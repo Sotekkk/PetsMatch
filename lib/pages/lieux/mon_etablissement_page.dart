@@ -37,8 +37,9 @@ class _MonEtablissementPageState extends State<MonEtablissementPage> {
     if (_uid == null) return;
     try {
       if (_profileId == null) {
-        final row = await _supabase.from('user_profiles').select('id').eq('uid', _uid!).eq('is_main', true).maybeSingle();
-        _profileId = row?['id'] as String?;
+        // Profil actif, pas "is_main" — sinon la page affiche l'établissement
+        // d'un AUTRE profil du même compte (ex. pension vu depuis éleveur).
+        _profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
       }
       final filterCol = _profileId != null ? 'pro_profile_id' : 'uid_pro';
       final filterVal = _profileId ?? _uid!;

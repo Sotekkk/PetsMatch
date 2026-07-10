@@ -268,8 +268,20 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
         description:   description.trim(),
         site_web:      siteWeb.trim(),
       };
-      if (lat !== null) data.latitude  = lat;
-      if (lng !== null) data.longitude = lng;
+      // Filet de sécurité : si l'adresse a été tapée sans jamais sélectionner
+      // une suggestion, lat/lng restent nuls et le profil pro devient
+      // invisible sur la carte des professionnels (/services/carte).
+      let finalLat = lat, finalLng = lng;
+      if ((finalLat === null || finalLng === null) && addressSearch.trim()) {
+        try {
+          const res = await fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(addressSearch.trim())}&limit=1`);
+          const json = await res.json();
+          const coords = json?.features?.[0]?.geometry?.coordinates;
+          if (coords) { finalLng = coords[0]; finalLat = coords[1]; }
+        } catch { /* ignore */ }
+      }
+      if (finalLat !== null) { data.latitude = finalLat; data.lat = finalLat; }
+      if (finalLng !== null) { data.longitude = finalLng; data.lng = finalLng; }
 
       if (isParticulier) {
         data.firstname = userFirstname;

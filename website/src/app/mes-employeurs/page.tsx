@@ -150,9 +150,15 @@ export default function MesEmployeursPage() {
       { data: tachesRaw },
       { data: planTachesRaw },
     ] = await Promise.all([
-      supabase.from('users')
-        .select('uid, firstname, lastname, name_elevage, is_elevage, cat_pro, profile_picture_url, profile_picture_url_elevage')
-        .in('uid', uids) as unknown as Promise<{ data: UserRow[] | null }>,
+      supabase.from('user_profiles')
+        .select('uid, firstname, lastname, nom, profile_type, cat_pro, avatar_url, profile_picture_url_pro')
+        .in('uid', uids).eq('is_main', true)
+        .then(({ data }) => ({ data: (data ?? []).map(p => ({
+          uid: p.uid, firstname: p.firstname, lastname: p.lastname,
+          name_elevage: p.nom, is_elevage: p.profile_type === 'eleveur',
+          cat_pro: p.cat_pro, profile_picture_url: p.avatar_url,
+          profile_picture_url_elevage: p.profile_picture_url_pro,
+        })) as UserRow[] })),
       supabase.from('animaux')
         .select('id, nom, espece, race, sexe, photo_url, uid_eleveur')
         .in('uid_eleveur', uids)

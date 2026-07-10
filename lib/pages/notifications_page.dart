@@ -61,7 +61,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
           .order('created_at', ascending: false)
           .limit(200);
       final currentType = _currentProfileType;
+      final activeProfileId = User_Info.activeProfileId;
       final filtered = (data as List).where((n) {
+        // profile_id est la source la plus fiable (multi-profil) — s'il est
+        // renseigné, il prime sur profile_type (souvent absent à la création).
+        final pid = (n['profile_id'] as String?) ?? '';
+        if (pid.isNotEmpty) return pid == activeProfileId;
         final pt = (n['profile_type'] as String?) ?? '';
         return pt.isEmpty || pt == currentType;
       }).toList();

@@ -75,7 +75,7 @@ export default function AssociationProfilePage() {
       const firebaseUid = ownerUid;
 
       Promise.all([
-        supabase.from('users').select('name_elevage, profile_picture_url_elevage, banner_url, ville_elevage, description_elevage, phone').eq('uid', firebaseUid).maybeSingle(),
+        supabase.from('users').select('name_elevage, profile_picture_url_elevage, banner_url, ville_elevage, description_elevage, phone_number').eq('uid', firebaseUid).maybeSingle(),
         supabase.from('annonces').select('id, titre, espece, race, photos, ville_eleveur').eq('uid_eleveur', firebaseUid).eq('profil_source', 'association').eq('statut', 'disponible').order('created_at', { ascending: false }),
         supabase.from('animaux').select('id, nom, espece, race, statut, photo_url').eq('uid_eleveur', firebaseUid).eq('is_association', true).eq('statut', 'disponible').order('nom'),
       ]).then(([{ data: userRow }, { data: ann }, { data: anim }]) => {
@@ -88,7 +88,7 @@ export default function AssociationProfilePage() {
         const ville = sp?.ville ?? (userRow as { ville_elevage?: string } | null)?.ville_elevage ?? '';
         const description = (sp?.desc_entreprise || sp?.description)
           ?? (userRow as { description_elevage?: string } | null)?.description_elevage ?? '';
-        const telephone = sp?.phone || sp?.telephone || (userRow as { phone?: string } | null)?.phone || '';
+        const telephone = sp?.phone || sp?.telephone || (userRow as { phone_number?: string } | null)?.phone_number || '';
 
         setProfile({ uid: firebaseUid, nom, avatar, banner, ville, description,
           telephone: telephone || undefined,

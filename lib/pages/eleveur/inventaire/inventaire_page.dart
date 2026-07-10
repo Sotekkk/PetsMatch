@@ -1,3 +1,4 @@
+import 'package:PetsMatch/main.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -73,14 +74,11 @@ class _InventairePageState extends State<InventairePage> {
     try {
       if (widget.eleveurProfileIdOverride != null) {
         _profileId = widget.eleveurProfileIdOverride;
-      } else if (_profileId == null) {
-        final profileRow = await _supa
-            .from('user_profiles')
-            .select('id')
-            .eq('uid', _uid)
-            .eq('is_main', true)
-            .maybeSingle();
-        if (profileRow != null) _profileId = profileRow['id'] as String?;
+      } else {
+        // Profil actuellement actif (peut différer du profil "is_main" —
+        // sinon un utilisateur multi-profil basculé sur son profil
+        // association/refuge voit l'inventaire de son profil éleveur).
+        _profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
       }
       final effectiveUid = widget.eleveurUidOverride ?? _uid;
       final rows = _profileId != null

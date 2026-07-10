@@ -77,53 +77,24 @@ function ServicesCarteContent() {
   async function loadPros() {
     setLoading(true);
     try {
-      // Profils primaires (users) — sans filtre lat/lng pour inclure tous les pros dans la liste
-      const { data: primaryData } = await supabase
-        .from('users')
-        .select('uid, name_elevage, firstname, profile_picture_url, banner_url, profession_pro, ville_elevage, ville, departement_elevage, region_elevage, cat_pro, especes_acceptees, accept_new_clients, lat, lng, rayon_intervention')
-        .not('cat_pro', 'is', null)
-        .neq('cat_pro', '');
-
-      // Profils secondaires (user_profiles) — latitude/longitude OU lat/lng
+      // Profils (user_profiles) — latitude/longitude OU lat/lng, inclus même sans lat/lng
       const { data: secondaryData } = await supabase
         .from('user_profiles')
-        .select('id, uid, profile_type, nom, name_elevage, avatar_url, banner_url, profession_pro, ville, ville_pro, especes_acceptees, accept_new_clients, latitude, longitude, lat, lng, rayon_intervention')
+        .select('id, uid, profile_type, nom, avatar_url, banner_url, profession_pro, ville, ville_pro, especes_acceptees, accept_new_clients, latitude, longitude, lat, lng, rayon_intervention')
         .not('profile_type', 'is', null)
         .in('statut_pro', ['actif', 'validated']);
 
       const items: ProMapItem[] = [];
 
-      // Primaires
-      for (const row of (primaryData ?? [])) {
-        items.push({
-          uid:                row.uid,
-          name:               row.name_elevage || row.firstname || 'Professionnel',
-          photo:              row.profile_picture_url,
-          banner:             row.banner_url,
-          profession:         row.profession_pro,
-          ville:              row.ville_elevage || row.ville,
-          cat_pro:            row.cat_pro,
-          especes:            Array.isArray(row.especes_acceptees) ? row.especes_acceptees : [],
-          accept_new_clients: row.accept_new_clients,
-          lat:                row.lat,
-          lng:                row.lng,
-          rayon_intervention: row.rayon_intervention,
-        });
-      }
-
-      // Secondaires (on évite les doublons uid+cat_pro) — on les inclut même sans lat/lng
-      const primaryKeys = new Set(items.map(i => `${i.uid}::${i.cat_pro}`));
       for (const row of (secondaryData ?? [])) {
         const lat = row.latitude ?? row.lat;
         const lng = row.longitude ?? row.lng;
         const cat = row.profile_type ?? '';
         if (!cat) continue;
-        const key = `${row.uid}::${cat}`;
-        if (primaryKeys.has(key)) continue; // profil principal déjà présent
         items.push({
           uid:                row.uid,
           profileTableId:     row.id,
-          name:               row.nom || row.name_elevage || 'Professionnel',
+          name:               row.nom || 'Professionnel',
           photo:              row.avatar_url,
           banner:             row.banner_url,
           profession:         row.profession_pro,
@@ -150,9 +121,10 @@ function ServicesCarteContent() {
     setLocating(true);
     try {
       const { data } = await supabase
-        .from('users')
+        .from('user_profiles')
         .select('lat, lng')
         .eq('uid', user.uid)
+        .eq('is_main', true)
         .maybeSingle();
       const lat = data?.lat as number | null;
       const lng = data?.lng as number | null;

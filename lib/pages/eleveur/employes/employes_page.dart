@@ -45,6 +45,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 
 // ─── Libellé de structure pour les notifications d'invitation ────────────────
@@ -163,18 +164,25 @@ class _EmployesTabState extends State<_EmployesTab> {
     setState(() => _loading = true);
     try {
       final profile = await _supa
-          .from('users')
-          .select('name_elevage, firstname, lastname')
+          .from('user_profiles')
+          .select('nom, firstname, lastname')
           .eq('uid', _uid)
+          .eq('is_main', true)
           .maybeSingle();
-      _nomElevage = (profile?['name_elevage'] as String?)?.trim().isNotEmpty == true
-          ? profile!['name_elevage'] as String
+      _nomElevage = (profile?['nom'] as String?)?.trim().isNotEmpty == true
+          ? profile!['nom'] as String
           : '${profile?['firstname'] ?? ''} ${profile?['lastname'] ?? ''}'.trim();
 
-      // Résoudre le profile_id de l'employeur
-      final eleveurProfileData = await _supa.from('user_profiles')
-          .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
-      final eleveurProfileId = eleveurProfileData?['id'] as String?;
+      // Résoudre le profile_id de l'employeur — le profil ACTIF, pas le
+      // profil "is_main" du compte (sinon la liste affiche les employés
+      // d'un AUTRE profil non-association du même compte, ex. éleveur
+      // vu depuis le profil éducateur).
+      String? eleveurProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+      if (eleveurProfileId == null) {
+        final eleveurProfileData = await _supa.from('user_profiles')
+            .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+        eleveurProfileId = eleveurProfileData?['id'] as String?;
+      }
 
       dynamic rows;
       if (eleveurProfileId != null) {
@@ -205,16 +213,16 @@ class _EmployesTabState extends State<_EmployesTab> {
               .select('uid').eq('id', employeProfileId).maybeSingle();
           final employeUid = profileData?['uid'] as String?;
           if (employeUid != null) {
-            u = await _supa.from('users')
-                .select('uid, firstname, lastname, profile_picture_url')
-                .eq('uid', employeUid).maybeSingle();
+            u = await _supa.from('user_profiles')
+                .select('uid, firstname, lastname, avatar_url')
+                .eq('uid', employeUid).eq('is_main', true).maybeSingle();
           }
         } else {
           final employeUid = e['uid_employe'] as String? ?? '';
           if (employeUid.isNotEmpty) {
-            u = await _supa.from('users')
-                .select('uid, firstname, lastname, profile_picture_url')
-                .eq('uid', employeUid).maybeSingle();
+            u = await _supa.from('user_profiles')
+                .select('uid, firstname, lastname, avatar_url')
+                .eq('uid', employeUid).eq('is_main', true).maybeSingle();
           }
         }
         result.add({...e, 'user': u});
@@ -289,7 +297,7 @@ class _EmployesTabState extends State<_EmployesTab> {
                     final u = e['user'] as Map<String, dynamic>?;
                     final nom = u == null ? 'Utilisateur inconnu'
                         : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
-                    final photoUrl = u?['profile_picture_url'] as String?;
+                    final photoUrl = u?['avatar_url'] as String?;
                     return _EmployeCard(
                       nom: nom, photoUrl: photoUrl,
                       teal: widget.teal, dark: widget.dark,
@@ -552,32 +560,16 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
       // Seuls les profils "particulier" peuvent être employés
       final profileRows = await _supa
           .from('user_profiles')
-          .select('uid, id')
+          .select('uid, id, firstname, lastname, avatar_url')
           .eq('profile_type', 'particulier')
-          .neq('uid', widget.uid);
-
-      final uids = (profileRows as List).map((p) => p['uid'] as String).toList();
-      if (uids.isEmpty) {
-        if (mounted) setState(() { _allUsers = []; _loading = false; });
-        return;
-      }
-
-      final userRows = await _supa
-          .from('users')
-          .select('uid, firstname, lastname, profile_picture_url')
-          .inFilter('uid', uids)
+          .eq('is_main', true)
+          .neq('uid', widget.uid)
           .limit(500);
 
-      // Associer le profile_id (particulier) à chaque user
-      final profileMap = <String, String>{};
-      for (final p in profileRows) {
-        profileMap[p['uid'] as String] = p['id'] as String;
-      }
-
       if (mounted) setState(() {
-        _allUsers = (userRows as List<dynamic>).map((u) {
-          final m = Map<String, dynamic>.from(u as Map);
-          m['_profile_id'] = profileMap[m['uid']];
+        _allUsers = (profileRows as List<dynamic>).map((p) {
+          final m = Map<String, dynamic>.from(p as Map);
+          m['_profile_id'] = m['id'];
           return m;
         }).toList();
         _loading = false;
@@ -601,17 +593,24 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
       '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
 
   String? _photoUser(Map<String, dynamic> u) =>
-      u['profile_picture_url'] as String?;
+      u['avatar_url'] as String?;
 
   Future<void> _ajouter(Map<String, dynamic> user) async {
     final uid = user['uid'] as String;
     final employeProfileId = user['_profile_id'] as String?;
     final profilSource = widget.isAssociation ? 'association' : 'eleveur';
 
-    // Résoudre le profile_id de l'employeur
-    final eleveurProfileData = await _supa.from('user_profiles')
-        .select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
-    final eleveurProfileId = eleveurProfileData?['id'] as String?;
+    // Résoudre le profile_id de l'employeur — le profil ACTIF, pas le profil
+    // "is_main" du compte : sinon un employé ajouté depuis le profil
+    // éducateur/pension se retrouve rattaché au profil éleveur du même
+    // compte (bug constaté : un employé de l'éleveur comptait dans la
+    // limite du forfait éducateur).
+    var eleveurProfileId = User_Info.activeProfileId;
+    if (eleveurProfileId.isEmpty) {
+      final eleveurProfileData = await _supa.from('user_profiles')
+          .select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
+      eleveurProfileId = eleveurProfileData?['id'] as String? ?? '';
+    }
 
     // Cherche uniquement dans le profil courant (élevage OU association, pas les deux)
     var q = _supa.from('employes').select()
@@ -622,7 +621,42 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
     } else {
       q = q.or('profil_source.is.null,profil_source.eq.eleveur');
     }
+    q = q.eq('eleveur_profile_id', eleveurProfileId);
     final existing = await q.maybeSingle();
+
+    // Limite d'employés par forfait (éducateur/pension) — la page d'abonnement
+    // annonce ces limites mais rien ne les appliquait jusqu'ici.
+    if (existing == null || existing['actif'] != true) {
+      final catPro = User_Info.catPro;
+      int maxEmployes = -1;
+      if (catPro == 'education') {
+        final planCode = await PlanService.getEducationPlanCode(widget.uid);
+        maxEmployes = PlanService.getEducationConfig(planCode).maxEmployes;
+      } else if (catPro == 'pension') {
+        final planCode = await PlanService.getPensionPlanCode(widget.uid);
+        maxEmployes = PlanService.getPensionConfig(planCode).maxEmployes;
+      }
+      if (maxEmployes != -1) {
+        // Scoper par eleveur_profile_id précis : profil_source ne distingue
+        // que association vs "le reste", donc les employés d'un AUTRE profil
+        // non-association du même compte (ex. éleveur) seraient sinon
+        // comptés à tort dans la limite du profil éducateur/pension.
+        final activeEmployes = await _supa.from('employes').select('id')
+            .eq('uid_eleveur', widget.uid).eq('actif', true)
+            .eq('eleveur_profile_id', eleveurProfileId);
+        if (activeEmployes.length >= maxEmployes) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(maxEmployes == 0
+                  ? 'Votre formule actuelle ne permet pas d\'ajouter d\'employé. Passez à une formule supérieure.'
+                  : 'Limite de $maxEmployes employé(s) atteinte pour votre formule. Passez à une formule supérieure pour en ajouter plus.'),
+              backgroundColor: Colors.orange,
+            ));
+          }
+          return;
+        }
+      }
+    }
 
     if (existing != null) {
       if (existing['actif'] == true) {
@@ -829,10 +863,15 @@ class _TachesTabState extends State<_TachesTab> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      // Résoudre le profile_id de l'employeur
-      final eleveurProfileData = await _supa.from('user_profiles')
-          .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
-      final eleveurProfileId = eleveurProfileData?['id'] as String?;
+      // Résoudre le profile_id de l'employeur — le profil ACTIF, pas le
+      // profil "is_main" du compte (voir _EmployesTabState._load pour le
+      // même correctif et son explication).
+      String? eleveurProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+      if (eleveurProfileId == null) {
+        final eleveurProfileData = await _supa.from('user_profiles')
+            .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+        eleveurProfileId = eleveurProfileData?['id'] as String?;
+      }
 
       dynamic tachesQ = _supa.from('taches_elevage').select();
       tachesQ = eleveurProfileId != null
@@ -875,9 +914,9 @@ class _TachesTabState extends State<_TachesTab> {
         }
         uid ??= e['uid_employe'] as String? ?? '';
         if (uid.isEmpty || uidToNom.containsKey(uid)) continue;
-        final u = await _supa.from('users')
+        final u = await _supa.from('user_profiles')
             .select('uid, firstname, lastname')
-            .eq('uid', uid).maybeSingle();
+            .eq('uid', uid).eq('is_main', true).maybeSingle();
         if (u != null) {
           uidToNom[uid] = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
         }
@@ -956,12 +995,12 @@ class _TachesTabState extends State<_TachesTab> {
             if (uidToNom.containsKey(assignedTo)) {
               pt['assigne_nom'] = uidToNom[assignedTo];
             } else {
-              final u = await _supa.from('users')
-                  .select('firstname, lastname, name_elevage, is_elevage')
-                  .eq('uid', assignedTo).maybeSingle();
+              final u = await _supa.from('user_profiles')
+                  .select('firstname, lastname, nom, profile_type')
+                  .eq('uid', assignedTo).eq('is_main', true).maybeSingle();
               if (u != null) {
-                pt['assigne_nom'] = u['is_elevage'] == true
-                    ? (u['name_elevage'] ?? 'Employé')
+                pt['assigne_nom'] = u['profile_type'] == 'eleveur'
+                    ? (u['nom'] ?? 'Employé')
                     : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
               }
             }
@@ -1079,12 +1118,13 @@ class _TachesTabState extends State<_TachesTab> {
     // Notification uniquement si assignation (pas si désassignation)
     if (newAssignedUid != null) {
       try {
-        final profile = await _supa.from('users')
-            .select('name_elevage, firstname, lastname')
+        final profile = await _supa.from('user_profiles')
+            .select('nom, firstname, lastname')
             .eq('uid', _uid)
+            .eq('is_main', true)
             .maybeSingle();
-        final nomElevage = (profile?['name_elevage'] as String?)?.trim().isNotEmpty == true
-            ? profile!['name_elevage'] as String
+        final nomElevage = (profile?['nom'] as String?)?.trim().isNotEmpty == true
+            ? profile!['nom'] as String
             : '${profile?['firstname'] ?? ''} ${profile?['lastname'] ?? ''}'.trim();
         final label = group['label'] as String? ?? 'Tâche de protocole';
         final total = group['_total'] as int;
@@ -1867,10 +1907,15 @@ class _CreateTacheSheetState extends State<_CreateTacheSheet> {
           : null;
       final titre = _titreCtrl.text.trim();
 
-      // Résoudre les profile_ids pour l'employeur et l'assigné
-      final eleveurProfileData = await _supa.from('user_profiles')
-          .select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
-      final eleveurProfileId = eleveurProfileData?['id'] as String?;
+      // Résoudre les profile_ids pour l'employeur et l'assigné — le profil
+      // ACTIF pour l'employeur, pas son profil "is_main" (voir
+      // _EmployesTabState._load pour le même correctif et son explication).
+      String? eleveurProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+      if (eleveurProfileId == null) {
+        final eleveurProfileData = await _supa.from('user_profiles')
+            .select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
+        eleveurProfileId = eleveurProfileData?['id'] as String?;
+      }
 
       String? assigneProfileId;
       if (_selectedEmployeUid != null) {
@@ -2667,9 +2712,9 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
           .toList();
 
       final results = await Future.wait([
-        _supa.from('users')
-            .select('uid, firstname, lastname, name_elevage, is_elevage, cat_pro, profile_picture_url, profile_picture_url_elevage')
-            .inFilter('uid', uids),
+        _supa.from('user_profiles')
+            .select('uid, firstname, lastname, nom, profile_type, cat_pro, avatar_url, profile_picture_url_pro')
+            .inFilter('uid', uids).eq('is_main', true),
         invitingProfileIds.isEmpty
             ? Future.value(<Map<String, dynamic>>[])
             : _supa.from('user_profiles')
@@ -2744,7 +2789,16 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
         final uid = e['uid_eleveur'] as String;
         final primaryUser = users.firstWhere((u) => u['uid'] == uid, orElse: () => <String, dynamic>{});
         if ((primaryUser as Map).isEmpty) continue;
-        var u = Map<String, dynamic>.from(primaryUser);
+        var u = <String, dynamic>{
+          'uid': primaryUser['uid'],
+          'firstname': primaryUser['firstname'],
+          'lastname': primaryUser['lastname'],
+          'name_elevage': primaryUser['nom'],
+          'is_elevage': primaryUser['profile_type'] == 'eleveur',
+          'cat_pro': primaryUser['cat_pro'],
+          'profile_picture_url': primaryUser['avatar_url'],
+          'profile_picture_url_elevage': primaryUser['profile_picture_url_pro'],
+        };
         // Si l'invitation vient d'un profil secondaire (ex : pension), afficher
         // le nom de CE profil plutôt que celui du compte principal.
         final invitingProfileId = e['eleveur_profile_id'] as String?;
@@ -3230,12 +3284,12 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
         insertRegistre: false,
       );
       _loadPlanTaches();
-      final moi = await _supa.from('users')
-          .select('firstname, lastname, name_elevage, is_elevage')
-          .eq('uid', _uid).maybeSingle();
+      final moi = await _supa.from('user_profiles')
+          .select('firstname, lastname, nom, profile_type')
+          .eq('uid', _uid).eq('is_main', true).maybeSingle();
       final nomEmploye = moi == null ? 'Votre employé'
-          : moi['is_elevage'] == true
-              ? (moi['name_elevage'] ?? 'Votre employé')
+          : moi['profile_type'] == 'eleveur'
+              ? (moi['nom'] ?? 'Votre employé')
               : '${moi['firstname'] ?? ''} ${moi['lastname'] ?? ''}'.trim();
       await _supa.from('notifications').insert({
         'uid':   widget.eleveurUid,
@@ -3244,6 +3298,7 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
         'body':  '$nomEmploye a terminé : ${t['label']}',
         'data':  {'tacheId': t['id'].toString(), 'eleveurUid': widget.eleveurUid},
         'read':  false,
+        if (widget.eleveurProfileId != null) 'profile_id': widget.eleveurProfileId,
       });
     } catch (_) {}
   }
@@ -3282,12 +3337,12 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
 
     // Notifier l'employeur
     try {
-      final moi = await _supa.from('users')
-          .select('firstname, lastname, name_elevage, is_elevage')
-          .eq('uid', _uid).maybeSingle();
+      final moi = await _supa.from('user_profiles')
+          .select('firstname, lastname, nom, profile_type')
+          .eq('uid', _uid).eq('is_main', true).maybeSingle();
       final nomEmploye = moi != null
-          ? (moi['is_elevage'] == true
-              ? (moi['name_elevage'] ?? 'Votre employé')
+          ? (moi['profile_type'] == 'eleveur'
+              ? (moi['nom'] ?? 'Votre employé')
               : '${moi['firstname'] ?? ''} ${moi['lastname'] ?? ''}'.trim())
           : 'Votre employé';
       await _supa.from('notifications').insert({
@@ -3297,6 +3352,7 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
         'body':  '$nomEmploye a terminé : ${t['titre']}',
         'data':  {'tacheId': t['id'].toString(), 'eleveurUid': widget.eleveurUid},
         'read':  false,
+        if (widget.eleveurProfileId != null) 'profile_id': widget.eleveurProfileId,
       });
     } catch (_) {}
 
@@ -4276,12 +4332,12 @@ class _TacheDetailPageState extends State<TacheDetailPage> {
       for (final c in rows) {
         final uid = c['uid_auteur'] as String;
         if (!_authorNames.containsKey(uid)) {
-          final u = await _supa.from('users')
-              .select('uid, firstname, lastname, name_elevage, is_elevage')
-              .eq('uid', uid).maybeSingle();
+          final u = await _supa.from('user_profiles')
+              .select('uid, firstname, lastname, nom, profile_type')
+              .eq('uid', uid).eq('is_main', true).maybeSingle();
           if (u != null) {
-            _authorNames[uid] = u['is_elevage'] == true
-                ? (u['name_elevage'] as String? ?? 'Élevage')
+            _authorNames[uid] = u['profile_type'] == 'eleveur'
+                ? (u['nom'] as String? ?? 'Élevage')
                 : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
           }
         }

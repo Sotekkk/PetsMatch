@@ -51,13 +51,14 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
       final empsRaw = await query;
       final List<Map<String, dynamic>> result = [];
       for (final e in empsRaw) {
-        final u = await supa.from('users')
-            .select('uid, firstname, lastname, name_elevage, is_elevage')
+        final u = await supa.from('user_profiles')
+            .select('uid, firstname, lastname, nom, profile_type')
             .eq('uid', e['uid_employe'] as String)
+            .eq('is_main', true)
             .maybeSingle();
         if (u != null) {
-          final nom = u['is_elevage'] == true
-              ? (u['name_elevage'] ?? 'Employé')
+          final nom = u['profile_type'] == 'eleveur'
+              ? (u['nom'] ?? 'Employé')
               : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
           result.add({...e, 'nom': nom});
         }

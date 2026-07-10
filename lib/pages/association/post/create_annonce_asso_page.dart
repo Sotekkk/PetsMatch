@@ -182,7 +182,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
       final uid = FirebaseAuth.instance.currentUser!.uid;
       debugPrint('[ASSO] uid=$uid step=userRow');
       final userRow = await Supabase.instance.client
-          .from('users').select().eq('uid', uid).single();
+          .from('user_profiles').select().eq('uid', uid).eq('is_main', true).single();
 
       // Profil secondaire association — son nom > name_elevage > nom/prénom
       String? assoLabel;
@@ -214,20 +214,20 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
       } catch (_) {}
 
       final nomAsso = (assoLabel?.isNotEmpty == true) ? assoLabel!
-          : (userRow['name_elevage'] as String?)?.isNotEmpty == true
-              ? userRow['name_elevage'] as String
+          : (userRow['nom'] as String?)?.isNotEmpty == true
+              ? userRow['nom'] as String
               : '${userRow['firstname'] ?? ''} ${userRow['lastname'] ?? ''}'.trim();
-      final ville  = (userRow['ville_elevage'] as String?) ?? (userRow['ville'] as String?) ?? '';
+      final ville  = (userRow['ville_pro'] as String?) ?? (userRow['ville'] as String?) ?? '';
       final dep    = () {
-        final d = userRow['departement_elevage'] as String?;
+        final d = userRow['departement_pro'] as String?;
         if (d != null && d.isNotEmpty) return d;
-        final cp = (userRow['code_postal_elevage'] as String?) ?? '';
+        final cp = (userRow['code_postal_pro'] as String?) ?? '';
         return FrenchGeo.fromPostalCode(cp)?.departement ?? '';
       }();
       final region = () {
-        final r = userRow['region_elevage'] as String?;
+        final r = userRow['region_pro'] as String?;
         if (r != null && r.isNotEmpty) return r;
-        final cp = (userRow['code_postal_elevage'] as String?) ?? '';
+        final cp = (userRow['code_postal_pro'] as String?) ?? '';
         return FrenchGeo.fromPostalCode(cp)?.region ?? '';
       }();
 
@@ -240,7 +240,7 @@ class _CreateAnnonceAssoPageState extends State<CreateAnnonceAssoPage> {
         'ville_eleveur':       ville,
         'departement_eleveur': dep,
         'region_eleveur':      region,
-        'pays_eleveur':        userRow['pays_elevage'] ?? 'France',
+        'pays_eleveur':        userRow['pays_pro'] ?? 'France',
         'type':                'animal',
         'type_vente':          'adoption',
         'profil_source':       'association',

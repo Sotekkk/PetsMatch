@@ -78,17 +78,7 @@ class _ProListState extends State<ProList> {
 
   Future<void> _loadAll() async {
     setState(() => _loading = true);
-    // 1. Load all primary pros — use safe columns only (statut_pro etc. may not exist yet)
-    List<dynamic> primaryRows = [];
-    try {
-      primaryRows = await _supa
-          .from('users')
-          .select('uid, cat_pro, profession_pro, name_elevage')
-          .not('cat_pro', 'is', null)
-          .inFilter('cat_pro', ['veterinaire', 'sante', 'education', 'garde', 'pension', 'toilettage', 'photographe', 'marechal_ferrant', 'referencement', 'autre']);
-    } catch (_) {}
-
-    // 2. Load all secondary profiles — select * so missing columns don't crash the query
+    // Load all secondary profiles — select * so missing columns don't crash the query
     List<dynamic> secondaryRows = [];
     try {
       secondaryRows = await _supa
@@ -99,12 +89,9 @@ class _ProListState extends State<ProList> {
 
     try {
 
-      // 3. Collect all UIDs to fetch Firestore data
+      // Collect all UIDs to fetch Firestore data
       final allUids = <String>{};
-      for (final r in (primaryRows as List)) {
-        if (r['uid'] != null) allUids.add(r['uid'] as String);
-      }
-      for (final r in (secondaryRows as List)) {
+      for (final r in secondaryRows) {
         if (r['uid'] != null) allUids.add(r['uid'] as String);
       }
 
@@ -113,39 +100,27 @@ class _ProListState extends State<ProList> {
       // Also load from Supabase users for email/name (more reliable)
       if (allUids.isNotEmpty) {
         try {
-          final userRows = await _supa
-              .from('users')
-              .select('uid, firstname, lastname, email, profile_picture_url_elevage, profile_picture_url')
-              .inFilter('uid', allUids.toList());
-          for (final u in (userRows as List)) {
-            fireMap[u['uid'] as String] = Map<String, dynamic>.from(u);
+          final profileRows = await _supa
+              .from('user_profiles')
+              .select('uid, firstname, lastname, avatar_url, profile_picture_url_pro')
+              .inFilter('uid', allUids.toList()).eq('is_main', true);
+          final emailRows = await _supa
+              .from('users').select('uid, email').inFilter('uid', allUids.toList());
+          final emailByUid = { for (final u in (emailRows as List)) u['uid'] as String: u['email'] };
+          for (final p in (profileRows as List)) {
+            fireMap[p['uid'] as String] = {
+              'firstname': p['firstname'], 'lastname': p['lastname'],
+              'email': emailByUid[p['uid']],
+              'profile_picture_url_elevage': p['profile_picture_url_pro'],
+              'profile_picture_url': p['avatar_url'],
+            };
           }
         } catch (_) {}
       }
 
-      // 5. Build unified entries
+      // Build unified entries
       final entries = <_ProfileEntry>[];
-      for (final r in (primaryRows as List)) {
-        final uid = r['uid']?.toString() ?? '';
-        final user = fireMap[uid] ?? {};
-        entries.add(_ProfileEntry(
-          uid: uid,
-          isSecondary: false,
-          profileTableId: null,
-          catPro: r['cat_pro']?.toString() ?? '',
-          statutPro: r['statut_pro']?.toString() ?? 'actif',
-          nameElevage: r['name_elevage']?.toString() ?? '',
-          professionPro: r['profession_pro']?.toString() ?? '',
-          especesAcceptees: List<String>.from(r['especes_acceptees'] ?? []),
-          certifications: List.from(r['certifications'] ?? []),
-          rayonIntervention: r['rayon_intervention'],
-          firstName: user['firstname']?.toString() ?? '',
-          lastName: user['lastname']?.toString() ?? '',
-          email: user['email']?.toString() ?? '',
-          photoUrl: (user['profile_picture_url_elevage'] ?? user['profile_picture_url'] ?? '').toString(),
-        ));
-      }
-      for (final r in (secondaryRows as List)) {
+      for (final r in secondaryRows) {
         final uid = r['uid']?.toString() ?? '';
         final user = fireMap[uid] ?? {};
         entries.add(_ProfileEntry(

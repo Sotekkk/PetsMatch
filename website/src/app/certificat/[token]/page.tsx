@@ -8,6 +8,11 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+const PRO_TYPES = new Set([
+  'veterinaire', 'para_medical', 'education', 'petsitter',
+  'pension', 'promeneur', 'photographe', 'marechal_ferrant',
+]);
+
 interface Cert {
   id: string;
   nom_animal: string;
@@ -245,9 +250,17 @@ export default function CertificatPublicPage({ params }: { params: Promise<{ tok
           const limite = new Date(data.date_limite_signature);
           if (now < limite) { setDelaiBloq(true); setJoursRestants(Math.ceil((limite.getTime() - now.getTime()) / 86400_000)); }
         }
-        const { data: ced } = await supabase.from('users')
-          .select('name_elevage,firstname,lastname,siret,phone_number,numero_elevage,rue_elevage,ville_elevage,code_postal_elevage,rue,ville,code_postal,is_elevage,is_pro,cat_pro')
-          .eq('uid', data.cedant_uid).maybeSingle();
+        const { data: cp } = await supabase.from('user_profiles')
+          .select('nom,firstname,lastname,siret,phone_number,numero_elevage,rue_pro,ville_pro,code_postal_pro,rue,ville,code_postal,profile_type,cat_pro')
+          .eq('uid', data.cedant_uid).eq('is_main', true).maybeSingle();
+        const ced = cp ? {
+          name_elevage: cp.nom, firstname: cp.firstname, lastname: cp.lastname,
+          siret: cp.siret, phone_number: cp.phone_number, numero_elevage: cp.numero_elevage,
+          rue_elevage: cp.rue_pro, ville_elevage: cp.ville_pro, code_postal_elevage: cp.code_postal_pro,
+          rue: cp.rue, ville: cp.ville, code_postal: cp.code_postal,
+          is_elevage: cp.profile_type === 'eleveur', is_pro: PRO_TYPES.has(cp.profile_type ?? ''),
+          cat_pro: cp.cat_pro,
+        } : null;
         setCedant(ced as Cedant | null);
         setLoading(false);
       });

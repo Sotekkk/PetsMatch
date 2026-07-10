@@ -823,6 +823,10 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const avatarRef = useRef<HTMLInputElement>(null);
+  const [acacedNum, setAcacedNum] = useState('');
+  const [acacedDocFile, setAcacedDocFile] = useState<File | null>(null);
+  const [acacedDocUrl, setAcacedDocUrl] = useState<string | null>(null);
+  const acacedDocRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     supabase.from('user_profiles').select('*').eq('id', profileId).single()
@@ -875,6 +879,8 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         }
         setEducationBilanRequis((r.education_bilan_requis as boolean) ?? true);
         setArrhesPourcentage(((r.arrhes_pourcentage as number) ?? 0));
+        setAcacedNum(((r.acaced_numero ?? r.acaced) as string) ?? '');
+        setAcacedDocUrl((r.acaced_doc_url as string) ?? null);
         setLoading(false);
         if (cat === 'education') loadForfaits();
       });
@@ -931,6 +937,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       ...((data?.profile_type ?? data?.cat_pro) === 'education'
         ? { tarifs_education: tarifsEducation, education_bilan_requis: educationBilanRequis }
         : {}),
+      ...(['garde', 'education'].includes((data?.profile_type ?? data?.cat_pro) ?? '')
+        ? { acaced: acacedNum.trim(), acaced_numero: acacedNum.trim() }
+        : {}),
     };
 
     if (avatarFile) {
@@ -939,6 +948,17 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       if (uploaded) {
         const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
         payload.avatar_url = pub.publicUrl;
+      }
+    }
+
+    if (acacedDocFile) {
+      const ext = acacedDocFile.name.split('.').pop() ?? 'jpg';
+      const path = `documents/${uid}/pro_${profileId}_acaced.${ext}`;
+      const { data: uploaded } = await supabase.storage.from('petsmatch').upload(path, acacedDocFile, { upsert: true });
+      if (uploaded) {
+        const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+        payload.acaced_doc_url = pub.publicUrl;
+        setAcacedDocUrl(pub.publicUrl);
       }
     }
 
@@ -1160,6 +1180,38 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                 onChange={e => setArrhesPourcentage(Math.min(100, Math.max(0, Number(e.target.value))))}
                 className={inputCls} />
             </Field>
+          </Card>
+        )}
+
+        {/* ACACED — obligatoire pour garde et éducateur */}
+        {(catPro === 'garde' || catPro === 'education') && (
+          <Card title="ACACED *">
+            <p className="text-xs text-gray-400 mb-3">
+              Attestation de connaissances obligatoire pour cette activité (Code rural, art. L214-6-1).
+            </p>
+            <Field label="N° ACACED">
+              <input value={acacedNum} onChange={e => setAcacedNum(e.target.value)} className={inputCls} placeholder="Ex : 2022/9fd5-fd12" />
+            </Field>
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-1">Certificat ACACED</p>
+              {acacedDocUrl && !acacedDocFile && (
+                <a href={acacedDocUrl} target="_blank" rel="noopener" className="text-xs text-[#0C5C6C] underline block mb-1">📄 Certificat actuel</a>
+              )}
+              {acacedDocFile ? (
+                <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+                  <span className="text-green-600 text-sm">✓</span>
+                  <span className="text-xs text-green-700 flex-1 truncate">{acacedDocFile.name}</span>
+                  <button type="button" onClick={() => acacedDocRef.current?.click()} className="text-xs text-[#0C5C6C] font-medium hover:underline">Changer</button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => acacedDocRef.current?.click()}
+                  className="w-full border-2 border-dashed border-gray-200 hover:border-[#0C5C6C] rounded-xl py-2.5 text-sm text-gray-400 hover:text-[#0C5C6C] transition-colors">
+                  📎 Joindre le certificat ACACED (image ou PDF)
+                </button>
+              )}
+              <input ref={acacedDocRef} type="file" accept="image/*,application/pdf" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) setAcacedDocFile(f); e.target.value = ''; }} />
+            </div>
           </Card>
         )}
 
@@ -1811,6 +1863,7 @@ export default function ProfilPage() {
       if (isEleveur) {
         profileUpdate.nom            = nameElevage;
         profileUpdate.phone_number   = phoneElevage;
+        profileUpdate.numero_elevage = phoneElevage;
         profileUpdate.desc_entreprise = description;
         profileUpdate.rue_pro        = rue;
         profileUpdate.code_postal_pro = cp;
@@ -1818,11 +1871,18 @@ export default function ProfilPage() {
         profileUpdate.pays_pro       = pays;
         profileUpdate.adresse        = [rue, cp, villeElevage, pays].filter(Boolean).join(', ');
         profileUpdate.siret          = siret.trim();
+        profileUpdate.numero_tva     = tva.trim();
+        profileUpdate.acaced         = acacedNum.trim();
+        profileUpdate.especes_elevees = especesElevees;
         profileUpdate.instagram      = instagram.trim();
         profileUpdate.facebook       = facebook.trim();
         profileUpdate.site_web       = siteWeb.trim();
         if (payload.banner_url) profileUpdate.banner_url = payload.banner_url;
         if (payload.profile_picture_url_elevage) profileUpdate.profile_picture_url_pro = payload.profile_picture_url_elevage;
+        if (payload.kbis_url) profileUpdate.kbis_url = payload.kbis_url;
+        if (payload.acaced_doc_url) profileUpdate.acaced_doc_url = payload.acaced_doc_url;
+        if (acacedDateObtention) profileUpdate.acaced_date_obtention = acacedDateObtention;
+        if (acacedDateRenewal) profileUpdate.acaced_date_renewal = acacedDateRenewal;
       }
       const profileQ = activeProfileId
         ? supabase.from('user_profiles').update(profileUpdate).eq('id', activeProfileId)

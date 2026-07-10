@@ -31,9 +31,10 @@ class _ChatProfilePageState extends State<ChatProfilePage> {
   Future<void> _load() async {
     try {
       final p = await _supa
-          .from('users')
-          .select()
+          .from('user_profiles')
+          .select('firstname, lastname, ville, avatar_url')
           .eq('uid', widget.uid)
+          .eq('is_main', true)
           .maybeSingle();
 
       List<Map<String, dynamic>> animaux = [];
@@ -272,8 +273,8 @@ Veuillez traiter ce signalement sous 24h conformément aux CGU.
     final p = _profile!;
     final nom = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
     final city = p['ville']?.toString() ?? '';
-    final photo = p['profile_picture_url']?.toString() ?? '';
-    final adopt = (p['adopt_project'] ?? p['adoptProject'] ?? p['desc'] ?? '').toString();
+    final photo = p['avatar_url']?.toString() ?? '';
+    const adopt = '';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),

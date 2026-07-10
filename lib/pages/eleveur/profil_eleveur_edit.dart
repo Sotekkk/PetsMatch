@@ -113,7 +113,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
     if (bannerFromFirestore == null || bannerFromFirestore.isEmpty) {
       try {
         final row = await Supabase.instance.client
-            .from('users').select('banner_url').eq('uid', uid).maybeSingle();
+            .from('user_profiles').select('banner_url').eq('uid', uid).eq('is_main', true).maybeSingle();
         final url = row?['banner_url'] as String?;
         if (url != null && url.isNotEmpty) bannerFromFirestore = url;
       } catch (_) {}
@@ -505,17 +505,21 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           if (_profileLng != null) 'lng': _profileLng,
           if (photoUrl != null) 'profile_picture_url_elevage': photoUrl,
           if (bannerUrl != null) 'banner_url': bannerUrl,
-          'siret':      _siretCtrl.text.trim(),
-          'numero_tva': _tvaCtrl.text.trim(),
-          'acaced':     _acacedCtrl.text.trim(),
-          'instagram':  _instagramCtrl.text.trim(),
+          'siret':          _siretCtrl.text.trim(),
+          'numero_tva':     _tvaCtrl.text.trim(),
+          'acaced':         _acacedCtrl.text.trim(),
+          'instagram':      _instagramCtrl.text.trim(),
           'facebook':  _facebookCtrl.text.trim(),
           'site_web':  _siteWebCtrl.text.trim(),
+          'numero_elevage': _telCtrl.text.trim(),
+          'bio':            _descCtrl.text.trim(),
           if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbis_url': siretDocUrl,
           if (acacedDocUrl != null && acacedDocUrl.isNotEmpty) 'acaced_doc_url': acacedDocUrl,
         }, onConflict: 'uid');
 
-        // Sync user_profiles (source V2)
+        // Sync user_profiles (source V2) — description prend le même contenu
+        // que users.bio, et phone_number celui de numero_elevage (jamais
+        // laissé au placeholder "0000000000" écrit par d'anciens flux).
         await supa.from('user_profiles').update({
           'nom':                    _nomElevageCtrl.text.trim(),
           'firstname':              _prenomCtrl.text.trim(),
@@ -529,10 +533,15 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           if (_profileLng != null) 'lng_pro': _profileLng,
           if (photoUrl != null) 'profile_picture_url_pro': photoUrl,
           if (bannerUrl != null) 'banner_url': bannerUrl,
-          'siret':      _siretCtrl.text.trim(),
-          'instagram':  _instagramCtrl.text.trim(),
-          'facebook':   _facebookCtrl.text.trim(),
-          'site_web':   _siteWebCtrl.text.trim(),
+          'siret':          _siretCtrl.text.trim(),
+          'numero_tva':     _tvaCtrl.text.trim(),
+          'acaced':         _acacedCtrl.text.trim(),
+          'instagram':      _instagramCtrl.text.trim(),
+          'facebook':       _facebookCtrl.text.trim(),
+          'site_web':       _siteWebCtrl.text.trim(),
+          'numero_elevage': _telCtrl.text.trim(),
+          'phone_number':   _telCtrl.text.trim(),
+          'description':    _descCtrl.text.trim(),
           if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbis_url': siretDocUrl,
           if (acacedDocUrl != null && acacedDocUrl.isNotEmpty) 'acaced_doc_url': acacedDocUrl,
         }).eq('uid', uid).eq('is_main', true);

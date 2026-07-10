@@ -38,6 +38,10 @@ import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart';
+import 'package:PetsMatch/pages/pro/pension_factures_page.dart';
+import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/registre_visites_page.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
@@ -72,6 +76,8 @@ class _EleveurNavState extends State<EleveurNav> {
   bool _isBenevole   = false;
   String _planCode   = 'free';
   String _pensionPlanCode = 'free';
+  String _educationPlanCode = 'free';
+  String _gardePlanCode = 'free';
 
   static const _green = Color(0xFF6E9E57);
   static const _teal = Color(0xFF0C5C6C);
@@ -105,6 +111,16 @@ class _EleveurNavState extends State<EleveurNav> {
     if (User_Info.catPro == 'pension') {
       final code = await PlanService.getPensionPlanCode(uid);
       if (mounted) setState(() => _pensionPlanCode = code);
+      return;
+    }
+    if (User_Info.catPro == 'education') {
+      final code = await PlanService.getEducationPlanCode(uid);
+      if (mounted) setState(() => _educationPlanCode = code);
+      return;
+    }
+    if (User_Info.catPro == 'garde') {
+      final code = await PlanService.getGardePlanCode(uid);
+      if (mounted) setState(() => _gardePlanCode = code);
       return;
     }
     final code = await PlanService.getPlanCode(uid);
@@ -551,7 +567,7 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                  if (User_Info.catPro == 'garde' || User_Info.catPro == 'pension') _DrawerItem(
+                  if (User_Info.catPro == 'pension') _DrawerItem(
                     icon: Icons.home_work_outlined,
                     label: 'Registre pension',
                     onTap: () {
@@ -588,6 +604,19 @@ class _EleveurNavState extends State<EleveurNav> {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(
                         builder: (_) => const EducationDevisPage(),
+                      ));
+                    },
+                  ),
+                  if (User_Info.catPro == 'education') _DrawerItem(
+                    icon: Icons.groups_outlined,
+                    label: 'Mes Employés',
+                    locked: _educationPlanCode == 'free',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => _educationPlanCode == 'free'
+                            ? const EducationAbonnementPage()
+                            : const EmployesPage(),
                       ));
                     },
                   ),
@@ -690,6 +719,26 @@ class _EleveurNavState extends State<EleveurNav> {
                       },
                     ),
                     _DrawerItem(
+                      icon: Icons.euro_outlined,
+                      label: 'Tarifs',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PensionTarifsPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Mes Factures',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PensionFacturesPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
                       icon: Icons.groups_outlined,
                       label: 'Mes Employés',
                       locked: _pensionPlanCode == 'free',
@@ -713,6 +762,67 @@ class _EleveurNavState extends State<EleveurNav> {
                       },
                     ),
                   ],
+                  if (User_Info.catPro == 'garde') ...[
+                    _DrawerItem(
+                      icon: Icons.checklist_outlined,
+                      label: 'Registre visites',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const RegistreVisitesPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.inventory_2_outlined,
+                      label: 'Inventaire',
+                      locked: _gardePlanCode == 'free',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => _gardePlanCode == 'free'
+                              ? const GardeAbonnementPage()
+                              : const InventairePage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.event_note_outlined,
+                      label: 'Protocoles / Tâches',
+                      locked: _gardePlanCode == 'free',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => _gardePlanCode == 'free'
+                              ? const GardeAbonnementPage()
+                              : const PlanTemplateListPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.groups_outlined,
+                      label: 'Mes Employés',
+                      locked: _gardePlanCode == 'free',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => _gardePlanCode == 'free'
+                              ? const GardeAbonnementPage()
+                              : const EmployesPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.workspace_premium_outlined,
+                      label: 'Mon abonnement',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const GardeAbonnementPage(),
+                        ));
+                      },
+                    ),
+                  ],
                 ],
                 const Divider(height: 24),
                 _DrawerItem(
@@ -727,7 +837,7 @@ class _EleveurNavState extends State<EleveurNav> {
                     ));
                   },
                 ),
-                if (User_Info.catPro == 'restauration' || User_Info.catPro == 'pension') ...[
+                if (User_Info.catPro == 'restauration') ...[
                   const Divider(height: 8),
                   _DrawerItem(
                     icon: Icons.store_outlined,

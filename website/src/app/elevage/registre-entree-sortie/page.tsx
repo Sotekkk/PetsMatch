@@ -357,11 +357,11 @@ function EditRegistreForm({ animal, uid, onClose, onSaved }: {
   const [adresseElevage, setAdresseElevage] = useState('');
 
   useEffect(() => {
-    supabase.from('users').select('name_elevage, rue_elevage, ville_elevage').eq('uid', uid).maybeSingle()
+    supabase.from('user_profiles').select('nom, rue_pro, ville_pro').eq('uid', uid).eq('is_main', true).maybeSingle()
       .then(({ data }) => {
         if (data) {
-          setNomElevage((data as { name_elevage?: string }).name_elevage ?? '');
-          const parts = [(data as { rue_elevage?: string; ville_elevage?: string }).rue_elevage, (data as { ville_elevage?: string }).ville_elevage].filter(Boolean);
+          setNomElevage((data as { nom?: string }).nom ?? '');
+          const parts = [(data as { rue_pro?: string; ville_pro?: string }).rue_pro, (data as { ville_pro?: string }).ville_pro].filter(Boolean);
           setAdresseElevage(parts.join(', '));
         }
       });

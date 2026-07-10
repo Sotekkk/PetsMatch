@@ -246,13 +246,13 @@ function FeedPageContent() {
     const uids = [...new Set(feed.map(f => f.uidEleveur).filter(Boolean))] as string[];
     if (uids.length > 0) {
       const { data: users } = await supabase
-        .from('users')
-        .select('uid, profile_picture_url_elevage, profile_picture_url')
-        .in('uid', uids);
+        .from('user_profiles')
+        .select('uid, profile_picture_url_pro, avatar_url')
+        .in('uid', uids).eq('is_main', true);
       if (users) {
         const photoMap: Record<string, string> = {};
         for (const u of users) {
-          photoMap[u.uid] = u.profile_picture_url_elevage ?? u.profile_picture_url ?? '';
+          photoMap[u.uid] = u.profile_picture_url_pro ?? u.avatar_url ?? '';
         }
         feed = feed.map(f => ({ ...f, photoEleveur: f.uidEleveur ? photoMap[f.uidEleveur] : undefined }));
       }

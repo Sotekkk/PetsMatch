@@ -100,11 +100,11 @@ class _PetFriendsPageState extends State<PetFriendsPage>
   Future<void> _loadAllUsers() async {
     try {
       final rows = await _supa
-          .from('users')
-          .select('uid, firstname, lastname, profile_picture_url, ville')
+          .from('user_profiles')
+          .select('uid, firstname, lastname, profile_picture_url:avatar_url, ville')
           .neq('uid', _myUid)
-          .or('is_elevage.is.null,is_elevage.eq.false')
-          .or('is_pro.is.null,is_pro.eq.false')
+          .eq('profile_type', 'particulier')
+          .eq('is_main', true)
           .limit(500);
       if (mounted) setState(() {
         _allUsers = List<Map<String, dynamic>>.from(rows as List);
@@ -134,9 +134,9 @@ class _PetFriendsPageState extends State<PetFriendsPage>
         return;
       }
 
-      final profiles = await _supa.from('users')
-          .select('uid, firstname, lastname, profile_picture_url, ville')
-          .inFilter('uid', byUid.keys.toList());
+      final profiles = await _supa.from('user_profiles')
+          .select('uid, firstname, lastname, profile_picture_url:avatar_url, ville')
+          .inFilter('uid', byUid.keys.toList()).eq('is_main', true);
       final Map<String, Map<String, dynamic>> profMap = {
         for (final p in (profiles as List)) p['uid'].toString(): p as Map<String, dynamic>
       };
@@ -198,7 +198,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
         'statut': 'en_attente',
         'created_at': DateTime.now().toIso8601String(), 'updated_at': DateTime.now().toIso8601String(),
       });
-      final me = await _supa.from('users').select('firstname, lastname').eq('uid', _myUid).maybeSingle();
+      final me = await _supa.from('user_profiles').select('firstname, lastname').eq('uid', _myUid).eq('is_main', true).maybeSingle();
       final nom = me != null ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim() : 'Quelqu\'un';
       await _supa.from('notifications').insert({
         'uid': targetUid, 'type': 'petfriend_request',
@@ -211,7 +211,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
 
   Future<void> _accept(_FriendRow row) async {
     await _supa.from('petfriends').update({'statut': 'accepte', 'updated_at': DateTime.now().toIso8601String()}).eq('id', row.relId);
-    final me = await _supa.from('users').select('firstname, lastname').eq('uid', _myUid).maybeSingle();
+    final me = await _supa.from('user_profiles').select('firstname, lastname').eq('uid', _myUid).eq('is_main', true).maybeSingle();
     final nom = me != null ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim() : 'Quelqu\'un';
     await _supa.from('notifications').insert({
       'uid': row.uid, 'type': 'petfriend_accepted',
@@ -304,8 +304,8 @@ class _PetFriendsPageState extends State<PetFriendsPage>
                     final nom = nomCtrl.text.trim();
                     if (nom.isEmpty) return;
                     final members = [_myUid, ...selectedUids];
-                    final myData = await _supa.from('users')
-                        .select('firstname, lastname').eq('uid', _myUid).maybeSingle();
+                    final myData = await _supa.from('user_profiles')
+                        .select('firstname, lastname').eq('uid', _myUid).eq('is_main', true).maybeSingle();
                     final myName = '${myData?['firstname'] ?? ''} ${myData?['lastname'] ?? ''}'.trim();
                     final unread = {for (final u in members) u: 0};
                     final Map<String, dynamic> participantsInfo = {
@@ -313,9 +313,9 @@ class _PetFriendsPageState extends State<PetFriendsPage>
                     };
                     // Charger les noms des autres membres
                     if (selectedUids.isNotEmpty) {
-                      final others = await _supa.from('users')
-                          .select('uid, firstname, lastname, profile_picture_url')
-                          .inFilter('uid', selectedUids.toList());
+                      final others = await _supa.from('user_profiles')
+                          .select('uid, firstname, lastname, profile_picture_url:avatar_url')
+                          .inFilter('uid', selectedUids.toList()).eq('is_main', true);
                       for (final o in (others as List)) {
                         final oName = '${o['firstname'] ?? ''} ${o['lastname'] ?? ''}'.trim();
                         participantsInfo[o['uid'].toString()] = {

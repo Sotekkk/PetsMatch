@@ -200,9 +200,10 @@ class _VetPatientsPageState extends State<VetPatientsPage>
       if (clientUids.isNotEmpty) {
         try {
           final clients = await Supabase.instance.client
-              .from('users')
-              .select('*')
-              .inFilter('uid', clientUids);
+              .from('user_profiles')
+              .select('uid, firstname, lastname, nom, profile_type')
+              .inFilter('uid', clientUids)
+              .eq('is_main', true);
           for (final c in clients as List) {
             clientsMap[c['uid']?.toString() ?? ''] = Map<String, dynamic>.from(c as Map);
           }
@@ -260,8 +261,8 @@ class _VetPatientsPageState extends State<VetPatientsPage>
     final statut  = rdv['statut']?.toString() ?? '';
     final duree   = rdv['duree_minutes'];
 
-    final isElevage   = client?['isElevage'] == true || client?['isPro'] == true;
-    final nameElevage = client?['name_elevage']?.toString() ?? '';
+    final isElevage   = client?['profile_type'] == 'eleveur';
+    final nameElevage = client?['nom']?.toString() ?? '';
     final fn = client?['firstname']?.toString() ?? '';
     final ln = client?['lastname']?.toString() ?? '';
     final clientNom = isElevage && nameElevage.isNotEmpty
@@ -848,9 +849,9 @@ class _RdvJourCard extends StatelessWidget {
     final motif   = rdv['motif']?.toString() ?? '';
     final statut  = rdv['statut']?.toString() ?? '';
 
-    // Nom du client (éleveur → name_elevage ou prénom, particulier → prénom nom)
-    final isElevage = client?['isElevage'] == true || client?['isPro'] == true;
-    final nameElevage = client?['name_elevage']?.toString() ?? '';
+    // Nom du client (éleveur → nom élevage, particulier → prénom nom)
+    final isElevage = client?['profile_type'] == 'eleveur';
+    final nameElevage = client?['nom']?.toString() ?? '';
     final fn = client?['firstname']?.toString() ?? '';
     final ln = client?['lastname']?.toString() ?? '';
     final clientNom = isElevage && nameElevage.isNotEmpty

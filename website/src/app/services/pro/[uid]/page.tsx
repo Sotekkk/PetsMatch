@@ -151,17 +151,18 @@ function ProDetailContent() {
           cat_pro: data.profile_type || data.cat_pro || '',
           tarifs_education: (data.tarifs_education as Record<string, number>) ?? {},
           education_bilan_requis: (data.education_bilan_requis as boolean) ?? true,
+          statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
         };
       } else {
-        const { data } = await supabase.from('users').select('*').eq('uid', uid).maybeSingle();
+        const { data } = await supabase.from('user_profiles').select('*').eq('uid', uid).eq('is_main', true).maybeSingle();
         if (data) row = {
-          uid: data.uid, name: data.name_elevage || data.firstname || '',
+          uid: data.uid, name: data.nom || data.firstname || '',
           profession: data.profession_pro || '',
           description: data.desc_entreprise || '',
-          ville: data.ville_elevage || data.ville || '',
+          ville: data.ville_pro || data.ville || '',
           adresse: data.adresse || '',
-          code_postal: data.code_postal || '',
-          photo: data.profile_picture_url_elevage || data.profile_picture_url || '',
+          code_postal: data.code_postal_pro || data.code_postal || '',
+          photo: data.profile_picture_url_pro || data.avatar_url || '',
           banner: data.banner_url || '',
           accept_new_clients: data.accept_new_clients ?? true,
           especes: Array.isArray(data.especes_acceptees) ? data.especes_acceptees : [],
@@ -230,7 +231,7 @@ function ProDetailContent() {
         ...(prixCours ? { prix: prixCours } : {}),
       });
       const animalNom = animaux.find(a => a.id === inscriptionAnimalId)?.nom ?? 'son animal';
-      const { data: userData } = await supabase.from('users').select('firstname, lastname').eq('uid', user.uid).maybeSingle();
+      const { data: userData } = await supabase.from('user_profiles').select('firstname, lastname').eq('uid', user.uid).eq('is_main', true).maybeSingle();
       const clientName = userData ? `${userData.firstname ?? ''} ${userData.lastname ?? ''}`.trim() : 'Un client';
       const dateStr = new Date(inscriptionCours.date_heure).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
       await supabase.from('notifications').insert({

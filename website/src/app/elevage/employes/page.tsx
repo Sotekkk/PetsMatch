@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useActiveProfileState } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -99,7 +99,7 @@ function dateLabel(d: string): string {
 
 export default function EmployesPage() {
   const { user, loading } = useAuth();
-  const profileId = useActiveProfile();
+  const { id: profileId, loaded: profileLoaded } = useActiveProfileState();
   const router = useRouter();
   const [tab, setTab] = useState<'employes' | 'taches'>('taches');
   const [employes, setEmployes] = useState<Employe[]>([]);
@@ -117,7 +117,7 @@ export default function EmployesPage() {
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
 
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!user || !profileLoaded) return;
     setLoadingData(true);
     try {
       // Employés
@@ -131,17 +131,18 @@ export default function EmployesPage() {
       const empsData: Employe[] = [];
       const uidToNom: Record<string, string> = {};
       for (const e of empsRaw ?? []) {
-        const { data: u } = await supabase.from('users')
-          .select('uid,firstname,lastname,name_elevage,is_elevage,profile_picture_url,profile_picture_url_elevage')
-          .eq('uid', e.uid_employe).maybeSingle();
+        const { data: u } = await supabase.from('user_profiles')
+          .select('uid,firstname,lastname,nom,profile_type,avatar_url,profile_picture_url_pro')
+          .eq('uid', e.uid_employe).eq('is_main', true).maybeSingle();
         if (u) {
-          const nom = u.is_elevage ? (u.name_elevage ?? 'Élevage') : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
+          const isElevage = u.profile_type === 'eleveur';
+          const nom = isElevage ? (u.nom ?? 'Élevage') : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
           uidToNom[u.uid] = nom;
           empsData.push({
             id: e.id.toString(),
             uid_employe: e.uid_employe,
             nom,
-            photo: u.is_elevage ? u.profile_picture_url_elevage : u.profile_picture_url,
+            photo: isElevage ? u.profile_picture_url_pro : u.avatar_url,
             employeProfileId: e.employe_profile_id as string | null,
             eleveurProfileId: e.eleveur_profile_id as string | null,
           });
@@ -184,7 +185,7 @@ export default function EmployesPage() {
       setPlanTaches(ptResolved);
     } catch (_) {}
     setLoadingData(false);
-  }, [user, profileId]);
+  }, [user, profileId, profileLoaded]);
 
   useEffect(() => { if (user) load(); }, [user, load]);
 

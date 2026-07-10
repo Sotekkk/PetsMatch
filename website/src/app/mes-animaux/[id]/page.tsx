@@ -1240,7 +1240,7 @@ export default function AnimalFichePage() {
     const proUids = [...new Set([...allDocs.map(d => d.pro_uid as string).filter(Boolean), ...vetUids])];
     const names: Record<string,string> = {};
     if (proUids.length > 0) {
-      const { data: users } = await supabase.from('users').select('uid, firstname, lastname').in('uid', proUids);
+      const { data: users } = await supabase.from('user_profiles').select('uid, firstname, lastname').in('uid', proUids).eq('is_main', true);
       (users ?? []).forEach((u: Record<string,unknown>) => {
         const nom = `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
         names[u.uid as string] = nom ? `Dr. ${nom}` : 'Vétérinaire';
@@ -1310,11 +1310,11 @@ export default function AnimalFichePage() {
   }, [id, isNew]);
   useEffect(() => {
     if (!user || !isEleveur) return;
-    supabase.from('users').select('name_elevage, rue_elevage, ville_elevage').eq('uid', user.uid).maybeSingle()
+    supabase.from('user_profiles').select('nom, rue_pro, ville_pro').eq('uid', user.uid).eq('is_main', true).maybeSingle()
       .then(({ data }) => {
         if (data) {
-          setNomElevage((data as {name_elevage?:string}).name_elevage ?? '');
-          const parts = [(data as {rue_elevage?:string;ville_elevage?:string}).rue_elevage, (data as {ville_elevage?:string}).ville_elevage].filter(Boolean);
+          setNomElevage((data as {nom?:string}).nom ?? '');
+          const parts = [(data as {rue_pro?:string;ville_pro?:string}).rue_pro, (data as {ville_pro?:string}).ville_pro].filter(Boolean);
           setAdresseElevage(parts.join(', '));
         }
       });

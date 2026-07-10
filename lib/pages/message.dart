@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'chatScreen.dart';
 
 class MessagePage extends StatefulWidget {
@@ -350,18 +351,8 @@ class _MessagePageState extends State<MessagePage> {
       return _userCache[uid]!;
     }
     try {
-      final snap = await _supa.from('users')
-          .select('firstname, lastname, profile_picture_url, is_elevage, name_elevage')
-          .eq('uid', uid).maybeSingle();
-      if (snap != null) {
-        final isElevage = snap['is_elevage'] == true;
-        final name = isElevage && (snap['name_elevage'] as String?)?.isNotEmpty == true
-            ? snap['name_elevage'] as String
-            : '${snap['firstname'] ?? ''} ${snap['lastname'] ?? ''}'.trim();
-        _userCache[uid] = {'name': name.isEmpty ? 'Utilisateur' : name, 'photo': snap['profile_picture_url'] as String?};
-      } else {
-        _userCache[uid] = {'name': 'Utilisateur inconnu', 'photo': null};
-      }
+      final d = await MessagingHelper.getDisplayInfo(uid);
+      _userCache[uid] = {'name': d['name'] as String, 'photo': d['photo'] as String?};
     } catch (_) {
       _userCache[uid] = {'name': 'Utilisateur inconnu', 'photo': null};
     }

@@ -352,9 +352,9 @@ export default function PromenadeDetailPage() {
       setPromenade(p as Promenade);
 
       // Organizer profile
-      const { data: org } = await supabase.from('users')
-        .select('uid, firstname, lastname, profile_picture_url')
-        .eq('uid', p.organisateur_uid).maybeSingle();
+      const { data: org } = await supabase.from('user_profiles')
+        .select('uid, firstname, lastname, profile_picture_url:avatar_url')
+        .eq('uid', p.organisateur_uid).eq('is_main', true).maybeSingle();
       setOrganizer(org as UserProfile ?? null);
 
       // Participants
@@ -365,9 +365,9 @@ export default function PromenadeDetailPage() {
 
       if (parts && parts.length > 0) {
         const uids = parts.map((r: { user_uid: string }) => r.user_uid);
-        const { data: users } = await supabase.from('users')
-          .select('uid, firstname, lastname, profile_picture_url')
-          .in('uid', uids);
+        const { data: users } = await supabase.from('user_profiles')
+          .select('uid, firstname, lastname, profile_picture_url:avatar_url')
+          .in('uid', uids).eq('is_main', true);
         const usersMap: Record<string, UserProfile> = {};
         (users ?? []).forEach((u: UserProfile) => { usersMap[u.uid] = u; });
         setParticipants(parts.map((part: { user_uid: string; statut: string; rejoint_at: string }) => ({
@@ -394,8 +394,8 @@ export default function PromenadeDetailPage() {
       .order('created_at');
     if (!rawMsgs || rawMsgs.length === 0) { setMessages([]); return; }
     const uids = [...new Set(rawMsgs.map((m: { user_uid: string }) => m.user_uid))];
-    const { data: users } = await supabase.from('users')
-      .select('uid, firstname, lastname, profile_picture_url').in('uid', uids);
+    const { data: users } = await supabase.from('user_profiles')
+      .select('uid, firstname, lastname, profile_picture_url:avatar_url').in('uid', uids).eq('is_main', true);
     const uMap: Record<string, UserProfile> = {};
     (users ?? []).forEach((u: UserProfile) => { uMap[u.uid] = u; });
     setMessages(rawMsgs.map((m: PrMessage) => ({ ...m, user: uMap[m.user_uid] })));
@@ -467,8 +467,8 @@ export default function PromenadeDetailPage() {
 
   async function notifyParticipantsMsg(text: string | null, _imageUrl: string | null) {
     if (!user || !promenade) return;
-    const { data: me } = await supabase.from('users')
-      .select('firstname, lastname').eq('uid', user.uid).maybeSingle();
+    const { data: me } = await supabase.from('user_profiles')
+      .select('firstname, lastname').eq('uid', user.uid).eq('is_main', true).maybeSingle();
     const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
     const body = text ? `${nom} : ${text.slice(0, 60)}${text.length > 60 ? '…' : ''}`
                       : `${nom} a partagé une photo`;
@@ -500,8 +500,8 @@ export default function PromenadeDetailPage() {
       });
       // Notify organizer
       if (promenade && promenade.organisateur_uid !== user.uid) {
-        const { data: me } = await supabase.from('users')
-          .select('firstname, lastname').eq('uid', user.uid).maybeSingle();
+        const { data: me } = await supabase.from('user_profiles')
+          .select('firstname, lastname').eq('uid', user.uid).eq('is_main', true).maybeSingle();
         const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
         await supabase.from('notifications').insert({
           uid: promenade.organisateur_uid,

@@ -188,8 +188,8 @@ function LikersModal({ annonceId, bebeIndex, mode, onClose }: {
       if (!rows?.length) { setLoading(false); return; }
       // Dédupliquer par user_uid (un même compte peut avoir liké depuis plusieurs profils)
       const uids = [...new Set((rows as { user_uid: string }[]).map(r => r.user_uid))];
-      const { data: u } = await supabase.from('users')
-        .select('uid, firstname, lastname, profile_picture_url').in('uid', uids);
+      const { data: u } = await supabase.from('user_profiles')
+        .select('uid, firstname, lastname, profile_picture_url:avatar_url').in('uid', uids).eq('is_main', true);
       setUsers((u ?? []) as typeof users);
       setLoading(false);
     });
@@ -494,27 +494,40 @@ export default function AnnonceDetailPage() {
               supabase.from('user_profiles')
                 .select('id, profile_type, nom, profile_label, avatar_url, ville')
                 .eq('uid', data.uid_eleveur),
-              supabase.from('users')
-                .select('name_elevage, profile_picture_url_elevage, ville_elevage')
-                .eq('uid', data.uid_eleveur).maybeSingle(),
+              supabase.from('user_profiles')
+                .select('nom, profile_picture_url_pro, ville_pro')
+                .eq('uid', data.uid_eleveur).eq('is_main', true).maybeSingle(),
             ]).then(([{ data: allProfiles }, { data: u }]) => {
               type SP = { id?: string; profile_type?: string; nom?: string; profile_label?: string; avatar_url?: string; ville?: string };
-              type U  = { name_elevage?: string; profile_picture_url_elevage?: string; ville_elevage?: string };
+              type U  = { nom?: string; profile_picture_url_pro?: string; ville_pro?: string };
               const profiles = (allProfiles ?? []) as SP[];
               const s = profiles.find(p => p.profile_type === 'association') ?? null;
               const r = u as U | null;
               if (s?.id) setAssoProfileId(s.id);
               setAssoData({
-                nom:    s?.nom?.trim() || s?.profile_label?.trim() || r?.name_elevage || data.nom_eleveur || 'Association',
-                avatar: s?.avatar_url || r?.profile_picture_url_elevage || '',
-                ville:  s?.ville || r?.ville_elevage || data.ville_eleveur || '',
+                nom:    s?.nom?.trim() || s?.profile_label?.trim() || r?.nom || data.nom_eleveur || 'Association',
+                avatar: s?.avatar_url || r?.profile_picture_url_pro || '',
+                ville:  s?.ville || r?.ville_pro || data.ville_eleveur || '',
               });
             });
           } else {
-            supabase.from('users')
-              .select('profile_picture_url_elevage, name_elevage, ville_elevage, pays_elevage, statut_pro, siret, is_premium')
-              .eq('uid', data.uid_eleveur).maybeSingle()
-              .then(({ data: u }) => { if (u) setPro(u as ProData); });
+            Promise.all([
+              supabase.from('user_profiles')
+                .select('profile_picture_url_pro, nom, ville_pro, pays_pro, statut_pro, siret')
+                .eq('uid', data.uid_eleveur).eq('is_main', true).maybeSingle(),
+              supabase.from('users').select('is_premium').eq('uid', data.uid_eleveur).maybeSingle(),
+            ]).then(([{ data: cp }, { data: premiumRow }]) => {
+              if (!cp) return;
+              setPro({
+                profile_picture_url_elevage: cp.profile_picture_url_pro,
+                name_elevage: cp.nom,
+                ville_elevage: cp.ville_pro,
+                pays_elevage: cp.pays_pro,
+                statut_pro: cp.statut_pro,
+                siret: cp.siret,
+                is_premium: premiumRow?.is_premium ?? false,
+              } as ProData);
+            });
           }
         }
         setLoading(false);

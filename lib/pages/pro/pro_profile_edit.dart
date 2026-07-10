@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart' as geo;
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_webservice/places.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
@@ -61,6 +62,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   String _catPro = '';
   String _siret = '';
   String _ordreVeterinaire = '';
+
+  // ACACED — obligatoire pour garde (petsitter/promeneur) et éducateur
+  final _acacedCtrl = TextEditingController();
+  File?   _acacedDocFile;
+  String? _acacedDocUrl;
 
   static const _especesList = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
   List<String> _especesAcceptees = [];
@@ -147,15 +153,16 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
             .maybeSingle();
       } else {
         row = await _supa
-            .from('users')
+            .from('user_profiles')
             .select()
             .eq('uid', User_Info.uid)
+            .eq('is_main', true)
             .maybeSingle();
       }
 
       if (row != null) {
         final isSecondary = widget.secondaryProfileId != null;
-        _photoUrl  = isSecondary ? row['avatar_url'] as String? : row['profile_picture_url_elevage'] as String?;
+        _photoUrl  = isSecondary ? row['avatar_url'] as String? : row['profile_picture_url_pro'] as String?;
         _bannerUrl = row['banner_url'] as String?;
         _nomStructureCtrl.text = (row['nom'] ?? row['name_elevage']) ?? User_Info.nameElevage;
         _professionCtrl.text   = row['profession_pro']  ?? User_Info.professionPro;
@@ -170,6 +177,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         _acceptNewClients      = row['accept_new_clients'] ?? true;
         _urgences24h           = row['urgences_24h'] ?? false;
 
+        _acacedCtrl.text = row['acaced_numero'] ?? row['acaced'] ?? '';
+        _acacedDocUrl    = row['acaced_doc_url'] as String?;
+
         if (isSecondary) {
           _lat = (row['latitude'] as num?)?.toDouble() ?? (row['lat'] as num?)?.toDouble();
           _lng = (row['longitude'] as num?)?.toDouble() ?? (row['lng'] as num?)?.toDouble();
@@ -180,14 +190,14 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           _cpCtrl.text   = row['code_postal']  ?? '';
           _paysCtrl.text = row['pays']?.isNotEmpty == true ? row['pays'] : 'France';
         } else {
-          _lat = (row['lat'] as num?)?.toDouble();
-          _lng = (row['lng'] as num?)?.toDouble();
-          _siret         = row['siret']               ?? User_Info.siret;
-          _catPro        = row['cat_pro']             ?? '';
-          _rueCtrl.text  = row['rue_elevage']         ?? '';
-          _villeCtrl.text = row['ville_elevage']      ?? '';
-          _cpCtrl.text   = row['code_postal_elevage'] ?? '';
-          _paysCtrl.text = row['pays_elevage']?.isNotEmpty == true ? row['pays_elevage'] : 'France';
+          _lat = (row['latitude'] as num?)?.toDouble() ?? (row['lat'] as num?)?.toDouble();
+          _lng = (row['longitude'] as num?)?.toDouble() ?? (row['lng'] as num?)?.toDouble();
+          _siret         = row['siret']           ?? User_Info.siret;
+          _catPro        = row['cat_pro']         ?? '';
+          _rueCtrl.text  = row['rue_pro']         ?? '';
+          _villeCtrl.text = row['ville_pro']      ?? '';
+          _cpCtrl.text   = row['code_postal_pro'] ?? '';
+          _paysCtrl.text = row['pays_pro']?.isNotEmpty == true ? row['pays_pro'] : 'France';
         }
         _addressSearchCtrl.text = [_rueCtrl.text, _cpCtrl.text, _villeCtrl.text]
             .where((s) => s.isNotEmpty).join(', ');
@@ -440,6 +450,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       if (_bannerFile != null) {
         bannerUrl = await uploadPhoto(_bannerFile!, 'profiles/$uid/banner.jpg');
       }
+      String? acacedDocUrl = _acacedDocUrl;
+      if (_acacedDocFile != null) {
+        acacedDocUrl = await uploadPhoto(_acacedDocFile!, 'profiles/$uid/acaced.jpg');
+      }
 
       final horairesMap = {
         for (final j in _jours)
@@ -474,6 +488,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
+          if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
+          if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
+          if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
+            'acaced_doc_url': acacedDocUrl,
           'rue':                _rueCtrl.text.trim(),
           'ville':              _villeCtrl.text.trim(),
           'code_postal':        _cpCtrl.text.trim(),
@@ -514,6 +532,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
+          if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
+          if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
+            'acaced_doc_url': acacedDocUrl,
           'rue_elevage':          _rueCtrl.text.trim(),
           'ville_elevage':        _villeCtrl.text.trim(),
           'code_postal_elevage':  _cpCtrl.text.trim(),
@@ -524,6 +545,46 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (photoUrl  != null) 'profile_picture_url_elevage': photoUrl,
           if (bannerUrl != null) 'banner_url': bannerUrl,
         }, onConflict: 'uid');
+
+        // Sync user_profiles (source V2) — sinon les données restent figées
+        // après le tout premier edit, jamais répercutées côté user_profiles.
+        await _supa.from('user_profiles').update({
+          'nom':                _nomStructureCtrl.text.trim(),
+          'profession_pro':     _professionCtrl.text.trim(),
+          'desc_entreprise':    _descCtrl.text.trim(),
+          'tarifs':             _tarifsCtrl.text.trim(),
+          'site_web':           _siteWebCtrl.text.trim(),
+          'instagram':          _instagramCtrl.text.trim(),
+          'facebook':           _facebookCtrl.text.trim(),
+          'rayon_intervention': _rayonKm,
+          'especes_acceptees':  _especesAcceptees,
+          'horaires':           horairesMap,
+          'certifications':     _certifications,
+          'accept_new_clients': _acceptNewClients,
+          if (_catPro == 'veterinaire') 'urgences_24h': _urgences24h,
+          'cat_pro':            _catPro,
+          'is_pro':             true,
+          'durees_motifs':      _dureesMotifs,
+          if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
+          if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
+          if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
+          if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
+          if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
+          if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
+          if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
+            'acaced_doc_url': acacedDocUrl,
+          'rue_pro':            _rueCtrl.text.trim(),
+          'ville_pro':          _villeCtrl.text.trim(),
+          'code_postal_pro':    _cpCtrl.text.trim(),
+          'pays_pro':           _paysCtrl.text.trim(),
+          'adresse':            adresse,
+          'latitude':           _lat,
+          'longitude':          _lng,
+          'lat':                _lat,
+          'lng':                _lng,
+          if (photoUrl  != null) 'profile_picture_url_pro': photoUrl,
+          if (bannerUrl != null) 'banner_url': bannerUrl,
+        }).eq('uid', User_Info.uid).eq('is_main', true);
 
         await FirebaseFirestore.instance.collection('users').doc(uid).update({
           'catPro': _catPro,
@@ -818,6 +879,67 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                     ]),
                   ],
 
+                  // ── ACACED — obligatoire pour garde et éducateur ──────────
+                  if (_catPro == 'garde' || _catPro == 'education') ...[
+                    const SizedBox(height: 24),
+                    _sectionTitle('ACACED *'),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Attestation de connaissances obligatoire pour cette activité (Code rural, art. L214-6-1).',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _acacedCtrl,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                      decoration: InputDecoration(
+                        labelText: 'N° ACACED',
+                        hintText: 'Ex : 2022/9fd5-fd12',
+                        filled: true, fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    InkWell(
+                      onTap: _pickAcacedDoc,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFDDDDDD)),
+                        ),
+                        child: Row(children: [
+                          Icon(
+                            (_acacedDocFile != null || (_acacedDocUrl?.isNotEmpty ?? false))
+                                ? Icons.check_circle_outline : Icons.upload_file_outlined,
+                            color: (_acacedDocFile != null || (_acacedDocUrl?.isNotEmpty ?? false))
+                                ? const Color(0xFF6E9E57) : Colors.grey.shade500,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _acacedDocFile != null
+                                  ? 'Nouveau justificatif sélectionné'
+                                  : (_acacedDocUrl?.isNotEmpty ?? false)
+                                      ? 'Justificatif ACACED envoyé'
+                                      : 'Ajouter le justificatif ACACED',
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1E2025)),
+                            ),
+                          ),
+                        ]),
+                      ),
+                    ),
+                  ],
+
                   // ── Tarifs éducateur/comportementaliste ───────────────────
                   if (_catPro == 'education') ...[
                     const SizedBox(height: 24),
@@ -1110,6 +1232,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   Future<void> _pickPhoto() async {
     final file = await pickAndCropSquare();
     if (file != null && mounted) setState(() => _photoFile = file);
+  }
+
+  Future<void> _pickAcacedDoc() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 90);
+    if (picked != null && mounted) setState(() => _acacedDocFile = File(picked.path));
   }
 
   // ── Address block ─────────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/message.dart';
+import 'package:PetsMatch/utils/geocoding_helper.dart';
 
 class ProAgendaPage extends StatefulWidget {
   const ProAgendaPage({super.key});
@@ -38,6 +39,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // VET07 — retard
   bool _retardDeclare = false;
 
+  // Équipe d'intervenants — employés assignables à un RDV (instructeur_profile_id)
+  List<({String profileId, String nom})> _employes = [];
+  bool _employesLoaded = false;
+
   // Durées par motif (pour pré-remplir le dialog de confirmation)
   Map<String, int> _dureesMotifs = {};
   static const _motifToDuree = <String, String>{
@@ -58,7 +63,60 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     _loadCreneaux();
     _loadDureesMotifs();
     _loadAujourdhui();
+    _loadEmployes();
     User_Info.profileNotifier.addListener(_onProfileChange);
+  }
+
+  // Équipe d'intervenants — employés assignables à un RDV/cours (ordre de
+  // grandeur : quelques personnes, chargés une fois par ouverture de page).
+  Future<void> _loadEmployes() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final pid = User_Info.activeProfileId;
+      var q = Supabase.instance.client.from('employes')
+          .select('uid_employe, employe_profile_id').eq('actif', true);
+      q = pid.isNotEmpty ? q.eq('eleveur_profile_id', pid) : q.eq('uid_eleveur', uid);
+      final emps = await q;
+      if (emps.isEmpty) { if (mounted) setState(() => _employesLoaded = true); return; }
+
+      final uidByProfileId = <String, String>{};
+      final profileIds = emps.map((e) => e['employe_profile_id'] as String?).whereType<String>().toList();
+      if (profileIds.isNotEmpty) {
+        final profs = await Supabase.instance.client.from('user_profiles')
+            .select('id, uid').inFilter('id', profileIds);
+        for (final p in profs) {
+          uidByProfileId[p['id'].toString()] = p['uid'].toString();
+        }
+      }
+
+      final employeUids = <String>{};
+      for (final e in emps) {
+        final pfid = e['employe_profile_id'] as String?;
+        final u = pfid != null ? uidByProfileId[pfid] : e['uid_employe'] as String?;
+        if (u != null && u.isNotEmpty) employeUids.add(u);
+      }
+      if (employeUids.isEmpty) { if (mounted) setState(() => _employesLoaded = true); return; }
+
+      final users = await Supabase.instance.client.from('users')
+          .select('uid, firstname, lastname').inFilter('uid', employeUids.toList());
+      final nameByUid = <String, String>{
+        for (final u in users)
+          u['uid'].toString(): '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim(),
+      };
+
+      final result = <({String profileId, String nom})>[];
+      for (final e in emps) {
+        final pfid = e['employe_profile_id'] as String?;
+        if (pfid == null) continue;
+        final u = uidByProfileId[pfid];
+        final nom = (u != null ? nameByUid[u] : null) ?? 'Employé';
+        result.add((profileId: pfid, nom: nom.isNotEmpty ? nom : 'Employé'));
+      }
+      if (mounted) setState(() { _employes = result; _employesLoaded = true; });
+    } catch (_) {
+      if (mounted) setState(() => _employesLoaded = true);
+    }
   }
 
   void _onProfileChange() {
@@ -703,6 +761,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     final motifCtrl = TextEditingController(text: rdv['motif']?.toString() ?? '');
     final lieuCtrl = TextEditingController(text: rdv['lieu']?.toString() ?? '');
     final notesCtrl = TextEditingController(text: rdv['notes_pro']?.toString() ?? '');
+    String? instructeurProfileId = rdv['instructeur_profile_id']?.toString();
+    if (instructeurProfileId != null && instructeurProfileId.isEmpty) instructeurProfileId = null;
 
     final result = await showModalBottomSheet<bool>(
       context: context,
@@ -776,6 +836,19 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               TextField(controller: lieuCtrl, decoration: const InputDecoration(
                   labelText: 'Lieu', hintText: 'Au cabinet, au domicile du client…', border: OutlineInputBorder())),
               const SizedBox(height: 12),
+              if (_employes.isNotEmpty) ...[
+                DropdownButtonFormField<String?>(
+                  initialValue: instructeurProfileId,
+                  decoration: const InputDecoration(labelText: 'Intervenant assigné', border: OutlineInputBorder()),
+                  items: [
+                    const DropdownMenuItem<String?>(value: null, child: Text('Moi')),
+                    for (final e in _employes)
+                      DropdownMenuItem<String?>(value: e.profileId, child: Text(e.nom)),
+                  ],
+                  onChanged: (v) => setModal(() => instructeurProfileId = v),
+                ),
+                const SizedBox(height: 12),
+              ],
               TextField(controller: notesCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Notes (optionnel)', border: OutlineInputBorder())),
               const SizedBox(height: 20),
               SizedBox(width: double.infinity, child: ElevatedButton(
@@ -791,19 +864,36 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
     if (result != true) return;
     final newDh = DateTime(date.year, date.month, date.day, hour, minute);
-    await _modifierRdv(rdv, newDh, duree, motifCtrl.text.trim(), lieuCtrl.text.trim(), notesCtrl.text.trim());
+    await _modifierRdv(rdv, newDh, duree, motifCtrl.text.trim(), lieuCtrl.text.trim(),
+        notesCtrl.text.trim(), instructeurProfileId);
   }
 
-  Future<void> _modifierRdv(Map<String, dynamic> rdv, DateTime newDh, int duree, String motif, String lieu, String notes) async {
+  Future<void> _modifierRdv(Map<String, dynamic> rdv, DateTime newDh, int duree, String motif,
+      String lieu, String notes, String? instructeurProfileId) async {
     try {
       final supa = Supabase.instance.client;
       final rdvId = rdv['id'].toString();
+      // Ne re-géocode que si le lieu a changé, pour éviter un appel réseau inutile
+      // à chaque modification (durée, motif…) qui ne touche pas l'adresse.
+      double? lieuLat;
+      double? lieuLng;
+      if (lieu.isNotEmpty && lieu != (rdv['lieu']?.toString() ?? '')) {
+        final geo = await GeocodingHelper.geocode(lieu);
+        lieuLat = geo?.lat;
+        lieuLng = geo?.lng;
+      } else if (lieu.isNotEmpty) {
+        lieuLat = (rdv['lieu_lat'] as num?)?.toDouble();
+        lieuLng = (rdv['lieu_lng'] as num?)?.toDouble();
+      }
       await supa.from('rdv').update({
         'date_heure': newDh.toIso8601String(),
         'duree_minutes': duree,
         'motif': motif.isNotEmpty ? motif : null,
         'lieu': lieu.isNotEmpty ? lieu : null,
+        'lieu_lat': lieuLat,
+        'lieu_lng': lieuLng,
         'notes_pro': notes.isNotEmpty ? notes : null,
+        'instructeur_profile_id': instructeurProfileId,
         'reminder_48h_sent': false, 'reminder_24h_sent': false,
         'reminder_1h_sent': false, 'reminder_15min_sent': false,
       }).eq('id', rdvId);
@@ -1334,7 +1424,51 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     );
   }
 
+  // Agenda dynamique — alerte retard : pour des séances à domicile
+  // consécutives et géocodées le même jour, estime si le temps entre les
+  // deux (fin de la 1re → début de la 2e) suffit à parcourir la distance à
+  // vol d'oiseau (heuristique 30 km/h, pas d'API Directions payante).
+  List<String> _travelWarningsToday() {
+    final today = DateTime.now();
+    final rdvsToday = _rdvs.where((r) {
+      final s = r['statut'] as String? ?? '';
+      if (s != 'confirme') return false;
+      final dh = DateTime.tryParse(r['date_heure']?.toString() ?? '')?.toLocal();
+      return dh != null && _sameDay(dh, today);
+    }).toList()
+      ..sort((a, b) {
+        final da = DateTime.tryParse(a['date_heure']?.toString() ?? '') ?? DateTime(0);
+        final db = DateTime.tryParse(b['date_heure']?.toString() ?? '') ?? DateTime(0);
+        return da.compareTo(db);
+      });
+
+    final warnings = <String>[];
+    for (var i = 0; i < rdvsToday.length - 1; i++) {
+      final a = rdvsToday[i];
+      final b = rdvsToday[i + 1];
+      final aLat = (a['lieu_lat'] as num?)?.toDouble();
+      final aLng = (a['lieu_lng'] as num?)?.toDouble();
+      final bLat = (b['lieu_lat'] as num?)?.toDouble();
+      final bLng = (b['lieu_lng'] as num?)?.toDouble();
+      if (aLat == null || aLng == null || bLat == null || bLng == null) continue;
+      final aDh = DateTime.tryParse(a['date_heure']?.toString() ?? '')?.toLocal();
+      final bDh = DateTime.tryParse(b['date_heure']?.toString() ?? '')?.toLocal();
+      if (aDh == null || bDh == null) continue;
+      final aDuree = (a['duree_minutes'] as num?)?.toInt() ?? 60;
+      final gapMin = bDh.difference(aDh.add(Duration(minutes: aDuree))).inMinutes;
+      final distKm = GeocodingHelper.distanceKm(aLat, aLng, bLat, bLng);
+      final travelMin = (distKm / 30 * 60).ceil(); // 30 km/h à vol d'oiseau
+      if (gapMin < travelMin) {
+        final bHeure = '${bDh.hour.toString().padLeft(2, "0")}h${bDh.minute.toString().padLeft(2, "0")}';
+        warnings.add('Risque de retard pour le RDV de $bHeure : '
+            '~${distKm.toStringAsFixed(1)} km à parcourir en $gapMin min seulement.');
+      }
+    }
+    return warnings;
+  }
+
   Widget _buildAujourdhuiCard() {
+    final warnings = _travelWarningsToday();
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -1352,19 +1486,52 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           final dh = DateTime.tryParse(e['date_debut']?.toString() ?? '')?.toLocal();
           final heure = dh != null ? '${dh.hour.toString().padLeft(2, "0")}h${dh.minute.toString().padLeft(2, "0")}' : '';
           final estCollectif = e['type'] == 'cours_collectif';
+          final rdvId = e['rdv_id']?.toString();
+          final lieu = rdvId != null
+              ? (_rdvs.firstWhere((r) => r['id']?.toString() == rdvId,
+                  orElse: () => const {})['lieu']?.toString() ?? '')
+              : '';
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 3),
             child: Row(children: [
-              Container(width: 6, height: 6, margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(color: estCollectif ? const Color(0xFF7B5EA7) : _teal, shape: BoxShape.circle)),
-              Text(heure, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
+              Row(children: [
+                Container(width: 6, height: 6, margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(color: estCollectif ? const Color(0xFF7B5EA7) : _teal, shape: BoxShape.circle)),
+                Text(heure, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
+              ]),
               const SizedBox(width: 8),
               Expanded(child: Text(e['titre']?.toString() ?? '',
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.black87),
                   overflow: TextOverflow.ellipsis)),
+              if (lieu.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                Icon(Icons.place_outlined, size: 12, color: Colors.grey.shade500),
+                const SizedBox(width: 2),
+                Text(lieu, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600),
+                    overflow: TextOverflow.ellipsis),
+              ],
             ]),
           );
         }),
+        if (warnings.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          for (final w in warnings)
+            Container(
+              margin: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(children: [
+                Icon(Icons.warning_amber_rounded, size: 16, color: Colors.orange.shade800),
+                const SizedBox(width: 8),
+                Expanded(child: Text(w, style: TextStyle(fontFamily: 'Galey', fontSize: 11.5,
+                    color: Colors.orange.shade900))),
+              ]),
+            ),
+        ],
       ]),
     );
   }
@@ -2163,7 +2330,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     rdvId: rdv['id']?.toString(),
                   )))
               : null,
-          onCompteRendu: showProTools
+          // CR / Ordonnance est un flux médical (vétérinaire, pension…) — sans
+          // objet pour l'éducateur, qui a son propre rapport de séance
+          // (lié à l'animal, voir animal_fiche.dart / education_devis_page.dart).
+          onCompteRendu: (showProTools && User_Info.catPro != 'education')
               ? () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => CompteRenduPage(
                     rdv: rdv,
@@ -2242,6 +2412,7 @@ class _RdvCard extends StatelessWidget {
     final clientName = rdv['_client_name']?.toString() ?? 'Client';
     final animalNom = rdv['_animal_nom']?.toString() ?? '';
     final motif = rdv['motif']?.toString() ?? '';
+    final lieu = rdv['lieu']?.toString() ?? '';
     final duree = (rdv['duree_minutes'] as num?)?.toInt();
     final notes = rdv['notes_pro']?.toString() ?? '';
     final statut = rdv['statut']?.toString() ?? '';
@@ -2329,9 +2500,18 @@ class _RdvCard extends StatelessWidget {
               ],
               const SizedBox(height: 8),
 
-              // Motif + durée
+              // Motif + lieu + durée
               if (motif.isNotEmpty)
                 Text(motif, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF555F6A))),
+              if (lieu.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Row(children: [
+                  const Icon(Icons.place_outlined, size: 14, color: Color(0xFF0C5C6C)),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text(lieu, style: const TextStyle(fontFamily: 'Galey',
+                      fontSize: 13, color: Color(0xFF0C5C6C)))),
+                ]),
+              ],
               const SizedBox(height: 4),
               Text(
                 duree != null

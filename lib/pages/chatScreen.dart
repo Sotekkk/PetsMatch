@@ -4,6 +4,7 @@ import 'package:PetsMatch/pages/chat_profile_page.dart';
 import 'package:PetsMatch/pages/user_detail_page_feed.dart';
 import 'package:PetsMatch/pages/main_feed.dart' show UserSelected;
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
+import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -220,21 +221,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<Map<String, dynamic>> _getUserInfo(String userId) async {
     try {
-      final d = await _supa.from('users')
-          .select('firstname, lastname, profile_picture_url, is_elevage, is_pro, name_elevage')
-          .eq('uid', userId).maybeSingle();
-      if (d == null) return {'name': 'Utilisateur', 'profilePictureUrl': '', 'uid': userId, 'isElevage': false, 'isPro': false};
-      final isElevage = d['is_elevage'] == true;
-      final isPro = d['is_pro'] == true;
-      final name = isElevage && (d['name_elevage'] as String?)?.isNotEmpty == true
-          ? d['name_elevage'] as String
-          : '${d['firstname'] ?? ''} ${d['lastname'] ?? ''}'.trim();
+      final d = await MessagingHelper.getDisplayInfo(userId);
       return {
-        'name': name.isEmpty ? 'Utilisateur' : name,
-        'profilePictureUrl': d['profile_picture_url'] as String? ?? '',
+        'name': d['name'],
+        'profilePictureUrl': d['photo'] as String? ?? '',
         'uid': userId,
-        'isElevage': isElevage,
-        'isPro': isPro,
+        'isElevage': d['isElevage'],
+        'isPro': d['isPro'],
       };
     } catch (_) {
       return {'name': 'Utilisateur', 'profilePictureUrl': '', 'uid': userId, 'isElevage': false, 'isPro': false};

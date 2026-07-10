@@ -104,9 +104,9 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
         .order('date_debut', { ascending: false }).limit(1).maybeSingle();
       const ownerUid = propRow?.uid_proprio;
       if (!ownerUid) return;
-      const { data: pro } = await supabase.from('users')
-        .select('name_elevage, firstname, lastname').eq('uid', proUid).maybeSingle();
-      const proNom = pro?.name_elevage || [pro?.firstname, pro?.lastname].filter(Boolean).join(' ') || 'Votre pension';
+      const { data: pro } = await supabase.from('user_profiles')
+        .select('nom, firstname, lastname').eq('uid', proUid).eq('is_main', true).maybeSingle();
+      const proNom = pro?.nom || [pro?.firstname, pro?.lastname].filter(Boolean).join(' ') || 'Votre pension';
       await supabase.from('notifications').insert({
         uid: ownerUid, type: 'pension_journal',
         title: `Nouvelles de ${animalNom}`,

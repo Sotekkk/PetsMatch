@@ -161,8 +161,8 @@ function PensionPlanningPageInner() {
         .select('permission').eq('eleveur_profile_id', emp.eleveur_profile_id)
         .eq('employe_profile_id', activeProfileId).eq('permission', 'read_planning_pension').maybeSingle();
       if (!perm) { router.push('/mes-employeurs'); return; }
-      const { data: u } = await supabase.from('users').select('firstname, lastname, name_elevage, is_elevage').eq('uid', employerUid).maybeSingle();
-      setEmployerNom(u?.is_elevage ? (u?.name_elevage ?? 'Employeur') : `${u?.firstname ?? ''} ${u?.lastname ?? ''}`.trim());
+      const { data: u } = await supabase.from('user_profiles').select('firstname, lastname, nom, profile_type').eq('uid', employerUid).eq('is_main', true).maybeSingle();
+      setEmployerNom(u?.profile_type === 'eleveur' ? (u?.nom ?? 'Employeur') : `${u?.firstname ?? ''} ${u?.lastname ?? ''}`.trim());
       setEmployerOk(true);
     })();
   }, [employerUid, user, activeProfileId, router]);

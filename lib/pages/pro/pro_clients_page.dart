@@ -224,12 +224,12 @@ class _ProClientsPageState extends State<ProClientsPage>
       Map<String, Map<String, dynamic>> animalData = {};
 
       if (clientUids.isNotEmpty) {
-        final users = await supa.from('users').select('uid, firstname, lastname, name_elevage')
-            .inFilter('uid', clientUids);
+        final users = await supa.from('user_profiles').select('uid, firstname, lastname, nom')
+            .inFilter('uid', clientUids).eq('is_main', true);
         for (final u in users) {
           final uid = u['uid'] as String;
-          final name = (u['name_elevage'] as String?)?.isNotEmpty == true
-              ? u['name_elevage'] as String
+          final name = (u['nom'] as String?)?.isNotEmpty == true
+              ? u['nom'] as String
               : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
           clientNames[uid] = name.isNotEmpty ? name : 'Client';
         }

@@ -143,8 +143,8 @@ export default function PetFriendChatWebPage() {
         // Enrichir participants_info si mon nom manque
         const info = { ...(conv.participants_info as Record<string, ParticipantInfo> ?? {}) };
         if (!info[myUid]) {
-          const { data: me } = await supabase.from('users')
-            .select('firstname, lastname, profile_picture_url').eq('uid', myUid).maybeSingle();
+          const { data: me } = await supabase.from('user_profiles')
+            .select('firstname, lastname, profile_picture_url:avatar_url').eq('uid', myUid).eq('is_main', true).maybeSingle();
           if (me) {
             const myName = `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Utilisateur';
             info[myUid] = { name: myName, ...(me.profile_picture_url ? { photo: me.profile_picture_url } : {}) };

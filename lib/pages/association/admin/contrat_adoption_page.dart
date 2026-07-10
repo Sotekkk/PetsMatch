@@ -327,19 +327,43 @@ class _CreerContratSheetState extends State<_CreerContratSheet> {
   }
 
   Future<void> _searchUsers(String q) async {
-    if (q.trim().length < 2) { setState(() => _userResults = []); return; }
+    final query = q.trim();
+    if (query.length < 2) { setState(() => _userResults = []); return; }
     setState(() => _searching = true);
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-      final res = await _supa.from('users')
-          .select('uid,firstname,lastname,email,phone_number,rue,ville,code_postal,rue_elevage,ville_elevage,code_postal_elevage')
-          .or('firstname.ilike.%${q.trim()}%,lastname.ilike.%${q.trim()}%,email.ilike.%${q.trim()}%')
-          .neq('uid', uid).limit(5);
-      if (mounted) setState(() { _userResults = List<Map<String, dynamic>>.from(res as List); _searching = false; });
+      List<Map<String, dynamic>> results;
+      if (query.contains('@')) {
+        final users = await _supa.from('users').select('uid,email')
+            .ilike('email', '%$query%').neq('uid', uid).limit(5);
+        final emailByUid = { for (final u in (users as List)) u['uid'] as String: u['email'] as String? };
+        final uids = emailByUid.keys.toList();
+        final List cps = uids.isEmpty ? [] : await _supa.from('user_profiles')
+            .select('uid,firstname,lastname,phone_number,rue,ville,code_postal,rue_pro,ville_pro,code_postal_pro')
+            .inFilter('uid', uids).eq('is_main', true);
+        results = List<Map<String, dynamic>>.from(cps).map((cp) => _mapProfile(cp, email: emailByUid[cp['uid']])).toList();
+      } else {
+        final cps = await _supa.from('user_profiles')
+            .select('uid,firstname,lastname,email_contact,phone_number,rue,ville,code_postal,rue_pro,ville_pro,code_postal_pro')
+            .or('firstname.ilike.%$query%,lastname.ilike.%$query%')
+            .neq('uid', uid).eq('is_main', true).limit(5);
+        results = List<Map<String, dynamic>>.from(cps as List).map((cp) => _mapProfile(cp)).toList();
+      }
+      if (mounted) setState(() { _userResults = results; _searching = false; });
     } catch (_) {
       if (mounted) setState(() => _searching = false);
     }
   }
+
+  Map<String, dynamic> _mapProfile(Map<String, dynamic> cp, {String? email}) => {
+    'uid': cp['uid'],
+    'firstname': cp['firstname'],
+    'lastname': cp['lastname'],
+    'email': email ?? cp['email_contact'] ?? '',
+    'phone_number': cp['phone_number'],
+    'rue': cp['rue'], 'ville': cp['ville'], 'code_postal': cp['code_postal'],
+    'rue_elevage': cp['rue_pro'], 'ville_elevage': cp['ville_pro'], 'code_postal_elevage': cp['code_postal_pro'],
+  };
 
   void _prefillUser(Map<String, dynamic> u) {
     final personalAddr = [u['rue'], u['code_postal'], u['ville']]

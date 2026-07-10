@@ -300,11 +300,11 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
           .toList();
       final Map<String, String> names = {};
       if (cedantUids.isNotEmpty) {
-        final users = await _supa.from('users')
-            .select('uid, firstname, lastname, name_elevage')
-            .inFilter('uid', cedantUids);
+        final users = await _supa.from('user_profiles')
+            .select('uid, firstname, lastname, nom')
+            .inFilter('uid', cedantUids).eq('is_main', true);
         for (final u in (users as List)) {
-          final elevage = u['name_elevage'] as String?;
+          final elevage = u['nom'] as String?;
           final nom = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
           names[u['uid'] as String] = (elevage?.isNotEmpty == true) ? elevage! : nom;
         }

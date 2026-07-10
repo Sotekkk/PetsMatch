@@ -29,6 +29,21 @@ String _profileName(Map<String, dynamic>? p, {bool isMe = false}) {
 String? _profilePhoto(Map<String, dynamic>? p) =>
     p?['profile_picture_url']?.toString();
 
+const _proTypes = {
+  'veterinaire', 'para_medical', 'education', 'petsitter',
+  'pension', 'promeneur', 'photographe', 'marechal_ferrant',
+};
+
+Map<String, dynamic> _toProfileMap(Map<String, dynamic> cp) => {
+  'uid': cp['uid'],
+  'firstname': cp['firstname'],
+  'lastname': cp['lastname'],
+  'profile_picture_url': cp['avatar_url'],
+  'is_elevage': cp['profile_type'] == 'eleveur',
+  'is_pro': _proTypes.contains(cp['profile_type']),
+  'name_elevage': cp['nom'],
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Modération du contenu
 // ─────────────────────────────────────────────────────────────────────────────
@@ -194,11 +209,11 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
       bool currentIsPro = false;
       if (allUids.isNotEmpty) {
         final profilesData = await _supa
-            .from('users')
-            .select('uid, firstname, lastname, profile_picture_url, is_elevage, is_pro, name_elevage')
-            .inFilter('uid', allUids);
+            .from('user_profiles')
+            .select('uid, firstname, lastname, avatar_url, profile_type, nom')
+            .inFilter('uid', allUids).eq('is_main', true);
         for (final p in (profilesData as List)) {
-          profilesMap[p['uid'].toString()] = Map<String, dynamic>.from(p);
+          profilesMap[p['uid'].toString()] = _toProfileMap(Map<String, dynamic>.from(p));
         }
         if (_uid.isNotEmpty && profilesMap.containsKey(_uid)) {
           final me = profilesMap[_uid]!;
@@ -1015,11 +1030,11 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         .toList();
     if (missingUids.isNotEmpty) {
       final pd = await _supa
-          .from('users')
-          .select('uid, firstname, lastname, profile_picture_url, is_elevage, name_elevage')
-          .inFilter('uid', missingUids);
+          .from('user_profiles')
+          .select('uid, firstname, lastname, avatar_url, profile_type, nom')
+          .inFilter('uid', missingUids).eq('is_main', true);
       for (final p in (pd as List)) {
-        existingProfiles[p['uid'].toString()] = Map<String, dynamic>.from(p);
+        existingProfiles[p['uid'].toString()] = _toProfileMap(Map<String, dynamic>.from(p));
       }
     }
 
@@ -1584,11 +1599,11 @@ class _LikesSheetState extends State<_LikesSheet> {
     final missingUids = uids.where((u) => !profiles.containsKey(u)).toList();
     if (missingUids.isNotEmpty) {
       final pd = await _supa
-          .from('users')
-          .select('uid, firstname, lastname, profile_picture_url, is_elevage, name_elevage')
-          .inFilter('uid', missingUids);
+          .from('user_profiles')
+          .select('uid, firstname, lastname, avatar_url, profile_type, nom')
+          .inFilter('uid', missingUids).eq('is_main', true);
       for (final p in (pd as List)) {
-        profiles[p['uid'].toString()] = Map<String, dynamic>.from(p);
+        profiles[p['uid'].toString()] = _toProfileMap(Map<String, dynamic>.from(p));
       }
     }
 

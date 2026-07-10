@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { useProfileSource, useActiveProfile } from '@/hooks/useActiveProfile';
+import { useProfileSource, useActiveProfileState } from '@/hooks/useActiveProfile';
 
 interface Task {
   id: string;
@@ -12,6 +12,7 @@ interface Task {
   date: string;
   statut: 'a_faire' | 'fait';
   uid_eleveur: string;
+  eleveur_profile_id?: string | null;
   assigne_a: string | null;
   notes: string | null;
   animal_nom?: string;
@@ -22,7 +23,7 @@ export default function MesTachesPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const profilSource = useProfileSource();
-  const profileId = useActiveProfile();
+  const { id: profileId, loaded: profileLoaded } = useActiveProfileState();
   const [taches, setTaches] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDone, setShowDone] = useState(false);
@@ -33,7 +34,7 @@ export default function MesTachesPage() {
   }, [authLoading, user, router]);
 
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!user || !profileLoaded) return;
     setLoading(true);
     try {
       let q = supabase.from('taches_elevage').select('*').order('date');
@@ -55,11 +56,11 @@ export default function MesTachesPage() {
           const { data: a } = await supabase.from('animaux').select('nom').eq('id', t.animal_id).maybeSingle();
           animalNom = a?.nom ?? undefined;
         }
-        const { data: u } = await supabase.from('users')
-          .select('firstname, lastname, name_elevage, is_elevage')
-          .eq('uid', t.uid_eleveur).maybeSingle();
+        const { data: u } = await supabase.from('user_profiles')
+          .select('firstname, lastname, nom, profile_type')
+          .eq('uid', t.uid_eleveur).eq('is_main', true).maybeSingle();
         if (u) {
-          eleveurNom = u.is_elevage ? (u.name_elevage ?? 'Élevage') : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
+          eleveurNom = u.profile_type === 'eleveur' ? (u.nom ?? 'Élevage') : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
         }
         result.push({ ...t, animal_nom: animalNom, eleveur_nom: eleveurNom });
       }
@@ -67,7 +68,7 @@ export default function MesTachesPage() {
     } finally {
       setLoading(false);
     }
-  }, [user, profilSource, profileId]);
+  }, [user, profilSource, profileId, profileLoaded]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -84,11 +85,11 @@ export default function MesTachesPage() {
     // Notification à l'employeur quand l'employé valide
     if (newStatut === 'fait') {
       try {
-        const { data: moi } = await supabase.from('users')
-          .select('firstname, lastname, name_elevage, is_elevage')
-          .eq('uid', user!.uid).maybeSingle();
+        const { data: moi } = await supabase.from('user_profiles')
+          .select('firstname, lastname, nom, profile_type')
+          .eq('uid', user!.uid).eq('is_main', true).maybeSingle();
         const nomEmploye = moi
-          ? (moi.is_elevage ? (moi.name_elevage ?? 'Votre employé') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
+          ? (moi.profile_type === 'eleveur' ? (moi.nom ?? 'Votre employé') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
           : 'Votre employé';
 
         await supabase.from('notifications').insert({
@@ -98,6 +99,7 @@ export default function MesTachesPage() {
           body:  `${nomEmploye} a terminé : ${t.titre}`,
           data:  { tacheId: t.id, eleveurUid: t.uid_eleveur },
           read:  false,
+          ...(t.eleveur_profile_id ? { profile_id: t.eleveur_profile_id } : {}),
         });
       } catch (_) {}
     }

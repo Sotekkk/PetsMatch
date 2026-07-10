@@ -8,6 +8,21 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 const TYPE_LABELS: Record<string, string> = { race: 'Race', region: 'Région', loisir: 'Loisir', autre: 'Autre' };
 
+const PRO_TYPES = new Set([
+  'veterinaire', 'para_medical', 'education', 'petsitter',
+  'pension', 'promeneur', 'photographe', 'marechal_ferrant',
+]);
+
+function toUserProfile(cp: { uid: string; firstname?: string; lastname?: string; avatar_url?: string; profile_type?: string; nom?: string }) {
+  return {
+    uid: cp.uid, firstname: cp.firstname, lastname: cp.lastname,
+    profile_picture_url: cp.avatar_url,
+    is_elevage: cp.profile_type === 'eleveur',
+    is_pro: !!cp.profile_type && PRO_TYPES.has(cp.profile_type),
+    name_elevage: cp.nom,
+  };
+}
+
 // ── Modération ────────────────────────────────────────────────────────────────
 const GROS_MOTS = ['merde', 'putain', 'connard', 'connasse', 'salope', 'pute', 'enculé', 'enculer', 'fdp', 'nique', 'niquer', 'ntm', 'bâtard', 'batard', 'chier', 'bite ', 'branleur', 'branler'];
 const COMMERCE_KW = ['prix :', 'prix:', 'tarif ', 'tarif:', '€', ' euro', 'paypal', 'virement', 'paiement', 'vend ', 'vends ', 'achète ', 'a vendre', 'à vendre', 'achat', 'solde', 'livraison gratuite'];
@@ -182,11 +197,11 @@ export default function GroupeDetailPage() {
       ])];
       if (authorUids.length > 0) {
         const { data: profiles } = await supabase
-          .from('users')
-          .select('uid, firstname, lastname, profile_picture_url, is_elevage, is_pro, name_elevage')
-          .in('uid', authorUids);
+          .from('user_profiles')
+          .select('uid, firstname, lastname, avatar_url, profile_type, nom')
+          .in('uid', authorUids).eq('is_main', true);
         const map: Record<string, UserProfile> = {};
-        for (const p of (profiles ?? [])) map[p.uid] = p;
+        for (const p of (profiles ?? [])) map[p.uid] = toUserProfile(p);
         setUserProfiles(map);
         if (user?.uid && map[user.uid]) {
           setCurrentUserIsPro(map[user.uid].is_elevage === true || map[user.uid].is_pro === true);
@@ -284,10 +299,10 @@ export default function GroupeDetailPage() {
       if (data) {
         setPosts(prev => [data as Post, ...prev]);
         if (user.uid && !userProfiles[user.uid]) {
-          const { data: me } = await supabase.from('users')
-            .select('uid, firstname, lastname, profile_picture_url, is_elevage, is_pro, name_elevage')
-            .eq('uid', user.uid).single();
-          if (me) setUserProfiles(prev => ({ ...prev, [user.uid]: me }));
+          const { data: me } = await supabase.from('user_profiles')
+            .select('uid, firstname, lastname, avatar_url, profile_type, nom')
+            .eq('uid', user.uid).eq('is_main', true).single();
+          if (me) setUserProfiles(prev => ({ ...prev, [user.uid]: toUserProfile(me) }));
         }
       }
       setNewPost('');
@@ -305,10 +320,10 @@ export default function GroupeDetailPage() {
     const missing = uids.filter((u: string) => !userProfiles[u]);
     const profiles = { ...userProfiles };
     if (missing.length > 0) {
-      const { data: pd } = await supabase.from('users')
-        .select('uid, firstname, lastname, profile_picture_url, is_elevage, name_elevage')
-        .in('uid', missing);
-      for (const p of (pd ?? [])) profiles[p.uid] = p;
+      const { data: pd } = await supabase.from('user_profiles')
+        .select('uid, firstname, lastname, avatar_url, profile_type, nom')
+        .in('uid', missing).eq('is_main', true);
+      for (const p of (pd ?? [])) profiles[p.uid] = toUserProfile(p);
       setUserProfiles(profiles);
     }
     setLikers(uids.map((uid: string) => profiles[uid] ?? { uid }));
@@ -355,12 +370,12 @@ export default function GroupeDetailPage() {
     // Load missing profiles for comment authors
     const missing = [...new Set(commentsList.map(c => c.auteur_uid))].filter(u => !userProfiles[u]);
     if (missing.length > 0) {
-      const { data: pd } = await supabase.from('users')
-        .select('uid, firstname, lastname, profile_picture_url, is_elevage, name_elevage')
-        .in('uid', missing);
+      const { data: pd } = await supabase.from('user_profiles')
+        .select('uid, firstname, lastname, avatar_url, profile_type, nom')
+        .in('uid', missing).eq('is_main', true);
       if (pd) {
         const newProfiles: Record<string, UserProfile> = {};
-        for (const p of pd) newProfiles[p.uid] = p;
+        for (const p of pd) newProfiles[p.uid] = toUserProfile(p);
         setUserProfiles(prev => ({ ...prev, ...newProfiles }));
       }
     }

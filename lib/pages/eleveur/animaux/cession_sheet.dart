@@ -122,6 +122,20 @@ class _CessionSheetState extends State<CessionSheet> {
 
   List<Map<String, dynamic>> _searchResults = [];
 
+  static const _cpFields = 'uid, firstname, lastname, nom, profile_type, avatar_url, phone_number, adresse, rue, ville, code_postal, numero_elevage';
+
+  Map<String, dynamic> _mapProfile(Map<String, dynamic> cp, {String? email}) => {
+    'uid': cp['uid'],
+    'firstname': cp['firstname'], 'lastname': cp['lastname'],
+    'name_elevage': cp['nom'], 'is_elevage': cp['profile_type'] == 'eleveur',
+    'profile_picture_url': cp['avatar_url'], 'phone_number': cp['phone_number'],
+    'code_iso': '+33', 'code_iso_elevage': '+33',
+    'adress': cp['adresse'], 'adress_elevage': cp['adresse'],
+    'rue': cp['rue'], 'ville': cp['ville'], 'code_postal': cp['code_postal'],
+    'numero_elevage': cp['numero_elevage'],
+    'email': email,
+  };
+
   Future<void> _searchUser() async {
     final q = _searchCtrl.text.trim();
     if (q.isEmpty) return;
@@ -130,18 +144,23 @@ class _CessionSheetState extends State<CessionSheet> {
       final isEmail = q.contains('@');
       List<Map<String, dynamic>> rows;
       if (isEmail) {
-        final res = await _supa
-            .from('users')
-            .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, phone_number, code_iso, adress, rue, ville, code_postal, numero_elevage, code_iso_elevage, adress_elevage, email')
-            .eq('email', q.toLowerCase())
-            .maybeSingle();
-        rows = res != null ? [res] : [];
+        final userRow = await _supa.from('users').select('uid, email')
+            .eq('email', q.toLowerCase()).maybeSingle();
+        if (userRow == null) {
+          rows = [];
+        } else {
+          final cp = await _supa.from('user_profiles').select(_cpFields)
+              .eq('uid', userRow['uid'] as String).eq('is_main', true).maybeSingle();
+          rows = cp != null ? [_mapProfile(cp, email: userRow['email'] as String?)] : [];
+        }
       } else {
-        rows = await _supa
-            .from('users')
-            .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, phone_number, code_iso, adress, rue, ville, code_postal, numero_elevage, code_iso_elevage, adress_elevage, email')
-            .or('firstname.ilike.%$q%,lastname.ilike.%$q%,name_elevage.ilike.%$q%')
+        final cps = await _supa
+            .from('user_profiles')
+            .select(_cpFields)
+            .or('firstname.ilike.%$q%,lastname.ilike.%$q%,nom.ilike.%$q%')
+            .eq('is_main', true)
             .limit(8);
+        rows = (cps as List).map((cp) => _mapProfile(Map<String, dynamic>.from(cp))).toList();
       }
       final mapped = rows.map((r) {
         final isElv = r['is_elevage'] == true;

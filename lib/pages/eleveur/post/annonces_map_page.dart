@@ -125,11 +125,11 @@ class _AnnoncesMapPageState extends State<AnnoncesMapPage> {
           if (uid.isNotEmpty) {
             try {
               final userRow = await Supabase.instance.client
-                  .from('users').select().eq('uid', uid).maybeSingle();
+                  .from('user_profiles').select().eq('uid', uid).eq('is_main', true).maybeSingle();
               if (userRow != null) {
-                final villeElevage = ((userRow['ville_elevage'] as String?) ?? '').trim();
-                final cpElevage    = ((userRow['code_postal_elevage'] as String?) ?? '').trim();
-                paysQuery = ((userRow['pays_elevage'] as String?) ?? 'France').trim();
+                final villeElevage = ((userRow['ville_pro'] as String?) ?? '').trim();
+                final cpElevage    = ((userRow['code_postal_pro'] as String?) ?? '').trim();
+                paysQuery = ((userRow['pays_pro'] as String?) ?? 'France').trim();
                 villeQuery = villeElevage.isNotEmpty ? villeElevage : cpElevage;
                 // Backfill denormalized field on the annonce so we don't have to do this again
                 if (villeQuery.isNotEmpty) {

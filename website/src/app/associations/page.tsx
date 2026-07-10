@@ -35,60 +35,34 @@ export default function AssociationsPage() {
   const [view, setView]       = useState<'liste' | 'carte'>('liste');
 
   useEffect(() => {
-    Promise.all([
-      // user_profiles : profile_type='association' — on ne sélectionne PAS name_elevage
-      // (cette colonne n'existe pas dans user_profiles, cause "not in schema cache")
-      supabase.from('user_profiles')
-        .select('id, uid, nom, profile_label, avatar_url, banner_url, ville, description, lat, lng')
-        .eq('profile_type', 'association')
-        .order('nom'),
-      supabase.from('users')
-        .select('uid, name_elevage, firstname, lastname, photo_profil_elevage, photo_url, banner_url, ville_elevage, ville, description_elevage, latitude, longitude')
-        .eq('is_association', true),
-    ]).then(([{ data: profiles }, { data: primary }]) => {
-      const list: Asso[] = [];
-      const seenUids = new Set<string>();
-
-      for (const p of (profiles ?? []) as Record<string, unknown>[]) {
-        const uid = p['uid'] as string ?? '';
-        const id  = p['id']  as string ?? uid;
-        seenUids.add(uid);
-        const nom   = (p['nom']          as string | undefined)?.trim() ?? '';
-        const label = (p['profile_label'] as string | undefined)?.trim() ?? '';
-        list.push({
-          id,
-          uid,
-          name:        nom || label || 'Association',
-          avatar:      (p['avatar_url'] as string | undefined) ?? undefined,
-          banner:      (p['banner_url'] as string | undefined) ?? undefined,
-          ville:       (p['ville'] as string | undefined)?.trim() ?? undefined,
-          description: (p['description'] as string | undefined)?.trim() ?? undefined,
-          lat:         (p['lat'] as number | undefined) ?? undefined,
-          lng:         (p['lng'] as number | undefined) ?? undefined,
+    // user_profiles : profile_type='association' — on ne sélectionne PAS name_elevage
+    // (cette colonne n'existe pas dans user_profiles, cause "not in schema cache")
+    supabase.from('user_profiles')
+      .select('id, uid, nom, profile_label, avatar_url, banner_url, ville, description, lat, lng')
+      .eq('profile_type', 'association')
+      .order('nom')
+      .then(({ data: profiles }) => {
+        const list: Asso[] = ((profiles ?? []) as Record<string, unknown>[]).map(p => {
+          const uid = p['uid'] as string ?? '';
+          const id  = p['id']  as string ?? uid;
+          const nom   = (p['nom']          as string | undefined)?.trim() ?? '';
+          const label = (p['profile_label'] as string | undefined)?.trim() ?? '';
+          return {
+            id,
+            uid,
+            name:        nom || label || 'Association',
+            avatar:      (p['avatar_url'] as string | undefined) ?? undefined,
+            banner:      (p['banner_url'] as string | undefined) ?? undefined,
+            ville:       (p['ville'] as string | undefined)?.trim() ?? undefined,
+            description: (p['description'] as string | undefined)?.trim() ?? undefined,
+            lat:         (p['lat'] as number | undefined) ?? undefined,
+            lng:         (p['lng'] as number | undefined) ?? undefined,
+          };
         });
-      }
 
-      for (const u of (primary ?? []) as Record<string, unknown>[]) {
-        const uid = u['uid'] as string ?? '';
-        if (seenUids.has(uid)) continue;
-        const name = (u['name_elevage'] as string | undefined)?.trim()
-          || `${u['firstname'] ?? ''} ${u['lastname'] ?? ''}`.trim()
-          || 'Association';
-        const ville = ((u['ville_elevage'] as string | undefined)?.trim() || (u['ville'] as string | undefined)?.trim()) ?? undefined;
-        const avatar = ((u['photo_profil_elevage'] as string | undefined) || (u['photo_url'] as string | undefined)) ?? undefined;
-        const banner = (u['banner_url'] as string | undefined) ?? undefined;
-        list.push({
-          id: uid,
-          uid, name, avatar, banner, ville,
-          description: (u['description_elevage'] as string | undefined)?.trim() ?? undefined,
-          lat: (u['latitude'] as number | undefined) ?? undefined,
-          lng: (u['longitude'] as number | undefined) ?? undefined,
-        });
-      }
-
-      setAssos(list);
-      setLoading(false);
-    });
+        setAssos(list);
+        setLoading(false);
+      });
   }, []);
 
   const filtered = assos.filter(a => {

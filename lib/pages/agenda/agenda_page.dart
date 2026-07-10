@@ -167,8 +167,8 @@ class _AgendaPageState extends State<AgendaPage> {
       }
       if (uids.isEmpty) return;
 
-      final users = await _supa.from('users')
-          .select('uid,firstname,lastname').inFilter('uid', uids);
+      final users = await _supa.from('user_profiles')
+          .select('uid,firstname,lastname').inFilter('uid', uids).eq('is_main', true);
       if (mounted) {
         setState(() {
           _employes = (users as List).map((u) => {
@@ -370,14 +370,14 @@ class _AgendaPageState extends State<AgendaPage> {
       }
       if (uids.isNotEmpty) {
         try {
-          final users = await _supa.from('users')
-              .select('uid,firstname,lastname,name_elevage,is_elevage')
-              .inFilter('uid', uids.toList());
+          final users = await _supa.from('user_profiles')
+              .select('uid,firstname,lastname,nom,profile_type')
+              .inFilter('uid', uids.toList()).eq('is_main', true);
           final nomMap = <String, String>{};
           for (final u in (users as List)) {
             final uid = u['uid'] as String;
-            final nom = (u['is_elevage'] == true && u['name_elevage'] != null)
-                ? u['name_elevage'] as String
+            final nom = (u['profile_type'] == 'eleveur' && u['nom'] != null)
+                ? u['nom'] as String
                 : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
             if (nom.isNotEmpty) nomMap[uid] = nom;
           }
@@ -1876,16 +1876,16 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
     if (rdvId == null) { setState(() => _loading = false); return; }
     try {
       final rdvRows = await _supa.from('rdv')
-          .select('id, pro_uid, client_uid, animal_id, date_heure, motif, statut, duree_minutes, notes_client')
+          .select('id, pro_uid, client_uid, animal_id, date_heure, motif, statut, duree_minutes, notes_client, lieu, lieu_lat, lieu_lng')
           .eq('id', rdvId).maybeSingle();
       if (rdvRows == null) { setState(() => _loading = false); return; }
       _rdv = Map<String, dynamic>.from(rdvRows);
 
       // Pro profile (adresse, GPS)
       try {
-        final proRows = await _supa.from('users')
-            .select('uid, firstname, lastname, name_elevage, profession_pro, adress_elevage, lat, lng, profile_picture_url_elevage')
-            .eq('uid', _rdv!['pro_uid']).maybeSingle();
+        final proRows = await _supa.from('user_profiles')
+            .select('uid, firstname, lastname, name_elevage:nom, profession_pro, adress_elevage:adresse, lat, lng')
+            .eq('uid', _rdv!['pro_uid']).eq('is_main', true).maybeSingle();
         if (proRows != null) _pro = Map<String, dynamic>.from(proRows);
       } catch (_) {}
 
@@ -1923,8 +1923,10 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
   }
 
   Future<void> _openNav() async {
-    final lat = (_pro?['lat'] as num?)?.toDouble();
-    final lng = (_pro?['lng'] as num?)?.toDouble();
+    // Priorité au lieu précis du RDV (ex. visite à domicile) sur l'adresse
+    // fixe du cabinet du pro, sinon on navigue au mauvais endroit.
+    final lat = (_rdv?['lieu_lat'] as num?)?.toDouble() ?? (_pro?['lat'] as num?)?.toDouble();
+    final lng = (_rdv?['lieu_lng'] as num?)?.toDouble() ?? (_pro?['lng'] as num?)?.toDouble();
     if (lat == null || lng == null) return;
 
     await showModalBottomSheet(
@@ -2048,14 +2050,19 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
                   const Divider(),
                   const SizedBox(height: 12),
                   _InfoRow(icon: Icons.person_outlined, text: _proName(), bold: true),
-                  if ((_pro?['adress_elevage']?.toString() ?? '').isNotEmpty) ...[
+                  if ((_rdv?['lieu']?.toString() ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _InfoRow(icon: Icons.location_on_outlined,
+                        text: _rdv!['lieu'].toString()),
+                  ] else if ((_pro?['adress_elevage']?.toString() ?? '').isNotEmpty) ...[
                     const SizedBox(height: 8),
                     _InfoRow(icon: Icons.location_on_outlined,
                         text: _pro!['adress_elevage'].toString()),
                   ],
 
                   // ── Bouton GPS ────────────────────────────────────────────
-                  if (_pro?['lat'] != null && _pro?['lng'] != null) ...[
+                  if ((_rdv?['lieu_lat'] != null && _rdv?['lieu_lng'] != null) ||
+                      (_pro?['lat'] != null && _pro?['lng'] != null)) ...[
                     const SizedBox(height: 14),
                     SizedBox(
                       width: double.infinity,
@@ -2605,12 +2612,12 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
     });
     if (_selectedEmployeUid != null) {
       try {
-        final moi = await supa.from('users')
-            .select('firstname,lastname,name_elevage,is_elevage')
-            .eq('uid', widget.uid).maybeSingle();
+        final moi = await supa.from('user_profiles')
+            .select('firstname,lastname,nom,profile_type')
+            .eq('uid', widget.uid).eq('is_main', true).maybeSingle();
         final nomEleveur = moi != null
-            ? (moi['is_elevage'] == true
-                ? (moi['name_elevage'] ?? 'Votre éleveur')
+            ? (moi['profile_type'] == 'eleveur'
+                ? (moi['nom'] ?? 'Votre éleveur')
                 : '${moi['firstname'] ?? ''} ${moi['lastname'] ?? ''}'.trim())
             : 'Votre éleveur';
         await supa.from('notifications').insert({
@@ -2814,12 +2821,12 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
     });
     if (_selectedEmployeUid != null) {
       try {
-        final moi = await supa.from('users')
-            .select('firstname,lastname,name_elevage,is_elevage')
-            .eq('uid', widget.uid).maybeSingle();
+        final moi = await supa.from('user_profiles')
+            .select('firstname,lastname,nom,profile_type')
+            .eq('uid', widget.uid).eq('is_main', true).maybeSingle();
         final nomEleveur = moi != null
-            ? (moi['is_elevage'] == true
-                ? (moi['name_elevage'] ?? 'Votre éleveur')
+            ? (moi['profile_type'] == 'eleveur'
+                ? (moi['nom'] ?? 'Votre éleveur')
                 : '${moi['firstname'] ?? ''} ${moi['lastname'] ?? ''}'.trim())
             : 'Votre éleveur';
         await supa.from('notifications').insert({
@@ -3029,12 +3036,12 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
     }).eq('id', widget.tache['id'] as String);
     if (newAssigne != null && newAssigne != prevAssigne) {
       try {
-        final moi = await supa.from('users')
-            .select('firstname,lastname,name_elevage,is_elevage')
-            .eq('uid', widget.uid).maybeSingle();
+        final moi = await supa.from('user_profiles')
+            .select('firstname,lastname,nom,profile_type')
+            .eq('uid', widget.uid).eq('is_main', true).maybeSingle();
         final nomEleveur = moi != null
-            ? (moi['is_elevage'] == true
-                ? (moi['name_elevage'] ?? 'Votre éleveur')
+            ? (moi['profile_type'] == 'eleveur'
+                ? (moi['nom'] ?? 'Votre éleveur')
                 : '${moi['firstname'] ?? ''} ${moi['lastname'] ?? ''}'.trim())
             : 'Votre éleveur';
         await supa.from('notifications').insert({
@@ -3221,12 +3228,12 @@ class _EditProtocoleSheetState extends State<_EditProtocoleSheet> {
     }).inFilter('id', ids);
     if (newAssigned != null && newAssigned != prevAssigned) {
       try {
-        final moi = await supa.from('users')
-            .select('firstname,lastname,name_elevage,is_elevage')
-            .eq('uid', widget.uid).maybeSingle();
+        final moi = await supa.from('user_profiles')
+            .select('firstname,lastname,nom,profile_type')
+            .eq('uid', widget.uid).eq('is_main', true).maybeSingle();
         final nomEleveur = moi != null
-            ? (moi['is_elevage'] == true
-                ? (moi['name_elevage'] ?? 'Votre éleveur')
+            ? (moi['profile_type'] == 'eleveur'
+                ? (moi['nom'] ?? 'Votre éleveur')
                 : '${moi['firstname'] ?? ''} ${moi['lastname'] ?? ''}'.trim())
             : 'Votre éleveur';
         await supa.from('notifications').insert({

@@ -178,26 +178,18 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
 
   static Map<String, dynamic> _normalizeUser(Map<String, dynamic> row) => {
     ...row,
-    'nameElevage':              row['name_elevage'],
-    'profilePictureUrlElevage': row['profile_picture_url_elevage'],
-    'profilePictureUrl':        row['profile_picture_url'],
-    'villeElevage':             row['ville_elevage'],
+    'nameElevage':              row['nom'],
+    'profilePictureUrlElevage': row['profile_picture_url_pro'],
+    'profilePictureUrl':        row['avatar_url'],
+    'villeElevage':             row['ville_pro'],
     'descEntreprise':           row['desc_entreprise'],
-    'isPartenaire':             row['is_partenaire'] ?? false,
-    'catPro':                   row['cat_pro'] ?? '',
     'professionPro':            row['profession_pro'] ?? '',
-    'codeISOElevage':           row['code_iso_elevage'] ?? '',
     'numeroElevage':            row['numero_elevage'] ?? '',
-    'adressElevage':            row['adress_elevage'] ?? '',
+    'adressElevage':            row['adresse'] ?? '',
     'isValidate':               row['is_validate'] ?? false,
-    'isElevage':                row['is_elevage'] ?? false,
-    'isPro':                    row['is_pro'] ?? false,
-    'isDog':                    row['is_dog'] ?? false,
-    'isCat':                    row['is_cat'] ?? false,
-    'dogBreeds':                row['dog_breeds'] ?? [],
-    'catBreeds':                row['cat_breeds'] ?? [],
-    'codePostalElevage':        row['code_postal_elevage'] ?? '',
-    'paysElevage':              row['pays_elevage'] ?? '',
+    'isElevage':                row['profile_type'] == 'eleveur',
+    'codePostalElevage':        row['code_postal_pro'] ?? '',
+    'paysElevage':              row['pays_pro'] ?? '',
     'siret':                    row['siret'] ?? '',
   };
 
@@ -229,9 +221,9 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
       if (myUid != null && uniqueUids.isNotEmpty) {
         final sample = uniqueUids.take(5).toList();
         final users = await Supabase.instance.client
-            .from('users')
-            .select('uid, firstname, profile_picture_url')
-            .inFilter('uid', sample);
+            .from('user_profiles')
+            .select('uid, firstname, profile_picture_url:avatar_url')
+            .inFilter('uid', sample).eq('is_main', true);
         likers = List<Map<String, dynamic>>.from(users);
       }
 
@@ -316,7 +308,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
   Future<void> _loadEleveur(String uid, {String? profilSource, String? profileId}) async {
     try {
       final row = await Supabase.instance.client
-          .from('users').select().eq('uid', uid).single();
+          .from('user_profiles').select().eq('uid', uid).eq('is_main', true).single();
       Map<String, dynamic> normalized = _normalizeUser(row);
 
       final src = profilSource
@@ -364,7 +356,14 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
   Widget build(BuildContext context) {
     final data = _annonceData ?? widget.initialData ?? <String, dynamic>{};
 
-    final isOwner   = FirebaseAuth.instance.currentUser?.uid == data['uidEleveur'];
+    // Un même uid Firebase peut porter plusieurs profils (éleveur + association…) :
+    // le simple uid ne suffit pas à déterminer si LE PROFIL ACTIF a créé cette
+    // annonce, sinon on peut modifier une annonce créée par un autre de ses profils.
+    final annonceProfileId = data['profile_id']?.toString();
+    final isOwner   = FirebaseAuth.instance.currentUser?.uid == data['uidEleveur']
+        && (annonceProfileId == null || annonceProfileId.isEmpty
+            || User_Info.activeProfileId.isEmpty
+            || annonceProfileId == User_Info.activeProfileId);
     final photos    = List<String>.from(data['photos'] ?? []);
     final espece    = (data['espece'] as String?) ?? '';
     final especeAutre = (data['espece_autre'] as String?) ?? '';
@@ -1769,7 +1768,24 @@ class _BottomBarState extends State<_BottomBar> {
   }
 
   Future<void> _openChat() async {
-    if (widget.uidEleveur.isEmpty) return;
+    if (widget.uidEleveur.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Impossible de contacter : information manquante sur l\'annonce.',
+              style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+        ));
+      }
+      return;
+    }
+    if (FirebaseAuth.instance.currentUser == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Connectez-vous pour contacter.', style: TextStyle(fontFamily: 'Galey')),
+        ));
+      }
+      return;
+    }
     setState(() => _loading = true);
     // Track contact click
     Supabase.instance.client.from('annonces')
@@ -1787,6 +1803,13 @@ class _BottomBarState extends State<_BottomBar> {
       if (mounted) Navigator.push(context, MaterialPageRoute(
           builder: (_) => ChatScreen(
               conversationId: convId, eleveurId: widget.uidEleveur)));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+        ));
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -1829,11 +1852,13 @@ class _BottomBarState extends State<_BottomBar> {
                   child: _loading
                       ? const SizedBox(width: 22, height: 22,
                           child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.chat_outlined, size: 18),
-                          SizedBox(width: 8),
-                          Text('Contacter l\'éleveur', style: TextStyle(
-                              fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                      : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          const Icon(Icons.chat_outlined, size: 18),
+                          const SizedBox(width: 8),
+                          Text(widget.data['profil_source'] == 'association'
+                                  ? 'Contacter l\'association' : 'Contacter l\'éleveur',
+                              style: const TextStyle(
+                                  fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
                         ]),
                 ),
         ),
@@ -2186,9 +2211,9 @@ class _LikersSheetState extends State<_LikersSheet> {
         return;
       }
       final users = await Supabase.instance.client
-          .from('users')
-          .select('uid, firstname, lastname, profile_picture_url')
-          .inFilter('uid', uids);
+          .from('user_profiles')
+          .select('uid, firstname, lastname, profile_picture_url:avatar_url')
+          .inFilter('uid', uids).eq('is_main', true);
       final userMap = <String, Map<String, dynamic>>{
         for (final u in List<Map<String, dynamic>>.from(users))
           u['uid'] as String: u,
@@ -2326,9 +2351,9 @@ class _FavorisSheetState extends State<_FavorisSheet> {
         return;
       }
       final users = await Supabase.instance.client
-          .from('users')
-          .select('uid, firstname, lastname, profile_picture_url')
-          .inFilter('uid', uids);
+          .from('user_profiles')
+          .select('uid, firstname, lastname, profile_picture_url:avatar_url')
+          .inFilter('uid', uids).eq('is_main', true);
       final userMap = <String, Map<String, dynamic>>{
         for (final u in List<Map<String, dynamic>>.from(users))
           u['uid'] as String: u,

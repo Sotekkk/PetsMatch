@@ -152,12 +152,12 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       ])];
       if (allUids.length > 0) {
         const { data: usersData } = await supabase
-          .from('users').select('uid, prenom, nom, firstname, lastname')
-          .in('uid', allUids);
+          .from('user_profiles').select('uid, firstname, lastname')
+          .in('uid', allUids).eq('is_main', true);
         const names: Record<string, string> = {};
         for (const u of (usersData ?? [])) {
-          const rec = u as { uid: string; prenom?: string; nom?: string; firstname?: string; lastname?: string };
-          names[rec.uid] = [rec.prenom ?? rec.firstname, rec.nom ?? rec.lastname].filter(Boolean).join(' ') || 'Client';
+          const rec = u as { uid: string; firstname?: string; lastname?: string };
+          names[rec.uid] = [rec.firstname, rec.lastname].filter(Boolean).join(' ') || 'Client';
         }
         setClientNames(names);
       }

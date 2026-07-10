@@ -559,6 +559,7 @@ export default function EleveurProfilEditPage() {
         date_of_birth: dob,
         nom: nameElevage,
         phone_number: phoneElevage,
+        numero_elevage: phoneElevage,
         desc_entreprise: description,
         rue_pro: rue,
         code_postal_pro: cp,
@@ -568,12 +569,20 @@ export default function EleveurProfilEditPage() {
         departement: geo?.departement ?? '',
         region: geo?.region ?? '',
         siret: siret.trim(),
+        numero_tva: tva.trim(),
+        acaced: acacedNum.trim(),
+        especes_elevees: especesElevees,
         instagram: instagram.trim(),
         facebook: facebook.trim(),
         site_web: siteWeb.trim(),
       };
       if (payload.banner_url) profileUpdate.banner_url = payload.banner_url;
+      if (payload.profile_picture_url) profileUpdate.avatar_url = payload.profile_picture_url;
       if (payload.profile_picture_url_elevage) profileUpdate.profile_picture_url_pro = payload.profile_picture_url_elevage;
+      if (payload.kbis_url) profileUpdate.kbis_url = payload.kbis_url;
+      if (payload.acaced_doc_url) profileUpdate.acaced_doc_url = payload.acaced_doc_url;
+      if (acacedDateObtention) profileUpdate.acaced_date_obtention = acacedDateObtention;
+      if (acacedDateRenewal) profileUpdate.acaced_date_renewal = acacedDateRenewal;
 
       await supabase.from('user_profiles')
         .update(profileUpdate)

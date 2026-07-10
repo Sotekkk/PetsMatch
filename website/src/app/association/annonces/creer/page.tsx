@@ -192,25 +192,25 @@ export default function CreerAnnonceAssoPage() {
       } else {
         // Mode création — INSERT
         const [{ data: userData }, { data: assoProfile }] = await Promise.all([
-          supabase.from('users')
-            .select('name_elevage, firstname, lastname, ville_elevage, departement_elevage, region_elevage, pays_elevage')
-            .eq('uid', user.uid).single(),
+          supabase.from('user_profiles')
+            .select('nom, firstname, lastname, ville_pro, departement_pro, region_pro, pays_pro')
+            .eq('uid', user.uid).eq('is_main', true).single(),
           supabase.from('user_profiles')
             .select('profile_label')
             .eq('uid', user.uid).eq('profile_type', 'association').maybeSingle(),
         ]);
         const nomAsso = assoProfile?.profile_label
-          || userData?.name_elevage
+          || userData?.nom
           || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim();
 
         await supabase.from('annonces').insert({
           uid_eleveur: user.uid,
           ...(activeProfileId ? { profile_id: activeProfileId } : {}),
           nom_eleveur: nomAsso,
-          ville_eleveur: userData?.ville_elevage ?? '',
-          departement_eleveur: userData?.departement_elevage ?? '',
-          region_eleveur: userData?.region_elevage ?? '',
-          pays_eleveur: userData?.pays_elevage ?? 'France',
+          ville_eleveur: userData?.ville_pro ?? '',
+          departement_eleveur: userData?.departement_pro ?? '',
+          region_eleveur: userData?.region_pro ?? '',
+          pays_eleveur: userData?.pays_pro ?? 'France',
           titre: titre || `${ESPECE_LABEL[espece] ?? espece} cherche une famille`,
           espece,
           espece_autre: espece === 'autre' ? (especeAutre.trim() || null) : null,

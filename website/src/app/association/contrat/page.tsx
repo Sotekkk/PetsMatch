@@ -109,26 +109,49 @@ export default function ContratsAdoptionPage() {
   const load = useCallback(async () => {
     if (!user) return;
     setFetching(true);
-    const [docsRes, aniRes, profRes] = await Promise.all([
+    const [docsRes, aniRes, profRes, userRes] = await Promise.all([
       supabase.from('documents_animaux').select('*').eq('uid_eleveur', user.uid).eq('type', 'contrat_adoption').order('created_at', { ascending: false }),
       supabase.from('animaux').select('id, nom, espece, race, sexe, identification, date_naissance, couleur, sterilise').eq('uid_eleveur', user.uid).eq('is_association', true).not('statut', 'in', '(sorti,decede,adopte)').order('nom'),
-      supabase.from('users').select('name_elevage,firstname,lastname,adress_elevage,rue,ville,code_postal,siret,email,numero_elevage,code_iso_elevage,phone_number').eq('uid', user.uid).maybeSingle(),
+      supabase.from('user_profiles').select('nom,firstname,lastname,adresse,rue,ville,code_postal,siret,email_contact,numero_elevage,phone_number').eq('uid', user.uid).eq('is_main', true).maybeSingle(),
+      supabase.from('users').select('email').eq('uid', user.uid).maybeSingle(),
     ]);
     setDocs((docsRes.data ?? []) as DocAdoption[]);
     setAnimaux((aniRes.data ?? []) as Animal[]);
-    setProfile(profRes.data as UserProfile | null);
+    const cp = profRes.data;
+    setProfile(cp ? {
+      name_elevage: cp.nom, firstname: cp.firstname, lastname: cp.lastname,
+      adress_elevage: cp.adresse, rue: cp.rue, ville: cp.ville, code_postal: cp.code_postal,
+      siret: cp.siret, email: userRes.data?.email || cp.email_contact || '',
+      numero_elevage: cp.numero_elevage, code_iso_elevage: '+33', phone_number: cp.phone_number,
+    } : null);
     setFetching(false);
   }, [user]);
 
   async function searchUser(q: string) {
     setUserSearch(q);
     if (q.length < 2) { setUserResults([]); return; }
-    const isEmail = q.includes('@');
-    const fields = 'uid,firstname,lastname,name_elevage,is_elevage,email,phone_number,rue,ville,code_postal,rue_elevage,ville_elevage,code_postal_elevage';
-    const { data } = isEmail
-      ? await supabase.from('users').select(fields).ilike('email', `%${q}%`).limit(5)
-      : await supabase.from('users').select(fields).or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%`).limit(8);
-    setUserResults((data ?? []) as UserResult[]);
+    const cpFields = 'uid,firstname,lastname,nom,profile_type,email_contact,phone_number,rue,ville,code_postal,rue_pro,ville_pro,code_postal_pro';
+    const toResult = (cp: Record<string, unknown>, email?: string): UserResult => ({
+      uid: cp.uid as string, firstname: cp.firstname as string, lastname: cp.lastname as string,
+      name_elevage: cp.nom as string | undefined, is_elevage: cp.profile_type === 'eleveur',
+      email: email || (cp.email_contact as string | undefined) || '',
+      phone_number: cp.phone_number as string | undefined,
+      rue: cp.rue as string | undefined, ville: cp.ville as string | undefined, code_postal: cp.code_postal as string | undefined,
+      rue_elevage: cp.rue_pro as string | undefined, ville_elevage: cp.ville_pro as string | undefined, code_postal_elevage: cp.code_postal_pro as string | undefined,
+    });
+    if (q.includes('@')) {
+      const { data: users } = await supabase.from('users').select('uid,email').ilike('email', `%${q}%`).limit(5);
+      const uids = (users ?? []).map(u => u.uid);
+      const emailByUid = new Map((users ?? []).map(u => [u.uid, u.email as string]));
+      const { data: cps } = uids.length
+        ? await supabase.from('user_profiles').select(cpFields).in('uid', uids).eq('is_main', true)
+        : { data: [] as Record<string, unknown>[] };
+      setUserResults((cps ?? []).map(cp => toResult(cp, emailByUid.get(cp.uid as string))));
+    } else {
+      const { data: cps } = await supabase.from('user_profiles').select(cpFields)
+        .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%`).eq('is_main', true).limit(8);
+      setUserResults((cps ?? []).map(cp => toResult(cp)));
+    }
   }
 
   function selectUser(u: UserResult) {

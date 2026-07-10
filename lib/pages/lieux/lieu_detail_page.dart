@@ -70,13 +70,13 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
       final uids = avisList.map((a) => a['user_uid'] as String?).whereType<String>().toSet();
       if (uids.isNotEmpty) {
         try {
-          final usersData = await _supabase.from('users')
-              .select('uid, firstname, lastname, is_elevage, name_elevage')
-              .inFilter('uid', uids.toList());
+          final usersData = await _supabase.from('user_profiles')
+              .select('uid, firstname, lastname, profile_type, nom')
+              .inFilter('uid', uids.toList()).eq('is_main', true);
           for (final u in (usersData as List)) {
-            final isElevage = u['is_elevage'] == true;
-            final name = isElevage && (u['name_elevage'] as String?)?.isNotEmpty == true
-                ? u['name_elevage'] as String
+            final isElevage = u['profile_type'] == 'eleveur';
+            final name = isElevage && (u['nom'] as String?)?.isNotEmpty == true
+                ? u['nom'] as String
                 : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
             for (final a in avisList) {
               if (a['user_uid'] == u['uid']) a['_user_nom'] = name.isEmpty ? 'Utilisateur' : name;
@@ -124,7 +124,7 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
       final ownerUid = _lieu?['uid_pro'] as String?;
       if (ownerUid != null && ownerUid != _uid) {
         try {
-          final me = await _supabase.from('users').select('firstname, lastname').eq('uid', _uid).maybeSingle();
+          final me = await _supabase.from('user_profiles').select('firstname, lastname').eq('uid', _uid).eq('is_main', true).maybeSingle();
           final nom = me != null ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim() : 'Quelqu\'un';
           final nomLieu = (_lieu?['name'] ?? _lieu?['nom'] ?? 'votre établissement').toString();
           await _supabase.from('notifications').insert({
@@ -179,12 +179,46 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
     final lieu = _lieu!;
     final lat = lieu['lat'];
     final lng = lieu['lng'];
-    final wazeUri = Uri.parse('waze://ul?ll=$lat,$lng&navigate=yes');
-    final gmapsUri = Uri.parse('https://maps.google.com/?daddr=$lat,$lng');
-    if (await canLaunchUrl(wazeUri)) {
-      await launchUrl(wazeUri);
-    } else {
-      await launchUrl(gmapsUri, mode: LaunchMode.externalApplication);
+    if (lat == null || lng == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Localisation indisponible pour ce lieu.'),
+          backgroundColor: Colors.red,
+        ));
+      }
+      return;
+    }
+    // Waze/Google Maps affichent juste un pin anonyme avec ll=lat,lng seul —
+    // on passe aussi l'adresse en texte (q=) pour qu'elle apparaisse réellement
+    // dans l'app de navigation, tout en gardant lat/lng pour la précision.
+    final adresseTxt = [lieu['adresse'], lieu['code_postal'], lieu['ville']]
+        .where((s) => s != null && s.toString().trim().isNotEmpty)
+        .join(', ');
+    final q = Uri.encodeComponent(adresseTxt.isNotEmpty ? adresseTxt : '$lat,$lng');
+    final wazeUri = Uri.parse('waze://?ll=$lat,$lng&q=$q&navigate=yes');
+    final gmapsDest = adresseTxt.isNotEmpty ? q : '$lat,$lng';
+    final gmapsUri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$gmapsDest');
+    try {
+      bool launched = false;
+      if (await canLaunchUrl(wazeUri)) {
+        launched = await launchUrl(wazeUri, mode: LaunchMode.externalApplication);
+      }
+      if (!launched) {
+        launched = await launchUrl(gmapsUri, mode: LaunchMode.externalApplication);
+      }
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Impossible d\'ouvrir une application de navigation.'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e'),
+          backgroundColor: Colors.red,
+        ));
+      }
     }
   }
 

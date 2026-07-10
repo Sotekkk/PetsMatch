@@ -89,10 +89,14 @@ function EmployesTab({ uid }: { uid: string }) {
 
       const result: Employe[] = [];
       for (const e of (rows ?? [])) {
-        const { data: u } = await supabase.from('users')
-          .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, profile_picture_url_elevage')
-          .eq('uid', e.uid_employe).maybeSingle();
-        const p = u as UserProfile | null;
+        const { data: cp } = await supabase.from('user_profiles')
+          .select('uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro')
+          .eq('uid', e.uid_employe).eq('is_main', true).maybeSingle();
+        const p: UserProfile | null = cp ? {
+          uid: cp.uid, firstname: cp.firstname, lastname: cp.lastname,
+          name_elevage: cp.nom, is_elevage: cp.profile_type === 'eleveur',
+          profile_picture_url: cp.avatar_url, profile_picture_url_elevage: cp.profile_picture_url_pro,
+        } : null;
         const nom = p?.is_elevage
           ? (p.name_elevage?.trim() || 'Élevage')
           : `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim() || 'Utilisateur';
@@ -165,10 +169,17 @@ function AddEmployeModal({ uid, onClose, type = 'employe' }: { uid: string; onCl
   const [adding, setAdding] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.from('users')
-      .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, profile_picture_url_elevage')
-      .neq('uid', uid).limit(500)
-      .then(({ data }) => { setAllUsers((data ?? []) as UserProfile[]); setLoading(false); });
+    supabase.from('user_profiles')
+      .select('uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro')
+      .neq('uid', uid).eq('is_main', true).limit(500)
+      .then(({ data }) => {
+        setAllUsers((data ?? []).map(cp => ({
+          uid: cp.uid, firstname: cp.firstname, lastname: cp.lastname,
+          name_elevage: cp.nom, is_elevage: cp.profile_type === 'eleveur',
+          profile_picture_url: cp.avatar_url, profile_picture_url_elevage: cp.profile_picture_url_pro,
+        })));
+        setLoading(false);
+      });
   }, [uid]);
 
   function search(q: string) {

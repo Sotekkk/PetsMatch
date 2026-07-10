@@ -3746,10 +3746,10 @@ Phase 9 — V2 (PRO14–PRO18, PFR09, PFR16, PFR22)
 
 | Item | Détail | Statut |
 |---|---|---|
-| Réservation intelligente | Algorithme d'allocation optimale entre logements de même catégorie selon les dates demandées | Non commencé |
-| Tarification automatisée | Prix calculé automatiquement selon poids animal, individuel/collectif, arrivée/départ en début de journée, réductions séjour long | Non commencé |
-| Alertes facturation | Notification si séjour non facturé ou client débiteur | Non commencé |
-| Export facturation par plage de dates | Export CSV actuel = tout l'historique filtré par statut, pas de sélecteur de dates dédié | Non commencé |
+| Réservation intelligente | ✅ Livré (session 2026-07-09), app + web : bannière "animal(aux) à placer" sur les entrées "en_pension" sans logement, suggestion automatique du meilleur logement compatible (espèce acceptée, place disponible, best-fit — le plus petit logement qui convient en premier). Bouton "Tout placer auto" pour traiter plusieurs animaux d'un coup. Scope volontairement limité à l'allocation temps réel (pas de pré-réservation à dates futures, ce concept n'existe pas encore dans le modèle de données). | Livré |
+| Tarification automatisée | ✅ Livré (session 2026-07-09), app uniquement (web = lecture seule sur l'abonnement, la facturation elle-même n'existe que côté app) : config par tranches de poids (prix seul/partagé) + réductions séjour long dans une nouvelle page "Tarifs" ; pré-remplit automatiquement le tarif/nuit à la facturation. | Livré |
+| Alertes facturation | ✅ Livré (session 2026-07-09), app uniquement : nouvelle table `pension_factures` traçant chaque facture envoyée (avant : rien n'était persisté, PDF généré à la volée). Bandeau "séjours non facturés" + "factures impayées depuis >15j" en haut du registre, bouton "Marquer facturé (sans envoi)" pour les factures remises en main propre. | Livré |
+| Export facturation par plage de dates | ✅ Livré (session 2026-07-09), app uniquement, dans la nouvelle page "Mes Factures" : sélecteur de plage de dates + export PDF (total facturé/payé/restant dû). | Livré |
 | Paiement en ligne pension (Stripe) | Plomberie corrigée (2026-07-03, commits `a9a3152e`/`7c823f31`) : `/api/stripe/checkout`/`activate`/`portal` sont profil_type-aware, price ID lu depuis `plans_tarifaires`. **Plus besoin d'ouvrir le dashboard Stripe** : `/admin` → Tarification crée désormais automatiquement le produit + prix Stripe dès qu'un tarif > 0 est saisi et enregistré (`getOrCreatePlanProduct` dans `api/admin/tarification/route.ts`). Reste : aller dans `/admin` et saisir les prix pension pour déclencher la création | Prêt — reste juste à saisir les prix dans /admin |
 | Paiement en ligne (lien email/SMS) | Explicitement V2 par l'utilisateur, avec frais de service/transaction optionnels | Non commencé |
 | États de nettoyage des logements | ✅ Livré (session 2026-07-03) : suivi jour par jour via `pension_nettoyages`, ligne dédiée dans le planning. Reste : pas d'état "hors service" (logement indisponible temporairement, hors nettoyage) | Partiel — nettoyage fait, "hors service" restant |
@@ -4065,13 +4065,13 @@ automatisée + forfaits → devis auto → notification avant séance → GPS/é
 | Item | Détail | Statut |
 |---|---|---|
 | Réservation en ligne des cours collectifs | ✅ Livré (session 2026-07-04) : le client parcourt les cours collectifs à venir d'un pro directement sur sa fiche publique (app `service_detail_page.dart`, web `services/pro/[uid]/page.tsx`), choisit l'animal concerné, s'inscrit avec vérification de capacité (refus si complet), et le pro reçoit une notification (`type: 'cours_collectif_inscription'`, cliquable vers le planning). | Livré |
-| Cours à domicile + GPS/trajet | Aucune API d'itinéraire n'existe dans le projet (seulement distance à vol d'oiseau via `Geolocator.distanceBetween`). Nécessite l'intégration d'une API Directions/Distance Matrix. | Non commencé |
-| Équipe d'intervenants | Le système `employes` ne gère que des permissions d'accès aux fonctionnalités, pas d'assignation à un RDV/cours précis. Nécessiterait une colonne/table d'assignation (`instructeur_profile_id` ou table de jointure). | Non commencé |
 | Tarification automatisée + forfaits | ✅ Livré (session 2026-07-05) : (1) forfaits — le pro crée des packs de séances nommés (nom, nb séances, prix) dans son profil (`forfaits_education` table), affichés publiquement sur sa fiche pro (informationnel, pas de suivi de crédit/solde automatisé, même logique que `tarifs_education`) ; (2) tarification automatisée — le prix du cours collectif (`tarifs_education['cours_collectif']`) s'affiche désormais automatiquement au client lors de la réservation en ligne et est figé sur la ligne `cours_collectifs_participants.prix` au moment de l'inscription (pour référence/facturation même si le tarif change plus tard). Pas de calcul selon poids animal — jugé hors scope pour un éducateur (pertinent surtout pour la pension). | Livré |
-| Devis automatique | Aucun système de devis n'existe dans le projet (seulement contrats/factures). À construire à partir de zéro, probablement comme étape avant `contrats`/`factures`. | Non commencé |
-| Emails automatiques devis/contrats/factures | Dépend du devis (ci-dessus) ; contrats/factures existent déjà mais sans envoi email automatique dédié à l'éducateur. | Non commencé |
-| Notification avant séance + SMS | Notification in-app faisable (pattern déjà en place) ; SMS non implémenté nulle part dans le projet actuellement. | Non commencé |
-| Agenda dynamique avec temps de trajet + alerte retard | Dépend du GPS/trajet (ci-dessus). | Non commencé |
+| Devis automatique | ✅ Livré (session 2026-07-06) : nouvelle table `devis` (numéro, lignes, statut brouillon/envoyé/accepté/refusé/expiré, token d'acceptation public). Le pro sélectionne le client via recherche PetsMatch ou saisie libre. Web : `education/devis/page.tsx` (liste + création) + `devis/[token]/page.tsx` (page publique d'acceptation client, sans compte). App : `education_devis_page.dart`. Le devis se lie à l'animal concerné et apparaît dans ses documents, visible côté client uniquement si un devis/rapport éducateur existe réellement pour cet animal. Après acceptation : simple changement de statut, pas de génération automatique de facture. | Livré |
+| Notification avant séance | ✅ Livré (session 2026-07-06), **in-app uniquement** (SMS explicitement écarté par l'utilisateur pour l'instant). Système de rappel existant (`rdv.reminder_48h/24h/1h/15min_sent`, Netlify function `send-rdv-reminders.mts`) étendu pour couvrir aussi `cours_collectifs` (nouvelles colonnes identiques + notification à chaque participant inscrit). | Livré |
+| Cours à domicile + GPS/trajet | ✅ Livré (session 2026-07-08), **approche à vol d'oiseau** (pas d'API Directions payante — cohérent avec le choix initial `Geolocator.distanceBetween`). Géocodage automatique du champ `rdv.lieu` (texte libre) en coordonnées GPS via le package `geocoding` (app, déjà utilisé ailleurs) / `api-adresse.data.gouv.fr` (web, gratuit) au moment de l'enregistrement — nouvelles colonnes `rdv.lieu_lat`/`lieu_lng`. | Livré |
+| Équipe d'intervenants | ✅ Livré (session 2026-07-08) : nouvelle colonne `instructeur_profile_id` sur `rdv` et `cours_collectifs` (référence `user_profiles`). Sélecteur "Intervenant assigné" dans le formulaire de modification du RDV (app `pro_agenda.dart`, web `mes-rdv/page.tsx::ModifierModal`), liste chargée depuis la table `employes` existante (aucune permission supplémentaire, juste une assignation). | Livré |
+| Agenda dynamique avec temps de trajet + alerte retard | ✅ Livré (session 2026-07-08) : pour deux RDV confirmés le même jour, tous deux géocodés, dont l'écart entre fin du premier et début du second est inférieur au temps de trajet estimé (distance à vol d'oiseau ÷ 30 km/h), un bandeau "⚠️ Risque de retard" s'affiche — app (carte "Aujourd'hui" de `pro_agenda.dart`) et web (haut de `agenda/page.tsx`). | Livré |
+| Emails automatiques devis/contrats/factures | Dépend du devis (ci-dessus, maintenant livré) ; contrats/factures existent déjà mais sans envoi email automatique dédié à l'éducateur. Décision explicite de l'utilisateur : reste en attente, l'in-app est privilégié partout ailleurs dans le module. | Non commencé |
 
 ### 20.3 — Migration à exécuter
 
@@ -4137,9 +4137,8 @@ supabase/migration_creneaux_type_prestation.sql    -- colonne type_prestation su
 
 ### 21.2 — Reste à faire
 
-- Créneaux individuel/collectif côté app (Flutter) — web uniquement pour
-  l'instant.
-- GPS/trajet complet (Phase 2 éducateur item 5/5).
+- ✅ Créneaux individuel/collectif côté app (Flutter) — livré, voir §20.
+- ✅ GPS/trajet complet (Phase 2 éducateur item 5/5) — livré, voir §26.
 
 ## 22. Onglet "Éducation" dans la fiche animal + correctif agenda (session 2026-07-05)
 
@@ -4237,6 +4236,742 @@ supabase/migration_education_exercices_conseilles.sql  -- colonne exercices_cons
 ```
 supabase/migration_backfill_agenda_events_client_profile.sql
 ```
+
+---
+
+## 26. Module Éducateur/Comportementaliste — Phase 2 complétée (sessions 2026-07-06 / 2026-07-08)
+
+Les 5 items du backlog Phase 2 (§20.2) sont désormais tous livrés, dans
+l'ordre validé. Détail des trois derniers :
+
+- **Devis automatique** : nouvelle table `devis` (`numero_devis`,
+  `date_devis`, `date_validite`, client PetsMatch ou saisie libre,
+  `lignes` JSONB, `total_ttc`, `statut` brouillon/envoyé/accepté/refusé/
+  expiré, `token_acceptation`). Le client accepte/refuse sans compte via
+  un lien public (`/devis/[token]`, même pattern que `/certificat/[token]`
+  déjà existant). Après acceptation : simple changement de statut — pas
+  de génération automatique de facture (décision explicite). Le devis se
+  lie à l'animal concerné (`documents_animaux`, visible côté client
+  uniquement si un devis/rapport éducateur existe réellement pour cet
+  animal).
+- **Rappels avant séance** : le système de rappel existant sur `rdv`
+  (`reminder_48h/24h/1h/15min_sent`, Netlify function
+  `send-rdv-reminders.mts` toutes les 15 min) a été étendu pour couvrir
+  aussi `cours_collectifs` — mêmes colonnes de rappel, notification
+  envoyée au pro et à chaque participant inscrit (`cours_collectifs_participants`).
+- **GPS/trajet + équipe d'intervenants + agenda dynamique** : approche à
+  vol d'oiseau assumée dès le départ (pas d'intégration d'API Directions
+  payante). `rdv.lieu` (texte libre) est géocodé automatiquement à
+  l'enregistrement en `rdv.lieu_lat`/`lieu_lng` (package `geocoding` déjà
+  utilisé ailleurs côté app, `api-adresse.data.gouv.fr` gratuit côté web).
+  Nouvelle colonne `instructeur_profile_id` sur `rdv`/`cours_collectifs`
+  pour assigner un employé (réutilise la table `employes` existante, pas
+  de nouvelle notion de permission). Quand deux RDV confirmés le même jour
+  sont tous deux géocodés et que l'écart entre la fin du premier et le
+  début du second est inférieur au temps de trajet estimé (distance à vol
+  d'oiseau ÷ 30 km/h), un bandeau "⚠️ Risque de retard" s'affiche — carte
+  "Aujourd'hui" de l'agenda pro app, haut de l'agenda pro web.
+
+### 26.1 — Bugs corrigés au passage (découverts en testant le module)
+
+- **Notifications qui fuitent entre profils** : le filtre d'affichage
+  (app `notifications_page.dart`, web `/api/notifications`) ne se basait
+  que sur `profile_type` (souvent absent à la création), jamais sur
+  `profile_id` pourtant bien renseigné sur la ligne — une notif destinée
+  à un profil apparaissait aussi sur les autres profils du même compte.
+  `profile_id` prime désormais quand présent. Idem pour les notifications
+  `tache_validee` (3 points de création, app + web) qui n'écrivaient
+  jamais `profile_id`.
+- **`agenda_events.pro_profile_id` vide** (rappels chaleurs/mise-bas) :
+  `User_Info.activeProfileId` pouvait être lu vide au moment de la
+  création du rappel, écrivant une chaîne vide au lieu d'un profil
+  valide — invisible dans les vues filtrées par profil. Repli sur le
+  profil principal ajouté ; 111 lignes existantes corrigées en base.
+- **Annonce visible/modifiable depuis le mauvais profil** : la page
+  d'accueil éleveur et le contrôle de propriété d'une annonce (bouton
+  "Modifier") ne vérifiaient que l'uid Firebase (partagé entre profils
+  d'un même compte), pas le `profile_id` actif — une annonce créée
+  depuis le profil association restait modifiable depuis le profil
+  éleveur du même compte.
+- **Messagerie "Contacter" silencieuse** : la table `conversations` n'a
+  jamais eu de colonne `categorie` alors que le code la lit/écrit depuis
+  longtemps — toute création de nouvelle conversation échouait
+  silencieusement (PGRST204), masqué tant qu'une conversation existait
+  déjà entre les deux participants.
+- **Itinéraire Waze cassé** (lieux pet-friendly) : lien au format invalide
+  (`waze://ul?...` au lieu de `waze://?...`), adresse jamais transmise
+  (seulement les coordonnées brutes), et absence de `<queries>` dans le
+  manifeste Android (obligatoire dès Android 11 pour détecter une app de
+  navigation externe).
+- **Carte des professionnels vide côté web** : la requête des profils pro
+  secondaires demandait une colonne `name_elevage` inexistante sur
+  `user_profiles` (réservée à `users`), faisant échouer toute la requête
+  et excluant tous les pros secondaires de la carte. Par ailleurs, la
+  création d'un profil pro secondaire (app `add_profile_page.dart`, web
+  `profil/ajouter/page.tsx`) enregistrait les coordonnées GPS seulement
+  si déjà résolues, sans filet de sécurité comme à l'édition — un pro qui
+  tape son adresse sans sélectionner une suggestion restait invisible sur
+  la carte pour toujours (4 profils existants sur 8 concernés, corrigés
+  en base).
+
+### 26.2 — Migrations à exécuter
+
+```
+supabase/migration_education_devis.sql
+supabase/migration_cours_collectifs_reminders.sql
+supabase/migration_education_intervenants_trajet.sql
+supabase/migration_conversations_categorie.sql
+```
+
+---
+
+## 27. Module Pension — Phase 2 complétée (session 2026-07-09) + chantier prioritaire suivant
+
+Les 4 items de la Phase 2 Pension (§19.2) sont livrés — détail dans le tableau
+mis à jour ci-dessus. Repère utile pour les tests : `enclos_chenil` (logements),
+`pension_entrees` (registre), `pension_factures` (nouvelle table, historique +
+statut de paiement), `tarifs_pension` (nouvelle colonne JSONB sur `user_profiles`).
+
+### 27.1 — Bug corrigé au passage : `users` / `user_profiles` désynchronisés
+
+En creusant un problème de téléphone/description manquants pour un profil
+éleveur, découverte d'un problème plus large :
+
+- **Web sans repli** : `useAuth()` (web) ne lisait que `user_profiles`, sans
+  jamais retomber sur `users` (table primaire historique) quand le champ est
+  vide — contrairement à l'app qui a déjà cette logique de repli
+  (`main.dart::applyProfile`). Corrigé dans `auth-context.tsx` : `mapProfile()`
+  accepte désormais une ligne `users` de secours pour bio/banner/téléphone/
+  siret/réseaux sociaux/photos, avec traitement spécial du placeholder
+  téléphone `"0000000000"` laissé par d'anciens flux de création.
+- **Écriture app perdue silencieusement** : la description et le téléphone
+  élevage n'étaient enregistrés que dans **Firestore** (`profil_eleveur_edit.dart`),
+  plus lu nulle part depuis la migration Supabase — toute modification depuis
+  l'app se perdait. Corrigé : écriture désormais dans `users` ET `user_profiles`
+  (colonnes `bio`/`description`, `numero_elevage`/`phone_number`).
+- **Bug multi-profil dans la gestion des employés** (`employes_page.dart`) :
+  la résolution du "profil employeur" se basait sur un champ `is_main` figé
+  sur le profil éleveur du compte au lieu du profil réellement actif — un
+  employé ajouté depuis n'importe quel profil (éducateur, pension…) se
+  retrouvait toujours rattaché au profil éleveur. Corrigé (4 endroits) pour
+  utiliser `User_Info.activeProfileId`.
+
+### 27.2 — Chantier prioritaire pour la prochaine session
+
+L'utilisateur a validé la direction : **`users` doit devenir purement
+l'identité d'authentification (uid, email, préférences globales), toutes les
+données de profil doivent vivre dans `user_profiles`** (une ligne par profil).
+C'est déjà la direction du code ("Sync user_profiles (source V2)" en
+commentaire à plusieurs endroits), mais la bascule n'est que partielle.
+
+**Ne pas se lancer sans cadrage** : chantier transverse à haut risque, touche
+chaque lecture/écriture de profil (cartes, annonces, fiches, création,
+édition) sur les 2 plateformes. Repartir de l'audit fait en §27.1 avant
+d'étendre à d'autres profils (association, éducateur, pension, vétérinaire…).
+
+### 27.3 — Phase 1 livrée : colonnes synonymes désynchronisées
+
+Audit complet (session suivante) : `users` a ~90 colonnes de profil, la
+quasi-totalité dupliquée sur `user_profiles` via ~10 migrations
+incrémentales, avec des incohérences de nommage réelles causant des pertes
+de données actives (l'app et le site ne lisaient pas les mêmes colonnes
+pour un même concept) :
+
+- N° ACACED : `acaced_numero` (lu par l'app) vs `acaced` (lu par le web) —
+  `acaced` n'était jamais écrit par aucun code vivant.
+- Doc ACACED : `acaced_doc_url` (écrit partout) vs `diplome_url` (seule
+  colonne lue par le web) — `diplome_url` n'était jamais écrit.
+- Téléphone : `phone` / `phone_number` / `telephone` sur `user_profiles`,
+  chaque écran n'en écrivant qu'un ou deux à la fois.
+
+Corrigé via `supabase/migration_sync_profile_synonyms.sql` : trigger
+Postgres (`BEFORE INSERT OR UPDATE`) qui recopie automatiquement toute
+écriture sur une de ces colonnes vers ses synonymes (sur `user_profiles`
+et sur `users` pour `acaced_numero`/`acaced`), + backfill ponctuel des
+lignes déjà divergentes. Approche DB plutôt que retouche des ~15 sites
+d'écriture recensés : transparente pour tout code existant, futur-proof
+contre un nouveau site d'écriture qui oublierait une colonne. Vérifié en
+live : écriture sur une seule colonne → synonymes mis à jour
+automatiquement.
+
+Corrigé au passage : deux lectures mortes de colonnes inexistantes sur
+`users` (`users.phone`, `users.telephone` — seule `phone_number` existe
+réellement) dans `website/src/app/associations/[id]/page.tsx` et
+`website/src/app/elevages/[id]/page.tsx`, redirigées vers `phone_number`.
+
+**Reste pour une Phase 2** : synchronisation *entre* `users` et
+`user_profiles` (`numero_elevage` notamment, écrit sur `users` sans être
+répercuté sur `user_profiles` dans 2 écrans web) — plus invasif
+(cross-table), non traité dans cette phase.
+
+### 27.4 — Phase 2 livrée : complétude des écritures vers user_profiles
+
+Audit champ par champ des ~11 sites d'écriture (voir §27.3) : `numero_tva`,
+`acaced`, `kbis_url`, `acaced_doc_url`, `especes_elevees`,
+`acaced_date_obtention`, `acaced_date_renewal` manquaient côté
+`user_profiles` dans 3 fichiers (`profil_eleveur_edit.dart`,
+`profil/page.tsx`, `elevage/profil/edit/page.tsx`) alors qu'ils étaient
+bien écrits sur `users` — confirmé en base sur un profil réel (3 espèces
+sur `users.especes_elevees`, tableau vide sur `user_profiles`). Un 4e
+fichier (`inscription_restauration_pro_page.dart`) ne synchronisait pas
+`firstname`/`lastname`/`phone_number`. Corrigé par ajout des champs
+manquants aux objets d'écriture existants, sans nouvelle logique.
+
+**Trouvé au passage, hors scope de cette phase** : aucun compte n'obtenait
+de ligne `user_profiles` à l'inscription (`verifemail.dart`,
+`inscription/page.tsx` n'écrivent que sur `users`) — traité en Phase 3.
+
+### 27.5 — Phase 3 livrée : ligne user_profiles automatique à l'inscription
+
+`is_main = true` est lu par ~90 endroits du code pour résoudre "le profil
+principal du compte", la plupart sans repli — un compte sans aucune ligne
+`is_main=true` (le cas de tout nouveau compte avant Phase 3, tant qu'il
+n'a pas explicitement ajouté un profil) cassait silencieusement l'agenda,
+la pension, les employés, Stripe, les fiches animaux, etc.
+
+Corrigé via `supabase/migration_auto_create_main_profile.sql` : trigger
+`AFTER INSERT ON users` qui crée automatiquement une ligne `user_profiles`
+(`is_main=true`) avec le `profile_type` déduit des colonnes déjà connues
+à l'inscription (`is_association`/`is_elevage`/`is_pro`+`cat_pro`). Filet
+de sécurité à deux niveaux (repli `particulier` minimal, puis silence
+total) pour ne jamais bloquer une inscription si le type déduit posait
+problème. Idempotent (`ON CONFLICT (uid, profile_type) DO NOTHING`) —
+si l'utilisateur complète ensuite son profil via "ajouter un profil",
+l'upsert met à jour la ligne déjà créée au lieu d'en dupliquer une, et
+`is_main` reste intact. Backfill défensif inclus (0 compte orphelin
+constaté). Vérifié en live avec 3 types de compte (particulier, éleveur,
+vétérinaire) : ligne créée avec le bon `profile_type` et `is_main=true`
+à chaque fois.
+
+**Chantier §27.2 maintenant sur une base saine** : `user_profiles` a
+toujours une ligne principale dès l'inscription, complète pour tous les
+champs connus, et synchronisée sans divergence de nommage avec `users`.
+Reste pour une passe future : la bascule complète (arrêter d'écrire sur
+`users`), et le nettoyage du modèle d'adresse à 3 variantes / des
+booléens redondants avec `profile_type` — non traités, périmètre plus
+large qu'une session.
+
+### 27.6 — Phase 4 livrée (lot 1) : messagerie + profil public vers user_profiles
+
+Reste du risque inverse : ~62 fichiers lisent des données de profil
+directement sur `users` sans jamais consulter `user_profiles` — figées
+si on arrête un jour d'écrire les profils sur `users`. Audit fait,
+classé par risque/impact, trop large pour une session — traité par lots.
+
+**Lot 1 (ce lot)** : messagerie (`lib/utils/messaging_helper.dart`,
+`lib/pages/chatScreen.dart`, `lib/pages/message.dart` — 3 implémentations
+dupliquées du même calcul nom/photo, unifiées en une méthode partagée
+`MessagingHelper.getDisplayInfo()` qui lit `user_profiles`) + page de
+profil public web (`website/src/app/profil/[uid]/page.tsx`). Vérifié en
+live : résolution nom/photo correcte pour un profil éleveur (utilise
+`nom` de `user_profiles` plutôt que `name_elevage` de `users`).
+
+**Hors scope, flaggé pour un lot futur** : `chatScreen.dart::_navigateToUser`
+(fiche complète éleveur/pro ouverte depuis le chat) recouvre le même
+territoire que `user_elevage_feed.dart`/`UserDetailPageFeed` — nécessite
+sa propre passe car certains champs legacy (`is_dog`/`dog_breeds`/
+`cat_breeds`) n'ont pas d'équivalent sur `user_profiles`.
+
+**Lots restants** (par ordre d'impact décroissant, voir audit complet
+dans l'historique de session) : pages association (bénévoles, familles
+d'accueil, groupes communauté) ; pages particulier (feed, animaux
+acquis/perdus, promenades). *(Voir §27.9 — cette liste s'est révélée
+incomplète : le lot association/particulier a été livré, mais un audit
+plus large a trouvé un reste bien plus important que prévu.)*
+
+### 27.7 — Phase 4 livrée (lot 2) : documents légaux/financiers vers user_profiles
+
+Ciblait la catégorie la plus à risque : `certificats_engagement`, `devis`,
+`documents_animaux` ne stockent jamais l'identité de l'émetteur à la
+création (seulement son `uid` en FK) — les pages publiques de signature
+(`certificat/[token]`, `devis/[token]`, `signer-contrat/[token]`) sont
+donc la source primaire, pas juste un affichage. Un siret/adresse figé y
+serait injecté tel quel dans un document signé, pas juste un avatar
+périmé.
+
+10 fichiers migrés (6 web, 4 app) selon 2 motifs : lecture directe du
+profil (FK connue ou profil courant) → bascule simple vers
+`user_profiles` (`is_main=true`) ; recherche live d'acquéreur/adoptant
+par nom OU email (pas de `profile_id` connu à l'avance, 5 fichiers) →
+recherche par nom bascule vers `user_profiles`, recherche par email garde
+`users.email` (seul champ légitimement d'identité, absent de
+`user_profiles`) puis enchaîne une requête `user_profiles` pour les
+champs de préremplissage (téléphone/adresse/siret). Vérifié en live :
+requêtes de recherche et de lookup par FK renvoient bien les champs à
+jour de `user_profiles` (siret, adresse pro complète, téléphone) pour un
+profil éleveur réel.
+
+### 27.8 — Phase 4 livrée (lot 3) : agenda/planning/employés vers user_profiles
+
+13 fichiers (9 web, 4 app dont `employes_page.dart` à elle seule 8 sites
+d'appel) — toutes des résolutions de nom d'affichage sur un `uid` déjà
+connu (assigné de tâche, employé, client de RDV, participant de cours,
+auteur de mouvement d'inventaire/commentaire), aucune recherche live.
+Web `elevage/agenda/page.tsx` : 6 lookups "mon propre nom" quasi
+identiques dédupliqués en une fonction module-level `resolveDisplayName()`
+réutilisée partout dans le fichier.
+
+Deux bugs préexistants corrigés au passage : `agenda/page.tsx` lisait
+`nom, prenom` sur `users` — colonnes qui n'existent pas (seuls
+`firstname`/`lastname` existent) — le nom du client RDV en attente
+retombait toujours sur "Client" ; `vet_patients_page.dart` lisait
+`client?['isElevage']`/`['isPro']` en camelCase sur un résultat Supabase
+snake_case, branche toujours morte empêchant l'affichage du nom
+d'élevage pour un client éleveur d'un vétérinaire. Les deux sont
+corrigés en même temps que la bascule, comportement visible amélioré.
+Exclu du lot : `pro_zone_page.dart` (lat/lng/rayon d'intervention, pas
+des données de profil affichées).
+
+### 27.9 — Phase 4 livrée (lot 4) : association/particulier/promenades + périmètre réel restant
+
+16 fichiers ciblés (bénévoles, familles d'accueil, groupes communauté,
+promenades, feed particulier, animaux acquis/perdus, badge pro sur
+annonces, journal pension) + 2 trouvés en passant appartenant au même
+motif (`promenade_detail_page.dart`, équivalent Flutter oublié de la
+page web promenades ; `website/src/app/employes/page.tsx`, gestion
+employés pro générique distincte de celle déjà migrée au lot 3).
+
+Cas particulier traité : `association/familles-accueil` (web + app)
+charge la liste et filtre côté client par nom **et email** — `email`
+n'a pas d'équivalent sur `user_profiles`. Requête `user_profiles`
+principale + requête `users.select('uid, email')` fusionnée par uid pour
+garder le filtre email et le préremplissage du formulaire fonctionnels.
+`annonces/page.tsx` : `statut_pro`/`siret` basculent vers `user_profiles`,
+`is_premium` (identité/abonnement) reste sur `users`, 2 requêtes fusionnées.
+
+**Correction importante sur l'ampleur du chantier** : un audit de
+vérification avant ce lot a montré que la liste "lots restants" notée
+plus haut était incomplète. Il reste en réalité ~25-30 fichiers app et
+~15-20 fichiers web non migrés, concentrés dans 4 familles non encore
+traitées :
+- **Annuaire pro / édition de profil** : `pro_profile_edit.dart`,
+  `profil_eleveur_edit.dart` (lecture `banner_url`),
+  `profil_association_edit.dart`, `service_list_page.dart`,
+  `service_detail_page.dart`, pages admin (`pro_list.dart`,
+  `pro_detail.dart`), web `services/page.tsx`, `services/carte/page.tsx`,
+  `services/pro/[uid]/page.tsx`, `admin/page.tsx`.
+- **Annonces (création/détail/feed/carte)** : `create_annonce_page.dart`,
+  `annonce_detail_page.dart`, `annonces_feed_page.dart`,
+  `annonces_map_page.dart`, `create_annonce_asso_page.dart`, web
+  `annonces/[id]/page.tsx`, `annonces/feed/page.tsx`,
+  `association/annonces/creer/page.tsx`.
+- **PetFriends** : `petfriends_page.dart`, `public_profile_page.dart`
+  (a déjà un repli `user_profiles` partiel non utilisé en premier),
+  web `petfriends/page.tsx`.
+- **Annuaire associations/élevages** : `associations_list_page.dart`,
+  `mes_associations_benevole.dart`, web `mes-associations/page.tsx`,
+  `mes-employeurs/page.tsx`.
+
+Plus des lookups isolés (`chip_scanner_service.dart`, `lieu_detail_page.dart`,
+recherches live par nom/email non couvertes dans `education_devis_page.dart`,
+`cession_sheet.dart`, `contrat_reservation.dart`, pages `mes-rdv`/
+`mes-patients`/`mes-animaux` côté web). Périmètre trop large pour une
+session — décision explicite de s'arrêter à ce lot et documenter le
+reste plutôt que de continuer sans cadrage. **Ne pas repartir de zéro** :
+utiliser le pattern déjà établi (bascule `.from('users')` →
+`.from('user_profiles').eq('is_main', true)`, `name_elevage`→`nom`,
+`is_elevage`→`profile_type==='eleveur'`, `profile_picture_url`→
+`avatar_url`) et découper par famille comme ci-dessus.
+
+### 27.10 — Phase 4 livrée (lot 5) : annuaire pro / édition de profil
+
+**Découverte majeure au passage** : `lib/pages/pro/pro_profile_edit.dart`
+(édition du profil PRINCIPAL, pas secondaire) n'écrivait **que** sur
+`users` à la sauvegarde — jamais sur `user_profiles`. Contrairement aux
+trous ponctuels de la Phase 2 (quelques champs manquants), ici c'était
+le flux entier qui ne synchronisait jamais `user_profiles` après le
+premier edit d'un pro sur son profil principal. Corrigé en ajoutant un
+update miroir vers `user_profiles` (`is_main=true`), même mapping que
+la branche profil secondaire déjà correcte du même fichier
+(`rue`→`rue_pro`, `avatar_url`→`profile_picture_url_pro`, etc.). Ce fix
+d'écriture était un préalable obligatoire avant de pouvoir migrer la
+lecture de ce fichier sans afficher de données figées.
+
+Bascule lecture ensuite sur 6 fichiers en lookups directs par uid connu
+(pro_profile_edit.dart branche principale, banner_url de
+profil_eleveur_edit.dart, `_toggleNearMe`/`toggleNearMe` de
+service_list_page.dart et services/carte/page.tsx, service_detail_page.dart
+et services/pro/[uid]/page.tsx en alignant leur branche `users` sur le
+remap déjà présent dans leur branche `user_profiles` voisine, requête
+batch de pro_list.dart avec email scindé sur `users`).
+
+**Hors scope, documenté pour une passe dédiée** : les pages d'annuaire
+qui FUSIONNENT deux sources (`users` + `user_profiles`) avec
+dédoublonnage par uid — `service_list_page.dart` (requête principale),
+`pro_list.dart` (requête A), `website/src/app/services/page.tsx`,
+`services/carte/page.tsx` (requête principale), `admin/page.tsx` (2
+requêtes). Ce ne sont pas des bascules simples : il faut restructurer
+la logique de fusion/dédoublonnage, avec un vrai risque de doublons ou
+de trous si mal fait — certaines de ces fusions (`services/page.tsx`
+notamment) pourraient même devenir du code mort maintenant que chaque
+compte a garanti une ligne `user_profiles` `is_main=true`, mais ça reste
+une décision de conception à valider, pas un simple renommage de champ.
+Également laissés en l'état : les 2 requêtes de repli de
+`profil_association_edit.dart` (email + champs onboarding jamais
+recopiés par conception, et une branche à noms de colonnes suspects qui
+ne fire que pour une association jamais encore sauvegardée).
+
+### 27.11 — Phase 4 livrée (lot 6) : annonces (création/détail/feed/carte)
+
+8 fichiers (5 app, 3 web) — aucun cas de fusion à dédoublonner dans ce
+lot, uniquement des lookups directs par uid connu (seul ou en liste).
+`is_premium` traité comme dans `annonces/page.tsx` (lot précédent) :
+gardé sourcé sur `users` via une requête séparée plutôt que de faire
+confiance à la colonne `user_profiles.is_premium` existante mais non
+retenue comme fiable pour ce champ. Au passage, `annonce_detail_page.dart`
+(`_normalizeUser`) perd les champs jamais consommés en aval et sans
+équivalent `user_profiles` (`is_pro`, `is_dog`, `is_cat`, `dog_breeds`,
+`cat_breeds`, `is_partenaire`) — vérifié par recherche qu'aucun code du
+fichier ne les lit. Bug corrigé au passage dans 2 fichiers (`create_annonce_page.dart`,
+`create_annonce_asso_page.dart`) : le pays de l'annonce était lu sur
+`users.pays_elevage` alors que `pays_pro` est la colonne réellement
+maintenue à jour côté `user_profiles`.
+
+Incohérence préexistante notée mais non traitée (hors scope migration) :
+`website/src/app/annonces/feed/page.tsx` n'a pas l'étape de repli photo/nom
+association que son équivalent Flutter (`annonces_feed_page.dart`) a
+déjà — les annonces association affichent la photo personnelle de
+l'éleveur plutôt que celle de l'association sur le feed web.
+
+### 27.12 — Phase 4 livrée (lot 7) : PetFriends
+
+3 fichiers (2 app, 1 web) — tous des lookups directs par uid connu, un
+seul cas structurel : `public_profile_page.dart` interrogeait `users`
+en source primaire et `user_profiles` seulement en repli (si `users` ne
+renvoyait rien) — inversé, `user_profiles` (`is_main=true`) devient la
+seule source, le repli `users` supprimé (devenu inutile). Le filtre
+`is_elevage`/`is_pro` de la recherche d'amis (colonnes sans équivalent
+direct) remplacé par `.eq('profile_type', 'particulier')`, l'équivalent
+le plus direct pour une fonctionnalité particulier↔particulier.
+
+Incohérence préexistante notée, non corrigée : `website/src/app/petfriends/page.tsx`
+n'a jamais eu ce filtre côté recherche (contrairement à l'app) — un
+compte pro apparaît dans "ajouter un ami" sur le site mais pas dans
+l'app. Même famille que l'incohérence notée au lot 6.
+
+### 27.13 — Phase 4 livrée (lot 8) : annuaire associations/élevages + état réel du chantier
+
+3 fichiers migrés (lookups directs par liste d'uid connue, dérivée de
+`employes`) : `mes_associations_benevole.dart`, `mes-associations/page.tsx`
+(déjà partiellement migré), `mes-employeurs/page.tsx`.
+`associations_list_page.dart` + son équivalent web `associations/page.tsx`
+se sont révélés être — comme au lot 5 — des pages à fusion
+`users`+`user_profiles` avec dédoublonnage par uid, pas une bascule
+simple : ajoutés à la catégorie B (restructuration future), pas traités.
+
+**Audit de vérification fait avant ce lot — l'état réel du chantier est
+plus large que ce que les lots précédents laissaient penser.** Plusieurs
+fichiers de catégories considérées "terminées" ont en fait des lectures
+`users` jamais basculées, jamais identifiées dans l'audit initial de ces
+lots :
+- Messagerie (lot 1) : `chat_profile_page.dart`, `petfriend_chat_page.dart`,
+  `petfriends/chat/[convId]/page.tsx`, `website/src/app/messages/page.tsx`.
+- Agenda (lot 3) : `lib/pages/agenda/agenda_page.dart` (fichier distinct
+  de celui déjà migré).
+- Employés (lot 3) : `website/src/app/association/equipe/page.tsx`.
+
+Plus ~13 lookups simples isolés jamais couverts par aucun lot
+(`chip_scanner_service.dart`, `lieu_detail_page.dart`,
+`portee_form_page.dart`, `pro_clients_page.dart`,
+`animal_fiche_pension_page.dart`, `fiches_pension_page.dart`,
+`registre_pension_page.dart`, `animal_fiche.dart` — partiellement fait —,
+`mes-animaux/[id]/page.tsx`, `ProDashboard.tsx`, `elevages/[id]/page.tsx` —
+jamais aligné sur son équivalent pro `services/pro/[uid]/page.tsx` déjà
+migré au lot 5, `profil/page.tsx` §agrement/capacite/email), et 4 sites
+de recherche live par email sans équivalent `user_profiles`
+(`cession_sheet.dart`, `CessionModal.tsx`, `education_devis_page.dart`,
+`education/devis/page.tsx`) qui nécessitent une conception dédiée (motif
+B des lots précédents).
+
+**Conclusion pour la suite** : le chantier `users`→`user_profiles` en
+lecture n'est pas fini, malgré 8 lots livrés (Phases 1-4). Périmètre
+restant estimé : ~13 lookups simples (bascule directe, motif connu),
+~7 fichiers de "catégories terminées" à vérifier/compléter, 4 sites de
+recherche par email (motif B), et 7 pages à fusion users+user_profiles
+(catégorie B, restructuration de dédoublonnage). Décision prise en fin
+de session : pause sur ce chantier, reprise dans une session dédiée
+plutôt que de continuer à la volée sans cadrage frais.
+
+### 27.14 — Phase 4 livrée (lot 9) : catégories partielles complétées + lookups isolés
+
+15 fichiers migrés couvrant les 3 clusters identifiés au lot 8 :
+messagerie (`chat_profile_page.dart`, `petfriend_chat_page.dart`,
+`petfriends/chat/[convId]/page.tsx`, `messages/page.tsx`), agenda
+(`lib/pages/agenda/agenda_page.dart`, 7 sites dans un seul fichier —
+distinct de celui migré au lot 3), employés
+(`website/src/app/association/equipe/page.tsx`, source primaire + repli
+`user_profiles` fusionnés en une seule requête, comme au lot 7 ; le
+bulk-load-then-filter de `AddPetsMatchModal` basculé sur le même motif
+que `association/benevoles/page.tsx` du lot 4). Plus 9 lookups isolés
+jamais couverts (`chip_scanner_service.dart`, `user_detail_page_feed.dart`,
+`lieu_detail_page.dart`, `portee_form_page.dart`, `pro_clients_page.dart`,
+`registre_pension_page.dart`, `mes-animaux/[id]/page.tsx`,
+`ProDashboard.tsx`, `elevages/[id]/page.tsx`).
+
+Cas particulier : `registre_pension_page.dart` — nom/adresse basculent
+vers `user_profiles`, `email` reste sourcé sur `users` (aucun équivalent
+fiable). `ProDashboard.tsx` : `prenom`/`nom` retirés (colonnes `users`
+inexistantes, toujours `undefined` avant ce fix — **ne pas** les
+remapper vers `user_profiles.nom`, qui désigne le nom d'élevage et non
+un nom de famille). `elevages/[id]/page.tsx` : confirmé en direct que
+tous les champs éleveur (`siret`, `is_premium`, `is_validate`,
+`especes_elevees`) existent bien sur `user_profiles`.
+
+**Explicitement exclu, laissé en l'état** : `animal_fiche_pension_page.dart`
+et `fiches_pension_page.dart` gardent leur repli `users.phone_number`
+intentionnel (contournement d'un ancien bug de placeholder, probablement
+redondant depuis le trigger de la Phase 1, mais pas retiré par prudence).
+
+**Restant après ce lot** : 4 sites de recherche live par email (motif
+nécessitant conception dédiée — `cession_sheet.dart`, `CessionModal.tsx`,
+`education_devis_page.dart`, `education/devis/page.tsx`) et 7 pages à
+fusion users+user_profiles avec dédoublonnage (catégorie B —
+`service_list_page.dart`, `pro_list.dart`, `services/page.tsx`,
+`services/carte/page.tsx`, `admin/page.tsx`, `associations_list_page.dart`,
+`associations/page.tsx`). Chantier de lecture `users`→`user_profiles`
+substantiellement complet pour les lookups simples ; le reste nécessite
+une conception dédiée, pas une bascule mécanique.
+
+### 27.15 — Phase 4 livrée (lot 10) : recherche live par email
+
+4 fichiers (cession d'animal app+web, devis éducateur app+web).
+`elevage/contrat/page.tsx` (déjà migré) confirme le rétrécissement de
+champs nécessaire : `code_iso`/`code_iso_elevage` codés en dur `'+33'`
+(pas de colonne dédiée), adresse élevage détaillée
+(rue/ville/cp/pays_elevage) collapsée sur la colonne combinée unique
+`adresse`, `siret` conservé (colonne réelle).
+
+`cession_sheet.dart`/`CessionModal.tsx` avaient déjà la séparation
+email/nom avec correspondance email **exacte** — comportement conservé
+(pas de passage à `ilike`). `education_devis_page.dart`/`education/devis/page.tsx`
+n'avaient **aucune** séparation (une seule requête `users` avec 3
+conditions `ilike` combinées firstname/lastname/email) — introduit la
+séparation `isEmail`, branche email en `ilike` (sémantique substring
+conservée, différente de la correspondance exacte des 2 autres
+fichiers). Au passage, fusionné le lookup séparé du `profile_id` client
+(auparavant une 2e requête `user_profiles` après sélection) dans la
+même requête de recherche, un aller-retour réseau en moins.
+
+Vérifié en live : recherche par email exact et par email partiel
+résolvent toutes deux le bon uid puis les bons champs `user_profiles`
+sur un compte réel.
+
+**Chantier de lecture `users`→`user_profiles` complet pour tous les
+lookups simples et recherches live.** Seule reste la catégorie B (7
+pages à fusion users+user_profiles avec dédoublonnage par uid,
+restructuration dédiée non traitée cette session).
+
+### 27.16 — Catégorie B terminée : simplification au lieu de restructuration
+
+Avant de commencer, vérifié en base que le backfill de la Phase 3 est
+réellement complet : les 12 comptes `users` ont tous une ligne
+`user_profiles.is_main=true` correspondante, avec `profile_type`/`cat_pro`/
+`statut_pro` cohérents. Conséquence : la fusion `users`+`user_profiles`
+avec dédoublonnage par uid dans les 7 pages catégorie B n'est plus une
+restructuration à concevoir — c'est de la logique morte à supprimer.
+Confirmé avec l'utilisateur avant de lancer les 7 fichiers.
+
+**5 fichiers — simplification mécanique** (suppression de la requête
+`users` + du dédoublonnage, ne garde que `user_profiles`) :
+`service_list_page.dart`, `pro_list.dart` (app), `associations_list_page.dart`
+(app — un fichier `.bak` non-tracké préexistant dans le même dossier,
+antérieur à cette session, laissé intact sans y toucher), `associations/page.tsx`,
+`services/page.tsx`, `services/carte/page.tsx` (web).
+
+**`admin/page.tsx` — cas à part**, découvert en cours de route : plus
+complexe que les 6 autres car `isSecondary` ne sert pas qu'à l'affichage,
+il route aussi les écritures admin (validation/refus/suppression de
+compte/toggle premium) vers `users` ou `user_profiles`. Un mauvais aiguillage
+ici casse le pipeline d'approbation, pas juste l'affichage — reconfirmé
+avec l'utilisateur avant de toucher ce fichier spécifiquement.
+Redéfinition : `isSecondary` devient `!user_profiles.is_main` au lieu de
+"la ligne vient de quelle table" — cette redéfinition preserve tel quel
+tout le sens déjà porté par `isSecondary` dans les 40+ endroits où il est
+lu (badges, filtres, texte de confirmation suppression, clés de cache de
+validation), donc pas de refonte de ces 40+ sites, seulement des fonctions
+de chargement et d'écriture (`loadUsers`, `setStatut`, `mapPrimaryRows`/
+`mapSecondaryRows` fusionnés en `mapProfileRows`, `loadDossiers`,
+`approveDossier`, `refuseDossier`, `reconsiderDossier`, `runAutoValidate`).
+`is_premium` et `email` restent lus/écrits sur `users` (aucun équivalent
+fiable sur `user_profiles`, cohérent avec le pattern déjà établi lot 4).
+Effet de bord positif : `loadDossiers` n'avait auparavant aucune requête
+pour les profils secondaires refusés (`refusedDossiers` ne couvrait que
+`users`) — la requête `user_profiles` unifiée couvre maintenant aussi ce
+cas, corrigeant un trou préexistant sans complexité ajoutée.
+
+Vérifié : `flutter analyze` (3 fichiers app, 0 nouveau problème),
+`tsc --noEmit` + `eslint` (4 fichiers web, même nombre exact de problèmes
+avant/après stash), `next build` production complet sans erreur.
+
+**Chantier `users`→`user_profiles` en lecture entièrement terminé,
+catégorie B incluse.**
+
+---
+
+## 28. Module Petsitter / Promeneur (`garde`) — Spec initiale (session 2026-07-10)
+
+> Objectif exprimé : donner aux profils Pet sitter / Promeneur un socle de gestion
+> opérationnelle aussi complet que la pension (§19), inspiré du produit "Kookie Sitter".
+> Pet sitter et promeneur sont traités **ensemble** (l'utilisateur les veut "en parallèle").
+
+### 28.1 — Décision d'architecture
+
+`profile_type = 'garde'` existe déjà (`add_profile_page.dart`) et couvre les deux
+sous-professions "Pet sitter" / "Promeneur de chiens" via `sub_profession`. Il
+n'y a **pas** de type `'petsitter'` séparé dans le flux d'inscription réel — seul
+un littéral legacy `'petsitter'` traîne dans les sets `proTypes` (`main.dart` et
+~6 fichiers dupliqués) pour la compat `isPro`. **Décision : construire le module
+sur `catPro == 'garde'`**, pas sur un nouveau type `'petsitter'`, pour rester
+cohérent avec l'inscription existante. Aucun profil `'petsitter'` réel n'existe
+en base à migrer.
+
+Par ailleurs, `'sante'` couvre déjà Ostéopathe/Kinésithérapeute (sous-professions),
+et `'marechal_ferrant'` est déjà un type à part entière — ces deux-là ne sont donc
+pas des types "manquants", juste des types sans build-out opérationnel façon
+pension pour l'instant (repoussé, hors scope immédiat). **`'taxi'`** en revanche
+n'existe pas du tout (ni type, ni sous-profession) — à créer si/quand ce chantier
+est repris.
+
+### 28.2 — Fonctionnalités demandées (traduites de la description Kookie Sitter)
+
+- **Fiches client/animal centralisées** : infos client + animaux accessibles
+  app + web, historique des visites/promenades.
+- **Événements planifiés** : accès agenda, démarrer/terminer une prestation,
+  vue équipe des événements à venir.
+- **Devis/contrats/factures automatiques** avec envoi email automatique
+  (Premium/Team uniquement, comme chez Kookie Sitter).
+- **Gestion des clés** : liste de clés par client, description + traçabilité.
+- **Rapports post-visite** : facultatif, avec photos, envoi auto par email
+  (SMS en option — **non disponible**, Twilio jamais implémenté sur ce projet,
+  cf. précédent similaire noté §19.4).
+- **Communication entre intervenants** (équipe partagée).
+- **Suivi GPS + ordre d'itinéraire** : carte des prestations du jour, tournée
+  réordonnable.
+- **Services récurrents** : modèles de planification flexible (ex. 5j/semaine).
+- **Forfaits** : lots de prestations pré-achetées à tarif préférentiel.
+- **Tarifs clients personnalisés** : prix différents par client pour un même service.
+- **Créneaux horaires de planification** configurables.
+- **Gestion du personnel** : plusieurs intervenants, services/localisations/dates
+  assignables individuellement.
+- **Paiement en ligne des prestations** : **explicitement V2** par l'utilisateur —
+  pour tous les prestataires qui le souhaitent (pas juste petsitter), sinon saisie
+  manuelle pour la comptabilité (éducateur, petsitter, pension inclus). Cohérent
+  avec le "paiement en ligne (lien email/SMS)" déjà noté V2 pour la pension (§19.2).
+
+### 28.3 — Réutilisation attendue (déjà générique, pas de nouveau code)
+
+Inventaire, Employés, Protocoles/Tâches, Agenda/RDV, Documents/contrats
+signature électronique sont déjà génériques par `pro_profile_id` — même
+traitement que la pension (§19.1, "parité de gestion"). Reste réellement
+spécifique à construire : logements→tournées/itinéraire, gestion des clés,
+forfaits, tarifs personnalisés, services récurrents, config plan/abonnement
+`garde` (n'existe pas encore dans `plan_service.dart`/`use-plan.ts`, seuls
+`pension` et `education` ont un config aujourd'hui).
+
+### 28.4 — Phase 1 livrée (session 2026-07-10) : socle
+
+**Découverte en cours de route** : `app_nav_drawer.dart` (drawer secondaire
+utilisé sur les pages d'annuaire type `service_list_page.dart`) n'est **pas**
+la navigation réelle d'un compte pro — tout compte `isPro` (garde inclus)
+route vers `eleveur_nav.dart` via `bottom_nav.dart::_asElevage`. Le lien
+`garde → RegistrePensionPage` s'y trouvait déjà, sémantiquement faux (registre
+de check-in/check-out en logements, pas le modèle événementiel du petsitter)
+— corrigé au passage (`pension` seul sur ce lien désormais).
+
+- **Abonnement `garde`** : `GardePlanConfig` + `getGardeConfig`/
+  `getGardePlansLive`/`getGardePlanCode` dans `plan_service.dart` (miroir
+  exact de `EducationPlanConfig`, sans les champs logements propres à la
+  pension). 3 paliers mêmes prix que pension/éducateur. App :
+  `garde_abonnement_page.dart`. Web : `GardePlanConfig`/`usePlanGarde` dans
+  `use-plan.ts`, `useGardeAccess.ts` (miroir `usePensionAccess`),
+  `/garde/abonnement` (miroir exact de `/pension/abonnement`, checkout
+  Stripe déjà générique par `profil_type` — aucune adaptation backend
+  nécessaire, confirmé en lisant `api/stripe/checkout/route.ts`).
+- **Navigation** (`eleveur_nav.dart`) : bloc `catPro == 'garde'` ajouté
+  (Registre visites, Inventaire, Protocoles/Tâches, Mes Employés, Mon
+  abonnement — gating `_gardePlanCode` comme pension). Web : `MENU_GARDE`
+  dans `Header.tsx` (miroir `MENU_EDUCATION`), `effectiveIsGarde` ajouté à
+  la résolution de menu.
+- **Registre visites** (nouveau, remplace le lien pension erroné) : le
+  modèle petsitter est événementiel (chaque visite = une ligne `rdv`
+  existante, pas de nouvelle table). App : `registre_visites_page.dart` —
+  liste À venir/Passées scopée par `pro_profile_id`, bouton "Marquer
+  terminée" (`rdv.statut = 'termine'`, comportement déjà neutre côté
+  `pro_agenda.dart::_updateStatut`, aucune notification collatérale à
+  reproduire). Web : `/garde/registre` (même logique).
+- **Rapport de visite** : réutilise la table `pension_updates` telle
+  quelle (`animal_id`, `pro_uid`, `photo_url`, `note` — `pension_entree_id`
+  confirmé nullable par test d'insertion live) plutôt que d'en créer une
+  nouvelle identique. Bouton sur un événement dans Registre visites → photo
+  optionnelle + note → notification in-app (`type: 'visite_rapport'`),
+  même schéma que `education_rapport` (§20.1). **Effet de bord gratuit côté
+  web** : le composant `PensionJournal.tsx` était déjà entièrement
+  générique (prend `proUid` en prop, bascule lecture/écriture) — réutilisé
+  tel quel dans `/garde/registre`, aucun nouveau composant de saisie créé.
+  **Limite connue** : le bouton propriétaire "Nouvelles de la pension" sur
+  `mes-animaux/[id]/page.tsx` affichera aussi les rapports de visite garde
+  (même table, pas de colonne discriminante) — label pas encore adapté,
+  cosmétique uniquement, pas de fuite de données (l'affichage reste
+  scopé par `animal_id`, donc uniquement visible par le bon propriétaire).
+- **Dashboard** : `eleveur_home.dart` — bloc `catPro == 'garde'` (RDV
+  aujourd'hui, Visites ce mois, Statut, tous cliquables — miroir pension).
+  Web `ProDashboard.tsx` : déjà suffisamment générique (patients/RDV/
+  `TYPE_LABEL['garde']` déjà présents avant cette session), aucun changement
+  nécessaire.
+
+Vérifié : `flutter analyze` sur les fichiers app touchés/créés (0 nouveau
+problème, comparaison avant/après via `git stash`), `tsc --noEmit` +
+`eslint` sur les fichiers web (même compte d'erreurs `tsc` avant/après ;
+`eslint` +1 attendu — `usePlanGarde` hérite du même avertissement
+`react-hooks/set-state-in-effect` déjà toléré sur `usePensionPlan`, pas une
+régression nouvelle), `next build` production complet réussi (routes
+`/garde/abonnement` et `/garde/registre` confirmées dans la sortie de build).
+
+**Reste pour les phases suivantes** (non commencé) : devis/contrats/factures
+automatiques avec envoi email, gestion des clés, suivi GPS + tournée
+réordonnable, services récurrents, forfaits, tarifs clients personnalisés,
+créneaux horaires configurables dédiés, paiement en ligne des prestations
+(V2 explicite). Onboarding dédié (`onboarding_garde.dart` façon
+`onboarding_pension.dart`) également non traité — profils `garde` créés via
+le flux d'inscription générique existant (`add_profile_page.dart`).
+
+### 28.5 — ACACED manquant à l'inscription et à la validation, corrigé
+
+Signalé par l'utilisateur après coup : le formulaire d'inscription
+(`add_profile_page.dart`) n'avait **aucun champ ACACED pour `garde`** (seul
+`education` l'avait, obligatoire) — le numéro n'était même pas envoyé en
+base pour un profil garde. Pire, **aucune page n'avait d'upload du
+justificatif ACACED pour un type pro** (`pro_profile_edit.dart`/web
+`SecondaryProEdit`) — seul l'éleveur avait cette UI. `education` avait donc
+déjà ce trou en prod avant cette session (champ obligatoire à l'inscription,
+mais nulle part où uploader le document ensuite). Obligation légale (Code
+rural, art. L214-6-1), pas une simple recommandation — corrigé pour les
+deux types d'un coup plutôt que de dupliquer le trou pour garde :
+
+- **Inscription** (`add_profile_page.dart`) : champ ACACED désormais
+  obligatoire pour `garde` en plus de `education` (même traitement,
+  `data['acaced_numero']` envoyé pour les deux).
+- **Édition + upload du justificatif** — nouveau, n'existait pour aucun
+  type pro avant cette session : section ACACED (numéro + upload
+  image/PDF) ajoutée dans `pro_profile_edit.dart` (app) gated
+  `catPro == 'garde' || catPro == 'education'`, écrite dans les 3 blocs
+  d'écriture existants (secondaire→`user_profiles`, principal→`users`,
+  principal→`user_profiles` sync). Web : même section dans
+  `SecondaryProEdit` (`profil/page.tsx`) — **scope limité aux profils
+  secondaires** (paramétré par `profileId`), le cas profil pro *primaire*
+  côté web n'a pas été audité/couvert par ce correctif, à vérifier si des
+  comptes garde/éducateur primaires existent.
+  Écrit sur les deux colonnes `acaced`/`acaced_numero` (doublon déjà
+  présent en base, `admin/page.tsx` lit `acaced`, l'inscription écrit
+  `acaced_numero` — pas unifié, juste rendu cohérent sur les deux).
+- Pas de reprise de la piste avancée de l'éleveur (dates d'obtention/
+  renouvellement, statut d'expiration coloré) — numéro + justificatif
+  suffisent pour que l'admin puisse valider, le suivi d'expiration reste
+  pour une itération ultérieure si demandé.
+
+Vérifié : `flutter analyze` (0 nouveau problème sur les 2 fichiers app),
+`tsc --noEmit` + `eslint` sur `profil/page.tsx` (0 problème avant/après),
+`next build` production complet réussi.
 
 ---
 

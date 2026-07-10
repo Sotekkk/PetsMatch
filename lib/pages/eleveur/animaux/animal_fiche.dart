@@ -6175,13 +6175,25 @@ Future<void> _scheduleRappelAgenda({
     } catch (_) {}
     // Stocke à 08h00 UTC pour affichage correct en France (évite minuit UTC = 02h00 local)
     final dateAt8 = DateTime(dateRappel.year, dateRappel.month, dateRappel.day, 8, 0).toUtc();
+    // Ne jamais écrire une chaîne vide : les vues agenda filtrent par
+    // pro_profile_id = activeProfileId, une chaîne vide ne matche jamais
+    // rien et rend le rappel invisible partout.
+    var proProfileId = User_Info.activeProfileId;
+    if (proProfileId.isEmpty) {
+      try {
+        final row = await Supabase.instance.client.from('user_profiles')
+            .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+        proProfileId = row?['id']?.toString() ?? '';
+      } catch (_) {}
+    }
     await Supabase.instance.client.from('agenda_events').insert({
       'uid':            uid,
       'titre':          finalTitre,
       'type':           'medication',
       'date_debut':     dateAt8.toIso8601String(),
       'animal_id':      int.tryParse(animalId),
-      'pro_profile_id': User_Info.activeProfileId,
+      'pro_profile_id': proProfileId.isNotEmpty ? proProfileId : null,
+      if (proProfileId.isNotEmpty) 'profile_id': proProfileId,
     });
   } catch (_) {}
 }

@@ -294,22 +294,25 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
       if (uids.isNotEmpty) {
         try {
           final users = await Supabase.instance.client
-              .from('users')
-              .select('uid, profile_picture_url_elevage, profile_picture_url, statut_pro, siret, is_premium')
-              .inFilter('uid', uids);
+              .from('user_profiles')
+              .select('uid, profile_picture_url_pro, avatar_url, statut_pro, siret')
+              .inFilter('uid', uids).eq('is_main', true);
+          final premiumRows = await Supabase.instance.client
+              .from('users').select('uid, is_premium').inFilter('uid', uids);
+          final premiumByUid = { for (final u in List<Map<String, dynamic>>.from(premiumRows)) u['uid'] as String: u['is_premium'] == true };
           final photoMap    = <String, String>{};
           final verifiedMap = <String, bool>{};
           final premiumMap  = <String, bool>{};
           for (final u in List<Map<String, dynamic>>.from(users)) {
             final id = u['uid'] as String?;
             if (id == null) continue;
-            final ph = (u['profile_picture_url_elevage'] as String?)?.isNotEmpty == true
-                ? u['profile_picture_url_elevage'] as String
-                : (u['profile_picture_url'] as String?) ?? '';
+            final ph = (u['profile_picture_url_pro'] as String?)?.isNotEmpty == true
+                ? u['profile_picture_url_pro'] as String
+                : (u['avatar_url'] as String?) ?? '';
             if (ph.isNotEmpty) photoMap[id] = ph;
             final siret = u['siret']?.toString() ?? '';
             verifiedMap[id] = u['statut_pro'] == 'actif' && siret.isNotEmpty;
-            premiumMap[id]  = u['is_premium'] == true;
+            premiumMap[id]  = premiumByUid[id] ?? false;
           }
           items = items.map((i) {
             final uid = i.uidEleveur;

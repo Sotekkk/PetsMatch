@@ -223,70 +223,74 @@ export default function AdminPage() {
       const fireMap: Record<string, FireUser> = {};
       snap.docs.forEach(d => { fireMap[d.id] = { uid: d.id, ...d.data() as object } as FireUser; });
 
-      const { data: primaryRows } = await supabase.from('users').select(
-        'uid, cat_pro, statut_pro, rayon_intervention, especes_acceptees, certifications, name_elevage, profession_pro, profile_picture_url_elevage, profile_picture_url, firstname, lastname, email, is_premium, siret'
-      );
-      const { data: secondaryRows } = await supabase.from('user_profiles').select(
-        'id, uid, profile_type, cat_pro, statut_pro, rayon_intervention, especes_acceptees, certifications, name_elevage, profession_pro, avatar_url'
+      // is_premium/email n'ont pas d'équivalent fiable sur user_profiles — seuls
+      // champs encore lus depuis users (comportement déjà établi ailleurs dans
+      // l'admin : identité/abonnement reste sur users).
+      const { data: usersMeta } = await supabase.from('users').select('uid, email, is_premium');
+      const usersMetaByUid = new Map((usersMeta ?? []).map(u => [u.uid, u]));
+
+      const { data: profileRows } = await supabase.from('user_profiles').select(
+        'id, uid, is_main, profile_type, cat_pro, statut_pro, rayon_intervention, especes_acceptees, certifications, nom, firstname, lastname, profession_pro, avatar_url, profile_picture_url_pro, siret'
       ).not('profile_type', 'is', null);
 
       const allEntries: ProfileEntry[] = [];
 
+      const mainRowByUid = new Map((profileRows ?? []).filter(r => r.is_main).map(r => [r.uid, r]));
+
       snap.docs.forEach(d => {
         const fire = fireMap[d.id];
-        const supaRow = (primaryRows ?? []).find(r => r.uid === d.id) ?? {};
+        const meta = usersMetaByUid.get(d.id);
+        const row = mainRowByUid.get(d.id);
         allEntries.push({
-          uid: d.id, isSecondary: false,
-          firstName: fire.firstname ?? '', lastName: fire.lastname ?? '', email: fire.email ?? '',
-          photoUrl: (supaRow as Record<string, string>)['profile_picture_url_elevage'] ?? fire.profilePictureUrl ?? '',
-          catPro: (supaRow as Record<string, string>)['cat_pro'] ?? '',
-          statutPro: (supaRow as Record<string, string>)['statut_pro'] ?? 'actif',
-          nameElevage: (supaRow as Record<string, string>)['name_elevage'] ?? '',
-          professionPro: (supaRow as Record<string, string>)['profession_pro'] ?? '',
-          especesAcceptees: ((supaRow as Record<string, unknown>)['especes_acceptees'] as string[]) ?? [],
-          certifications: ((supaRow as Record<string, unknown>)['certifications'] as { nom?: string; organisme?: string }[]) ?? [],
-          rayonIntervention: (supaRow as Record<string, number>)['rayon_intervention'],
+          uid: d.id, isSecondary: false, profileTableId: row?.id,
+          firstName: fire.firstname ?? '', lastName: fire.lastname ?? '', email: fire.email ?? meta?.email ?? '',
+          photoUrl: row?.profile_picture_url_pro ?? row?.avatar_url ?? fire.profilePictureUrl ?? '',
+          catPro: row?.profile_type ?? row?.cat_pro ?? '',
+          statutPro: row?.statut_pro ?? 'actif',
+          nameElevage: row?.nom ?? '',
+          professionPro: row?.profession_pro ?? '',
+          especesAcceptees: (row?.especes_acceptees as string[]) ?? [],
+          certifications: (row?.certifications as { nom?: string; organisme?: string }[]) ?? [],
+          rayonIntervention: row?.rayon_intervention,
           isAdmin: fire.isAdmin, isElevage: fire.isElevage,
-          isPremium: (supaRow as Record<string, boolean>)['is_premium'] ?? false,
-          siret: (supaRow as Record<string, string>)['siret'] ?? '',
+          isPremium: meta?.is_premium ?? false,
+          siret: row?.siret ?? '',
         });
       });
 
-      // Users who registered via website (Supabase only, no Firestore doc)
-      for (const row of (primaryRows ?? [])) {
-        const uid = (row as Record<string, unknown>)['uid'] as string;
-        if (fireMap[uid]) continue; // already added above
-        const r = row as Record<string, unknown>;
+      // Comptes inscrits via le site web (Supabase uniquement, pas de doc Firestore)
+      for (const [uid, row] of mainRowByUid) {
+        if (fireMap[uid]) continue; // déjà ajouté ci-dessus
+        const meta = usersMetaByUid.get(uid);
         allEntries.push({
-          uid, isSecondary: false,
-          firstName: (r['firstname'] as string) ?? '',
-          lastName:  (r['lastname']  as string) ?? '',
-          email:     (r['email']     as string) ?? '',
-          photoUrl:  (r['profile_picture_url'] as string) ?? '',
-          catPro:    (r['cat_pro']   as string) ?? '',
-          statutPro: (r['statut_pro'] as string) ?? 'actif',
-          nameElevage:    (r['name_elevage']    as string) ?? '',
-          professionPro:  (r['profession_pro']  as string) ?? '',
-          especesAcceptees: (r['especes_acceptees'] as string[]) ?? [],
-          certifications:   (r['certifications'] as { nom?: string; organisme?: string }[]) ?? [],
-          rayonIntervention: r['rayon_intervention'] as number | undefined,
+          uid, isSecondary: false, profileTableId: row.id,
+          firstName: (row.firstname as string) ?? '',
+          lastName:  (row.lastname  as string) ?? '',
+          email:     meta?.email ?? '',
+          photoUrl:  row.profile_picture_url_pro ?? row.avatar_url ?? '',
+          catPro:    row.profile_type ?? row.cat_pro ?? '',
+          statutPro: row.statut_pro ?? 'actif',
+          nameElevage:    row.nom ?? '',
+          professionPro:  row.profession_pro ?? '',
+          especesAcceptees: (row.especes_acceptees as string[]) ?? [],
+          certifications:   (row.certifications as { nom?: string; organisme?: string }[]) ?? [],
+          rayonIntervention: row.rayon_intervention as number | undefined,
           isAdmin:   false,
-          isElevage: (r['is_elevage'] as boolean) ?? false,
-          isPremium: (r['is_premium'] as boolean) ?? false,
-          siret:     (r['siret'] as string) ?? '',
+          isElevage: row.profile_type === 'eleveur',
+          isPremium: meta?.is_premium ?? false,
+          siret:     row.siret ?? '',
         });
       }
 
-      for (const row of (secondaryRows ?? [])) {
+      for (const row of (profileRows ?? [])) {
+        if (row.is_main) continue; // déjà couvert ci-dessus
         const fire = fireMap[row.uid] ?? {};
-        const existsPrimary = allEntries.some(e => !e.isSecondary && e.uid === row.uid && e.catPro === (row.profile_type ?? row.cat_pro));
-        if (existsPrimary) continue;
         allEntries.push({
           uid: row.uid, isSecondary: true, profileTableId: row.id,
           firstName: (fire as FireUser).firstname ?? '', lastName: (fire as FireUser).lastname ?? '',
           email: (fire as FireUser).email ?? '', photoUrl: row.avatar_url ?? (fire as FireUser).profilePictureUrl ?? '',
           catPro: row.profile_type ?? row.cat_pro ?? '', statutPro: row.statut_pro ?? 'en_attente',
-          nameElevage: row.name_elevage ?? '', professionPro: row.profession_pro ?? '',
+          nameElevage: row.nom ?? '', professionPro: row.profession_pro ?? '',
           especesAcceptees: (row.especes_acceptees as string[]) ?? [],
           certifications: (row.certifications as { nom?: string; organisme?: string }[]) ?? [],
           rayonIntervention: row.rayon_intervention,
@@ -305,13 +309,11 @@ export default function AdminPage() {
   }, []);
 
   async function setStatut(entry: ProfileEntry, statut: string) {
-    if (entry.isSecondary && entry.profileTableId) {
+    if (entry.profileTableId) {
       await supabase.from('user_profiles').update({ statut_pro: statut }).eq('id', entry.profileTableId);
-    } else {
-      await supabase.from('users').update({ statut_pro: statut }).eq('uid', entry.uid);
     }
     setEntries(prev => prev.map(e => {
-      if (entry.isSecondary ? e.profileTableId === entry.profileTableId : (!e.isSecondary && e.uid === entry.uid))
+      if (e.profileTableId === entry.profileTableId && e.uid === entry.uid)
         return { ...e, statutPro: statut };
       return e;
     }));
@@ -349,34 +351,11 @@ export default function AdminPage() {
   }
 
   // ── Dossiers ─────────────────────────────────────────────────────────────────
-  function mapPrimaryRows(rows: Record<string, unknown>[]): DossierEntry[] {
-    return rows.map((r) => ({
-      uid:            r['uid'] as string,
-      firstname:      (r['firstname'] as string) ?? '',
-      lastname:       (r['lastname'] as string) ?? '',
-      email:          (r['email'] as string) ?? '',
-      siret:          (r['siret'] as string) ?? null,
-      kbisUrl:        (r['kbis_url'] as string) ?? null,
-      acacedDocUrl:   (r['acaced_doc_url'] as string) ?? null,
-      acaced:         (r['acaced'] as string) ?? null,
-      catPro:         (r['cat_pro'] as string) ?? null,
-      professionPro:  (r['profession_pro'] as string) ?? null,
-      certifications: (r['certifications'] as DossierEntry['certifications']) ?? null,
-      isElevage:      (r['is_elevage'] as boolean) ?? false,
-      isPro:          (r['is_pro'] as boolean) ?? false,
-      nameElevage:    (r['name_elevage'] as string) ?? null,
-      createdAt:      (r['created_at'] as string) ?? null,
-      rejectionReason:(r['rejection_reason'] as string) ?? null,
-      isSecondary:    false,
-    }));
-  }
-
-  function mapSecondaryRows(rows: Record<string, unknown>[], fireMap: Record<string, FireUser>): DossierEntry[] {
+  function mapProfileRows(rows: Record<string, unknown>[], fireMap: Record<string, FireUser>): DossierEntry[] {
     return rows.map((r) => {
       const fire = fireMap[r['uid'] as string] ?? {};
       const ptype = (r['profile_type'] as string) ?? '';
-      // nom peut être dans `nom` (association) ou `name_elevage` (éleveur)
-      const nomElevage = (r['nom'] as string) ?? (r['name_elevage'] as string) ?? null;
+      const isMain = (r['is_main'] as boolean) ?? false;
       return {
         uid:            r['uid'] as string,
         profileTableId: r['id'] as string,
@@ -392,10 +371,10 @@ export default function AdminPage() {
         certifications: (r['certifications'] as DossierEntry['certifications']) ?? null,
         isElevage:      ptype === 'eleveur',
         isPro:          ptype !== 'particulier',
-        nameElevage:    nomElevage,
+        nameElevage:    (r['nom'] as string) ?? null,
         createdAt:      (r['created_at'] as string) ?? null,
         rejectionReason:(r['rejection_reason'] as string) ?? null,
-        isSecondary:    true,
+        isSecondary:    !isMain,
       };
     });
   }
@@ -403,65 +382,57 @@ export default function AdminPage() {
   const loadDossiers = useCallback(async () => {
     setDossiersLoading(true);
     try {
+      const dossierCols = 'id, uid, is_main, profile_type, cat_pro, profession_pro, certifications, nom, siret, rna, firstname, lastname, kbis_url, acaced_doc_url, acaced, rejection_reason, created_at, is_validate, statut_pro';
       const [
-        { data: pendingPrimary, error: err1 },
-        { data: pendingSecondary, error: err2 },
-        { data: refusedPrimary, error: err3 },
+        { data: pending, error: err1 },
+        { data: refused, error: err2 },
       ] = await Promise.all([
         supabase
-          .from('users')
-          .select('uid, firstname, lastname, email, siret, kbis_url, acaced_doc_url, acaced, cat_pro, profession_pro, certifications, is_elevage, is_pro, name_elevage, created_at, rejection_reason')
-          .eq('statut_pro', 'en_attente')
-          .order('created_at', { ascending: true }),
-        supabase
           .from('user_profiles')
-          .select('id, uid, profile_type, cat_pro, profession_pro, certifications, nom, siret, rna, firstname, lastname, kbis_url, acaced_doc_url, acaced, rejection_reason, created_at, is_validate, statut_pro')
+          .select(dossierCols)
           .not('profile_type', 'is', null)
           .neq('profile_type', 'particulier')
           .not('is_validate', 'is', true)
           .not('statut_pro', 'eq', 'refuse')
           .order('created_at', { ascending: true }),
         supabase
-          .from('users')
-          .select('uid, firstname, lastname, email, siret, kbis_url, acaced_doc_url, acaced, cat_pro, profession_pro, certifications, is_elevage, is_pro, name_elevage, created_at, rejection_reason')
+          .from('user_profiles')
+          .select(dossierCols)
+          .not('profile_type', 'is', null)
+          .neq('profile_type', 'particulier')
           .eq('statut_pro', 'refuse')
           .order('created_at', { ascending: false }),
       ]);
 
-      if (err1) console.error('[dossiers] users pending:', err1.message);
-      if (err2) console.error('[dossiers] user_profiles pending:', err2.message);
-      if (err3) console.error('[dossiers] users refused:', err3.message);
+      if (err1) console.error('[dossiers] user_profiles pending:', err1.message);
+      if (err2) console.error('[dossiers] user_profiles refused:', err2.message);
 
       const snap = await getDocs(collection(db, 'users'));
       const fireMap: Record<string, FireUser> = {};
       snap.docs.forEach(d => { fireMap[d.id] = { uid: d.id, ...d.data() as object } as FireUser; });
 
-      setDossiers([
-        ...mapPrimaryRows((pendingPrimary ?? []) as Record<string, unknown>[]),
-        ...mapSecondaryRows((pendingSecondary ?? []) as Record<string, unknown>[], fireMap),
-      ]);
-      setRefusedDossiers(mapPrimaryRows((refusedPrimary ?? []) as Record<string, unknown>[]));
+      setDossiers(mapProfileRows((pending ?? []) as Record<string, unknown>[], fireMap));
+      setRefusedDossiers(mapProfileRows((refused ?? []) as Record<string, unknown>[], fireMap));
     } finally {
       setDossiersLoading(false);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function approveDossier(d: DossierEntry) {
-    const saveKey = d.isSecondary ? (d.profileTableId ?? d.uid) : d.uid;
+    const saveKey = d.profileTableId ?? d.uid;
     setDossierSaving(saveKey);
     try {
-      if (d.isSecondary && d.profileTableId) {
+      if (d.profileTableId) {
         await supabase.from('user_profiles').update({ statut_pro: 'actif', is_validate: true, rejection_reason: null }).eq('id', d.profileTableId);
-      } else {
-        await supabase.from('users').update({
-          is_validate: true, statut_pro: 'actif', rejection_reason: null,
-        }).eq('uid', d.uid);
+      }
+      if (!d.isSecondary) {
+        // Vérification de compte (Firestore) — liée au profil principal uniquement.
         await updateDoc(doc(db, 'users', d.uid), { isValidate: true, verificationStatus: 'approved' });
       }
       const profileType = d.isElevage ? 'eleveur' : (d.catPro ?? '');
       await notifyProfileValidated(d.uid, profileType);
       setDossiers(prev => prev.filter(x =>
-        d.isSecondary ? x.profileTableId !== d.profileTableId : (x.isSecondary || x.uid !== d.uid)
+        x.profileTableId !== d.profileTableId
       ));
       setStats(prev => prev ? { ...prev, profilsEnAttente: Math.max(0, prev.profilsEnAttente - 1) } : prev);
       setSelectedDossier(null);
@@ -471,15 +442,15 @@ export default function AdminPage() {
   }
 
   async function refuseDossier(d: DossierEntry, motif: string) {
-    const saveKey = d.isSecondary ? (d.profileTableId ?? d.uid) : d.uid;
+    const saveKey = d.profileTableId ?? d.uid;
     setDossierSaving(saveKey);
     try {
-      if (d.isSecondary && d.profileTableId) {
-        await supabase.from('user_profiles').update({ statut_pro: 'refuse' }).eq('id', d.profileTableId);
-      } else {
-        await supabase.from('users').update({
-          is_validate: false, statut_pro: 'refuse', rejection_reason: motif.trim() || null,
-        }).eq('uid', d.uid);
+      if (d.profileTableId) {
+        await supabase.from('user_profiles').update({
+          statut_pro: 'refuse', is_validate: false, rejection_reason: motif.trim() || null,
+        }).eq('id', d.profileTableId);
+      }
+      if (!d.isSecondary) {
         await updateDoc(doc(db, 'users', d.uid), { isValidate: false, verificationStatus: 'rejected' });
       }
       const profileType = d.isElevage ? 'eleveur' : (d.catPro ?? '');
@@ -499,7 +470,7 @@ export default function AdminPage() {
         profileType,
       });
       setDossiers(prev => prev.filter(x =>
-        d.isSecondary ? x.profileTableId !== d.profileTableId : (x.isSecondary || x.uid !== d.uid)
+        x.profileTableId !== d.profileTableId
       ));
       setStats(prev => prev ? { ...prev, profilsEnAttente: Math.max(0, prev.profilsEnAttente - 1) } : prev);
       setSelectedDossier(null);
@@ -521,7 +492,7 @@ export default function AdminPage() {
           // Un compte peut avoir plusieurs profils user_profiles (éleveur, pension,
           // éducateur…) — sans profileId, l'API renvoyait le premier profil trouvé
           // pour ce uid (ex : SIRET de l'élevage) au lieu du profil réellement testé.
-          ...(d.isSecondary && d.profileTableId ? { profileId: d.profileTableId } : { uid: d.uid }),
+          ...(d.profileTableId ? { profileId: d.profileTableId } : { uid: d.uid }),
           adminUid: user?.uid,
         }),
       });
@@ -532,7 +503,7 @@ export default function AdminPage() {
         if (result.autoValidated) {
           // Retirer du dossier en attente
           setDossiers(prev => prev.filter(x =>
-            d.isSecondary ? x.profileTableId !== d.profileTableId : (x.isSecondary || x.uid !== d.uid)
+            x.profileTableId !== d.profileTableId
           ));
           setStats(prev => prev ? { ...prev, profilsEnAttente: Math.max(0, prev.profilsEnAttente - 1) } : prev);
           if (selectedDossier?.uid === d.uid) setSelectedDossier(null);
@@ -546,14 +517,18 @@ export default function AdminPage() {
   }
 
   async function reconsiderDossier(d: DossierEntry) {
-    const saveKey = d.isSecondary ? (d.profileTableId ?? d.uid) : d.uid;
+    const saveKey = d.profileTableId ?? d.uid;
     setDossierSaving(saveKey);
     try {
-      await supabase.from('users').update({
-        statut_pro: 'en_attente', rejection_reason: null,
-      }).eq('uid', d.uid);
-      await updateDoc(doc(db, 'users', d.uid), { verificationStatus: 'pending' });
-      setRefusedDossiers(prev => prev.filter(x => x.uid !== d.uid));
+      if (d.profileTableId) {
+        await supabase.from('user_profiles').update({
+          statut_pro: 'en_attente', rejection_reason: null,
+        }).eq('id', d.profileTableId);
+      }
+      if (!d.isSecondary) {
+        await updateDoc(doc(db, 'users', d.uid), { verificationStatus: 'pending' });
+      }
+      setRefusedDossiers(prev => prev.filter(x => x.profileTableId !== d.profileTableId));
       setStats(prev => prev ? { ...prev, profilsEnAttente: prev.profilsEnAttente + 1 } : prev);
       setSelectedDossier(null);
     } finally {

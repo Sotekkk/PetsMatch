@@ -16,6 +16,9 @@ interface RdvInfo {
   duree_minutes?: number | null;
   motif?: string | null;
   client_uid?: string | null;
+  lieu?: string | null;
+  lieu_lat?: number | null;
+  lieu_lng?: number | null;
 }
 
 interface AgendaEvent {
@@ -413,7 +416,7 @@ export default function AgendaPage() {
     const rdvIds = list.map(e => e.rdv_id).filter(Boolean) as string[];
     if (rdvIds.length > 0) {
       const { data: rdvsData } = await supabase
-        .from('rdv').select('id, pro_uid, statut, animal_id, duree_minutes, motif, client_uid').in('id', rdvIds);
+        .from('rdv').select('id, pro_uid, statut, animal_id, duree_minutes, motif, client_uid, lieu, lieu_lat, lieu_lng').in('id', rdvIds);
       const rdvMap: Record<string, RdvInfo> = {};
       for (const r of (rdvsData ?? [])) {
         const rec = r as RdvInfo;
@@ -457,13 +460,13 @@ export default function AgendaPage() {
     }
     if (taskUids.size > 0) {
       const { data: usersData } = await supabase
-        .from('users')
-        .select('uid,firstname,lastname,name_elevage,is_elevage')
-        .in('uid', [...taskUids]);
+        .from('user_profiles')
+        .select('uid,firstname,lastname,nom,profile_type')
+        .in('uid', [...taskUids]).eq('is_main', true);
       const nomMap: Record<string, string> = {};
-      for (const u of (usersData ?? []) as { uid: string; firstname?: string; lastname?: string; name_elevage?: string; is_elevage?: boolean }[]) {
-        const nom = (u.is_elevage && u.name_elevage)
-          ? u.name_elevage
+      for (const u of (usersData ?? []) as { uid: string; firstname?: string; lastname?: string; nom?: string; profile_type?: string }[]) {
+        const nom = (u.profile_type === 'eleveur' && u.nom)
+          ? u.nom
           : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
         if (nom) nomMap[u.uid] = nom;
       }
@@ -548,6 +551,34 @@ export default function AgendaPage() {
     setEvents(prev => prev.filter(e => e.id !== id));
   }
 
+  // Agenda dynamique — alerte retard : pour des séances à domicile
+  // consécutives et géocodées le même jour, estime si le temps entre les
+  // deux (fin de la 1re → début de la 2e) suffit à parcourir la distance à
+  // vol d'oiseau (heuristique 30 km/h, pas d'API Directions payante).
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayRdvs = events
+    .filter(e => e.type === 'rdv' && e.rdv?.statut === 'confirme' && e.date_debut.slice(0, 10) === todayStr)
+    .sort((a, b) => a.date_debut.localeCompare(b.date_debut));
+  const travelWarnings: string[] = [];
+  for (let i = 0; i < todayRdvs.length - 1; i++) {
+    const a = todayRdvs[i], b = todayRdvs[i + 1];
+    const aLat = a.rdv?.lieu_lat, aLng = a.rdv?.lieu_lng;
+    const bLat = b.rdv?.lieu_lat, bLng = b.rdv?.lieu_lng;
+    if (aLat == null || aLng == null || bLat == null || bLng == null) continue;
+    const aDuree = a.duree_minutes ?? a.rdv?.duree_minutes ?? 30;
+    const aEnd = new Date(new Date(a.date_debut).getTime() + aDuree * 60000);
+    const bStart = new Date(b.date_debut);
+    const gapMin = Math.round((bStart.getTime() - aEnd.getTime()) / 60000);
+    const dLat = (bLat - aLat) * Math.PI / 180;
+    const dLng = (bLng - aLng) * Math.PI / 180;
+    const hs = Math.sin(dLat / 2) ** 2 + Math.cos(aLat * Math.PI / 180) * Math.cos(bLat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    const distKm = 6371 * 2 * Math.atan2(Math.sqrt(hs), Math.sqrt(1 - hs));
+    const travelMin = Math.ceil(distKm / 30 * 60);
+    if (gapMin < travelMin) {
+      travelWarnings.push(`Risque de retard pour le RDV de ${fmtTime(b.date_debut)} : ~${distKm.toFixed(1)} km à parcourir en ${gapMin} min seulement.`);
+    }
+  }
+
   if (!uid) return (
     <div className="min-h-screen bg-[#F8F8F8] flex items-center justify-center">
       <p className="text-gray-400 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -591,6 +622,17 @@ export default function AgendaPage() {
       </div>
 
       <div className="max-w-3xl mx-auto px-4 py-6">
+        {travelWarnings.length > 0 && (
+          <div className="mb-6 space-y-2">
+            {travelWarnings.map((w, i) => (
+              <div key={i} className="flex items-start gap-2 bg-orange-50 border border-orange-200 rounded-xl px-3 py-2">
+                <span className="text-orange-600">⚠️</span>
+                <p className="text-xs text-orange-800" style={{ fontFamily: 'Galey, sans-serif' }}>{w}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* RDV en attente — visible uniquement pour un profil pro secondaire */}
         {activeProfileId && pendingRdvs.length > 0 && (
           <div className="mb-6">
@@ -676,11 +718,11 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
   const [clientName, setClientName] = useState('');
 
   useEffect(() => {
-    supabase.from('users').select('nom, prenom').eq('uid', rdv.client_uid).single()
+    supabase.from('user_profiles').select('firstname, lastname').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle()
       .then(({ data }) => {
         if (data) {
-          const d = data as { nom: string; prenom: string };
-          setClientName([d.prenom, d.nom].filter(Boolean).join(' '));
+          const d = data as { firstname: string; lastname: string };
+          setClientName([d.firstname, d.lastname].filter(Boolean).join(' '));
         }
       });
   }, [rdv.client_uid]);
@@ -876,10 +918,10 @@ function AssignerModal({ task, uid, onClose, onAssign }: { task: Task; uid: stri
       const { data: emps } = await supabase.from('employes').select('uid_employe').eq('uid_eleveur', uid).eq('actif', true);
       if (!emps?.length) return;
       const uids = (emps as { uid_employe: string }[]).map(e => e.uid_employe);
-      const { data: users } = await supabase.from('users').select('uid,firstname,lastname,name_elevage,is_elevage').in('uid', uids);
-      setMembers(((users ?? []) as { uid: string; firstname?: string; lastname?: string; name_elevage?: string; is_elevage?: boolean }[]).map(u => ({
+      const { data: users } = await supabase.from('user_profiles').select('uid,firstname,lastname,nom,profile_type').in('uid', uids).eq('is_main', true);
+      setMembers(((users ?? []) as { uid: string; firstname?: string; lastname?: string; nom?: string; profile_type?: string }[]).map(u => ({
         uid: u.uid,
-        nom: (u.is_elevage && u.name_elevage) ? u.name_elevage : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim(),
+        nom: (u.profile_type === 'eleveur' && u.nom) ? u.nom : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim(),
       })));
     }
     load();
@@ -1199,6 +1241,14 @@ function EventCard({ event: e, onDelete, onAnnuler, onModifier, onNavigateToAnim
   const isRdv  = !!e.rdv_id;
   const plus24h = isRdv && new Date(e.date_debut).getTime() - Date.now() > 24 * 3600 * 1000;
   const animalId = e.animal_id ?? e.rdv?.animal_id;
+  const lieu = e.rdv?.lieu;
+  const lieuLat = e.rdv?.lieu_lat;
+  const lieuLng = e.rdv?.lieu_lng;
+  const itineraireHref = lieuLat != null && lieuLng != null
+    ? `https://www.google.com/maps/dir/?api=1&destination=${lieuLat},${lieuLng}`
+    : lieu
+      ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(lieu)}`
+      : null;
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 px-4 py-3 space-y-2"
@@ -1209,11 +1259,20 @@ function EventCard({ event: e, onDelete, onAnnuler, onModifier, onNavigateToAnim
           <p className="font-bold text-sm text-[#1E2025] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{e.titre}</p>
           <p className="text-xs text-gray-400">{fmtTime(e.date_debut)} · {TYPE_LABEL[e.type] ?? e.type}</p>
           {e.notes && <p className="text-xs text-gray-400 truncate">{e.notes}</p>}
+          {lieu && <p className="text-xs text-gray-400 truncate">📍 {lieu}</p>}
         </div>
         {!isRdv && (
           <button onClick={() => onDelete(e.id)} className="text-gray-300 hover:text-red-400 transition-colors text-lg flex-shrink-0">×</button>
         )}
       </div>
+
+      {itineraireHref && (
+        <a href={itineraireHref} target="_blank" rel="noopener noreferrer"
+          className="block w-full text-center text-xs font-semibold py-1.5 rounded-lg border border-[#0C5C6C]/20 hover:border-[#0C5C6C] text-[#0C5C6C] transition-colors"
+          style={{ fontFamily: 'Galey, sans-serif' }}>
+          🧭 Itinéraire
+        </a>
+      )}
 
       {animalId && (
         <button onClick={() => onNavigateToAnimal(animalId)}

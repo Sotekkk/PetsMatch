@@ -112,9 +112,9 @@ class _FacturationPageState extends State<FacturationPage> {
   Future<List<Map<String, dynamic>>> _load() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return [];
-    final profileData = await _supa.from('user_profiles')
-        .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
-    final profileId = profileData?['id'] as String?;
+    // Profil actif, pas "is_main" — sinon la page affiche les factures
+    // d'un AUTRE profil du même compte (ex. association vue depuis éleveur).
+    final profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
 
     dynamic q = profileId != null
         ? _supa.from('factures').select().eq('profile_id', profileId)
