@@ -77,6 +77,7 @@ export default function DevisPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [animaux, setAnimaux] = useState<AnimalOption[]>([]);
   const [animalId, setAnimalId] = useState('');
+  const [catPro, setCatPro] = useState('');
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [loading, user, router]);
 
@@ -84,15 +85,18 @@ export default function DevisPage() {
     if (!user) return;
     Promise.all([
       supabase.from('devis').select('*').eq('pro_uid', user.uid).order('created_at', { ascending: false }),
-      supabase.from('user_profiles').select('tarifs_education').eq('id', activeProfileId).maybeSingle(),
-      supabase.from('forfaits_education').select('id,nom,prix').eq('pro_uid', user.uid).eq('actif', true),
+      supabase.from('user_profiles').select('tarifs_education, profile_type, cat_pro').eq('id', activeProfileId).maybeSingle(),
       activeProfileId
         ? supabase.from('animal_access').select('animal_id').eq('pro_profile_id', activeProfileId).in('statut', ['active', 'active_write'])
         : Promise.resolve({ data: [] }),
-    ]).then(async ([d, t, f, acc]) => {
+    ]).then(async ([d, t, acc]) => {
+      const pt = (t.data?.profile_type ?? t.data?.cat_pro ?? '') as string;
+      setCatPro(pt);
       setDevisList((d.data ?? []) as Devis[]);
       setTarifs((t.data?.tarifs_education ?? {}) as Record<string, number>);
-      setForfaits((f.data ?? []) as { id: string; nom: string; prix: number }[]);
+      const forfaitsTable = pt === 'garde' ? 'forfaits_garde' : 'forfaits_education';
+      const { data: forfaitsData } = await supabase.from(forfaitsTable).select('id,nom,prix').eq('pro_uid', user.uid).eq('actif', true);
+      setForfaits((forfaitsData ?? []) as { id: string; nom: string; prix: number }[]);
       const animalIds = [...new Set(((acc.data ?? []) as { animal_id: string }[]).map(a => a.animal_id))];
       if (animalIds.length > 0) {
         const { data: anims } = await supabase.from('animaux').select('id,nom,espece').in('id', animalIds);
@@ -366,19 +370,19 @@ export default function DevisPage() {
                 <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Prestations</p>
                 {(Object.keys(tarifs).length > 0 || forfaits.length > 0) && (
                   <div className="flex flex-wrap gap-2 mb-3">
-                    {tarifs.cours_individuel && (
+                    {catPro === 'education' && tarifs.cours_individuel && (
                       <button onClick={() => addLigne('Cours individuel', tarifs.cours_individuel)}
                         className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">
                         + Cours individuel ({tarifs.cours_individuel} €)
                       </button>
                     )}
-                    {tarifs.cours_collectif && (
+                    {catPro === 'education' && tarifs.cours_collectif && (
                       <button onClick={() => addLigne('Cours collectif', tarifs.cours_collectif)}
                         className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">
                         + Cours collectif ({tarifs.cours_collectif} €)
                       </button>
                     )}
-                    {tarifs.evaluation && (
+                    {catPro === 'education' && tarifs.evaluation && (
                       <button onClick={() => addLigne('Évaluation', tarifs.evaluation)}
                         className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">
                         + Évaluation ({tarifs.evaluation} €)

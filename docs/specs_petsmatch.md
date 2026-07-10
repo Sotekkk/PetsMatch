@@ -4973,6 +4973,82 @@ Vérifié : `flutter analyze` (0 nouveau problème sur les 2 fichiers app),
 `tsc --noEmit` + `eslint` sur `profil/page.tsx` (0 problème avant/après),
 `next build` production complet réussi.
 
+### 28.6 — Phase 2a livrée (session 2026-07-10) : devis/contrats/factures auto + forfaits
+
+Découpage validé avec l'utilisateur pour continuer le module garde : devis/
+contrats/factures automatiques (email inclus) + forfaits, le reste (clés,
+GPS/tournée, récurrence, tarifs personnalisés, créneaux configurables) en
+phases ultérieures. Exploration préalable confirmée : `devis`/`factures`
+déjà pleinement génériques (aucun changement de schéma), seuls les contrats
+et forfaits nécessitaient une nouvelle table (mirror du pattern déjà établi
+`pension_updates` réutilisé tel quel vs `pension_factures`/`pension_entrees`
+mirror selon que le nom de table est déjà neutre ou couplé au domaine).
+
+- **Facturation** : lien de navigation manquant ajouté au bloc garde
+  (`eleveur_nav.dart`) — le backend (`factures`/`FacturationPage`,
+  `/elevage/facturation`) était déjà pleinement fonctionnel pour garde
+  depuis le fix cross-profil de `facturation.dart` plus tôt cette session,
+  seul l'accès manquait. Découverte au passage : même la pension n'a pas
+  ce lien dans `eleveur_nav.dart` (a sa propre page dédiée
+  `pension_factures_page.dart`) — trou pré-existant non spécifique à garde,
+  non corrigé (hors scope).
+- **Devis** : table `devis` déjà générique (scopée uid/profile_id, aucune
+  colonne éducateur-spécifique) — `EducationDevisPage` renommée `DevisPage`
+  et généralisée en place (table `forfaits`/`forfaits_garde` sélectionnée
+  selon `catPro`, chips de tarifs rapides limités à `education`) plutôt que
+  dupliquée. Web : `/garde/devis` ré-exporte `/education/devis/page.tsx`
+  (même pattern que `associations/inventaire` → `elevage/inventaire`
+  établi en catégorie B).
+- **Contrats** : nouvelle table requise (`documents_animaux.rdv_id`, migration
+  `migration_garde_contrat.sql` — **à exécuter manuellement dans le SQL
+  Editor Supabase**, non appliquée automatiquement) — la pension elle-même
+  n'utilise pas `ContractService.ts` pour ses contrats (insertion directe
+  dans `documents_animaux`, découvert en lisant `/pension/contrat/page.tsx`),
+  même approche reprise pour garde. Nouveau `contrat-garde.ts` (template
+  HTML, mirror `contrat-pension.ts`), nouveau type `contrat_garde` câblé
+  dans `/signer-contrat/[token]/page.tsx` (dispatch générique déjà en
+  place). App : bouton contrat sur `registre_visites_page.dart` (insert +
+  lien copié, même pattern que `registre_pension_page.dart`). Web :
+  `/garde/contrat`.
+- **Envoi email automatique** : n'existait pour aucun type de profil avant
+  cette session (juste notification in-app). 3 nouvelles routes génériques
+  (`api/devis/notify-email`, `api/contrat/notify-email`,
+  `api/facture/notify-email`, mirror `api/cession/notify-email`).
+  **Sécurité** : en copiant le pattern nodemailer existant, un identifiant
+  Gmail codé en dur allait être dupliqué dans 3 nouveaux fichiers (déjà
+  présent en dur dans 2 fichiers pré-existants, `cession`/`animal-claim` —
+  non touchés, hors scope) — bloqué par le classificateur de sécurité,
+  corrigé en extrayant `website/src/lib/mailer.ts` (transport partagé lisant
+  `GMAIL_USER`/`GMAIL_APP_PASSWORD` depuis `.env.local`, jamais commité) au
+  lieu de propager le secret en clair. Bouton "Envoyer par email" gated
+  `GardePlanConfig.code != 'free'` **entièrement câblé uniquement sur
+  `/garde/contrat`** (exemple de bout en bout fonctionnel) — les boutons
+  équivalents sur devis (page partagée education/garde) et facture (page
+  générique partagée par tous les types pro) **ne sont pas câblés dans
+  l'UI** cette session, pour éviter d'élargir le risque sur des pages
+  partagées par d'autres types de profils sans cadrage dédié. Les 3 routes
+  API sont prêtes et testables indépendamment.
+- **Forfaits** : nouvelle table `forfaits_garde` (migration
+  `migration_garde_forfaits.sql` — **à exécuter manuellement**, `nb_visites`
+  au lieu de `nb_seances`, RLS identique à `forfaits_education`).
+  `ForfaitModal` (web) et le bottom sheet équivalent (app,
+  `pro_profile_edit.dart`) généralisés en place avec sélection de
+  table/colonne selon `catPro` et wording adaptatif ("visites" vs
+  "séances"), plutôt que dupliqués.
+
+**Migrations à exécuter manuellement avant mise en service** (non
+appliquées par ce travail — écrites comme scripts idempotents pour le SQL
+Editor Supabase, comme toutes les migrations de ce projet) :
+`migration_garde_contrat.sql`, `migration_garde_forfaits.sql`.
+
+Vérifié : `flutter analyze` sur les 5 fichiers app touchés (0 nouveau
+problème, comparaison avant/après), `tsc --noEmit` (0 nouvelle erreur,
+même compte qu'avant), `eslint` (0 nouveau problème sur les nouveaux
+fichiers ; 1 avertissement `react-hooks/set-state-in-effect` hérité sur
+`/garde/contrat`, même pattern pré-existant déjà toléré partout ailleurs
+dans ce projet), `next build` production complet réussi (routes
+`/garde/devis`, `/garde/contrat` confirmées dans la sortie de build).
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

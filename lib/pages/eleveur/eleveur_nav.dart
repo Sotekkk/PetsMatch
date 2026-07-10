@@ -603,7 +603,7 @@ class _EleveurNavState extends State<EleveurNav> {
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const EducationDevisPage(),
+                        builder: (_) => const DevisPage(),
                       ));
                     },
                   ),
@@ -774,6 +774,16 @@ class _EleveurNavState extends State<EleveurNav> {
                       },
                     ),
                     _DrawerItem(
+                      icon: Icons.request_quote_outlined,
+                      label: 'Devis',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const DevisPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
                       icon: Icons.inventory_2_outlined,
                       label: 'Inventaire',
                       locked: _gardePlanCode == 'free',
@@ -809,6 +819,16 @@ class _EleveurNavState extends State<EleveurNav> {
                           builder: (_) => _gardePlanCode == 'free'
                               ? const GardeAbonnementPage()
                               : const EmployesPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Facturation',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const FacturationPage(),
                         ));
                       },
                     ),

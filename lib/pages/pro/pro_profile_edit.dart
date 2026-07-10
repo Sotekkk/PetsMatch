@@ -256,14 +256,17 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       }
     } catch (_) {}
     if (mounted) setState(() => _loading = false);
-    if (_catPro == 'education') await _loadForfaits();
+    if (_catPro == 'education' || _catPro == 'garde') await _loadForfaits();
   }
+
+  String get _forfaitsTable => _catPro == 'garde' ? 'forfaits_garde' : 'forfaits_education';
+  String get _forfaitsCountCol => _catPro == 'garde' ? 'nb_visites' : 'nb_seances';
 
   Future<void> _loadForfaits() async {
     setState(() => _loadingForfaits = true);
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid;
-      final rows = await _supa.from('forfaits_education').select()
+      final rows = await _supa.from(_forfaitsTable).select()
           .eq('pro_uid', uid).eq('actif', true).order('created_at');
       if (mounted) setState(() => _forfaits = List<Map<String, dynamic>>.from(rows as List));
     } catch (_) {
@@ -273,6 +276,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   }
 
   Future<void> _ajouterForfait() async {
+    final unite = _catPro == 'garde' ? 'visites' : 'séances';
     final nomCtrl = TextEditingController();
     final seancesCtrl = TextEditingController(text: '5');
     final prixCtrl = TextEditingController();
@@ -286,12 +290,12 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Nouveau forfait', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
           const SizedBox(height: 16),
-          TextField(controller: nomCtrl, decoration: const InputDecoration(
-              labelText: 'Nom du forfait', hintText: 'Ex : Pack 5 séances', border: OutlineInputBorder())),
+          TextField(controller: nomCtrl, decoration: InputDecoration(
+              labelText: 'Nom du forfait', hintText: 'Ex : Pack 5 $unite', border: const OutlineInputBorder())),
           const SizedBox(height: 12),
           Row(children: [
             Expanded(child: TextField(controller: seancesCtrl, keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Nb séances', border: OutlineInputBorder()))),
+                decoration: InputDecoration(labelText: 'Nb $unite', border: const OutlineInputBorder()))),
             const SizedBox(width: 8),
             Expanded(child: TextField(controller: prixCtrl, keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: 'Prix (€)', border: OutlineInputBorder()))),
@@ -311,11 +315,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     if (result != true || nomCtrl.text.trim().isEmpty) return;
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid;
-      await _supa.from('forfaits_education').insert({
+      await _supa.from(_forfaitsTable).insert({
         'pro_uid': uid,
         if (widget.secondaryProfileId != null) 'pro_profile_id': widget.secondaryProfileId,
         'nom': nomCtrl.text.trim(),
-        'nb_seances': int.tryParse(seancesCtrl.text.trim()) ?? 1,
+        _forfaitsCountCol: int.tryParse(seancesCtrl.text.trim()) ?? 1,
         'prix': double.tryParse(prixCtrl.text.trim()) ?? 0,
         if (descCtrl.text.trim().isNotEmpty) 'description': descCtrl.text.trim(),
       });
@@ -328,7 +332,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   }
 
   Future<void> _supprimerForfait(String id) async {
-    await _supa.from('forfaits_education').update({'actif': false}).eq('id', id);
+    await _supa.from(_forfaitsTable).update({'actif': false}).eq('id', id);
     await _loadForfaits();
   }
 
@@ -1006,11 +1010,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                     ]),
                   ],
 
-                  // ── Forfaits éducateur/comportementaliste ─────────────────
-                  if (_catPro == 'education') ...[
+                  // ── Forfaits éducateur/comportementaliste ou garde ────────
+                  if (_catPro == 'education' || _catPro == 'garde') ...[
                     const SizedBox(height: 24),
                     Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                      _sectionTitle('Forfaits (packs de séances)'),
+                      _sectionTitle(_catPro == 'garde' ? 'Forfaits (packs de visites)' : 'Forfaits (packs de séances)'),
                       TextButton.icon(
                         onPressed: _ajouterForfait,
                         icon: const Icon(Icons.add, size: 18),
@@ -1031,7 +1035,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                         child: Row(children: [
                           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Text(f['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
-                            Text('${f['nb_seances']} séances — ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} €',
+                            Text('${f[_forfaitsCountCol]} ${_catPro == 'garde' ? 'visites' : 'séances'} — ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} €',
                                 style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                           ])),
                           IconButton(

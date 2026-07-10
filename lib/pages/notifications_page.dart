@@ -298,7 +298,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     // Devis accepté/refusé par le client — reçu par le pro
     if (type == 'devis_accepte' || type == 'devis_refuse') {
       await Navigator.push(context, MaterialPageRoute(
-        builder: (_) => const EducationDevisPage(),
+        builder: (_) => const DevisPage(),
       ));
       return;
     }

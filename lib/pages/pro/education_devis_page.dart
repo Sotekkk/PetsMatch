@@ -44,13 +44,13 @@ Future<void> _syncDocumentAnimal(String devisId, String animalId, String statut,
   } catch (_) {}
 }
 
-class EducationDevisPage extends StatefulWidget {
-  const EducationDevisPage({super.key});
+class DevisPage extends StatefulWidget {
+  const DevisPage({super.key});
   @override
-  State<EducationDevisPage> createState() => _EducationDevisPageState();
+  State<DevisPage> createState() => _DevisPageState();
 }
 
-class _EducationDevisPageState extends State<EducationDevisPage> {
+class _DevisPageState extends State<DevisPage> {
   final _supa = Supabase.instance.client;
   List<Map<String, dynamic>> _devis = [];
   bool _loading = true;
@@ -298,10 +298,11 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
     if (uid == null) return;
     final pid = User_Info.activeProfileId;
     try {
+      final forfaitsTable = User_Info.catPro == 'garde' ? 'forfaits_garde' : 'forfaits_education';
       final tarifsRow = pid.isNotEmpty
           ? await _supa.from('user_profiles').select('tarifs_education').eq('id', pid).maybeSingle()
           : null;
-      final forfaitsRows = await _supa.from('forfaits_education')
+      final forfaitsRows = await _supa.from(forfaitsTable)
           .select('id,nom,prix').eq('pro_uid', uid).eq('actif', true);
       if (mounted) {
         setState(() {
@@ -488,11 +489,11 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
           const Text('Prestations', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
           const SizedBox(height: 8),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            if (_tarifs['cours_individuel'] != null)
+            if (User_Info.catPro == 'education' && _tarifs['cours_individuel'] != null)
               _quickAddChip('Cours individuel', _tarifs['cours_individuel'] as num),
-            if (_tarifs['cours_collectif'] != null)
+            if (User_Info.catPro == 'education' && _tarifs['cours_collectif'] != null)
               _quickAddChip('Cours collectif', _tarifs['cours_collectif'] as num),
-            if (_tarifs['evaluation'] != null)
+            if (User_Info.catPro == 'education' && _tarifs['evaluation'] != null)
               _quickAddChip('Évaluation', _tarifs['evaluation'] as num),
             for (final f in _forfaits)
               _quickAddChip(f['nom']?.toString() ?? '', (f['prix'] as num?) ?? 0, purple: true),

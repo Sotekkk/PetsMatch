@@ -237,6 +237,8 @@ const MENU_GARDE = [
     icon: '🐕',
     items: [
       { href: '/garde/registre',  label: 'Registre visites', icon: '📋' },
+      { href: '/garde/devis',     label: 'Devis',            icon: '📝' },
+      { href: '/garde/contrat',   label: 'Contrats',         icon: '✍️', pro: true },
       { href: '/mes-rdv',         label: 'Gérer mes RDV',    icon: '🗓️' },
       { href: '/pro/creneaux',    label: 'Mes créneaux',     icon: '⏰' },
       { href: '/agenda',          label: 'Mon agenda',       icon: '📅' },
