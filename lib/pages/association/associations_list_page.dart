@@ -37,14 +37,6 @@ class _AssociationsListPageState extends State<AssociationsListPage> {
           .eq('profile_type', 'association')
           .order('nom');
 
-      List<Map<String, dynamic>> primary = [];
-      try {
-        primary = await Supabase.instance.client
-            .from('users')
-            .select('uid,firstname,lastname,name_elevage,ville,ville_elevage,photo_profil_elevage,photo_url,latitude,longitude')
-            .eq('is_association', true);
-      } catch (_) {}
-
       final list = <Map<String, dynamic>>[];
 
       for (final p in profiles as List) {
@@ -62,30 +54,6 @@ class _AssociationsListPageState extends State<AssociationsListPage> {
           'lat':        p['latitude'] as double?,
           'lng':        p['longitude'] as double?,
           'source':     'profile',
-        });
-      }
-
-      final existingUids = list.map((e) => e['uid']?.toString()).toSet();
-      for (final u in primary) {
-        final uid = u['uid']?.toString() ?? '';
-        if (existingUids.contains(uid)) continue;
-        final name = (u['name_elevage'] as String?)?.isNotEmpty == true
-            ? u['name_elevage'] as String
-            : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
-        final ville = (u['ville_elevage'] as String?)?.isNotEmpty == true
-            ? u['ville_elevage'] as String
-            : u['ville'] as String? ?? '';
-        final avatar = (u['photo_profil_elevage'] as String?)?.isNotEmpty == true
-            ? u['photo_profil_elevage'] as String
-            : u['photo_url'] as String? ?? '';
-        list.add({
-          'uid':    uid,
-          'name':   name,
-          'avatar': avatar,
-          'ville':  ville,
-          'lat':    u['latitude'] as double?,
-          'lng':    u['longitude'] as double?,
-          'source': 'primary',
         });
       }
 

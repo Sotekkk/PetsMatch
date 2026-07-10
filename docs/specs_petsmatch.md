@@ -4761,6 +4761,51 @@ lookups simples et recherches live.** Seule reste la catégorie B (7
 pages à fusion users+user_profiles avec dédoublonnage par uid,
 restructuration dédiée non traitée cette session).
 
+### 27.16 — Catégorie B terminée : simplification au lieu de restructuration
+
+Avant de commencer, vérifié en base que le backfill de la Phase 3 est
+réellement complet : les 12 comptes `users` ont tous une ligne
+`user_profiles.is_main=true` correspondante, avec `profile_type`/`cat_pro`/
+`statut_pro` cohérents. Conséquence : la fusion `users`+`user_profiles`
+avec dédoublonnage par uid dans les 7 pages catégorie B n'est plus une
+restructuration à concevoir — c'est de la logique morte à supprimer.
+Confirmé avec l'utilisateur avant de lancer les 7 fichiers.
+
+**5 fichiers — simplification mécanique** (suppression de la requête
+`users` + du dédoublonnage, ne garde que `user_profiles`) :
+`service_list_page.dart`, `pro_list.dart` (app), `associations_list_page.dart`
+(app — un fichier `.bak` non-tracké préexistant dans le même dossier,
+antérieur à cette session, laissé intact sans y toucher), `associations/page.tsx`,
+`services/page.tsx`, `services/carte/page.tsx` (web).
+
+**`admin/page.tsx` — cas à part**, découvert en cours de route : plus
+complexe que les 6 autres car `isSecondary` ne sert pas qu'à l'affichage,
+il route aussi les écritures admin (validation/refus/suppression de
+compte/toggle premium) vers `users` ou `user_profiles`. Un mauvais aiguillage
+ici casse le pipeline d'approbation, pas juste l'affichage — reconfirmé
+avec l'utilisateur avant de toucher ce fichier spécifiquement.
+Redéfinition : `isSecondary` devient `!user_profiles.is_main` au lieu de
+"la ligne vient de quelle table" — cette redéfinition preserve tel quel
+tout le sens déjà porté par `isSecondary` dans les 40+ endroits où il est
+lu (badges, filtres, texte de confirmation suppression, clés de cache de
+validation), donc pas de refonte de ces 40+ sites, seulement des fonctions
+de chargement et d'écriture (`loadUsers`, `setStatut`, `mapPrimaryRows`/
+`mapSecondaryRows` fusionnés en `mapProfileRows`, `loadDossiers`,
+`approveDossier`, `refuseDossier`, `reconsiderDossier`, `runAutoValidate`).
+`is_premium` et `email` restent lus/écrits sur `users` (aucun équivalent
+fiable sur `user_profiles`, cohérent avec le pattern déjà établi lot 4).
+Effet de bord positif : `loadDossiers` n'avait auparavant aucune requête
+pour les profils secondaires refusés (`refusedDossiers` ne couvrait que
+`users`) — la requête `user_profiles` unifiée couvre maintenant aussi ce
+cas, corrigeant un trou préexistant sans complexité ajoutée.
+
+Vérifié : `flutter analyze` (3 fichiers app, 0 nouveau problème),
+`tsc --noEmit` + `eslint` (4 fichiers web, même nombre exact de problèmes
+avant/après stash), `next build` production complet sans erreur.
+
+**Chantier `users`→`user_profiles` en lecture entièrement terminé,
+catégorie B incluse.**
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

@@ -78,44 +78,22 @@ class _ServiceListPageState extends State<ServiceListPage> {
       // Exclure éleveurs et associations (ont leur propre espace dédié)
       const _excluded = '(eleveur,association)';
 
-      // Primary profiles from users table
-      // is_elevage = false : les éleveurs ont leur espace dédié
-      final dynamic primaryRows = hasFilter
+      final List<dynamic> secondaryRows = hasFilter
           ? await _supa
-              .from('users')
+              .from('user_profiles')
               .select()
-              .inFilter('cat_pro', widget.catProValues)
-              .eq('is_elevage', false)
-              .order('name_elevage')
+              .inFilter('profile_type', widget.catProValues)
+              .inFilter('statut_pro', ['actif', 'validated'])
           : await _supa
-              .from('users')
+              .from('user_profiles')
               .select()
-              .eq('is_elevage', false)
-              .not('cat_pro', 'in', _excluded)
-              .order('name_elevage');
+              .inFilter('statut_pro', ['actif', 'validated'])
+              .not('profile_type', 'in', _excluded);
 
-      // Secondary profiles from user_profiles table (only validated ones)
-      List<dynamic> secondaryRows = [];
-      try {
-        secondaryRows = hasFilter
-            ? await _supa
-                .from('user_profiles')
-                .select()
-                .inFilter('profile_type', widget.catProValues)
-                .inFilter('statut_pro', ['actif', 'validated'])
-            : await _supa
-                .from('user_profiles')
-                .select()
-                .inFilter('statut_pro', ['actif', 'validated'])
-                .not('profile_type', 'in', _excluded);
-      } catch (_) {}
-
-      // Secondaires d'abord : si un uid a un profil user_profiles (plus précis),
-      // il prend la priorité sur la ligne users (qui peut avoir cat_pro générique).
       final seenUids = <String>{};
       final merged = <Map<String, dynamic>>[];
 
-      for (final row in (secondaryRows as List)) {
+      for (final row in secondaryRows) {
         final uid = row['uid']?.toString() ?? '';
         if (!seenUids.add(uid)) continue;
         final nomVal = row['nom'] ?? row['name_elevage'] ?? '';
@@ -149,13 +127,6 @@ class _ServiceListPageState extends State<ServiceListPage> {
           'certifications': row['certifications'] ?? [],
           'tarifs': row['tarifs'] ?? '',
         });
-      }
-
-      // Primaires : on ajoute uniquement les uids pas encore couverts par un profil secondaire
-      for (final row in (primaryRows as List)) {
-        final uid = row['uid']?.toString() ?? '';
-        if (!seenUids.add(uid)) continue;
-        merged.add(Map<String, dynamic>.from(row));
       }
 
       if (mounted) {

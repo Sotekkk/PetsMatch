@@ -188,51 +188,15 @@ export default function ServicesPage() {
   useEffect(() => {
     (async () => {
       try {
-        // Source 1 : user_profiles (profils pro V2 — priorité)
         const { data: profilesData } = await supabase
           .from('user_profiles')
           .select('id, uid, nom, profile_type, avatar_url, ville_pro, accept_new_clients')
           .in('statut_pro', ['actif', 'validated'])
           .not('profile_type', 'in', '(eleveur,association)')
           .order('updated_at', { ascending: false })
-          .limit(20);
+          .limit(12);
 
-        // Source 2 : users (anciens profils pros — fallback si pas dans user_profiles)
-        const { data: usersData } = await supabase
-          .from('users')
-          .select('uid, name_elevage, firstname, cat_pro, profile_picture_url, profile_picture_url_elevage, ville, ville_elevage, accept_new_clients')
-          .eq('is_elevage', false)
-          .eq('is_pro', true)
-          .not('cat_pro', 'in', '(eleveur,association)')
-          .order('name_elevage')
-          .limit(20);
-
-        // Fusion — user_profiles en priorité, users en fallback si uid absent
-        const seenUids = new Set<string>();
-        const merged: VerifiedPro[] = [];
-
-        for (const row of (profilesData ?? [])) {
-          if (!seenUids.has(row.uid)) {
-            seenUids.add(row.uid);
-            merged.push(row as VerifiedPro);
-          }
-        }
-        for (const row of (usersData ?? [])) {
-          if (!seenUids.has(row.uid)) {
-            seenUids.add(row.uid);
-            merged.push({
-              id: row.uid,
-              uid: row.uid,
-              nom: row.name_elevage || row.firstname || '',
-              profile_type: row.cat_pro || '',
-              avatar_url: row.profile_picture_url_elevage || row.profile_picture_url || undefined,
-              ville_pro: row.ville_elevage || row.ville || undefined,
-              accept_new_clients: row.accept_new_clients ?? true,
-            });
-          }
-        }
-
-        setPros(merged.slice(0, 12));
+        setPros((profilesData ?? []) as VerifiedPro[]);
       } finally {
         setLoading(false);
       }
