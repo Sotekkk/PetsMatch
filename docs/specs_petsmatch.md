@@ -5129,6 +5129,39 @@ générale de la règle sur ce projet et non d'un problème introduit),
 `next build` production complet réussi (`/garde/tarifs-clients`
 confirmée dans la sortie de build).
 
+### 28.9 — Phase 2b livrée (session 2026-07-10) : onboarding dédié
+
+App uniquement — pas d'équivalent web pour l'onboarding pension non plus,
+confirmé par recherche, donc aucune contrepartie web à créer ici.
+
+- **Nouveau `onboarding_garde.dart`** : mirror exact de
+  `onboarding_pension.dart` (4 slides carrousel, flag
+  `SharedPreferences` `onboarding_garde_done`), contenu adapté au
+  vocabulaire petsitter/promeneur (registre visites/rapports, devis/
+  contrats/tarifs personnalisés, visibilité annuaire).
+- **`bottom_nav.dart::_checkOnboarding`** — bug découvert en câblant le
+  déclenchement : `eleveurProfiles` (et son fallback `User_Info.isPro &&
+  !hasPension`) capturait déjà silencieusement tous les profils `garde`
+  avant ce correctif — un nouveau profil garde déclenchait donc
+  l'onboarding **éleveur** (contenu totalement hors sujet : portées,
+  annonces d'élevage...), jamais un onboarding dédié. Corrigé :
+  `gardeProfiles` extrait et exclu de `eleveurProfiles` et du fallback
+  pro générique, nouveau flag `needsGarde` suivant exactement le même
+  pattern que `needsPension` (marquage silencieux "déjà fait" si le
+  profil existait avant ce correctif, pour ne pas montrer l'onboarding
+  rétroactivement aux comptes garde déjà actifs).
+- **Non traité, limitation pré-existante identique pour pension** : la
+  feuille de choix `_showOnboardingChoice` (cas association + autre profil
+  simultané) ne propose que "Association"/"Éleveur", jamais "Pension" ni
+  désormais "Garde" — un profil garde+association nouvellement créé verra
+  l'onboarding association proposé mais pas l'onboarding garde via cette
+  feuille (reste possible séparément si `needsGarde` seul plus tard).
+  Écart déjà présent pour pension avant cette session, pas aggravé,
+  hors scope d'un correctif ciblé "onboarding garde".
+
+Vérifié : `flutter analyze` sur les 2 fichiers touchés (0 nouveau
+problème, comparaison `git stash` avant/après).
+
 ---
 
 ## 29. Module "Balades ludiques" (collègue) — correctif fuite cross-profil (session 2026-07-10)
