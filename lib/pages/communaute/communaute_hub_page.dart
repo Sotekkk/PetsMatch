@@ -8,6 +8,7 @@ import 'package:PetsMatch/pages/lieux/lieux_pet_friendly_page.dart';
 import 'package:PetsMatch/pages/nature/natural_places_page.dart';
 import 'package:PetsMatch/pages/petfriends/petfriends_page.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
+import 'package:PetsMatch/pages/balades_ludiques/balades_ludiques_hub_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 const _teal = Color(0xFF0C5C6C);
@@ -22,6 +23,13 @@ class CommunauteHubPage extends StatelessWidget {
       label: 'Balades canines',
       subtitle: 'Organisez des sorties avec d\'autres propriétaires',
       color: Color(0xFF2E7D5E),
+      requiresAuth: false,
+    ),
+    _CommunauteSection(
+      icon: Icons.explore_outlined,
+      label: 'Balades ludiques',
+      subtitle: 'Chasses au trésor et parcours à défis avec votre animal',
+      color: Color(0xFFC2410C),
       requiresAuth: false,
     ),
     _CommunauteSection(
@@ -211,6 +219,9 @@ class CommunauteHubPage extends StatelessWidget {
     switch (section.label) {
       case 'Balades canines':
         page = const PromenadePage();
+        break;
+      case 'Balades ludiques':
+        page = const BaladesLudiquesHubPage();
         break;
       case 'Forums':
         page = const ForumPage();
