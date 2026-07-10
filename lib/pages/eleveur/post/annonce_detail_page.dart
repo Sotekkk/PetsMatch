@@ -178,26 +178,18 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
 
   static Map<String, dynamic> _normalizeUser(Map<String, dynamic> row) => {
     ...row,
-    'nameElevage':              row['name_elevage'],
-    'profilePictureUrlElevage': row['profile_picture_url_elevage'],
-    'profilePictureUrl':        row['profile_picture_url'],
-    'villeElevage':             row['ville_elevage'],
+    'nameElevage':              row['nom'],
+    'profilePictureUrlElevage': row['profile_picture_url_pro'],
+    'profilePictureUrl':        row['avatar_url'],
+    'villeElevage':             row['ville_pro'],
     'descEntreprise':           row['desc_entreprise'],
-    'isPartenaire':             row['is_partenaire'] ?? false,
-    'catPro':                   row['cat_pro'] ?? '',
     'professionPro':            row['profession_pro'] ?? '',
-    'codeISOElevage':           row['code_iso_elevage'] ?? '',
     'numeroElevage':            row['numero_elevage'] ?? '',
-    'adressElevage':            row['adress_elevage'] ?? '',
+    'adressElevage':            row['adresse'] ?? '',
     'isValidate':               row['is_validate'] ?? false,
-    'isElevage':                row['is_elevage'] ?? false,
-    'isPro':                    row['is_pro'] ?? false,
-    'isDog':                    row['is_dog'] ?? false,
-    'isCat':                    row['is_cat'] ?? false,
-    'dogBreeds':                row['dog_breeds'] ?? [],
-    'catBreeds':                row['cat_breeds'] ?? [],
-    'codePostalElevage':        row['code_postal_elevage'] ?? '',
-    'paysElevage':              row['pays_elevage'] ?? '',
+    'isElevage':                row['profile_type'] == 'eleveur',
+    'codePostalElevage':        row['code_postal_pro'] ?? '',
+    'paysElevage':              row['pays_pro'] ?? '',
     'siret':                    row['siret'] ?? '',
   };
 
@@ -229,9 +221,9 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
       if (myUid != null && uniqueUids.isNotEmpty) {
         final sample = uniqueUids.take(5).toList();
         final users = await Supabase.instance.client
-            .from('users')
-            .select('uid, firstname, profile_picture_url')
-            .inFilter('uid', sample);
+            .from('user_profiles')
+            .select('uid, firstname, profile_picture_url:avatar_url')
+            .inFilter('uid', sample).eq('is_main', true);
         likers = List<Map<String, dynamic>>.from(users);
       }
 
@@ -316,7 +308,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
   Future<void> _loadEleveur(String uid, {String? profilSource, String? profileId}) async {
     try {
       final row = await Supabase.instance.client
-          .from('users').select().eq('uid', uid).single();
+          .from('user_profiles').select().eq('uid', uid).eq('is_main', true).single();
       Map<String, dynamic> normalized = _normalizeUser(row);
 
       final src = profilSource
@@ -2219,9 +2211,9 @@ class _LikersSheetState extends State<_LikersSheet> {
         return;
       }
       final users = await Supabase.instance.client
-          .from('users')
-          .select('uid, firstname, lastname, profile_picture_url')
-          .inFilter('uid', uids);
+          .from('user_profiles')
+          .select('uid, firstname, lastname, profile_picture_url:avatar_url')
+          .inFilter('uid', uids).eq('is_main', true);
       final userMap = <String, Map<String, dynamic>>{
         for (final u in List<Map<String, dynamic>>.from(users))
           u['uid'] as String: u,
@@ -2359,9 +2351,9 @@ class _FavorisSheetState extends State<_FavorisSheet> {
         return;
       }
       final users = await Supabase.instance.client
-          .from('users')
-          .select('uid, firstname, lastname, profile_picture_url')
-          .inFilter('uid', uids);
+          .from('user_profiles')
+          .select('uid, firstname, lastname, profile_picture_url:avatar_url')
+          .inFilter('uid', uids).eq('is_main', true);
       final userMap = <String, Map<String, dynamic>>{
         for (final u in List<Map<String, dynamic>>.from(users))
           u['uid'] as String: u,

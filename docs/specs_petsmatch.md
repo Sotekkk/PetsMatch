@@ -4611,6 +4611,28 @@ une décision de conception à valider, pas un simple renommage de champ.
 recopiés par conception, et une branche à noms de colonnes suspects qui
 ne fire que pour une association jamais encore sauvegardée).
 
+### 27.11 — Phase 4 livrée (lot 6) : annonces (création/détail/feed/carte)
+
+8 fichiers (5 app, 3 web) — aucun cas de fusion à dédoublonner dans ce
+lot, uniquement des lookups directs par uid connu (seul ou en liste).
+`is_premium` traité comme dans `annonces/page.tsx` (lot précédent) :
+gardé sourcé sur `users` via une requête séparée plutôt que de faire
+confiance à la colonne `user_profiles.is_premium` existante mais non
+retenue comme fiable pour ce champ. Au passage, `annonce_detail_page.dart`
+(`_normalizeUser`) perd les champs jamais consommés en aval et sans
+équivalent `user_profiles` (`is_pro`, `is_dog`, `is_cat`, `dog_breeds`,
+`cat_breeds`, `is_partenaire`) — vérifié par recherche qu'aucun code du
+fichier ne les lit. Bug corrigé au passage dans 2 fichiers (`create_annonce_page.dart`,
+`create_annonce_asso_page.dart`) : le pays de l'annonce était lu sur
+`users.pays_elevage` alors que `pays_pro` est la colonne réellement
+maintenue à jour côté `user_profiles`.
+
+Incohérence préexistante notée mais non traitée (hors scope migration) :
+`website/src/app/annonces/feed/page.tsx` n'a pas l'étape de repli photo/nom
+association que son équivalent Flutter (`annonces_feed_page.dart`) a
+déjà — les annonces association affichent la photo personnelle de
+l'éleveur plutôt que celle de l'association sur le feed web.
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

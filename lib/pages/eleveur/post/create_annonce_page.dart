@@ -605,23 +605,23 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
 
       final uid = FirebaseAuth.instance.currentUser!.uid;
       final userRow = await Supabase.instance.client
-          .from('users').select().eq('uid', uid).single();
+          .from('user_profiles').select().eq('uid', uid).eq('is_main', true).single();
 
-      final nomEleveur = (userRow['name_elevage'] as String?)?.isNotEmpty == true
-          ? userRow['name_elevage'] as String
+      final nomEleveur = (userRow['nom'] as String?)?.isNotEmpty == true
+          ? userRow['nom'] as String
           : userRow['firstname'] as String? ?? '';
       final villeEleveur =
-          (userRow['ville_elevage'] as String?) ?? (userRow['ville'] as String?) ?? '';
+          (userRow['ville_pro'] as String?) ?? (userRow['ville'] as String?) ?? '';
       final departementEleveur = () {
-        final dep = userRow['departement_elevage'] as String?;
+        final dep = userRow['departement_pro'] as String?;
         if (dep != null && dep.isNotEmpty) return dep;
-        final cp = (userRow['code_postal_elevage'] as String?) ?? '';
+        final cp = (userRow['code_postal_pro'] as String?) ?? '';
         return FrenchGeo.fromPostalCode(cp)?.departement ?? '';
       }();
       final regionEleveur = () {
-        final reg = userRow['region_elevage'] as String?;
+        final reg = userRow['region_pro'] as String?;
         if (reg != null && reg.isNotEmpty) return reg;
-        final cp = (userRow['code_postal_elevage'] as String?) ?? '';
+        final cp = (userRow['code_postal_pro'] as String?) ?? '';
         return FrenchGeo.fromPostalCode(cp)?.region ?? '';
       }();
 
@@ -634,7 +634,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         'ville_eleveur':        villeEleveur,
         'departement_eleveur':  departementEleveur,
         'region_eleveur':       regionEleveur,
-        'pays_eleveur':         userRow['pays_elevage'] ?? 'France',
+        'pays_eleveur':         userRow['pays_pro'] ?? 'France',
         'type':                 _type,
         'type_vente':           _typeVente,
         'espece':               _espece,
