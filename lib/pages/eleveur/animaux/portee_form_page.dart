@@ -127,15 +127,16 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
     // Profil éleveur (nom + adresse)
     try {
       final profil = await _supa
-          .from('users')
-          .select('name_elevage, rue_elevage, ville_elevage')
+          .from('user_profiles')
+          .select('nom, rue_pro, ville_pro')
           .eq('uid', uid)
+          .eq('is_main', true)
           .maybeSingle();
       if (profil != null && mounted) {
-        final rue    = profil['rue_elevage']    as String? ?? '';
-        final ville  = profil['ville_elevage']  as String? ?? '';
+        final rue    = profil['rue_pro']    as String? ?? '';
+        final ville  = profil['ville_pro']  as String? ?? '';
         setState(() {
-          _nomElevage     = profil['name_elevage'] as String?;
+          _nomElevage     = profil['nom'] as String?;
           _adresseElevage = [rue, ville].where((s) => s.isNotEmpty).join(', ').isEmpty
               ? null
               : [rue, ville].where((s) => s.isNotEmpty).join(', ');

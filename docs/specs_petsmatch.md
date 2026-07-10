@@ -4692,6 +4692,46 @@ recherche par email (motif B), et 7 pages à fusion users+user_profiles
 de session : pause sur ce chantier, reprise dans une session dédiée
 plutôt que de continuer à la volée sans cadrage frais.
 
+### 27.14 — Phase 4 livrée (lot 9) : catégories partielles complétées + lookups isolés
+
+15 fichiers migrés couvrant les 3 clusters identifiés au lot 8 :
+messagerie (`chat_profile_page.dart`, `petfriend_chat_page.dart`,
+`petfriends/chat/[convId]/page.tsx`, `messages/page.tsx`), agenda
+(`lib/pages/agenda/agenda_page.dart`, 7 sites dans un seul fichier —
+distinct de celui migré au lot 3), employés
+(`website/src/app/association/equipe/page.tsx`, source primaire + repli
+`user_profiles` fusionnés en une seule requête, comme au lot 7 ; le
+bulk-load-then-filter de `AddPetsMatchModal` basculé sur le même motif
+que `association/benevoles/page.tsx` du lot 4). Plus 9 lookups isolés
+jamais couverts (`chip_scanner_service.dart`, `user_detail_page_feed.dart`,
+`lieu_detail_page.dart`, `portee_form_page.dart`, `pro_clients_page.dart`,
+`registre_pension_page.dart`, `mes-animaux/[id]/page.tsx`,
+`ProDashboard.tsx`, `elevages/[id]/page.tsx`).
+
+Cas particulier : `registre_pension_page.dart` — nom/adresse basculent
+vers `user_profiles`, `email` reste sourcé sur `users` (aucun équivalent
+fiable). `ProDashboard.tsx` : `prenom`/`nom` retirés (colonnes `users`
+inexistantes, toujours `undefined` avant ce fix — **ne pas** les
+remapper vers `user_profiles.nom`, qui désigne le nom d'élevage et non
+un nom de famille). `elevages/[id]/page.tsx` : confirmé en direct que
+tous les champs éleveur (`siret`, `is_premium`, `is_validate`,
+`especes_elevees`) existent bien sur `user_profiles`.
+
+**Explicitement exclu, laissé en l'état** : `animal_fiche_pension_page.dart`
+et `fiches_pension_page.dart` gardent leur repli `users.phone_number`
+intentionnel (contournement d'un ancien bug de placeholder, probablement
+redondant depuis le trigger de la Phase 1, mais pas retiré par prudence).
+
+**Restant après ce lot** : 4 sites de recherche live par email (motif
+nécessitant conception dédiée — `cession_sheet.dart`, `CessionModal.tsx`,
+`education_devis_page.dart`, `education/devis/page.tsx`) et 7 pages à
+fusion users+user_profiles avec dédoublonnage (catégorie B —
+`service_list_page.dart`, `pro_list.dart`, `services/page.tsx`,
+`services/carte/page.tsx`, `admin/page.tsx`, `associations_list_page.dart`,
+`associations/page.tsx`). Chantier de lecture `users`→`user_profiles`
+substantiellement complet pour les lookups simples ; le reste nécessite
+une conception dédiée, pas une bascule mécanique.
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

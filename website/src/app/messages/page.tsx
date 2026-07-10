@@ -145,15 +145,15 @@ function MessagesPageInner() {
   const getUserInfo = useCallback(async (uid: string): Promise<UserInfo> => {
     if (userInfoCacheRef.current[uid]) return userInfoCacheRef.current[uid];
     try {
-      const { data } = await supabase.from('users')
-        .select('firstname, lastname, profile_picture_url, is_elevage, name_elevage')
-        .eq('uid', uid).maybeSingle();
+      const { data } = await supabase.from('user_profiles')
+        .select('firstname, lastname, avatar_url, profile_type, nom')
+        .eq('uid', uid).eq('is_main', true).maybeSingle();
       if (data) {
-        const isElevage = data.is_elevage === true;
-        const name = isElevage && data.name_elevage
-          ? data.name_elevage
+        const isElevage = data.profile_type === 'eleveur';
+        const name = isElevage && data.nom
+          ? data.nom
           : `${data.firstname ?? ''} ${data.lastname ?? ''}`.trim() || 'Utilisateur';
-        const info: UserInfo = { name, avatar: data.profile_picture_url ?? undefined };
+        const info: UserInfo = { name, avatar: data.avatar_url ?? undefined };
         userInfoCacheRef.current[uid] = info;
         forceUpdate(n => n + 1);
         return info;

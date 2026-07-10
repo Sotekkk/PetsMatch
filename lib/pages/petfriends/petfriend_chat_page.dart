@@ -153,14 +153,14 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
         // Stocker le nom de l'expéditeur dans participants_info
         final updatedInfo = Map<String, dynamic>.from(_participantsInfo);
         if (myName.isEmpty) {
-          final me = await _supa.from('users')
-              .select('firstname, lastname, profile_picture_url')
-              .eq('uid', _myUid).maybeSingle();
+          final me = await _supa.from('user_profiles')
+              .select('firstname, lastname, avatar_url')
+              .eq('uid', _myUid).eq('is_main', true).maybeSingle();
           if (me != null) {
             updatedInfo[_myUid] = {
               'name': '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim(),
-              if ((me['profile_picture_url'] as String?)?.isNotEmpty == true)
-                'photo': me['profile_picture_url'],
+              if ((me['avatar_url'] as String?)?.isNotEmpty == true)
+                'photo': me['avatar_url'],
             };
             setState(() => _participantsInfo = updatedInfo);
           }

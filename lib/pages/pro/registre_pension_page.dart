@@ -2243,16 +2243,20 @@ Future<Map<String, dynamic>> _lookupAnimalByChip(String chip) async {
         try {
           // Supabase, pas Firestore (obsolète depuis la migration — documents
           // vides/périmés, ce qui laissait ces champs vides à l'admission).
-          final d = await supa.from('users').select().eq('uid', ownerUid).maybeSingle();
+          final d = await supa.from('user_profiles').select().eq('uid', ownerUid).eq('is_main', true).maybeSingle();
           if (d != null) {
             // Éleveur/pro → nom d'élevage + adresse pro en priorité, sinon nom perso.
-            final nameElevage = (d['name_elevage'] as String?) ?? (d['nom'] as String?);
+            final nameElevage = d['nom'] as String?;
             final firstLast = [d['firstname'] as String? ?? '', d['lastname'] as String? ?? '']
                 .where((s) => s.isNotEmpty).join(' ');
             ownerNom = (nameElevage != null && nameElevage.isNotEmpty) ? nameElevage : firstLast;
 
             ownerContact = (d['phone_number'] as String?) ?? (d['telephone'] as String?) ?? '';
-            ownerEmail   = (d['email'] as String?) ?? (d['email_contact'] as String?) ?? '';
+            // email : aucun équivalent fiable sur user_profiles, reste sur users.
+            try {
+              final userRow = await supa.from('users').select('email').eq('uid', ownerUid).maybeSingle();
+              ownerEmail = (userRow?['email'] as String?) ?? '';
+            } catch (_) {}
 
             final ruePro   = d['rue_pro'] as String? ?? d['adress_elevage'] as String? ?? d['rue_elevage'] as String?;
             final cpPro    = d['code_postal_pro'] as String?;

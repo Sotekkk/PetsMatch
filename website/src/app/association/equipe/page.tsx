@@ -162,31 +162,19 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
         let taches: Tache[] = [];
 
         if (row.uid_employe) {
-          // 1. Cherche dans users (table principale)
-          const { data: u } = await supabase.from('users')
-            .select('firstname, lastname, name_elevage, is_elevage, profile_picture_url, profile_picture_url_elevage, phone_number')
-            .eq('uid', row.uid_employe).maybeSingle();
-          const p = u as Omit<UserProfile, 'uid'> | null;
+          const { data: p } = await supabase.from('user_profiles')
+            .select('firstname, lastname, nom, profile_label, avatar_url, profile_picture_url_pro')
+            .eq('uid', row.uid_employe)
+            .eq('is_main', true)
+            .maybeSingle();
 
-          let fullNom = p?.is_elevage
-            ? (p.name_elevage?.trim() || '')
-            : `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim();
-
-          // 2. Fallback user_profiles si nom vide (particuliers qui ont leur info dans user_profiles)
-          if (!fullNom) {
-            const { data: up } = await supabase.from('user_profiles')
-              .select('nom, name_elevage, profile_label, avatar_url')
-              .eq('uid', row.uid_employe)
-              .eq('is_main', true)
-              .maybeSingle();
-            fullNom = up?.profile_label?.trim() || up?.nom?.trim() || up?.name_elevage?.trim() || '';
-            if (!photo && up?.avatar_url) photo = up.avatar_url;
-          }
-
-          if (!fullNom) fullNom = isBenevole ? 'Bénévole' : 'Employé';
+          const fullNom = p?.profile_label?.trim()
+            || p?.nom?.trim()
+            || `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim()
+            || (isBenevole ? 'Bénévole' : 'Employé');
           prenom = fullNom.split(' ')[0] ?? fullNom;
           nom = fullNom.split(' ').slice(1).join(' ') || '';
-          if (!photo) photo = (p?.is_elevage ? p?.profile_picture_url_elevage : p?.profile_picture_url) ?? null;
+          photo = p?.avatar_url || p?.profile_picture_url_pro || null;
           taches = await fetchTachesPersonne(row.uid_employe, uid);
         }
 
@@ -947,10 +935,18 @@ function AddPetsMatchModal({ uid, eleveurProfileId, type, onClose }: { uid: stri
   const [adding, setAdding] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.from('users')
-      .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, profile_picture_url_elevage, phone_number')
-      .neq('uid', uid).limit(500)
-      .then(({ data }) => { setAllUsers((data ?? []) as UserProfile[]); setLoading(false); });
+    supabase.from('user_profiles')
+      .select('uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro, phone_number')
+      .neq('uid', uid).eq('is_main', true).limit(500)
+      .then(({ data }) => {
+        setAllUsers((data ?? []).map(p => ({
+          uid: p.uid, firstname: p.firstname, lastname: p.lastname,
+          name_elevage: p.nom, is_elevage: p.profile_type === 'eleveur',
+          profile_picture_url: p.avatar_url, profile_picture_url_elevage: p.profile_picture_url_pro,
+          phone_number: p.phone_number,
+        })));
+        setLoading(false);
+      });
   }, [uid]);
 
   function search(q: string) {

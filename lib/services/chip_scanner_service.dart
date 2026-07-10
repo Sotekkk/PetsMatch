@@ -648,12 +648,13 @@ class _VetResultSheetState extends State<_VetResultSheet> {
       bool isClinic = false;
       try {
         final vetUser = await Supabase.instance.client
-            .from('users')
-            .select('firstname, lastname, name_elevage')
+            .from('user_profiles')
+            .select('firstname, lastname, nom')
             .eq('uid', vetUid)
+            .eq('is_main', true)
             .maybeSingle();
         if (vetUser != null) {
-          final clinic = (vetUser['name_elevage'] ?? '').toString().trim();
+          final clinic = (vetUser['nom'] ?? '').toString().trim();
           final fname  = (vetUser['firstname']   ?? '').toString().trim();
           final lname  = (vetUser['lastname']    ?? '').toString().trim();
           if (clinic.isNotEmpty) {

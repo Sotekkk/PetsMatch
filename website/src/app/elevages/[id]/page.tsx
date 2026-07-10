@@ -94,18 +94,15 @@ function fromSupabase(uid: string, d: Record<string, unknown>): EleveurData {
       espece: e.espece ?? '',
       races: e.races ?? [],
     }));
-  } else {
-    if (d['is_dog']) especesList.push({ espece: 'chien', races: Array.isArray(d['dog_breeds']) ? d['dog_breeds'] as string[] : [] });
-    if (d['is_cat']) especesList.push({ espece: 'chat', races: Array.isArray(d['cat_breeds']) ? d['cat_breeds'] as string[] : [] });
   }
   return {
     uid,
-    name: (d['name_elevage'] as string) || `${d['firstname'] ?? ''} ${d['lastname'] ?? ''}`.trim() || 'Éleveur',
+    name: (d['nom'] as string)?.trim() || `${d['firstname'] ?? ''} ${d['lastname'] ?? ''}`.trim() || 'Éleveur',
     description: (d['desc_entreprise'] as string) || '',
-    photo: (d['profile_picture_url_elevage'] as string) || (d['profile_picture_url'] as string) || '',
+    photo: (d['avatar_url'] as string) || '',
     banner: (d['banner_url'] as string) || '',
-    ville: (d['ville_elevage'] as string) || (d['ville'] as string) || '',
-    pays: (d['pays_elevage'] as string) || '',
+    ville: (d['ville'] as string) || '',
+    pays: (d['pays'] as string) || '',
     especesList,
     siret: (d['siret'] as string) || '',
     statutPro: (d['statut_pro'] as string) || '',
@@ -198,14 +195,14 @@ export default function EleveurProfilePage() {
         setLoading(false);
         return;
       }
-      return supabase.from('users').select('*').eq('uid', id).maybeSingle()
+      return supabase.from('user_profiles').select('*').eq('uid', id).eq('is_main', true).maybeSingle()
         .then(({ data }) => {
           if (data) setEleveur(fromSupabase(id, data as Record<string, unknown>));
           else setNotFound(true);
           setLoading(false);
         });
     }).catch(() => {
-      supabase.from('users').select('*').eq('uid', id).maybeSingle()
+      supabase.from('user_profiles').select('*').eq('uid', id).eq('is_main', true).maybeSingle()
         .then(({ data }) => {
           if (data) setEleveur(fromSupabase(id, data as Record<string, unknown>));
           else setNotFound(true);

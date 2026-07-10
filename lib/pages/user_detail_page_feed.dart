@@ -36,9 +36,10 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
   Future<void> _loadBannerFromSupabase() async {
     try {
       final row = await Supabase.instance.client
-          .from('users')
+          .from('user_profiles')
           .select('banner_url')
           .eq('uid', widget.user.uid)
+          .eq('is_main', true)
           .maybeSingle();
       final url = row?['banner_url'] as String?;
       if (mounted && url != null && url.isNotEmpty) setState(() => _bannerUrl = url);
