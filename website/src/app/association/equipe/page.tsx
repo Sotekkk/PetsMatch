@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useActiveProfileState } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -110,12 +110,12 @@ async function fetchTachesPersonne(uid_employe: string, uid_eleveur: string): Pr
 export default function EquipeWebPage() {
   const { user } = useAuth();
   const uid = user?.uid ?? '';
-  const profileId = useActiveProfile();
+  const { id: profileId, loaded: profileLoaded } = useActiveProfileState();
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold font-galey text-teal-800 mb-6">Équipe</h1>
-      <EquipeUnifiee uid={uid} profileId={profileId} />
+      {profileLoaded && <EquipeUnifiee uid={uid} profileId={profileId} />}
     </div>
   );
 }
@@ -787,7 +787,7 @@ function BenevoleCard({ b, uid: _uid, isOpen, onToggleOpen, onToggle, onEdit, on
 function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
   uid: string; assigneeUid: string; assigneeName: string; onClose: () => void;
 }) {
-  const activeProfileId = useActiveProfile();
+  const { id: activeProfileId } = useActiveProfileState();
   const today = new Date().toISOString().split('T')[0];
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [enclos, setEnclos] = useState<Enclos[]>([]);

@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useActiveProfileState } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -262,7 +262,7 @@ ${sectionsHtml}
 
 export default function PlanningPage() {
   const { user, loading } = useAuth();
-  const profileId = useActiveProfile();
+  const { id: profileId, loaded: profileLoaded } = useActiveProfileState();
   const router = useRouter();
   const pathname = usePathname();
   const profilSource = pathname.startsWith('/association') ? 'association' : 'eleveur';
@@ -315,7 +315,7 @@ export default function PlanningPage() {
   }
 
   const loadTaches = useCallback(async () => {
-    if (!user) return;
+    if (!user || !profileLoaded) return;
     setLoadingData(true);
     let q = supabase.from('plan_taches')
       .select('*, plans_actifs(reference_label)')
@@ -332,10 +332,10 @@ export default function PlanningPage() {
     if (error) console.error('[plan_taches]', error.message, error.details);
     setTaches((data ?? []) as Tache[]);
     setLoadingData(false);
-  }, [user, selectedDate, profilSource, profileId]);
+  }, [user, selectedDate, profilSource, profileId, profileLoaded]);
 
   const loadTemplates = useCallback(async () => {
-    if (!user) return;
+    if (!user || !profileLoaded) return;
     let q = supabase.from('plan_templates').select('*, plan_template_etapes(*)')
       .order('created_at', { ascending: false });
     if (profileId) {
@@ -347,10 +347,10 @@ export default function PlanningPage() {
       ? q.eq('profil_source', 'association')
       : q.or('profil_source.is.null,profil_source.eq.eleveur'));
     setTemplates((data ?? []) as Template[]);
-  }, [user, profilSource, profileId]);
+  }, [user, profilSource, profileId, profileLoaded]);
 
   const loadMonth = useCallback(async () => {
-    if (!user) return;
+    if (!user || !profileLoaded) return;
     setMonthLoading(true);
     const first = new Date(focusedMonth); first.setDate(1);
     const last  = new Date(focusedMonth.getFullYear(), focusedMonth.getMonth() + 1, 0);
@@ -381,7 +381,7 @@ export default function PlanningPage() {
     setTasksByDate(byDate);
     setOverdueSet(overdue);
     setMonthLoading(false);
-  }, [user, focusedMonth, profileId]);
+  }, [user, focusedMonth, profileId, profileLoaded]);
 
   useEffect(() => { if (user) { loadTaches(); loadTemplates(); } }, [user, loadTaches, loadTemplates]);
   useEffect(() => { if (user && view === 'mois') loadMonth(); }, [user, view, loadMonth]);

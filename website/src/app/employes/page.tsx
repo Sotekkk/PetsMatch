@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useActiveProfileState } from '@/hooks/useActiveProfile';
 
 const PRO_TYPES = new Set([
   'veterinaire', 'para_medical', 'education', 'petsitter',
@@ -100,14 +100,17 @@ function Avatar({ src, nom, size = 40 }: { src?: string | null; nom: string; siz
 export default function EmployesPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const profileId = useActiveProfile();
+  const { id: profileId, loaded: profileLoaded } = useActiveProfileState();
   const [tab, setTab] = useState<'equipe' | 'taches'>('equipe');
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/connexion');
   }, [authLoading, user, router]);
 
-  if (authLoading || !user) {
+  // Attendre la résolution du profil actif avant de monter les onglets —
+  // sinon leurs fetchs repliraient sur uid seul et remonteraient les
+  // données de TOUS les profils du compte (fuite cross-profil).
+  if (authLoading || !user || !profileLoaded) {
     return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
   }
 

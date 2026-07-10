@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useActiveProfileState } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -68,7 +68,7 @@ function pluralUnite(unite: string, qty: number): string {
 export default function InventairePage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
-  const profileId = useActiveProfile();
+  const { id: profileId, loaded: profileLoaded } = useActiveProfileState();
 
   const [items,      setItems]      = useState<Item[]>([]);
   const [loading,    setLoading]    = useState(true);
@@ -85,7 +85,10 @@ export default function InventairePage() {
   }, [authLoading, user, router]);
 
   const loadItems = useCallback(async () => {
-    if (!user) return;
+    // Attendre la résolution du profil actif (lecture localStorage) avant de
+    // charger — sinon un repli sur uid_eleveur seul remonte les articles de
+    // TOUS les profils du compte (ex: éleveur affiché sous association).
+    if (!user || !profileLoaded) return;
     setLoading(true);
     const pid = profileId || null;
     let q = supabase.from('inventaire_items').select('*').order('categorie').order('nom');
@@ -97,7 +100,7 @@ export default function InventairePage() {
     const { data } = await q;
     setItems((data ?? []) as Item[]);
     setLoading(false);
-  }, [user, profileId]);
+  }, [user, profileId, profileLoaded]);
 
   useEffect(() => { loadItems(); }, [loadItems]);
 

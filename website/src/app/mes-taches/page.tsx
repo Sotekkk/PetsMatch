@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { useProfileSource, useActiveProfile } from '@/hooks/useActiveProfile';
+import { useProfileSource, useActiveProfileState } from '@/hooks/useActiveProfile';
 
 interface Task {
   id: string;
@@ -23,7 +23,7 @@ export default function MesTachesPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const profilSource = useProfileSource();
-  const profileId = useActiveProfile();
+  const { id: profileId, loaded: profileLoaded } = useActiveProfileState();
   const [taches, setTaches] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDone, setShowDone] = useState(false);
@@ -34,7 +34,7 @@ export default function MesTachesPage() {
   }, [authLoading, user, router]);
 
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!user || !profileLoaded) return;
     setLoading(true);
     try {
       let q = supabase.from('taches_elevage').select('*').order('date');
@@ -68,7 +68,7 @@ export default function MesTachesPage() {
     } finally {
       setLoading(false);
     }
-  }, [user, profilSource, profileId]);
+  }, [user, profilSource, profileId, profileLoaded]);
 
   useEffect(() => { load(); }, [load]);
 

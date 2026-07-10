@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useActiveProfileState } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -99,7 +99,7 @@ function dateLabel(d: string): string {
 
 export default function EmployesPage() {
   const { user, loading } = useAuth();
-  const profileId = useActiveProfile();
+  const { id: profileId, loaded: profileLoaded } = useActiveProfileState();
   const router = useRouter();
   const [tab, setTab] = useState<'employes' | 'taches'>('taches');
   const [employes, setEmployes] = useState<Employe[]>([]);
@@ -117,7 +117,7 @@ export default function EmployesPage() {
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
 
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!user || !profileLoaded) return;
     setLoadingData(true);
     try {
       // Employés
@@ -185,7 +185,7 @@ export default function EmployesPage() {
       setPlanTaches(ptResolved);
     } catch (_) {}
     setLoadingData(false);
-  }, [user, profileId]);
+  }, [user, profileId, profileLoaded]);
 
   useEffect(() => { if (user) load(); }, [user, load]);
 

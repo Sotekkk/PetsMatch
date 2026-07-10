@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useActiveProfileState } from '@/hooks/useActiveProfile';
 
 interface Animal { id: string; nom: string; espece?: string; race?: string; statut?: string; photo_url?: string }
 
@@ -45,7 +45,7 @@ const EMPTY_FORM = {
 
 export default function FamillesAccueilWebPage() {
   const { user } = useAuth();
-  const profileId = useActiveProfile();
+  const { id: profileId, loaded: profileLoaded } = useActiveProfileState();
   const [fas, setFas] = useState<FA[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -66,7 +66,7 @@ export default function FamillesAccueilWebPage() {
   const [placing, setPlacing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!user || !profileLoaded) return;
     let q = supabase.from('familles_accueil')
       .select('*, animaux(id, nom, espece, race, statut, photo_url)')
       .eq('actif', true).order('nom');
@@ -78,7 +78,7 @@ export default function FamillesAccueilWebPage() {
     const { data } = await q;
     setFas(data ?? []);
     setLoading(false);
-  }, [user, profileId]);
+  }, [user, profileId, profileLoaded]);
 
   const loadUsers = useCallback(async () => {
     if (!user) return;
