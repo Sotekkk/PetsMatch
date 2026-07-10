@@ -5049,6 +5049,37 @@ fichiers ; 1 avertissement `react-hooks/set-state-in-effect` hérité sur
 dans ce projet), `next build` production complet réussi (routes
 `/garde/devis`, `/garde/contrat` confirmées dans la sortie de build).
 
+### 28.7 — Phase 2b livrée (session 2026-07-10) : gestion des clés
+
+Première brique de la Phase 2b (reste : GPS/tournée, services récurrents,
+tarifs personnalisés par client, créneaux configurables, onboarding dédié —
+non commencés).
+
+- **Nouvelle table `cles_clients`** (migration `migration_garde_cles.sql` —
+  **à exécuter manuellement**) : `animal_id`, `owner_uid`/`owner_profile_id`,
+  `description`, `statut` (`en_possession`/`rendue`), `date_recuperation`,
+  `date_restitution`, `notes`. Scopée `pro_uid`+`pro_profile_id`, RLS INSERT
+  exige les deux (convention établie tout ce chantier).
+- **Pas de nouvelle notion de "client"** : la liste des clients éligibles à
+  une clé est dérivée des RDV confirmés/terminés existants (même requête
+  que `registre_visites_page.dart`), pas de table clients dédiée à créer.
+- App : nouvelle page `cles_clients_page.dart` (liste "En ma possession" /
+  "Rendues", ajout via bottom sheet avec sélecteur client/animal, édition,
+  bascule de statut en un tap, suppression). Lien ajouté au bloc garde de
+  `eleveur_nav.dart`, juste après "Devis".
+- Web : nouvelle route `/garde/cles` (même logique, modale au lieu de
+  bottom sheet). Lien ajouté à `MENU_GARDE` dans `Header.tsx`.
+- Pas de gating Premium/Team sur cette fonctionnalité (contrairement à
+  Inventaire/Protocoles/Employés) — jugée basique/attendue dès le palier
+  gratuit, même traitement que Registre visites/Devis.
+
+Vérifié : `flutter analyze` sur le nouveau fichier + `eleveur_nav.dart`
+(0 nouveau problème), `tsc --noEmit` + `eslint` sur `garde/cles/page.tsx`
+et `Header.tsx` (0 nouvelle erreur — le seul avertissement
+`react-hooks/set-state-in-effect` reproduit le pattern déjà toléré sur
+`/garde/registre`), `next build` production complet réussi (`/garde/cles`
+confirmée dans la sortie de build).
+
 ---
 
 ## 29. Module "Balades ludiques" (collègue) — correctif fuite cross-profil (session 2026-07-10)
