@@ -22,6 +22,8 @@ import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/pro/registre_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/registre_visites_page.dart';
+import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
@@ -486,6 +488,24 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
         _StatCard(
           value: 'Pension', label: 'Statut', icon: Icons.verified_outlined,
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PensionAbonnementPage())),
+        ),
+      ]);
+    }
+    if (User_Info.catPro == 'garde') {
+      return Row(children: [
+        _StatCard(
+          value: _rdvTodayCount.toString(), label: 'RDV aujourd\'hui', icon: Icons.calendar_today_outlined,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AgendaPage(initialViewMode: 1, onBack: () => Navigator.pop(context)))),
+        ),
+        const SizedBox(width: 12),
+        _StatCard(
+          value: _rdvMonthCount.toString(), label: 'Visites ce mois', icon: Icons.calendar_month_outlined,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RegistreVisitesPage())),
+        ),
+        const SizedBox(width: 12),
+        _StatCard(
+          value: 'Garde', label: 'Statut', icon: Icons.verified_outlined,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const GardeAbonnementPage())),
         ),
       ]);
     }

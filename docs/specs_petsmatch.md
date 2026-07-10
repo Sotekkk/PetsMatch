@@ -4808,4 +4808,133 @@ catégorie B incluse.**
 
 ---
 
+## 28. Module Petsitter / Promeneur (`garde`) — Spec initiale (session 2026-07-10)
+
+> Objectif exprimé : donner aux profils Pet sitter / Promeneur un socle de gestion
+> opérationnelle aussi complet que la pension (§19), inspiré du produit "Kookie Sitter".
+> Pet sitter et promeneur sont traités **ensemble** (l'utilisateur les veut "en parallèle").
+
+### 28.1 — Décision d'architecture
+
+`profile_type = 'garde'` existe déjà (`add_profile_page.dart`) et couvre les deux
+sous-professions "Pet sitter" / "Promeneur de chiens" via `sub_profession`. Il
+n'y a **pas** de type `'petsitter'` séparé dans le flux d'inscription réel — seul
+un littéral legacy `'petsitter'` traîne dans les sets `proTypes` (`main.dart` et
+~6 fichiers dupliqués) pour la compat `isPro`. **Décision : construire le module
+sur `catPro == 'garde'`**, pas sur un nouveau type `'petsitter'`, pour rester
+cohérent avec l'inscription existante. Aucun profil `'petsitter'` réel n'existe
+en base à migrer.
+
+Par ailleurs, `'sante'` couvre déjà Ostéopathe/Kinésithérapeute (sous-professions),
+et `'marechal_ferrant'` est déjà un type à part entière — ces deux-là ne sont donc
+pas des types "manquants", juste des types sans build-out opérationnel façon
+pension pour l'instant (repoussé, hors scope immédiat). **`'taxi'`** en revanche
+n'existe pas du tout (ni type, ni sous-profession) — à créer si/quand ce chantier
+est repris.
+
+### 28.2 — Fonctionnalités demandées (traduites de la description Kookie Sitter)
+
+- **Fiches client/animal centralisées** : infos client + animaux accessibles
+  app + web, historique des visites/promenades.
+- **Événements planifiés** : accès agenda, démarrer/terminer une prestation,
+  vue équipe des événements à venir.
+- **Devis/contrats/factures automatiques** avec envoi email automatique
+  (Premium/Team uniquement, comme chez Kookie Sitter).
+- **Gestion des clés** : liste de clés par client, description + traçabilité.
+- **Rapports post-visite** : facultatif, avec photos, envoi auto par email
+  (SMS en option — **non disponible**, Twilio jamais implémenté sur ce projet,
+  cf. précédent similaire noté §19.4).
+- **Communication entre intervenants** (équipe partagée).
+- **Suivi GPS + ordre d'itinéraire** : carte des prestations du jour, tournée
+  réordonnable.
+- **Services récurrents** : modèles de planification flexible (ex. 5j/semaine).
+- **Forfaits** : lots de prestations pré-achetées à tarif préférentiel.
+- **Tarifs clients personnalisés** : prix différents par client pour un même service.
+- **Créneaux horaires de planification** configurables.
+- **Gestion du personnel** : plusieurs intervenants, services/localisations/dates
+  assignables individuellement.
+- **Paiement en ligne des prestations** : **explicitement V2** par l'utilisateur —
+  pour tous les prestataires qui le souhaitent (pas juste petsitter), sinon saisie
+  manuelle pour la comptabilité (éducateur, petsitter, pension inclus). Cohérent
+  avec le "paiement en ligne (lien email/SMS)" déjà noté V2 pour la pension (§19.2).
+
+### 28.3 — Réutilisation attendue (déjà générique, pas de nouveau code)
+
+Inventaire, Employés, Protocoles/Tâches, Agenda/RDV, Documents/contrats
+signature électronique sont déjà génériques par `pro_profile_id` — même
+traitement que la pension (§19.1, "parité de gestion"). Reste réellement
+spécifique à construire : logements→tournées/itinéraire, gestion des clés,
+forfaits, tarifs personnalisés, services récurrents, config plan/abonnement
+`garde` (n'existe pas encore dans `plan_service.dart`/`use-plan.ts`, seuls
+`pension` et `education` ont un config aujourd'hui).
+
+### 28.4 — Phase 1 livrée (session 2026-07-10) : socle
+
+**Découverte en cours de route** : `app_nav_drawer.dart` (drawer secondaire
+utilisé sur les pages d'annuaire type `service_list_page.dart`) n'est **pas**
+la navigation réelle d'un compte pro — tout compte `isPro` (garde inclus)
+route vers `eleveur_nav.dart` via `bottom_nav.dart::_asElevage`. Le lien
+`garde → RegistrePensionPage` s'y trouvait déjà, sémantiquement faux (registre
+de check-in/check-out en logements, pas le modèle événementiel du petsitter)
+— corrigé au passage (`pension` seul sur ce lien désormais).
+
+- **Abonnement `garde`** : `GardePlanConfig` + `getGardeConfig`/
+  `getGardePlansLive`/`getGardePlanCode` dans `plan_service.dart` (miroir
+  exact de `EducationPlanConfig`, sans les champs logements propres à la
+  pension). 3 paliers mêmes prix que pension/éducateur. App :
+  `garde_abonnement_page.dart`. Web : `GardePlanConfig`/`usePlanGarde` dans
+  `use-plan.ts`, `useGardeAccess.ts` (miroir `usePensionAccess`),
+  `/garde/abonnement` (miroir exact de `/pension/abonnement`, checkout
+  Stripe déjà générique par `profil_type` — aucune adaptation backend
+  nécessaire, confirmé en lisant `api/stripe/checkout/route.ts`).
+- **Navigation** (`eleveur_nav.dart`) : bloc `catPro == 'garde'` ajouté
+  (Registre visites, Inventaire, Protocoles/Tâches, Mes Employés, Mon
+  abonnement — gating `_gardePlanCode` comme pension). Web : `MENU_GARDE`
+  dans `Header.tsx` (miroir `MENU_EDUCATION`), `effectiveIsGarde` ajouté à
+  la résolution de menu.
+- **Registre visites** (nouveau, remplace le lien pension erroné) : le
+  modèle petsitter est événementiel (chaque visite = une ligne `rdv`
+  existante, pas de nouvelle table). App : `registre_visites_page.dart` —
+  liste À venir/Passées scopée par `pro_profile_id`, bouton "Marquer
+  terminée" (`rdv.statut = 'termine'`, comportement déjà neutre côté
+  `pro_agenda.dart::_updateStatut`, aucune notification collatérale à
+  reproduire). Web : `/garde/registre` (même logique).
+- **Rapport de visite** : réutilise la table `pension_updates` telle
+  quelle (`animal_id`, `pro_uid`, `photo_url`, `note` — `pension_entree_id`
+  confirmé nullable par test d'insertion live) plutôt que d'en créer une
+  nouvelle identique. Bouton sur un événement dans Registre visites → photo
+  optionnelle + note → notification in-app (`type: 'visite_rapport'`),
+  même schéma que `education_rapport` (§20.1). **Effet de bord gratuit côté
+  web** : le composant `PensionJournal.tsx` était déjà entièrement
+  générique (prend `proUid` en prop, bascule lecture/écriture) — réutilisé
+  tel quel dans `/garde/registre`, aucun nouveau composant de saisie créé.
+  **Limite connue** : le bouton propriétaire "Nouvelles de la pension" sur
+  `mes-animaux/[id]/page.tsx` affichera aussi les rapports de visite garde
+  (même table, pas de colonne discriminante) — label pas encore adapté,
+  cosmétique uniquement, pas de fuite de données (l'affichage reste
+  scopé par `animal_id`, donc uniquement visible par le bon propriétaire).
+- **Dashboard** : `eleveur_home.dart` — bloc `catPro == 'garde'` (RDV
+  aujourd'hui, Visites ce mois, Statut, tous cliquables — miroir pension).
+  Web `ProDashboard.tsx` : déjà suffisamment générique (patients/RDV/
+  `TYPE_LABEL['garde']` déjà présents avant cette session), aucun changement
+  nécessaire.
+
+Vérifié : `flutter analyze` sur les fichiers app touchés/créés (0 nouveau
+problème, comparaison avant/après via `git stash`), `tsc --noEmit` +
+`eslint` sur les fichiers web (même compte d'erreurs `tsc` avant/après ;
+`eslint` +1 attendu — `usePlanGarde` hérite du même avertissement
+`react-hooks/set-state-in-effect` déjà toléré sur `usePensionPlan`, pas une
+régression nouvelle), `next build` production complet réussi (routes
+`/garde/abonnement` et `/garde/registre` confirmées dans la sortie de build).
+
+**Reste pour les phases suivantes** (non commencé) : devis/contrats/factures
+automatiques avec envoi email, gestion des clés, suivi GPS + tournée
+réordonnable, services récurrents, forfaits, tarifs clients personnalisés,
+créneaux horaires configurables dédiés, paiement en ligne des prestations
+(V2 explicite). Onboarding dédié (`onboarding_garde.dart` façon
+`onboarding_pension.dart`) également non traité — profils `garde` créés via
+le flux d'inscription générique existant (`add_profile_page.dart`).
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

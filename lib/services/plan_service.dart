@@ -78,6 +78,32 @@ class EducationPlanConfig {
   });
 }
 
+class GardePlanConfig {
+  final String code;
+  final String label;
+  final bool hasInventaire;
+  final bool hasEmployes;
+  final int maxEmployes; // -1 = illimité
+  final bool hasProtocoles;
+  final bool hasFactureExport;
+  final bool hasBadgePremium;
+  final double prixMensuel;
+  final double prixAnnuel;
+
+  const GardePlanConfig({
+    required this.code,
+    required this.label,
+    required this.hasInventaire,
+    required this.hasEmployes,
+    required this.maxEmployes,
+    required this.hasProtocoles,
+    required this.hasFactureExport,
+    required this.hasBadgePremium,
+    this.prixMensuel = 0,
+    this.prixAnnuel = 0,
+  });
+}
+
 class PlanService {
   static const String kWebsiteUrl = 'https://www.petsmatchapp.com';
 
@@ -224,6 +250,81 @@ class PlanService {
           .select('plan_code')
           .eq('uid', uid)
           .eq('profil_type', 'education')
+          .eq('statut', 'actif')
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      return (res?['plan_code'] as String?) ?? 'free';
+    } catch (_) {
+      return 'free';
+    }
+  }
+
+  static const Map<String, GardePlanConfig> gardeConfigs = {
+    'free': GardePlanConfig(
+      code: 'free', label: 'Découverte', hasInventaire: false, hasEmployes: false, maxEmployes: 0,
+      hasProtocoles: false, hasFactureExport: false, hasBadgePremium: false,
+      prixMensuel: 0, prixAnnuel: 0,
+    ),
+    'pro': GardePlanConfig(
+      code: 'pro', label: 'Pro', hasInventaire: true, hasEmployes: true, maxEmployes: 3,
+      hasProtocoles: true, hasFactureExport: true, hasBadgePremium: false,
+      prixMensuel: 14, prixAnnuel: 140,
+    ),
+    'premium': GardePlanConfig(
+      code: 'premium', label: 'Premium', hasInventaire: true, hasEmployes: true, maxEmployes: -1,
+      hasProtocoles: true, hasFactureExport: true, hasBadgePremium: true,
+      prixMensuel: 24, prixAnnuel: 240,
+    ),
+  };
+
+  static GardePlanConfig getGardeConfig(String planCode) =>
+      gardeConfigs[planCode] ?? gardeConfigs['free']!;
+
+  /// Tarifs garde (petsitter/promeneur) à jour depuis plans_tarifaires
+  /// (éditables depuis l'admin web sans déploiement). Retombe sur
+  /// gardeConfigs si la BDD est injoignable.
+  static Future<Map<String, GardePlanConfig>> getGardePlansLive() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('plans_tarifaires')
+          .select('plan_code, label, prix_mensuel, prix_annuel, features')
+          .eq('profil_type', 'garde')
+          .eq('actif', true);
+      final out = <String, GardePlanConfig>{};
+      for (final row in (rows as List)) {
+        final code = row['plan_code'] as String?;
+        if (code == null) continue;
+        final fallback = getGardeConfig(code);
+        final f = (row['features'] as Map<String, dynamic>?) ?? {};
+        out[code] = GardePlanConfig(
+          code: code,
+          label: (row['label'] as String?) ?? fallback.label,
+          hasInventaire: f['hasInventaire'] as bool? ?? fallback.hasInventaire,
+          hasEmployes: f['hasEmployes'] as bool? ?? fallback.hasEmployes,
+          maxEmployes: (f['maxEmployes'] as num?)?.toInt() ?? fallback.maxEmployes,
+          hasProtocoles: f['hasProtocoles'] as bool? ?? fallback.hasProtocoles,
+          hasFactureExport: f['hasFactureExport'] as bool? ?? fallback.hasFactureExport,
+          hasBadgePremium: f['hasBadgePremium'] as bool? ?? fallback.hasBadgePremium,
+          prixMensuel: (row['prix_mensuel'] as num?)?.toDouble() ?? fallback.prixMensuel,
+          prixAnnuel: (row['prix_annuel'] as num?)?.toDouble() ?? fallback.prixAnnuel,
+        );
+      }
+      return out.isEmpty ? gardeConfigs : out;
+    } catch (_) {
+      return gardeConfigs;
+    }
+  }
+
+  /// Plan garde actif pour ce uid — distinct du plan éleveur/pension/éducateur
+  /// (abonnements est scopé par profil_type).
+  static Future<String> getGardePlanCode(String uid) async {
+    try {
+      final res = await Supabase.instance.client
+          .from('abonnements')
+          .select('plan_code')
+          .eq('uid', uid)
+          .eq('profil_type', 'garde')
           .eq('statut', 'actif')
           .order('created_at', ascending: false)
           .limit(1)

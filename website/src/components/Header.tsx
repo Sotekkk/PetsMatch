@@ -231,6 +231,40 @@ const MENU_PENSION = [
   },
 ];
 
+const MENU_GARDE = [
+  {
+    section: 'Mon Activité',
+    icon: '🐕',
+    items: [
+      { href: '/garde/registre',  label: 'Registre visites', icon: '📋' },
+      { href: '/mes-rdv',         label: 'Gérer mes RDV',    icon: '🗓️' },
+      { href: '/pro/creneaux',    label: 'Mes créneaux',     icon: '⏰' },
+      { href: '/agenda',          label: 'Mon agenda',       icon: '📅' },
+      { href: '/mes-patients',    label: 'Mes animaux en garde', icon: '🐾' },
+    ],
+  },
+  {
+    section: 'Mon Profil',
+    icon: '👤',
+    items: [
+      { href: '/profil',              label: 'Modifier mon profil', icon: '✏️' },
+      { href: '/elevage/inventaire',  label: 'Inventaire',          icon: '📦', pro: true },
+      { href: '/employes',            label: 'Mes employés',        icon: '👥', pro: true },
+      { href: '/mes-taches',          label: 'Mes tâches',          icon: '✅', pro: true },
+      { href: '/elevage/facturation', label: 'Facturation',         icon: '🧾' },
+      { href: '/garde/abonnement',    label: 'Mon abonnement',      icon: '💳' },
+    ],
+  },
+  {
+    section: 'Annuaire & Communauté',
+    icon: '🔎',
+    items: [
+      { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
+      { href: '/communaute', label: 'Communauté',                  icon: '👥' },
+    ],
+  },
+];
+
 const MENU_EDUCATION = [
   {
     section: 'Mon Activité',
@@ -561,6 +595,9 @@ export default function Header() {
   const effectiveIsEducation = resolvedProfileType
     ? resolvedProfileType === 'education'
     : (userData?.isPro === true && userData?.catPro === 'education');
+  const effectiveIsGarde = resolvedProfileType
+    ? resolvedProfileType === 'garde'
+    : (userData?.isPro === true && userData?.catPro === 'garde');
   // Détection pro primaire (userData.isPro = true, aucun profil secondaire actif)
   const isPrimaryPro = !resolvedProfileType && userData?.isPro === true;
   const primaryCatPro = userData?.catPro ?? '';
@@ -595,7 +632,7 @@ export default function Header() {
         : sec)
     : MENU_PARTICULIER;
   const baseMenuSections = isEffectivelyPro
-    ? (effectiveIsPension ? MENU_PENSION : effectiveIsVet ? MENU_VET : effectiveIsEducation ? MENU_EDUCATION : MENU_PRO)
+    ? (effectiveIsPension ? MENU_PENSION : effectiveIsVet ? MENU_VET : effectiveIsEducation ? MENU_EDUCATION : effectiveIsGarde ? MENU_GARDE : MENU_PRO)
     : effectiveIsAssociation ? MENU_ASSOCIATION
     : effectiveIsEleveur ? MENU_ELEVEUR
     : baseMenuParticulier;
