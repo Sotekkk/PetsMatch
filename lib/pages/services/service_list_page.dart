@@ -230,9 +230,10 @@ class _ServiceListPageState extends State<ServiceListPage> {
         return;
       }
       final row = await _supa
-          .from('users')
+          .from('user_profiles')
           .select('lat, lng')
           .eq('uid', uid)
+          .eq('is_main', true)
           .maybeSingle();
       final lat = (row?['lat'] as num?)?.toDouble();
       final lng = (row?['lng'] as num?)?.toDouble();

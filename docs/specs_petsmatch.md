@@ -4573,6 +4573,44 @@ utiliser le pattern déjà établi (bascule `.from('users')` →
 `is_elevage`→`profile_type==='eleveur'`, `profile_picture_url`→
 `avatar_url`) et découper par famille comme ci-dessus.
 
+### 27.10 — Phase 4 livrée (lot 5) : annuaire pro / édition de profil
+
+**Découverte majeure au passage** : `lib/pages/pro/pro_profile_edit.dart`
+(édition du profil PRINCIPAL, pas secondaire) n'écrivait **que** sur
+`users` à la sauvegarde — jamais sur `user_profiles`. Contrairement aux
+trous ponctuels de la Phase 2 (quelques champs manquants), ici c'était
+le flux entier qui ne synchronisait jamais `user_profiles` après le
+premier edit d'un pro sur son profil principal. Corrigé en ajoutant un
+update miroir vers `user_profiles` (`is_main=true`), même mapping que
+la branche profil secondaire déjà correcte du même fichier
+(`rue`→`rue_pro`, `avatar_url`→`profile_picture_url_pro`, etc.). Ce fix
+d'écriture était un préalable obligatoire avant de pouvoir migrer la
+lecture de ce fichier sans afficher de données figées.
+
+Bascule lecture ensuite sur 6 fichiers en lookups directs par uid connu
+(pro_profile_edit.dart branche principale, banner_url de
+profil_eleveur_edit.dart, `_toggleNearMe`/`toggleNearMe` de
+service_list_page.dart et services/carte/page.tsx, service_detail_page.dart
+et services/pro/[uid]/page.tsx en alignant leur branche `users` sur le
+remap déjà présent dans leur branche `user_profiles` voisine, requête
+batch de pro_list.dart avec email scindé sur `users`).
+
+**Hors scope, documenté pour une passe dédiée** : les pages d'annuaire
+qui FUSIONNENT deux sources (`users` + `user_profiles`) avec
+dédoublonnage par uid — `service_list_page.dart` (requête principale),
+`pro_list.dart` (requête A), `website/src/app/services/page.tsx`,
+`services/carte/page.tsx` (requête principale), `admin/page.tsx` (2
+requêtes). Ce ne sont pas des bascules simples : il faut restructurer
+la logique de fusion/dédoublonnage, avec un vrai risque de doublons ou
+de trous si mal fait — certaines de ces fusions (`services/page.tsx`
+notamment) pourraient même devenir du code mort maintenant que chaque
+compte a garanti une ligne `user_profiles` `is_main=true`, mais ça reste
+une décision de conception à valider, pas un simple renommage de champ.
+Également laissés en l'état : les 2 requêtes de repli de
+`profil_association_edit.dart` (email + champs onboarding jamais
+recopiés par conception, et une branche à noms de colonnes suspects qui
+ne fire que pour une association jamais encore sauvegardée).
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

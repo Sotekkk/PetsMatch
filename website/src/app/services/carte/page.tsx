@@ -150,9 +150,10 @@ function ServicesCarteContent() {
     setLocating(true);
     try {
       const { data } = await supabase
-        .from('users')
+        .from('user_profiles')
         .select('lat, lng')
         .eq('uid', user.uid)
+        .eq('is_main', true)
         .maybeSingle();
       const lat = data?.lat as number | null;
       const lng = data?.lng as number | null;

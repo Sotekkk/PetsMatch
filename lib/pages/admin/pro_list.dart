@@ -113,12 +113,20 @@ class _ProListState extends State<ProList> {
       // Also load from Supabase users for email/name (more reliable)
       if (allUids.isNotEmpty) {
         try {
-          final userRows = await _supa
-              .from('users')
-              .select('uid, firstname, lastname, email, profile_picture_url_elevage, profile_picture_url')
-              .inFilter('uid', allUids.toList());
-          for (final u in (userRows as List)) {
-            fireMap[u['uid'] as String] = Map<String, dynamic>.from(u);
+          final profileRows = await _supa
+              .from('user_profiles')
+              .select('uid, firstname, lastname, avatar_url, profile_picture_url_pro')
+              .inFilter('uid', allUids.toList()).eq('is_main', true);
+          final emailRows = await _supa
+              .from('users').select('uid, email').inFilter('uid', allUids.toList());
+          final emailByUid = { for (final u in (emailRows as List)) u['uid'] as String: u['email'] };
+          for (final p in (profileRows as List)) {
+            fireMap[p['uid'] as String] = {
+              'firstname': p['firstname'], 'lastname': p['lastname'],
+              'email': emailByUid[p['uid']],
+              'profile_picture_url_elevage': p['profile_picture_url_pro'],
+              'profile_picture_url': p['avatar_url'],
+            };
           }
         } catch (_) {}
       }

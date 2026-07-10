@@ -147,15 +147,16 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
             .maybeSingle();
       } else {
         row = await _supa
-            .from('users')
+            .from('user_profiles')
             .select()
             .eq('uid', User_Info.uid)
+            .eq('is_main', true)
             .maybeSingle();
       }
 
       if (row != null) {
         final isSecondary = widget.secondaryProfileId != null;
-        _photoUrl  = isSecondary ? row['avatar_url'] as String? : row['profile_picture_url_elevage'] as String?;
+        _photoUrl  = isSecondary ? row['avatar_url'] as String? : row['profile_picture_url_pro'] as String?;
         _bannerUrl = row['banner_url'] as String?;
         _nomStructureCtrl.text = (row['nom'] ?? row['name_elevage']) ?? User_Info.nameElevage;
         _professionCtrl.text   = row['profession_pro']  ?? User_Info.professionPro;
@@ -180,14 +181,14 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           _cpCtrl.text   = row['code_postal']  ?? '';
           _paysCtrl.text = row['pays']?.isNotEmpty == true ? row['pays'] : 'France';
         } else {
-          _lat = (row['lat'] as num?)?.toDouble();
-          _lng = (row['lng'] as num?)?.toDouble();
-          _siret         = row['siret']               ?? User_Info.siret;
-          _catPro        = row['cat_pro']             ?? '';
-          _rueCtrl.text  = row['rue_elevage']         ?? '';
-          _villeCtrl.text = row['ville_elevage']      ?? '';
-          _cpCtrl.text   = row['code_postal_elevage'] ?? '';
-          _paysCtrl.text = row['pays_elevage']?.isNotEmpty == true ? row['pays_elevage'] : 'France';
+          _lat = (row['latitude'] as num?)?.toDouble() ?? (row['lat'] as num?)?.toDouble();
+          _lng = (row['longitude'] as num?)?.toDouble() ?? (row['lng'] as num?)?.toDouble();
+          _siret         = row['siret']           ?? User_Info.siret;
+          _catPro        = row['cat_pro']         ?? '';
+          _rueCtrl.text  = row['rue_pro']         ?? '';
+          _villeCtrl.text = row['ville_pro']      ?? '';
+          _cpCtrl.text   = row['code_postal_pro'] ?? '';
+          _paysCtrl.text = row['pays_pro']?.isNotEmpty == true ? row['pays_pro'] : 'France';
         }
         _addressSearchCtrl.text = [_rueCtrl.text, _cpCtrl.text, _villeCtrl.text]
             .where((s) => s.isNotEmpty).join(', ');
@@ -524,6 +525,42 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (photoUrl  != null) 'profile_picture_url_elevage': photoUrl,
           if (bannerUrl != null) 'banner_url': bannerUrl,
         }, onConflict: 'uid');
+
+        // Sync user_profiles (source V2) — sinon les données restent figées
+        // après le tout premier edit, jamais répercutées côté user_profiles.
+        await _supa.from('user_profiles').update({
+          'nom':                _nomStructureCtrl.text.trim(),
+          'profession_pro':     _professionCtrl.text.trim(),
+          'desc_entreprise':    _descCtrl.text.trim(),
+          'tarifs':             _tarifsCtrl.text.trim(),
+          'site_web':           _siteWebCtrl.text.trim(),
+          'instagram':          _instagramCtrl.text.trim(),
+          'facebook':           _facebookCtrl.text.trim(),
+          'rayon_intervention': _rayonKm,
+          'especes_acceptees':  _especesAcceptees,
+          'horaires':           horairesMap,
+          'certifications':     _certifications,
+          'accept_new_clients': _acceptNewClients,
+          if (_catPro == 'veterinaire') 'urgences_24h': _urgences24h,
+          'cat_pro':            _catPro,
+          'is_pro':             true,
+          'durees_motifs':      _dureesMotifs,
+          if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
+          if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
+          if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
+          if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
+          'rue_pro':            _rueCtrl.text.trim(),
+          'ville_pro':          _villeCtrl.text.trim(),
+          'code_postal_pro':    _cpCtrl.text.trim(),
+          'pays_pro':           _paysCtrl.text.trim(),
+          'adresse':            adresse,
+          'latitude':           _lat,
+          'longitude':          _lng,
+          'lat':                _lat,
+          'lng':                _lng,
+          if (photoUrl  != null) 'profile_picture_url_pro': photoUrl,
+          if (bannerUrl != null) 'banner_url': bannerUrl,
+        }).eq('uid', User_Info.uid).eq('is_main', true);
 
         await FirebaseFirestore.instance.collection('users').doc(uid).update({
           'catPro': _catPro,

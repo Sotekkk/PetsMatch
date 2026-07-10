@@ -89,11 +89,38 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
           };
         }
       } else {
-        row = await _supa
-            .from('users')
+        final raw = await _supa
+            .from('user_profiles')
             .select()
             .eq('uid', widget.proUid)
+            .eq('is_main', true)
             .maybeSingle();
+        if (raw != null) {
+          row = {
+            ...raw,
+            'uid':                       raw['uid'],
+            'name_elevage':              raw['nom'] ?? raw['firstname'] ?? '',
+            'profile_picture_url_elevage': raw['profile_picture_url_pro'] ?? '',
+            'profile_picture_url':       raw['avatar_url'] ?? '',
+            'banner_url':                raw['banner_url'] ?? '',
+            'ville_elevage':             raw['ville_pro'] ?? raw['ville'] ?? '',
+            'ville':                     raw['ville'] ?? '',
+            'desc_entreprise':           raw['desc_entreprise'] ?? '',
+            'especes_acceptees':         raw['especes_acceptees'] ?? [],
+            'accept_new_clients':        raw['accept_new_clients'] ?? true,
+            'horaires':                  raw['horaires'] ?? {},
+            'certifications':            raw['certifications'] ?? [],
+            'tarifs':                    raw['tarifs'] ?? '',
+            'site_web':                  raw['site_web'] ?? '',
+            'instagram':                 raw['instagram'] ?? '',
+            'facebook':                  raw['facebook'] ?? '',
+            'rayon_intervention':        raw['rayon_intervention'] ?? 0,
+            'cat_pro':                   raw['cat_pro'] ?? '',
+            'profession_pro':            raw['profession_pro'] ?? '',
+            'lat':                       raw['latitude'] ?? raw['lat'],
+            'lng':                       raw['longitude'] ?? raw['lng'],
+          };
+        }
       }
       if (mounted) setState(() { _proData = row; _loading = false; });
       if (row?['cat_pro'] == 'education') await _loadCoursCollectifs();

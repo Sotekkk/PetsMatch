@@ -113,7 +113,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
     if (bannerFromFirestore == null || bannerFromFirestore.isEmpty) {
       try {
         final row = await Supabase.instance.client
-            .from('users').select('banner_url').eq('uid', uid).maybeSingle();
+            .from('user_profiles').select('banner_url').eq('uid', uid).eq('is_main', true).maybeSingle();
         final url = row?['banner_url'] as String?;
         if (url != null && url.isNotEmpty) bannerFromFirestore = url;
       } catch (_) {}
