@@ -43,6 +43,7 @@ import 'package:PetsMatch/pages/pro/pension_factures_page.dart';
 import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/registre_visites_page.dart';
 import 'package:PetsMatch/pages/pro/cles_clients_page.dart';
+import 'package:PetsMatch/pages/pro/tarifs_clients_page.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
@@ -791,6 +792,16 @@ class _EleveurNavState extends State<EleveurNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const ClesClientsPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.sell_outlined,
+                      label: 'Tarifs clients',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const TarifsClientsPage(),
                         ));
                       },
                     ),

@@ -81,6 +81,16 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     ('box', 'Box'), ('enclos', 'Enclos'), ('parc', 'Parc'), ('chatterie', 'Chatterie'), ('cage', 'Cage'),
   ];
 
+  // Garde (petsitter/promeneur) : tarifs par type de prestation (€)
+  Map<String, int> _tarifsGarde = {};
+  static const _prestationsGarde = [
+    ('promenade_30min', 'Promenade (30 min)'),
+    ('promenade_1h',    'Promenade (1h)'),
+    ('promenade_2h',    'Promenade (2h)'),
+    ('garde_journee',   'Garde à domicile (journée)'),
+    ('autre',           'Autre prestation'),
+  ];
+
   // Éducateur/comportementaliste : tarifs par type de prestation (€)
   Map<String, int> _tarifsEducation = {};
   static const _prestationsEducation = [
@@ -230,6 +240,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         if (row['tarifs_education'] is Map) {
           _tarifsEducation = Map<String, int>.from(
             (row['tarifs_education'] as Map).map((k, v) =>
+                MapEntry(k.toString(), (v as num?)?.toInt() ?? 0)));
+        }
+        if (row['tarifs_garde'] is Map) {
+          _tarifsGarde = Map<String, int>.from(
+            (row['tarifs_garde'] as Map).map((k, v) =>
                 MapEntry(k.toString(), (v as num?)?.toInt() ?? 0)));
         }
         _educationBilanRequis = row['education_bilan_requis'] as bool? ?? true;
@@ -491,6 +506,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
+          if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
@@ -535,6 +551,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
+          if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
@@ -572,6 +589,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
+          if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
@@ -942,6 +960,54 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                         ]),
                       ),
                     ),
+                  ],
+
+                  // ── Tarifs garde (petsitter/promeneur) ─────────────────────
+                  if (_catPro == 'garde') ...[
+                    const SizedBox(height: 24),
+                    _sectionTitle('Tarifs par type de prestation (€)'),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Laissez à 0 les prestations que vous ne proposez pas.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                    ),
+                    const SizedBox(height: 12),
+                    ..._prestationsGarde.map((t) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(children: [
+                        Expanded(child: Text(t.$2,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                                fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
+                        const SizedBox(width: 12),
+                        SizedBox(
+                          width: 90,
+                          child: TextFormField(
+                            initialValue: (_tarifsGarde[t.$1] ?? 0).toString(),
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                            decoration: InputDecoration(
+                              suffixText: '€',
+                              suffixStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                              filled: true, fillColor: Colors.white,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
+                            ),
+                            onChanged: (val) {
+                              final v = int.tryParse(val);
+                              if (v != null && v >= 0) {
+                                setState(() => _tarifsGarde = {..._tarifsGarde, t.$1: v});
+                              }
+                            },
+                          ),
+                        ),
+                      ]),
+                    )),
                   ],
 
                   // ── Tarifs éducateur/comportementaliste ───────────────────

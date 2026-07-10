@@ -734,6 +734,14 @@ const PRESTATIONS_EDUCATION = [
   { value: 'domicile_supplement', label: 'Supplément à domicile' },
 ];
 
+const PRESTATIONS_GARDE = [
+  { value: 'promenade_30min', label: 'Promenade (30 min)' },
+  { value: 'promenade_1h', label: 'Promenade (1h)' },
+  { value: 'promenade_2h', label: 'Promenade (2h)' },
+  { value: 'garde_journee', label: 'Garde à domicile (journée)' },
+  { value: 'autre', label: 'Autre prestation' },
+];
+
 const JOURS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
 const MOTIFS_LABELS: Record<string, Record<string, string>> = {
@@ -815,6 +823,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [durees, setDurees] = useState<Record<string, number>>({});
   const [tarifsLogements, setTarifsLogements] = useState<Record<string, number>>({});
   const [tarifsEducation, setTarifsEducation] = useState<Record<string, number>>({});
+  const [tarifsGarde, setTarifsGarde] = useState<Record<string, number>>({});
   const [educationBilanRequis, setEducationBilanRequis] = useState(true);
   const [forfaits, setForfaits] = useState<{ id: string; nom: string; nb_seances: number; prix: number }[]>([]);
   const [loadingForfaits, setLoadingForfaits] = useState(false);
@@ -876,6 +885,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         }
         if (r.tarifs_education && typeof r.tarifs_education === 'object') {
           setTarifsEducation(r.tarifs_education as Record<string, number>);
+        }
+        if (r.tarifs_garde && typeof r.tarifs_garde === 'object') {
+          setTarifsGarde(r.tarifs_garde as Record<string, number>);
         }
         setEducationBilanRequis((r.education_bilan_requis as boolean) ?? true);
         setArrhesPourcentage(((r.arrhes_pourcentage as number) ?? 0));
@@ -947,6 +959,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         : {}),
       ...((data?.profile_type ?? data?.cat_pro) === 'education'
         ? { tarifs_education: tarifsEducation, education_bilan_requis: educationBilanRequis }
+        : {}),
+      ...((data?.profile_type ?? data?.cat_pro) === 'garde'
+        ? { tarifs_garde: tarifsGarde }
         : {}),
       ...(['garde', 'education'].includes((data?.profile_type ?? data?.cat_pro) ?? '')
         ? { acaced: acacedNum.trim(), acaced_numero: acacedNum.trim() }
@@ -1237,6 +1252,24 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                   <input type="number" min={0} step={1}
                     value={tarifsEducation[value] ?? 0}
                     onChange={e => setTarifsEducation(t => ({ ...t, [value]: Number(e.target.value) }))}
+                    className={inputCls} />
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Tarifs garde (petsitter/promeneur) */}
+        {catPro === 'garde' && (
+          <Card title="Tarifs par type de prestation (€)">
+            <p className="text-xs text-gray-400 mb-3">Laissez à 0 les prestations que vous ne proposez pas.</p>
+            <div className="grid grid-cols-2 gap-3">
+              {PRESTATIONS_GARDE.map(({ value, label }) => (
+                <div key={value}>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">{label}</label>
+                  <input type="number" min={0} step={1}
+                    value={tarifsGarde[value] ?? 0}
+                    onChange={e => setTarifsGarde(t => ({ ...t, [value]: Number(e.target.value) }))}
                     className={inputCls} />
                 </div>
               ))}

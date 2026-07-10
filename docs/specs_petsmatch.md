@@ -5080,6 +5080,55 @@ et `Header.tsx` (0 nouvelle erreur — le seul avertissement
 `/garde/registre`), `next build` production complet réussi (`/garde/cles`
 confirmée dans la sortie de build).
 
+### 28.8 — Phase 2b livrée (session 2026-07-10) : tarifs clients personnalisés
+
+**Découverte préalable** : garde n'avait **aucun catalogue de tarifs de
+base** (contrairement à `education`/`tarifs_education` et
+`pension`/`tarifs_logements`) — juste le champ libre générique `tarifs`.
+Sans catalogue de base, "personnalisé" n'a pas de sens (rien à surcharger) :
+prérequis ajouté avant la fonctionnalité demandée.
+
+- **Catalogue de base `tarifs_garde`** (nouvelle colonne JSONB sur
+  `user_profiles`, migration `migration_garde_tarifs_clients.sql` — **à
+  exécuter manuellement**) : mirror exact de `tarifs_education`
+  (`_prestationsGarde`/`PRESTATIONS_GARDE` : promenade 30min/1h/2h, garde
+  journée, autre). UI app (`pro_profile_edit.dart`) + web
+  (`profil/page.tsx`) mirroir la section éducateur existante.
+- **Nouvelle table `tarifs_clients_garde`** : surcharge par client d'un
+  type de prestation (`pro_profile_id`, `owner_profile_id`,
+  `prestation_type`, `prix`), contrainte unique sur les trois. Écriture en
+  "upsert si différent du tarif standard / delete si redevenu identique"
+  plutôt que de stocker des doublons inutiles.
+- **Clients éligibles dérivés des RDV** (même pattern que Gestion des
+  clés, §28.7) — mais ici via `rdv.client_profile_id` (fiabilisé par le
+  correctif RDV du 07-08) plutôt que `animaux_proprietes`, car la
+  tarification est par client/payeur, pas par animal.
+- App : nouvelle page `tarifs_clients_page.dart` (liste clients avec badge
+  "N tarifs personnalisés" ou "Tarifs standards", tap → bottom sheet avec
+  un champ par prestation, prérempli au tarif standard). Web :
+  `/garde/tarifs-clients` (même logique, modale).
+- **Bug pré-existant corrigé au passage** : `DevisPage`/`/education/devis`
+  (généralisée pour garde en Phase 2a, §28.6) lisait en dur la colonne
+  `tarifs_education` quel que soit `catPro` — les chips de saisie rapide
+  n'avaient donc jamais fonctionné pour garde (aucune ligne à afficher,
+  échec silencieux). Corrigé : lecture de la colonne appropriée
+  (`tarifs_garde` vs `tarifs_education`) + ajout des chips garde
+  (promenade 30min/1h/2h, garde journée) qui n'existaient pas du tout
+  avant (les chips étaient conditionnées `catPro === 'education'` en dur).
+  Une fois un client sélectionné dans le devis, ses tarifs personnalisés
+  (si définis) remplacent le tarif standard dans les chips — app et web.
+
+Vérifié : `flutter analyze` sur les 4 fichiers app touchés (0 nouveau
+problème), `tsc --noEmit` (0 nouvelle erreur), `eslint` (0 nouveau
+problème sur les nouveaux fichiers ; le nouvel effet de chargement des
+tarifs client sur `/education/devis` reproduit le même avertissement
+`react-hooks/set-state-in-effect` que tous les autres effets de
+chargement de ce projet — tenté un correctif via `useCallback`, le linter
+continue de tracer à travers, confirmant qu'il s'agit d'une limite
+générale de la règle sur ce projet et non d'un problème introduit),
+`next build` production complet réussi (`/garde/tarifs-clients`
+confirmée dans la sortie de build).
+
 ---
 
 ## 29. Module "Balades ludiques" (collègue) — correctif fuite cross-profil (session 2026-07-10)

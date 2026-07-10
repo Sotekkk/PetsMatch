@@ -257,6 +257,7 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
   String? _clientProfileId;
 
   Map<String, dynamic> _tarifs = {};
+  Map<String, dynamic> _tarifsBase = {};
   List<Map<String, dynamic>> _forfaits = [];
   List<Map<String, dynamic>> _animaux = [];
   String? _animalId;
@@ -293,6 +294,8 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
     super.dispose();
   }
 
+  String get _tarifsCol => User_Info.catPro == 'garde' ? 'tarifs_garde' : 'tarifs_education';
+
   Future<void> _loadTarifsForfaits() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -300,16 +303,38 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
     try {
       final forfaitsTable = User_Info.catPro == 'garde' ? 'forfaits_garde' : 'forfaits_education';
       final tarifsRow = pid.isNotEmpty
-          ? await _supa.from('user_profiles').select('tarifs_education').eq('id', pid).maybeSingle()
+          ? await _supa.from('user_profiles').select(_tarifsCol).eq('id', pid).maybeSingle()
           : null;
       final forfaitsRows = await _supa.from(forfaitsTable)
           .select('id,nom,prix').eq('pro_uid', uid).eq('actif', true);
       if (mounted) {
         setState(() {
-          _tarifs = (tarifsRow?['tarifs_education'] as Map?)?.cast<String, dynamic>() ?? {};
+          _tarifsBase = (tarifsRow?[_tarifsCol] as Map?)?.cast<String, dynamic>() ?? {};
+          _tarifs = _tarifsBase;
           _forfaits = List<Map<String, dynamic>>.from(forfaitsRows);
         });
       }
+    } catch (_) {}
+  }
+
+  // Surcharge tarifs personnalisés pour le client sélectionné (garde uniquement) —
+  // fusionne au-dessus du catalogue de base pour les chips de saisie rapide.
+  Future<void> _loadTarifsClient() async {
+    if (User_Info.catPro != 'garde') return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final pid = User_Info.activeProfileId;
+    if (uid == null || pid.isEmpty || _clientProfileId == null || _clientProfileId!.isEmpty) {
+      if (mounted) setState(() => _tarifs = _tarifsBase);
+      return;
+    }
+    try {
+      final overrides = await _supa.from('tarifs_clients_garde').select('prestation_type, prix')
+          .eq('pro_uid', uid).eq('pro_profile_id', pid).eq('owner_profile_id', _clientProfileId!);
+      final merged = Map<String, dynamic>.from(_tarifsBase);
+      for (final o in List<Map<String, dynamic>>.from(overrides as List)) {
+        merged[o['prestation_type'] as String] = o['prix'];
+      }
+      if (mounted) setState(() => _tarifs = merged);
     } catch (_) {}
   }
 
@@ -358,6 +383,7 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
     _clientProfileId = u['profile_id']?.toString();
     _searchCtrl.text = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
     setState(() => _searchResults = []);
+    _loadTarifsClient();
   }
 
   void _addLigne(String description, num prix) {
@@ -495,6 +521,14 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
               _quickAddChip('Cours collectif', _tarifs['cours_collectif'] as num),
             if (User_Info.catPro == 'education' && _tarifs['evaluation'] != null)
               _quickAddChip('Évaluation', _tarifs['evaluation'] as num),
+            if (User_Info.catPro == 'garde' && (_tarifs['promenade_30min'] as num? ?? 0) > 0)
+              _quickAddChip('Promenade (30 min)', _tarifs['promenade_30min'] as num),
+            if (User_Info.catPro == 'garde' && (_tarifs['promenade_1h'] as num? ?? 0) > 0)
+              _quickAddChip('Promenade (1h)', _tarifs['promenade_1h'] as num),
+            if (User_Info.catPro == 'garde' && (_tarifs['promenade_2h'] as num? ?? 0) > 0)
+              _quickAddChip('Promenade (2h)', _tarifs['promenade_2h'] as num),
+            if (User_Info.catPro == 'garde' && (_tarifs['garde_journee'] as num? ?? 0) > 0)
+              _quickAddChip('Garde à domicile (journée)', _tarifs['garde_journee'] as num),
             for (final f in _forfaits)
               _quickAddChip(f['nom']?.toString() ?? '', (f['prix'] as num?) ?? 0, purple: true),
           ]),
