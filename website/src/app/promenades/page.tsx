@@ -524,8 +524,8 @@ export default function PromenadePage() {
         // Notifier l'organisateur
         const promenade = promenades.find(p => p.id === id);
         if (promenade && promenade.organisateur_uid !== user.uid) {
-          const { data: me } = await supabase.from('users')
-            .select('firstname, lastname').eq('uid', user.uid).maybeSingle();
+          const { data: me } = await supabase.from('user_profiles')
+            .select('firstname, lastname').eq('uid', user.uid).eq('is_main', true).maybeSingle();
           const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
           await supabase.from('notifications').insert({
             uid: promenade.organisateur_uid,

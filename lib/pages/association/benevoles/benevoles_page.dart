@@ -419,11 +419,15 @@ class _SearchBenevoleSheetState extends State<_SearchBenevoleSheet> {
 
   Future<void> _loadUsers() async {
     try {
-      final rows = await _supa.from('users')
-          .select('uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, profile_picture_url_elevage')
-          .neq('uid', widget.uid).limit(500);
+      final rows = await _supa.from('user_profiles')
+          .select('uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro')
+          .neq('uid', widget.uid).eq('is_main', true).limit(500);
       if (mounted) setState(() {
-        _allUsers = List<Map<String, dynamic>>.from(rows as List);
+        _allUsers = List<Map<String, dynamic>>.from(rows as List).map((cp) => {
+          'uid': cp['uid'], 'firstname': cp['firstname'], 'lastname': cp['lastname'],
+          'name_elevage': cp['nom'], 'is_elevage': cp['profile_type'] == 'eleveur',
+          'profile_picture_url': cp['avatar_url'], 'profile_picture_url_elevage': cp['profile_picture_url_pro'],
+        }).toList();
         _loading = false;
       });
     } catch (_) {

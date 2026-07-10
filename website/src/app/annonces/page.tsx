@@ -107,9 +107,13 @@ export default function AnnoncesPage() {
         setLoading(false);
         const uids = [...new Set(rows.map(a => a.uid_eleveur).filter(Boolean))] as string[];
         if (uids.length > 0) {
-          const { data: users } = await supabase.from('users').select('uid, statut_pro, siret, is_premium').in('uid', uids);
+          const [{ data: profiles }, { data: users }] = await Promise.all([
+            supabase.from('user_profiles').select('uid, statut_pro, siret').in('uid', uids).eq('is_main', true),
+            supabase.from('users').select('uid, is_premium').in('uid', uids),
+          ]);
+          const premiumByUid = new Map((users ?? []).map(u => [u.uid, u.is_premium]));
           const map: Record<string, EleveurVerif> = {};
-          for (const u of (users ?? [])) map[u.uid] = { statut_pro: u.statut_pro, siret: u.siret, is_premium: u.is_premium };
+          for (const p of (profiles ?? [])) map[p.uid] = { statut_pro: p.statut_pro, siret: p.siret, is_premium: premiumByUid.get(p.uid) ?? false };
           setEleveurVerifs(map);
         }
         // Load like counts

@@ -7,6 +7,23 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 
+const PRO_TYPES = new Set([
+  'veterinaire', 'para_medical', 'education', 'petsitter',
+  'pension', 'promeneur', 'photographe', 'marechal_ferrant',
+]);
+
+function toUserProfile(cp: { uid: string; firstname?: string | null; lastname?: string | null; avatar_url?: string | null; profile_type?: string | null; nom?: string | null; profile_picture_url_pro?: string | null; cat_pro?: string | null }): UserProfile {
+  return {
+    uid: cp.uid, firstname: cp.firstname ?? null, lastname: cp.lastname ?? null,
+    name_elevage: cp.nom ?? null,
+    is_elevage: cp.profile_type === 'eleveur',
+    is_pro: !!cp.profile_type && PRO_TYPES.has(cp.profile_type),
+    cat_pro: cp.cat_pro ?? null,
+    profile_picture_url: cp.avatar_url ?? null,
+    profile_picture_url_elevage: cp.profile_picture_url_pro ?? null,
+  };
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Employee {
@@ -150,10 +167,10 @@ function EquipeTab({ uid, profileId }: { uid: string; profileId: string | null }
 
       const result: Employee[] = [];
       for (const e of (rows ?? [])) {
-        const { data: u } = await supabase.from('users')
-          .select('uid, firstname, lastname, name_elevage, is_elevage, is_pro, cat_pro, profile_picture_url, profile_picture_url_elevage')
-          .eq('uid', e.uid_employe).maybeSingle();
-        result.push({ ...e, permissions: e.permissions ?? {}, user: u ?? undefined });
+        const { data: u } = await supabase.from('user_profiles')
+          .select('uid, firstname, lastname, nom, profile_type, cat_pro, avatar_url, profile_picture_url_pro')
+          .eq('uid', e.uid_employe).eq('is_main', true).maybeSingle();
+        result.push({ ...e, permissions: e.permissions ?? {}, user: u ? toUserProfile(u) : undefined });
       }
       setEmployes(result);
     } finally {
@@ -251,16 +268,16 @@ function AddEmployeModal({ uid, profileId, onClose }: { uid: string; profileId: 
 
   useEffect(() => {
     async function load() {
-      const { data: profile } = await supabase.from('users')
-        .select('name_elevage, firstname, lastname').eq('uid', uid).maybeSingle();
+      const { data: profile } = await supabase.from('user_profiles')
+        .select('nom, firstname, lastname').eq('uid', uid).eq('is_main', true).maybeSingle();
       setNomElevage(
-        (profile?.name_elevage as string)?.trim() ||
+        (profile?.nom as string)?.trim() ||
         `${profile?.firstname ?? ''} ${profile?.lastname ?? ''}`.trim()
       );
-      const { data } = await supabase.from('users')
-        .select('uid, firstname, lastname, name_elevage, is_elevage, is_pro, cat_pro, profile_picture_url, profile_picture_url_elevage')
-        .neq('uid', uid).limit(500);
-      const filtered = (data ?? []).filter((u: UserProfile) => {
+      const { data } = await supabase.from('user_profiles')
+        .select('uid, firstname, lastname, nom, profile_type, cat_pro, avatar_url, profile_picture_url_pro')
+        .neq('uid', uid).eq('is_main', true).limit(500);
+      const filtered = (data ?? []).map(toUserProfile).filter((u: UserProfile) => {
         if (u.is_pro && CAT_SANTE.has((u.cat_pro ?? '').toLowerCase().trim())) return false;
         return true;
       });
@@ -300,7 +317,7 @@ function AddEmployeModal({ uid, profileId, onClose }: { uid: string; profileId: 
       if (!existing || !existing.actif) {
         const catPro = profileId
           ? (await supabase.from('user_profiles').select('profile_type').eq('id', profileId).maybeSingle()).data?.profile_type
-          : (await supabase.from('users').select('cat_pro').eq('uid', uid).maybeSingle()).data?.cat_pro;
+          : (await supabase.from('user_profiles').select('cat_pro').eq('uid', uid).eq('is_main', true).maybeSingle()).data?.cat_pro;
         if (catPro === 'education' || catPro === 'pension') {
           const { data: abo } = await supabase.from('abonnements')
             .select('plan_code').eq('uid', uid).eq('profil_type', catPro).eq('statut', 'actif')
@@ -484,10 +501,10 @@ function TachesTab({ uid, profileId }: { uid: string; profileId: string | null }
 
       const uidToNom: Record<string, string> = {};
       for (const e of (empsRaw ?? [])) {
-        const { data: u } = await supabase.from('users')
-          .select('uid, firstname, lastname, name_elevage, is_elevage')
-          .eq('uid', e.uid_employe).maybeSingle();
-        if (u) uidToNom[u.uid] = u.is_elevage ? (u.name_elevage ?? 'Élevage') : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
+        const { data: u } = await supabase.from('user_profiles')
+          .select('uid, firstname, lastname, nom, profile_type')
+          .eq('uid', e.uid_employe).eq('is_main', true).maybeSingle();
+        if (u) uidToNom[u.uid] = u.profile_type === 'eleveur' ? (u.nom ?? 'Élevage') : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
       }
 
       const emps = (empsRaw ?? []).map(e => ({ uid: e.uid_employe as string, nom: uidToNom[e.uid_employe] ?? 'Employé' }));

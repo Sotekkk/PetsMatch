@@ -232,13 +232,14 @@ class _AnimauxPerdusPageState extends State<AnimauxPerdusPage> {
     if (uid == null) return;
     try {
       final row = await Supabase.instance.client
-          .from('users')
-          .select('ville, ville_elevage')
+          .from('user_profiles')
+          .select('ville, ville_pro')
           .eq('uid', uid)
+          .eq('is_main', true)
           .maybeSingle();
       if (row != null && mounted) {
-        final v = (row['ville_elevage'] as String?)?.isNotEmpty == true
-            ? row['ville_elevage'] as String
+        final v = (row['ville_pro'] as String?)?.isNotEmpty == true
+            ? row['ville_pro'] as String
             : (row['ville'] as String?) ?? '';
         if (v.isNotEmpty) {
           _lieuCtrl.text = v;

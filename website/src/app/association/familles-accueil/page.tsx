@@ -82,12 +82,19 @@ export default function FamillesAccueilWebPage() {
 
   const loadUsers = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from('users')
-      .select('uid, firstname, lastname, email, phone_number, profile_picture_url, rue, ville_elevage, code_postal_elevage')
-      .neq('uid', user.uid)
-      .limit(500);
-    setAllUsers(data ?? []);
+    const [{ data: profiles }, { data: emails }] = await Promise.all([
+      supabase.from('user_profiles')
+        .select('uid, firstname, lastname, phone_number, avatar_url, rue, ville_pro, code_postal_pro')
+        .neq('uid', user.uid).eq('is_main', true).limit(500),
+      supabase.from('users').select('uid, email').neq('uid', user.uid).limit(500),
+    ]);
+    const emailByUid = new Map((emails ?? []).map(u => [u.uid, u.email as string]));
+    setAllUsers((profiles ?? []).map(p => ({
+      uid: p.uid, firstname: p.firstname, lastname: p.lastname,
+      email: emailByUid.get(p.uid), phone_number: p.phone_number,
+      profile_picture_url: p.avatar_url,
+      rue: p.rue, ville_elevage: p.ville_pro, code_postal_elevage: p.code_postal_pro,
+    })));
   }, [user]);
 
   useEffect(() => { load(); loadUsers(); }, [load, loadUsers]);

@@ -42,15 +42,16 @@ class _AnimauxAcquisPageState extends State<AnimauxAcquisPage> {
             .select('id, nom, espece, race, sexe, date_naissance, photo_url, uid_eleveur, statut, date_sortie, cession_prix, destinataire_nom')
             .eq('uid_acquereur', _uid)
             .order('date_sortie', ascending: false),
-        _supa.from('users')
-            .select('firstname, lastname, name_elevage')
+        _supa.from('user_profiles')
+            .select('firstname, lastname, nom')
             .eq('uid', _uid)
+            .eq('is_main', true)
             .maybeSingle(),
       ]);
       final rows = List<Map<String, dynamic>>.from(results[0] as List);
       final profil = results[1] as Map<String, dynamic>?;
       if (profil != null) {
-        final elevage = profil['name_elevage'] as String?;
+        final elevage = profil['nom'] as String?;
         final nom = '${profil['firstname'] ?? ''} ${profil['lastname'] ?? ''}'.trim();
         _nomCedant = elevage?.isNotEmpty == true ? elevage! : nom;
       }
@@ -62,11 +63,11 @@ class _AnimauxAcquisPageState extends State<AnimauxAcquisPage> {
           .toSet().cast<String>().toList();
       final Map<String, String> names = {};
       if (cedantUids.isNotEmpty) {
-        final users = await _supa.from('users')
-            .select('uid, firstname, lastname, name_elevage')
-            .inFilter('uid', cedantUids);
+        final users = await _supa.from('user_profiles')
+            .select('uid, firstname, lastname, nom')
+            .inFilter('uid', cedantUids).eq('is_main', true);
         for (final u in (users as List)) {
-          final elevage = u['name_elevage'] as String?;
+          final elevage = u['nom'] as String?;
           final nom = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
           names[u['uid'] as String] = (elevage?.isNotEmpty == true) ? elevage! : nom;
         }

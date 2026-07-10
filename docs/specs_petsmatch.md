@@ -4475,7 +4475,9 @@ sa propre passe car certains champs legacy (`is_dog`/`dog_breeds`/
 **Lots restants** (par ordre d'impact décroissant, voir audit complet
 dans l'historique de session) : pages association (bénévoles, familles
 d'accueil, groupes communauté) ; pages particulier (feed, animaux
-acquis/perdus, promenades).
+acquis/perdus, promenades). *(Voir §27.9 — cette liste s'est révélée
+incomplète : le lot association/particulier a été livré, mais un audit
+plus large a trouvé un reste bien plus important que prévu.)*
 
 ### 27.7 — Phase 4 livrée (lot 2) : documents légaux/financiers vers user_profiles
 
@@ -4519,6 +4521,57 @@ d'élevage pour un client éleveur d'un vétérinaire. Les deux sont
 corrigés en même temps que la bascule, comportement visible amélioré.
 Exclu du lot : `pro_zone_page.dart` (lat/lng/rayon d'intervention, pas
 des données de profil affichées).
+
+### 27.9 — Phase 4 livrée (lot 4) : association/particulier/promenades + périmètre réel restant
+
+16 fichiers ciblés (bénévoles, familles d'accueil, groupes communauté,
+promenades, feed particulier, animaux acquis/perdus, badge pro sur
+annonces, journal pension) + 2 trouvés en passant appartenant au même
+motif (`promenade_detail_page.dart`, équivalent Flutter oublié de la
+page web promenades ; `website/src/app/employes/page.tsx`, gestion
+employés pro générique distincte de celle déjà migrée au lot 3).
+
+Cas particulier traité : `association/familles-accueil` (web + app)
+charge la liste et filtre côté client par nom **et email** — `email`
+n'a pas d'équivalent sur `user_profiles`. Requête `user_profiles`
+principale + requête `users.select('uid, email')` fusionnée par uid pour
+garder le filtre email et le préremplissage du formulaire fonctionnels.
+`annonces/page.tsx` : `statut_pro`/`siret` basculent vers `user_profiles`,
+`is_premium` (identité/abonnement) reste sur `users`, 2 requêtes fusionnées.
+
+**Correction importante sur l'ampleur du chantier** : un audit de
+vérification avant ce lot a montré que la liste "lots restants" notée
+plus haut était incomplète. Il reste en réalité ~25-30 fichiers app et
+~15-20 fichiers web non migrés, concentrés dans 4 familles non encore
+traitées :
+- **Annuaire pro / édition de profil** : `pro_profile_edit.dart`,
+  `profil_eleveur_edit.dart` (lecture `banner_url`),
+  `profil_association_edit.dart`, `service_list_page.dart`,
+  `service_detail_page.dart`, pages admin (`pro_list.dart`,
+  `pro_detail.dart`), web `services/page.tsx`, `services/carte/page.tsx`,
+  `services/pro/[uid]/page.tsx`, `admin/page.tsx`.
+- **Annonces (création/détail/feed/carte)** : `create_annonce_page.dart`,
+  `annonce_detail_page.dart`, `annonces_feed_page.dart`,
+  `annonces_map_page.dart`, `create_annonce_asso_page.dart`, web
+  `annonces/[id]/page.tsx`, `annonces/feed/page.tsx`,
+  `association/annonces/creer/page.tsx`.
+- **PetFriends** : `petfriends_page.dart`, `public_profile_page.dart`
+  (a déjà un repli `user_profiles` partiel non utilisé en premier),
+  web `petfriends/page.tsx`.
+- **Annuaire associations/élevages** : `associations_list_page.dart`,
+  `mes_associations_benevole.dart`, web `mes-associations/page.tsx`,
+  `mes-employeurs/page.tsx`.
+
+Plus des lookups isolés (`chip_scanner_service.dart`, `lieu_detail_page.dart`,
+recherches live par nom/email non couvertes dans `education_devis_page.dart`,
+`cession_sheet.dart`, `contrat_reservation.dart`, pages `mes-rdv`/
+`mes-patients`/`mes-animaux` côté web). Périmètre trop large pour une
+session — décision explicite de s'arrêter à ce lot et documenter le
+reste plutôt que de continuer sans cadrage. **Ne pas repartir de zéro** :
+utiliser le pattern déjà établi (bascule `.from('users')` →
+`.from('user_profiles').eq('is_main', true)`, `name_elevage`→`nom`,
+`is_elevage`→`profile_type==='eleveur'`, `profile_picture_url`→
+`avatar_url`) et découper par famille comme ci-dessus.
 
 ---
 

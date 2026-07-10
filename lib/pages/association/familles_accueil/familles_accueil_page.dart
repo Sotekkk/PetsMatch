@@ -423,13 +423,20 @@ class _FaSheetState extends State<_FaSheet> {
     if (myUid == null) return;
     setState(() => _loadingUsers = true);
     try {
-      final rows = await _supa
-          .from('users')
-          .select('uid, firstname, lastname, email, phone_number, ville_elevage, code_postal_elevage, rue, profile_picture_url')
-          .neq('uid', myUid)
+      final profiles = await _supa
+          .from('user_profiles')
+          .select('uid, firstname, lastname, phone_number, ville_pro, code_postal_pro, rue, avatar_url')
+          .neq('uid', myUid).eq('is_main', true)
           .limit(500);
+      final users = await _supa.from('users').select('uid, email').neq('uid', myUid).limit(500);
+      final emailByUid = { for (final u in (users as List)) u['uid'] as String: u['email'] as String? };
       if (mounted) setState(() {
-        _allUsers = List<Map<String, dynamic>>.from(rows);
+        _allUsers = List<Map<String, dynamic>>.from(profiles as List).map((p) => {
+          'uid': p['uid'], 'firstname': p['firstname'], 'lastname': p['lastname'],
+          'email': emailByUid[p['uid']], 'phone_number': p['phone_number'],
+          'ville_elevage': p['ville_pro'], 'code_postal_elevage': p['code_postal_pro'],
+          'rue': p['rue'], 'profile_picture_url': p['avatar_url'],
+        }).toList();
         _loadingUsers = false;
       });
     } catch (_) {

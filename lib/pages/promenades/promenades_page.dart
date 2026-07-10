@@ -153,9 +153,10 @@ class _PromenadesPageState extends State<PromenadePage> {
         if (orgUid.isNotEmpty && orgUid != _uid) {
           try {
             final me = await _supa
-                .from('users')
+                .from('user_profiles')
                 .select('firstname, lastname')
                 .eq('uid', _uid)
+                .eq('is_main', true)
                 .maybeSingle();
             final nom = me != null
                 ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim()
