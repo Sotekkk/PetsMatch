@@ -205,6 +205,19 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
     if (isElv) setQualite('eleveur');
   }
 
+  function mapProfile(cp: Record<string, unknown>, email?: string): Record<string, unknown> {
+    return {
+      uid: cp.uid, firstname: cp.firstname, lastname: cp.lastname,
+      name_elevage: cp.nom, is_elevage: cp.profile_type === 'eleveur',
+      profile_picture_url: cp.avatar_url, phone_number: cp.phone_number,
+      code_iso: '+33', code_iso_elevage: '+33',
+      adress: cp.adresse, adress_elevage: cp.adresse,
+      rue: cp.rue, ville: cp.ville, code_postal: cp.code_postal,
+      numero_elevage: cp.numero_elevage, siret: cp.siret,
+      email,
+    };
+  }
+
   async function searchUser() {
     const q = searchQuery.trim();
     if (!q) return;
@@ -212,17 +225,21 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
     setSearchDone(false);
     setSearchResult(null);
     setSearchResults([]);
-    const FIELDS = 'uid, firstname, lastname, name_elevage, is_elevage, profile_picture_url, email, phone_number, code_iso, rue, ville, code_postal, pays, adress, numero_elevage, code_iso_elevage, rue_elevage, ville_elevage, code_postal_elevage, pays_elevage, adress_elevage, siret';
+    const CP_FIELDS = 'uid, firstname, lastname, nom, profile_type, avatar_url, phone_number, adresse, rue, ville, code_postal, numero_elevage, siret';
     const isEmail = q.includes('@');
     let rows: Record<string, unknown>[] = [];
     if (isEmail) {
-      const { data } = await supabase.from('users').select(FIELDS).eq('email', q.toLowerCase()).maybeSingle();
-      if (data) rows = [data];
+      const { data: userRow } = await supabase.from('users').select('uid, email').eq('email', q.toLowerCase()).maybeSingle();
+      if (userRow) {
+        const { data: cp } = await supabase.from('user_profiles').select(CP_FIELDS).eq('uid', userRow.uid).eq('is_main', true).maybeSingle();
+        if (cp) rows = [mapProfile(cp, userRow.email)];
+      }
     } else {
-      const { data } = await supabase.from('users').select(FIELDS)
-        .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,name_elevage.ilike.%${q}%`)
+      const { data } = await supabase.from('user_profiles').select(CP_FIELDS)
+        .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,nom.ilike.%${q}%`)
+        .eq('is_main', true)
         .limit(6);
-      rows = (data as Record<string, unknown>[]) ?? [];
+      rows = ((data as Record<string, unknown>[]) ?? []).map(cp => mapProfile(cp));
     }
     if (rows.length === 1) {
       const d = rows[0];

@@ -30,7 +30,7 @@ interface Devis {
 }
 
 interface UserResult {
-  uid: string; firstname?: string; lastname?: string; email?: string; phone_number?: string;
+  uid: string; firstname?: string; lastname?: string; email?: string; phone_number?: string; profile_id?: string;
 }
 
 interface AnimalOption { id: string; nom: string; espece: string | null; }
@@ -105,29 +105,45 @@ export default function DevisPage() {
   async function searchUsers(q: string) {
     setUserSearch(q);
     setClientUid(null); setClientProfileId(null);
-    if (q.trim().length < 2) { setUserResults([]); return; }
+    const query = q.trim();
+    if (query.length < 2) { setUserResults([]); return; }
     setUserSearchLoading(true);
-    const { data } = await supabase
-      .from('users')
-      .select('uid,firstname,lastname,email,phone_number')
-      .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,email.ilike.%${q}%`)
-      .neq('uid', user?.uid ?? '')
-      .limit(6);
-    setUserResults((data ?? []) as UserResult[]);
+    const cpFields = 'id,uid,firstname,lastname,phone_number';
+    if (query.includes('@')) {
+      const { data: users } = await supabase.from('users').select('uid, email')
+        .ilike('email', `%${query}%`).neq('uid', user?.uid ?? '').limit(6);
+      const uids = (users ?? []).map(u => u.uid);
+      const emailByUid = new Map((users ?? []).map(u => [u.uid, u.email as string]));
+      const { data: cps } = uids.length
+        ? await supabase.from('user_profiles').select(cpFields).in('uid', uids).eq('is_main', true)
+        : { data: [] as Record<string, unknown>[] };
+      setUserResults((cps ?? []).map(cp => ({
+        uid: cp.uid as string, firstname: cp.firstname as string, lastname: cp.lastname as string,
+        email: emailByUid.get(cp.uid as string) ?? '', phone_number: cp.phone_number as string,
+        profile_id: cp.id as string,
+      })));
+    } else {
+      const { data: cps } = await supabase.from('user_profiles').select(`${cpFields},email_contact`)
+        .or(`firstname.ilike.%${query}%,lastname.ilike.%${query}%`)
+        .neq('uid', user?.uid ?? '').eq('is_main', true).limit(6);
+      setUserResults((cps ?? []).map(cp => ({
+        uid: cp.uid as string, firstname: cp.firstname as string, lastname: cp.lastname as string,
+        email: (cp.email_contact as string) ?? '', phone_number: cp.phone_number as string,
+        profile_id: cp.id as string,
+      })));
+    }
     setUserSearchLoading(false);
   }
 
-  async function prefillUser(u: UserResult) {
+  function prefillUser(u: UserResult) {
     setNomClient(u.lastname ?? '');
     setPrenomClient(u.firstname ?? '');
     setEmailClient(u.email ?? '');
     setTelClient(u.phone_number ?? '');
     setClientUid(u.uid);
+    setClientProfileId(u.profile_id ?? null);
     setUserSearch(`${u.firstname ?? ''} ${u.lastname ?? ''}`.trim());
     setUserResults([]);
-    // Profil principal du client (pour la notification in-app ciblée sur son profil actif éventuel)
-    const { data } = await supabase.from('user_profiles').select('id').eq('uid', u.uid).eq('is_main', true).maybeSingle();
-    setClientProfileId(data?.id ?? null);
   }
 
   function updateLigne(i: number, patch: Partial<Ligne>) {

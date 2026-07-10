@@ -4732,6 +4732,35 @@ fusion users+user_profiles avec dédoublonnage (catégorie B —
 substantiellement complet pour les lookups simples ; le reste nécessite
 une conception dédiée, pas une bascule mécanique.
 
+### 27.15 — Phase 4 livrée (lot 10) : recherche live par email
+
+4 fichiers (cession d'animal app+web, devis éducateur app+web).
+`elevage/contrat/page.tsx` (déjà migré) confirme le rétrécissement de
+champs nécessaire : `code_iso`/`code_iso_elevage` codés en dur `'+33'`
+(pas de colonne dédiée), adresse élevage détaillée
+(rue/ville/cp/pays_elevage) collapsée sur la colonne combinée unique
+`adresse`, `siret` conservé (colonne réelle).
+
+`cession_sheet.dart`/`CessionModal.tsx` avaient déjà la séparation
+email/nom avec correspondance email **exacte** — comportement conservé
+(pas de passage à `ilike`). `education_devis_page.dart`/`education/devis/page.tsx`
+n'avaient **aucune** séparation (une seule requête `users` avec 3
+conditions `ilike` combinées firstname/lastname/email) — introduit la
+séparation `isEmail`, branche email en `ilike` (sémantique substring
+conservée, différente de la correspondance exacte des 2 autres
+fichiers). Au passage, fusionné le lookup séparé du `profile_id` client
+(auparavant une 2e requête `user_profiles` après sélection) dans la
+même requête de recherche, un aller-retour réseau en moins.
+
+Vérifié en live : recherche par email exact et par email partiel
+résolvent toutes deux le bon uid puis les bons champs `user_profiles`
+sur un compte réel.
+
+**Chantier de lecture `users`→`user_profiles` complet pour tous les
+lookups simples et recherches live.** Seule reste la catégorie B (7
+pages à fusion users+user_profiles avec dédoublonnage par uid,
+restructuration dédiée non traitée cette session).
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

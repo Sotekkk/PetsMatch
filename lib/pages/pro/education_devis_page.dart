@@ -313,31 +313,50 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
   }
 
   Future<void> _searchUsers(String q) async {
-    if (q.trim().length < 2) { setState(() => _searchResults = []); return; }
+    final query = q.trim();
+    if (query.length < 2) { setState(() => _searchResults = []); return; }
     setState(() => _searching = true);
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-      final rows = await _supa.from('users')
-          .select('uid,firstname,lastname,email,phone_number')
-          .or('firstname.ilike.%$q%,lastname.ilike.%$q%,email.ilike.%$q%')
-          .neq('uid', uid).limit(6);
-      if (mounted) setState(() => _searchResults = List<Map<String, dynamic>>.from(rows as List));
+      const cpFields = 'id,uid,firstname,lastname,phone_number';
+      List<Map<String, dynamic>> results;
+      if (query.contains('@')) {
+        final users = await _supa.from('users').select('uid, email')
+            .ilike('email', '%$query%').neq('uid', uid).limit(6);
+        final emailByUid = { for (final u in (users as List)) u['uid'] as String: u['email'] as String? };
+        final uids = emailByUid.keys.toList();
+        final List cps = uids.isEmpty ? [] : await _supa.from('user_profiles')
+            .select(cpFields).inFilter('uid', uids).eq('is_main', true);
+        results = List<Map<String, dynamic>>.from(cps).map((cp) => {
+          'uid': cp['uid'], 'firstname': cp['firstname'], 'lastname': cp['lastname'],
+          'email': emailByUid[cp['uid']] ?? '', 'phone_number': cp['phone_number'],
+          'profile_id': cp['id'],
+        }).toList();
+      } else {
+        final cps = await _supa.from('user_profiles').select('$cpFields,email_contact')
+            .or('firstname.ilike.%$query%,lastname.ilike.%$query%')
+            .neq('uid', uid).eq('is_main', true).limit(6);
+        results = List<Map<String, dynamic>>.from(cps as List).map((cp) => {
+          'uid': cp['uid'], 'firstname': cp['firstname'], 'lastname': cp['lastname'],
+          'email': cp['email_contact'] ?? '', 'phone_number': cp['phone_number'],
+          'profile_id': cp['id'],
+        }).toList();
+      }
+      if (mounted) setState(() => _searchResults = results);
     } catch (_) {} finally {
       if (mounted) setState(() => _searching = false);
     }
   }
 
-  Future<void> _prefillUser(Map<String, dynamic> u) async {
+  void _prefillUser(Map<String, dynamic> u) {
     _nomCtrl.text = u['lastname']?.toString() ?? '';
     _prenomCtrl.text = u['firstname']?.toString() ?? '';
     _emailCtrl.text = u['email']?.toString() ?? '';
     _telCtrl.text = u['phone_number']?.toString() ?? '';
     _clientUid = u['uid']?.toString();
+    _clientProfileId = u['profile_id']?.toString();
     _searchCtrl.text = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
     setState(() => _searchResults = []);
-    final profile = await _supa.from('user_profiles').select('id')
-        .eq('uid', _clientUid!).eq('is_main', true).maybeSingle();
-    _clientProfileId = profile?['id']?.toString();
   }
 
   void _addLigne(String description, num prix) {
