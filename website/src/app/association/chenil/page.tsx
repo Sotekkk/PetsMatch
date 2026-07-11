@@ -383,7 +383,7 @@ export default function ChenilWebPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold font-galey text-teal-800">Chenil / Hébergement</h1>
+        <h1 className="text-2xl font-bold font-galey text-teal-800">Affectation des hébergements</h1>
         <button onClick={() => setEditEnclos('new')}
           className="bg-teal-700 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 transition-colors">
           + Enclos

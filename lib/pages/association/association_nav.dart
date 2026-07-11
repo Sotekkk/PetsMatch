@@ -171,7 +171,7 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Chenil / Planning',
+                      label: 'Affectation des hébergements',
                       icon: Icons.home_work_outlined,
                       onTap: () {
                         Navigator.pop(context);
@@ -181,12 +181,12 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'RDV visites d\'adoption',
-                      icon: Icons.event_available_outlined,
+                      label: 'Protocoles',
+                      icon: Icons.repeat_outlined,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const ProAgendaPage(),
+                          builder: (_) => const PlanTemplateListPage(isAssociation: true),
                         ));
                       },
                     ),
@@ -251,32 +251,48 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Planning du mois',
-                      icon: Icons.calendar_month_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PlanningMoisPage(isAssociation: true),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Modèles de routines',
-                      icon: Icons.repeat_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PlanTemplateListPage(isAssociation: true),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
                       label: 'Inventaire',
                       icon: Icons.inventory_2_outlined,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const InventairePage(),
+                        ));
+                      },
+                    ),
+                  ],
+                ),
+                _DrawerSection(
+                  icon: Icons.calendar_month_outlined,
+                  label: 'Agenda & RDV',
+                  children: [
+                    _DrawerSubItem(
+                      label: 'Mon Agenda',
+                      icon: Icons.calendar_month_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => AgendaPage(isAssociation: true),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'RDV visites d\'adoption',
+                      icon: Icons.event_available_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const ProAgendaPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Planning du mois',
+                      icon: Icons.event_repeat_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PlanningMoisPage(isAssociation: true),
                         ));
                       },
                     ),
@@ -363,16 +379,6 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                   ],
-                ),
-                _DrawerItem(
-                  icon: Icons.calendar_month_outlined,
-                  label: 'Mon Agenda',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => AgendaPage(isAssociation: true),
-                    ));
-                  },
                 ),
                 _DrawerItem(
                   icon: Icons.favorite_border,

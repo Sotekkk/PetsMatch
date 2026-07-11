@@ -152,7 +152,7 @@ export default function AnimauxAssoPage() {
             className={`px-4 py-2 text-sm font-galey font-semibold border-b-2 transition-colors ${
               tab === t ? 'border-teal-700 text-teal-800' : 'border-transparent text-gray-400 hover:text-gray-600'
             }`}>
-            {t === 'detenus' ? 'Détenus' : 'Ancien'}
+            {t === 'detenus' ? 'Nos protégés' : 'Ancien'}
           </button>
         ))}
       </div>

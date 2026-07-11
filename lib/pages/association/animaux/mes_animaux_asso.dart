@@ -192,7 +192,7 @@ class _MesAnimauxAssoPageState extends State<MesAnimauxAssoPage> with SingleTick
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700),
-          tabs: const [Tab(text: 'Détenus'), Tab(text: 'Ancien')],
+          tabs: const [Tab(text: 'Nos protégés'), Tab(text: 'Ancien')],
         ),
         actions: [
           IconButton(

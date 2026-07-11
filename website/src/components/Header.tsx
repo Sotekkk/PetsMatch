@@ -311,7 +311,7 @@ const MENU_ASSOCIATION = [
     items: [
       { href: '/association/animaux',                    label: 'Mes Animaux',           icon: '🐾' },
       { href: '/association/familles-accueil',           label: 'Familles d\'accueil',   icon: '🏡' },
-      { href: '/association/chenil',                     label: 'Chenil / Planning',     icon: '🗓️' },
+      { href: '/association/chenil',                     label: 'Affectation des hébergements', icon: '🗓️' },
       { href: '/association/planning',                   label: 'Protocoles',            icon: '📅' },
       { href: '/association/registre-sanitaire',         label: 'Suivi sanitaire',       icon: '🏥' },
       { href: '/association/inventaire',                 label: 'Inventaire',            icon: '📦' },
@@ -326,6 +326,7 @@ const MENU_ASSOCIATION = [
     icon: '🗓️',
     items: [
       { href: '/association/agenda', label: 'Agenda',    icon: '🗓️' },
+      { href: '/agenda',             label: 'RDV visites d\'adoption', icon: '🐾' },
       { href: '/mes-rdv',            label: 'Mes RDV',   icon: '📅' },
       { href: '/mes-taches',         label: 'Mes tâches', icon: '✅' },
     ],

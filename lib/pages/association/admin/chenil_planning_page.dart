@@ -246,7 +246,7 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
       backgroundColor: const Color(0xFFF8F8F6),
       appBar: AppBar(
         backgroundColor: _teal,
-        title: const Text('Chenil / Planning',
+        title: const Text('Affectation des hébergements',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
