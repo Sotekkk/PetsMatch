@@ -221,7 +221,7 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Équipe',
+                      label: 'Mes employés et bénévoles',
                       icon: Icons.groups_outlined,
                       onTap: () {
                         Navigator.pop(context);
