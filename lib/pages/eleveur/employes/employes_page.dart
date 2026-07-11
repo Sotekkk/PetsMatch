@@ -266,6 +266,80 @@ class _EmployesTabState extends State<_EmployesTab> {
         SnackBar(content: Text('$nom a été retiré de votre élevage')));
   }
 
+  Future<void> _openSearchSheet() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AddEmployeSheet(uid: _uid, nomElevage: _nomElevage, teal: widget.teal, dark: widget.dark,
+          isAssociation: widget.isAssociation),
+    );
+    _load();
+  }
+
+  Future<void> _openManuelSheet() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AddEmployeManuelSheet(uid: _uid, teal: widget.teal),
+    );
+    _load();
+  }
+
+  void _showAddChoiceSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Ajouter un employé',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: Icon(Icons.search, color: widget.teal),
+                label: Text('Chercher sur PetsMatch',
+                    style: TextStyle(fontFamily: 'Galey', color: widget.teal, fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: widget.teal),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                onPressed: () {
+                  Navigator.pop(context);
+                  _openSearchSheet();
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.edit_outlined, color: Colors.white),
+                label: const Text('Ajouter manuellement',
+                    style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: widget.teal,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                onPressed: () {
+                  Navigator.pop(context);
+                  _openManuelSheet();
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -274,16 +348,7 @@ class _EmployesTabState extends State<_EmployesTab> {
         backgroundColor: widget.teal,
         icon: const Icon(Icons.person_add_outlined, color: Colors.white),
         label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
-        onPressed: () async {
-          await showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            backgroundColor: Colors.transparent,
-            builder: (_) => _AddEmployeSheet(uid: _uid, nomElevage: _nomElevage, teal: widget.teal, dark: widget.dark,
-                isAssociation: widget.isAssociation),
-          );
-          _load();
-        },
+        onPressed: widget.isAssociation ? _showAddChoiceSheet : _openSearchSheet,
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -295,8 +360,10 @@ class _EmployesTabState extends State<_EmployesTab> {
                   itemBuilder: (_, i) {
                     final e = _employes[i];
                     final u = e['user'] as Map<String, dynamic>?;
-                    final nom = u == null ? 'Utilisateur inconnu'
-                        : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+                    final manuelNom = '${e['prenom'] ?? ''} ${e['nom'] ?? ''}'.trim();
+                    final nom = u != null
+                        ? '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim()
+                        : (manuelNom.isNotEmpty ? manuelNom : 'Utilisateur inconnu');
                     final photoUrl = u?['avatar_url'] as String?;
                     return _EmployeCard(
                       nom: nom, photoUrl: photoUrl,
@@ -787,6 +854,126 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
 }
 
 // ─── Tab Tâches ───────────────────────────────────────────────────────────────
+
+// ─── Bottom sheet : Ajouter un employé manuellement (sans compte PetsMatch) ───
+
+class _AddEmployeManuelSheet extends StatefulWidget {
+  final String uid;
+  final Color teal;
+  const _AddEmployeManuelSheet({required this.uid, required this.teal});
+  @override
+  State<_AddEmployeManuelSheet> createState() => _AddEmployeManuelSheetState();
+}
+
+class _AddEmployeManuelSheetState extends State<_AddEmployeManuelSheet> {
+  final _supa = Supabase.instance.client;
+  final _prenomCtrl = TextEditingController();
+  final _nomCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _telCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _prenomCtrl.dispose();
+    _nomCtrl.dispose();
+    _emailCtrl.dispose();
+    _telCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _ajouter() async {
+    if (_prenomCtrl.text.trim().isEmpty || _nomCtrl.text.trim().isEmpty) return;
+    setState(() => _saving = true);
+    try {
+      var eleveurProfileId = User_Info.activeProfileId;
+      if (eleveurProfileId.isEmpty) {
+        final data = await _supa.from('user_profiles')
+            .select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
+        eleveurProfileId = data?['id'] as String? ?? '';
+      }
+      await _supa.from('employes').insert({
+        'uid_eleveur': widget.uid,
+        if (eleveurProfileId.isNotEmpty) 'eleveur_profile_id': eleveurProfileId,
+        'prenom': _prenomCtrl.text.trim(),
+        'nom': _nomCtrl.text.trim(),
+        'email': _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
+        'telephone': _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
+        'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+        'actif': true,
+        'type': 'employe',
+        'profil_source': 'association',
+      });
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Widget _field(TextEditingController ctrl, String label, {TextInputType? keyboard, int maxLines = 1}) =>
+      TextField(
+        controller: ctrl,
+        keyboardType: keyboard,
+        maxLines: maxLines,
+        style: const TextStyle(fontFamily: 'Galey'),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+          border: const OutlineInputBorder(),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
+      child: Container(
+        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Saisir un employé',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+            const SizedBox(height: 16),
+            Row(children: [
+              Expanded(child: _field(_prenomCtrl, 'Prénom *')),
+              const SizedBox(width: 10),
+              Expanded(child: _field(_nomCtrl, 'Nom *')),
+            ]),
+            const SizedBox(height: 10),
+            _field(_emailCtrl, 'Email', keyboard: TextInputType.emailAddress),
+            const SizedBox(height: 10),
+            _field(_telCtrl, 'Téléphone', keyboard: TextInputType.phone),
+            const SizedBox(height: 10),
+            _field(_notesCtrl, 'Notes', maxLines: 2),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _saving ? null : _ajouter,
+                style: ElevatedButton.styleFrom(backgroundColor: widget.teal),
+                child: _saving
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _TachesTab extends StatefulWidget {
   final Color green, teal, dark, bg;

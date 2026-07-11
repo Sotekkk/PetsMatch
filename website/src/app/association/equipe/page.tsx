@@ -130,9 +130,11 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
   const [showAddEmploye, setShowAddEmploye] = useState(false);
   const [showAddBenevole, setShowAddBenevole] = useState(false);
   const [showFormBenevole, setShowFormBenevole] = useState(false);
+  const [showFormEmploye, setShowFormEmploye] = useState(false);
   const [editing, setEditing] = useState<MembreEquipe | null>(null);
   const [assigning, setAssigning] = useState<MembreEquipe | null>(null);
   const [form, setForm] = useState({ prenom: '', nom: '', email: '', telephone: '', notes: '' });
+  const [formEmploye, setFormEmploye] = useState({ prenom: '', nom: '', email: '', telephone: '', notes: '' });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -210,6 +212,23 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
     if (error) { alert(`Erreur: ${error.message}`); return; }
     setForm({ prenom: '', nom: '', email: '', telephone: '', notes: '' });
     setShowFormBenevole(false);
+    load();
+  };
+
+  const handleAddEmployeManuel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!uid || !formEmploye.prenom.trim() || !formEmploye.nom.trim()) return;
+    setSaving(true);
+    const { error } = await supabase.from('employes').insert({
+      uid_eleveur: uid, prenom: formEmploye.prenom.trim(), nom: formEmploye.nom.trim(),
+      email: formEmploye.email.trim() || null, telephone: formEmploye.telephone.trim() || null,
+      notes: formEmploye.notes.trim() || null, actif: true, type: 'employe', profil_source: 'association',
+      ...(profileId ? { eleveur_profile_id: profileId } : {}),
+    });
+    setSaving(false);
+    if (error) { alert(`Erreur: ${error.message}`); return; }
+    setFormEmploye({ prenom: '', nom: '', email: '', telephone: '', notes: '' });
+    setShowFormEmploye(false);
     load();
   };
 
@@ -302,21 +321,52 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
         </div>
       )}
 
-      {/* Boutons d'ajout */}
-      <div className="flex gap-2 flex-wrap">
-        <button onClick={() => setShowAddEmploye(true)}
-          className="bg-teal-700 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 transition-colors">
-          🔍 Inviter un employé
-        </button>
-        <button onClick={() => setShowAddBenevole(true)}
-          className="bg-purple-600 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-purple-700 transition-colors">
-          🔍 Bénévole PetsMatch
-        </button>
-        <button onClick={() => setShowFormBenevole(!showFormBenevole)}
-          className="border border-purple-400 text-purple-600 px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-purple-50 transition-colors">
-          + Bénévole manuel
-        </button>
+      {/* Boutons d'ajout — deux méthodes pour chaque fonction : recherche PetsMatch ou saisie manuelle */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-galey font-semibold text-gray-400 uppercase tracking-wide w-full sm:w-auto">Employés</span>
+          <button onClick={() => setShowAddEmploye(true)}
+            className="bg-teal-700 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 transition-colors">
+            🔍 Chercher sur PetsMatch
+          </button>
+          <button onClick={() => setShowFormEmploye(!showFormEmploye)}
+            className="border border-teal-400 text-teal-700 px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-50 transition-colors">
+            + Ajouter manuellement
+          </button>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-galey font-semibold text-gray-400 uppercase tracking-wide w-full sm:w-auto">Bénévoles</span>
+          <button onClick={() => setShowAddBenevole(true)}
+            className="bg-purple-600 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-purple-700 transition-colors">
+            🔍 Chercher sur PetsMatch
+          </button>
+          <button onClick={() => setShowFormBenevole(!showFormBenevole)}
+            className="border border-purple-400 text-purple-600 px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-purple-50 transition-colors">
+            + Ajouter manuellement
+          </button>
+        </div>
       </div>
+
+      {showFormEmploye && (
+        <form onSubmit={handleAddEmployeManuel} className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-teal-100">
+          <h2 className="font-bold font-galey text-teal-800">Nouvel employé</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <input placeholder="Prénom *" required value={formEmploye.prenom} onChange={e => setFormEmploye({ ...formEmploye, prenom: e.target.value })} className={inp} />
+            <input placeholder="Nom *" required value={formEmploye.nom} onChange={e => setFormEmploye({ ...formEmploye, nom: e.target.value })} className={inp} />
+            <input placeholder="Email" type="email" value={formEmploye.email} onChange={e => setFormEmploye({ ...formEmploye, email: e.target.value })} className={inp} />
+            <input placeholder="Téléphone" value={formEmploye.telephone} onChange={e => setFormEmploye({ ...formEmploye, telephone: e.target.value })} className={inp} />
+          </div>
+          <textarea placeholder="Notes" rows={2} value={formEmploye.notes} onChange={e => setFormEmploye({ ...formEmploye, notes: e.target.value })} className={inp + ' resize-none'} />
+          <div className="flex gap-3">
+            <button type="submit" disabled={saving} className="bg-teal-700 text-white px-6 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800 disabled:opacity-50">
+              {saving ? 'Enregistrement…' : 'Ajouter'}
+            </button>
+            <button type="button" onClick={() => setShowFormEmploye(false)} className="text-gray-500 px-6 py-2 rounded-full text-sm font-galey border border-gray-200 hover:bg-gray-50">
+              Annuler
+            </button>
+          </div>
+        </form>
+      )}
 
       {showFormBenevole && (
         <form onSubmit={handleAddBenevoleManuel} className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-purple-100">
@@ -999,7 +1049,7 @@ function AddPetsMatchModal({ uid, eleveurProfileId, type, onClose }: { uid: stri
       <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h3 className="font-bold font-galey text-gray-800">
-            {type === 'benevole' ? 'Ajouter un bénévole PetsMatch' : 'Inviter un employé'}
+            {type === 'benevole' ? 'Inviter un bénévole' : 'Inviter un employé'}
           </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
         </div>

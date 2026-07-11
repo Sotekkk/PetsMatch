@@ -534,7 +534,7 @@ class _SearchBenevoleSheetState extends State<_SearchBenevoleSheet> {
           Container(width: 40, height: 4,
               decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 16),
-          const Text('Ajouter un bénévole PetsMatch',
+          const Text('Ajouter un bénévole',
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
           const SizedBox(height: 14),
           Padding(
