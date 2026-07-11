@@ -191,16 +191,6 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Certificats d\'engagement',
-                      icon: Icons.edit_document,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const CertificatsEngagementPage(isAssociation: true),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
                       label: 'Suivi sanitaire',
                       icon: Icons.health_and_safety_outlined,
                       onTap: () {
@@ -435,8 +425,8 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Documents',
-                      icon: Icons.folder_outlined,
+                      label: 'Certificats d\'engagement',
+                      icon: Icons.edit_document,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
