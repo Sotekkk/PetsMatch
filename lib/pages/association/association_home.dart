@@ -1,14 +1,7 @@
 import 'package:PetsMatch/main.dart';
-import 'package:PetsMatch/pages/association/admin/chenil_planning_page.dart';
-import 'package:PetsMatch/pages/association/admin/contrat_adoption_page.dart';
 import 'package:PetsMatch/pages/association/animaux/mes_animaux_asso.dart';
 import 'package:PetsMatch/pages/association/equipe/equipe_page.dart';
-import 'package:PetsMatch/pages/association/familles_accueil/familles_accueil_page.dart';
-import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
-import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
-import 'package:PetsMatch/pages/eleveur/admin/certificats_engagement_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
-import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -462,35 +455,6 @@ class _AssociationHomePageState extends State<AssociationHomePage> {
                     ),
                     const SizedBox(height: 20),
                   ],
-
-                  // Actions rapides
-                  Text('Actions rapides',
-                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                          fontSize: 16, color: _teal)),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      _QuickAction('Mes animaux', Icons.pets, _teal, onTap: () =>
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const MesAnimauxAssoPage()))),
-                      _QuickAction('Familles d\'accueil', Icons.house_outlined, Colors.purple, onTap: () =>
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const FamillesAccueilPage()))),
-                      _QuickAction('Déposer une annonce', Icons.campaign_outlined, _green, onTap: () =>
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateAnnonceAssoPage()))),
-                      _QuickAction('Créer un certificat', Icons.edit_document, Colors.orange, onTap: () =>
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const CertificatsEngagementPage(isAssociation: true)))),
-                      _QuickAction('Planning chenil', Icons.calendar_month_outlined, _teal, onTap: () =>
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const ChenilPlanningPage()))),
-                      _QuickAction('RDV visites', Icons.event_available_outlined, Colors.pink, onTap: () =>
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const ProAgendaPage()))),
-                      _QuickAction('Contrat d\'adoption', Icons.handshake_outlined, const Color(0xFF00695C), onTap: () =>
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const ContratAdoptionPage()))),
-                      _QuickAction('Employés & Bénévoles', Icons.badge_outlined, Colors.purple, onTap: () =>
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => const EmployesPage(isAssociation: true)))),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
                 ],
               ]),
             ),
@@ -542,39 +506,6 @@ class _StatCard extends StatelessWidget {
                   maxLines: 1, overflow: TextOverflow.ellipsis),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _QuickAction extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final VoidCallback? onTap;
-
-  const _QuickAction(this.label, this.icon, this.color, {this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: color, size: 16),
-            const SizedBox(width: 6),
-            Text(label,
-                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: color, fontWeight: FontWeight.w600)),
-          ],
         ),
       ),
     );

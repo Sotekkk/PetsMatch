@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/config.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -45,6 +46,7 @@ class _ContratAdoptionPageState extends State<ContratAdoptionPage> {
           .select('id, nom, espece, race, identification, date_naissance, photo_url, statut')
           .eq('uid_eleveur', uid)
           .eq('is_association', true)
+          .not('statut', 'in', '(sorti,decede,adopte)')
           .order('nom'),
       _supa.from('documents_animaux')
           .select('id, titre, statut, created_at, metadata, token, animal_id')
@@ -53,9 +55,18 @@ class _ContratAdoptionPageState extends State<ContratAdoptionPage> {
           .order('created_at', ascending: false),
     ]);
     if (mounted) {
+      final tousContrats = List<Map<String, dynamic>>.from(contrats as List);
+      // Un animal déjà engagé dans un contrat en cours/signé ne doit plus être proposé
+      const statutsBloquants = ['brouillon', 'en_attente', 'signe', 'partiellement_signe', 'en_cours'];
+      final animauxBloques = tousContrats
+          .where((c) => statutsBloquants.contains(c['statut']))
+          .map((c) => c['animal_id'])
+          .toSet();
       setState(() {
-        _animaux  = List<Map<String, dynamic>>.from(animaux as List);
-        _contrats = List<Map<String, dynamic>>.from(contrats as List);
+        _animaux  = List<Map<String, dynamic>>.from(animaux as List)
+            .where((a) => !animauxBloques.contains(a['id']))
+            .toList();
+        _contrats = tousContrats;
         _loading  = false;
       });
     }
@@ -400,13 +411,35 @@ class _CreerContratSheetState extends State<_CreerContratSheet> {
       final espece   = animal['espece'] as String? ?? '';
       final participation = int.tryParse(_participCtrl.text) ?? _participationDefaut(espece);
 
+      // Infos de l'association active (jamais celles de l'éleveur/profil principal)
+      final pid = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+      final assoProfile = pid != null
+          ? await _supa.from('user_profiles')
+              .select('nom, profession_pro, siret, email_contact, phone, telephone, rue, ville, code_postal')
+              .eq('id', pid).maybeSingle()
+          : await _supa.from('user_profiles')
+              .select('nom, profession_pro, siret, email_contact, phone, telephone, rue, ville, code_postal')
+              .eq('uid', uid).eq('is_main', true).maybeSingle();
+      final assoNom = (assoProfile?['nom'] as String?) ?? '';
+      final assoAdresse = [assoProfile?['rue'], assoProfile?['code_postal'], assoProfile?['ville']]
+          .where((e) => e != null && (e as String).isNotEmpty).join(', ');
+      final assoTel = (assoProfile?['phone'] as String?) ?? (assoProfile?['telephone'] as String?) ?? '';
+      final assoEmail = (assoProfile?['email_contact'] as String?) ?? '';
+      final assoSiret = (assoProfile?['siret'] as String?) ?? '';
+
       final res = await _supa.from('documents_animaux').insert({
         'animal_id':   animalId,
         'uid_eleveur': uid,
+        'pro_profile_id': pid,
         'type':        'contrat_adoption',
         'titre':       'Contrat d\'adoption — $nomAnimal',
         'statut':      'brouillon',
         'metadata': {
+          'asso_nom':         assoNom,
+          'asso_adresse':     assoAdresse,
+          'asso_tel':         assoTel,
+          'asso_email':       assoEmail,
+          'asso_siret':       assoSiret,
           'adoptant_nom':     _nomCtrl.text.trim(),
           'adoptant_prenom':  _prenomCtrl.text.trim(),
           'adoptant_email':   _emailCtrl.text.trim(),

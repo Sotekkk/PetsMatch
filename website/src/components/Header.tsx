@@ -309,7 +309,6 @@ const MENU_ASSOCIATION = [
     section: 'Mon Association',
     icon: '🐾',
     items: [
-      { href: '/association',                            label: 'Tableau de bord',       icon: '🏠' },
       { href: '/association/animaux',                    label: 'Mes Animaux',           icon: '🐾' },
       { href: '/association/familles-accueil',           label: 'Familles d\'accueil',   icon: '🏡' },
       { href: '/association/chenil',                     label: 'Chenil / Planning',     icon: '🗓️' },

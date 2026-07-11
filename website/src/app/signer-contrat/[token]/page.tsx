@@ -35,6 +35,7 @@ interface DocRow {
   animal_id: string;
   pension_entree_id?: string;
   uid_eleveur: string;
+  pro_profile_id?: string | null;
   type: string;
   titre: string;
   statut: DocStatut;
@@ -89,18 +90,24 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
 
       if (!data) { setStatus('not_found'); return; }
 
+      // Le profil créateur du contrat : celui rattaché au document (pro_profile_id) si
+      // renseigné, sinon le profil principal du compte (contrats créés avant ce champ).
+      const profQuery = supabase.from('user_profiles')
+        .select('firstname,lastname,nom,adresse,siret,numero_elevage,ville_pro,ville,phone_number,email_contact,rue,code_postal,phone,telephone');
       const [{ data: cp }, { data: userRow }] = await Promise.all([
-        supabase.from('user_profiles')
-          .select('firstname,lastname,nom,adresse,siret,numero_elevage,ville_pro,ville,phone_number,email_contact')
-          .eq('uid', data.uid_eleveur).eq('is_main', true).maybeSingle(),
+        data.pro_profile_id
+          ? profQuery.eq('id', data.pro_profile_id).maybeSingle()
+          : profQuery.eq('uid', data.uid_eleveur).eq('is_main', true).maybeSingle(),
         supabase.from('users').select('email').eq('uid', data.uid_eleveur).maybeSingle(),
       ]);
       const profil = cp ? {
         firstname: cp.firstname, lastname: cp.lastname, name_elevage: cp.nom,
-        adress_elevage: cp.adresse, adress: cp.adresse, siret: cp.siret,
+        adress_elevage: cp.adresse || [cp.rue, cp.code_postal, cp.ville].filter(Boolean).join(', '),
+        adress: cp.adresse, siret: cp.siret,
         numero_elevage: cp.numero_elevage, code_iso_elevage: '+33',
         email: userRow?.email || cp.email_contact || '',
-        ville_elevage: cp.ville_pro, ville: cp.ville, phone_number: cp.phone_number, code_iso: '+33',
+        ville_elevage: cp.ville_pro, ville: cp.ville,
+        phone_number: cp.phone_number || cp.phone || cp.telephone, code_iso: '+33',
       } : null;
 
       const meta = (data.metadata ?? {}) as Record<string, string>;
@@ -368,10 +375,16 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     if (bothSigned && (doc.type === 'contrat_vente' || doc.type === 'certificat_cession') && doc.animal_id) {
       await supabase.from('animaux').update({ statut: 'sorti' }).eq('id', doc.animal_id).eq('statut', 'en_attente_cession');
     }
+    // Quand le contrat d'adoption est entièrement signé → l'animal passe adopté
+    if (bothSigned && doc.type === 'contrat_adoption' && doc.animal_id) {
+      await supabase.from('animaux').update({ statut: 'adopte' }).eq('id', doc.animal_id);
+    }
 
     // Notifications inter-parties
+    const isAdoption = doc.type === 'contrat_adoption';
+    const partieVendeur = isAdoption ? 'L\'association' : 'L\'éleveur';
     const acqEmail  = doc.metadata?.acquereur_email;
-    const acqNom    = doc.metadata?.acquereur_nom || 'L\'acquéreur';
+    const acqNom    = doc.metadata?.acquereur_nom || (isAdoption ? 'L\'adoptant(e)' : 'L\'acquéreur');
     const titre     = doc.titre ?? 'le contrat';
     const signingUrl = `${window.location.origin}/signer-contrat/${token}`;
 
@@ -383,7 +396,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           data: { token } }) });
       if (acqEmail) fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: acqEmail, type: 'contrat_signe_complet', title: '✅ Contrat signé !',
-          body: `L'éleveur a apposé sa signature — ${titre} est désormais signé par les deux parties.`,
+          body: `${partieVendeur} a apposé sa signature — ${titre} est désormais signé par les deux parties.`,
           data: { token, url: signingUrl } }) });
     } else if (role === 'acquereur') {
       // Acquéreur vient de signer → notifier l'éleveur
@@ -394,8 +407,8 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     } else {
       // Éleveur vient de signer → notifier l'acquéreur
       if (acqEmail) fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: acqEmail, type: 'contrat_signe_eleveur', title: '✍️ L\'éleveur a signé',
-          body: `L'éleveur a signé ${titre} — à vous de signer pour finaliser.`,
+        body: JSON.stringify({ email: acqEmail, type: 'contrat_signe_eleveur', title: `✍️ ${partieVendeur} a signé`,
+          body: `${partieVendeur} a signé ${titre} — à vous de signer pour finaliser.`,
           data: { token, url: signingUrl } }) });
     }
 
@@ -690,9 +703,9 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         <h2 className="text-base font-bold text-[#1F2A2E] mb-4 text-center">Signatures</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
 
-          {/* Signature éleveur */}
+          {/* Signature vendeur / association */}
           <SignatureZone
-            label="Signature de l'éleveur"
+            label={doc?.type === 'contrat_adoption' ? 'Signature de l\'association' : 'Signature de l\'éleveur'}
             sublabel={doc?.metadata?.acquereur_nom ? undefined : undefined}
             canvasRef={canvasElvRef}
             handlers={elvHandlers}
@@ -703,9 +716,9 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             signedAt={doc?.metadata?.signe_eleveur_le}
           />
 
-          {/* Signature acquéreur — grisée pour le vendeur */}
+          {/* Signature acquéreur / adoptant — grisée pour l'autre partie */}
           <SignatureZone
-            label="Signature de l'acquéreur"
+            label={doc?.type === 'contrat_adoption' ? 'Signature de l\'adoptant(e)' : 'Signature de l\'acquéreur'}
             sublabel={doc?.metadata?.acquereur_nom || undefined}
             canvasRef={canvasAcqRef}
             handlers={acqHandlers}
@@ -780,7 +793,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           onClick={e => { if (e.target === e.currentTarget) setRefuseModal(false); }}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl space-y-4">
             <h3 className="font-bold text-[#1F2A2E] text-base font-galey">❌ Refuser ce contrat</h3>
-            <p className="text-sm text-gray-500">Indiquez optionnellement la raison du refus. L&apos;éleveur en sera informé.</p>
+            <p className="text-sm text-gray-500">Indiquez optionnellement la raison du refus. {doc?.type === 'contrat_adoption' ? "L'association" : "L'éleveur"} en sera informé(e).</p>
             <textarea
               value={refuseReason}
               onChange={e => setRefuseReason(e.target.value)}

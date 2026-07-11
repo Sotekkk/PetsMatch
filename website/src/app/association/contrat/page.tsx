@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import {
   generateContratAdoptionHTML,
   PARTICIPATION_DEFAUT,
@@ -38,18 +39,13 @@ interface Animal {
 }
 
 interface UserProfile {
-  name_elevage: string;
-  firstname: string;
-  lastname: string;
-  adress_elevage?: string;
+  nom: string;
   rue?: string;
   ville?: string;
   code_postal?: string;
   siret?: string;
   email: string;
-  numero_elevage?: string;
-  code_iso_elevage?: string;
-  phone_number?: string;
+  phone?: string;
 }
 
 const STATUT_META: Record<string, { label: string; cls: string }> = {
@@ -65,6 +61,7 @@ const STATUT_META: Record<string, { label: string; cls: string }> = {
 
 export default function ContratsAdoptionPage() {
   const { user, loading } = useAuth();
+  const { id: profileId, loaded: profileLoaded } = useActiveProfileState();
   const router = useRouter();
 
   const [docs, setDocs]       = useState<DocAdoption[]>([]);
@@ -98,7 +95,7 @@ export default function ContratsAdoptionPage() {
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [loading, user, router]);
 
-  useEffect(() => { if (user) load(); }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (user && profileLoaded) load(); }, [user, profileLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const handler = (e: MessageEvent) => { if (e.data?.type === 'contract_signed') load(); };
@@ -107,25 +104,32 @@ export default function ContratsAdoptionPage() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async () => {
-    if (!user) return;
+    if (!user || !profileLoaded) return;
     setFetching(true);
+    const profQuery = profileId
+      ? supabase.from('user_profiles').select('nom,siret,email_contact,phone,telephone,rue,ville,code_postal').eq('id', profileId).maybeSingle()
+      : supabase.from('user_profiles').select('nom,siret,email_contact,phone,telephone,rue,ville,code_postal').eq('uid', user.uid).eq('is_main', true).maybeSingle();
     const [docsRes, aniRes, profRes, userRes] = await Promise.all([
       supabase.from('documents_animaux').select('*').eq('uid_eleveur', user.uid).eq('type', 'contrat_adoption').order('created_at', { ascending: false }),
       supabase.from('animaux').select('id, nom, espece, race, sexe, identification, date_naissance, couleur, sterilise').eq('uid_eleveur', user.uid).eq('is_association', true).not('statut', 'in', '(sorti,decede,adopte)').order('nom'),
-      supabase.from('user_profiles').select('nom,firstname,lastname,adresse,rue,ville,code_postal,siret,email_contact,numero_elevage,phone_number').eq('uid', user.uid).eq('is_main', true).maybeSingle(),
+      profQuery,
       supabase.from('users').select('email').eq('uid', user.uid).maybeSingle(),
     ]);
-    setDocs((docsRes.data ?? []) as DocAdoption[]);
-    setAnimaux((aniRes.data ?? []) as Animal[]);
+    const allDocs = (docsRes.data ?? []) as DocAdoption[];
+    setDocs(allDocs);
+    // Un animal déjà adopté ou déjà engagé dans un contrat en cours/signé ne doit plus être proposé
+    const blockedAnimalIds = new Set(
+      allDocs.filter(d => !['annule', 'refuse', 'expire'].includes(d.statut)).map(d => d.animal_id)
+    );
+    setAnimaux(((aniRes.data ?? []) as Animal[]).filter(a => !blockedAnimalIds.has(a.id)));
     const cp = profRes.data;
     setProfile(cp ? {
-      name_elevage: cp.nom, firstname: cp.firstname, lastname: cp.lastname,
-      adress_elevage: cp.adresse, rue: cp.rue, ville: cp.ville, code_postal: cp.code_postal,
+      nom: cp.nom, rue: cp.rue, ville: cp.ville, code_postal: cp.code_postal,
       siret: cp.siret, email: userRes.data?.email || cp.email_contact || '',
-      numero_elevage: cp.numero_elevage, code_iso_elevage: '+33', phone_number: cp.phone_number,
+      phone: cp.phone || cp.telephone || '',
     } : null);
     setFetching(false);
-  }, [user]);
+  }, [user, profileId, profileLoaded]);
 
   async function searchUser(q: string) {
     setUserSearch(q);
@@ -184,9 +188,9 @@ export default function ContratsAdoptionPage() {
   function assoInfo(): AssociationInfo {
     if (!profile) return { nom: '' };
     return {
-      nom: profile.name_elevage || `${profile.firstname} ${profile.lastname}`.trim(),
-      adresse: profile.adress_elevage || [profile.rue, profile.code_postal, profile.ville].filter(Boolean).join(', '),
-      tel: profile.numero_elevage ? `${profile.code_iso_elevage ?? '+33'} ${profile.numero_elevage}`.trim() : profile.phone_number ?? '',
+      nom: profile.nom || '',
+      adresse: [profile.rue, profile.code_postal, profile.ville].filter(Boolean).join(', '),
+      tel: profile.phone ?? '',
       email: profile.email ?? '',
       siret: profile.siret ?? '',
     };
@@ -199,6 +203,7 @@ export default function ContratsAdoptionPage() {
     const token = crypto.randomUUID();
     const payload = {
       uid_eleveur: user.uid,
+      pro_profile_id: profileId || null,
       animal_id: selectedAnimal.id,
       type: 'contrat_adoption',
       titre,
@@ -250,7 +255,7 @@ export default function ContratsAdoptionPage() {
     if (acqEmail?.trim()) {
       const { data: targetUser } = await supabase.from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
       if (targetUser?.uid) {
-        const assoNom = profile?.name_elevage || `${profile?.firstname ?? ''} ${profile?.lastname ?? ''}`.trim() || 'Une association';
+        const assoNom = profile?.nom || 'Une association';
         const signingUrl = `${window.location.origin}/signer-contrat/${token}`;
         await sendNotification({
           uid: targetUser.uid, type: 'contrat_invite',
