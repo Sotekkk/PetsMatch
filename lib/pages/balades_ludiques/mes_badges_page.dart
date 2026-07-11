@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'balades_ludiques_shared.dart';
 
 class MesBadgesPage extends StatefulWidget {
@@ -25,10 +26,11 @@ class _MesBadgesPageState extends State<MesBadgesPage> {
 
   Future<void> _load() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) { setState(() => _loading = false); return; }
-    final xp = await _supa.from('joueurs_xp').select().eq('user_uid', uid).maybeSingle();
+    final pid = User_Info.activeProfileId;
+    if (uid == null || pid.isEmpty) { setState(() => _loading = false); return; }
+    final xp = await _supa.from('joueurs_xp').select().eq('profile_id', pid).maybeSingle();
     final tous = await _supa.from('badges').select().eq('actif', true).order('rarete');
-    final obtenus = await _supa.from('badges_obtenus').select('badge_id').eq('user_uid', uid);
+    final obtenus = await _supa.from('badges_obtenus').select('badge_id').eq('profile_id', pid);
     if (mounted) {
       setState(() {
         _xp = xp;

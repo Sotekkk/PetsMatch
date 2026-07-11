@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -55,6 +55,7 @@ export default function DevisPage() {
   const [fetching, setFetching] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [tarifs, setTarifs] = useState<Record<string, number>>({});
+  const [tarifsBase, setTarifsBase] = useState<Record<string, number>>({});
   const [forfaits, setForfaits] = useState<{ id: string; nom: string; prix: number }[]>([]);
   const [newLink, setNewLink] = useState<string | null>(null);
 
@@ -77,6 +78,7 @@ export default function DevisPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [animaux, setAnimaux] = useState<AnimalOption[]>([]);
   const [animalId, setAnimalId] = useState('');
+  const [catPro, setCatPro] = useState('');
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [loading, user, router]);
 
@@ -84,15 +86,20 @@ export default function DevisPage() {
     if (!user) return;
     Promise.all([
       supabase.from('devis').select('*').eq('pro_uid', user.uid).order('created_at', { ascending: false }),
-      supabase.from('user_profiles').select('tarifs_education').eq('id', activeProfileId).maybeSingle(),
-      supabase.from('forfaits_education').select('id,nom,prix').eq('pro_uid', user.uid).eq('actif', true),
+      supabase.from('user_profiles').select('tarifs_education, tarifs_garde, profile_type, cat_pro').eq('id', activeProfileId).maybeSingle(),
       activeProfileId
         ? supabase.from('animal_access').select('animal_id').eq('pro_profile_id', activeProfileId).in('statut', ['active', 'active_write'])
         : Promise.resolve({ data: [] }),
-    ]).then(async ([d, t, f, acc]) => {
+    ]).then(async ([d, t, acc]) => {
+      const pt = (t.data?.profile_type ?? t.data?.cat_pro ?? '') as string;
+      setCatPro(pt);
       setDevisList((d.data ?? []) as Devis[]);
-      setTarifs((t.data?.tarifs_education ?? {}) as Record<string, number>);
-      setForfaits((f.data ?? []) as { id: string; nom: string; prix: number }[]);
+      const base = (pt === 'garde' ? t.data?.tarifs_garde : t.data?.tarifs_education) ?? {};
+      setTarifsBase(base as Record<string, number>);
+      setTarifs(base as Record<string, number>);
+      const forfaitsTable = pt === 'garde' ? 'forfaits_garde' : 'forfaits_education';
+      const { data: forfaitsData } = await supabase.from(forfaitsTable).select('id,nom,prix').eq('pro_uid', user.uid).eq('actif', true);
+      setForfaits((forfaitsData ?? []) as { id: string; nom: string; prix: number }[]);
       const animalIds = [...new Set(((acc.data ?? []) as { animal_id: string }[]).map(a => a.animal_id))];
       if (animalIds.length > 0) {
         const { data: anims } = await supabase.from('animaux').select('id,nom,espece').in('id', animalIds);
@@ -101,6 +108,23 @@ export default function DevisPage() {
       setFetching(false);
     });
   }, [user, activeProfileId]);
+
+  // Surcharge tarifs personnalisés pour le client sélectionné (garde uniquement) —
+  // fusionne au-dessus du catalogue de base pour les chips de saisie rapide.
+  const loadTarifsClient = useCallback(async () => {
+    if (catPro !== 'garde' || !user || !activeProfileId || !clientProfileId) {
+      setTarifs(tarifsBase);
+      return;
+    }
+    const { data } = await supabase.from('tarifs_clients_garde').select('prestation_type, prix')
+      .eq('pro_uid', user.uid).eq('pro_profile_id', activeProfileId).eq('owner_profile_id', clientProfileId);
+    const merged = { ...tarifsBase };
+    for (const o of (data ?? []) as { prestation_type: string; prix: number }[]) {
+      merged[o.prestation_type] = o.prix;
+    }
+    setTarifs(merged);
+  }, [catPro, user, activeProfileId, clientProfileId, tarifsBase]);
+  useEffect(() => { loadTarifsClient(); }, [loadTarifsClient]);
 
   async function searchUsers(q: string) {
     setUserSearch(q);
@@ -366,22 +390,46 @@ export default function DevisPage() {
                 <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Prestations</p>
                 {(Object.keys(tarifs).length > 0 || forfaits.length > 0) && (
                   <div className="flex flex-wrap gap-2 mb-3">
-                    {tarifs.cours_individuel && (
+                    {catPro === 'education' && tarifs.cours_individuel && (
                       <button onClick={() => addLigne('Cours individuel', tarifs.cours_individuel)}
                         className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">
                         + Cours individuel ({tarifs.cours_individuel} €)
                       </button>
                     )}
-                    {tarifs.cours_collectif && (
+                    {catPro === 'education' && tarifs.cours_collectif && (
                       <button onClick={() => addLigne('Cours collectif', tarifs.cours_collectif)}
                         className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">
                         + Cours collectif ({tarifs.cours_collectif} €)
                       </button>
                     )}
-                    {tarifs.evaluation && (
+                    {catPro === 'education' && tarifs.evaluation && (
                       <button onClick={() => addLigne('Évaluation', tarifs.evaluation)}
                         className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">
                         + Évaluation ({tarifs.evaluation} €)
+                      </button>
+                    )}
+                    {catPro === 'garde' && !!tarifs.promenade_30min && (
+                      <button onClick={() => addLigne('Promenade (30 min)', tarifs.promenade_30min)}
+                        className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">
+                        + Promenade (30 min) ({tarifs.promenade_30min} €)
+                      </button>
+                    )}
+                    {catPro === 'garde' && !!tarifs.promenade_1h && (
+                      <button onClick={() => addLigne('Promenade (1h)', tarifs.promenade_1h)}
+                        className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">
+                        + Promenade (1h) ({tarifs.promenade_1h} €)
+                      </button>
+                    )}
+                    {catPro === 'garde' && !!tarifs.promenade_2h && (
+                      <button onClick={() => addLigne('Promenade (2h)', tarifs.promenade_2h)}
+                        className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">
+                        + Promenade (2h) ({tarifs.promenade_2h} €)
+                      </button>
+                    )}
+                    {catPro === 'garde' && !!tarifs.garde_journee && (
+                      <button onClick={() => addLigne('Garde à domicile (journée)', tarifs.garde_journee)}
+                        className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">
+                        + Garde à domicile (journée) ({tarifs.garde_journee} €)
                       </button>
                     )}
                     {forfaits.map(f => (

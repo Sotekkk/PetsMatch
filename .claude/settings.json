@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /Users/nabilksouri/Documents/Application/PetsMatch add lib/pages/lieux/lieux_feed_page.dart lib/pages/lieux/lieux_pet_friendly_page.dart)",
+      "Bash(git -C /Users/nabilksouri/Documents/Application/PetsMatch commit -m ' *)",
+      "Bash(find /Users/nabilksouri -name \"*.env*\" -maxdepth 6 2>/dev/null | grep -v node_modules | head -15)",
+      "Read(//Users/nabilksouri/**)",
+      "WebFetch(domain:wiki.openstreetmap.org)",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}

@@ -4973,6 +4973,446 @@ Vérifié : `flutter analyze` (0 nouveau problème sur les 2 fichiers app),
 `tsc --noEmit` + `eslint` sur `profil/page.tsx` (0 problème avant/après),
 `next build` production complet réussi.
 
+### 28.6 — Phase 2a livrée (session 2026-07-10) : devis/contrats/factures auto + forfaits
+
+Découpage validé avec l'utilisateur pour continuer le module garde : devis/
+contrats/factures automatiques (email inclus) + forfaits, le reste (clés,
+GPS/tournée, récurrence, tarifs personnalisés, créneaux configurables) en
+phases ultérieures. Exploration préalable confirmée : `devis`/`factures`
+déjà pleinement génériques (aucun changement de schéma), seuls les contrats
+et forfaits nécessitaient une nouvelle table (mirror du pattern déjà établi
+`pension_updates` réutilisé tel quel vs `pension_factures`/`pension_entrees`
+mirror selon que le nom de table est déjà neutre ou couplé au domaine).
+
+- **Facturation** : lien de navigation manquant ajouté au bloc garde
+  (`eleveur_nav.dart`) — le backend (`factures`/`FacturationPage`,
+  `/elevage/facturation`) était déjà pleinement fonctionnel pour garde
+  depuis le fix cross-profil de `facturation.dart` plus tôt cette session,
+  seul l'accès manquait. Découverte au passage : même la pension n'a pas
+  ce lien dans `eleveur_nav.dart` (a sa propre page dédiée
+  `pension_factures_page.dart`) — trou pré-existant non spécifique à garde,
+  non corrigé (hors scope).
+- **Devis** : table `devis` déjà générique (scopée uid/profile_id, aucune
+  colonne éducateur-spécifique) — `EducationDevisPage` renommée `DevisPage`
+  et généralisée en place (table `forfaits`/`forfaits_garde` sélectionnée
+  selon `catPro`, chips de tarifs rapides limités à `education`) plutôt que
+  dupliquée. Web : `/garde/devis` ré-exporte `/education/devis/page.tsx`
+  (même pattern que `associations/inventaire` → `elevage/inventaire`
+  établi en catégorie B).
+- **Contrats** : nouvelle table requise (`documents_animaux.rdv_id`, migration
+  `migration_garde_contrat.sql` — **à exécuter manuellement dans le SQL
+  Editor Supabase**, non appliquée automatiquement) — la pension elle-même
+  n'utilise pas `ContractService.ts` pour ses contrats (insertion directe
+  dans `documents_animaux`, découvert en lisant `/pension/contrat/page.tsx`),
+  même approche reprise pour garde. Nouveau `contrat-garde.ts` (template
+  HTML, mirror `contrat-pension.ts`), nouveau type `contrat_garde` câblé
+  dans `/signer-contrat/[token]/page.tsx` (dispatch générique déjà en
+  place). App : bouton contrat sur `registre_visites_page.dart` (insert +
+  lien copié, même pattern que `registre_pension_page.dart`). Web :
+  `/garde/contrat`.
+- **Envoi email automatique** : n'existait pour aucun type de profil avant
+  cette session (juste notification in-app). 3 nouvelles routes génériques
+  (`api/devis/notify-email`, `api/contrat/notify-email`,
+  `api/facture/notify-email`, mirror `api/cession/notify-email`).
+  **Sécurité** : en copiant le pattern nodemailer existant, un identifiant
+  Gmail codé en dur allait être dupliqué dans 3 nouveaux fichiers (déjà
+  présent en dur dans 2 fichiers pré-existants, `cession`/`animal-claim` —
+  non touchés, hors scope) — bloqué par le classificateur de sécurité,
+  corrigé en extrayant `website/src/lib/mailer.ts` (transport partagé lisant
+  `GMAIL_USER`/`GMAIL_APP_PASSWORD` depuis `.env.local`, jamais commité) au
+  lieu de propager le secret en clair. Bouton "Envoyer par email" gated
+  `GardePlanConfig.code != 'free'` **entièrement câblé uniquement sur
+  `/garde/contrat`** (exemple de bout en bout fonctionnel) — les boutons
+  équivalents sur devis (page partagée education/garde) et facture (page
+  générique partagée par tous les types pro) **ne sont pas câblés dans
+  l'UI** cette session, pour éviter d'élargir le risque sur des pages
+  partagées par d'autres types de profils sans cadrage dédié. Les 3 routes
+  API sont prêtes et testables indépendamment.
+- **Forfaits** : nouvelle table `forfaits_garde` (migration
+  `migration_garde_forfaits.sql` — **à exécuter manuellement**, `nb_visites`
+  au lieu de `nb_seances`, RLS identique à `forfaits_education`).
+  `ForfaitModal` (web) et le bottom sheet équivalent (app,
+  `pro_profile_edit.dart`) généralisés en place avec sélection de
+  table/colonne selon `catPro` et wording adaptatif ("visites" vs
+  "séances"), plutôt que dupliqués.
+
+**Migrations à exécuter manuellement avant mise en service** (non
+appliquées par ce travail — écrites comme scripts idempotents pour le SQL
+Editor Supabase, comme toutes les migrations de ce projet) :
+`migration_garde_contrat.sql`, `migration_garde_forfaits.sql`.
+
+Vérifié : `flutter analyze` sur les 5 fichiers app touchés (0 nouveau
+problème, comparaison avant/après), `tsc --noEmit` (0 nouvelle erreur,
+même compte qu'avant), `eslint` (0 nouveau problème sur les nouveaux
+fichiers ; 1 avertissement `react-hooks/set-state-in-effect` hérité sur
+`/garde/contrat`, même pattern pré-existant déjà toléré partout ailleurs
+dans ce projet), `next build` production complet réussi (routes
+`/garde/devis`, `/garde/contrat` confirmées dans la sortie de build).
+
+### 28.7 — Phase 2b livrée (session 2026-07-10) : gestion des clés
+
+Première brique de la Phase 2b (reste : GPS/tournée, services récurrents,
+tarifs personnalisés par client, créneaux configurables, onboarding dédié —
+non commencés).
+
+- **Nouvelle table `cles_clients`** (migration `migration_garde_cles.sql` —
+  **à exécuter manuellement**) : `animal_id`, `owner_uid`/`owner_profile_id`,
+  `description`, `statut` (`en_possession`/`rendue`), `date_recuperation`,
+  `date_restitution`, `notes`. Scopée `pro_uid`+`pro_profile_id`, RLS INSERT
+  exige les deux (convention établie tout ce chantier).
+- **Pas de nouvelle notion de "client"** : la liste des clients éligibles à
+  une clé est dérivée des RDV confirmés/terminés existants (même requête
+  que `registre_visites_page.dart`), pas de table clients dédiée à créer.
+- App : nouvelle page `cles_clients_page.dart` (liste "En ma possession" /
+  "Rendues", ajout via bottom sheet avec sélecteur client/animal, édition,
+  bascule de statut en un tap, suppression). Lien ajouté au bloc garde de
+  `eleveur_nav.dart`, juste après "Devis".
+- Web : nouvelle route `/garde/cles` (même logique, modale au lieu de
+  bottom sheet). Lien ajouté à `MENU_GARDE` dans `Header.tsx`.
+- Pas de gating Premium/Team sur cette fonctionnalité (contrairement à
+  Inventaire/Protocoles/Employés) — jugée basique/attendue dès le palier
+  gratuit, même traitement que Registre visites/Devis.
+
+Vérifié : `flutter analyze` sur le nouveau fichier + `eleveur_nav.dart`
+(0 nouveau problème), `tsc --noEmit` + `eslint` sur `garde/cles/page.tsx`
+et `Header.tsx` (0 nouvelle erreur — le seul avertissement
+`react-hooks/set-state-in-effect` reproduit le pattern déjà toléré sur
+`/garde/registre`), `next build` production complet réussi (`/garde/cles`
+confirmée dans la sortie de build).
+
+### 28.8 — Phase 2b livrée (session 2026-07-10) : tarifs clients personnalisés
+
+**Découverte préalable** : garde n'avait **aucun catalogue de tarifs de
+base** (contrairement à `education`/`tarifs_education` et
+`pension`/`tarifs_logements`) — juste le champ libre générique `tarifs`.
+Sans catalogue de base, "personnalisé" n'a pas de sens (rien à surcharger) :
+prérequis ajouté avant la fonctionnalité demandée.
+
+- **Catalogue de base `tarifs_garde`** (nouvelle colonne JSONB sur
+  `user_profiles`, migration `migration_garde_tarifs_clients.sql` — **à
+  exécuter manuellement**) : mirror exact de `tarifs_education`
+  (`_prestationsGarde`/`PRESTATIONS_GARDE` : promenade 30min/1h/2h, garde
+  journée, autre). UI app (`pro_profile_edit.dart`) + web
+  (`profil/page.tsx`) mirroir la section éducateur existante.
+- **Nouvelle table `tarifs_clients_garde`** : surcharge par client d'un
+  type de prestation (`pro_profile_id`, `owner_profile_id`,
+  `prestation_type`, `prix`), contrainte unique sur les trois. Écriture en
+  "upsert si différent du tarif standard / delete si redevenu identique"
+  plutôt que de stocker des doublons inutiles.
+- **Clients éligibles dérivés des RDV** (même pattern que Gestion des
+  clés, §28.7) — mais ici via `rdv.client_profile_id` (fiabilisé par le
+  correctif RDV du 07-08) plutôt que `animaux_proprietes`, car la
+  tarification est par client/payeur, pas par animal.
+- App : nouvelle page `tarifs_clients_page.dart` (liste clients avec badge
+  "N tarifs personnalisés" ou "Tarifs standards", tap → bottom sheet avec
+  un champ par prestation, prérempli au tarif standard). Web :
+  `/garde/tarifs-clients` (même logique, modale).
+- **Bug pré-existant corrigé au passage** : `DevisPage`/`/education/devis`
+  (généralisée pour garde en Phase 2a, §28.6) lisait en dur la colonne
+  `tarifs_education` quel que soit `catPro` — les chips de saisie rapide
+  n'avaient donc jamais fonctionné pour garde (aucune ligne à afficher,
+  échec silencieux). Corrigé : lecture de la colonne appropriée
+  (`tarifs_garde` vs `tarifs_education`) + ajout des chips garde
+  (promenade 30min/1h/2h, garde journée) qui n'existaient pas du tout
+  avant (les chips étaient conditionnées `catPro === 'education'` en dur).
+  Une fois un client sélectionné dans le devis, ses tarifs personnalisés
+  (si définis) remplacent le tarif standard dans les chips — app et web.
+
+Vérifié : `flutter analyze` sur les 4 fichiers app touchés (0 nouveau
+problème), `tsc --noEmit` (0 nouvelle erreur), `eslint` (0 nouveau
+problème sur les nouveaux fichiers ; le nouvel effet de chargement des
+tarifs client sur `/education/devis` reproduit le même avertissement
+`react-hooks/set-state-in-effect` que tous les autres effets de
+chargement de ce projet — tenté un correctif via `useCallback`, le linter
+continue de tracer à travers, confirmant qu'il s'agit d'une limite
+générale de la règle sur ce projet et non d'un problème introduit),
+`next build` production complet réussi (`/garde/tarifs-clients`
+confirmée dans la sortie de build).
+
+### 28.9 — Phase 2b livrée (session 2026-07-10) : onboarding dédié
+
+App uniquement — pas d'équivalent web pour l'onboarding pension non plus,
+confirmé par recherche, donc aucune contrepartie web à créer ici.
+
+- **Nouveau `onboarding_garde.dart`** : mirror exact de
+  `onboarding_pension.dart` (4 slides carrousel, flag
+  `SharedPreferences` `onboarding_garde_done`), contenu adapté au
+  vocabulaire petsitter/promeneur (registre visites/rapports, devis/
+  contrats/tarifs personnalisés, visibilité annuaire).
+- **`bottom_nav.dart::_checkOnboarding`** — bug découvert en câblant le
+  déclenchement : `eleveurProfiles` (et son fallback `User_Info.isPro &&
+  !hasPension`) capturait déjà silencieusement tous les profils `garde`
+  avant ce correctif — un nouveau profil garde déclenchait donc
+  l'onboarding **éleveur** (contenu totalement hors sujet : portées,
+  annonces d'élevage...), jamais un onboarding dédié. Corrigé :
+  `gardeProfiles` extrait et exclu de `eleveurProfiles` et du fallback
+  pro générique, nouveau flag `needsGarde` suivant exactement le même
+  pattern que `needsPension` (marquage silencieux "déjà fait" si le
+  profil existait avant ce correctif, pour ne pas montrer l'onboarding
+  rétroactivement aux comptes garde déjà actifs).
+- **Non traité, limitation pré-existante identique pour pension** : la
+  feuille de choix `_showOnboardingChoice` (cas association + autre profil
+  simultané) ne propose que "Association"/"Éleveur", jamais "Pension" ni
+  désormais "Garde" — un profil garde+association nouvellement créé verra
+  l'onboarding association proposé mais pas l'onboarding garde via cette
+  feuille (reste possible séparément si `needsGarde` seul plus tard).
+  Écart déjà présent pour pension avant cette session, pas aggravé,
+  hors scope d'un correctif ciblé "onboarding garde".
+
+Vérifié : `flutter analyze` sur les 2 fichiers touchés (0 nouveau
+problème, comparaison `git stash` avant/après).
+
+### 28.10 — Phase 2b/2c livrée (session 2026-07-10) : RDV clients récurrents
+
+**Cadrage revu en cours de route** : la demande initiale "services
+récurrents + créneaux configurables" s'est révélée déjà largement
+couverte — `creneaux_pro` (grille hebdo + "Répliquer" sur N semaines/fin
+d'année/date perso) existe déjà en app (`pro_agenda.dart`) **et** web
+(`/pro/creneaux`), générique à tous les types de pro dont garde, déjà
+relié dans `MENU_GARDE`. Fausse piste initiale de ma part (recherche par
+nom de fichier `*creneau*`, qui ne matche pas `pro_agenda.dart` où c'est
+implémenté) — corrigée après remarque de l'utilisatrice. Le vrai trou
+identifié après clarification : la **récurrence côté RDV client** (ex.
+« promenade tous les mardis avec Mme Dupont ») n'existait nulle part —
+seule la disponibilité du pro pouvait être répliquée, pas une réservation
+répétée automatiquement pour un client donné.
+
+- **App** (`rdv_booking_page.dart`, flux client→pro déclenché depuis
+  `service_detail_page.dart`) : nouveau champ `isGarde`, toggle « Répéter
+  ce RDV chaque semaine » (4/8/12 semaines) visible une fois un créneau
+  choisi. À la soumission, calcule les dates hebdomadaires suivantes et
+  ne retient que celles réellement disponibles
+  (`_isDateSlotAvailable` : tous les créneaux 15 min de `creneaux_pro`
+  couvrant la durée + absence de chevauchement avec un RDV existant),
+  insère une ligne `rdv` par occurrence valide, une seule notification
+  agrégée au pro, retour utilisateur explicite si certaines dates n'ont
+  pas pu être honorées (ex. "6/8 RDV créés").
+- **Web** (`services/pro/[uid]/page.tsx`) — porté à la demande de
+  l'utilisatrice après cadrage initial "app d'abord". **Découverte en
+  l'explorant** : ce flux web utilise un schéma `rdv` différent de l'app
+  (`date_debut`/`date_fin` au lieu de `date_heure`/`duree_minutes`, pas
+  de vérification de conflit avec les RDV existants — juste
+  `creneaux_pro.statut` immédiatement basculé sur `'reserve'` à la
+  réservation) — écart pré-existant entre les deux plateformes, non
+  corrigé (hors scope d'un ajout de récurrence, risque de casser un flux
+  déjà en prod). La récurrence web reprend donc fidèlement ce même
+  schéma plutôt que d'introduire celui de l'app, pour rester cohérente
+  avec le comportement déjà en place. Disponibilité vérifiée par
+  appartenance à la liste `slots` déjà chargée (requête sans limite de
+  date supérieure côté web, contrairement à l'app plafonnée à 3 mois).
+- Pas de nouvelle table ni migration — entièrement bâti sur `rdv` et
+  `creneaux_pro` existants.
+
+Vérifié : `flutter analyze` sur les 2 fichiers app touchés (0 nouveau
+problème), `tsc --noEmit` (0 nouvelle erreur), `eslint` (0 nouveau
+problème — même compte d'erreurs pré-existantes qu'avant sur
+`services/pro/[uid]/page.tsx`, confirmé par `git stash`), `next build`
+production complet réussi.
+
+### 28.11 — Phase 2c livrée (session 2026-07-10) : GPS + tournée réordonnable
+
+Dernière brique du module garde. **App uniquement** (confirmé avec
+l'utilisatrice) — le suivi GPS en direct n'a pas de sens sur une version
+web, un pet sitter ne prépare pas sa tournée depuis un ordinateur en
+faisant ses visites.
+
+**Découverte préalable (exploration dédiée)** : l'infrastructure géo
+existait déjà à 90 % mais pour l'éducateur, pas pour garde —
+`rdv.lieu`/`lieu_lat`/`lieu_lng` (migration `migration_education_intervenants_trajet.sql`,
+géocodage natif au moment où le pro modifie un RDV), `GeocodingHelper`
+(`lib/utils/geocoding_helper.dart`, géocodage + distance à vol d'oiseau),
+et une heuristique "risque de retard" déjà dans `pro_agenda.dart`
+(`_travelWarningsToday`) comparant le temps entre deux RDV consécutifs à
+la distance à parcourir. **Aucune colonne d'ordre de passage n'existait
+en revanche** — les visites n'étaient triables que par heure de RDV.
+
+- **Nouvelle colonne `rdv.ordre_visite`** (migration
+  `migration_rdv_ordre_visite.sql` — **à exécuter manuellement**) :
+  ordre de passage indicatif, distinct de l'heure réservée (permet au
+  pro d'optimiser son trajet sans changer les horaires convenus avec les
+  clients).
+- **Nouvelle page `tournee_page.dart`** ("Ma tournée", lien ajouté au
+  bloc garde de `eleveur_nav.dart`) : carte (mirror du pattern
+  `balades_ludiques_map_view.dart`, `google_maps_flutter`) des visites
+  confirmées du jour avec marqueurs numérotés (vert=départ, rouge=fin,
+  bleu=étapes) + tracé (`Polyline`) reliant les points dans l'ordre +
+  marqueur violet "Ma position" (géolocalisation `geolocator`, best-effort,
+  ne bloque pas le chargement si permission refusée). Distance totale à
+  vol d'oiseau affichée (réutilise `GeocodingHelper.distanceKm`).
+  Liste `ReorderableListView` en dessous (glisser-déposer), persiste
+  `ordre_visite` par RDV à chaque réordonnancement. Tri par défaut :
+  `ordre_visite` si déjà défini, sinon heure du RDV.
+- **Trou pratique comblé au passage** : sans adresse géocodée, une
+  visite n'a pas de position sur la carte — or `lieu`/`lieu_lat`/`lieu_lng`
+  ne se remplissaient jusqu'ici qu'en passant par le flux complet
+  "modifier le RDV". Ajouté un raccourci "+ Ajouter une adresse" par
+  visite directement dans la liste de la tournée (dialogue simple →
+  géocodage via `GeocodingHelper` → update direct de la ligne `rdv`),
+  sans quoi la fonctionnalité serait restée vide pour la quasi-totalité
+  des RDV existants.
+- Pas d'optimisation automatique d'itinéraire (tri "plus court chemin") —
+  demande explicite : "réordonnable", pas "optimisable". Laissé au pro.
+
+Vérifié : `flutter analyze` sur les 2 fichiers touchés (0 nouveau
+problème — seul avertissement : `onReorder` déprécié sur
+`ReorderableListView`, même pattern déjà toléré ailleurs dans le projet
+sur `step_points_carte.dart`).
+
+---
+
+## 29. Module "Balades ludiques" (collègue) — correctif fuite cross-profil (session 2026-07-10)
+
+**Contexte** : module de geocaching/chasse au trésor développé par une
+collègue sans accès Supabase (branche mergée via `git pull --no-rebase`,
+commit `97b267f9`), distinct des "promenades" collectives. À la relecture de
+`supabase/migration_balades_ludiques.sql`, l'utilisatrice a repéré l'absence
+totale de `profile_id` sur les 9 nouvelles tables — uniquement scopées par
+`*_uid` (Firebase uid) — soit exactement la classe de bug cross-profil déjà
+corrigée ailleurs dans le projet cette session (le uid seul ne distingue pas
+un profil élevage d'un profil association/pension d'un même compte). Demande
+explicite : **tout doit fonctionner via `profile_id`, pas seulement le
+créateur** — cohérent avec la convention établie partout ailleurs dans
+l'app (`User_Info.activeProfileId` côté app, `activeProfileId` de
+`useAuth()` côté web).
+
+**Migration n'ayant jamais été exécutée en production** (colonne
+`profile_id` absente du schéma réel) : schéma redessiné directement dans le
+fichier plutôt que par `ALTER TABLE` a posteriori — sûr, aucune donnée
+existante à migrer.
+
+**Tables corrigées** (`supabase/migration_balades_ludiques.sql`) :
+- `balades_ludiques` : + `createur_profile_id` (nullable, `ON DELETE SET
+  NULL`, la ligne reste identifiable par uid même si le profil est
+  supprimé) + index.
+- `balades_ludiques_progressions` : `joueur_uid` → + `joueur_profile_id`
+  (NOT NULL), contrainte unique migrée de `(balade_id, joueur_uid)` vers
+  `(balade_id, joueur_profile_id)`, policy INSERT exige les deux.
+- `balades_ludiques_validations` : + `joueur_profile_id` (nullable).
+- `balades_ludiques_avis` : `user_uid` → + `profile_id` (NOT NULL),
+  contrainte unique migrée vers `(balade_id, profile_id)`.
+- `balades_ludiques_favoris` : `user_uid` → + `profile_id` (NOT NULL), clé
+  primaire migrée de `(user_uid, balade_id)` vers `(profile_id, balade_id)`.
+- `badges_obtenus` : + `profile_id` (NOT NULL), contrainte unique migrée
+  vers `(profile_id, badge_id, balade_id)`.
+- `joueurs_xp` : clé primaire migrée de `user_uid` vers `profile_id`
+  (`user_uid` conservé en colonne simple + index, pour affichage/debug).
+
+Toutes les policies RLS INSERT concernées mises à jour pour exiger
+`*_profile_id IS NOT NULL` en plus du uid existant.
+
+**Fichiers applicatifs corrigés** (tous les points de lecture/écriture
+touchant ces tables, identifiés par grep exhaustif sur
+`createur_uid|joueur_uid|user_uid` dans les deux arborescences) :
+
+*Web* (5 fichiers) : `balades-ludiques/creer/page.tsx`,
+`balades-ludiques/mes-parcours/page.tsx`, `balades-ludiques/[id]/page.tsx`,
+`balades-ludiques/[id]/jouer/page.tsx`, `balades-ludiques/classement/page.tsx`
+— ce dernier entièrement réécrit : l'ancien code affichait `Créateur
+{uid.slice(0,6)}` (fragment de uid brut) faute de pouvoir résoudre un nom ;
+désormais résolution des noms d'affichage via une requête batch
+`user_profiles` (nom > profile_label > firstname+lastname > "Utilisateur").
+
+*App* (6 fichiers) : `creation/creation_flow_page.dart`,
+`mes_parcours_page.dart`, `mes_badges_page.dart`, `classement_page.dart`
+(même réécriture de résolution de nom que le web), `balade_ludique_jouer_page.dart`,
+`balade_ludique_detail_page.dart`. Pattern uniforme : ajout de
+`User_Info.activeProfileId` (app) / `activeProfileId` de `useAuth()` (web)
+sur chaque lecture/écriture de progression, favoris, avis, XP et badges ;
+`_isOwner`/`isOwner` comparent désormais `createur_profile_id`, plus
+`createur_uid`.
+
+Fichiers du module sans dépendance `profile_id` (widgets défis, hub, filtres,
+carte, étapes de création, stats de parcours) : audités, aucun changement
+nécessaire — ils ne lisent/écrivent que des données non scopées par
+utilisateur (points, défis, filtres publics).
+
+**Package manquant** : `qrcode.react` déclaré par la collègue dans
+`package.json` mais absent de `node_modules` (écart d'environnement
+pré-existant, sans lien avec le correctif) — corrigé par `npm install`.
+
+**Migration à exécuter manuellement** avant mise en service (n'a jamais
+été appliquée en production, donc aucune donnée à migrer, mais toujours
+un script à exécuter à la main dans le SQL Editor Supabase comme toutes
+les migrations de ce projet) : `migration_balades_ludiques.sql` (version
+corrigée).
+
+Vérifié : `flutter analyze` sur tout `lib/pages/balades_ludiques` (0 nouveau
+problème — seulement du bruit `withOpacity`/`onReorder` déjà présent avant
+correctif, confirmé par comparaison `git stash`), `tsc --noEmit` et `eslint`
+sur `website/src/app/balades-ludiques` (mêmes erreurs pré-existantes
+qu'avant correctif, confirmé par `git stash` ; le correctif de
+`classement/page.tsx` a même supprimé une erreur TS pré-existante au
+passage).
+
+---
+
+## 30. Notifications cross-profil — likes + rappels serveur (session 2026-07-10)
+
+**Contexte** : la collègue signale voir des notifications élevage (like,
+tâche validée, annonce expirant) sur son profil association. Investigation :
+3 causes distinctes, toutes de la même famille que le chantier `profile_id`
+de cette session.
+
+- **Like sur annonce** (`annonce_detail_page.dart`, `annonces_feed_page.dart`,
+  `website/src/app/annonces/feed/page.tsx`, `website/src/app/annonces/page.tsx`) :
+  la notification envoyée au propriétaire de l'annonce ne renseignait que
+  `sender_profile_id` (profil de la personne qui like), jamais `profile_id`
+  (profil cible = destinataire) — elle tombait donc systématiquement dans le
+  fallback "aucun profil connu → afficher sur tous les profils" de
+  `notifications_page.dart`. Corrigé en propageant le `profile_id` de
+  l'annonce (colonne déjà présente sur `annonces`) jusqu'à l'insert de la
+  notification, sur les 4 fichiers (à noter : sur `annonces/page.tsx`, la
+  prop a dû être filée à travers 3 composants imbriqués
+  `AnnonceCard` → `BabyPhotoCard` → `toggleLike`).
+- **Tâche validée** : déjà correctement scopée par `profile_id` depuis le
+  correctif du 2026-07-08 (commit `54c1323d`) — la notification vue par la
+  collègue datait d'avant ce correctif (donnée historique, pas un bug actif).
+- **Annonce expirant** — cause racine différente et plus grave : la Cloud
+  Function planifiée `functions/annonces.js`
+  (`sendAnnonceExpirationReminders`, tourne tous les jours à 7h) n'a jamais
+  renseigné `profile_id` du tout sur ses insertions dans `notifications`.
+  Contrairement aux bugs "app", celui-ci n'a **aucun lien avec la version de
+  l'app installée** : il fuit en continu côté serveur, indépendamment de ce
+  que la collègue a sur son téléphone.
+
+**Audit étendu** : le même trou (zéro `profile_id`) a été trouvé dans 7
+autres Cloud Functions programmées qui insèrent dans `notifications` :
+`chaleurs.js`, `retraite.js`, `sante.js`, `agenda.js` (rappels mise-bas),
+`vet_notifications.js`, `rdv_reminders.js`. Toutes corrigées (confirmation
+utilisatrice de traiter les 7 en plus des 3 signalées à l'origine).
+
+**Découverte clé** : `animaux.profile_id` n'est **pas fiable** (déjà
+documenté dans `migration_fix_animaux_proprietes_unique_constraint.sql` —
+jamais renseigné par certains flux comme `portee_form_page.dart`). La
+source fiable du profil propriétaire courant est
+`animaux_proprietes.profile_id_proprio` avec `date_fin IS NULL` (= ligne de
+propriété active), même pattern que celui déjà utilisé côté app dans
+`mes_animaux.dart`. Chaque Cloud Function concernée résout donc désormais
+le `profile_id` via une requête (batchée quand plusieurs animaux, sinon
+par ligne) sur `animaux_proprietes` plutôt que de lire une colonne
+`profile_id` directement sur `animaux`. Seul `rdv_reminders.js` fait
+exception : `rdv.client_profile_id` existe et est fiable (renseigné par le
+correctif RDV du 07-08), donc lu directement.
+
+**`alertes.js` volontairement non touché** : ses notifications
+(`notifyUsersNearLostAnimal`, `notifyNearFoundAnimal`, `notifyAnimalOwner`)
+sont des alertes de sécurité communautaire (animal perdu/trouvé à
+proximité), pertinentes pour la personne quel que soit son profil actif —
+contrairement aux notifications "business" d'un profil pro (élevage,
+association…), les scoper par profil irait à l'encontre du besoin.
+
+Vérifié : `flutter analyze` (0 nouveau problème sur les 2 fichiers app),
+`tsc --noEmit` + `eslint` sur les 4 fichiers web (0 nouvelle erreur,
+comparaison `git stash` : même compte avant/après), `eslint --fix` sur les
+7 fichiers Cloud Functions (quelques erreurs `block-spacing`/`max-len`
+introduites par le nouveau code, corrigées), chargement Node de chacun des
+7 fichiers confirmé sans erreur de syntaxe.
+
+**À faire après déploiement** : `firebase deploy --only functions` est
+nécessaire pour que le correctif des 7 fonctions programmées prenne effet
+— contrairement au reste de cette session, un rebuild/réinstall de l'app
+seul ne suffit pas ici.
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

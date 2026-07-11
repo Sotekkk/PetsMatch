@@ -35,7 +35,7 @@ function genQrCode() {
 }
 
 function CreerBaladeContent() {
-  const { user } = useAuth();
+  const { user, activeProfileId } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
   const editId = params.get('edit');
@@ -134,6 +134,7 @@ function CreerBaladeContent() {
       }
       const row: Record<string, unknown> = {
         createur_uid: user.uid,
+        createur_profile_id: activeProfileId || null,
         titre: titre.trim(),
         description: description.trim() || null,
         cover_url: finalCoverUrl,
@@ -175,20 +176,21 @@ function CreerBaladeContent() {
         });
       }
 
-      if (!editId) {
-        const { data: existing } = await supabase.from('joueurs_xp').select('*').eq('user_uid', user.uid).maybeSingle();
+      if (!editId && activeProfileId) {
+        const { data: existing } = await supabase.from('joueurs_xp').select('*').eq('profile_id', activeProfileId).maybeSingle();
         const nouveauNbCrees = (existing?.nb_parcours_crees ?? 0) + 1;
         await supabase.from('joueurs_xp').upsert({
+          profile_id: activeProfileId,
           user_uid: user.uid,
           xp_total: existing?.xp_total ?? 0,
           nb_parcours_completes: existing?.nb_parcours_completes ?? 0,
           nb_parcours_crees: nouveauNbCrees,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'user_uid' });
+        }, { onConflict: 'profile_id' });
 
         if (nouveauNbCrees === 1) {
           const { data: badge } = await supabase.from('badges').select('*').eq('code', 'createur_premier').maybeSingle();
-          if (badge) await supabase.from('badges_obtenus').insert({ user_uid: user.uid, badge_id: badge.id, balade_id: id });
+          if (badge) await supabase.from('badges_obtenus').insert({ user_uid: user.uid, profile_id: activeProfileId, badge_id: badge.id, balade_id: id });
         }
       }
 

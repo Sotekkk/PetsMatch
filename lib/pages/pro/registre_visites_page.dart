@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 
@@ -78,6 +80,60 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
       if (mounted) setState(() { _visites = list; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _genererContratSignature(Map<String, dynamic> rdv) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final existing = await _supa
+          .from('documents_animaux')
+          .select('token')
+          .eq('rdv_id', rdv['id'])
+          .eq('type', 'contrat_garde')
+          .maybeSingle();
+
+      String? token = existing?['token'] as String?;
+      if (token == null) {
+        final row = await _supa.from('documents_animaux').insert({
+          'uid_eleveur': uid,
+          'animal_id': rdv['animal_id'],
+          'rdv_id': rdv['id'],
+          'type': 'contrat_garde',
+          'titre': 'Contrat de prestation — ${rdv['_animal_nom'] ?? ''}',
+          'statut': 'en_attente',
+          'metadata': {
+            'client_nom': rdv['_client_nom'],
+            'date_visite': rdv['date_heure'],
+          },
+        }).select('token').single();
+        token = row['token'] as String?;
+      } else {
+        await _supa.from('documents_animaux')
+            .update({'statut': 'en_attente'})
+            .eq('rdv_id', rdv['id'])
+            .eq('type', 'contrat_garde');
+      }
+      if (token == null) return;
+      final url = '$kSiteBaseUrl/signer-contrat/$token';
+      await Clipboard.setData(ClipboardData(text: url));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Lien de signature copié — envoyez-le au client',
+              style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: _teal,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
     }
   }
 
@@ -264,6 +320,7 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
                       rdv: displayed[i],
                       onTerminer: () => _marquerTermine(displayed[i]),
                       onRapport: () => _openRapport(displayed[i]),
+                      onContrat: () => _genererContratSignature(displayed[i]),
                     ),
                   ),
                 ),
@@ -297,9 +354,10 @@ class _VisiteCard extends StatelessWidget {
   final Map<String, dynamic> rdv;
   final VoidCallback onTerminer;
   final VoidCallback onRapport;
+  final VoidCallback onContrat;
   static const _teal = Color(0xFF0C5C6C);
 
-  const _VisiteCard({required this.rdv, required this.onTerminer, required this.onRapport});
+  const _VisiteCard({required this.rdv, required this.onTerminer, required this.onRapport, required this.onContrat});
 
   @override
   Widget build(BuildContext context) {
@@ -355,6 +413,11 @@ class _VisiteCard extends StatelessWidget {
                 ),
                 child: const Text('Rapport de visite', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
               ),
+            ),
+            IconButton(
+              onPressed: onContrat,
+              tooltip: 'Contrat de prestation',
+              icon: const Icon(Icons.draw_outlined, size: 18, color: _teal),
             ),
           ]),
         ]),

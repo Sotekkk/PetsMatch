@@ -5,6 +5,7 @@ import 'package:PetsMatch/pages/eleveur/eleveur_nav.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_asso.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_eleveur.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_pension.dart';
+import 'package:PetsMatch/pages/onboarding/onboarding_garde.dart';
 import 'package:PetsMatch/pages/particulier/particulier_nav.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
@@ -120,35 +121,40 @@ class _BottomNavState extends State<BottomNav> {
     // Types de profils disponibles
     final assoProfiles    = User_Info.availableProfiles.where((p) => p['profile_type'] == 'association').toList();
     final pensionProfiles = User_Info.availableProfiles.where((p) => p['profile_type'] == 'pension').toList();
+    final gardeProfiles   = User_Info.availableProfiles.where((p) => p['profile_type'] == 'garde').toList();
     final eleveurProfiles = User_Info.availableProfiles.where((p) =>
-        !['particulier', 'association', 'pension'].contains(p['profile_type'] ?? '')).toList();
+        !['particulier', 'association', 'pension', 'garde'].contains(p['profile_type'] ?? '')).toList();
 
     final hasAsso    = assoProfiles.isNotEmpty    || User_Info.isAssociation;
     final hasPension = pensionProfiles.isNotEmpty;
+    final hasGarde   = gardeProfiles.isNotEmpty;
     final hasEleveur = eleveurProfiles.isNotEmpty || User_Info.isElevage ||
-                       (User_Info.isPro && !hasPension);
+                       (User_Info.isPro && !hasPension && !hasGarde);
 
     // ── Lire les flags AVANT de les modifier ──────────────────────────────────
     bool assoDone    = prefs.getBool('onboarding_asso_done')    ?? false;
     bool pensionDone = prefs.getBool(OnboardingPensionPage.prefKey) ?? false;
+    bool gardeDone   = prefs.getBool(OnboardingGardePage.prefKey) ?? false;
     bool eleveurDone = prefs.getBool('onboarding_eleveur_done') ?? false;
 
     // Si le profil existe déjà, on marque l'onboarding comme fait sans le montrer
     if (hasAsso    && !assoDone)    { await prefs.setBool('onboarding_asso_done',    true); assoDone    = true; }
     if (hasPension && !pensionDone) { await prefs.setBool(OnboardingPensionPage.prefKey, true); pensionDone = true; }
+    if (hasGarde   && !gardeDone)   { await prefs.setBool(OnboardingGardePage.prefKey, true); gardeDone = true; }
     if (hasEleveur && !eleveurDone) { await prefs.setBool('onboarding_eleveur_done', true); eleveurDone = true; }
 
     // ── Vérifier ce qui reste à montrer ──────────────────────────────────────
     final needsAsso    = hasAsso    && !assoDone;
     final needsPension = hasPension && !pensionDone;
+    final needsGarde   = hasGarde   && !gardeDone;
     final needsEleveur = hasEleveur && !eleveurDone;
 
-    if (!needsAsso && !needsPension && !needsEleveur) return;
+    if (!needsAsso && !needsPension && !needsGarde && !needsEleveur) return;
     if (!mounted) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (needsAsso && (needsEleveur || needsPension)) {
+      if (needsAsso && (needsEleveur || needsPension || needsGarde)) {
         _showOnboardingChoice(prefs);
       } else if (needsAsso) {
         Navigator.of(context).push(MaterialPageRoute(
@@ -157,6 +163,10 @@ class _BottomNavState extends State<BottomNav> {
       } else if (needsPension) {
         Navigator.of(context).push(MaterialPageRoute(
           builder: (_) => const OnboardingPensionPage(),
+        ));
+      } else if (needsGarde) {
+        Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => const OnboardingGardePage(),
         ));
       } else if (needsEleveur) {
         Navigator.of(context).push(MaterialPageRoute(

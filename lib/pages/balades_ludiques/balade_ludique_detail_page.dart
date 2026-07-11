@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'balades_ludiques_shared.dart';
 import 'balade_ludique_jouer_page.dart';
 import 'creation/creation_flow_page.dart';
@@ -26,7 +27,8 @@ class _BaladeLudiqueDetailPageState extends State<BaladeLudiqueDetailPage> {
   bool _busy = false;
 
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
-  bool get _isOwner => _balade != null && _uid != null && _balade!['createur_uid'] == _uid;
+  String? get _pid => User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+  bool get _isOwner => _balade != null && _pid != null && _balade!['createur_profile_id'] == _pid;
 
   @override
   void initState() {
@@ -43,12 +45,12 @@ class _BaladeLudiqueDetailPageState extends State<BaladeLudiqueDetailPage> {
 
       Map<String, dynamic>? progression;
       bool isFavori = false;
-      if (_uid != null) {
+      if (_pid != null) {
         final prog = await _supa.from('balades_ludiques_progressions').select()
-            .eq('balade_id', widget.baladeId).eq('joueur_uid', _uid!).maybeSingle();
+            .eq('balade_id', widget.baladeId).eq('joueur_profile_id', _pid!).maybeSingle();
         progression = prog;
         final fav = await _supa.from('balades_ludiques_favoris').select()
-            .eq('balade_id', widget.baladeId).eq('user_uid', _uid!).maybeSingle();
+            .eq('balade_id', widget.baladeId).eq('profile_id', _pid!).maybeSingle();
         isFavori = fav != null;
       }
 
@@ -69,13 +71,14 @@ class _BaladeLudiqueDetailPageState extends State<BaladeLudiqueDetailPage> {
 
   Future<void> _toggleFavori() async {
     final uid = _uid;
-    if (uid == null) return;
+    final pid = _pid;
+    if (uid == null || pid == null) return;
     setState(() => _isFavori = !_isFavori);
     try {
       if (_isFavori) {
-        await _supa.from('balades_ludiques_favoris').insert({'user_uid': uid, 'balade_id': widget.baladeId});
+        await _supa.from('balades_ludiques_favoris').insert({'user_uid': uid, 'profile_id': pid, 'balade_id': widget.baladeId});
       } else {
-        await _supa.from('balades_ludiques_favoris').delete().eq('user_uid', uid).eq('balade_id', widget.baladeId);
+        await _supa.from('balades_ludiques_favoris').delete().eq('profile_id', pid).eq('balade_id', widget.baladeId);
       }
       final nbFavoris = await _supa.from('balades_ludiques_favoris').select().eq('balade_id', widget.baladeId).count(CountOption.exact);
       await _supa.from('balades_ludiques').update({'nb_favoris': nbFavoris.count}).eq('id', widget.baladeId);
@@ -84,14 +87,15 @@ class _BaladeLudiqueDetailPageState extends State<BaladeLudiqueDetailPage> {
 
   Future<void> _commencer() async {
     final uid = _uid;
-    if (uid == null) {
+    final pid = _pid;
+    if (uid == null || pid == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Connectez-vous pour commencer un parcours')));
       return;
     }
     if (_progression == null) {
       try {
         final inserted = await _supa.from('balades_ludiques_progressions').insert({
-          'balade_id': widget.baladeId, 'joueur_uid': uid,
+          'balade_id': widget.baladeId, 'joueur_uid': uid, 'joueur_profile_id': pid,
         }).select().single();
         final nbJoueurs = await _supa.from('balades_ludiques_progressions').select().eq('balade_id', widget.baladeId).count(CountOption.exact);
         await _supa.from('balades_ludiques').update({'nb_joueurs': nbJoueurs.count}).eq('id', widget.baladeId);
@@ -137,7 +141,8 @@ class _BaladeLudiqueDetailPageState extends State<BaladeLudiqueDetailPage> {
 
   Future<void> _laisserAvis() async {
     final uid = _uid;
-    if (uid == null) return;
+    final pid = _pid;
+    if (uid == null || pid == null) return;
     int note = 5;
     final ctrl = TextEditingController();
     final ok = await showDialog<bool>(
@@ -163,8 +168,8 @@ class _BaladeLudiqueDetailPageState extends State<BaladeLudiqueDetailPage> {
     if (ok != true) return;
     try {
       await _supa.from('balades_ludiques_avis').upsert({
-        'balade_id': widget.baladeId, 'user_uid': uid, 'note': note, 'commentaire': ctrl.text.trim().isEmpty ? null : ctrl.text.trim(),
-      }, onConflict: 'balade_id,user_uid');
+        'balade_id': widget.baladeId, 'user_uid': uid, 'profile_id': pid, 'note': note, 'commentaire': ctrl.text.trim().isEmpty ? null : ctrl.text.trim(),
+      }, onConflict: 'balade_id,profile_id');
       final rows = await _supa.from('balades_ludiques_avis').select('note').eq('balade_id', widget.baladeId);
       final notes = List<Map<String, dynamic>>.from(rows as List).map((r) => (r['note'] as num).toDouble()).toList();
       final moyenne = notes.isEmpty ? null : notes.reduce((a, b) => a + b) / notes.length;
@@ -176,9 +181,9 @@ class _BaladeLudiqueDetailPageState extends State<BaladeLudiqueDetailPage> {
       if (moyenne != null && moyenne >= 4.5) {
         try {
           final badge = await _supa.from('badges').select().eq('code', 'createur_bien_note').maybeSingle();
-          if (badge != null) {
+          if (badge != null && _balade!['createur_profile_id'] != null) {
             await _supa.from('badges_obtenus').insert({
-              'user_uid': _balade!['createur_uid'], 'badge_id': badge['id'], 'balade_id': widget.baladeId,
+              'user_uid': _balade!['createur_uid'], 'profile_id': _balade!['createur_profile_id'], 'badge_id': badge['id'], 'balade_id': widget.baladeId,
             });
           }
         } catch (_) {} // déjà obtenu

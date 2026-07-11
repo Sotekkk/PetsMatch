@@ -139,7 +139,7 @@ exports.sendAnnonceExpirationReminders = functions
                 `annonces?expires_at=gte.${encodeURIComponent(start)}` +
                 `&expires_at=lt.${encodeURIComponent(end)}` +
                 `&statut=in.(disponible,pause)` +
-                `&select=id,uid_eleveur,titre,espece,race`,
+                `&select=id,uid_eleveur,profile_id,titre,espece,race`,
             );
 
             for (const a of annonces) {
@@ -165,6 +165,7 @@ exports.sendAnnonceExpirationReminders = functions
                         body,
                         data: {annonceId: String(a.id), palier: key},
                         read: false,
+                        ...(a.profile_id ? {profile_id: a.profile_id} : {}),
                     }]);
                 } catch (e) {
                     console.error(`notifications insert ${a.id}:`, e.message);

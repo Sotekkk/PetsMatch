@@ -43,6 +43,7 @@ ON CONFLICT (code) DO NOTHING;
 CREATE TABLE IF NOT EXISTS balades_ludiques (
   id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   createur_uid         TEXT NOT NULL,
+  createur_profile_id  UUID REFERENCES user_profiles(id) ON DELETE SET NULL,
   titre                TEXT NOT NULL,
   description          TEXT,
   cover_url            TEXT,
@@ -84,6 +85,7 @@ CREATE TABLE IF NOT EXISTS balades_ludiques (
 
 CREATE INDEX IF NOT EXISTS idx_bl_statut    ON balades_ludiques (statut);
 CREATE INDEX IF NOT EXISTS idx_bl_createur  ON balades_ludiques (createur_uid);
+CREATE INDEX IF NOT EXISTS idx_bl_createur_profile ON balades_ludiques (createur_profile_id);
 CREATE INDEX IF NOT EXISTS idx_bl_geo       ON balades_ludiques (lat_depart, lng_depart);
 CREATE INDEX IF NOT EXISTS idx_bl_filtres   ON balades_ludiques (espece_cible, difficulte, gratuit);
 CREATE INDEX IF NOT EXISTS idx_bl_event     ON balades_ludiques (type_evenement, event_debut, event_fin);
@@ -146,14 +148,16 @@ CREATE TABLE IF NOT EXISTS balades_ludiques_progressions (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   balade_id           UUID NOT NULL REFERENCES balades_ludiques(id) ON DELETE CASCADE,
   joueur_uid          TEXT NOT NULL,
+  joueur_profile_id   UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
   statut              TEXT NOT NULL DEFAULT 'en_cours' CHECK (statut IN ('en_cours', 'termine', 'abandonne')),
   nb_points_valides   INTEGER DEFAULT 0,
   started_at          TIMESTAMPTZ DEFAULT NOW(),
   completed_at        TIMESTAMPTZ,
-  UNIQUE (balade_id, joueur_uid)
+  UNIQUE (balade_id, joueur_profile_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_blpr_joueur ON balades_ludiques_progressions (joueur_uid);
+CREATE INDEX IF NOT EXISTS idx_blpr_joueur_profile ON balades_ludiques_progressions (joueur_profile_id);
 CREATE INDEX IF NOT EXISTS idx_blpr_balade ON balades_ludiques_progressions (balade_id, statut);
 
 ALTER TABLE balades_ludiques_progressions ENABLE ROW LEVEL SECURITY;
@@ -162,7 +166,7 @@ DROP POLICY IF EXISTS "blpr_select" ON balades_ludiques_progressions;
 CREATE POLICY "blpr_select" ON balades_ludiques_progressions FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "blpr_insert" ON balades_ludiques_progressions;
-CREATE POLICY "blpr_insert" ON balades_ludiques_progressions FOR INSERT WITH CHECK (joueur_uid IS NOT NULL);
+CREATE POLICY "blpr_insert" ON balades_ludiques_progressions FOR INSERT WITH CHECK (joueur_uid IS NOT NULL AND joueur_profile_id IS NOT NULL);
 
 DROP POLICY IF EXISTS "blpr_update" ON balades_ludiques_progressions;
 CREATE POLICY "blpr_update" ON balades_ludiques_progressions FOR UPDATE USING (true);
@@ -177,6 +181,7 @@ CREATE TABLE IF NOT EXISTS balades_ludiques_validations (
   progression_id        UUID NOT NULL REFERENCES balades_ludiques_progressions(id) ON DELETE CASCADE,
   point_id              UUID NOT NULL REFERENCES balades_ludiques_points(id) ON DELETE CASCADE,
   joueur_uid            TEXT NOT NULL,
+  joueur_profile_id     UUID REFERENCES user_profiles(id) ON DELETE SET NULL,
   type_preuve           TEXT NOT NULL CHECK (type_preuve IN ('photo', 'texte', 'gps', 'qr_code')),
   preuve_photo_url      TEXT,
   preuve_texte          TEXT,
@@ -211,13 +216,15 @@ CREATE TABLE IF NOT EXISTS balades_ludiques_avis (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   balade_id     UUID NOT NULL REFERENCES balades_ludiques(id) ON DELETE CASCADE,
   user_uid      TEXT NOT NULL,
+  profile_id    UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
   note          INTEGER NOT NULL CHECK (note BETWEEN 1 AND 5),
   commentaire   TEXT,
   created_at    TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE (balade_id, user_uid)
+  UNIQUE (balade_id, profile_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_bla_balade ON balades_ludiques_avis (balade_id);
+CREATE INDEX IF NOT EXISTS idx_bla_profile ON balades_ludiques_avis (profile_id);
 
 ALTER TABLE balades_ludiques_avis ENABLE ROW LEVEL SECURITY;
 
@@ -225,7 +232,7 @@ DROP POLICY IF EXISTS "bla_select" ON balades_ludiques_avis;
 CREATE POLICY "bla_select" ON balades_ludiques_avis FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "bla_insert" ON balades_ludiques_avis;
-CREATE POLICY "bla_insert" ON balades_ludiques_avis FOR INSERT WITH CHECK (user_uid IS NOT NULL);
+CREATE POLICY "bla_insert" ON balades_ludiques_avis FOR INSERT WITH CHECK (user_uid IS NOT NULL AND profile_id IS NOT NULL);
 
 DROP POLICY IF EXISTS "bla_update" ON balades_ludiques_avis;
 CREATE POLICY "bla_update" ON balades_ludiques_avis FOR UPDATE USING (true);
@@ -237,10 +244,13 @@ CREATE POLICY "bla_delete" ON balades_ludiques_avis FOR DELETE USING (true);
 
 CREATE TABLE IF NOT EXISTS balades_ludiques_favoris (
   user_uid      TEXT NOT NULL,
+  profile_id    UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
   balade_id     UUID NOT NULL REFERENCES balades_ludiques(id) ON DELETE CASCADE,
   created_at    TIMESTAMPTZ DEFAULT NOW(),
-  PRIMARY KEY (user_uid, balade_id)
+  PRIMARY KEY (profile_id, balade_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_blf_uid ON balades_ludiques_favoris (user_uid);
 
 ALTER TABLE balades_ludiques_favoris ENABLE ROW LEVEL SECURITY;
 
@@ -248,7 +258,7 @@ DROP POLICY IF EXISTS "blf_select" ON balades_ludiques_favoris;
 CREATE POLICY "blf_select" ON balades_ludiques_favoris FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "blf_insert" ON balades_ludiques_favoris;
-CREATE POLICY "blf_insert" ON balades_ludiques_favoris FOR INSERT WITH CHECK (user_uid IS NOT NULL);
+CREATE POLICY "blf_insert" ON balades_ludiques_favoris FOR INSERT WITH CHECK (user_uid IS NOT NULL AND profile_id IS NOT NULL);
 
 DROP POLICY IF EXISTS "blf_delete" ON balades_ludiques_favoris;
 CREATE POLICY "blf_delete" ON balades_ludiques_favoris FOR DELETE USING (true);
@@ -258,13 +268,15 @@ CREATE POLICY "blf_delete" ON balades_ludiques_favoris FOR DELETE USING (true);
 CREATE TABLE IF NOT EXISTS badges_obtenus (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_uid      TEXT NOT NULL,
+  profile_id    UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
   badge_id      UUID NOT NULL REFERENCES badges(id) ON DELETE CASCADE,
   balade_id     UUID REFERENCES balades_ludiques(id) ON DELETE SET NULL,
   obtenu_at     TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE (user_uid, badge_id, balade_id)
+  UNIQUE (profile_id, badge_id, balade_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_bo_user ON badges_obtenus (user_uid);
+CREATE INDEX IF NOT EXISTS idx_bo_profile ON badges_obtenus (profile_id);
 
 ALTER TABLE badges_obtenus ENABLE ROW LEVEL SECURITY;
 
@@ -272,12 +284,13 @@ DROP POLICY IF EXISTS "bo_select" ON badges_obtenus;
 CREATE POLICY "bo_select" ON badges_obtenus FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "bo_insert" ON badges_obtenus;
-CREATE POLICY "bo_insert" ON badges_obtenus FOR INSERT WITH CHECK (user_uid IS NOT NULL);
+CREATE POLICY "bo_insert" ON badges_obtenus FOR INSERT WITH CHECK (user_uid IS NOT NULL AND profile_id IS NOT NULL);
 
 -- ── 9. joueurs_xp (compteur global par joueur) ────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS joueurs_xp (
-  user_uid                TEXT PRIMARY KEY,
+  profile_id              UUID PRIMARY KEY REFERENCES user_profiles(id) ON DELETE CASCADE,
+  user_uid                TEXT NOT NULL,
   xp_total                INTEGER NOT NULL DEFAULT 0,
   nb_parcours_completes   INTEGER NOT NULL DEFAULT 0,
   nb_parcours_crees       INTEGER NOT NULL DEFAULT 0,
@@ -285,6 +298,7 @@ CREATE TABLE IF NOT EXISTS joueurs_xp (
 );
 
 CREATE INDEX IF NOT EXISTS idx_xp_total ON joueurs_xp (xp_total DESC);
+CREATE INDEX IF NOT EXISTS idx_xp_uid   ON joueurs_xp (user_uid);
 
 ALTER TABLE joueurs_xp ENABLE ROW LEVEL SECURITY;
 
@@ -292,7 +306,7 @@ DROP POLICY IF EXISTS "xp_select" ON joueurs_xp;
 CREATE POLICY "xp_select" ON joueurs_xp FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "xp_insert" ON joueurs_xp;
-CREATE POLICY "xp_insert" ON joueurs_xp FOR INSERT WITH CHECK (user_uid IS NOT NULL);
+CREATE POLICY "xp_insert" ON joueurs_xp FOR INSERT WITH CHECK (user_uid IS NOT NULL AND profile_id IS NOT NULL);
 
 DROP POLICY IF EXISTS "xp_update" ON joueurs_xp;
 CREATE POLICY "xp_update" ON joueurs_xp FOR UPDATE USING (true);

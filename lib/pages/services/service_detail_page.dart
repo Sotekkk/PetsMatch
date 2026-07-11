@@ -728,6 +728,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                       categoryColor: widget.categoryColor,
                       isPension: _proData?['cat_pro'] == 'pension',
                       isVet: _proData?['cat_pro'] == 'sante' || _proData?['cat_pro'] == 'veterinaire',
+                      isGarde: _proData?['cat_pro'] == 'garde',
                       proProfileId: widget.profileTableId,
                     )))
                 : null,

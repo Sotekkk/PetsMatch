@@ -12,6 +12,7 @@ class RdvBookingPage extends StatefulWidget {
   final bool isPension;
   final bool isVet;
   final bool isAssociation;
+  final bool isGarde;
   final String? preselectedAnimalId;
   final String? proProfileId; // user_profiles.id si profil secondaire
   final Map<String, dynamic>? visiteAnimal; // animal de l'association à visiter (id, nom, espece, photo_url)
@@ -24,6 +25,7 @@ class RdvBookingPage extends StatefulWidget {
     this.isPension = false,
     this.isVet = false,
     this.isAssociation = false,
+    this.isGarde = false,
     this.preselectedAnimalId,
     this.proProfileId,
     this.visiteAnimal,
@@ -49,6 +51,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   List<Map<String, dynamic>> _existingRdvs = [];
   String? _selectedDateKey;
   Map<String, dynamic>? _selectedSlot;
+  // Garde : RDV récurrent (visites/promenades hebdomadaires)
+  bool _recurrent = false;
+  int _occurrences = 4;
+  static const _occurrenceChoices = [4, 8, 12];
   // Pension-specific
   String? _selectedMotif;
   bool? _premiereVisite;
@@ -402,6 +408,35 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
   List<String> get _availableDates => _smartSlotsByDate.keys.toList()..sort();
 
+  // ── Récurrence (garde uniquement) ────────────────────────────────────────────
+  // Vérifie que TOUS les créneaux de 15 min nécessaires à la durée sont marqués
+  // disponibles pour cette date, et qu'aucun RDV existant ne chevauche.
+  bool _isDateSlotAvailable(DateTime date, String heureDebut, int durationMin) {
+    final dateStr = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    final startParts = heureDebut.split(':');
+    final startMin = int.parse(startParts[0]) * 60 + int.parse(startParts[1]);
+    final endMin = startMin + durationMin;
+
+    final freeSet = <int>{};
+    for (final slot in _availableSlots) {
+      if (slot['date'] != dateStr) continue;
+      final sp = (slot['heure_debut'] as String).split(':');
+      freeSet.add(int.parse(sp[0]) * 60 + int.parse(sp[1]));
+    }
+    for (var m = startMin; m < endMin; m += 15) {
+      if (!freeSet.contains(m)) return false;
+    }
+
+    for (final rdv in _existingRdvs) {
+      final dh = DateTime.tryParse(rdv['date_heure'] as String? ?? '')?.toLocal();
+      if (dh == null) continue;
+      if (dh.year != date.year || dh.month != date.month || dh.day != date.day) continue;
+      final rdvStart = dh.hour * 60 + dh.minute;
+      final rdvEnd = rdvStart + ((rdv['duree_minutes'] as num?)?.toInt() ?? 30);
+      if (startMin < rdvEnd && endMin > rdvStart) return false;
+    }
+    return true;
+  }
 
   // ── Submit ────────────────────────────────────────────────────────────────────
 
@@ -469,32 +504,55 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       final animalId = _selectedAnimal?['id']?.toString();
       final dureeToSend = _selectedDuration;
 
-      await Supabase.instance.client.from('rdv').insert({
-        'pro_uid':        widget.proUid,
-        'pro_profile_id': widget.proProfileId ?? '',
-        'client_uid': uid,
-        if (User_Info.activeProfileId != null) 'client_profile_id': User_Info.activeProfileId,
-        if (animalId != null && animalId.isNotEmpty) 'animal_id': animalId,
-        'date_heure': dateHeure.toIso8601String(),
-        'motif':      motif,
-        if (widget.isPension && _premiereVisite != null) 'premiere_visite': _premiereVisite,
-        if (_notesCtrl.text.trim().isNotEmpty && (widget.isPension ? _selectedMotif != 'autre' : true))
-          'notes_client': _notesCtrl.text.trim(),
-        'duree_minutes': dureeToSend,
-        'statut': 'demande',
-      });
+      // Récurrence (garde uniquement) : une série hebdomadaire à partir du
+      // créneau choisi, en ne retenant que les dates réellement disponibles
+      // (créneaux du pro + absence de conflit avec un RDV existant).
+      final occurrenceDates = <DateTime>[slotDate];
+      if (widget.isGarde && _recurrent) {
+        for (var i = 1; i < _occurrences; i++) {
+          final d = slotDate.add(Duration(days: 7 * i));
+          if (_isDateSlotAvailable(d, (_selectedSlot!['heure_debut'] as String), dureeToSend)) {
+            occurrenceDates.add(d);
+          }
+        }
+      }
 
-      // Notification in-app (cloche) pour la pension
+      final heureDebutStr = _selectedSlot!['heure_debut'] as String;
+      final rows = occurrenceDates.map((d) {
+        final hp = heureDebutStr.split(':');
+        final dh = DateTime(d.year, d.month, d.day, int.parse(hp[0]), int.parse(hp[1])).toUtc();
+        return {
+          'pro_uid':        widget.proUid,
+          'pro_profile_id': widget.proProfileId ?? '',
+          'client_uid': uid,
+          if (User_Info.activeProfileId.isNotEmpty) 'client_profile_id': User_Info.activeProfileId,
+          if (animalId != null && animalId.isNotEmpty) 'animal_id': animalId,
+          'date_heure': dh.toIso8601String(),
+          'motif':      motif,
+          if (widget.isPension && _premiereVisite != null) 'premiere_visite': _premiereVisite,
+          if (_notesCtrl.text.trim().isNotEmpty && (widget.isPension ? _selectedMotif != 'autre' : true))
+            'notes_client': _notesCtrl.text.trim(),
+          'duree_minutes': dureeToSend,
+          'statut': 'demande',
+        };
+      }).toList();
+
+      await Supabase.instance.client.from('rdv').insert(rows);
+
+      // Notification in-app (cloche) pour le pro
       try {
         final clientName = FirebaseAuth.instance.currentUser?.displayName?.isNotEmpty == true
             ? FirebaseAuth.instance.currentUser!.displayName!
             : 'Un client';
         final dateStr = _formatDate(dateHeure.toLocal());
+        final isSerie = rows.length > 1;
         await Supabase.instance.client.from('notifications').insert({
           'uid':   widget.proUid,
           'type':  'rdv_demande',
-          'title': 'Nouvelle demande de RDV',
-          'body':  '$clientName souhaite un RDV le $dateStr — motif : $motif',
+          'title': isSerie ? 'Nouvelle série de RDV récurrents' : 'Nouvelle demande de RDV',
+          'body':  isSerie
+              ? '$clientName souhaite ${rows.length} RDV récurrents à partir du $dateStr — motif : $motif'
+              : '$clientName souhaite un RDV le $dateStr — motif : $motif',
           'data':  <String, dynamic>{
             'client_uid': uid,
             if (_selectedAnimal != null) 'animal_nom': _selectedAnimal!['nom']?.toString() ?? '',
@@ -514,7 +572,14 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       } catch (_) {}
 
       if (mounted) {
-        _snack('Demande de RDV envoyée !', color: widget.categoryColor);
+        if (widget.isGarde && _recurrent && rows.length < _occurrences) {
+          _snack('${rows.length}/$_occurrences RDV créés — certaines dates n\'étaient pas disponibles.',
+              color: widget.categoryColor);
+        } else if (rows.length > 1) {
+          _snack('${rows.length} demandes de RDV envoyées !', color: widget.categoryColor);
+        } else {
+          _snack('Demande de RDV envoyée !', color: widget.categoryColor);
+        }
         Navigator.pop(context, true);
       }
     } catch (e) {
@@ -557,6 +622,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                   ..._buildMotifSection(),
                   const SizedBox(height: 20),
                   ..._buildSlotPicker(),
+                  if (widget.isGarde && _selectedSlot != null) ...[
+                    const SizedBox(height: 20),
+                    _buildRecurrenceSection(),
+                  ],
                   const SizedBox(height: 20),
                   _buildAnimalSection(),
                   const SizedBox(height: 20),
@@ -977,6 +1046,51 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       decoration: _inputDecoration('Décrivez la raison de votre demande de RDV…'),
     ),
   ];
+
+  // ── Récurrence (garde uniquement) ────────────────────────────────────────────
+
+  Widget _buildRecurrenceSection() {
+    final color = widget.categoryColor;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.repeat, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(child: Text('Répéter ce RDV chaque semaine',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: color))),
+          Switch(
+            value: _recurrent,
+            activeThumbColor: color,
+            onChanged: (v) => setState(() => _recurrent = v),
+          ),
+        ]),
+        if (_recurrent) ...[
+          const SizedBox(height: 4),
+          Text('Idéal pour une promenade ou une visite régulière avec le même client.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+          const SizedBox(height: 10),
+          Wrap(spacing: 8, children: _occurrenceChoices.map((n) {
+            final selected = _occurrences == n;
+            return ChoiceChip(
+              label: Text('$n semaines', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                  color: selected ? Colors.white : color)),
+              selected: selected,
+              onSelected: (_) => setState(() => _occurrences = n),
+              selectedColor: color,
+              backgroundColor: color.withValues(alpha: 0.08),
+              showCheckmark: false,
+            );
+          }).toList()),
+        ],
+      ]),
+    );
+  }
 
   // ── Animal & notes sections ───────────────────────────────────────────────────
 

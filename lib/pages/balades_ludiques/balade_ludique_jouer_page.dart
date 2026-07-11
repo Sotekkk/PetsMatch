@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'balades_ludiques_shared.dart';
 import 'widgets/defi_photo_widget.dart';
 import 'widgets/defi_question_widget.dart';
@@ -27,6 +28,7 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
   bool _showIndice = false;
 
   String get _uid => FirebaseAuth.instance.currentUser!.uid;
+  String get _pid => User_Info.activeProfileId;
 
   @override
   void initState() {
@@ -39,9 +41,9 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
     final balade = await _supa.from('balades_ludiques').select().eq('id', widget.baladeId).single();
     final points = await _supa.from('balades_ludiques_points').select().eq('balade_id', widget.baladeId).order('ordre');
     var progression = await _supa.from('balades_ludiques_progressions').select()
-        .eq('balade_id', widget.baladeId).eq('joueur_uid', _uid).maybeSingle();
+        .eq('balade_id', widget.baladeId).eq('joueur_profile_id', _pid).maybeSingle();
     progression ??= await _supa.from('balades_ludiques_progressions').insert({
-      'balade_id': widget.baladeId, 'joueur_uid': _uid,
+      'balade_id': widget.baladeId, 'joueur_uid': _uid, 'joueur_profile_id': _pid,
     }).select().single();
 
     if (mounted) {
@@ -78,6 +80,7 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
         'progression_id': progressionId,
         'point_id': point['id'],
         'joueur_uid': _uid,
+        'joueur_profile_id': _pid,
         'type_preuve': typePreuve,
         'preuve_photo_url': photoUrl,
         'preuve_texte': texte,
@@ -119,15 +122,16 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
     // XP + compteur joueur
     Map<String, dynamic> xpRow;
     try {
-      final existing = await _supa.from('joueurs_xp').select().eq('user_uid', _uid).maybeSingle();
+      final existing = await _supa.from('joueurs_xp').select().eq('profile_id', _pid).maybeSingle();
       final nouveauXp = ((existing?['xp_total'] as int?) ?? 0) + xpGagne;
       final nouveauNbCompletes = ((existing?['nb_parcours_completes'] as int?) ?? 0) + 1;
       xpRow = await _supa.from('joueurs_xp').upsert({
+        'profile_id': _pid,
         'user_uid': _uid,
         'xp_total': nouveauXp,
         'nb_parcours_completes': nouveauNbCompletes,
         'updated_at': DateTime.now().toIso8601String(),
-      }, onConflict: 'user_uid').select().single();
+      }, onConflict: 'profile_id').select().single();
     } catch (_) {
       xpRow = {'xp_total': xpGagne, 'nb_parcours_completes': 1};
     }
@@ -136,7 +140,7 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
     final debloquees = <String>[];
     try {
       final catalogue = await _supa.from('badges').select().eq('actif', true);
-      final deja = await _supa.from('badges_obtenus').select('badge_id').eq('user_uid', _uid);
+      final deja = await _supa.from('badges_obtenus').select('badge_id').eq('profile_id', _pid);
       final dejaIds = List<Map<String, dynamic>>.from(deja as List).map((r) => r['badge_id']).toSet();
 
       for (final badgeRaw in List<Map<String, dynamic>>.from(catalogue as List)) {
@@ -151,7 +155,7 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
         }
         if (obtenu) {
           await _supa.from('badges_obtenus').insert({
-            'user_uid': _uid, 'badge_id': badgeRaw['id'], 'balade_id': widget.baladeId,
+            'user_uid': _uid, 'profile_id': _pid, 'badge_id': badgeRaw['id'], 'balade_id': widget.baladeId,
           });
           debloquees.add('${badgeRaw['icone_url'] ?? '🏅'} ${badgeRaw['nom']}');
         }

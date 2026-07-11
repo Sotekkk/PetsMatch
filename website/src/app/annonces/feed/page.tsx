@@ -42,6 +42,7 @@ interface RawAnnonce {
   sexe?: string;
   nom_eleveur?: string;
   uid_eleveur?: string;
+  profile_id?: string;
   description?: string;
   registre_type?: string;
   date_naissance?: string;
@@ -63,6 +64,7 @@ interface FeedItem {
   ville?: string;
   nomEleveur?: string;
   uidEleveur?: string;
+  profileId?: string;
   photoEleveur?: string;
   isSaillie?: boolean;
   dateNaissance?: string;
@@ -125,7 +127,7 @@ function buildFeedItems(annonces: RawAnnonce[]): FeedItem[] {
             prix: b.prix ?? null,
             statut: b.statut, description: b.description,
             ville: a.ville_eleveur, nomEleveur: a.nom_eleveur,
-            uidEleveur: a.uid_eleveur, isSaillie: false,
+            uidEleveur: a.uid_eleveur, profileId: a.profile_id, isSaillie: false,
             dateNaissance: a.date_naissance,
             pedigree: b.pedigree ?? false,
             profilSource: a.profil_source,
@@ -142,7 +144,7 @@ function buildFeedItems(annonces: RawAnnonce[]): FeedItem[] {
         sexe: a.sexe, prix,
         description: a.description,
         ville: a.ville_eleveur, nomEleveur: a.nom_eleveur,
-        uidEleveur: a.uid_eleveur, isSaillie,
+        uidEleveur: a.uid_eleveur, profileId: a.profile_id, isSaillie,
         dateNaissance: a.date_naissance_animal,
         registreType: a.registre_type,
         profilSource: a.profil_source,
@@ -228,7 +230,7 @@ function FeedPageContent() {
     setLoading(true);
     let q = supabase
       .from('annonces')
-      .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, sexe, nom_eleveur, uid_eleveur, description, registre_type, date_naissance, date_naissance_animal, profil_source')
+      .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, sexe, nom_eleveur, uid_eleveur, profile_id, description, registre_type, date_naissance, date_naissance_animal, profil_source')
       .eq('statut', 'disponible')
       .order('created_at', { ascending: false });
 
@@ -442,6 +444,7 @@ function FeedPageContent() {
           body: `${likerName} a aimé "${item.nom}"`,
           data: { annonceId: item.annonceId, bebeIndex: item.bebeIndex, fromUid: user!.uid },
           read: false,
+          ...(item.profileId ? { profile_id: item.profileId } : {}),
           ...(activeProfileId ? { sender_profile_id: activeProfileId } : {}),
         });
         // Push notification via Firebase Cloud Functions (même infra que les alertes perdus)

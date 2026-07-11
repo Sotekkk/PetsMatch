@@ -81,6 +81,16 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     ('box', 'Box'), ('enclos', 'Enclos'), ('parc', 'Parc'), ('chatterie', 'Chatterie'), ('cage', 'Cage'),
   ];
 
+  // Garde (petsitter/promeneur) : tarifs par type de prestation (€)
+  Map<String, int> _tarifsGarde = {};
+  static const _prestationsGarde = [
+    ('promenade_30min', 'Promenade (30 min)'),
+    ('promenade_1h',    'Promenade (1h)'),
+    ('promenade_2h',    'Promenade (2h)'),
+    ('garde_journee',   'Garde à domicile (journée)'),
+    ('autre',           'Autre prestation'),
+  ];
+
   // Éducateur/comportementaliste : tarifs par type de prestation (€)
   Map<String, int> _tarifsEducation = {};
   static const _prestationsEducation = [
@@ -232,6 +242,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
             (row['tarifs_education'] as Map).map((k, v) =>
                 MapEntry(k.toString(), (v as num?)?.toInt() ?? 0)));
         }
+        if (row['tarifs_garde'] is Map) {
+          _tarifsGarde = Map<String, int>.from(
+            (row['tarifs_garde'] as Map).map((k, v) =>
+                MapEntry(k.toString(), (v as num?)?.toInt() ?? 0)));
+        }
         _educationBilanRequis = row['education_bilan_requis'] as bool? ?? true;
         _arrhesPourcentage = (row['arrhes_pourcentage'] as num?)?.toInt() ?? 0;
         if (row['horaires'] is Map) {
@@ -256,14 +271,17 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       }
     } catch (_) {}
     if (mounted) setState(() => _loading = false);
-    if (_catPro == 'education') await _loadForfaits();
+    if (_catPro == 'education' || _catPro == 'garde') await _loadForfaits();
   }
+
+  String get _forfaitsTable => _catPro == 'garde' ? 'forfaits_garde' : 'forfaits_education';
+  String get _forfaitsCountCol => _catPro == 'garde' ? 'nb_visites' : 'nb_seances';
 
   Future<void> _loadForfaits() async {
     setState(() => _loadingForfaits = true);
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid;
-      final rows = await _supa.from('forfaits_education').select()
+      final rows = await _supa.from(_forfaitsTable).select()
           .eq('pro_uid', uid).eq('actif', true).order('created_at');
       if (mounted) setState(() => _forfaits = List<Map<String, dynamic>>.from(rows as List));
     } catch (_) {
@@ -273,6 +291,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   }
 
   Future<void> _ajouterForfait() async {
+    final unite = _catPro == 'garde' ? 'visites' : 'séances';
     final nomCtrl = TextEditingController();
     final seancesCtrl = TextEditingController(text: '5');
     final prixCtrl = TextEditingController();
@@ -286,12 +305,12 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           const Text('Nouveau forfait', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
           const SizedBox(height: 16),
-          TextField(controller: nomCtrl, decoration: const InputDecoration(
-              labelText: 'Nom du forfait', hintText: 'Ex : Pack 5 séances', border: OutlineInputBorder())),
+          TextField(controller: nomCtrl, decoration: InputDecoration(
+              labelText: 'Nom du forfait', hintText: 'Ex : Pack 5 $unite', border: const OutlineInputBorder())),
           const SizedBox(height: 12),
           Row(children: [
             Expanded(child: TextField(controller: seancesCtrl, keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Nb séances', border: OutlineInputBorder()))),
+                decoration: InputDecoration(labelText: 'Nb $unite', border: const OutlineInputBorder()))),
             const SizedBox(width: 8),
             Expanded(child: TextField(controller: prixCtrl, keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: 'Prix (€)', border: OutlineInputBorder()))),
@@ -311,11 +330,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     if (result != true || nomCtrl.text.trim().isEmpty) return;
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid;
-      await _supa.from('forfaits_education').insert({
+      await _supa.from(_forfaitsTable).insert({
         'pro_uid': uid,
         if (widget.secondaryProfileId != null) 'pro_profile_id': widget.secondaryProfileId,
         'nom': nomCtrl.text.trim(),
-        'nb_seances': int.tryParse(seancesCtrl.text.trim()) ?? 1,
+        _forfaitsCountCol: int.tryParse(seancesCtrl.text.trim()) ?? 1,
         'prix': double.tryParse(prixCtrl.text.trim()) ?? 0,
         if (descCtrl.text.trim().isNotEmpty) 'description': descCtrl.text.trim(),
       });
@@ -328,7 +347,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   }
 
   Future<void> _supprimerForfait(String id) async {
-    await _supa.from('forfaits_education').update({'actif': false}).eq('id', id);
+    await _supa.from(_forfaitsTable).update({'actif': false}).eq('id', id);
     await _loadForfaits();
   }
 
@@ -487,6 +506,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
+          if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
@@ -531,6 +551,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
+          if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
@@ -568,6 +589,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'tarifs_logements':   _tarifsLogements,
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
+          if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
@@ -940,6 +962,54 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                     ),
                   ],
 
+                  // ── Tarifs garde (petsitter/promeneur) ─────────────────────
+                  if (_catPro == 'garde') ...[
+                    const SizedBox(height: 24),
+                    _sectionTitle('Tarifs par type de prestation (€)'),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Laissez à 0 les prestations que vous ne proposez pas.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                    ),
+                    const SizedBox(height: 12),
+                    ..._prestationsGarde.map((t) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(children: [
+                        Expanded(child: Text(t.$2,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                                fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
+                        const SizedBox(width: 12),
+                        SizedBox(
+                          width: 90,
+                          child: TextFormField(
+                            initialValue: (_tarifsGarde[t.$1] ?? 0).toString(),
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                            decoration: InputDecoration(
+                              suffixText: '€',
+                              suffixStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                              filled: true, fillColor: Colors.white,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
+                            ),
+                            onChanged: (val) {
+                              final v = int.tryParse(val);
+                              if (v != null && v >= 0) {
+                                setState(() => _tarifsGarde = {..._tarifsGarde, t.$1: v});
+                              }
+                            },
+                          ),
+                        ),
+                      ]),
+                    )),
+                  ],
+
                   // ── Tarifs éducateur/comportementaliste ───────────────────
                   if (_catPro == 'education') ...[
                     const SizedBox(height: 24),
@@ -1006,11 +1076,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                     ]),
                   ],
 
-                  // ── Forfaits éducateur/comportementaliste ─────────────────
-                  if (_catPro == 'education') ...[
+                  // ── Forfaits éducateur/comportementaliste ou garde ────────
+                  if (_catPro == 'education' || _catPro == 'garde') ...[
                     const SizedBox(height: 24),
                     Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                      _sectionTitle('Forfaits (packs de séances)'),
+                      _sectionTitle(_catPro == 'garde' ? 'Forfaits (packs de visites)' : 'Forfaits (packs de séances)'),
                       TextButton.icon(
                         onPressed: _ajouterForfait,
                         icon: const Icon(Icons.add, size: 18),
@@ -1031,7 +1101,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                         child: Row(children: [
                           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Text(f['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
-                            Text('${f['nb_seances']} séances — ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} €',
+                            Text('${f[_forfaitsCountCol]} ${_catPro == 'garde' ? 'visites' : 'séances'} — ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} €',
                                 style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                           ])),
                           IconButton(

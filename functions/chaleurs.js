@@ -162,6 +162,15 @@ exports.sendChaleursNotifications = functions
         const chaleursRaw = await supabaseSelect("chaleurs",
             `animal_id=in.(${femIds.join(",")})&order=date.desc`);
 
+        // Résolution du profil propriétaire courant (animaux.profile_id n'est pas fiable —
+        // voir migration_fix_animaux_proprietes_unique_constraint.sql)
+        const proprietesRaw = await supabaseSelect("animaux_proprietes",
+            `animal_id=in.(${femIds.join(",")})&date_fin=is.null`);
+        const profileIdByAnimal = {};
+        for (const p of proprietesRaw) {
+            if (p.profile_id_proprio) profileIdByAnimal[p.animal_id] = p.profile_id_proprio;
+        }
+
         const lastChaleur = {};
         for (const c of chaleursRaw) {
             if (!lastChaleur[c.animal_id]) {
@@ -233,6 +242,7 @@ exports.sendChaleursNotifications = functions
                     body,
                     data: {animalId: String(animal.id)},
                     read: false,
+                    ...(profileIdByAnimal[animal.id] ? {profile_id: profileIdByAnimal[animal.id]} : {}),
                 }]);
                 inApp++;
             } catch (e) {

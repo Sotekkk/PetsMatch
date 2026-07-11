@@ -734,6 +734,14 @@ const PRESTATIONS_EDUCATION = [
   { value: 'domicile_supplement', label: 'Supplément à domicile' },
 ];
 
+const PRESTATIONS_GARDE = [
+  { value: 'promenade_30min', label: 'Promenade (30 min)' },
+  { value: 'promenade_1h', label: 'Promenade (1h)' },
+  { value: 'promenade_2h', label: 'Promenade (2h)' },
+  { value: 'garde_journee', label: 'Garde à domicile (journée)' },
+  { value: 'autre', label: 'Autre prestation' },
+];
+
 const JOURS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
 const MOTIFS_LABELS: Record<string, Record<string, string>> = {
@@ -815,6 +823,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [durees, setDurees] = useState<Record<string, number>>({});
   const [tarifsLogements, setTarifsLogements] = useState<Record<string, number>>({});
   const [tarifsEducation, setTarifsEducation] = useState<Record<string, number>>({});
+  const [tarifsGarde, setTarifsGarde] = useState<Record<string, number>>({});
   const [educationBilanRequis, setEducationBilanRequis] = useState(true);
   const [forfaits, setForfaits] = useState<{ id: string; nom: string; nb_seances: number; prix: number }[]>([]);
   const [loadingForfaits, setLoadingForfaits] = useState(false);
@@ -877,26 +886,40 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         if (r.tarifs_education && typeof r.tarifs_education === 'object') {
           setTarifsEducation(r.tarifs_education as Record<string, number>);
         }
+        if (r.tarifs_garde && typeof r.tarifs_garde === 'object') {
+          setTarifsGarde(r.tarifs_garde as Record<string, number>);
+        }
         setEducationBilanRequis((r.education_bilan_requis as boolean) ?? true);
         setArrhesPourcentage(((r.arrhes_pourcentage as number) ?? 0));
         setAcacedNum(((r.acaced_numero ?? r.acaced) as string) ?? '');
         setAcacedDocUrl((r.acaced_doc_url as string) ?? null);
         setLoading(false);
-        if (cat === 'education') loadForfaits();
+        if (cat === 'education' || cat === 'garde') loadForfaits();
       });
   }, [profileId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  function forfaitsTable() {
+    const cat = data?.profile_type ?? data?.cat_pro ?? '';
+    return cat === 'garde' ? 'forfaits_garde' : 'forfaits_education';
+  }
+  function forfaitsCountCol() {
+    return forfaitsTable() === 'forfaits_garde' ? 'nb_visites' : 'nb_seances';
+  }
+
   async function loadForfaits() {
     setLoadingForfaits(true);
-    const { data: rows } = await supabase.from('forfaits_education')
-      .select('id, nom, nb_seances, prix').eq('pro_uid', uid).eq('actif', true).order('created_at');
-    setForfaits((rows ?? []) as { id: string; nom: string; nb_seances: number; prix: number }[]);
+    const { data: rows } = await supabase.from(forfaitsTable())
+      .select(`id, nom, ${forfaitsCountCol()}, prix`).eq('pro_uid', uid).eq('actif', true).order('created_at');
+    setForfaits(((rows ?? []) as Record<string, unknown>[]).map(r => ({
+      id: r.id as string, nom: r.nom as string, prix: r.prix as number,
+      nb_seances: (r[forfaitsCountCol()] as number) ?? 1,
+    })));
     setLoadingForfaits(false);
   }
 
   async function ajouterForfait(nom: string, nbSeances: number, prix: number, description: string) {
-    await supabase.from('forfaits_education').insert({
-      pro_uid: uid, pro_profile_id: profileId, nom, nb_seances: nbSeances, prix,
+    await supabase.from(forfaitsTable()).insert({
+      pro_uid: uid, pro_profile_id: profileId, nom, [forfaitsCountCol()]: nbSeances, prix,
       description: description || null,
     });
     setShowForfaitModal(false);
@@ -904,7 +927,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   }
 
   async function supprimerForfait(id: string) {
-    await supabase.from('forfaits_education').update({ actif: false }).eq('id', id);
+    await supabase.from(forfaitsTable()).update({ actif: false }).eq('id', id);
     loadForfaits();
   }
 
@@ -936,6 +959,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         : {}),
       ...((data?.profile_type ?? data?.cat_pro) === 'education'
         ? { tarifs_education: tarifsEducation, education_bilan_requis: educationBilanRequis }
+        : {}),
+      ...((data?.profile_type ?? data?.cat_pro) === 'garde'
+        ? { tarifs_garde: tarifsGarde }
         : {}),
       ...(['garde', 'education'].includes((data?.profile_type ?? data?.cat_pro) ?? '')
         ? { acaced: acacedNum.trim(), acaced_numero: acacedNum.trim() }
@@ -1233,6 +1259,24 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           </Card>
         )}
 
+        {/* Tarifs garde (petsitter/promeneur) */}
+        {catPro === 'garde' && (
+          <Card title="Tarifs par type de prestation (€)">
+            <p className="text-xs text-gray-400 mb-3">Laissez à 0 les prestations que vous ne proposez pas.</p>
+            <div className="grid grid-cols-2 gap-3">
+              {PRESTATIONS_GARDE.map(({ value, label }) => (
+                <div key={value}>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">{label}</label>
+                  <input type="number" min={0} step={1}
+                    value={tarifsGarde[value] ?? 0}
+                    onChange={e => setTarifsGarde(t => ({ ...t, [value]: Number(e.target.value) }))}
+                    className={inputCls} />
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
         {/* Bilan préalable obligatoire (éducateur) */}
         {catPro === 'education' && (
           <Card title="Exiger un bilan avant les cours">
@@ -1250,9 +1294,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           </Card>
         )}
 
-        {/* Forfaits éducateur/comportementaliste */}
-        {catPro === 'education' && (
-          <Card title="Forfaits (packs de séances)">
+        {/* Forfaits éducateur/comportementaliste ou garde */}
+        {(catPro === 'education' || catPro === 'garde') && (
+          <Card title={catPro === 'garde' ? 'Forfaits (packs de visites)' : 'Forfaits (packs de séances)'}>
             {loadingForfaits ? (
               <p className="text-sm text-gray-400">Chargement…</p>
             ) : forfaits.length === 0 ? (
@@ -1263,7 +1307,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                   <div key={f.id} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
                     <div>
                       <p className="text-sm font-semibold text-[#1E2025]">{f.nom}</p>
-                      <p className="text-xs text-gray-500">{f.nb_seances} séances — {f.prix} €</p>
+                      <p className="text-xs text-gray-500">{f.nb_seances} {catPro === 'garde' ? 'visites' : 'séances'} — {f.prix} €</p>
                     </div>
                     <button onClick={() => supprimerForfait(f.id)} className="text-red-400 hover:text-red-600 text-sm">
                       Supprimer
@@ -1324,16 +1368,18 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       </div>
 
       {showForfaitModal && (
-        <ForfaitModal onClose={() => setShowForfaitModal(false)} onSave={ajouterForfait} />
+        <ForfaitModal onClose={() => setShowForfaitModal(false)} onSave={ajouterForfait} catPro={catPro} />
       )}
     </div>
   );
 }
 
-function ForfaitModal({ onClose, onSave }: {
+function ForfaitModal({ onClose, onSave, catPro }: {
   onClose: () => void;
   onSave: (nom: string, nbSeances: number, prix: number, description: string) => void;
+  catPro?: string;
 }) {
+  const unite = catPro === 'garde' ? 'visites' : 'séances';
   const [nom, setNom] = useState('');
   const [nbSeances, setNbSeances] = useState('5');
   const [prix, setPrix] = useState('');
@@ -1344,10 +1390,10 @@ function ForfaitModal({ onClose, onSave }: {
       <div className="bg-white rounded-2xl w-full max-w-sm p-6" onClick={e => e.stopPropagation()}>
         <h3 className="font-bold text-base mb-4 text-[#1E2025]">Nouveau forfait</h3>
         <div className="space-y-3">
-          <input value={nom} onChange={e => setNom(e.target.value)} placeholder="Nom du forfait (ex : Pack 5 séances)"
+          <input value={nom} onChange={e => setNom(e.target.value)} placeholder={`Nom du forfait (ex : Pack 5 ${unite})`}
             className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" />
           <div className="grid grid-cols-2 gap-3">
-            <input type="number" value={nbSeances} onChange={e => setNbSeances(e.target.value)} placeholder="Nb séances"
+            <input type="number" value={nbSeances} onChange={e => setNbSeances(e.target.value)} placeholder={`Nb ${unite}`}
               className="px-3 py-2 border border-gray-200 rounded-xl text-sm" />
             <input type="number" value={prix} onChange={e => setPrix(e.target.value)} placeholder="Prix (€)"
               className="px-3 py-2 border border-gray-200 rounded-xl text-sm" />

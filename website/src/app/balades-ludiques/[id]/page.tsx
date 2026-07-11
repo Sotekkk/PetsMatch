@@ -10,6 +10,7 @@ import { difficulteLabel, difficulteColor, dureeLabel, typeDefiIcon } from '../s
 
 interface Balade {
   id: string; titre: string; description?: string; cover_url?: string; statut: string; createur_uid: string;
+  createur_profile_id?: string | null;
   espece_cible?: string; difficulte?: string; duree_min?: number; distance_km?: number;
   gratuit?: boolean; prix?: number; note_moyenne?: number; nb_avis?: number; nb_favoris?: number;
   type_evenement?: string; partenaire_nom?: string;
@@ -19,7 +20,7 @@ interface Avis { id: string; user_uid: string; note: number; commentaire?: strin
 
 export default function BaladeDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user, activeProfileId } = useAuth();
   const router = useRouter();
 
   const [balade, setBalade] = useState<Balade | null>(null);
@@ -30,7 +31,7 @@ export default function BaladeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  const isOwner = !!(balade && user && balade.createur_uid === user.uid);
+  const isOwner = !!(balade && activeProfileId && balade.createur_profile_id === activeProfileId);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,33 +44,34 @@ export default function BaladeDetailPage() {
     setPoints((pts ?? []) as Point[]);
     setAvis((av ?? []) as Avis[]);
 
-    if (user) {
+    if (user && activeProfileId) {
       const [{ data: prog }, { data: fav }] = await Promise.all([
-        supabase.from('balades_ludiques_progressions').select('statut').eq('balade_id', id).eq('joueur_uid', user.uid).maybeSingle(),
-        supabase.from('balades_ludiques_favoris').select('user_uid').eq('balade_id', id).eq('user_uid', user.uid).maybeSingle(),
+        supabase.from('balades_ludiques_progressions').select('statut').eq('balade_id', id).eq('joueur_profile_id', activeProfileId).maybeSingle(),
+        supabase.from('balades_ludiques_favoris').select('profile_id').eq('balade_id', id).eq('profile_id', activeProfileId).maybeSingle(),
       ]);
       setProgression(prog);
       setIsFavori(!!fav);
     }
     setLoading(false);
-  }, [id, user]);
+  }, [id, user, activeProfileId]);
 
   useEffect(() => { load(); }, [load]);
 
   async function toggleFavori() {
-    if (!user) return;
+    if (!user || !activeProfileId) return;
     const next = !isFavori;
     setIsFavori(next);
-    if (next) await supabase.from('balades_ludiques_favoris').insert({ user_uid: user.uid, balade_id: id });
-    else await supabase.from('balades_ludiques_favoris').delete().eq('user_uid', user.uid).eq('balade_id', id);
+    if (next) await supabase.from('balades_ludiques_favoris').insert({ user_uid: user.uid, profile_id: activeProfileId, balade_id: id });
+    else await supabase.from('balades_ludiques_favoris').delete().eq('profile_id', activeProfileId).eq('balade_id', id);
     const { count } = await supabase.from('balades_ludiques_favoris').select('*', { count: 'exact', head: true }).eq('balade_id', id);
     await supabase.from('balades_ludiques').update({ nb_favoris: count ?? 0 }).eq('id', id);
   }
 
   async function commencer() {
     if (!user) { router.push('/connexion'); return; }
+    if (!activeProfileId) return;
     if (!progression) {
-      await supabase.from('balades_ludiques_progressions').insert({ balade_id: id, joueur_uid: user.uid });
+      await supabase.from('balades_ludiques_progressions').insert({ balade_id: id, joueur_uid: user.uid, joueur_profile_id: activeProfileId });
       const { count } = await supabase.from('balades_ludiques_progressions').select('*', { count: 'exact', head: true }).eq('balade_id', id);
       await supabase.from('balades_ludiques').update({ nb_joueurs: count ?? 0 }).eq('id', id);
     }
@@ -85,19 +87,19 @@ export default function BaladeDetailPage() {
   }
 
   async function laisserAvis() {
-    if (!user) return;
+    if (!user || !activeProfileId) return;
     const note = Number(prompt('Votre note (1 à 5) ?', '5'));
     if (!note || note < 1 || note > 5) return;
     const commentaire = prompt('Un commentaire (optionnel) ?') ?? undefined;
-    await supabase.from('balades_ludiques_avis').upsert({ balade_id: id, user_uid: user.uid, note, commentaire }, { onConflict: 'balade_id,user_uid' });
+    await supabase.from('balades_ludiques_avis').upsert({ balade_id: id, user_uid: user.uid, profile_id: activeProfileId, note, commentaire }, { onConflict: 'balade_id,profile_id' });
     const { data: rows } = await supabase.from('balades_ludiques_avis').select('note').eq('balade_id', id);
     const notes = (rows ?? []).map((r: { note: number }) => r.note);
     const moyenne = notes.length ? Math.round((notes.reduce((a: number, b: number) => a + b, 0) / notes.length) * 10) / 10 : null;
     await supabase.from('balades_ludiques').update({ note_moyenne: moyenne, nb_avis: notes.length }).eq('id', id);
 
-    if (moyenne != null && moyenne >= 4.5 && balade) {
+    if (moyenne != null && moyenne >= 4.5 && balade?.createur_profile_id) {
       const { data: badgeBienNote } = await supabase.from('badges').select('*').eq('code', 'createur_bien_note').maybeSingle();
-      if (badgeBienNote) await supabase.from('badges_obtenus').insert({ user_uid: balade.createur_uid, badge_id: badgeBienNote.id, balade_id: id });
+      if (badgeBienNote) await supabase.from('badges_obtenus').insert({ user_uid: balade.createur_uid, profile_id: balade.createur_profile_id, badge_id: badgeBienNote.id, balade_id: id });
     }
 
     load();

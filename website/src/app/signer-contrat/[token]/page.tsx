@@ -9,6 +9,7 @@ import {
 } from '@/lib/contrat-vente';
 import { generateContratAdoptionHTML } from '@/lib/contrat-adoption';
 import { generateContratHebergementHTML } from '@/lib/contrat-pension';
+import { generateContratGardeHTML } from '@/lib/contrat-garde';
 import { useAuth } from '@/lib/auth-context';
 
 const supabase = createClient(
@@ -166,6 +167,48 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             tarifNuit: meta.tarif_nuit,
             arrhesPourcentage: meta.arrhes_pourcentage ? Number(meta.arrhes_pourcentage) : undefined,
             logementNom: meta.logement_nom,
+            notes: meta.notes,
+          },
+        );
+      } else if (data.type === 'contrat_garde') {
+        const { data: rdv } = await supabase
+          .from('rdv')
+          .select('animal_id, client_uid, date_heure')
+          .eq('id', data.rdv_id)
+          .maybeSingle();
+        let animalInfo: { nom?: string; espece?: string; race?: string } = {};
+        let clientInfo: { nom?: string; contact?: string } = {};
+        if (rdv?.animal_id) {
+          const { data: an } = await supabase.from('animaux').select('nom, espece, race').eq('id', rdv.animal_id).maybeSingle();
+          animalInfo = an ?? {};
+        }
+        if (rdv?.client_uid) {
+          const { data: cp2 } = await supabase.from('user_profiles')
+            .select('firstname, lastname, email_contact').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle();
+          clientInfo = {
+            nom: `${cp2?.firstname ?? ''} ${cp2?.lastname ?? ''}`.trim(),
+            contact: cp2?.email_contact ?? '',
+          };
+        }
+        generatedHtml = generateContratGardeHTML(
+          {
+            animal_nom: animalInfo.nom ?? meta.acquereur_nom ?? '',
+            espece: animalInfo.espece,
+            race: animalInfo.race,
+            client_nom: meta.client_nom || clientInfo.nom,
+            client_contact: meta.client_contact || clientInfo.contact,
+            date_visite: rdv?.date_heure ?? meta.date_visite,
+            type_prestation: meta.type_prestation,
+          },
+          {
+            nom: elvNom,
+            adresse: profil?.adress_elevage ?? profil?.adress ?? '',
+            email: profil?.email ?? '',
+            tel: elvTel,
+            siret: profil?.siret ?? '',
+          },
+          {
+            tarif: meta.tarif,
             notes: meta.notes,
           },
         );

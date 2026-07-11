@@ -99,6 +99,18 @@ exports.notifyOwnerVetEntry = functions
         const ownerUid = animal.uid_eleveur || animal.uid_proprietaire;
         if (!ownerUid) return {ok: false, reason: "no_owner"};
 
+        // Résolution du profil propriétaire courant (animaux.profile_id n'est pas
+        // fiable — voir migration_fix_animaux_proprietes_unique_constraint.sql)
+        let profileId = null;
+        try {
+            const propRows = await supabaseGet(
+                `animaux_proprietes?animal_id=eq.${encodeURIComponent(animalId)}` +
+                `&uid_proprio=eq.${encodeURIComponent(ownerUid)}` +
+                `&date_fin=is.null&select=profile_id_proprio`,
+            );
+            if (propRows?.[0]) profileId = propRows[0].profile_id_proprio;
+        } catch (_) {/* pas bloquant */}
+
         const labels = {
             vaccin: "une vaccination",
             traitement: "un traitement",
@@ -118,6 +130,7 @@ exports.notifyOwnerVetEntry = functions
                 body: body,
                 data: {animal_id: animalId, type_acte: typeActe},
                 read: false,
+                ...(profileId ? {profile_id: profileId} : {}),
             }]);
         } catch (e) {
             console.error("notifyOwnerVetEntry: insert notification error", e);

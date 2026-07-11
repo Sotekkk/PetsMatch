@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'balades_ludiques_shared.dart';
 import 'balade_ludique_detail_page.dart';
 import 'creation/creation_flow_page.dart';
@@ -26,10 +27,11 @@ class _MesParcoursPageState extends State<MesParcoursPage> {
 
   Future<void> _load() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) { setState(() => _loading = false); return; }
+    final pid = User_Info.activeProfileId;
+    if (uid == null || pid.isEmpty) { setState(() => _loading = false); return; }
     setState(() => _loading = true);
     final data = await _supa.from('balades_ludiques').select()
-        .eq('createur_uid', uid).neq('statut', 'supprime').order('created_at', ascending: false);
+        .eq('createur_profile_id', pid).neq('statut', 'supprime').order('created_at', ascending: false);
     if (mounted) setState(() { _parcours = List<Map<String, dynamic>>.from(data as List); _loading = false; });
   }
 
