@@ -191,16 +191,6 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Contrat d\'adoption',
-                      icon: Icons.handshake_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const ContratAdoptionPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
                       label: 'Certificats d\'engagement',
                       icon: Icons.edit_document,
                       onTap: () {
