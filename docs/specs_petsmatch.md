@@ -5209,6 +5209,55 @@ problème — même compte d'erreurs pré-existantes qu'avant sur
 `services/pro/[uid]/page.tsx`, confirmé par `git stash`), `next build`
 production complet réussi.
 
+### 28.11 — Phase 2c livrée (session 2026-07-10) : GPS + tournée réordonnable
+
+Dernière brique du module garde. **App uniquement** (confirmé avec
+l'utilisatrice) — le suivi GPS en direct n'a pas de sens sur une version
+web, un pet sitter ne prépare pas sa tournée depuis un ordinateur en
+faisant ses visites.
+
+**Découverte préalable (exploration dédiée)** : l'infrastructure géo
+existait déjà à 90 % mais pour l'éducateur, pas pour garde —
+`rdv.lieu`/`lieu_lat`/`lieu_lng` (migration `migration_education_intervenants_trajet.sql`,
+géocodage natif au moment où le pro modifie un RDV), `GeocodingHelper`
+(`lib/utils/geocoding_helper.dart`, géocodage + distance à vol d'oiseau),
+et une heuristique "risque de retard" déjà dans `pro_agenda.dart`
+(`_travelWarningsToday`) comparant le temps entre deux RDV consécutifs à
+la distance à parcourir. **Aucune colonne d'ordre de passage n'existait
+en revanche** — les visites n'étaient triables que par heure de RDV.
+
+- **Nouvelle colonne `rdv.ordre_visite`** (migration
+  `migration_rdv_ordre_visite.sql` — **à exécuter manuellement**) :
+  ordre de passage indicatif, distinct de l'heure réservée (permet au
+  pro d'optimiser son trajet sans changer les horaires convenus avec les
+  clients).
+- **Nouvelle page `tournee_page.dart`** ("Ma tournée", lien ajouté au
+  bloc garde de `eleveur_nav.dart`) : carte (mirror du pattern
+  `balades_ludiques_map_view.dart`, `google_maps_flutter`) des visites
+  confirmées du jour avec marqueurs numérotés (vert=départ, rouge=fin,
+  bleu=étapes) + tracé (`Polyline`) reliant les points dans l'ordre +
+  marqueur violet "Ma position" (géolocalisation `geolocator`, best-effort,
+  ne bloque pas le chargement si permission refusée). Distance totale à
+  vol d'oiseau affichée (réutilise `GeocodingHelper.distanceKm`).
+  Liste `ReorderableListView` en dessous (glisser-déposer), persiste
+  `ordre_visite` par RDV à chaque réordonnancement. Tri par défaut :
+  `ordre_visite` si déjà défini, sinon heure du RDV.
+- **Trou pratique comblé au passage** : sans adresse géocodée, une
+  visite n'a pas de position sur la carte — or `lieu`/`lieu_lat`/`lieu_lng`
+  ne se remplissaient jusqu'ici qu'en passant par le flux complet
+  "modifier le RDV". Ajouté un raccourci "+ Ajouter une adresse" par
+  visite directement dans la liste de la tournée (dialogue simple →
+  géocodage via `GeocodingHelper` → update direct de la ligne `rdv`),
+  sans quoi la fonctionnalité serait restée vide pour la quasi-totalité
+  des RDV existants.
+- Pas d'optimisation automatique d'itinéraire (tri "plus court chemin") —
+  demande explicite : "réordonnable", pas "optimisable". Laissé au pro.
+
+Vérifié : `flutter analyze` sur les 2 fichiers touchés (0 nouveau
+problème — seul avertissement : `onReorder` déprécié sur
+`ReorderableListView`, même pattern déjà toléré ailleurs dans le projet
+sur `step_points_carte.dart`).
+
 ---
 
 ## 29. Module "Balades ludiques" (collègue) — correctif fuite cross-profil (session 2026-07-10)
