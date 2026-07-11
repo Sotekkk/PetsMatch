@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 
 class BenevolesPage extends StatefulWidget {
   const BenevolesPage({super.key});
@@ -39,16 +40,23 @@ class _BenevolesPageState extends State<BenevolesPage> {
     super.dispose();
   }
 
+  Future<String?> _resolveProfileId(String uid) async {
+    // Le profil ACTIF (association), pas le profil "is_main" du compte —
+    // sinon on mélange les bénévoles avec un autre profil du même compte.
+    if (User_Info.activeProfileId.isNotEmpty) return User_Info.activeProfileId;
+    final mainProfile = await _supa.from('user_profiles')
+        .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+    return mainProfile?['id'] as String?;
+  }
+
   Future<void> _load() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      final data = await _supa
-          .from('employes')
-          .select()
-          .eq('uid_eleveur', uid)
-          .eq('type', 'benevole')
-          .order('nom');
+      final profileId = await _resolveProfileId(uid);
+      var q = _supa.from('employes').select().eq('type', 'benevole');
+      q = profileId != null ? q.eq('eleveur_profile_id', profileId) : q.eq('uid_eleveur', uid);
+      final data = await q.order('nom');
       if (mounted) {
         setState(() {
           _benevoles = List<Map<String, dynamic>>.from(data as List);
@@ -66,8 +74,10 @@ class _BenevolesPageState extends State<BenevolesPage> {
     if (_prenomCtrl.text.trim().isEmpty || _nomCtrl.text.trim().isEmpty) return;
 
     try {
+      final profileId = await _resolveProfileId(uid);
       await _supa.from('employes').insert({
         'uid_eleveur': uid,
+        if (profileId != null) 'eleveur_profile_id': profileId,
         'prenom': _prenomCtrl.text.trim(),
         'nom': _nomCtrl.text.trim(),
         'email': _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
@@ -458,15 +468,26 @@ class _SearchBenevoleSheetState extends State<_SearchBenevoleSheet> {
 
   Future<void> _ajouter(Map<String, dynamic> user) async {
     final uid = user['uid'] as String;
-    // Cherche uniquement dans les bénévoles de l'association
-    final existing = await _supa.from('employes').select()
+    // Le profil ACTIF (association), pas le profil "is_main" du compte.
+    String? profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+    if (profileId == null) {
+      final mainProfile = await _supa.from('user_profiles')
+          .select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
+      profileId = mainProfile?['id'] as String?;
+    }
+    // Cherche uniquement dans les bénévoles de l'association active
+    var existingQ = _supa.from('employes').select()
         .eq('uid_eleveur', widget.uid).eq('uid_employe', uid)
-        .eq('profil_source', 'association').eq('type', 'benevole').maybeSingle();
+        .eq('profil_source', 'association').eq('type', 'benevole');
+    if (profileId != null) existingQ = existingQ.eq('eleveur_profile_id', profileId);
+    final existing = await existingQ.maybeSingle();
 
     if (existing != null) {
       if (existing['actif'] == true) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Cette personne est déjà bénévole dans votre équipe.')));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Cette personne est déjà bénévole dans votre équipe.')));
+        }
         return;
       }
       await _supa.from('employes').update({'actif': true}).eq('id', existing['id']);
@@ -474,6 +495,7 @@ class _SearchBenevoleSheetState extends State<_SearchBenevoleSheet> {
       await _supa.from('employes').insert({
         'uid_employe': uid,
         'uid_eleveur': widget.uid,
+        if (profileId != null) 'eleveur_profile_id': profileId,
         'actif': true,
         'type': 'benevole',
         'profil_source': 'association',
