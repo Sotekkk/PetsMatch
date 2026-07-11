@@ -5415,4 +5415,65 @@ seul ne suffit pas ici.
 
 ---
 
+## 31. Protocoles association — désynchronisation agenda + catalogue non adapté (session 2026-07-11)
+
+**Contexte** : signalé par l'utilisatrice après avoir généré un protocole
+depuis un profil association — les tâches créées (`plan_taches`)
+n'apparaissaient jamais dans "Mon Agenda", contrairement au comportement
+attendu côté éleveur. Elle a aussi noté que le catalogue de protocoles
+propose des concepts d'élevage contrôlé (mise bas, gestation) hors sujet
+pour une association/refuge.
+
+**Cause racine (désynchronisation agenda/protocoles)** : `plans_actifs` et
+`plan_taches` (générés par `elevage/planning/page.tsx` côté web et
+`planning_service.dart` côté app) n'écrivaient jamais la colonne
+`profile_id` — uniquement `eleveur_profile_id`. Or la lecture "Mon Agenda"
+(`elevage/agenda/page.tsx::withProfileFilter`, `agenda_page.dart`) filtre
+strictement sur `profile_id` dès qu'un `activeProfileId` est présent, et ne
+retombe sur `profil_source` (rétrocompat) que si `activeProfileId` est vide.
+Un profil éleveur principal a souvent `activeProfileId` vide → tombe sur le
+fallback permissif → "ça marche par accident". Un profil association a
+toujours un `activeProfileId` renseigné → filtre strict → zéro résultat,
+puisque `profile_id` n'a jamais été écrit. Corrigé en écrivant `profile_id`
+en plus de `eleveur_profile_id` sur les deux inserts (`plans_actifs` et
+`plan_taches`), web et app, exactement comme le fait déjà l'insertion
+manuelle de tâche (`AddTacheModal.save` / insert manuel app) — le motif de
+l'utilisatrice ("le planning de l'agenda et des protocoles doivent être les
+mêmes") est maintenant respecté : même colonne de scope partout.
+
+**Catalogue de protocoles adapté au contexte association** : les templates
+sont des lignes créées par l'utilisateur (pas un catalogue préchargé
+serveur), donc "mise bas"/"gestation" n'étaient pas des modèles imposés
+mais des **options exposées dans le formulaire de création**, identiques
+quel que soit le profil. Corrigé en filtrant, uniquement quand
+`profilSource === 'association'` (web) / `User_Info.activeType ==
+'association'` (app) :
+- Cible "Femelles gestantes" retirée (implique une date de mise bas de
+  toute façon absente en contexte association).
+- Événements de référence (J0) "Saillie" et "Mise bas" retirés.
+- Déclenchement automatique "Chaleurs" et "Gestation confirmée" retirés.
+
+Pas de changement pour "Naissance"/"Bébés · Jeunes" ni "Femelles
+allaitantes" (app) — restent pertinents pour une portée recueillie déjà
+née, sans lien avec un élevage contrôlé.
+
+**Bonus (garde-fou UX)** : en creusant, une tâche "promenade — Jour 1/364"
+signalée par l'utilisatrice n'était pas un bug de génération — c'est le
+toggle "Protocole récurrent (sans fin)" d'une étape quotidienne, qui fixe
+`duree_semaines = 52` (soit 364 jours) sans avertissement suffisamment
+visible. Renommé "Protocole récurrent (1 an)" et remplacé l'avertissement
+discret (texte gris italique) par un encart orange explicite précisant le
+nombre exact de tâches générées d'un coup et le fait que le protocole ne
+se renouvelle pas automatiquement après cette période — même traitement
+pour la durée manuelle dès qu'elle dépasse 12 semaines/mois. Web + app.
+
+Vérifié : `flutter analyze` sur `planning_service.dart` (2 avertissements
+`unnecessary_null_comparison` corrigés au passage, 3 autres pré-existants
+inchangés hors scope) et `plan_template_form_page.dart` (0 problème),
+`tsc --noEmit` + `eslint` sur `elevage/planning/page.tsx` (mêmes 10
+problèmes pré-existants qu'avant, confirmé par `git stash` — aucune
+régression), `next build` production complet réussi.
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

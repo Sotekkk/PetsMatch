@@ -887,11 +887,17 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
     else if (c === 'individuel') setRefEvent('manuel');
   };
 
-  const refEventsForCible = REF_EVENT_OPTIONS.filter(r =>
-    cibleType === 'gestantes' ? ['mise_bas', 'saillie', 'manuel'].includes(r.value)
-    : cibleType === 'bebes'   ? ['naissance', 'age_semaines'].includes(r.value)
-    : r.value !== 'age_semaines'
-  );
+  // Une association ne pratique pas d'élevage contrôlé (saillie, mise bas) —
+  // ces événements de référence n'ont pas de sens hors contexte éleveur.
+  const cibleOptions = profilSource === 'association'
+    ? CIBLE_OPTIONS.filter(c => c.value !== 'gestantes')
+    : CIBLE_OPTIONS;
+  const refEventsForCible = REF_EVENT_OPTIONS.filter(r => {
+    if (profilSource === 'association' && (r.value === 'saillie' || r.value === 'mise_bas')) return false;
+    return cibleType === 'gestantes' ? ['mise_bas', 'saillie', 'manuel'].includes(r.value)
+      : cibleType === 'bebes'   ? ['naissance', 'age_semaines'].includes(r.value)
+      : r.value !== 'age_semaines';
+  });
 
   const save = async () => {
     if (!nom.trim()) { setError('Le nom est requis'); return; }
@@ -999,7 +1005,7 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
                 </select>
               </div>
               <div className="space-y-2">
-                {CIBLE_OPTIONS.map(c => (
+                {cibleOptions.map(c => (
                   <button key={c.value} onClick={() => handleCible(c.value)}
                     className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition-colors ${cibleType === c.value ? 'bg-green-50 border border-green-400' : 'bg-white border border-gray-200 hover:bg-gray-50'}`}>
                     <span className="text-lg">{c.emoji}</span>
@@ -1042,8 +1048,10 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
                 {[
                   { value: '',          emoji: '—',   label: 'Manuel uniquement' },
                   { value: 'naissance', emoji: '🐣',  label: 'Naissance' },
-                  { value: 'chaleurs',  emoji: '🌡️', label: 'Chaleurs' },
-                  { value: 'gestation', emoji: '🤰',  label: 'Gestation confirmée' },
+                  ...(profilSource === 'association' ? [] : [
+                    { value: 'chaleurs',  emoji: '🌡️', label: 'Chaleurs' },
+                    { value: 'gestation', emoji: '🤰',  label: 'Gestation confirmée' },
+                  ]),
                   { value: 'entree',    emoji: '🏠',  label: 'Entrée animal' },
                 ].map(d => (
                   <button key={d.value} onClick={() => setDeclencheurAuto(d.value)}
@@ -1170,7 +1178,7 @@ function EtapeForm({ index, etape, cibleType, refEvent, onChange, onRemove }: {
               <div className={`w-9 h-5 rounded-full transition-colors relative ${etape.is_recurrent ? 'bg-green-600' : 'bg-gray-300'}`}>
                 <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${etape.is_recurrent ? 'translate-x-4' : 'translate-x-0.5'}`} />
               </div>
-              Protocole récurrent (sans fin)
+              Protocole récurrent (1 an)
             </button>
             {!etape.is_recurrent ? (
               <div className="flex items-center gap-2">
@@ -1178,9 +1186,16 @@ function EtapeForm({ index, etape, cibleType, refEvent, onChange, onRemove }: {
                 <input type="number" min={1} value={etape.duree_semaines} onChange={e => onChange({ duree_semaines: parseInt(e.target.value) || 1 })}
                   className="w-14 border border-gray-200 rounded-lg px-2 py-1.5 text-center text-sm bg-white focus:outline-none focus:border-green-500" />
                 <span className="text-xs text-gray-500">{etape.frequence === 'mensuel' ? 'mois' : 'semaines'}</span>
+                {etape.duree_semaines >= 12 && (
+                  <span className="text-xs text-amber-600 font-semibold">
+                    ⚠️ {etape.frequence === 'quotidien' ? etape.duree_semaines * 7 : etape.frequence === 'mensuel' ? etape.duree_semaines : etape.duree_semaines * (etape.nb_fois_semaine || 1)} tâches générées
+                  </span>
+                )}
               </div>
             ) : (
-              <p className="text-xs text-gray-400 italic">Génère 1 an de tâches à l&apos;application</p>
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                ⚠️ Génère {etape.frequence === 'quotidien' ? '364' : etape.frequence === 'mensuel' ? '12' : `${52 * (etape.nb_fois_semaine || 1)}`} tâches d&apos;un coup (1 an) — le protocole ne se renouvelle pas automatiquement après, il faudra le réappliquer.
+              </p>
             )}
           </div>
         )}
@@ -1304,6 +1319,7 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
           const labelBase = [etape.type_acte, etape.produit, etape.dosage ? `(${etape.dosage})` : ''].filter(Boolean).join(' ');
           const common = {
             plan_id: planRow.id, etape_id: etape.id, uid_eleveur: uid,
+            profile_id: profileId || null,
             ...(profileId ? { eleveur_profile_id: profileId } : {}),
             animal_id: target.animal_id ?? null,
             animal_nom: target.animal_nom ?? null,

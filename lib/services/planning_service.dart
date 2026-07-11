@@ -294,7 +294,7 @@ class PlanningService {
     final row = await _supa.from('plans_actifs').insert({
       'template_id':      template['id'],
       'uid_eleveur':      uid,
-      if (User_Info.activeProfileId != null) 'eleveur_profile_id': User_Info.activeProfileId,
+      if (User_Info.activeProfileId.isNotEmpty) 'eleveur_profile_id': User_Info.activeProfileId,
       'type_declencheur': template['reference_event'] ?? 'manuel',
       'date_reference':   dateReference.toIso8601String().split('T').first,
       'profil_source':    _profilSource,
@@ -426,7 +426,8 @@ class PlanningService {
     'plan_id':         planId,
     'etape_id':        etape['id'],
     'uid_eleveur':     uid,
-    if (User_Info.activeProfileId != null) 'eleveur_profile_id': User_Info.activeProfileId,
+    'profile_id': User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+    if (User_Info.activeProfileId.isNotEmpty) 'eleveur_profile_id': User_Info.activeProfileId,
     'profil_source':   _profilSource,
     if (animalId != null) 'animal_id': animalId,
     if (animalNom != null && animalNom.isNotEmpty) 'animal_nom': animalNom,

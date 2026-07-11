@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -50,7 +51,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   static const _especes = ['', 'chien', 'chat', 'cheval', 'lapin', 'oiseau', 'nac', 'ovin', 'caprin', 'porcin'];
 
   // Cible : qui est concerné
-  static const _cibles = [
+  static const _ciblesBase = [
     ('individuel',  '🐾', 'Animal individuel',      'Sélection manuelle à l\'application'),
     ('cheptel',     '🏡', 'Tout le cheptel',        'Tous les animaux de l\'espèce'),
     ('males',       '♂',  'Mâles',                  'Tous les mâles de l\'espèce'),
@@ -59,6 +60,14 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     ('allaitantes', '🤱', 'Femelles allaitantes',   'Femelles en nurserie / avec bébés (< 8 sem.)'),
     ('bebes',       '🍼', 'Bébés / Jeunes',         'Selon l\'âge en semaines'),
   ];
+
+  // Une association ne pratique pas d'élevage contrôlé (saillie, mise bas) —
+  // ces cibles/événements n'ont pas de sens hors contexte éleveur.
+  bool get _isAssociation => User_Info.activeType == 'association';
+
+  List<(String, String, String, String)> get _cibles => _isAssociation
+      ? _ciblesBase.where((c) => c.$1 != 'gestantes').toList()
+      : _ciblesBase;
 
   // Événement de référence pour J0
   static const _refEvents = [
@@ -307,8 +316,8 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
                 for (final d in [
                   ('',          '—',   'Manuel uniquement'),
                   ('naissance', '🐣',  'Naissance'),
-                  ('chaleurs',  '🌡️', 'Chaleurs'),
-                  ('gestation', '🤰',  'Gestation confirmée'),
+                  if (!_isAssociation) ('chaleurs',  '🌡️', 'Chaleurs'),
+                  if (!_isAssociation) ('gestation', '🤰',  'Gestation confirmée'),
                   ('entree',    '🏠',  'Entrée animal'),
                 ])
                   _Chip(
@@ -354,11 +363,13 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
 
   // Filtrer les ref events selon la cible
   List<(String, String, String, String)> _refEventsFor(String cible) {
-    return switch (cible) {
+    final base = switch (cible) {
       'gestantes' => _refEvents.where((r) => r.$1 == 'mise_bas' || r.$1 == 'saillie' || r.$1 == 'manuel').toList(),
       'bebes'     => _refEvents.where((r) => r.$1 == 'naissance' || r.$1 == 'age_semaines').toList(),
       _           => _refEvents.where((r) => r.$1 != 'age_semaines').toList(),
     };
+    if (!_isAssociation) return base;
+    return base.where((r) => r.$1 != 'saillie' && r.$1 != 'mise_bas').toList();
   }
 }
 
@@ -594,28 +605,47 @@ class _EtapeCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Text('Protocole récurrent (sans fin)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+                      const Text('Protocole récurrent (1 an)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
                     ]),
                   ),
                   const SizedBox(height: 6),
                   // Durée — masquée si récurrent
-                  if (!ctrl.isRecurrent) Row(children: [
-                    const Text('Pendant : ', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                    SizedBox(
-                      width: 52,
-                      child: TextFormField(
-                        controller: ctrl.dureeSemainesCtrl,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        decoration: fd('', hint: '4'),
-                        textAlign: TextAlign.center,
-                        style: _ts,
-                        onChanged: (_) => onChanged(),
+                  if (!ctrl.isRecurrent) ...[
+                    Row(children: [
+                      const Text('Pendant : ', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                      SizedBox(
+                        width: 52,
+                        child: TextFormField(
+                          controller: ctrl.dureeSemainesCtrl,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                          decoration: fd('', hint: '4'),
+                          textAlign: TextAlign.center,
+                          style: _ts,
+                          onChanged: (_) => onChanged(),
+                        ),
+                      ),
+                      Text(freq == 'mensuel' ? ' mois' : ' sem.', style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                    ]),
+                    Builder(builder: (_) {
+                      final dureeS = int.tryParse(ctrl.dureeSemainesCtrl.text) ?? 1;
+                      if (dureeS < 12) return const SizedBox.shrink();
+                      final total = freq == 'quotidien' ? dureeS * 7 : freq == 'mensuel' ? dureeS : dureeS * (ctrl.nbFoisSemaine);
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text('⚠️ $total tâches générées', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: Colors.orange)),
+                      );
+                    }),
+                  ] else
+                    Container(
+                      margin: const EdgeInsets.only(top: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.orange.shade200)),
+                      child: Text(
+                        '⚠️ Génère ${freq == 'quotidien' ? '364' : freq == 'mensuel' ? '12' : '${52 * ctrl.nbFoisSemaine}'} tâches d\'un coup (1 an) — le protocole ne se renouvelle pas automatiquement après, il faudra le réappliquer.',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.orange.shade900),
                       ),
                     ),
-                    Text(freq == 'mensuel' ? ' mois' : ' sem.', style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                  ]) else
-                    Text('Génère 1 an de tâches à l\'application', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500, fontStyle: FontStyle.italic)),
                 ],
                 // Durée en jours si ponctuel
                 if (freq == 'ponctuel') ...[
