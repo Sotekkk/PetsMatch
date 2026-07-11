@@ -105,18 +105,6 @@ export default function AssociationDashboard() {
           </div>
         )}
       </div>
-
-      {/* Raccourcis */}
-      <div className="bg-white rounded-2xl shadow-sm p-5">
-        <h2 className="font-bold font-galey text-teal-800 mb-4">Actions rapides</h2>
-        <div className="flex flex-wrap gap-3">
-          <QuickLink href="/association/animaux" icon="🐾" label="Ajouter un animal" />
-          <QuickLink href="/association/familles-accueil" icon="🏡" label="Gérer les FA" />
-          <QuickLink href="/association/annonces" icon="📣" label="Déposer une annonce" />
-          <QuickLink href="/association/certificat-engagement" icon="📋" label="Créer un certificat" />
-          <QuickLink href="/association/chenil" icon="🗓️" label="Planning chenil" />
-        </div>
-      </div>
     </div>
   );
 }
@@ -141,15 +129,5 @@ function StatCard({ label, value, color, icon }: { label: string; value: number;
       </div>
       <p className={`text-3xl font-bold font-galey ${valColor[color] ?? 'text-gray-700'}`}>{value}</p>
     </div>
-  );
-}
-
-function QuickLink({ href, icon, label }: { href: string; icon: string; label: string }) {
-  return (
-    <Link href={href}
-      className="flex items-center gap-2 px-4 py-2 bg-teal-50 text-teal-800 rounded-full text-sm font-galey font-semibold hover:bg-teal-100 transition-colors border border-teal-200">
-      <span>{icon}</span>
-      <span>{label}</span>
-    </Link>
   );
 }

@@ -1217,6 +1217,7 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
   const [dateRef, setDateRef] = useState(toISODate(new Date()));
   const [animalId, setAnimalId] = useState('');
   const [showPicker, setShowPicker] = useState(false);
+  const [animalSearch, setAnimalSearch] = useState('');
   const [animaux, setAnimaux] = useState<{ id: string; nom: string; espece?: string; photo_url?: string | null }[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -1225,6 +1226,9 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
   const needsAnimal = cibleType === 'individuel';
   const showDate = cibleType !== 'bebes' && cibleType !== 'gestantes';
   const selectedAnimal = animaux.find(a => a.id === animalId);
+  const filteredAnimaux = animalSearch.trim()
+    ? animaux.filter(a => a.nom.toLowerCase().includes(animalSearch.trim().toLowerCase()))
+    : animaux;
 
   useEffect(() => {
     if (!needsAnimal) return;
@@ -1386,25 +1390,36 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
                   </svg>
                 </button>
                 {showPicker && (
-                  <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
-                    {animaux.length === 0
-                      ? <p className="text-sm text-gray-400 text-center py-4">Aucun animal</p>
-                      : animaux.map(a => (
-                        <button key={a.id} type="button"
-                          onClick={() => { setAnimalId(a.id); setShowPicker(false); }}
-                          className="w-full flex items-center gap-3 px-3 py-2 hover:bg-green-50 text-left border-b border-gray-50 last:border-0 transition-colors">
-                          <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
-                            {a.photo_url
-                              ? <img src={a.photo_url} alt="" className="w-full h-full object-cover" />
-                              : <span className="text-sm">🐾</span>}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-gray-800 truncate">{a.nom}</p>
-                            {a.espece && <p className="text-xs text-gray-400">{a.espece}</p>}
-                          </div>
-                        </button>
-                      ))
-                    }
+                  <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                    <div className="p-2 border-b border-gray-100">
+                      <input
+                        autoFocus
+                        value={animalSearch}
+                        onChange={e => setAnimalSearch(e.target.value)}
+                        placeholder="Rechercher un animal…"
+                        className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-green-500"
+                      />
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      {filteredAnimaux.length === 0
+                        ? <p className="text-sm text-gray-400 text-center py-4">Aucun animal</p>
+                        : filteredAnimaux.map(a => (
+                          <button key={a.id} type="button"
+                            onClick={() => { setAnimalId(a.id); setShowPicker(false); setAnimalSearch(''); }}
+                            className="w-full flex items-center gap-3 px-3 py-2 hover:bg-green-50 text-left border-b border-gray-50 last:border-0 transition-colors">
+                            <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
+                              {a.photo_url
+                                ? <img src={a.photo_url} alt="" className="w-full h-full object-cover" />
+                                : <span className="text-sm">🐾</span>}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-gray-800 truncate">{a.nom}</p>
+                              {a.espece && <p className="text-xs text-gray-400">{a.espece}</p>}
+                            </div>
+                          </button>
+                        ))
+                      }
+                    </div>
                   </div>
                 )}
               </div>
