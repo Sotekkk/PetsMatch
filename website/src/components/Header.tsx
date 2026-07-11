@@ -315,7 +315,7 @@ const MENU_ASSOCIATION = [
       { href: '/association/planning',                   label: 'Protocoles',            icon: '📅' },
       { href: '/association/registre-sanitaire',         label: 'Suivi sanitaire',       icon: '🏥' },
       { href: '/association/inventaire',                 label: 'Inventaire',            icon: '📦' },
-      { href: '/employes',                               label: 'Mes employés et bénévoles', icon: '👥' },
+      { href: '/association/equipe',                     label: 'Mes employés et bénévoles', icon: '👥' },
       { href: '/association/registre-entree-sortie',     label: 'Entrée - Sortie',       icon: '📂' },
       { href: '/mes-taches',                             label: 'Mes tâches',            icon: '✅' },
     ],
