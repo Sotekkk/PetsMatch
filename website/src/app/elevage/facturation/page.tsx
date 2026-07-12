@@ -37,6 +37,7 @@ interface Facture {
   total_ttc?: number;
   lignes?: Ligne[];
   profil_source?: string;
+  token?: string;
 }
 
 const STATUT_STYLE: Record<string, string> = {
@@ -60,7 +61,7 @@ function isoToFr(iso?: string) {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function FacturationPage() {
-  const { user, loading } = useAuth();
+  const { user, userData, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const profilSource = pathname?.startsWith('/association') ? 'association' : 'eleveur';
@@ -72,6 +73,7 @@ export default function FacturationPage() {
   const [filtreStatut, setFiltreStatut] = useState('tous');
   const [selected, setSelected] = useState<Facture | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.push('/connexion');
@@ -106,6 +108,31 @@ export default function FacturationPage() {
     await supabase.from('factures').update({ statut }).eq('id', id);
     setFactures((prev) => prev.map((f) => f.id === id ? { ...f, statut } : f));
     setSelected((prev) => prev?.id === id ? { ...prev, statut } : prev);
+  }
+
+  async function envoyerParEmail(f: Facture) {
+    if (!f.email_client || !f.token) return;
+    setSendingEmail(true);
+    const proNom = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre professionnel';
+    const factureUrl = `${window.location.origin}/facture/${f.token}`;
+    try {
+      const res = await fetch('/api/facture/notify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: f.email_client,
+          client_nom: `${f.prenom_client ?? ''} ${f.nom_client ?? ''}`.trim() || 'Client',
+          pro_nom: proNom,
+          numero_facture: f.numero_facture ? `n° ${f.numero_facture}` : undefined,
+          total_ttc: f.total_ttc,
+          facture_url: factureUrl,
+        }),
+      });
+      if (res.ok) alert('Email envoyé au client.');
+      else alert('Erreur lors de l\'envoi de l\'email.');
+    } finally {
+      setSendingEmail(false);
+    }
   }
 
   if (loading || planLoading || !user) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
@@ -289,6 +316,20 @@ export default function FacturationPage() {
                 </button>
               </div>
             )}
+            {selected.token && (
+              <div className="flex gap-2 mb-3">
+                <a href={`/facture/${selected.token}`} target="_blank" rel="noopener noreferrer"
+                  className="flex-1 border border-gray-200 text-gray-600 font-medium py-2 rounded-xl text-sm hover:bg-gray-50 transition-colors text-center">
+                  Voir la facture
+                </a>
+                {selected.email_client && (
+                  <button onClick={() => envoyerParEmail(selected)} disabled={sendingEmail}
+                    className="flex-1 border border-gray-200 text-gray-600 font-medium py-2 rounded-xl text-sm hover:bg-gray-50 disabled:opacity-50 transition-colors">
+                    {sendingEmail ? '…' : '📧 Envoyer par email'}
+                  </button>
+                )}
+              </div>
+            )}
             <button onClick={() => setSelected(null)}
               className="w-full border border-gray-200 text-gray-600 font-medium py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors">
               Fermer
@@ -365,6 +406,7 @@ function NouvelleFactureForm({ uid, profileId, nextNum, profilSource = 'eleveur'
       date_prestation: datePrestation || null,
       date_echeance:  dateEcheance || null,
       statut:         'emise',
+      token:          crypto.randomUUID(),
       lignes,
       total_ht:       totalHT,
       total_tva:      totalTVA,

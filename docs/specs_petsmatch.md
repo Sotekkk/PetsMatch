@@ -5688,6 +5688,47 @@ traité).
 Vérifié : `flutter analyze education_devis_page.dart` → 0 problème,
 `tsc --noEmit` propre sur `education/devis/page.tsx`.
 
+## 36. Envoi par email — devis et facture (session 2026-07-12)
+
+**Contexte** : reprise du gap §"petsitter — reste à faire" identifié en
+début de session — l'envoi par email n'était câblé que sur
+`/garde/contrat`, alors que les routes API `api/devis/notify-email` et
+`api/facture/notify-email` existaient déjà (scaffoldées, jamais
+appelées par aucune page).
+
+**Devis** (`education/devis/page.tsx`, partagé éducateur/garde) :
+bouton "📧 Email" ajouté sur chaque devis envoyé (si `email_client`
+renseigné), appelle `api/devis/notify-email` avec le lien public déjà
+existant `/devis/[token]`. Gating Premium via `usePlanGarde()` — actif
+uniquement quand `catPro === 'garde'` (l'éducateur n'a pas cette
+notion de plan sur le web aujourd'hui, bouton laissé ungaté pour ce
+cas).
+
+**Facture** (`elevage/facturation/page.tsx`) : contrairement à
+devis/contrat, la table `factures` n'avait ni colonne `token` ni page
+de consultation publique. Construits de zéro, mirror exact du pattern
+devis :
+- Migration `supabase/migration_facture_token.sql` — ajoute
+  `factures.token` (backfill des lignes existantes via
+  `gen_random_uuid()`, nouvelles factures génèrent le leur côté client
+  via `crypto.randomUUID()` à la création).
+- Nouvelle page publique `website/src/app/facture/[token]/page.tsx`
+  (lecture seule, sans compte requis — mirror `/devis/[token]`, avec
+  export PDF via `window.print()`, pas d'action accepter/refuser
+  puisqu'une facture n'a pas ce concept).
+- Bouton "Envoyer par email" + "Voir la facture" dans la modale détail
+  de `elevage/facturation/page.tsx`. Pas de gating Premium
+  supplémentaire nécessaire : toute la page Facturation est déjà
+  réservée au plan Premium (`planConfig.hasPremiumFeatures`).
+
+Migration exécutée par l'utilisatrice dans le SQL Editor Supabase,
+vérifiée après coup via une requête anonyme (`token` bien présent et
+rempli sur les factures existantes).
+
+Vérifié : `tsc --noEmit` propre sur les 3 fichiers touchés/créés,
+`next build` production complet réussi (`/facture/[token]` compile
+comme route dynamique).
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { usePlanGarde } from '@/lib/use-plan';
 
 interface Ligne { description: string; quantite: number; prix_unitaire: number; total: number; }
 
@@ -47,9 +48,14 @@ const STATUT_LABEL: Record<string, string> = {
 };
 
 export default function DevisPage() {
-  const { user, loading } = useAuth();
+  const { user, userData, loading } = useAuth();
   const router = useRouter();
   const activeProfileId = useActiveProfile();
+  // Gating Premium/Team demandé pour l'envoi email — seul le plan garde a
+  // cette notion aujourd'hui (abonnement scopé par profil_type), l'éducateur
+  // n'a pas de restriction équivalente.
+  const { plan: gardePlan } = usePlanGarde();
+  const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
 
   const [devisList, setDevisList] = useState<Devis[]>([]);
   const [fetching, setFetching] = useState(true);
@@ -301,6 +307,30 @@ export default function DevisPage() {
     setNewLink(`${window.location.origin}/devis/${d.token_acceptation}`);
   }
 
+  async function envoyerParEmail(d: Devis) {
+    if (!d.email_client) return;
+    setSendingEmailId(d.id);
+    const proNom = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre professionnel';
+    const devisUrl = `${window.location.origin}/devis/${d.token_acceptation}`;
+    try {
+      const res = await fetch('/api/devis/notify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: d.email_client,
+          client_nom: `${d.prenom_client ?? ''} ${d.nom_client ?? ''}`.trim() || 'Client',
+          pro_nom: proNom,
+          total_ttc: d.total_ttc,
+          devis_url: devisUrl,
+        }),
+      });
+      if (res.ok) alert('Email envoyé au client.');
+      else alert('Erreur lors de l\'envoi de l\'email.');
+    } finally {
+      setSendingEmailId(null);
+    }
+  }
+
   async function handleDelete(id: string) {
     await supabase.from('devis').delete().eq('id', id).neq('statut', 'accepte');
     setDevisList(prev => prev.filter(d => d.id !== id));
@@ -537,6 +567,19 @@ export default function DevisPage() {
                     className="text-xs bg-[#0C5C6C] text-white px-3 py-1.5 rounded-lg hover:bg-[#094F5D] font-medium">
                     Envoyer
                   </button>
+                )}
+                {d.statut !== 'brouillon' && d.email_client && (
+                  catPro === 'garde' && gardePlan === 'free' ? (
+                    <Link href="/garde/abonnement"
+                      className="text-xs font-medium text-amber-600 hover:underline whitespace-nowrap px-1 py-1.5">
+                      🔒 Email (Pro)
+                    </Link>
+                  ) : (
+                    <button onClick={() => envoyerParEmail(d)} disabled={sendingEmailId === d.id}
+                      className="text-xs border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 disabled:opacity-50">
+                      {sendingEmailId === d.id ? '…' : '📧 Email'}
+                    </button>
+                  )
                 )}
                 {d.statut !== 'brouillon' && (
                   <button onClick={() => navigator.clipboard.writeText(`${origin}/devis/${d.token_acceptation}`)}
