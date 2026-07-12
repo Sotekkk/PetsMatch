@@ -19,6 +19,7 @@ interface Tache {
 interface Benevole {
   id: string;
   uid_employe?: string;
+  employe_profile_id?: string | null;
   prenom: string;
   nom: string;
   email?: string;
@@ -32,6 +33,7 @@ interface Benevole {
 interface Employe {
   id: string;
   uid_employe: string;
+  employe_profile_id?: string | null;
   actif: boolean;
   nom: string;
   photo?: string | null;
@@ -55,6 +57,7 @@ interface Enclos { id: string; nom: string; }
 interface MembreEquipe {
   id: string;
   uid_employe?: string;
+  employe_profile_id?: string | null;
   type: 'employe' | 'benevole';
   nom: string;
   prenom: string;
@@ -183,6 +186,7 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
         result.push({
           id: row.id,
           uid_employe: row.uid_employe ?? undefined,
+          employe_profile_id: row.employe_profile_id ?? null,
           type: isBenevole ? 'benevole' : 'employe',
           nom, prenom, email, telephone,
           notes: row.notes ?? undefined,
@@ -232,13 +236,14 @@ function EquipeUnifiee({ uid, profileId }: { uid: string; profileId: string | nu
     load();
   };
 
-  const toggleActif = async (id: string, actif: boolean, uidEmploye?: string) => {
+  const toggleActif = async (id: string, actif: boolean, uidEmploye?: string, employeProfileId?: string | null) => {
     await supabase.from('employes').update({ actif: !actif }).eq('id', id);
     if (actif && uidEmploye) {
       await supabase.from('notifications').insert({
         uid: uidEmploye, type: 'employee_revoked',
         title: 'Statut bénévole modifié',
         body: 'Votre statut de bénévole a été désactivé',
+        ...(employeProfileId ? { profile_id: employeProfileId } : {}),
         data: {},
         read: false,
       });
@@ -459,7 +464,7 @@ function EmployesTab({ uid }: { uid: string }) {
           : `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim() || 'Utilisateur';
         const photo = p?.is_elevage ? p.profile_picture_url_elevage : p?.profile_picture_url;
         const taches = await fetchTachesPersonne(e.uid_employe, uid);
-        result.push({ id: e.id, uid_employe: e.uid_employe, actif: e.actif, nom, photo, taches });
+        result.push({ id: e.id, uid_employe: e.uid_employe, employe_profile_id: e.employe_profile_id ?? null, actif: e.actif, nom, photo, taches });
       }
       setEmployes(result);
     } finally {
@@ -476,6 +481,7 @@ function EmployesTab({ uid }: { uid: string }) {
       uid: emp.uid_employe, type: 'employee_revoked',
       title: 'Accès retiré',
       body: `Vous avez été retiré de l'équipe`,
+      ...(emp.employe_profile_id ? { profile_id: emp.employe_profile_id } : {}),
       data: { eleveurUid: uid },
       read: false,
     });
@@ -589,7 +595,7 @@ function BenevolesTab({ uid }: { uid: string }) {
           const photo = p?.is_elevage ? p.profile_picture_url_elevage : p?.profile_picture_url;
           const taches = await fetchTachesPersonne(row.uid_employe, uid);
           result.push({
-            id: row.id, uid_employe: row.uid_employe, actif: row.actif ?? true,
+            id: row.id, uid_employe: row.uid_employe, employe_profile_id: row.employe_profile_id ?? null, actif: row.actif ?? true,
             prenom: nom.split(' ')[0] ?? nom, nom: nom.split(' ').slice(1).join(' ') || '',
             email: row.email, telephone: row.telephone || p?.phone_number || undefined,
             notes: row.notes, photo, taches,
@@ -630,13 +636,14 @@ function BenevolesTab({ uid }: { uid: string }) {
     load();
   };
 
-  const toggleActif = async (id: string, actif: boolean, uidEmploye?: string) => {
+  const toggleActif = async (id: string, actif: boolean, uidEmploye?: string, employeProfileId?: string | null) => {
     await supabase.from('employes').update({ actif: !actif }).eq('id', id);
     if (actif && uidEmploye) {
       await supabase.from('notifications').insert({
         uid: uidEmploye, type: 'employee_revoked',
         title: 'Statut bénévole modifié',
         body: 'Votre statut de bénévole a été désactivé',
+        ...(employeProfileId ? { profile_id: employeProfileId } : {}),
         data: {},
         read: false,
       });
@@ -713,7 +720,7 @@ function BenevolesTab({ uid }: { uid: string }) {
                   <BenevoleCard key={b.id} b={b} uid={uid}
                     isOpen={expanded[b.id] ?? false}
                     onToggleOpen={() => setExpanded(prev => ({ ...prev, [b.id]: !(prev[b.id] ?? false) }))}
-                    onToggle={() => toggleActif(b.id, b.actif, b.uid_employe)}
+                    onToggle={() => toggleActif(b.id, b.actif, b.uid_employe, b.employe_profile_id)}
                     onEdit={() => setEditing(b)}
                     onDelete={() => handleDelete(b.id)}
                     onAssign={() => setAssigning(b)} />
@@ -729,7 +736,7 @@ function BenevolesTab({ uid }: { uid: string }) {
                   <BenevoleCard key={b.id} b={b} uid={uid}
                     isOpen={expanded[b.id] ?? false}
                     onToggleOpen={() => setExpanded(prev => ({ ...prev, [b.id]: !(prev[b.id] ?? false) }))}
-                    onToggle={() => toggleActif(b.id, b.actif, b.uid_employe)}
+                    onToggle={() => toggleActif(b.id, b.actif, b.uid_employe, b.employe_profile_id)}
                     onEdit={() => setEditing(b)}
                     onDelete={() => handleDelete(b.id)}
                     onAssign={() => setAssigning(b)} />
@@ -1026,12 +1033,15 @@ function AddPetsMatchModal({ uid, eleveurProfileId, type, onClose }: { uid: stri
           ...(eleveurProfileId ? { eleveur_profile_id: eleveurProfileId } : {}),
         });
       }
+      const { data: targetParticulier } = await supabase.from('user_profiles')
+        .select('id').eq('uid', u.uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
       await supabase.from('notifications').insert({
         uid: u.uid, type: 'employee_invite',
         title: type === 'benevole' ? 'Invitation bénévole' : 'Invitation à rejoindre une équipe',
         body: type === 'benevole'
           ? 'Vous avez été ajouté comme bénévole dans une association'
           : 'Vous avez été ajouté à l\'équipe d\'une association',
+        ...(targetParticulier?.id ? { profile_id: targetParticulier.id } : {}),
         data: { assoUid: uid },
         read: false,
       });

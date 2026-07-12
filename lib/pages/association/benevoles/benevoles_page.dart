@@ -101,7 +101,7 @@ class _BenevolesPageState extends State<BenevolesPage> {
     }
   }
 
-  Future<void> _toggle(String id, bool actif, {String? uidEmploye}) async {
+  Future<void> _toggle(String id, bool actif, {String? uidEmploye, String? employeProfileId}) async {
     await _supa.from('employes').update({'actif': !actif}).eq('id', id);
     if (actif && uidEmploye != null) {
       await _supa.from('notifications').insert({
@@ -109,6 +109,7 @@ class _BenevolesPageState extends State<BenevolesPage> {
         'type':  'employee_revoked',
         'title': 'Statut bénévole modifié',
         'body':  'Votre statut de bénévole a été désactivé',
+        if ((employeProfileId ?? '').isNotEmpty) 'profile_id': employeProfileId,
         'data':  <String, dynamic>{},
         'read':  false,
       });
@@ -313,7 +314,7 @@ class _BenevolesPageState extends State<BenevolesPage> {
                       ),
                       ...actifs.map((b) => _BenevoleTile(
                         benevole: b,
-                        onToggle: () => _toggle(b['id'], b['actif'] == true, uidEmploye: b['uid_employe'] as String?),
+                        onToggle: () => _toggle(b['id'], b['actif'] == true, uidEmploye: b['uid_employe'] as String?, employeProfileId: b['employe_profile_id'] as String?),
                         onDelete: () => _delete(b['id']),
                       )),
                     ],
@@ -326,7 +327,7 @@ class _BenevolesPageState extends State<BenevolesPage> {
                       ),
                       ...inactifs.map((b) => _BenevoleTile(
                         benevole: b,
-                        onToggle: () => _toggle(b['id'], b['actif'] == true, uidEmploye: b['uid_employe'] as String?),
+                        onToggle: () => _toggle(b['id'], b['actif'] == true, uidEmploye: b['uid_employe'] as String?, employeProfileId: b['employe_profile_id'] as String?),
                         onDelete: () => _delete(b['id']),
                       )),
                     ],
@@ -501,11 +502,17 @@ class _SearchBenevoleSheetState extends State<_SearchBenevoleSheet> {
         'profil_source': 'association',
       });
     }
+    // Rejoindre une équipe est une notion particulier — résoudre ce profil
+    // précis du destinataire (le picker ci-dessus liste tout profil is_main,
+    // pas seulement particulier).
+    final targetParticulier = await _supa.from('user_profiles')
+        .select('id').eq('uid', uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
     await _supa.from('notifications').insert({
       'uid':   uid,
       'type':  'employee_invite',
       'title': 'Invitation bénévole',
       'body':  'Vous avez été ajouté comme bénévole dans une association',
+      if (targetParticulier?['id'] != null) 'profile_id': targetParticulier!['id'],
       'data':  {'assoUid': widget.uid},
       'read':  false,
     });

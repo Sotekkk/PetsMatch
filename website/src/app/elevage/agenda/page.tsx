@@ -16,6 +16,13 @@ async function resolveDisplayName(uid: string, fallback: string): Promise<string
     : (`${data.firstname ?? ''} ${data.lastname ?? ''}`.trim() || fallback);
 }
 
+// Une tâche assignée cible le profil particulier du destinataire (pas le profil élevage/employeur)
+async function resolveParticulierProfileId(uid: string): Promise<string | null> {
+  const { data } = await supabase.from('user_profiles')
+    .select('id').eq('uid', uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+  return data?.id ?? null;
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type ViewMode = 'mois' | 'semaine' | 'jour';
@@ -140,11 +147,13 @@ function AddTacheModal({ selectedDate, uid, profilSource, activeProfileId, emplo
     if (assigneUid) {
       try {
         const nomEleveur = await resolveDisplayName(uid, 'Votre éleveur');
+        const employeProfileId = await resolveParticulierProfileId(assigneUid);
         await supabase.from('notifications').insert({
           uid: assigneUid, type: 'tache_assignee',
           title: 'Nouvelle tâche assignée 📋',
           body: `${nomEleveur} vous a assigné : ${titre.trim()}`,
           data: {}, read: false,
+          ...(employeProfileId ? { profile_id: employeProfileId } : {}),
         });
       } catch (_) {}
     }
@@ -263,11 +272,13 @@ function AddProtocoleModal({ selectedDate, uid, profilSource, activeProfileId, e
     if (assigneUid) {
       try {
         const nomEleveur = await resolveDisplayName(uid, 'Votre éleveur');
+        const employeProfileId = await resolveParticulierProfileId(assigneUid);
         await supabase.from('notifications').insert({
           uid: assigneUid, type: 'tache_assignee',
           title: 'Nouveau protocole assigné 📋',
           body: `${nomEleveur} vous a assigné : ${label.trim()}`,
           data: {}, read: false,
+          ...(employeProfileId ? { profile_id: employeProfileId } : {}),
         });
       } catch (_) {}
     }
@@ -371,11 +382,13 @@ function EditTacheModal({ tache, employes, currentUid, onClose, onSaved }: {
     if (newAssigne && newAssigne !== prevAssigne) {
       try {
         const nomEleveur = await resolveDisplayName(currentUid, 'Votre éleveur');
+        const employeProfileId = await resolveParticulierProfileId(newAssigne);
         await supabase.from('notifications').insert({
           uid: newAssigne, type: 'tache_assignee',
           title: 'Tâche assignée 📋',
           body: `${nomEleveur} vous a assigné : ${titre.trim()}`,
           data: { tacheId: tache.id }, read: false,
+          ...(employeProfileId ? { profile_id: employeProfileId } : {}),
         });
       } catch (_) {}
     }
@@ -462,11 +475,13 @@ function EditProtocoleModal({ groupe, employes, currentUid, onClose, onSaved }: 
     if (newAssigned && newAssigned !== prevAssigned) {
       try {
         const nomEleveur = await resolveDisplayName(currentUid, 'Votre éleveur');
+        const employeProfileId = await resolveParticulierProfileId(newAssigned);
         await supabase.from('notifications').insert({
           uid: newAssigned, type: 'tache_assignee',
           title: 'Protocole assigné 📋',
           body: `${nomEleveur} vous a assigné : ${label.trim()}`,
           data: { protocoleId: groupe.etapeId }, read: false,
+          ...(employeProfileId ? { profile_id: employeProfileId } : {}),
         });
       } catch (_) {}
     }
@@ -559,16 +574,18 @@ function AttributionModal({ tache, employes, currentUid, onClose, onSaved }: {
     if (newlyAssigned.length > 0) {
       try {
         const nomEleveur = await resolveDisplayName(currentUid, 'Votre éleveur');
-        await Promise.all(newlyAssigned.map(uid =>
-          supabase.from('notifications').insert({
+        await Promise.all(newlyAssigned.map(async uid => {
+          const employeProfileId = await resolveParticulierProfileId(uid);
+          return supabase.from('notifications').insert({
             uid,
             type:  'tache_assignee',
             title: 'Nouvelle tâche assignée 📋',
             body:  `${nomEleveur} vous a assigné : ${tache.titre}`,
             data:  { tacheId: tache.id },
             read:  false,
-          })
-        ));
+            ...(employeProfileId ? { profile_id: employeProfileId } : {}),
+          });
+        }));
       } catch (_) {}
     }
 

@@ -1564,20 +1564,22 @@ class _EventTile extends StatelessWidget {
   Future<void> _applyModification(BuildContext context, dynamic supa,
       String rdvId, String proUid, DateTime chosen, int duration) async {
     try {
-      await supa.from('rdv').update({
+      final updated = await supa.from('rdv').update({
         'statut':              'contre_proposition',
         'date_heure':          chosen.toUtc().toIso8601String(),
         'reminder_1h_sent':    false,  // reset reminders pour le nouveau créneau
         'reminder_15min_sent': false,
-      }).eq('id', rdvId);
+      }).eq('id', rdvId).select('pro_profile_id').maybeSingle();
 
       final clientName = FirebaseAuth.instance.currentUser?.displayName ?? 'Le client';
       final dateStr = DateFormat('d MMM à HH:mm', 'fr').format(chosen);
+      final proProfileId = updated?['pro_profile_id'] as String?;
       await supa.from('notifications').insert({
         'uid':   proUid,
         'type':  'rdv_contre_proposition',
         'title': 'Modification demandée par $clientName',
         'body':  '$clientName souhaite déplacer le RDV au $dateStr',
+        if ((proProfileId ?? '').isNotEmpty) 'profile_id': proProfileId,
         'data':  {'rdv_id': rdvId},
         'read':  false,
       });
@@ -1656,8 +1658,9 @@ class _EventTile extends StatelessWidget {
       final motif = ctrl.text.trim();
 
       // Load rdv to get pro_uid
-      final rdvRows = await supa.from('rdv').select('pro_uid').eq('id', rdvId);
+      final rdvRows = await supa.from('rdv').select('pro_uid, pro_profile_id').eq('id', rdvId);
       final proUid = rdvRows.isNotEmpty ? rdvRows[0]['pro_uid'] as String? : null;
+      final proProfileId = rdvRows.isNotEmpty ? rdvRows[0]['pro_profile_id'] as String? : null;
 
       // Cancel the RDV
       await supa.from('rdv').update({
@@ -1677,6 +1680,7 @@ class _EventTile extends StatelessWidget {
           'type':  'rdv_annule_client',
           'title': 'RDV annulé par $clientName',
           'body':  '$clientName a annulé son rendez-vous$motifPart',
+          if ((proProfileId ?? '').isNotEmpty) 'profile_id': proProfileId,
           'data':  {'rdv_id': rdvId},
           'read':  false,
         });
@@ -2599,6 +2603,12 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
     final animalNom = _selectedAnimaux.isEmpty
         ? null
         : _selectedAnimaux.map((a) => a['nom']?.toString() ?? '').join(', ');
+    String? employeProfileId;
+    if (_selectedEmployeUid != null) {
+      final p = await supa.from('user_profiles')
+          .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+      employeProfileId = p?['id'] as String?;
+    }
     await supa.from('plan_taches').insert({
       'uid_eleveur':   widget.uid,
       'label':         _labelCtrl.text.trim(),
@@ -2609,6 +2619,7 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
       'profil_source': widget.profilSource,
       if (profileId.isNotEmpty) 'profile_id': profileId,
       'assigned_to':   _selectedEmployeUid,
+      if ((employeProfileId ?? '').isNotEmpty) 'assigned_profile_id': employeProfileId,
     });
     if (_selectedEmployeUid != null) {
       try {
@@ -2624,6 +2635,7 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
           'uid': _selectedEmployeUid, 'type': 'tache_assignee',
           'title': 'Nouveau protocole assigné 📋',
           'body': '$nomEleveur vous a assigné : ${_labelCtrl.text.trim()}',
+          if ((employeProfileId ?? '').isNotEmpty) 'profile_id': employeProfileId,
           'data': <String, dynamic>{}, 'read': false,
         });
       } catch (_) {}
@@ -2833,6 +2845,7 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
           'uid': _selectedEmployeUid, 'type': 'tache_assignee',
           'title': 'Nouvelle tâche assignée 📋',
           'body': '$nomEleveur vous a assigné : ${_titreCtrl.text.trim()}',
+          if ((assigneProfileId ?? '').isNotEmpty) 'profile_id': assigneProfileId,
           'data': <String, dynamic>{}, 'read': false,
         });
       } catch (_) {}
@@ -3048,6 +3061,7 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
           'uid': newAssigne, 'type': 'tache_assignee',
           'title': 'Tâche assignée 📋',
           'body': '$nomEleveur vous a assigné : ${_titreCtrl.text.trim()}',
+          if ((newAssigneProfileId ?? '').isNotEmpty) 'profile_id': newAssigneProfileId,
           'data': <String, dynamic>{'tacheId': widget.tache['id']}, 'read': false,
         });
       } catch (_) {}
@@ -3221,10 +3235,17 @@ class _EditProtocoleSheetState extends State<_EditProtocoleSheet> {
     final ids = widget.groupe.map((t) => t['id'] as String).toList();
     final prevAssigned = widget.groupe.first['assigned_to'] as String?;
     final newAssigned = _selectedEmployeUid;
+    String? newAssignedProfileId;
+    if (newAssigned != null) {
+      final p = await supa.from('user_profiles')
+          .select('id').eq('uid', newAssigned).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+      newAssignedProfileId = p?['id'] as String?;
+    }
     await supa.from('plan_taches').update({
       'label': _labelCtrl.text.trim(),
       'type_acte': _typeActe,
       'assigned_to': newAssigned,
+      'assigned_profile_id': newAssignedProfileId,
     }).inFilter('id', ids);
     if (newAssigned != null && newAssigned != prevAssigned) {
       try {
@@ -3240,6 +3261,7 @@ class _EditProtocoleSheetState extends State<_EditProtocoleSheet> {
           'uid': newAssigned, 'type': 'tache_assignee',
           'title': 'Protocole assigné 📋',
           'body': '$nomEleveur vous a assigné : ${_labelCtrl.text.trim()}',
+          if ((newAssignedProfileId ?? '').isNotEmpty) 'profile_id': newAssignedProfileId,
           'data': <String, dynamic>{}, 'read': false,
         });
       } catch (_) {}

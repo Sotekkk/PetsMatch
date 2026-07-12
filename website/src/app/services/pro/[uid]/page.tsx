@@ -367,6 +367,7 @@ function ProDetailContent() {
         body: isSerie
           ? `Demande de ${targetSlots.length} RDV récurrents à partir du ${fmtDate(selectedSlot.date)} à ${fmtTime(selectedSlot.heureDebut)} — ${motifLabel}.`
           : `Demande pour le ${fmtDate(selectedSlot.date)} à ${fmtTime(selectedSlot.heureDebut)} — ${motifLabel}.`,
+        ...(pro.profileTableId ? { profile_id: pro.profileTableId } : {}),
         data: { pro_uid: pro.uid },
       });
       setRdvCount(targetSlots.length);

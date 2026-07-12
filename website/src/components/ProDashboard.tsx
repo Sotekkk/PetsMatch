@@ -21,6 +21,7 @@ interface PendingRdv {
   date_heure: string;
   motif: string | null;
   client_uid: string;
+  client_profile_id?: string | null;
   animal_id: number | null;
 }
 
@@ -113,7 +114,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       const [lostRes, pendRes, upRes] = await Promise.all([
         supabase.from('animaux_perdus').select('id, nom, espece, statut, photo_url, created_at')
           .order('created_at', { ascending: false }).limit(4),
-        supabase.from('rdv').select('id, date_heure, motif, client_uid, animal_id')
+        supabase.from('rdv').select('id, date_heure, motif, client_uid, client_profile_id, animal_id')
           .eq('pro_uid', uid).in('statut', ['demande', 'contre_proposition'])
           .or(profileFilter).order('date_heure').limit(5),
         supabase.from('rdv').select('id, date_heure, motif, client_uid, animal_id, statut')
@@ -209,6 +210,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       type: 'rdv_confirme',
       title: 'RDV confirmé',
       body: `Votre rendez-vous du ${fmtDate(rdv.date_heure)} a été confirmé.`,
+      ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
       data: { rdv_id: rdv.id },
       read: false,
     });
@@ -225,6 +227,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       type: 'rdv_refuse',
       title: 'RDV refusé',
       body: `Votre demande de rendez-vous du ${fmtDate(rdv.date_heure)} a été refusée.`,
+      ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
       data: { rdv_id: rdv.id },
       read: false,
     });

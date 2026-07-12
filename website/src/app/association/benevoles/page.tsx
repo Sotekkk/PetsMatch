@@ -20,6 +20,7 @@ interface Benevole {
 interface Employe {
   id: string;
   uid_employe: string;
+  employe_profile_id?: string | null;
   actif: boolean;
   nom: string;
   photo?: string | null;
@@ -101,7 +102,7 @@ function EmployesTab({ uid }: { uid: string }) {
           ? (p.name_elevage?.trim() || 'Élevage')
           : `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim() || 'Utilisateur';
         const photo = p?.is_elevage ? p.profile_picture_url_elevage : p?.profile_picture_url;
-        result.push({ id: e.id, uid_employe: e.uid_employe, actif: e.actif, nom, photo });
+        result.push({ id: e.id, uid_employe: e.uid_employe, employe_profile_id: e.employe_profile_id ?? null, actif: e.actif, nom, photo });
       }
       setEmployes(result);
     } finally {
@@ -118,6 +119,7 @@ function EmployesTab({ uid }: { uid: string }) {
       uid: emp.uid_employe, type: 'employee_revoked',
       title: 'Accès retiré',
       body: 'Vous avez été retiré de l\'équipe',
+      ...(emp.employe_profile_id ? { profile_id: emp.employe_profile_id } : {}),
       data: { assoUid: uid },
       read: false,
     });
@@ -208,12 +210,15 @@ function AddEmployeModal({ uid, onClose, type = 'employe' }: { uid: string; onCl
           type: type === 'benevole' ? 'benevole' : null,
         });
       }
+      const { data: targetParticulier } = await supabase.from('user_profiles')
+        .select('id').eq('uid', u.uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
       await supabase.from('notifications').insert({
         uid: u.uid, type: 'employee_invite',
         title: type === 'benevole' ? 'Invitation bénévole' : 'Invitation à rejoindre une équipe',
         body: type === 'benevole'
           ? 'Vous avez été ajouté comme bénévole dans une association'
           : 'Vous avez été ajouté à l\'équipe d\'une association',
+        ...(targetParticulier?.id ? { profile_id: targetParticulier.id } : {}),
         data: { assoUid: uid },
         read: false,
       });

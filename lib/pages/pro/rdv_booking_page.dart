@@ -553,6 +553,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           'body':  isSerie
               ? '$clientName souhaite ${rows.length} RDV récurrents à partir du $dateStr — motif : $motif'
               : '$clientName souhaite un RDV le $dateStr — motif : $motif',
+          if ((widget.proProfileId ?? '').isNotEmpty) 'profile_id': widget.proProfileId,
           'data':  <String, dynamic>{
             'client_uid': uid,
             if (_selectedAnimal != null) 'animal_nom': _selectedAnimal!['nom']?.toString() ?? '',

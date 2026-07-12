@@ -41,7 +41,7 @@ exports.sendRetardNotification = functions
 
         const {data: rdvs} = await supa
             .from("rdv")
-            .select("id, client_uid, date_heure, motif")
+            .select("id, client_uid, client_profile_id, date_heure, motif")
             .eq("pro_uid", proUid)
             .eq("statut", "confirme")
             .gte("date_heure", now.toISOString())
@@ -65,6 +65,12 @@ exports.sendRetardNotification = functions
             `${Math.floor(delaiMinutes / 60)}h${delaiMinutes % 60 > 0 ? delaiMinutes % 60 : ""}`;
 
         const uniqueClients = [...new Set(rdvs.map((r) => r.client_uid).filter(Boolean))];
+        const profileIdByClient = {};
+        for (const r of rdvs) {
+            if (r.client_uid && r.client_profile_id && !profileIdByClient[r.client_uid]) {
+                profileIdByClient[r.client_uid] = r.client_profile_id;
+            }
+        }
         let notified = 0;
 
         for (const clientUid of uniqueClients) {
@@ -81,6 +87,7 @@ exports.sendRetardNotification = functions
                     body: body,
                     data: {pro_uid: proUid},
                     read: false,
+                    ...(profileIdByClient[clientUid] ? {profile_id: profileIdByClient[clientUid]} : {}),
                 });
             } catch (_) {/* noop */}
 

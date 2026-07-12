@@ -30,6 +30,7 @@ interface Employee {
   id: string;
   uid_employe: string;
   uid_eleveur: string;
+  employe_profile_id?: string | null;
   actif: boolean;
   created_at: string;
   permissions: Record<string, boolean>;
@@ -190,6 +191,7 @@ function EquipeTab({ uid, profileId }: { uid: string; profileId: string | null }
       uid: emp.uid_employe, type: 'employee_revoked',
       title: 'Accès retiré',
       body: 'Vous avez été retiré de l\'équipe',
+      ...(emp.employe_profile_id ? { profile_id: emp.employe_profile_id } : {}),
       data: { eleveurUid: uid },
       read: false,
     });
@@ -359,11 +361,15 @@ function AddEmployeModal({ uid, profileId, onClose }: { uid: string; profileId: 
           profil_source: 'eleveur',
         });
       }
-      // Notification in-app
+      // Notification in-app — rejoindre une équipe est une notion particulier,
+      // résoudre ce profil précis (allUsers liste tout profil is_main).
+      const { data: targetParticulier } = await supabase.from('user_profiles')
+        .select('id').eq('uid', u.uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
       await supabase.from('notifications').insert({
         uid: u.uid, type: 'employee_invite',
         title: 'Invitation à rejoindre une équipe',
         body: `Vous avez été ajouté à l'équipe de ${nomElevage}`,
+        ...(targetParticulier?.id ? { profile_id: targetParticulier.id } : {}),
         data: { eleveurUid: uid, eleveurNom: nomElevage },
         read: false,
       });

@@ -218,9 +218,15 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
 
   Future<void> _assignerGroupe(List<Map<String, dynamic>> group, String? employeUid) async {
     try {
+      String? employeProfileId;
+      if (employeUid != null) {
+        final p = await Supabase.instance.client.from('user_profiles')
+            .select('id').eq('uid', employeUid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+        employeProfileId = p?['id'] as String?;
+      }
       for (final t in group) {
         await Supabase.instance.client.from('plan_taches')
-            .update({'assigned_to': employeUid}).eq('id', t['id'] as String);
+            .update({'assigned_to': employeUid, 'assigned_profile_id': employeProfileId}).eq('id', t['id'] as String);
       }
       if (mounted && employeUid != null && group.isNotEmpty) {
         final nomTache = _baseLabel(group.first['label'] as String? ?? '');
@@ -229,6 +235,7 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
           'type':  'tache',
           'title': 'Tâches de protocole assignées',
           'body':  nomTache,
+          if ((employeProfileId ?? '').isNotEmpty) 'profile_id': employeProfileId,
           'data':  {'eleveurUid': _uid, 'count': group.length},
           'read':  false,
         });

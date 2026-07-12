@@ -5476,4 +5476,97 @@ régression), `next build` production complet réussi.
 
 ---
 
+## 32. "Mes employeurs" — fuite d'animaux entre profils du même employeur (session 2026-07-11)
+
+**Contexte** : signalé par l'utilisatrice en testant son profil garde — un
+refuge l'ayant ajoutée comme employée (côté association), elle voyait
+aussi les animaux du profil **éleveur** de ce même compte, alors qu'elle
+n'avait accès qu'au profil association.
+
+**Cause racine** : `mes-employeurs/page.tsx` (web) et
+`MesEmployeursPage`/`employes_page.dart` (app) chargeaient déjà
+correctement les animaux via `animaux_proprietes.profile_id_proprio IN
+emploiProfileIds` (les seuls profils employé, hors bénévole, réellement
+accordés) — **mais** ce résultat correct était fusionné avec une seconde
+requête bien plus large, `animaux WHERE uid_eleveur IN (uids des
+employeurs)`, sans aucun filtre de profil. N'importe quel employé, même
+scopé à un seul profil (ex. association), récupérait donc TOUS les
+animaux de TOUS les profils du compte employeur (éleveur, pension, etc.),
+peu importe lequel l'avait effectivement embauché. Corrigé en supprimant
+entièrement la requête large et en ne conservant que la requête déjà
+correcte via `animaux_proprietes` — web et app.
+
+**Portée** : ce n'est pas un simple affichage confus (contrairement à la
+plupart des fuites notifications de cette session) — c'est une véritable
+fuite de données d'un profil professionnel vers un autre profil du même
+compte, potentiellement deux activités distinctes gérées par la même
+personne mais avec des employés différents pour chacune.
+
+Vérifié : `flutter analyze` sur `employes_page.dart` (40 problèmes,
+identique au compte pré-existant confirmé plus tôt cette session — 0
+nouveau, aucune erreur), `tsc --noEmit` (0 erreur), `next build`
+production complet réussi.
+
+**Reste à traiter** : audit complet des notifications cross-profil
+(~40 sites d'insertion identifiés sans `profile_id`, catégorisés par
+type — `employee_invite`, `contrat_invite`, `tache_assignee`,
+`rdv_confirme`/`refuse`/`modifie`/`annule`, `pension_journal`,
+`devis_recu`, `cession_*`, `promenade_*`, etc.). **Lots équipe + RDV
+traités le même jour, voir §32.1 ci-dessous.** Un bug de lecture distinct a aussi été
+repéré sur le site : `website/src/app/api/notifications/route.ts` ne
+vérifie jamais `profile_type` côté GET (seulement `profile_id`),
+contrairement au filtre app (`notifications_page.dart`) qui vérifie les
+deux — à corriger indépendamment de l'écriture des `profile_id` manquants.
+Restent aussi non traités : contrats/cession, pension, vétérinaire/
+éducateur, inventaire, PetFriends/promenades/balades-ludiques, devis.
+
+### 32.1 Lots "équipe" et "RDV" — notifications cross-profil corrigées (2026-07-11)
+
+**Règle métier appliquée** (donnée explicitement par l'utilisatrice) :
+« rejoindre une équipe c'est que pour le profil particulier
+normalement » — toute notification `employee_invite`/`employee_revoked`
+doit cibler le profil **particulier** (`profile_type = 'particulier'`,
+`is_main = true`) du destinataire, jamais un autre type de profil, même
+si le picker de recherche utilisé pour choisir le destinataire liste
+d'autres types de profils (ex. recherche bénévole incluant des comptes
+éleveur/association). Même logique étendue à `tache_assignee` /
+`tache_validee` : la notification suit le profil particulier de la
+personne assignée/validante, pas le profil métier de l'employeur.
+
+**Lot équipe** (`employee_invite` / `employee_revoked`) — corrigé :
+- App : `employes_page.dart`, `benevoles_page.dart` (association)
+- Web : `employes/page.tsx`, `association/equipe/page.tsx` (3 modèles de
+  données locaux distincts dans ce fichier — `MembreEquipe`, `Benevole`,
+  `Employe` — chacun avec son propre `toggleActif`/`revoquer`),
+  `association/benevoles/page.tsx`
+
+**Lot RDV** (`rdv_confirme`/`refuse`/`modifie`/`annule`/
+`contre_proposition`/`demande`/`retard`) — corrigé, source de vérité
+`rdv.client_profile_id` / `rdv.pro_profile_id` :
+- App : `agenda_page.dart`, `pro_agenda.dart`, `rdv_booking_page.dart`
+- Web : `agenda/page.tsx`, `ProDashboard.tsx`, `mes-rdv/page.tsx`,
+  `pension/rdv/page.tsx`, `services/pro/[uid]/page.tsx`
+- Cloud Function : `functions/retard.js` (`rdv_retard`)
+
+**Lot tâches/protocoles** (`tache_assignee` / `tache_validee`) — corrigé
+en plus des sites déjà traités dans le lot équipe :
+- App : `agenda_page.dart` (4 sites `plan_taches`/`taches_elevage`),
+  `planning_jour_page.dart`
+- Web : `elevage/agenda/page.tsx` — 5 sites `tache_assignee`
+  (`AddTacheModal`, `AddProtocoleModal`, `EditTacheModal`,
+  `EditProtocoleModal`, `AttributionModal`), résolus via un nouveau
+  helper `resolveParticulierProfileId(uid)` (mirror de
+  `resolveDisplayName`, filtré `profile_type='particulier'`). Le 6e site
+  du fichier (`tache_validee`, notifie l'éleveur quand un employé valide)
+  était déjà correct (`t.eleveur_profile_id`).
+
+Vérifié : `flutter analyze` combiné sur les 6 fichiers Dart touchés (62
+infos/warnings, 100% pré-existants — `withOpacity`/`value` dépréciés,
+`curly_braces`, champs/variables inutilisés — 0 nouveau problème),
+`tsc --noEmit` propre sur chaque fichier web touché, `eslint` +
+chargement Node propre sur `retard.js`, `next build` production complet
+réussi.
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

@@ -233,7 +233,7 @@ class _EmployesTabState extends State<_EmployesTab> {
     }
   }
 
-  Future<void> _revoquer(String employeId, String nom, String? uidEmploye) async {
+  Future<void> _revoquer(String employeId, String nom, String? uidEmploye, [String? employeProfileId]) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -257,6 +257,7 @@ class _EmployesTabState extends State<_EmployesTab> {
         'type':  'employee_revoked',
         'title': 'Accès retiré',
         'body':  'Vous avez été retiré de l\'équipe de $_nomElevage',
+        if ((employeProfileId ?? '').isNotEmpty) 'profile_id': employeProfileId,
         'data':  {'eleveurUid': _uid},
         'read':  false,
       });
@@ -369,7 +370,7 @@ class _EmployesTabState extends State<_EmployesTab> {
                       nom: nom, photoUrl: photoUrl,
                       teal: widget.teal, dark: widget.dark,
                       employeId: e['id'].toString(),
-                      onRevoquer: () => _revoquer(e['id'].toString(), nom, (e['user'] as Map<String, dynamic>?)?['uid'] as String?),
+                      onRevoquer: () => _revoquer(e['id'].toString(), nom, (e['user'] as Map<String, dynamic>?)?['uid'] as String?, e['employe_profile_id'] as String?),
                       onPermissionsChanged: _load,
                     );
                   },
@@ -755,6 +756,7 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
       'type':  'employee_invite',
       'title': 'Invitation à rejoindre $structureLabel',
       'body':  'Vous avez été ajouté à l\'équipe de $nomElevage',
+      if ((employeProfileId ?? '').isNotEmpty) 'profile_id': employeProfileId,
       'data':  {'eleveurUid': widget.uid, 'eleveurNom': nomElevage},
       'read':  false,
     });
@@ -1322,6 +1324,7 @@ class _TachesTabState extends State<_TachesTab> {
           'type':  'tache',
           'title': 'Nouvelle tâche assignée',
           'body':  '$nomElevage vous a assigné : $titre',
+          if ((newAssignedProfileId ?? '').isNotEmpty) 'profile_id': newAssignedProfileId,
           'data':  {'eleveurUid': _uid},
           'read':  false,
         });
@@ -2137,6 +2140,7 @@ class _CreateTacheSheetState extends State<_CreateTacheSheet> {
             'type':  'tache',
             'title': 'Nouvelle tâche assignée',
             'body':  dates.length > 1 ? '$titre (${dates.length} occurrences)' : titre,
+            if (assigneProfileId != null) 'profile_id': assigneProfileId,
             'data':  {'eleveurUid': widget.uid, 'tacheId': tacheId.toString()},
             'read':  false,
           });
@@ -2907,9 +2911,6 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
             : _supa.from('user_profiles')
                 .select('id, nom, avatar_url, profile_type')
                 .inFilter('id', invitingProfileIds),
-        _supa.from('animaux')
-            .select('id, nom, espece, race, photo_url, uid_eleveur')
-            .inFilter('uid_eleveur', uids).eq('statut', 'present').order('nom'),
         _supa.from('taches_elevage')
             .select('id, titre, date, statut, animal_id, uid_eleveur')
             .inFilter('uid_eleveur', uids).eq(tachesAssigneFilter, tachesAssigneValue).neq('statut', 'fait').order('date'),
@@ -2921,9 +2922,8 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
 
       final users            = results[0] as List;
       final invitingProfiles = results[1] as List;
-      final animaux          = results[2] as List;
-      final taches           = results[3] as List;
-      final planTaches       = results[4] as List;
+      final taches           = results[2] as List;
+      final planTaches       = results[3] as List;
 
       final invitingProfileById = <String, Map<String, dynamic>>{
         for (final p in invitingProfiles) (p as Map)['id'] as String: Map<String, dynamic>.from(p),
@@ -3000,14 +3000,11 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
             u['profile_picture_url_elevage'] = invitingProfile['avatar_url'];
           }
         }
-        // Fusionner animaux réguliers + animaux association
-        final regularAnims = animaux.where((a) => a['uid_eleveur'] == uid).toList();
-        final assocAnims = assocAnimalsByUid[uid] ?? [];
-        final seenAnimalIds = <String>{};
-        final anims = [
-          ...regularAnims,
-          ...assocAnims,
-        ].where((a) => seenAnimalIds.add(a['id']?.toString() ?? '')).toList();
+        // Animaux : uniquement via animaux_proprietes.profile_id_proprio, scopé aux
+        // profils employé (emploiProfileIds) réellement accordés à cet employé — ne
+        // jamais retomber sur un listing brut par uid_eleveur, qui exposerait aussi
+        // les animaux d'autres profils (ex : éleveur) du même compte employeur.
+        final anims = assocAnimalsByUid[uid] ?? [];
         final allTaches = [
           ...taches.where((t) => t['uid_eleveur'] == uid).map((t) => {...t, 'source': 'manuel', 'date': t['date']}),
           ...planTaches.where((t) => t['uid_eleveur'] == uid).map((t) => {...t, 'source': 'protocole', 'titre': t['label'] ?? 'Tâche', 'date': t['date_prevue']}),

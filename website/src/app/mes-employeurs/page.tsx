@@ -146,7 +146,6 @@ export default function MesEmployeursPage() {
 
     const [
       { data: users },
-      { data: animaux },
       { data: tachesRaw },
       { data: planTachesRaw },
     ] = await Promise.all([
@@ -159,11 +158,6 @@ export default function MesEmployeursPage() {
           cat_pro: p.cat_pro, profile_picture_url: p.avatar_url,
           profile_picture_url_elevage: p.profile_picture_url_pro,
         })) as UserRow[] })),
-      supabase.from('animaux')
-        .select('id, nom, espece, race, sexe, photo_url, uid_eleveur')
-        .in('uid_eleveur', uids)
-        .eq('statut', 'present')
-        .order('nom') as unknown as Promise<{ data: AnimalRow[] | null }>,
       (profileId
         ? supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigne_profile_id', profileId).neq('statut', 'fait').order('date')
         : supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigne_a', user.uid).neq('statut', 'fait').order('date')) as unknown as Promise<{ data: TacheRow[] | null }>,
@@ -257,15 +251,11 @@ export default function MesEmployeursPage() {
       const perms = [...new Set(allPids.flatMap(pid => permsMap[pid] ?? []))];
       const inventaire = inventaireRaw.filter(item => allPids.includes(item.eleveur_profile_id));
 
-      // Animaux : via uid_eleveur (éleveur) + via animal_proprietaire (association)
-      const regularAnimaux = (animaux ?? []).filter(a => a.uid_eleveur === u.uid);
-      const assocAnimaux = assocAnimalsByUid[u.uid] ?? [];
-      const seen = new Set<string>();
-      const allAnimaux = [...regularAnimaux, ...assocAnimaux].filter(a => {
-        if (seen.has(String(a.id))) return false;
-        seen.add(String(a.id));
-        return true;
-      });
+      // Animaux : uniquement via animaux_proprietes.profile_id_proprio, scopé aux
+      // profils employé (emploiProfileIds) réellement accordés à cet employé — ne
+      // jamais retomber sur un listing brut par uid_eleveur, qui exposerait aussi
+      // les animaux d'autres profils (ex : éleveur) du même compte employeur.
+      const allAnimaux = assocAnimalsByUid[u.uid] ?? [];
 
       // Si l'invitation vient d'un profil secondaire (ex : pension), afficher
       // le nom de CE profil plutôt que celui du compte principal.

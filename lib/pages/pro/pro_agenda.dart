@@ -657,6 +657,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           'type':  'rdv_contre_proposition',
           'title': '$proName vous propose un autre créneau',
           'body':  'Nouvelle proposition : le $dateStr — confirmez ou refusez dans vos RDV.',
+          if ((rdv['client_profile_id'] as String?)?.isNotEmpty == true) 'profile_id': rdv['client_profile_id'],
           'data':  {'rdv_id': rdv['id']},
           'read':  false,
         });
@@ -716,6 +717,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           'type':  'rdv_confirme',
           'title': 'RDV confirmé par $proName',
           'body':  'Votre rendez-vous est confirmé pour le ${preciseDh.toLocal().day.toString().padLeft(2,"0")}/${preciseDh.toLocal().month.toString().padLeft(2,"0")} à ${preciseDh.toLocal().hour.toString().padLeft(2,"0")}h${preciseDh.toLocal().minute.toString().padLeft(2,"0")}',
+          if ((rdv['client_profile_id'] as String?)?.isNotEmpty == true) 'profile_id': rdv['client_profile_id'],
           'data':  {'rdv_id': rdv['id']},
           'read':  false,
         });
@@ -914,6 +916,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           'uid': clientUid, 'type': 'rdv_modifie',
           'title': 'RDV modifié par $proName',
           'body': 'Votre rendez-vous a été mis à jour : ${newDh.day.toString().padLeft(2, "0")}/${newDh.month.toString().padLeft(2, "0")} à ${newDh.hour.toString().padLeft(2, "0")}h${newDh.minute.toString().padLeft(2, "0")}${lieu.isNotEmpty ? " — $lieu" : ""}',
+          if ((rdv['client_profile_id'] as String?)?.isNotEmpty == true) 'profile_id': rdv['client_profile_id'],
           'data': {'rdv_id': rdvId}, 'read': false,
         });
       }
@@ -1022,6 +1025,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             'body':  statut == 'refuse'
                 ? '$proName a refusé votre demande de RDV$motifPart'
                 : 'Votre RDV avec $proName a été annulé$motifPart',
+            if ((rdv['client_profile_id'] as String?)?.isNotEmpty == true) 'profile_id': rdv['client_profile_id'],
             'data':  {'rdv_id': rdv['id']},
             'read':  false,
           });

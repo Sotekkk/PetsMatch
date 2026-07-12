@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase';
 interface RdvInfo {
   id: string;
   pro_uid: string;
+  pro_profile_id?: string | null;
   statut: string;
   animal_id?: string | number | null;
   duree_minutes?: number | null;
@@ -128,6 +129,7 @@ function AnnulerModal({ event, onClose, onDone }: { event: AgendaEvent; onClose:
           type: 'rdv_annule_client',
           title: 'RDV annulé par le client',
           body: `Le client a annulé le rendez-vous du ${fmtDate(event.date_debut)}.${motif ? ` Motif : ${motif}` : ''}`,
+          ...(event.rdv.pro_profile_id ? { profile_id: event.rdv.pro_profile_id } : {}),
           data: { rdv_id: event.rdv_id },
           read: false,
         });
@@ -176,6 +178,7 @@ function ModifierModal({ event, onClose, onDone }: { event: AgendaEvent; onClose
   const [slotsLoading, setSlotsLoading] = useState(true);
   const [slotsByDate, setSlotsByDate] = useState<Record<string, number[]>>({});
   const [proUid, setProUid] = useState<string | null>(null);
+  const [proProfileId, setProProfileId] = useState<string | null>(null);
   const [selDate, setSelDate] = useState('');
   const [selHour, setSelHour] = useState<number | null>(null);
   const [fallbackDate, setFallbackDate] = useState('');
@@ -193,6 +196,7 @@ function ModifierModal({ event, onClose, onDone }: { event: AgendaEvent; onClose
       const pUid = rd.pro_uid;
       const pProfileId = rd.pro_profile_id ?? '';
       setProUid(pUid);
+      setProProfileId(rd.pro_profile_id);
 
       const today  = new Date().toISOString().slice(0, 10);
       const future = new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString().slice(0, 10);
@@ -249,6 +253,7 @@ function ModifierModal({ event, onClose, onDone }: { event: AgendaEvent; onClose
         type: 'rdv_contre_proposition',
         title: 'Modification demandée par le client',
         body: `Le client souhaite déplacer le RDV au ${dateStr}`,
+        ...(proProfileId ? { profile_id: proProfileId } : {}),
         data: { rdv_id: event.rdv_id },
         read: false,
       });
@@ -416,7 +421,7 @@ export default function AgendaPage() {
     const rdvIds = list.map(e => e.rdv_id).filter(Boolean) as string[];
     if (rdvIds.length > 0) {
       const { data: rdvsData } = await supabase
-        .from('rdv').select('id, pro_uid, statut, animal_id, duree_minutes, motif, client_uid, lieu, lieu_lat, lieu_lng').in('id', rdvIds);
+        .from('rdv').select('id, pro_uid, pro_profile_id, statut, animal_id, duree_minutes, motif, client_uid, lieu, lieu_lat, lieu_lng').in('id', rdvIds);
       const rdvMap: Record<string, RdvInfo> = {};
       for (const r of (rdvsData ?? [])) {
         const rec = r as RdvInfo;
@@ -752,6 +757,7 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
       type: 'rdv_confirme',
       title: 'RDV confirmé',
       body: `Votre rendez-vous du ${fmtDate(rdv.date_debut)} à ${fmtTime(rdv.date_debut)} a été confirmé.`,
+      ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
       data: { rdv_id: rdv.id },
       read: false,
     });
@@ -767,6 +773,7 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
       type: 'rdv_refuse',
       title: 'RDV refusé',
       body: `Votre demande de rendez-vous du ${fmtDate(rdv.date_debut)} a été refusée.`,
+      ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
       data: { rdv_id: rdv.id },
       read: false,
     });
