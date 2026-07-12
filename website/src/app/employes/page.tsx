@@ -8,8 +8,9 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
 
 const PRO_TYPES = new Set([
-  'veterinaire', 'para_medical', 'education', 'petsitter',
-  'pension', 'promeneur', 'photographe', 'marechal_ferrant',
+  'veterinaire', 'sante', 'education', 'garde',
+  'pension', 'toilettage', 'photographe', 'marechal_ferrant',
+  'restauration',
 ]);
 
 function toUserProfile(cp: { uid: string; firstname?: string | null; lastname?: string | null; avatar_url?: string | null; profile_type?: string | null; nom?: string | null; profile_picture_url_pro?: string | null; cat_pro?: string | null }): UserProfile {

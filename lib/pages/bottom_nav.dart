@@ -31,8 +31,8 @@ class BottomNav extends StatefulWidget {
 // types, sinon le switch échoue silencieusement (activeProfileId reste sur
 // l'ancien profil).
 const _kProTypes = {
-  'veterinaire', 'para_medical', 'education', 'petsitter',
-  'pension', 'promeneur', 'photographe', 'marechal_ferrant',
+  'veterinaire', 'sante', 'education', 'garde',
+  'pension', 'toilettage', 'photographe', 'marechal_ferrant',
   'restauration',
 };
 

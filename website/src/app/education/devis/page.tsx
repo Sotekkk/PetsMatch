@@ -84,8 +84,14 @@ export default function DevisPage() {
 
   useEffect(() => {
     if (!user) return;
+    // Scopé au profil pro actif — un même compte peut avoir plusieurs
+    // profils pro (ex. éducateur + garde), le devis doit rester dans le
+    // profil qui l'a créé (pro_profile_id, déjà résolu à la création).
+    const devisQ = activeProfileId
+      ? supabase.from('devis').select('*').eq('pro_uid', user.uid).eq('pro_profile_id', activeProfileId).order('created_at', { ascending: false })
+      : supabase.from('devis').select('*').eq('pro_uid', user.uid).order('created_at', { ascending: false });
     Promise.all([
-      supabase.from('devis').select('*').eq('pro_uid', user.uid).order('created_at', { ascending: false }),
+      devisQ,
       supabase.from('user_profiles').select('tarifs_education, tarifs_garde, profile_type, cat_pro').eq('id', activeProfileId).maybeSingle(),
       activeProfileId
         ? supabase.from('animal_access').select('animal_id').eq('pro_profile_id', activeProfileId).in('statut', ['active', 'active_write'])

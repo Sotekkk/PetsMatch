@@ -30,8 +30,9 @@ String? _profilePhoto(Map<String, dynamic>? p) =>
     p?['profile_picture_url']?.toString();
 
 const _proTypes = {
-  'veterinaire', 'para_medical', 'education', 'petsitter',
-  'pension', 'promeneur', 'photographe', 'marechal_ferrant',
+  'veterinaire', 'sante', 'education', 'garde',
+  'pension', 'toilettage', 'photographe', 'marechal_ferrant',
+  'restauration',
 };
 
 Map<String, dynamic> _toProfileMap(Map<String, dynamic> cp) => {

@@ -368,10 +368,12 @@ class User_Info {
     departementElevage = departement;
     regionElevage    = region;
 
-    // Flags de rôle (types V2 normalisés)
+    // Flags de rôle (types V2 normalisés — doit rester synchro avec
+    // _profileTypes dans add_profile_page.dart, seule source de vérité
+    // des profile_type réellement enregistrés en base)
     const proTypes = {
-      'veterinaire', 'para_medical', 'education', 'petsitter',
-      'pension', 'promeneur', 'photographe', 'marechal_ferrant',
+      'veterinaire', 'sante', 'education', 'garde',
+      'pension', 'toilettage', 'photographe', 'marechal_ferrant',
       'restauration',
     };
     isAssociation = type == 'association';

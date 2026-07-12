@@ -76,9 +76,12 @@ export interface Profile {
   [key: string]: unknown;
 }
 
+// Doit rester synchro avec _profileTypes (app: add_profile_page.dart),
+// seule source de vérité des profile_type réellement enregistrés en base.
 const PRO_TYPES = new Set([
-  'veterinaire', 'para_medical', 'education', 'petsitter',
-  'pension', 'promeneur', 'photographe', 'marechal_ferrant',
+  'veterinaire', 'sante', 'education', 'garde',
+  'pension', 'toilettage', 'photographe', 'marechal_ferrant',
+  'restauration',
 ]);
 
 // Supabase user_profiles snake_case → web camelCase.

@@ -210,8 +210,10 @@ function ProDetailContent() {
     setInscriptionCours(cours);
     setInscriptionAnimalId(null);
     if (animaux.length === 0) {
-      const { data } = await supabase.from('animaux').select('id, nom, espece')
+      let q = supabase.from('animaux').select('id, nom, espece')
         .or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`).order('nom');
+      if (activeProfileId) q = q.eq('profile_id', activeProfileId);
+      const { data } = await q;
       setAnimaux((data ?? []) as Animal[]);
     }
   }
@@ -268,6 +270,19 @@ function ProDetailContent() {
     setOccurrences(4);
     setSlotsLoading(true);
     const profileId = profileTableId ?? '';
+    // Scopé au profil actif du client réservant le RDV (pas tout le compte
+    // Firebase) — sinon un compte multi-profil (ex. particulier + éleveur)
+    // voit les animaux de tous ses profils au lieu du seul profil courant.
+    let animauxQ = supabase.from('animaux').select('id, nom, espece')
+      .or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`)
+      .order('nom');
+    if (activeProfileId) animauxQ = animauxQ.eq('profile_id', activeProfileId);
+    // animaux_proprietes = source de vérité pour la propriété actuelle
+    // (notamment après une cession — animaux.uid_proprietaire n'est pas
+    // mis à jour lors d'une cession, seul animaux_proprietes l'est).
+    let ownQ = supabase.from('animaux_proprietes').select('animal_id')
+      .eq('uid_proprio', user.uid).is('date_fin', null);
+    if (activeProfileId) ownQ = ownQ.eq('profile_id_proprio', activeProfileId);
     const [slotsRes, animauxRes, ownRes] = await Promise.all([
       supabase.from('creneaux_pro').select('date, heure_debut, heure_fin, type_prestation')
         .eq('pro_uid', uid)
@@ -275,14 +290,8 @@ function ProDetailContent() {
         .eq('pro_profile_id', profileId)
         .gte('date', toDateStr(new Date()))
         .order('date').order('heure_debut'),
-      supabase.from('animaux').select('id, nom, espece')
-        .or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`)
-        .order('nom'),
-      // animaux_proprietes = source de vérité pour la propriété actuelle
-      // (notamment après une cession — animaux.uid_proprietaire n'est pas
-      // mis à jour lors d'une cession, seul animaux_proprietes l'est).
-      supabase.from('animaux_proprietes').select('animal_id')
-        .eq('uid_proprio', user.uid).is('date_fin', null),
+      animauxQ,
+      ownQ,
     ]);
 
     // Éducateur : un nouveau client ne peut réserver qu'un bilan tant qu'il

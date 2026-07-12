@@ -9,8 +9,9 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 const TYPE_LABELS: Record<string, string> = { race: 'Race', region: 'Région', loisir: 'Loisir', autre: 'Autre' };
 
 const PRO_TYPES = new Set([
-  'veterinaire', 'para_medical', 'education', 'petsitter',
-  'pension', 'promeneur', 'photographe', 'marechal_ferrant',
+  'veterinaire', 'sante', 'education', 'garde',
+  'pension', 'toilettage', 'photographe', 'marechal_ferrant',
+  'restauration',
 ]);
 
 function toUserProfile(cp: { uid: string; firstname?: string; lastname?: string; avatar_url?: string; profile_type?: string; nom?: string }) {

@@ -7,8 +7,8 @@ class MessagingHelper {
   static String get _myUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   static const _proTypes = {
-    'veterinaire', 'para_medical', 'education', 'petsitter',
-    'pension', 'promeneur', 'photographe', 'marechal_ferrant',
+    'veterinaire', 'sante', 'education', 'garde',
+    'pension', 'toilettage', 'photographe', 'marechal_ferrant',
     'restauration',
   };
 

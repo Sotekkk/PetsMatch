@@ -5567,6 +5567,127 @@ infos/warnings, 100% pré-existants — `withOpacity`/`value` dépréciés,
 chargement Node propre sur `retard.js`, `next build` production complet
 réussi.
 
+## 33. Menu éleveur affiché à la place du menu pro (garde/santé/toilettage) — désynchronisation `profile_type` (session 2026-07-12)
+
+**Contexte** : signalé par l'utilisatrice sur son profil petsitter (app
+mobile) — le menu affichait "Mon Élevage" et toutes les entrées éleveur
+au lieu du menu pro garde (Registre visites, Ma tournée, Devis, Gestion
+des clés, etc.).
+
+**Cause racine** : `User_Info.isPro` (`lib/main.dart::applyProfile()`)
+est calculé via `proTypes.contains(profile_type)`, un `Set` de valeurs
+littérales censé lister tous les `profile_type` professionnels. Ce Set
+avait dérivé du vocabulaire réellement utilisé à la création de profil
+(`_profileTypes` dans `add_profile_page.dart`, seule source de vérité) :
+il contenait encore `para_medical`, `petsitter`, `promeneur` — des
+valeurs qui n'ont **jamais existé** en base — au lieu des vraies valeurs
+`sante`, `garde`, `toilettage`. Résultat : tout profil `garde`, `sante`
+ou `toilettage` avait `isPro = false`, donc `eleveur_nav.dart` (qui
+branche sur `!User_Info.isPro` pour le menu éleveur vs `User_Info.isPro`
+pour le menu pro) affichait le mauvais menu.
+
+**Portée** : le même Set dupliqué et désynchronisé était copié dans
+**8 fichiers au total** (app + web), chacun avec le même défaut :
+- App : `main.dart` (`isPro`/`catPro`), `bottom_nav.dart` (`_kProTypes`
+  — sert aussi à faire matcher le bouton "Professionnel" du switcher de
+  profil, donc ce switch pouvait aussi échouer silencieusement pour ces
+  3 types), `communaute/groupe_detail_page.dart` (`_proTypes`),
+  `utils/messaging_helper.dart` (`_proTypes`).
+- Web : `lib/auth-context.tsx` (`PRO_TYPES`, calcule `isPro` côté web —
+  même bug potentiel sur le site, pas seulement l'app), `app/employes/
+  page.tsx`, `app/communaute/groupes/[id]/page.tsx`, `app/certificat/
+  [token]/page.tsx` (`PRO_TYPES` locaux, même défaut).
+- `components/Header.tsx` avait déjà un `PRO_TYPES` correct, mais ses
+  maps `typeLabel`/`typeEmoji` gardaient les anciennes clés → badge
+  "Profil"/👤 générique au lieu du bon libellé pour garde/santé/
+  toilettage.
+- `app/api/admin/validate-profile/route.ts` : même défaut sur
+  `NAF_PREFIXES` (codes NAF autorisés par type pour la validation KBIS
+  auto) — les profils garde/santé/toilettage ne bénéficiaient jamais de
+  la validation automatique par code NAF faute de correspondance de clé.
+
+**Fix** : tous les Sets/maps réalignés sur `sante`, `garde`,
+`toilettage` (+ `restauration` ajouté là où absent). Un commentaire a
+été ajouté à chaque Set pointant vers `add_profile_page.dart`
+(`_profileTypes`) comme source de vérité, pour éviter une nouvelle
+dérive future.
+
+Vérifié : `flutter analyze` sur les 4 fichiers Dart touchés (0 nouveau
+problème vs baseline), `tsc --noEmit` sur les 6 fichiers web touchés (0
+nouveau problème vs baseline, confirmé par `git stash`/comparaison
+avant-après). App rebuild `--release` + réinstallée sur le téléphone de
+l'utilisatrice, correctif confirmé.
+
+## 34. Sélecteur d'animal à la réservation RDV — non scopé par profil actif (session 2026-07-12)
+
+**Contexte** : signalé par l'utilisatrice — en simulant une réservation
+de RDV avec un pro (ex. petsitter), le sélecteur d'animal montrait les
+animaux de son profil principal au lieu de ceux du profil actuellement
+actif. Demande explicite de vérifier et corriger **pour tous les pros**.
+
+**Cause racine** : `RdvBookingPage` (`lib/pages/pro/rdv_booking_page.dart`)
+— widget de réservation partagé par **tous** les types de pro (pension,
+vétérinaire, éducateur, garde, etc. via les flags `isPension`/`isVet`/
+`isGarde`/catPro dynamique ; seule l'association a un chemin séparé via
+`visiteAnimal`) — chargeait les animaux du client via
+`animaux.or(uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid)`, scopé
+uniquement par l'uid Firebase brut, sans filtre `profile_id`. Un compte
+multi-profil (ex. particulier + éleveur) voyait donc toujours les
+animaux de tous ses profils, indépendamment du profil actif au moment
+de la réservation. Le pattern correct existait déjà ailleurs
+(`lib/widgets/animal_picker_sheet.dart`, scopé via `animaux.profile_id`
+et `animaux_proprietes.profile_id_proprio`) mais n'avait jamais été
+repris dans ce fichier.
+
+**Portée** : `RdvBookingPage` étant l'unique point d'entrée de
+réservation RDV partagé, le fix couvre tous les types de pro en une
+fois. Même défaut trouvé et corrigé côté web sur l'équivalent
+`services/pro/[uid]/page.tsx` — deux sites : `openRdv()` (réservation
+RDV) et `openInscription()` (inscription à un cours collectif
+éducateur).
+
+**Fix** : requêtes `animaux`/`animaux_proprietes` conditionnées sur
+`User_Info.activeProfileId` (app) / `activeProfileId` (web, hook
+`useActiveProfile`) quand non vide, mirror exact du pattern déjà
+existant dans `animal_picker_sheet.dart`.
+
+Vérifié : `flutter analyze rdv_booking_page.dart` → 0 problème,
+`tsc --noEmit` propre sur `services/pro/[uid]/page.tsx`.
+
+## 35. "Mes devis" — même défaut de scoping profil (session 2026-07-12)
+
+**Contexte** : signalé par l'utilisatrice immédiatement après le fix
+§34 — sur "Mes devis" elle voyait un devis de son profil éducateur
+alors qu'un autre profil pro (garde) était actif.
+
+**Cause racine** : même défaut que §33/§34 — `DevisPage`
+(`lib/pages/pro/education_devis_page.dart`, **page partagée** entre le
+menu éducateur et le menu garde de `eleveur_nav.dart`) chargeait les
+devis via `.eq('pro_uid', uid)` uniquement. La colonne `pro_profile_id`
+existait déjà et était déjà correctement renseignée à la création du
+devis (`_save()`, ligne ~414) — seule la lecture (`_load()`) n'était
+jamais filtrée dessus.
+
+**Portée web** : `website/src/app/education/devis/page.tsx` a le même
+défaut sur sa requête `devis` initiale — et `/garde/devis` n'est qu'un
+re-export de ce même fichier (`export { default } from
+'@/app/education/devis/page'`), donc un seul fichier à corriger côté
+web aussi. `pro_profile_id` y était déjà correctement écrit à la
+création (lignes 220, 247).
+
+**Fix** : `_load()` (app) et la requête `devis` initiale (web)
+conditionnées sur le profil actif (`User_Info.activeProfileId` /
+`activeProfileId`) quand non vide, même pattern que §33/§34.
+
+**Note** : les tables `forfaits_education`/`forfaits_garde` (mêmes
+pages) sont déjà des tables séparées par catégorie pro — pas de risque
+de fuite éducateur↔garde sur les forfaits (seul un même compte avec
+deux profils du même type serait concerné, cas non signalé, non
+traité).
+
+Vérifié : `flutter analyze education_devis_page.dart` → 0 problème,
+`tsc --noEmit` propre sur `education/devis/page.tsx`.
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

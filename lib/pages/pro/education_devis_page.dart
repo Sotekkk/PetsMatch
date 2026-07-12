@@ -65,7 +65,13 @@ class _DevisPageState extends State<DevisPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
-      final rows = await _supa.from('devis').select().eq('pro_uid', uid).order('created_at', ascending: false);
+      // Scopé au profil pro actif — un même compte peut avoir plusieurs
+      // profils pro (ex. éducateur + garde), le devis doit rester dans le
+      // profil qui l'a créé (pro_profile_id, déjà résolu à la création).
+      final pid = User_Info.activeProfileId;
+      var q = _supa.from('devis').select().eq('pro_uid', uid);
+      if (pid.isNotEmpty) q = q.eq('pro_profile_id', pid);
+      final rows = await q.order('created_at', ascending: false);
       if (mounted) setState(() { _devis = List<Map<String, dynamic>>.from(rows as List); _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);

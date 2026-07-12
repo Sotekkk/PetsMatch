@@ -250,20 +250,28 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     if (uid == null) return;
     try {
       final supa = Supabase.instance.client;
-      // animaux_proprietes = source de vérité pour la propriété actuelle
-      // (notamment après une cession — animaux.uid_proprietaire n'est pas
-      // mis à jour lors d'une cession, seul animaux_proprietes l'est).
-      final ownRows = await supa.from('animaux_proprietes')
-          .select('animal_id')
-          .eq('uid_proprio', uid)
-          .isFilter('date_fin', null);
-      final cessionIds = (ownRows as List).map((r) => r['animal_id']?.toString()).whereType<String>().toSet();
-
-      final directRows = await supa
+      final pid = User_Info.activeProfileId;
+      // Scopé au profil actif du client réservant le RDV (pas tout le compte
+      // Firebase) — sinon un compte multi-profil (ex. particulier + éleveur)
+      // voit les animaux de tous ses profils au lieu du seul profil courant.
+      var directQ = supa
           .from('animaux')
           .select('id, nom, espece, race, photo_url')
           .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid');
+      if (pid.isNotEmpty) directQ = directQ.eq('profile_id', pid);
+      final directRows = await directQ;
       final direct = List<Map<String, dynamic>>.from((directRows as List).map((e) => Map<String, dynamic>.from(e as Map)));
+
+      // animaux_proprietes = source de vérité pour la propriété actuelle
+      // (notamment après une cession — animaux.uid_proprietaire n'est pas
+      // mis à jour lors d'une cession, seul animaux_proprietes l'est).
+      var ownQ = supa.from('animaux_proprietes')
+          .select('animal_id')
+          .eq('uid_proprio', uid)
+          .isFilter('date_fin', null);
+      if (pid.isNotEmpty) ownQ = ownQ.eq('profile_id_proprio', pid);
+      final ownRows = await ownQ;
+      final cessionIds = (ownRows as List).map((r) => r['animal_id']?.toString()).whereType<String>().toSet();
 
       final missingIds = cessionIds.difference(direct.map((a) => a['id']?.toString() ?? '').toSet());
       List<Map<String, dynamic>> viaCession = [];
