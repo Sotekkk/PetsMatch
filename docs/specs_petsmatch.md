@@ -5759,6 +5759,25 @@ Vérifié : `tsc --noEmit` propre, `eslint` (8 problèmes, 100%
 pré-existants confirmés par `git stash`/comparaison avant-après — 0
 nouveau), `next build` production complet réussi.
 
+**Suite (même session)** : le signalement initial de l'utilisatrice
+visait en fait `/mes-taches` (pas `/association/equipe`) — au moment
+du premier passage, cette page n'avait aucune création de tâche
+localement car un commit d'une collègue (Natacha, 2026-07-13,
+`47ac38b8`) ajoutant exactement cette fonctionnalité n'avait pas
+encore été récupéré (`git pull`) sur cette branche de travail. Une fois
+fusionné, le même défaut a été retrouvé dans
+`loadEquipeEtAnimaux()` de `website/src/app/mes-taches/page.tsx`
+(`animaux.eq('uid_eleveur', user.uid)` sans scoping profil) et corrigé
+avec le même pattern owned(is_association)+cession
+(animaux_proprietes.profile_id_proprio). Deux fichiers distincts avec
+le même bug, corrigés séparément : `association/equipe/page.tsx` (déjà
+existant) et `mes-taches/page.tsx` (nouveau, tout juste ajouté par la
+collègue).
+
+Vérifié : `tsc --noEmit` propre, `eslint` identique avant/après
+(4 problèmes, 100% pré-existants, confirmé `git stash`), `next build`
+production complet réussi.
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

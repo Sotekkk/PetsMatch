@@ -81,12 +81,30 @@ export default function MesTachesPage() {
   // Charge les animaux et l'équipe (employés/bénévoles) pour la création de tâche côté association
   const loadEquipeEtAnimaux = useCallback(async () => {
     if (!user || profilSource !== 'association') return;
-    const [animauxRes, employesRes] = await Promise.all([
-      supabase.from('animaux').select('id, nom, espece').eq('uid_eleveur', user.uid).order('nom'),
+    // Un même uid Firebase peut porter plusieurs profils (élevage +
+    // association) — ne garder que les animaux réellement de CE profil :
+    // possédés en propre (is_association=true) + reçus par cession
+    // (animaux_proprietes.profile_id_proprio), sinon un animal du profil
+    // élevage apparaît aussi dans le picker de tâche association.
+    const [ownedRes, employesRes] = await Promise.all([
+      supabase.from('animaux').select('id, nom, espece')
+        .eq('uid_eleveur', user.uid).eq('is_association', true).order('nom'),
       supabase.from('employes').select('uid_employe, type, prenom, nom')
         .eq('uid_eleveur', user.uid).eq('actif', true).eq('profil_source', 'association'),
     ]);
-    setAnimaux((animauxRes.data ?? []) as AnimalOption[]);
+    const owned = (ownedRes.data ?? []) as AnimalOption[];
+    const ownedIds = new Set(owned.map(a => a.id));
+    let received: AnimalOption[] = [];
+    if (profileId) {
+      const { data: byProfile } = await supabase.from('animaux_proprietes')
+        .select('animal_id').eq('uid_proprio', user.uid).eq('profile_id_proprio', profileId);
+      const ids = [...new Set((byProfile ?? []).map(r => r.animal_id as string))].filter(id => !ownedIds.has(id));
+      if (ids.length > 0) {
+        const { data } = await supabase.from('animaux').select('id, nom, espece').in('id', ids).order('nom');
+        received = (data ?? []) as AnimalOption[];
+      }
+    }
+    setAnimaux([...owned, ...received]);
     setMembres((employesRes.data ?? [])
       .filter((e: { uid_employe?: string | null }) => !!e.uid_employe)
       .map((e: { uid_employe: string; type: string; prenom?: string; nom?: string }) => ({
@@ -94,7 +112,7 @@ export default function MesTachesPage() {
         type: e.type === 'benevole' ? 'benevole' : 'employe',
         nom: `${e.prenom ?? ''} ${e.nom ?? ''}`.trim() || 'Sans nom',
       })));
-  }, [user, profilSource]);
+  }, [user, profilSource, profileId]);
 
   useEffect(() => { loadEquipeEtAnimaux(); }, [loadEquipeEtAnimaux]);
 
