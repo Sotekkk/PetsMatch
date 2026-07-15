@@ -856,14 +856,33 @@ function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      supabase.from('animaux').select('id, nom, espece').eq('uid_eleveur', uid).order('nom'),
-      supabase.from('chenil_enclos').select('id, nom').eq('uid_eleveur', uid).order('nom'),
-    ]).then(([anRes, encRes]) => {
-      setAnimaux((anRes.data ?? []) as Animal[]);
-      setEnclos((encRes.data ?? []) as Enclos[]);
-    });
-  }, [uid]);
+    async function loadAnimaux() {
+      // Un même uid Firebase peut porter plusieurs profils (élevage +
+      // association) — ne garder que les animaux réellement de CE profil :
+      // possédés en propre (is_association=true) + reçus par cession
+      // (animaux_proprietes.profile_id_proprio), sinon un animal du profil
+      // élevage apparaît aussi dans le picker de tâche association.
+      const { data: ownedData } = await supabase.from('animaux').select('id, nom, espece')
+        .eq('uid_eleveur', uid).eq('is_association', true).order('nom');
+      const owned = (ownedData ?? []) as Animal[];
+      const ownedIds = new Set(owned.map(a => a.id));
+
+      let received: Animal[] = [];
+      if (activeProfileId) {
+        const { data: byProfile } = await supabase.from('animaux_proprietes')
+          .select('animal_id').eq('uid_proprio', uid).eq('profile_id_proprio', activeProfileId);
+        const ids = [...new Set((byProfile ?? []).map(r => r.animal_id as string))].filter(id => !ownedIds.has(id));
+        if (ids.length > 0) {
+          const { data } = await supabase.from('animaux').select('id, nom, espece').in('id', ids).order('nom');
+          received = (data ?? []) as Animal[];
+        }
+      }
+      setAnimaux([...owned, ...received]);
+    }
+    loadAnimaux();
+    supabase.from('chenil_enclos').select('id, nom').eq('uid_eleveur', uid).order('nom')
+      .then(({ data }) => setEnclos((data ?? []) as Enclos[]));
+  }, [uid, activeProfileId]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();

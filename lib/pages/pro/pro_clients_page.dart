@@ -161,12 +161,12 @@ class _ProClientsPageState extends State<ProClientsPage>
       if (ownerProfileIds.isNotEmpty) {
         final profiles = await supa
             .from('user_profiles')
-            .select('id, firstname, lastname, name_elevage')
+            .select('id, firstname, lastname, nom')
             .inFilter('id', ownerProfileIds);
         for (final u in profiles) {
           final pid = u['id'] as String;
-          final name = (u['name_elevage'] as String?)?.isNotEmpty == true
-              ? u['name_elevage'] as String
+          final name = (u['nom'] as String?)?.isNotEmpty == true
+              ? u['nom'] as String
               : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
           ownerNames[pid] = name.isNotEmpty ? name : 'Propriétaire';
         }

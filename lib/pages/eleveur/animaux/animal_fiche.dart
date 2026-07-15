@@ -28,6 +28,7 @@ import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
+import 'package:PetsMatch/pages/pro/anatomie_points_page.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
@@ -192,7 +193,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   }
 
   int get _tabCount {
-    if (widget.vetMode) return 5;
+    if (widget.vetMode) return User_Info.catPro == 'sante' ? 6 : 5;
     if (widget.isAssociation) return 4;
     if (_statut == 'sorti' && !_isNewOwner) return 2; // ancien proprio : Identité + Documents
     if (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab) return 5; // particulier : sans Repro
@@ -1513,7 +1514,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           unselectedLabelColor: Colors.white60,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
           tabs: widget.vetMode
-              ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations')]
+              ? (User_Info.catPro == 'sante'
+                  ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Anatomie')]
+                  : const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations')])
               : widget.educationMode
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Éducation')]
                   : widget.isAssociation
@@ -1534,6 +1537,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                 _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly('write_repro')),
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
                 _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId),
+                if (User_Info.catPro == 'sante')
+                  AnatomieSeancesTab(animalId: widget.animalId ?? '', espece: _espece),
               ]
             : widget.educationMode
                 ? [
@@ -1546,7 +1551,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                     _IdentiteTab(this),
                     _CarnetSanteTab(animalId: widget.animalId),
                     _AlimentationTab(this),
-                    _ConsultationsOwnerTab(animalId: widget.animalId),
+                    _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
                   ]
                 : (_statut == 'sorti' && !_isNewOwner
                     ? [
@@ -1558,7 +1563,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                             _IdentiteTab(this),
                             _CarnetSanteTab(animalId: widget.animalId),
                             _AlimentationTab(this),
-                            _ConsultationsOwnerTab(animalId: widget.animalId),
+                            _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
                             _DocumentsTab(animalId: widget.animalId ?? ''),
                           ]
                         : [
@@ -1567,7 +1572,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                             _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly('write_repro')),
                             _CarnetSanteTab(animalId: widget.animalId),
                             _AlimentationTab(this),
-                            _ConsultationsOwnerTab(animalId: widget.animalId),
+                            _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
                           ])),
       ),
     );
@@ -9984,7 +9989,8 @@ class _EducationTabState extends State<_EducationTab> {
 
 class _ConsultationsOwnerTab extends StatefulWidget {
   final String? animalId;
-  const _ConsultationsOwnerTab({required this.animalId});
+  final String espece;
+  const _ConsultationsOwnerTab({required this.animalId, required this.espece});
 
   @override
   State<_ConsultationsOwnerTab> createState() => _ConsultationsOwnerTabState();
@@ -9997,6 +10003,7 @@ class _ConsultationsOwnerTabState extends State<_ConsultationsOwnerTab> {
   bool _loading = true;
   List<Map<String, dynamic>> _crs   = [];
   List<Map<String, dynamic>> _ordos = [];
+  int _seancesOsteoCount = 0;
   Map<String, String> _vetNames = {};
 
   @override
@@ -10012,6 +10019,11 @@ class _ConsultationsOwnerTabState extends State<_ConsultationsOwnerTab> {
           .eq('animal_id', widget.animalId!).order('created_at', ascending: false);
       final ordos = await _supa.from('ordonnances').select()
           .eq('animal_id', widget.animalId!).order('created_at', ascending: false);
+      int seancesOsteoCount = 0;
+      try {
+        final seances = await _supa.from('seances_osteo').select('id').eq('animal_id', widget.animalId!);
+        seancesOsteoCount = (seances as List).length;
+      } catch (_) {}
 
       final allCrs   = List<Map<String, dynamic>>.from(crs);
       final allOrdos = List<Map<String, dynamic>>.from(ordos);
@@ -10038,6 +10050,7 @@ class _ConsultationsOwnerTabState extends State<_ConsultationsOwnerTab> {
         _crs      = allCrs;
         _ordos    = allOrdos;
         _vetNames = vetNames;
+        _seancesOsteoCount = seancesOsteoCount;
         _loading  = false;
       });
     } catch (_) {
@@ -10055,7 +10068,7 @@ class _ConsultationsOwnerTabState extends State<_ConsultationsOwnerTab> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: _teal));
-    final isEmpty = _crs.isEmpty && _ordos.isEmpty;
+    final isEmpty = _crs.isEmpty && _ordos.isEmpty && _seancesOsteoCount == 0;
     return RefreshIndicator(
       onRefresh: _load,
       color: _teal,
@@ -10098,7 +10111,10 @@ class _ConsultationsOwnerTabState extends State<_ConsultationsOwnerTab> {
                   ..._ordos.map((o) => _OwnerConsultOrdoCard(ordo: o, color: _teal,
                       vetName: _vetNames[o['pro_uid']?.toString()] ?? 'Vétérinaire',
                       fmtDate: _fmtDate)),
+                  const SizedBox(height: 20),
                 ],
+                if (_seancesOsteoCount > 0)
+                  AnatomieOwnerSection(animalId: widget.animalId ?? '', espece: widget.espece),
               ]),
             ),
     );

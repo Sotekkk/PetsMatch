@@ -97,8 +97,15 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
     if (uid == null) return;
     final supa = Supabase.instance.client;
     try {
-      final alertesFuture = supa.from('alertes_perdus')
+      // Scopée au profil actif — sinon une alerte créée depuis un autre
+      // profil du même compte (particulier, éleveur…) apparaît partout.
+      final activeProfileIdForAlertes = User_Info.activeProfileId;
+      var alertesQuery = supa.from('alertes_perdus')
           .select().eq('uid_proprietaire', uid).eq('statut', 'perdu');
+      if (activeProfileIdForAlertes.isNotEmpty) {
+        alertesQuery = alertesQuery.eq('profile_id', activeProfileIdForAlertes);
+      }
+      final alertesFuture = alertesQuery;
 
       if (!User_Info.isPro) {
         // Éleveur : animaux présents (date_fin IS NULL, filtrés par profil actif)

@@ -5729,6 +5729,36 @@ Vérifié : `tsc --noEmit` propre sur les 3 fichiers touchés/créés,
 `next build` production complet réussi (`/facture/[token]` compile
 comme route dynamique).
 
+## 37. Assignation de tâche association — animaux de l'élevage visibles (session 2026-07-15)
+
+**Contexte** : signalé par l'utilisatrice — en créant une tâche pour un
+bénévole/employé depuis `/association/equipe`, le sélecteur d'animal
+montrait aussi les animaux du profil éleveur du même compte.
+
+**Cause racine** : `AssignTaskModal` dans
+`website/src/app/association/equipe/page.tsx` chargeait les animaux via
+`animaux.eq('uid_eleveur', uid)` — scopé uniquement par l'uid Firebase
+brut, sans distinguer le profil. Même défaut que §16 (fuite cession
+mes_animaux_asso) mais sur un site jamais couvert par ce fix
+précédent : cette modale de tâche est un fichier séparé de la page de
+listing d'animaux déjà corrigée.
+
+**Fix** : repris le pattern déjà établi et vérifié dans
+`association/animaux/page.tsx` — animaux possédés en propre par le
+profil association (`animaux.uid_eleveur = uid AND is_association =
+true`) UNION animaux reçus par cession et scopés à ce profil
+(`animaux_proprietes.profile_id_proprio = activeProfileId`).
+
+**App** : aucune fonctionnalité équivalente (assignation de tâche avec
+sélecteur d'animal côté association) n'existe dans l'app à ce jour —
+recherché dans `lib/pages/association/equipe/` et `benevoles/`, aucun
+insert `taches_elevage` ni picker animal trouvé. Rien à corriger côté
+app, fonctionnalité web uniquement pour l'instant.
+
+Vérifié : `tsc --noEmit` propre, `eslint` (8 problèmes, 100%
+pré-existants confirmés par `git stash`/comparaison avant-après — 0
+nouveau), `next build` production complet réussi.
+
 ---
 
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

@@ -12,6 +12,7 @@ import CessionModal from '@/components/animaux/CessionModal';
 import { uploadBlob, uploadDocument as uploadDocToStorage } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
 import AlimentationTab from './AlimentationTab';
+import { AnatomieOwnerSection } from '@/components/AnatomiePoints';
 import { triggerAutoProtocoles } from '@/lib/planning-service';
 import { PensionJournal } from '@/components/PensionJournal';
 
@@ -2708,7 +2709,10 @@ export default function AnimalFichePage() {
 
       {/* ── TAB CONSULTATIONS VÉTÉRINAIRES ───────────────────────────────── */}
       {tab === 'consultations' && !isNew && (
-        <ConsultationsVetTab crs={crs} ordonnances={ordonnances} vetNames={vetNames} />
+        <div className="space-y-4">
+          <ConsultationsVetTab crs={crs} ordonnances={ordonnances} vetNames={vetNames} />
+          <AnatomieOwnerSection animalId={id ?? ''} espece={animal.espece ?? ''} />
+        </div>
       )}
 
       {tab === 'alimentation' && !isNew && (

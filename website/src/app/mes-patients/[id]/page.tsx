@@ -8,6 +8,7 @@ import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { AnatomieSeances } from '@/components/AnatomiePoints';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -196,7 +197,9 @@ export default function PatientDetailPage() {
   const TABS: string[] = isPensionType
     ? ['Identité', 'Santé', 'Alimentation', 'Propriétaire']
     : isVet
-      ? ['Identité', 'Santé', 'Repro', 'Propriétaire', 'Consultations']
+      ? (catPro === 'sante'
+          ? ['Identité', 'Santé', 'Repro', 'Propriétaire', 'Consultations', 'Anatomie']
+          : ['Identité', 'Santé', 'Repro', 'Propriétaire', 'Consultations'])
       : isEducation
         ? ['Identité', 'Santé', 'Éducation', 'Propriétaire']
         : ['Identité', 'Santé', 'Propriétaire', 'Consultations'];
@@ -1060,6 +1063,10 @@ export default function PatientDetailPage() {
               </Card>
             )}
           </>
+        )}
+
+        {tab === 'Anatomie' && animal && (
+          <AnatomieSeances animalId={String(animal.id)} espece={animal.espece} />
         )}
       </div>
 
