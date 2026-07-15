@@ -19,6 +19,9 @@ interface Task {
   eleveur_nom?: string;
 }
 
+interface AnimalOption { id: string; nom: string; espece?: string | null; }
+interface MembreOption { uid: string; nom: string; type: 'employe' | 'benevole'; }
+
 export default function MesTachesPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -28,6 +31,9 @@ export default function MesTachesPage() {
   const [loading, setLoading] = useState(true);
   const [showDone, setShowDone] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
+  const [showAddTache, setShowAddTache] = useState(false);
+  const [animaux, setAnimaux] = useState<AnimalOption[]>([]);
+  const [membres, setMembres] = useState<MembreOption[]>([]);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/connexion');
@@ -71,6 +77,26 @@ export default function MesTachesPage() {
   }, [user, profilSource, profileId, profileLoaded]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Charge les animaux et l'équipe (employés/bénévoles) pour la création de tâche côté association
+  const loadEquipeEtAnimaux = useCallback(async () => {
+    if (!user || profilSource !== 'association') return;
+    const [animauxRes, employesRes] = await Promise.all([
+      supabase.from('animaux').select('id, nom, espece').eq('uid_eleveur', user.uid).order('nom'),
+      supabase.from('employes').select('uid_employe, type, prenom, nom')
+        .eq('uid_eleveur', user.uid).eq('actif', true).eq('profil_source', 'association'),
+    ]);
+    setAnimaux((animauxRes.data ?? []) as AnimalOption[]);
+    setMembres((employesRes.data ?? [])
+      .filter((e: { uid_employe?: string | null }) => !!e.uid_employe)
+      .map((e: { uid_employe: string; type: string; prenom?: string; nom?: string }) => ({
+        uid: e.uid_employe,
+        type: e.type === 'benevole' ? 'benevole' : 'employe',
+        nom: `${e.prenom ?? ''} ${e.nom ?? ''}`.trim() || 'Sans nom',
+      })));
+  }, [user, profilSource]);
+
+  useEffect(() => { loadEquipeEtAnimaux(); }, [loadEquipeEtAnimaux]);
 
   async function toggleFait(t: Task) {
     if (toggling) return;
@@ -121,9 +147,15 @@ export default function MesTachesPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <h1 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+        <h1 className="text-xl font-bold text-[#1F2A2E] flex-1" style={{ fontFamily: 'Galey, sans-serif' }}>
           Mes tâches
         </h1>
+        {profilSource === 'association' && (
+          <button onClick={() => setShowAddTache(true)}
+            className="flex items-center gap-1.5 text-sm font-semibold text-white bg-[#0C5C6C] hover:bg-[#094F5D] rounded-xl px-3 py-2 transition-colors">
+            <span className="text-base leading-none">+</span> Nouvelle tâche
+          </button>
+        )}
       </div>
 
       {/* Filtres */}
@@ -229,6 +261,172 @@ export default function MesTachesPage() {
           })}
         </div>
       )}
+
+      {showAddTache && (
+        <AddTacheModal
+          uid={user.uid}
+          profileId={profileId}
+          animaux={animaux}
+          membres={membres}
+          onClose={() => setShowAddTache(false)}
+          onSaved={() => { setShowAddTache(false); load(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Modal création de tâche (côté association) ──────────────────────────────
+
+function AddTacheModal({ uid, profileId, animaux, membres, onClose, onSaved }: {
+  uid: string;
+  profileId: string | null;
+  animaux: AnimalOption[];
+  membres: MembreOption[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const today = new Date().toISOString().split('T')[0];
+  const [titre, setTitre] = useState('');
+  const [date, setDate] = useState(today);
+  const [heure, setHeure] = useState('');
+  const [animalId, setAnimalId] = useState('');
+  const [assigneUid, setAssigneUid] = useState('');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!titre.trim() || !date) return;
+    setSaving(true);
+
+    let assigneProfileId: string | null = null;
+    if (assigneUid) {
+      const { data } = await supabase.from('user_profiles')
+        .select('id').eq('uid', assigneUid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+      assigneProfileId = data?.id ?? null;
+    }
+
+    const { data: inserted, error } = await supabase.from('taches_elevage').insert({
+      uid_eleveur: uid,
+      titre: titre.trim(),
+      date, heure: heure || null,
+      notes: notes.trim() || null,
+      statut: 'a_faire',
+      profil_source: 'association',
+      ...(profileId ? { eleveur_profile_id: profileId, profile_id: profileId } : {}),
+      animal_id: animalId || null,
+      assigne_a: assigneUid || null,
+      assignes_a: assigneUid ? [assigneUid] : null,
+      ...(assigneProfileId ? { assigne_profile_id: assigneProfileId } : {}),
+    }).select().single();
+
+    if (!error && assigneUid) {
+      try {
+        await supabase.from('notifications').insert({
+          uid: assigneUid, type: 'tache_assignee',
+          title: 'Nouvelle tâche assignée 📋',
+          body: titre.trim(),
+          data: { tacheId: (inserted as { id: string })?.id },
+          read: false,
+          ...(assigneProfileId ? { profile_id: assigneProfileId } : {}),
+        });
+      } catch (_) {}
+    }
+
+    setSaving(false);
+    if (error) { alert(`Erreur: ${error.message}`); return; }
+    onSaved();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <h2 className="font-bold text-gray-800 mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Nouvelle tâche
+        </h2>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">Titre *</label>
+            <input
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+              placeholder="Ex: Nettoyage cage, Promenade…"
+              value={titre}
+              onChange={e => setTitre(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">Date *</label>
+              <input
+                type="date"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">Heure</label>
+              <input
+                type="time"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                value={heure}
+                onChange={e => setHeure(e.target.value)}
+              />
+            </div>
+          </div>
+          {animaux.length > 0 && (
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">Animal (optionnel)</label>
+              <select
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                value={animalId}
+                onChange={e => setAnimalId(e.target.value)}
+              >
+                <option value="">— Sélectionner —</option>
+                {animaux.map(a => (
+                  <option key={a.id} value={a.id}>{a.nom}{a.espece ? ` (${a.espece})` : ''}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {membres.length > 0 && (
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">Assigner à un bénévole ou employé (optionnel)</label>
+              <select
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                value={assigneUid}
+                onChange={e => setAssigneUid(e.target.value)}
+              >
+                <option value="">— Personne —</option>
+                {membres.map(m => (
+                  <option key={m.uid} value={m.uid}>{m.nom} {m.type === 'benevole' ? '(Bénévole)' : '(Employé)'}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div>
+            <label className="text-xs font-semibold text-gray-500 mb-1 block">Notes (optionnel)</label>
+            <textarea
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none"
+              placeholder="Informations complémentaires…"
+              rows={2}
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="flex gap-3 mt-5">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 font-medium">
+            Annuler
+          </button>
+          <button onClick={save} disabled={!titre.trim() || !date || saving}
+            className="flex-1 py-2.5 bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition-colors">
+            {saving ? 'Ajout…' : 'Ajouter'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

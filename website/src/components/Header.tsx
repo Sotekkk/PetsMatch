@@ -81,7 +81,7 @@ const NAV_ASSOCIATION = [
   { href: '/association',              label: 'Mon Association' },
   { href: '/association/animaux',      label: 'Mes Animaux' },
   { href: '/association/annonces',     label: 'Mes Annonces' },
-  { href: '/association/planning',     label: 'Planning' },
+  { href: '/association/agenda',       label: 'Agenda' },
   { href: '/animaux-perdus',           label: 'Animaux perdus' },
   { href: '/services',                 label: 'Annuaire des professionnels' },
 ];
