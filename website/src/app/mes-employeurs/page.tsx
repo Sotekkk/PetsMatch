@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 const SPECIES_EMOJI: Record<string, string> = {
   chien: '🐕', chat: '🐈', cheval: '🐴', lapin: '🐰',
@@ -65,7 +64,6 @@ function formatDate(d: string) {
 
 export default function MesEmployeursPage() {
   const { user, loading: authLoading } = useAuth();
-  const profileId = useActiveProfile();
   const router = useRouter();
   const [employers, setEmployers] = useState<Employer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,10 +77,16 @@ export default function MesEmployeursPage() {
     if (!user) return;
     setLoading(true);
 
-    const empQ = profileId
-      ? supabase.from('employes').select('uid_eleveur, eleveur_profile_id, type').eq('employe_profile_id', profileId).eq('actif', true)
-      : supabase.from('employes').select('uid_eleveur, eleveur_profile_id, type').eq('uid_employe', user.uid).eq('actif', true);
-    const { data: rows } = await empQ;
+    // Les relations employé sont toujours rattachées au profil particulier de
+    // la personne (jamais à un profil pro/éleveur/association actif) : on
+    // résout ce profile_id avant d'interroger `employes`.
+    const { data: particulierProfile } = await supabase.from('user_profiles')
+      .select('id').eq('uid', user.uid).eq('profile_type', 'particulier').maybeSingle();
+    const profileId = particulierProfile?.id as string | undefined;
+
+    if (!profileId) { setLoading(false); return; }
+    const { data: rows } = await supabase.from('employes')
+      .select('uid_eleveur, eleveur_profile_id, type').eq('employe_profile_id', profileId).eq('actif', true);
 
     if (!rows || rows.length === 0) { setLoading(false); return; }
 
@@ -120,7 +124,7 @@ export default function MesEmployeursPage() {
 
     // Charger les permissions granulaires depuis employe_permissions
     const permsMap: Record<string, string[]> = {};
-    if (profileId && allProfileIds.length > 0) {
+    if (allProfileIds.length > 0) {
       const { data: permsRows } = await supabase.from('employe_permissions')
         .select('eleveur_profile_id, permission')
         .eq('employe_profile_id', profileId)
@@ -158,12 +162,8 @@ export default function MesEmployeursPage() {
           cat_pro: p.cat_pro, profile_picture_url: p.avatar_url,
           profile_picture_url_elevage: p.profile_picture_url_pro,
         })) as UserRow[] })),
-      (profileId
-        ? supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigne_profile_id', profileId).neq('statut', 'fait').order('date')
-        : supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigne_a', user.uid).neq('statut', 'fait').order('date')) as unknown as Promise<{ data: TacheRow[] | null }>,
-      (profileId
-        ? supabase.from('plan_taches').select('id, label, date_prevue, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigned_profile_id', profileId).neq('statut', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue')
-        : supabase.from('plan_taches').select('id, label, date_prevue, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigned_to', user.uid).neq('statut', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue')) as unknown as Promise<{ data: PlanRow[] | null }>,
+      supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigne_profile_id', profileId).neq('statut', 'fait').order('date') as unknown as Promise<{ data: TacheRow[] | null }>,
+      supabase.from('plan_taches').select('id, label, date_prevue, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigned_profile_id', profileId).neq('statut', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue') as unknown as Promise<{ data: PlanRow[] | null }>,
     ]);
 
     // Profils user_profiles précis utilisés à l'invitation (peut différer du
@@ -278,7 +278,7 @@ export default function MesEmployeursPage() {
 
     setEmployers(list);
     setLoading(false);
-  }, [user, profileId]);
+  }, [user]);
 
   useEffect(() => { load(); }, [load]);
 

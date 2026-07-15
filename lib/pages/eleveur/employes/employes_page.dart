@@ -1295,7 +1295,7 @@ class _TachesTabState extends State<_TachesTab> {
     String? newAssignedProfileId;
     if (newAssignedUid != null) {
       final profileData = await _supa.from('user_profiles')
-          .select('id').eq('uid', newAssignedUid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+          .select('id').eq('uid', newAssignedUid).eq('profile_type', 'particulier').maybeSingle();
       newAssignedProfileId = profileData?['id'] as String?;
     }
 
@@ -2110,7 +2110,7 @@ class _CreateTacheSheetState extends State<_CreateTacheSheet> {
       String? assigneProfileId;
       if (_selectedEmployeUid != null) {
         final assigneProfileData = await _supa.from('user_profiles')
-            .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+            .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').maybeSingle();
         assigneProfileId = assigneProfileData?['id'] as String?;
       }
 
@@ -2828,7 +2828,7 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
     try {
       // Résoudre le profile_id particulier de l'employé connecté
       final myProfileData = await _supa.from('user_profiles')
-          .select('id').eq('uid', _uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+          .select('id').eq('uid', _uid).eq('profile_type', 'particulier').maybeSingle();
       final myProfileId = myProfileData?['id'] as String?;
 
       List rows;
@@ -3387,7 +3387,7 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
     try {
       // Résoudre profile_id particulier de l'employé connecté
       final myProfileData = await _supa.from('user_profiles')
-          .select('id').eq('uid', _uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+          .select('id').eq('uid', _uid).eq('profile_type', 'particulier').maybeSingle();
       final myProfileId = myProfileData?['id'] as String?;
       final assignedField = myProfileId != null ? 'assigned_profile_id' : 'assigned_to';
       final assignedValue = myProfileId ?? _uid;
@@ -3492,7 +3492,7 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
     setState(() => _loadingTaches = true);
     try {
       final myProfileData = await _supa.from('user_profiles')
-          .select('id').eq('uid', _uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+          .select('id').eq('uid', _uid).eq('profile_type', 'particulier').maybeSingle();
       final myProfileId = myProfileData?['id'] as String?;
       final assigneField = myProfileId != null ? 'assigne_profile_id' : 'assigne_a';
       final assigneValue = myProfileId ?? _uid;

@@ -365,7 +365,7 @@ function AddEmployeModal({ uid, profileId, onClose }: { uid: string; profileId: 
       // Notification in-app — rejoindre une équipe est une notion particulier,
       // résoudre ce profil précis (allUsers liste tout profil is_main).
       const { data: targetParticulier } = await supabase.from('user_profiles')
-        .select('id').eq('uid', u.uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+        .select('id').eq('uid', u.uid).eq('profile_type', 'particulier').maybeSingle();
       await supabase.from('notifications').insert({
         uid: u.uid, type: 'employee_invite',
         title: 'Invitation à rejoindre une équipe',

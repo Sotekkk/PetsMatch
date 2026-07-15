@@ -506,7 +506,7 @@ class _SearchBenevoleSheetState extends State<_SearchBenevoleSheet> {
     // précis du destinataire (le picker ci-dessus liste tout profil is_main,
     // pas seulement particulier).
     final targetParticulier = await _supa.from('user_profiles')
-        .select('id').eq('uid', uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+        .select('id').eq('uid', uid).eq('profile_type', 'particulier').maybeSingle();
     await _supa.from('notifications').insert({
       'uid':   uid,
       'type':  'employee_invite',

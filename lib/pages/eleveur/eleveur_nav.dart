@@ -7,7 +7,6 @@ import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
-import 'package:PetsMatch/pages/particulier/mes_associations_benevole.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/pages/eleveur/eleveur_home.dart';
 import 'package:PetsMatch/pages/pro/restauration/restauration_home_page.dart';
@@ -63,7 +62,6 @@ import 'package:PetsMatch/pages/onboarding/onboarding_eleveur.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:url_launcher/url_launcher.dart';
 
 class EleveurNav extends StatefulWidget {
@@ -75,8 +73,6 @@ class EleveurNav extends StatefulWidget {
 
 class _EleveurNavState extends State<EleveurNav> {
   int _selectedIndex = 0;
-  bool _isEmploye    = false;
-  bool _isBenevole   = false;
   String _planCode   = 'free';
   String _pensionPlanCode = 'free';
   String _educationPlanCode = 'free';
@@ -89,24 +85,9 @@ class _EleveurNavState extends State<EleveurNav> {
   @override
   void initState() {
     super.initState();
-    _checkIsEmploye();
     _loadPlan();
   }
 
-
-  Future<void> _checkIsEmploye() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final rows = await Supabase.instance.client
-        .from('employes')
-        .select('id, type')
-        .eq('uid_employe', uid)
-        .eq('actif', true);
-    if (mounted) setState(() {
-      _isEmploye  = (rows as List).any((e) => e['type'] != 'benevole');
-      _isBenevole = rows.any((e) => e['type'] == 'benevole');
-    });
-  }
 
   Future<void> _loadPlan() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -318,28 +299,6 @@ class _EleveurNavState extends State<EleveurNav> {
                           ));
                         },
                       ),
-                      if (_isEmploye)
-                        _DrawerSubItem(
-                          label: 'Mes Employeurs',
-                          icon: Icons.work_outline,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const MesEmployeursPage(),
-                            ));
-                          },
-                        ),
-                      if (_isBenevole)
-                        _DrawerSubItem(
-                          label: 'Mes Associations',
-                          icon: Icons.volunteer_activism_outlined,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const MesAssociationsBenevole(),
-                            ));
-                          },
-                        ),
                     ],
                   ),
                   _DrawerSection(

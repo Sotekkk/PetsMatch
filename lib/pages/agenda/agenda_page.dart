@@ -2606,7 +2606,7 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
     String? employeProfileId;
     if (_selectedEmployeUid != null) {
       final p = await supa.from('user_profiles')
-          .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+          .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').maybeSingle();
       employeProfileId = p?['id'] as String?;
     }
     await supa.from('plan_taches').insert({
@@ -2813,7 +2813,7 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
     String? assigneProfileId;
     if (_selectedEmployeUid != null) {
       final assigneProfileData = await supa.from('user_profiles')
-          .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+          .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').maybeSingle();
       assigneProfileId = assigneProfileData?['id'] as String?;
     }
     await supa.from('taches_elevage').insert({
@@ -3036,7 +3036,7 @@ class _EditTacheSheetState extends State<_EditTacheSheet> {
     String? newAssigneProfileId;
     if (newAssigne != null) {
       final assigneProfileData = await supa.from('user_profiles')
-          .select('id').eq('uid', newAssigne).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+          .select('id').eq('uid', newAssigne).eq('profile_type', 'particulier').maybeSingle();
       newAssigneProfileId = assigneProfileData?['id'] as String?;
     }
     await supa.from('taches_elevage').update({
@@ -3238,7 +3238,7 @@ class _EditProtocoleSheetState extends State<_EditProtocoleSheet> {
     String? newAssignedProfileId;
     if (newAssigned != null) {
       final p = await supa.from('user_profiles')
-          .select('id').eq('uid', newAssigned).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+          .select('id').eq('uid', newAssigned).eq('profile_type', 'particulier').maybeSingle();
       newAssignedProfileId = p?['id'] as String?;
     }
     await supa.from('plan_taches').update({

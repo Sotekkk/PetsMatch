@@ -19,7 +19,7 @@ async function resolveDisplayName(uid: string, fallback: string): Promise<string
 // Une tâche assignée cible le profil particulier du destinataire (pas le profil élevage/employeur)
 async function resolveParticulierProfileId(uid: string): Promise<string | null> {
   const { data } = await supabase.from('user_profiles')
-    .select('id').eq('uid', uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+    .select('id').eq('uid', uid).eq('profile_type', 'particulier').maybeSingle();
   return data?.id ?? null;
 }
 

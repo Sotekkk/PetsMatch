@@ -221,7 +221,7 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
       String? employeProfileId;
       if (employeUid != null) {
         final p = await Supabase.instance.client.from('user_profiles')
-            .select('id').eq('uid', employeUid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+            .select('id').eq('uid', employeUid).eq('profile_type', 'particulier').maybeSingle();
         employeProfileId = p?['id'] as String?;
       }
       for (final t in group) {

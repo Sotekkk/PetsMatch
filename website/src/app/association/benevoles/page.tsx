@@ -211,7 +211,7 @@ function AddEmployeModal({ uid, onClose, type = 'employe' }: { uid: string; onCl
         });
       }
       const { data: targetParticulier } = await supabase.from('user_profiles')
-        .select('id').eq('uid', u.uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+        .select('id').eq('uid', u.uid).eq('profile_type', 'particulier').maybeSingle();
       await supabase.from('notifications').insert({
         uid: u.uid, type: 'employee_invite',
         title: type === 'benevole' ? 'Invitation bénévole' : 'Invitation à rejoindre une équipe',

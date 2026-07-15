@@ -30,30 +30,25 @@ class _MesAssociationsBenevoleState extends State<MesAssociationsBenevole> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      // Chercher par employe_profile_id (plus fiable), fallback uid_employe
+      // Le bénévolat est toujours rattaché au profil particulier de la
+      // personne (jamais à un profil pro/éleveur/association).
       final myProfileData = await _supa.from('user_profiles')
-          .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+          .select('id').eq('uid', _uid).eq('profile_type', 'particulier').maybeSingle();
       final myProfileId = myProfileData?['id'] as String?;
 
-      List rows;
-      if (myProfileId != null) {
-        rows = await _supa.from('employes')
-            .select('uid_eleveur, eleveur_profile_id')
-            .eq('employe_profile_id', myProfileId).eq('type', 'benevole').eq('actif', true)
-            .order('created_at');
-      } else {
-        rows = await _supa.from('employes')
-            .select('uid_eleveur, eleveur_profile_id')
-            .eq('uid_employe', _uid).eq('type', 'benevole').eq('actif', true)
-            .order('created_at');
-      }
+      final rows = myProfileId != null
+          ? await _supa.from('employes')
+              .select('uid_eleveur, eleveur_profile_id')
+              .eq('employe_profile_id', myProfileId).eq('type', 'benevole').eq('actif', true)
+              .order('created_at')
+          : <Map<String, dynamic>>[];
 
       // Déduplique par uid_eleveur
       final seenUids = <String>{};
       final empRows = <Map<String, dynamic>>[];
-      for (final r in rows as List) {
+      for (final r in rows) {
         final uid = r['uid_eleveur'] as String;
-        if (seenUids.add(uid)) empRows.add(r as Map<String, dynamic>);
+        if (seenUids.add(uid)) empRows.add(r);
       }
       if (empRows.isEmpty) {
         if (mounted) setState(() { _assos = []; _loading = false; });

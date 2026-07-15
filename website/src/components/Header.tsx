@@ -641,7 +641,10 @@ export default function Header() {
     : effectiveIsAssociation ? MENU_ASSOCIATION
     : effectiveIsEleveur ? MENU_ELEVEUR
     : baseMenuParticulier;
-  const menuSections = (isEmploye || isBenevole)
+  // "Mes employeurs"/"Mes associations" ne concerne que le profil particulier
+  // (on ne peut être employé/bénévole qu'en tant que particulier — jamais en
+  // tant que profil pro/éleveur/association).
+  const menuSections = (effectiveType === 'particulier' && (isEmploye || isBenevole))
     ? baseMenuSections.map((sec, i) => i === 0
         ? {
             ...sec,
@@ -659,11 +662,20 @@ export default function Header() {
     if (!user) { setIsFa(false); setIsEmploye(false); return; }
     supabase.from('familles_accueil').select('id').eq('fa_uid', user.uid).eq('actif', true).limit(1)
       .then(({ data }) => setIsFa((data ?? []).length > 0));
-    supabase.from('employes').select('id, type').eq('uid_employe', user.uid).eq('actif', true)
-      .then(({ data }) => {
-        const rows = data ?? [];
-        setIsEmploye(rows.some((r: { type: string | null }) => r.type !== 'benevole'));
-        setIsBenevole(rows.some((r: { type: string | null }) => r.type === 'benevole'));
+    // Les relations employé/bénévole sont toujours rattachées au profil
+    // particulier de la personne : on résout ce profile_id avant d'interroger
+    // `employes`, pour éviter que le même employeur n'apparaisse dans tous
+    // les profils du compte (association, pro…).
+    supabase.from('user_profiles').select('id').eq('uid', user.uid).eq('profile_type', 'particulier').maybeSingle()
+      .then(({ data: particulierProfile }) => {
+        const particulierProfileId = particulierProfile?.id as string | undefined;
+        if (!particulierProfileId) { setIsEmploye(false); setIsBenevole(false); return; }
+        supabase.from('employes').select('id, type').eq('employe_profile_id', particulierProfileId).eq('actif', true)
+          .then(({ data }) => {
+            const rows = data ?? [];
+            setIsEmploye(rows.some((r: { type: string | null }) => r.type !== 'benevole'));
+            setIsBenevole(rows.some((r: { type: string | null }) => r.type === 'benevole'));
+          });
       });
   }, [user]);
 

@@ -320,7 +320,7 @@ function AddTacheModal({ uid, profileId, animaux, membres, onClose, onSaved }: {
     let assigneProfileId: string | null = null;
     if (assigneUid) {
       const { data } = await supabase.from('user_profiles')
-        .select('id').eq('uid', assigneUid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+        .select('id').eq('uid', assigneUid).eq('profile_type', 'particulier').maybeSingle();
       assigneProfileId = data?.id ?? null;
     }
 

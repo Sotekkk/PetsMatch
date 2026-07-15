@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 interface Animal {
   id: string;
@@ -43,7 +42,6 @@ function formatDate(d: string) {
 
 export default function MesAssociationsPage() {
   const { user, loading: authLoading } = useAuth();
-  const profileId = useActiveProfile();
   const router = useRouter();
   const [assos, setAssos] = useState<Asso[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,11 +55,15 @@ export default function MesAssociationsPage() {
     if (!user) return;
     setLoading(true);
 
-    // Chercher par employe_profile_id d'abord, fallback uid_employe
-    const empQ = profileId
-      ? supabase.from('employes').select('uid_eleveur, eleveur_profile_id').eq('employe_profile_id', profileId).eq('type', 'benevole').eq('actif', true)
-      : supabase.from('employes').select('uid_eleveur, eleveur_profile_id').eq('uid_employe', user.uid).eq('type', 'benevole').eq('actif', true);
-    const { data: rows } = await empQ;
+    // Le bénévolat est toujours rattaché au profil particulier de la personne
+    // (jamais à un profil pro/éleveur/association actif).
+    const { data: particulierProfile } = await supabase.from('user_profiles')
+      .select('id').eq('uid', user.uid).eq('profile_type', 'particulier').maybeSingle();
+    const profileId = particulierProfile?.id as string | undefined;
+
+    if (!profileId) { setLoading(false); return; }
+    const { data: rows } = await supabase.from('employes')
+      .select('uid_eleveur, eleveur_profile_id').eq('employe_profile_id', profileId).eq('type', 'benevole').eq('actif', true);
 
     if (!rows || rows.length === 0) { setLoading(false); return; }
 
@@ -126,12 +128,8 @@ export default function MesAssociationsPage() {
       { data: planTachesRaw },
     ] = await Promise.all([
       supabase.from('user_profiles').select('uid, firstname, lastname, profile_picture_url:avatar_url, ville').eq('is_main', true).in('uid', uids) as unknown as Promise<{ data: Record<string, unknown>[] | null }>,
-      (profileId
-        ? supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigne_profile_id', profileId).neq('statut', 'fait').order('date')
-        : supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigne_a', user.uid).neq('statut', 'fait').order('date')) as unknown as Promise<{ data: TacheRow[] | null }>,
-      (profileId
-        ? supabase.from('plan_taches').select('id, label, date_prevue, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigned_profile_id', profileId).neq('statut', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue')
-        : supabase.from('plan_taches').select('id, label, date_prevue, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigned_to', user.uid).neq('statut', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue')) as unknown as Promise<{ data: PlanRow[] | null }>,
+      supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigne_profile_id', profileId).neq('statut', 'fait').order('date') as unknown as Promise<{ data: TacheRow[] | null }>,
+      supabase.from('plan_taches').select('id, label, date_prevue, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigned_profile_id', profileId).neq('statut', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue') as unknown as Promise<{ data: PlanRow[] | null }>,
     ]);
 
     // Animaux : animaux_proprietes WHERE profile_id_proprio = eleveur_profile_id
@@ -212,7 +210,7 @@ export default function MesAssociationsPage() {
 
     setAssos(list);
     setLoading(false);
-  }, [user, profileId]);
+  }, [user]);
 
   useEffect(() => { load(); }, [load]);
 

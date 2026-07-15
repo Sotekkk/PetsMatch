@@ -74,17 +74,16 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
     if (uid == null) return;
     final supa = Supabase.instance.client;
 
-    // Résoudre le profile_id particulier de l'utilisateur connecté
+    // Résoudre le profile_id particulier de l'utilisateur connecté (un profil
+    // particulier existe toujours, mais peut être secondaire — pas is_main).
     final particulierProfile = await supa.from('user_profiles')
-        .select('id').eq('uid', uid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+        .select('id').eq('uid', uid).eq('profile_type', 'particulier').maybeSingle();
     final particulierProfileId = particulierProfile?['id'] as String?;
 
-    final employsQuery = particulierProfileId != null
-        ? supa.from('employes').select('id, type').eq('employe_profile_id', particulierProfileId).eq('actif', true)
-        : supa.from('employes').select('id, type').eq('uid_employe', uid).eq('actif', true);
-
     final futures = <Future>[
-      employsQuery,
+      particulierProfileId != null
+          ? supa.from('employes').select('id, type').eq('employe_profile_id', particulierProfileId).eq('actif', true)
+          : Future.value(<Map<String, dynamic>>[]),
       if (!User_Info.isElevage)
         supa.from('familles_accueil').select('id').eq('fa_uid', uid).eq('actif', true).limit(1),
     ];
@@ -395,18 +394,6 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
                     ? const AbonnementPage()
                     : const RegistreEntreeSortiePage()),
               ),
-              if (_isEmploye)
-                _DrawerSubItem(
-                  label: 'Mes Employeurs',
-                  icon: Icons.work_outline,
-                  onTap: () => _push(const MesEmployeursPage()),
-                ),
-              if (_isBenevole)
-                _DrawerSubItem(
-                  label: 'Mes Associations',
-                  icon: Icons.volunteer_activism_outlined,
-                  onTap: () => _push(const MesAssociationsBenevole()),
-                ),
             ],
           ),
           _DrawerSection(

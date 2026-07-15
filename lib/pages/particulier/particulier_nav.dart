@@ -57,8 +57,16 @@ class _ParticulierNavState extends State<ParticulierNav> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final supa = Supabase.instance.client;
+    // Les relations employé/bénévole sont toujours rattachées au profil
+    // particulier de la personne : on résout ce profile_id avant d'interroger
+    // `employes`, pour éviter que le même employeur n'apparaisse dans tous
+    // les profils du compte (association, pro…).
+    final particulierProfile = await supa.from('user_profiles')
+        .select('id').eq('uid', uid).eq('profile_type', 'particulier').maybeSingle();
+    final particulierProfileId = particulierProfile?['id'] as String?;
+    if (particulierProfileId == null) return;
     final results = await Future.wait([
-      supa.from('employes').select('id, type').eq('uid_employe', uid).eq('actif', true),
+      supa.from('employes').select('id, type').eq('employe_profile_id', particulierProfileId).eq('actif', true),
       supa.from('familles_accueil').select('id').eq('fa_uid', uid).eq('actif', true).limit(1),
     ]);
     final employes = results[0] as List;
