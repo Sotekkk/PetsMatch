@@ -109,11 +109,15 @@ ALTER TABLE user_profiles DROP CONSTRAINT IF EXISTS user_profiles_profile_type_c
 ALTER TABLE user_profiles ADD CONSTRAINT user_profiles_profile_type_check
   CHECK (profile_type IS NULL OR profile_type IN (
     'particulier','eleveur','association','veterinaire',
-    'pension','education','petsitter','promeneur',
-    'photographe','para_medical','marechal_ferrant',
-    'petfriendly','partenaire'
+    'pension','education','petsitter','promeneur','garde',
+    'sante','toilettage','photographe','marechal_ferrant',
+    'restauration','taxi_animalier',
+    'para_medical','petfriendly','partenaire'
   ))
   NOT VALID;  -- s'applique aux nouvelles lignes seulement, pas aux données historiques
+  -- Liste réalignée le 2026-07-16 (voir migration_fix_profile_type_check.sql) :
+  -- garde/sante/toilettage/restauration/taxi_animalier ajoutés a posteriori
+  -- sans mise à jour de ce fichier source, causant un blocage silencieux.
 
 -- Contrainte CHECK sur statut_pro (V1 + V2)
 ALTER TABLE user_profiles DROP CONSTRAINT IF EXISTS user_profiles_statut_pro_check;
