@@ -258,6 +258,12 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
     return {};
   }
 
+  List<String> get _photosGalerie {
+    final raw = _proData?['photos_galerie'];
+    if (raw is List) return List<String>.from(raw);
+    return [];
+  }
+
   List<Map<String, dynamic>> get _certifications {
     final raw = _proData?['certifications'];
     if (raw is List) {
@@ -565,6 +571,38 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
               Text(_description, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5, color: Color(0xFF444444))),
             ],
           )),
+
+          // Galerie / portfolio (photographe et tout autre pro l'ayant renseignée)
+          if (_photosGalerie.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _card(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionTitle('Galerie'),
+                const SizedBox(height: 10),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _photosGalerie.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8),
+                  itemBuilder: (_, i) => ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: GestureDetector(
+                      onTap: () => showDialog(
+                        context: context,
+                        builder: (_) => Dialog(
+                          backgroundColor: Colors.transparent,
+                          child: CachedNetworkImage(imageUrl: _photosGalerie[i], fit: BoxFit.contain),
+                        ),
+                      ),
+                      child: CachedNetworkImage(imageUrl: _photosGalerie[i], fit: BoxFit.cover),
+                    ),
+                  ),
+                ),
+              ],
+            )),
+          ],
 
           // Tarifs
           if (_tarifs.isNotEmpty) ...[

@@ -16,6 +16,7 @@ interface ProData {
   photo: string; banner: string; accept_new_clients: boolean;
   especes: string[]; horaires: Record<string, string>;
   certifications: { nom: string; numero?: string }[];
+  photos_galerie: string[];
   tarifs: string; site_web: string; instagram: string; facebook: string;
   rayon: number; cat_pro: string; profileTableId?: string;
   statut_pro?: string; siret?: string; is_premium?: boolean;
@@ -162,6 +163,7 @@ function ProDetailContent() {
           especes: Array.isArray(data.especes_acceptees) ? data.especes_acceptees : [],
           horaires: (data.horaires && typeof data.horaires === 'object') ? data.horaires : {},
           certifications: Array.isArray(data.certifications) ? data.certifications : [],
+          photos_galerie: Array.isArray(data.photos_galerie) ? data.photos_galerie : [],
           tarifs: data.tarifs || '', site_web: data.site_web || '',
           instagram: data.instagram || '', facebook: data.facebook || '',
           rayon: data.rayon_intervention || 0,
@@ -185,6 +187,7 @@ function ProDetailContent() {
           especes: Array.isArray(data.especes_acceptees) ? data.especes_acceptees : [],
           horaires: (data.horaires && typeof data.horaires === 'object') ? data.horaires : {},
           certifications: Array.isArray(data.certifications) ? data.certifications : [],
+          photos_galerie: Array.isArray(data.photos_galerie) ? data.photos_galerie : [],
           tarifs: data.tarifs || '', site_web: data.site_web || '',
           instagram: data.instagram || '', facebook: data.facebook || '',
           rayon: data.rayon_intervention || 0, cat_pro: data.cat_pro || '',
@@ -581,6 +584,19 @@ function ProDetailContent() {
                 {pro.description || 'Aucune description disponible.'}
               </p>
             </div>
+            {pro.photos_galerie && pro.photos_galerie.length > 0 && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <p className="font-bold text-[#1E2025] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>Galerie</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {pro.photos_galerie.map((url, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block aspect-square overflow-hidden rounded-xl">
+                      <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
             {pro.tarifs && (
               <div className="bg-white rounded-2xl p-4 shadow-sm">
                 <p className="font-bold text-[#1E2025] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Tarifs</p>

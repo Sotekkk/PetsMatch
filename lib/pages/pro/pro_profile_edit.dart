@@ -71,6 +71,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   static const _especesList = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
   List<String> _especesAcceptees = [];
 
+  // Galerie / portfolio public (photographe) — distinct de albums_photo
+  // (livraison privée par RDV) : vitrine visible sur la fiche publique.
+  List<String> _photosGalerie = [];
+  final List<File> _newGaleriePhotos = [];
+
   // Durées par type de prestation (en minutes)
   Map<String, int> _dureesMotifs = {};
 
@@ -222,6 +227,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
 
         if (row['especes_acceptees'] is List) {
           _especesAcceptees = List<String>.from(row['especes_acceptees']);
+        }
+        if (row['photos_galerie'] is List) {
+          _photosGalerie = List<String>.from(row['photos_galerie']);
         }
         if (row['durees_motifs'] is Map) {
           _dureesMotifs = Map<String, int>.from(
@@ -474,6 +482,13 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         acacedDocUrl = await uploadPhoto(_acacedDocFile!, 'profiles/$uid/acaced.jpg');
       }
 
+      final galerieUrls = List<String>.from(_photosGalerie);
+      for (int i = 0; i < _newGaleriePhotos.length; i++) {
+        final url = await uploadPhoto(_newGaleriePhotos[i],
+            'profiles/$uid/galerie_${DateTime.now().microsecondsSinceEpoch}_$i.jpg');
+        galerieUrls.add(url);
+      }
+
       final horairesMap = {
         for (final j in _jours)
           j: _horaires[j]!.toText(),
@@ -512,6 +527,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
           if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
             'acaced_doc_url': acacedDocUrl,
+          if (_catPro == 'photographe') 'photos_galerie': galerieUrls,
           'rue':                _rueCtrl.text.trim(),
           'ville':              _villeCtrl.text.trim(),
           'code_postal':        _cpCtrl.text.trim(),
@@ -635,6 +651,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       }
       if (bannerUrl != null) setState(() { _bannerUrl = bannerUrl; _bannerFile = null; });
       if (photoUrl  != null) setState(() { _photoUrl  = photoUrl;  _photoFile  = null; });
+      if (_catPro == 'photographe') {
+        setState(() { _photosGalerie = galerieUrls; _newGaleriePhotos.clear(); });
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1141,6 +1160,19 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   const SizedBox(height: 12),
                   _certificationsEditor(),
 
+                  // ── Galerie / portfolio public (photographe) ──────────────
+                  if (_catPro == 'photographe') ...[
+                    const SizedBox(height: 24),
+                    _sectionTitle('Galerie / portfolio'),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Ces photos sont visibles par les clients sur votre fiche publique.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                    ),
+                    const SizedBox(height: 12),
+                    _galerieSection(),
+                  ],
+
                   // ── Équipe / Employés ─────────────────────────────────────
                   const SizedBox(height: 24),
                   _sectionTitle('Équipe'),
@@ -1302,6 +1334,57 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   Future<void> _pickPhoto() async {
     final file = await pickAndCropSquare();
     if (file != null && mounted) setState(() => _photoFile = file);
+  }
+
+  // ── Galerie / portfolio public ──────────────────────────────────────────────
+
+  Widget _galerieSection() {
+    final total = _photosGalerie.length + _newGaleriePhotos.length;
+    return Wrap(spacing: 10, runSpacing: 10, children: [
+      ..._photosGalerie.asMap().entries.map((e) => _galerieTile(
+        child: CachedNetworkImage(imageUrl: e.value, fit: BoxFit.cover),
+        onRemove: () => setState(() => _photosGalerie.removeAt(e.key)),
+      )),
+      ..._newGaleriePhotos.asMap().entries.map((e) => _galerieTile(
+        child: Image.file(e.value, fit: BoxFit.cover),
+        onRemove: () => setState(() => _newGaleriePhotos.removeAt(e.key)),
+      )),
+      if (total < 12)
+        GestureDetector(
+          onTap: _pickGaleriePhoto,
+          child: Container(
+            width: 90, height: 90,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFDDDDDD)),
+            ),
+            child: const Icon(Icons.add_photo_alternate_outlined, color: Color(0xFF90A4AE)),
+          ),
+        ),
+    ]);
+  }
+
+  Widget _galerieTile({required Widget child, required VoidCallback onRemove}) {
+    return Stack(children: [
+      ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox(width: 90, height: 90, child: child),
+      ),
+      Positioned(
+        top: 4, right: 4,
+        child: GestureDetector(
+          onTap: onRemove,
+          child: const CircleAvatar(radius: 11, backgroundColor: Colors.black54,
+              child: Icon(Icons.close, size: 13, color: Colors.white)),
+        ),
+      ),
+    ]);
+  }
+
+  Future<void> _pickGaleriePhoto() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+    if (picked != null && mounted) setState(() => _newGaleriePhotos.add(File(picked.path)));
   }
 
   Future<void> _pickAcacedDoc() async {
