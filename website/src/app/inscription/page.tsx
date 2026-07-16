@@ -22,7 +22,7 @@ const ROLES: { value: Role; label: string; icon: string; desc: string }[] = [
 ];
 
 const PRO_CATEGORIES: Record<string, string[]> = {
-  'Prestataire':         ['Éducateur comportementaliste', 'Promeneur de chiens', 'Pet sitter', 'Toiletteur', 'Photographe animalier'],
+  'Prestataire':         ['Éducateur comportementaliste', 'Promeneur de chiens', 'Pet sitter', 'Toiletteur', 'Photographe animalier', 'Taxi animalier'],
   'Pension pour animaux': ['Pension pour animaux'],
   'Santé animal':        ['Vétérinaire', 'Auxiliaire de santé', 'Maréchal-ferrant', 'Spécialiste de santé'],
 };
@@ -38,6 +38,7 @@ const CAT_PRO_MAP: Record<string, string> = {
   'Pet sitter':                   'garde',
   'Éducateur comportementaliste': 'education',
   'Photographe animalier':        'photographe',
+  'Taxi animalier':               'taxi_animalier',
 };
 
 const inputCls = 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white';

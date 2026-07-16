@@ -11,7 +11,7 @@ const TYPE_LABELS: Record<string, string> = { race: 'Race', region: 'Région', l
 const PRO_TYPES = new Set([
   'veterinaire', 'sante', 'education', 'garde',
   'pension', 'toilettage', 'photographe', 'marechal_ferrant',
-  'restauration',
+  'restauration', 'taxi_animalier',
 ]);
 
 function toUserProfile(cp: { uid: string; firstname?: string; lastname?: string; avatar_url?: string; profile_type?: string; nom?: string }) {

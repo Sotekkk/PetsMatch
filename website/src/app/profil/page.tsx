@@ -1119,7 +1119,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           <Field label="Pays">
             <input value={pays} onChange={e => setPays(e.target.value)} className={inputCls} />
           </Field>
-          {['garde', 'toilettage', 'education', 'photographe', 'marechal_ferrant'].includes(catPro) && (
+          {['garde', 'toilettage', 'education', 'photographe', 'marechal_ferrant', 'taxi_animalier'].includes(catPro) && (
             <div>
               <label className="text-xs font-medium text-gray-500 block mb-1">
                 Rayon d&apos;intervention : {rayon} km

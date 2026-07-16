@@ -36,6 +36,7 @@ const CAT_COLORS: Record<string, string> = {
   veterinaire: '#2196F3', sante: '#2196F3', education: '#FF9800',
   garde: '#4CAF50', toilettage: '#00BCD4', photographe: '#E91E63',
   marechal_ferrant: '#795548', referencement: '#CDDC39', pension: '#4CAF50',
+  taxi_animalier: '#00838F',
 };
 
 const MOTIFS_BY_CAT: Record<string, { key: string; label: string; icon: string; duree: number }[]> = {
@@ -75,6 +76,11 @@ const MOTIFS_BY_CAT: Record<string, { key: string; label: string; icon: string; 
     { key: 'toilettage_complet', label: 'Toilettage complet', icon: '✂️', duree: 90 },
     { key: 'coupe',              label: 'Coupe',              icon: '✂️', duree: 60 },
     { key: 'autre',              label: 'Autre',              icon: '➕', duree: 60 },
+  ],
+  taxi_animalier: [
+    { key: 'course',  label: 'Course',  icon: '🚕', duree: 30 },
+    { key: 'urgence', label: 'Urgence', icon: '🚨', duree: 20 },
+    { key: 'autre',   label: 'Autre',   icon: '➕', duree: 30 },
   ],
 };
 const DEFAULT_MOTIFS = [
@@ -119,6 +125,11 @@ function ProDetailContent() {
   const [saving, setSaving] = useState(false);
   const [rdvSuccess, setRdvSuccess] = useState(false);
   const [rdvCount, setRdvCount] = useState(1);
+
+  // Taxi animalier : trajet départ/arrivée + nombre d'animaux transportés
+  const [adresseDepart, setAdresseDepart] = useState('');
+  const [adresseArrivee, setAdresseArrivee] = useState('');
+  const [nombreAnimaux, setNombreAnimaux] = useState(1);
 
   // Garde uniquement : RDV récurrent (visites/promenades hebdomadaires)
   const [recurrent, setRecurrent] = useState(false);
@@ -341,9 +352,12 @@ function ProDetailContent() {
     return result;
   }
 
+  const isTaxi = pro?.cat_pro === 'taxi_animalier';
+
   async function confirmRdv() {
     if (!selectedSlot || !motifKey || !user || !pro) return;
     if (pro.cat_pro === 'veterinaire' && premiereVisite === null) return;
+    if (isTaxi && (!adresseDepart.trim() || !adresseArrivee.trim())) return;
     setSaving(true);
     try {
       const motifInfo = (MOTIFS_BY_CAT[pro.cat_pro] ?? DEFAULT_MOTIFS).find(m => m.key === motifKey);
@@ -362,6 +376,11 @@ function ProDetailContent() {
           notes: notes || null,
           pro_profile_id: pro.profileTableId || null,
           ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
+          ...(isTaxi ? {
+            adresse_depart: adresseDepart.trim(),
+            adresse_arrivee: adresseArrivee.trim(),
+            nombre_animaux: nombreAnimaux,
+          } : {}),
         });
         await supabase.from('creneaux_pro').update({ statut: 'reserve' })
           .eq('pro_uid', pro.uid)
@@ -403,7 +422,8 @@ function ProDetailContent() {
   const catColor = CAT_COLORS[pro?.cat_pro ?? ''] ?? '#0C5C6C';
 
   const canConfirm = !!motifKey && !!selectedSlot &&
-    (pro?.cat_pro !== 'veterinaire' || premiereVisite !== null);
+    (pro?.cat_pro !== 'veterinaire' || premiereVisite !== null) &&
+    (!isTaxi || (!!adresseDepart.trim() && !!adresseArrivee.trim()));
 
   if (loading) return (
     <div className="min-h-screen bg-[#F8F8F8] flex items-center justify-center">
@@ -712,6 +732,32 @@ function ProDetailContent() {
                 </div>
               ) : (
                 <div className="space-y-6">
+
+                  {/* Trajet (taxi uniquement) */}
+                  {isTaxi && (
+                    <div className="space-y-3">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide"
+                        style={{ fontFamily: 'Galey, sans-serif' }}>Trajet</p>
+                      <input value={adresseDepart} onChange={e => setAdresseDepart(e.target.value)}
+                        placeholder="Adresse de départ"
+                        className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none"
+                        style={{ fontFamily: 'Galey, sans-serif' }} />
+                      <input value={adresseArrivee} onChange={e => setAdresseArrivee(e.target.value)}
+                        placeholder="Adresse d'arrivée"
+                        className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none"
+                        style={{ fontFamily: 'Galey, sans-serif' }} />
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          Nombre d&apos;animaux transportés
+                        </span>
+                        <button onClick={() => setNombreAnimaux(n => Math.max(1, n - 1))}
+                          className="w-7 h-7 rounded-full border border-gray-200 text-gray-500">−</button>
+                        <span className="text-sm font-semibold w-4 text-center">{nombreAnimaux}</span>
+                        <button onClick={() => setNombreAnimaux(n => Math.min(6, n + 1))}
+                          className="w-7 h-7 rounded-full border border-gray-200 text-gray-500">+</button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Motif */}
                   <div>

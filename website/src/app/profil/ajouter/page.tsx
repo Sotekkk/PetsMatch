@@ -21,6 +21,7 @@ const PROFILE_TYPES = [
   { type: 'toilettage',       emoji: '✂️', label: 'Toilettage',       desc: 'Salon de toilettage, bain-brush' },
   { type: 'photographe',      emoji: '📷', label: 'Photographe',      desc: 'Photographe animalier spécialisé' },
   { type: 'marechal_ferrant', emoji: '🔨', label: 'Maréchal-ferrant', desc: 'Soins des sabots, ferrure équine' },
+  { type: 'taxi_animalier',   emoji: '🚕', label: 'Taxi animalier',   desc: 'Transport d\'animaux, urgences et rendez-vous' },
 ];
 
 const SUB_PROFESSIONS: Record<string, string[]> = {
@@ -33,9 +34,9 @@ const SUB_PROFESSIONS: Record<string, string[]> = {
 
 const ESPECES = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'NAC'];
 
-const PRO_TYPES = new Set(['veterinaire', 'sante', 'education', 'garde', 'pension', 'toilettage', 'photographe', 'marechal_ferrant']);
-const HAS_SIRET  = new Set(['veterinaire', 'sante', 'education', 'pension', 'toilettage', 'photographe', 'marechal_ferrant']);
-const HAS_RAYON  = new Set(['veterinaire', 'sante', 'education', 'garde', 'toilettage', 'photographe', 'marechal_ferrant']);
+const PRO_TYPES = new Set(['veterinaire', 'sante', 'education', 'garde', 'pension', 'toilettage', 'photographe', 'marechal_ferrant', 'taxi_animalier']);
+const HAS_SIRET  = new Set(['veterinaire', 'sante', 'education', 'pension', 'toilettage', 'photographe', 'marechal_ferrant', 'taxi_animalier']);
+const HAS_RAYON  = new Set(['veterinaire', 'sante', 'education', 'garde', 'toilettage', 'photographe', 'marechal_ferrant', 'taxi_animalier']);
 
 const ACTIVE_PROFILE_KEY = 'petsMatch_activeProfileId';
 
@@ -965,5 +966,6 @@ function defaultLabel(type: string, firstname: string, lastname: string): string
     toilettage:       'Mon salon',
     photographe:      'Mon activité photo',
     marechal_ferrant: 'Mon activité maréchalerie',
+    taxi_animalier:   'Mon activité de transport',
   } as Record<string, string>)[type] ?? 'Mon profil';
 }

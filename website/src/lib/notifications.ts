@@ -30,6 +30,7 @@ const PROFILE_LABELS: Record<string, string> = {
   toilettage:       'Toilettage',
   photographe:      'Photographe',
   marechal_ferrant: 'Maréchal-ferrant',
+  taxi_animalier:   'Taxi animalier',
 };
 
 export async function notifyProfilePendingValidation(uid: string, profileType: string) {

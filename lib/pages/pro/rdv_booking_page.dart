@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:geocoding/geocoding.dart' as geo;
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 
@@ -13,6 +14,7 @@ class RdvBookingPage extends StatefulWidget {
   final bool isVet;
   final bool isAssociation;
   final bool isGarde;
+  final bool isTaxi;
   final String? preselectedAnimalId;
   final String? proProfileId; // user_profiles.id si profil secondaire
   final Map<String, dynamic>? visiteAnimal; // animal de l'association à visiter (id, nom, espece, photo_url)
@@ -26,6 +28,7 @@ class RdvBookingPage extends StatefulWidget {
     this.isVet = false,
     this.isAssociation = false,
     this.isGarde = false,
+    this.isTaxi = false,
     this.preselectedAnimalId,
     this.proProfileId,
     this.visiteAnimal,
@@ -89,6 +92,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   bool _educationBilanRequis = true;
   bool _isFirstTimeEducationClient = false;
 
+  // Taxi animalier : trajet départ/arrivée + nombre d'animaux transportés
+  final _adresseDepartCtrl = TextEditingController();
+  final _adresseArriveeCtrl = TextEditingController();
+  int _nombreAnimaux = 1;
+  double? _latDepart, _lngDepart, _latArrivee, _lngArrivee;
+
   static const _motifLabels = <String, String>{
     'consultation': 'Consultation', 'vaccination': 'Vaccination',
     'bilan': 'Bilan annuel', 'urgence': 'Urgence', 'chirurgie': 'Chirurgie',
@@ -99,6 +108,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     'evaluation': 'Évaluation', 'bain': 'Bain',
     'toilettage_complet': 'Toilettage complet', 'coupe': 'Coupe',
     'seance': 'Séance', 'visite_adoption': 'Visite pour adoption', 'autre': 'Autre',
+    'course': 'Course',
   };
   static const _motifIcons = <String, IconData>{
     'consultation': Icons.medical_services_outlined,
@@ -121,6 +131,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     'coupe': Icons.content_cut_outlined,
     'seance': Icons.self_improvement_outlined,
     'visite_adoption': Icons.favorite_border,
+    'course': Icons.local_taxi_outlined,
     'autre': Icons.more_horiz_outlined,
   };
   static const _defaultDureesByCatPro = <String, Map<String, int>>{
@@ -130,6 +141,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     'education':   {'cours_individuel': 60, 'cours_collectif': 90, 'evaluation': 45, 'autre': 60},
     'toilettage':  {'bain': 45, 'toilettage_complet': 90, 'coupe': 60, 'autre': 60},
     'sante':       {'consultation': 45, 'seance': 60, 'autre': 60},
+    'taxi_animalier': {'course': 30, 'urgence': 20, 'autre': 30},
   };
 
   // Durée sélectionnée selon le motif choisi
@@ -163,6 +175,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   void dispose() {
     _motifCtrl.dispose();
     _notesCtrl.dispose();
+    _adresseDepartCtrl.dispose();
+    _adresseArriveeCtrl.dispose();
     super.dispose();
   }
 
@@ -457,6 +471,13 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       _snack('Veuillez sélectionner un créneau disponible', color: Colors.orange); return;
     }
 
+    // Validation trajet (taxi uniquement)
+    if (widget.isTaxi) {
+      if (_adresseDepartCtrl.text.trim().isEmpty || _adresseArriveeCtrl.text.trim().isEmpty) {
+        _snack('Veuillez indiquer l\'adresse de départ et d\'arrivée', color: Colors.orange); return;
+      }
+    }
+
     // Validation motif selon type
     if (widget.isPension) {
       if (_selectedMotif == null) {
@@ -509,6 +530,18 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         motif = _motifCtrl.text.trim();
       }
 
+      // Géocodage des adresses de trajet (taxi uniquement)
+      if (widget.isTaxi) {
+        try {
+          final depart = await geo.locationFromAddress(_adresseDepartCtrl.text.trim());
+          if (depart.isNotEmpty) { _latDepart = depart.first.latitude; _lngDepart = depart.first.longitude; }
+        } catch (_) {}
+        try {
+          final arrivee = await geo.locationFromAddress(_adresseArriveeCtrl.text.trim());
+          if (arrivee.isNotEmpty) { _latArrivee = arrivee.first.latitude; _lngArrivee = arrivee.first.longitude; }
+        } catch (_) {}
+      }
+
       final animalId = _selectedAnimal?['id']?.toString();
       final dureeToSend = _selectedDuration;
 
@@ -538,6 +571,15 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           'date_heure': dh.toIso8601String(),
           'motif':      motif,
           if (widget.isPension && _premiereVisite != null) 'premiere_visite': _premiereVisite,
+          if (widget.isTaxi) ...{
+            'adresse_depart': _adresseDepartCtrl.text.trim(),
+            'adresse_arrivee': _adresseArriveeCtrl.text.trim(),
+            'nombre_animaux': _nombreAnimaux,
+            if (_latDepart != null) 'lat_depart': _latDepart,
+            if (_lngDepart != null) 'lng_depart': _lngDepart,
+            if (_latArrivee != null) 'lat_arrivee': _latArrivee,
+            if (_lngArrivee != null) 'lng_arrivee': _lngArrivee,
+          },
           if (_notesCtrl.text.trim().isNotEmpty && (widget.isPension ? _selectedMotif != 'autre' : true))
             'notes_client': _notesCtrl.text.trim(),
           'duree_minutes': dureeToSend,
@@ -628,6 +670,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                 children: [
                   _buildProBanner(),
                   const SizedBox(height: 20),
+                  if (widget.isTaxi) ...[
+                    _buildTaxiTrajetSection(),
+                    const SizedBox(height: 20),
+                  ],
                   ..._buildMotifSection(),
                   const SizedBox(height: 20),
                   ..._buildSlotPicker(),
@@ -1224,6 +1270,42 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       ],
     );
   }
+
+  Widget _buildTaxiTrajetSection() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _sectionTitle('Trajet'),
+      const SizedBox(height: 8),
+      TextField(
+        controller: _adresseDepartCtrl,
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+        decoration: _inputDecoration('Adresse de départ').copyWith(
+            prefixIcon: const Icon(Icons.trip_origin, size: 18)),
+      ),
+      const SizedBox(height: 8),
+      TextField(
+        controller: _adresseArriveeCtrl,
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+        decoration: _inputDecoration('Adresse d\'arrivée').copyWith(
+            prefixIcon: const Icon(Icons.location_on_outlined, size: 18)),
+      ),
+      const SizedBox(height: 12),
+      Row(children: [
+        Text('Nombre d\'animaux transportés',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
+        const Spacer(),
+        IconButton(
+          icon: const Icon(Icons.remove_circle_outline, size: 20),
+          onPressed: _nombreAnimaux > 1 ? () => setState(() => _nombreAnimaux--) : null,
+        ),
+        Text('$_nombreAnimaux', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+        IconButton(
+          icon: const Icon(Icons.add_circle_outline, size: 20),
+          onPressed: _nombreAnimaux < 6 ? () => setState(() => _nombreAnimaux++) : null,
+        ),
+      ]),
+    ],
+  );
 
   Widget _buildNotesSection() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,

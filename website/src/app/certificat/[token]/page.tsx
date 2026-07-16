@@ -11,7 +11,7 @@ const supabase = createClient(
 const PRO_TYPES = new Set([
   'veterinaire', 'sante', 'education', 'garde',
   'pension', 'toilettage', 'photographe', 'marechal_ferrant',
-  'restauration',
+  'restauration', 'taxi_animalier',
 ]);
 
 interface Cert {

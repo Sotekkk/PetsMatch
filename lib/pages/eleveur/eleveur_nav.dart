@@ -44,6 +44,9 @@ import 'package:PetsMatch/pages/pro/registre_visites_page.dart';
 import 'package:PetsMatch/pages/pro/cles_clients_page.dart';
 import 'package:PetsMatch/pages/pro/tarifs_clients_page.dart';
 import 'package:PetsMatch/pages/pro/tournee_page.dart';
+import 'package:PetsMatch/pages/pro/taxi_tournee_page.dart';
+import 'package:PetsMatch/pages/pro/taxi_trajets_page.dart';
+import 'package:PetsMatch/pages/pro/taxi_factures_page.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
@@ -835,6 +838,38 @@ class _EleveurNavState extends State<EleveurNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const GardeAbonnementPage(),
+                        ));
+                      },
+                    ),
+                  ],
+                  if (User_Info.catPro == 'taxi_animalier') ...[
+                    _DrawerItem(
+                      icon: Icons.checklist_outlined,
+                      label: 'Mes trajets',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const TaxiTrajetsPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.route_outlined,
+                      label: 'Ma tournée',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const TaxiTourneePage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Mes factures',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const TaxiFacturesPage(),
                         ));
                       },
                     ),

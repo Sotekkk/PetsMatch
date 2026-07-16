@@ -45,6 +45,8 @@ const _profileTypes = [
       description: 'Photographe animalier spécialisé', color: Color(0xFF90A4AE)),
   _ProfileTypeInfo(type: 'marechal_ferrant', icon: Icons.handyman_outlined, label: 'Maréchal-ferrant',
       description: 'Soins des sabots, ferrure équine', color: Color(0xFF8D6E63)),
+  _ProfileTypeInfo(type: 'taxi_animalier', icon: Icons.local_taxi_outlined, label: 'Taxi animalier',
+      description: 'Transport d\'animaux, urgences et rendez-vous', color: Color(0xFF00838F)),
 ];
 
 const _subProfessions = <String, List<String>>{
@@ -229,6 +231,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
       'toilettage'       => 'Mon salon',
       'photographe'      => 'Mon activité photo',
       'marechal_ferrant' => 'Mon activité maréchalerie',
+      'taxi_animalier'   => 'Mon activité de transport',
       _                  => 'Mon profil',
     };
   }
@@ -326,7 +329,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
 
   bool get _isProType => const {
     'veterinaire', 'sante', 'education', 'garde', 'pension', 'toilettage',
-    'photographe', 'marechal_ferrant', 'restauration',
+    'photographe', 'marechal_ferrant', 'restauration', 'taxi_animalier',
   }.contains(widget.typeInfo.type);
   bool get _isEleveurType => widget.typeInfo.type == 'eleveur';
   bool get _isAssociationType => widget.typeInfo.type == 'association';
@@ -334,11 +337,11 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
   bool get _isRestauration => widget.typeInfo.type == 'restauration';
   bool get _hasSiret => const {
     'veterinaire', 'sante', 'education', 'pension', 'toilettage',
-    'photographe', 'marechal_ferrant', 'restauration',
+    'photographe', 'marechal_ferrant', 'restauration', 'taxi_animalier',
   }.contains(widget.typeInfo.type);
   bool get _hasRayon => const {
     'veterinaire', 'sante', 'education', 'garde', 'toilettage',
-    'photographe', 'marechal_ferrant',
+    'photographe', 'marechal_ferrant', 'taxi_animalier',
   }.contains(widget.typeInfo.type); // restauration = lieu fixe, pas de rayon
   bool get _hasSubProfession => _subProfessions.containsKey(widget.typeInfo.type);
 

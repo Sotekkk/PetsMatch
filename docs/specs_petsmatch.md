@@ -5851,4 +5851,71 @@ maréchal-ferrant existent déjà avant bascule en prod).
 
 ---
 
+## 39. Nouveau module "Taxi animalier" (`profil_type = 'taxi_animalier'`) (session 2026-07-16)
+
+**Contexte** : type de profil spec-é par l'utilisatrice mais jamais créé —
+confirmé §28.1 ("`'taxi'` n'existe pas du tout") : seule une catégorie de
+filtre annuaire existait (`services_page.dart`), aucun compte réel possible.
+Choisi comme premier des trois nouveaux modules (avec Photographe et
+Toiletteur) car le plus simple ("pas de contrat, simple réservation").
+
+**Décisions prises avec l'utilisatrice** :
+- Distance/temps de trajet en ligne droite (haversine, `GeocodingHelper`
+  déjà utilisé par `tournee_page.dart`) — pas d'intégration Directions API.
+- Système d'avis **générique** `avis_pro` (pas dédié taxi), réutilisable tel
+  quel par les futurs modules Photographe/Toiletteur.
+- `cat_pro` = `taxi_animalier` (pas `'taxi'`), pour matcher les filtres
+  annuaire déjà en place.
+
+**Implémenté, par phase** :
+1. **Type de profil** : ajouté partout où `marechal_ferrant` (dernier type
+   ajouté) était déjà branché — `add_profile_page.dart`, `main.dart`
+   (proTypes/isPro), `eleveur_nav.dart`/`app_nav_drawer.dart`, `Header.tsx`
+   (PRO_TYPES), `profil/ajouter/page.tsx`, `inscription/page.tsx`,
+   `profile_switcher_header.dart`, `notifications_page.dart`, admin
+   (`pro_detail.dart`/`pro_list.dart`), `groupe_detail_page.dart`,
+   `messaging_helper.dart`, `ServicesMap.tsx`, `ProDashboard.tsx`,
+   `validate-profile/route.ts` (codes NAF transport : 4932/4939, best-effort
+   — à vérifier officiellement avant volumétrie réelle).
+2. **Réservation** : réutilisé `RdvBookingPage`/`rdv_booking_page.dart`
+   (système motifs dynamiques déjà générique par `cat_pro`, juste une
+   entrée `taxi_animalier` ajoutée) + nouveau flag `isTaxi` pour les champs
+   spécifiques (adresse départ/arrivée, nombre d'animaux, géocodage via
+   `geocoding` package). Mirror web dans
+   `services/pro/[uid]/page.tsx`. Nouvelles colonnes sur `rdv` (déjà
+   scopée profil : `pro_uid`/`pro_profile_id`/`client_uid`/
+   `client_profile_id`, aucune colonne de scoping à ajouter) —
+   `migration_rdv_taxi_columns.sql`.
+3. **Planning** : aucun changement — `creneaux_pro`/`pro_agenda.dart` déjà
+   entièrement génériques, sans filtre `cat_pro`.
+4. **Carte/trajet** : nouveau `taxi_tournee_page.dart` (dérivé de
+   `tournee_page.dart`, adapté pour un trajet départ→arrivée par course
+   plutôt qu'un seul lieu par visite).
+5. **Historique** : nouveau `taxi_trajets_page.dart` (dérivé de
+   `registre_visites_page.dart`, simplifié — pas de rapport de visite ni de
+   contrat de prestation, hors scope taxi).
+6. **Factures** : nouvelle table `taxi_factures` (scopée pro ET client dès
+   la création — `migration_taxi_factures.sql`) + `taxi_factures_page.dart`
+   (dérivé de `pension_factures_page.dart`). Montant saisi manuellement à la
+   facturation (pas de tarification kilométrique automatique — aucun champ
+   tarif/km construit sur le profil pour l'instant, laissé pour plus tard).
+7. **Avis** : nouvelle table générique `avis_pro` (`migration_avis_pro.sql`)
+   + widget réutilisable `lib/widgets/avis_pro_widget.dart`
+   (`AvisProSection`), avec trigger de recalcul `note_moyenne`/`nb_avis` sur
+   `user_profiles` dès la création (contrairement à petfriendly où ce
+   trigger avait été fait dans une session ultérieure). Affiché sur
+   `service_detail_page.dart` pour `cat_pro == 'taxi_animalier'`.
+
+**Vérifié** : `flutter analyze` complet (2212 issues, 0 nouvelle erreur —
+les 17 erreurs restantes sont toutes dans `PetsMatch-main/`, dossier dupliqué
+obsolète sans rapport), `npx tsc --noEmit` et `npm run build` (site) propres
+(mêmes erreurs pré-existantes qu'avant, confirmées via `git show HEAD`).
+
+**How to apply** : 3 migrations à exécuter dans Supabase Dashboard avant mise
+en prod (`migration_rdv_taxi_columns.sql`, `migration_taxi_factures.sql`,
+`migration_avis_pro.sql`). Aucun compte `taxi_animalier` n'existe encore en
+base — déploiement propre, rien à backfiller.
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

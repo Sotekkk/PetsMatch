@@ -9,7 +9,7 @@ class MessagingHelper {
   static const _proTypes = {
     'veterinaire', 'sante', 'education', 'garde',
     'pension', 'toilettage', 'photographe', 'marechal_ferrant',
-    'restauration',
+    'restauration', 'taxi_animalier',
   };
 
   /// Résout nom + photo d'affichage depuis le profil principal

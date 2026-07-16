@@ -15,6 +15,7 @@ const _kCatLabels = <String, String>{
   'toilettage': 'Toilettage',
   'photographe': 'Photographe',
   'marechal_ferrant': 'Maréchal-ferrant',
+  'taxi_animalier': 'Taxi animalier',
   'referencement': 'Commerce / Animalerie',
   'autre': 'Autre',
 };

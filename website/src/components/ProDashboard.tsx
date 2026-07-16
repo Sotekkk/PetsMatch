@@ -71,6 +71,7 @@ const TYPE_LABEL: Record<string, string> = {
   veterinaire: 'Vétérinaire', sante: 'Santé animale', education: 'Éducateur',
   garde: 'Pet Sitter', pension: 'Pension', toilettage: 'Toilettage',
   photographe: 'Photographe', marechal_ferrant: 'Maréchal-ferrant',
+  taxi_animalier: 'Taxi animalier',
 };
 
 // ── Main component ─────────────────────────────────────────────────────────────

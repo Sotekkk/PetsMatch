@@ -416,7 +416,7 @@ const MENU_PARTICULIER = [
 
 // ── Helpers types profil ──────────────────────────────────────────────────────
 
-const PRO_TYPES = new Set(['veterinaire', 'sante', 'education', 'garde', 'pension', 'toilettage', 'photographe', 'marechal_ferrant']);
+const PRO_TYPES = new Set(['veterinaire', 'sante', 'education', 'garde', 'pension', 'toilettage', 'photographe', 'marechal_ferrant', 'taxi_animalier']);
 
 function typeLabel(type: string): string {
   return ({
@@ -431,6 +431,7 @@ function typeLabel(type: string): string {
     toilettage:       'Toilettage',
     photographe:      'Photographe',
     marechal_ferrant: 'Maréchal-ferrant',
+    taxi_animalier:   'Taxi animalier',
     restauration:     'Hébergement / Restauration',
     petfriendly:      'Lieu Pet-Friendly',
     partenaire:       'Partenaire',
@@ -450,6 +451,7 @@ function typeEmoji(type: string): string {
     toilettage:       '✂️',
     photographe:      '📷',
     marechal_ferrant: '🔨',
+    taxi_animalier:   '🚕',
     restauration:     '🍽️',
     petfriendly:      '📍',
     partenaire:       '🤝',

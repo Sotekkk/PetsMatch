@@ -14,6 +14,8 @@ const NAF_PREFIXES: Record<string, string[]> = {
   toilettage:       ['9609', '4779'],
   photographe:      ['7420', '9609'],
   marechal_ferrant: ['0161', '2573', '0149'],
+  // 4932=transports de voyageurs par taxis, 4939=autres transports terrestres n.c.a.
+  taxi_animalier:   ['4932', '4939', '9609'],
   // Hébergement/Restauration pet-friendly
   restauration:     ['5510', '5520', '5530', '5590', '5610', '5621', '5629', '5630', '9609'],
   // 5510=hôtels, 5520=hébergement touristique, 5530=terrains camping, 5590=autres héb.,

@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
+import 'package:PetsMatch/widgets/avis_pro_widget.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:intl/intl.dart';
 
@@ -578,6 +579,13 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             )),
           ],
 
+          // Avis (taxi animalier — système générique avis_pro, réutilisable
+          // par les futurs modules photographe/toiletteur)
+          if (_proData?['cat_pro'] == 'taxi_animalier') ...[
+            const SizedBox(height: 12),
+            _card(child: AvisProSection(proUid: widget.proUid, proProfileId: widget.profileTableId)),
+          ],
+
           // Cours collectifs disponibles (éducateur/comportementaliste)
           if (_proData?['cat_pro'] == 'education' && _coursCollectifs.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -729,6 +737,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                       isPension: _proData?['cat_pro'] == 'pension',
                       isVet: _proData?['cat_pro'] == 'sante' || _proData?['cat_pro'] == 'veterinaire',
                       isGarde: _proData?['cat_pro'] == 'garde',
+                      isTaxi: _proData?['cat_pro'] == 'taxi_animalier',
                       proProfileId: widget.profileTableId,
                     )))
                 : null,

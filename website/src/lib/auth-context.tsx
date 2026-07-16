@@ -81,7 +81,7 @@ export interface Profile {
 const PRO_TYPES = new Set([
   'veterinaire', 'sante', 'education', 'garde',
   'pension', 'toilettage', 'photographe', 'marechal_ferrant',
-  'restauration',
+  'restauration', 'taxi_animalier',
 ]);
 
 // Supabase user_profiles snake_case → web camelCase.

@@ -32,6 +32,7 @@ const CAT_COLORS: Record<string, string> = {
   referencement:    '#CDDC39',
   photographe:      '#E91E63',
   marechal_ferrant: '#795548',
+  taxi_animalier:   '#00838F',
 };
 const DEFAULT_COLOR = '#9C27B0'; // violet
 

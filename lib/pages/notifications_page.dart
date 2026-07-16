@@ -470,6 +470,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     'toilettage'       => 'Toilettage',
     'photographe'      => 'Photographe',
     'marechal_ferrant' => 'Maréchal-ferrant',
+    'taxi_animalier'   => 'Taxi animalier',
     _                  => type,
   };
 
@@ -484,6 +485,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     'toilettage'       => '✂️',
     'photographe'      => '📷',
     'marechal_ferrant' => '🔨',
+    'taxi_animalier'   => '🚕',
     _                  => '👤',
   };
 
