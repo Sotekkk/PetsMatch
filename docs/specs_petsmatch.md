@@ -5918,4 +5918,76 @@ base — déploiement propre, rien à backfiller.
 
 ---
 
+## 40. Module "Photographe animalier" — construction complète (session 2026-07-16)
+
+**Contexte** : `profile_type = 'photographe'` existait déjà comme type de
+profil mais sans aucune fonctionnalité dédiée (socle pro générique
+agenda/RDV uniquement). Deuxième des trois modules demandés (après Taxi
+animalier), plus riche : prestations tarifées, contrat signé
+électroniquement, paiement acompte+solde, galerie de livraison photo.
+
+**Décision validée avec l'utilisatrice** : une seule facture par
+prestation avec `montant_acompte`+`montant_solde`+`montant_total` et un
+statut détaillé (`acompte_du`→`acompte_paye`→`solde_du`→`payee`), plutôt
+que deux factures séparées.
+
+**Implémenté, par phase** :
+1. **Prestations & tarifs** : nouvelle table `prestations_photographe`
+   (type/prix/durée/nb photos/délai livraison/km inclus/prix km
+   supp/acompte %/options JSONB), `photographe_prestations_page.dart`
+   (CRUD). `forfaits_garde`/`forfaits_education` jugés trop pauvres pour
+   être réutilisés (pas d'options ni d'acompte/km/délai).
+2. **Réservation** : `rdv.prestation_id` (nouvelle colonne) + flag
+   `isPhotographe` sur `RdvBookingPage` (sélection de prestation au lieu du
+   motif dynamique, champ "Lieu du shooting" réutilisant les colonnes
+   `adresse_depart`/`lat_depart`/`lng_depart` déjà ajoutées pour le taxi —
+   une seule adresse suffit ici). Mirror web **différé** (le formulaire web
+   `services/pro/[uid]/page.tsx` utilise un catalogue de motifs statique
+   `MOTIFS_BY_CAT`, pas de fetch dynamique de prestations — à construire
+   dans une session ultérieure si besoin).
+3. **Contrat + signature électronique** : réutilise intégralement le
+   mécanisme existant (`documents_animaux` + `/signer-contrat/[token]` +
+   signature canvas) — Yousign confirmé être un stub 503, jamais utilisé en
+   pratique. Nouveau `website/src/lib/contrat-photographe.ts`
+   (`generateContratPrestationPhotoHTML`, calqué sur `contrat-pension.ts`),
+   nouvelle branche `contrat_prestation_photo` dans
+   `signer-contrat/[token]/page.tsx`, bouton "Contrat" sur la carte RDV de
+   `pro_agenda.dart` (nouveau callback `onContrat`, dérivé de
+   `_genererContratSignature` de `registre_visites_page.dart`).
+4. **Facturation acompte/solde** : nouvelle table `photographe_factures`
+   (montants acompte/solde/total + statut détaillé), dérivée de
+   `taxi_factures` (session précédente). Bouton "Facturer" sur la carte RDV
+   (nouveau callback `onFacturer`, pré-remplit les montants depuis
+   `prestations_photographe.prix`/`acompte_pourcentage`).
+5. **Galerie de livraison** : 3 nouvelles tables `albums_photo` (un par
+   RDV), `album_photos` (upload multi via `storage_helper.dart`, favoris),
+   `album_partage` (calquée exactement sur `partage_animal` — token auto,
+   expire_at, actif — aucun système multi-photos n'existait avant).
+   `photographe_album_page.dart` (app, upload/favoris/partage avec QR code)
+   + page publique `website/src/app/album/[token]/page.tsx` (galerie +
+   téléchargement sans connexion, sur le modèle de `/partage/[token]`).
+   Nouveau callback `onAlbum` sur la carte RDV.
+6. **Tableau de bord** : `photographe_dashboard_page.dart` — agrégats
+   calculés à la volée (nombre de shootings terminés, CA depuis
+   `photographe_factures` payées, km parcourus ce mois-ci depuis la
+   position du pro jusqu'à `rdv.lat_depart`/`lng_depart`, note moyenne
+   `avis_pro` déjà dénormalisée sur `user_profiles`). Aucun dashboard
+   CA/km n'existait pour aucun profil pro avant celui-ci.
+
+**Vérifié** : `flutter analyze` complet (2214 issues, 0 nouvelle erreur —
+comparé à la baseline pré-session), `npx tsc --noEmit` et `npm run build`
+(site) propres (mêmes erreurs pré-existantes, confirmées via `git show
+HEAD`).
+
+**How to apply** : 3 migrations à exécuter dans Supabase Dashboard avant
+mise en prod (`migration_prestations_photographe.sql`,
+`migration_rdv_photographe_columns.sql`, `migration_photographe_factures.sql`,
+`migration_albums_photo.sql`). Aucun compte `photographe` actif n'a encore
+utilisé ces fonctionnalités — déploiement propre, rien à backfiller.
+Le mirror web de la réservation (point 2) reste à faire si l'utilisatrice
+veut que la prise de RDV avec choix de prestation fonctionne aussi depuis
+le site, pas seulement l'app.
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

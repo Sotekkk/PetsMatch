@@ -15,6 +15,7 @@ class RdvBookingPage extends StatefulWidget {
   final bool isAssociation;
   final bool isGarde;
   final bool isTaxi;
+  final bool isPhotographe;
   final String? preselectedAnimalId;
   final String? proProfileId; // user_profiles.id si profil secondaire
   final Map<String, dynamic>? visiteAnimal; // animal de l'association à visiter (id, nom, espece, photo_url)
@@ -29,6 +30,7 @@ class RdvBookingPage extends StatefulWidget {
     this.isAssociation = false,
     this.isGarde = false,
     this.isTaxi = false,
+    this.isPhotographe = false,
     this.preselectedAnimalId,
     this.proProfileId,
     this.visiteAnimal,
@@ -98,6 +100,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   int _nombreAnimaux = 1;
   double? _latDepart, _lngDepart, _latArrivee, _lngArrivee;
 
+  // Photographe : prestation choisie (remplace le motif dynamique) + lieu
+  // du shooting (réutilise adresseDepart/latDepart/lngDepart, une seule
+  // adresse suffit ici contrairement au taxi).
+  List<Map<String, dynamic>> _prestations = [];
+  Map<String, dynamic>? _selectedPrestation;
+
   static const _motifLabels = <String, String>{
     'consultation': 'Consultation', 'vaccination': 'Vaccination',
     'bilan': 'Bilan annuel', 'urgence': 'Urgence', 'chirurgie': 'Chirurgie',
@@ -146,6 +154,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
   // Durée sélectionnée selon le motif choisi
   int get _selectedDuration {
+    if (widget.isPhotographe && _selectedPrestation != null) {
+      return (_selectedPrestation!['duree_minutes'] as num?)?.toInt() ?? 60;
+    }
     if (widget.isVet && _selectedVetMotif != null && _selectedVetMotif != 'autre') {
       return _dureesMotifs[_selectedVetMotif] ?? _selectedVetDuration;
     }
@@ -185,8 +196,17 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       _loadAnimaux(),
       _loadProProfile(),
       _loadAvailableSlots(),
+      if (widget.isPhotographe) _loadPrestations(),
     ]);
     if (mounted) setState(() => _loadingData = false);
+  }
+
+  Future<void> _loadPrestations() async {
+    try {
+      final rows = await Supabase.instance.client.from('prestations_photographe').select()
+          .eq('pro_uid', widget.proUid).eq('actif', true).order('created_at');
+      if (mounted) setState(() => _prestations = List<Map<String, dynamic>>.from(rows as List));
+    } catch (_) {}
   }
 
   Future<void> _loadProProfile() async {
@@ -478,8 +498,20 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       }
     }
 
+    // Validation prestation + lieu (photographe uniquement)
+    if (widget.isPhotographe) {
+      if (_selectedPrestation == null) {
+        _snack('Veuillez choisir une prestation', color: Colors.orange); return;
+      }
+      if (_adresseDepartCtrl.text.trim().isEmpty) {
+        _snack('Veuillez indiquer le lieu du shooting', color: Colors.orange); return;
+      }
+    }
+
     // Validation motif selon type
-    if (widget.isPension) {
+    if (widget.isPhotographe) {
+      // Motif dérivé de la prestation choisie — pas de saisie manuelle.
+    } else if (widget.isPension) {
       if (_selectedMotif == null) {
         _snack('Veuillez choisir le motif du rendez-vous', color: Colors.orange); return;
       }
@@ -516,7 +548,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           int.parse(heureDebut[0]), int.parse(heureDebut[1])).toUtc();
 
       final String motif;
-      if (widget.isPension) {
+      if (widget.isPhotographe) {
+        motif = _selectedPrestation?['nom']?.toString() ?? '';
+      } else if (widget.isPension) {
         motif = _selectedMotif == 'autre'
             ? _notesCtrl.text.trim()
             : _pensionMotifs.firstWhere((m) => m.$1 == _selectedMotif).$2;
@@ -530,7 +564,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         motif = _motifCtrl.text.trim();
       }
 
-      // Géocodage des adresses de trajet (taxi uniquement)
+      // Géocodage des adresses de trajet (taxi) / lieu du shooting (photographe)
       if (widget.isTaxi) {
         try {
           final depart = await geo.locationFromAddress(_adresseDepartCtrl.text.trim());
@@ -539,6 +573,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         try {
           final arrivee = await geo.locationFromAddress(_adresseArriveeCtrl.text.trim());
           if (arrivee.isNotEmpty) { _latArrivee = arrivee.first.latitude; _lngArrivee = arrivee.first.longitude; }
+        } catch (_) {}
+      } else if (widget.isPhotographe) {
+        try {
+          final lieu = await geo.locationFromAddress(_adresseDepartCtrl.text.trim());
+          if (lieu.isNotEmpty) { _latDepart = lieu.first.latitude; _lngDepart = lieu.first.longitude; }
         } catch (_) {}
       }
 
@@ -579,6 +618,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             if (_lngDepart != null) 'lng_depart': _lngDepart,
             if (_latArrivee != null) 'lat_arrivee': _latArrivee,
             if (_lngArrivee != null) 'lng_arrivee': _lngArrivee,
+          },
+          if (widget.isPhotographe) ...{
+            'prestation_id': _selectedPrestation?['id'],
+            'adresse_depart': _adresseDepartCtrl.text.trim(),
+            if (_latDepart != null) 'lat_depart': _latDepart,
+            if (_lngDepart != null) 'lng_depart': _lngDepart,
           },
           if (_notesCtrl.text.trim().isNotEmpty && (widget.isPension ? _selectedMotif != 'autre' : true))
             'notes_client': _notesCtrl.text.trim(),
@@ -676,6 +721,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                   ],
                   ..._buildMotifSection(),
                   const SizedBox(height: 20),
+                  if (widget.isPhotographe) ...[
+                    _buildPhotographeLieuSection(),
+                    const SizedBox(height: 20),
+                  ],
                   ..._buildSlotPicker(),
                   if (widget.isGarde && _selectedSlot != null) ...[
                     const SizedBox(height: 20),
@@ -731,8 +780,52 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   List<Widget> _buildMotifSection() {
     if (widget.isPension) return _buildPensionMotif();
     if (widget.isVet) return _buildVetMotif();
+    if (widget.isPhotographe) return _buildPrestationSection();
     // Pour les autres pros : motifs dynamiques si configurés, sinon champ libre
     return _buildDynamicMotif();
+  }
+
+  // ── Sélection de prestation (photographe) — remplace le motif dynamique.
+  List<Widget> _buildPrestationSection() {
+    if (_prestations.isEmpty) {
+      return [
+        _sectionTitle('Prestation'),
+        const SizedBox(height: 8),
+        Text('Ce photographe n\'a pas encore configuré de prestations.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+      ];
+    }
+    return [
+      _sectionTitle('Prestation *'),
+      const SizedBox(height: 8),
+      ..._prestations.map((p) {
+        final selected = _selectedPrestation?['id'] == p['id'];
+        return GestureDetector(
+          onTap: () => setState(() => _selectedPrestation = p),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: selected ? widget.categoryColor.withValues(alpha: 0.1) : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: selected ? widget.categoryColor : Colors.grey.shade200),
+            ),
+            child: Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(p['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                const SizedBox(height: 2),
+                Text('${p['duree_minutes']} min'
+                    '${p['nb_photos'] != null ? ' · ${p['nb_photos']} photos' : ''}'
+                    ' · livraison ${p['delai_livraison_jours']}j',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+              ])),
+              Text('${((p['prix'] as num?)?.toDouble() ?? 0).toStringAsFixed(0)} €',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: widget.categoryColor)),
+            ]),
+          ),
+        );
+      }),
+    ];
   }
 
   // ── Slot picker (commun à tous les pros) ─────────────────────────────────────
@@ -1304,6 +1397,20 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           onPressed: _nombreAnimaux < 6 ? () => setState(() => _nombreAnimaux++) : null,
         ),
       ]),
+    ],
+  );
+
+  Widget _buildPhotographeLieuSection() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _sectionTitle('Lieu du shooting'),
+      const SizedBox(height: 8),
+      TextField(
+        controller: _adresseDepartCtrl,
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+        decoration: _inputDecoration('Adresse du shooting (studio ou déplacement)').copyWith(
+            prefixIcon: const Icon(Icons.location_on_outlined, size: 18)),
+      ),
     ],
   );
 

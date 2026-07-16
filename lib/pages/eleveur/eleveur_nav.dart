@@ -47,6 +47,9 @@ import 'package:PetsMatch/pages/pro/tournee_page.dart';
 import 'package:PetsMatch/pages/pro/taxi_tournee_page.dart';
 import 'package:PetsMatch/pages/pro/taxi_trajets_page.dart';
 import 'package:PetsMatch/pages/pro/taxi_factures_page.dart';
+import 'package:PetsMatch/pages/pro/photographe_prestations_page.dart';
+import 'package:PetsMatch/pages/pro/photographe_factures_page.dart';
+import 'package:PetsMatch/pages/pro/photographe_dashboard_page.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
@@ -870,6 +873,38 @@ class _EleveurNavState extends State<EleveurNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const TaxiFacturesPage(),
+                        ));
+                      },
+                    ),
+                  ],
+                  if (User_Info.catPro == 'photographe') ...[
+                    _DrawerItem(
+                      icon: Icons.camera_alt_outlined,
+                      label: 'Mes prestations',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PhotographePrestationsPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Mes factures',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PhotographeFacturesPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.dashboard_outlined,
+                      label: 'Tableau de bord',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PhotographeDashboardPage(),
                         ));
                       },
                     ),

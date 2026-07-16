@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
+import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/utils/geocoding_helper.dart';
+import 'package:PetsMatch/config.dart';
+import 'package:intl/intl.dart';
 
 class ProAgendaPage extends StatefulWidget {
   const ProAgendaPage({super.key});
@@ -942,6 +946,147 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
           backgroundColor: Colors.red, behavior: SnackBarBehavior.floating,
         ));
+      }
+    }
+  }
+
+  // Photographe — génère (ou récupère) le contrat de prestation et copie le
+  // lien de signature, sur le modèle de _genererContratSignature (garde,
+  // registre_visites_page.dart).
+  Future<void> _genererContratPhoto(Map<String, dynamic> rdv) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final supa = Supabase.instance.client;
+      final existing = await supa
+          .from('documents_animaux')
+          .select('token')
+          .eq('rdv_id', rdv['id'])
+          .eq('type', 'contrat_prestation_photo')
+          .maybeSingle();
+
+      String? token = existing?['token'] as String?;
+      if (token == null) {
+        Map<String, dynamic>? prestation;
+        final prestationId = rdv['prestation_id']?.toString();
+        if (prestationId != null && prestationId.isNotEmpty) {
+          prestation = await supa.from('prestations_photographe')
+              .select('nom, prix, acompte_pourcentage')
+              .eq('id', prestationId).maybeSingle();
+        }
+        final row = await supa.from('documents_animaux').insert({
+          'uid_eleveur': uid,
+          'animal_id': rdv['animal_id'],
+          'rdv_id': rdv['id'],
+          'type': 'contrat_prestation_photo',
+          'titre': 'Contrat de prestation photo — ${rdv['_client_name'] ?? ''}',
+          'statut': 'en_attente',
+          'metadata': {
+            'client_nom': rdv['_client_name'],
+            'prestation_nom': prestation?['nom'],
+            'prix_total': prestation?['prix']?.toString(),
+            'acompte_pourcentage': prestation?['acompte_pourcentage']?.toString(),
+          },
+        }).select('token').single();
+        token = row['token'] as String?;
+      } else {
+        await supa.from('documents_animaux')
+            .update({'statut': 'en_attente'})
+            .eq('rdv_id', rdv['id'])
+            .eq('type', 'contrat_prestation_photo');
+      }
+      if (token == null) return;
+      final url = '$kSiteBaseUrl/signer-contrat/$token';
+      await Clipboard.setData(ClipboardData(text: url));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Lien de signature copié — envoyez-le au client',
+              style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Color(0xFF90A4AE),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  // Photographe — crée la facture acompte+solde à partir du prix de la
+  // prestation liée au RDV (montant pré-rempli, modifiable avant envoi).
+  Future<void> _facturerPhoto(Map<String, dynamic> rdv) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final supa = Supabase.instance.client;
+
+    double prixTotal = 0;
+    int acomptePourcentage = 30;
+    final prestationId = rdv['prestation_id']?.toString();
+    if (prestationId != null && prestationId.isNotEmpty) {
+      final prestation = await supa.from('prestations_photographe')
+          .select('prix, acompte_pourcentage').eq('id', prestationId).maybeSingle();
+      prixTotal = (prestation?['prix'] as num?)?.toDouble() ?? 0;
+      acomptePourcentage = (prestation?['acompte_pourcentage'] as num?)?.toInt() ?? 30;
+    }
+
+    final totalCtrl = TextEditingController(text: prixTotal > 0 ? prixTotal.toStringAsFixed(2) : '');
+    final acompteCtrl = TextEditingController(
+        text: prixTotal > 0 ? (prixTotal * acomptePourcentage / 100).toStringAsFixed(2) : '');
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Facturer la prestation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: totalCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Montant total (€)')),
+          const SizedBox(height: 8),
+          TextField(controller: acompteCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Montant acompte (€)')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Facturer')),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    final total = double.tryParse(totalCtrl.text.trim().replaceAll(',', '.')) ?? 0;
+    final acompte = double.tryParse(acompteCtrl.text.trim().replaceAll(',', '.')) ?? 0;
+    if (total <= 0) return;
+
+    try {
+      final now = DateTime.now();
+      await supa.from('photographe_factures').insert({
+        'pro_uid': uid,
+        'pro_profile_id': User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+        'rdv_id': rdv['id'],
+        'client_uid': rdv['client_uid'],
+        if (rdv['client_profile_id'] != null) 'client_profile_id': rdv['client_profile_id'],
+        'numero': 'PHOTO-${DateFormat('yyyyMMdd-HHmm').format(now)}',
+        'client_nom': rdv['_client_name'],
+        'montant_acompte': acompte,
+        'montant_solde': total - acompte,
+        'montant_total': total,
+        'statut': 'acompte_du',
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Prestation facturée.', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Color(0xFF6E9E57),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')), backgroundColor: Colors.red));
       }
     }
   }
@@ -2346,6 +2491,19 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     isPension: User_Info.catPro == 'pension',
                   )))
               : null,
+          onContrat: (showProTools && User_Info.catPro == 'photographe')
+              ? () => _genererContratPhoto(rdv)
+              : null,
+          onFacturer: (showProTools && User_Info.catPro == 'photographe' && rdv['statut'] == 'termine')
+              ? () => _facturerPhoto(rdv)
+              : null,
+          onAlbum: (showProTools && User_Info.catPro == 'photographe')
+              ? () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => PhotographeAlbumPage(
+                    rdvId: rdv['id'].toString(),
+                    clientName: rdv['_client_name']?.toString() ?? 'Client',
+                  )))
+              : null,
         );
       },
     );
@@ -2393,6 +2551,9 @@ class _RdvCard extends StatelessWidget {
   final VoidCallback? onContact;
   final VoidCallback? onDelete;
   final VoidCallback? onModifier;
+  final VoidCallback? onContrat;
+  final VoidCallback? onFacturer;
+  final VoidCallback? onAlbum;
 
   const _RdvCard({
     required this.rdv,
@@ -2408,6 +2569,9 @@ class _RdvCard extends StatelessWidget {
     this.onContact,
     this.onDelete,
     this.onModifier,
+    this.onContrat,
+    this.onFacturer,
+    this.onAlbum,
   });
 
   @override
@@ -2577,6 +2741,36 @@ class _RdvCard extends StatelessWidget {
                   onPressed: onCompteRendu,
                   icon: const Icon(Icons.description_outlined, size: 20, color: Color(0xFF6E9E57)),
                   tooltip: 'CR / Ordonnance',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+              if (onContrat != null) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  onPressed: onContrat,
+                  icon: const Icon(Icons.draw_outlined, size: 20, color: Color(0xFF90A4AE)),
+                  tooltip: 'Contrat de prestation',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+              if (onFacturer != null) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  onPressed: onFacturer,
+                  icon: const Icon(Icons.receipt_long_outlined, size: 20, color: Color(0xFF90A4AE)),
+                  tooltip: 'Facturer',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+              if (onAlbum != null) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  onPressed: onAlbum,
+                  icon: const Icon(Icons.photo_library_outlined, size: 20, color: Color(0xFF90A4AE)),
+                  tooltip: 'Galerie de livraison',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
