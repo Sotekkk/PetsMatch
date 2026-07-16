@@ -126,6 +126,44 @@ class SantePlanConfig {
   });
 }
 
+class ToilettagePlanConfig {
+  final String code;
+  final String label;
+  final bool hasEmployesIllimites;
+  final int maxEmployes; // -1 = illimité
+  final bool hasFacturation;
+  final bool hasStatistiques;
+  final bool hasGalerie;
+  final bool hasNotifications;
+  final bool hasExport;
+  final bool hasPlanningEmployes;
+  final bool hasContratSignature;
+  final bool hasPaiementEnLigne;
+  final bool hasSyncGoogleAgenda;
+  final bool hasMiseEnAvant;
+  final double prixMensuel;
+  final double prixAnnuel;
+
+  const ToilettagePlanConfig({
+    required this.code,
+    required this.label,
+    required this.hasEmployesIllimites,
+    required this.maxEmployes,
+    required this.hasFacturation,
+    required this.hasStatistiques,
+    required this.hasGalerie,
+    required this.hasNotifications,
+    required this.hasExport,
+    required this.hasPlanningEmployes,
+    required this.hasContratSignature,
+    required this.hasPaiementEnLigne,
+    required this.hasSyncGoogleAgenda,
+    required this.hasMiseEnAvant,
+    this.prixMensuel = 0,
+    this.prixAnnuel = 0,
+  });
+}
+
 class PlanService {
   static const String kWebsiteUrl = 'https://www.petsmatchapp.com';
 
@@ -421,6 +459,95 @@ class PlanService {
           .select('plan_code')
           .eq('uid', uid)
           .eq('profil_type', profilType)
+          .eq('statut', 'actif')
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      return (res?['plan_code'] as String?) ?? 'free';
+    } catch (_) {
+      return 'free';
+    }
+  }
+
+  // Toiletteur — grille dédiée (pas partagée avec un autre profil_type),
+  // GRATUIT/PRO/PREMIUM.
+  static const Map<String, ToilettagePlanConfig> toilettageConfigs = {
+    'free': ToilettagePlanConfig(
+      code: 'free', label: 'Découverte', hasEmployesIllimites: false, maxEmployes: 1,
+      hasFacturation: false, hasStatistiques: false, hasGalerie: false, hasNotifications: false,
+      hasExport: false, hasPlanningEmployes: false, hasContratSignature: false,
+      hasPaiementEnLigne: false, hasSyncGoogleAgenda: false, hasMiseEnAvant: false,
+      prixMensuel: 0, prixAnnuel: 0,
+    ),
+    'pro': ToilettagePlanConfig(
+      code: 'pro', label: 'Pro', hasEmployesIllimites: true, maxEmployes: -1,
+      hasFacturation: true, hasStatistiques: true, hasGalerie: true, hasNotifications: true,
+      hasExport: true, hasPlanningEmployes: false, hasContratSignature: false,
+      hasPaiementEnLigne: false, hasSyncGoogleAgenda: false, hasMiseEnAvant: false,
+      prixMensuel: 15, prixAnnuel: 150,
+    ),
+    'premium': ToilettagePlanConfig(
+      code: 'premium', label: 'Premium', hasEmployesIllimites: true, maxEmployes: -1,
+      hasFacturation: true, hasStatistiques: true, hasGalerie: true, hasNotifications: true,
+      hasExport: true, hasPlanningEmployes: true, hasContratSignature: true,
+      hasPaiementEnLigne: true, hasSyncGoogleAgenda: true, hasMiseEnAvant: true,
+      prixMensuel: 25, prixAnnuel: 250,
+    ),
+  };
+
+  static ToilettagePlanConfig getToilettageConfig(String planCode) =>
+      toilettageConfigs[planCode] ?? toilettageConfigs['free']!;
+
+  /// Tarifs toiletteur à jour depuis plans_tarifaires (éditables depuis
+  /// l'admin web sans déploiement). Retombe sur toilettageConfigs si la BDD
+  /// est injoignable.
+  static Future<Map<String, ToilettagePlanConfig>> getToilettagePlansLive() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('plans_tarifaires')
+          .select('plan_code, label, prix_mensuel, prix_annuel, features')
+          .eq('profil_type', 'toilettage')
+          .eq('actif', true);
+      final out = <String, ToilettagePlanConfig>{};
+      for (final row in (rows as List)) {
+        final code = row['plan_code'] as String?;
+        if (code == null) continue;
+        final fallback = getToilettageConfig(code);
+        final f = (row['features'] as Map<String, dynamic>?) ?? {};
+        out[code] = ToilettagePlanConfig(
+          code: code,
+          label: (row['label'] as String?) ?? fallback.label,
+          hasEmployesIllimites: f['hasEmployesIllimites'] as bool? ?? fallback.hasEmployesIllimites,
+          maxEmployes: (f['maxEmployes'] as num?)?.toInt() ?? fallback.maxEmployes,
+          hasFacturation: f['hasFacturation'] as bool? ?? fallback.hasFacturation,
+          hasStatistiques: f['hasStatistiques'] as bool? ?? fallback.hasStatistiques,
+          hasGalerie: f['hasGalerie'] as bool? ?? fallback.hasGalerie,
+          hasNotifications: f['hasNotifications'] as bool? ?? fallback.hasNotifications,
+          hasExport: f['hasExport'] as bool? ?? fallback.hasExport,
+          hasPlanningEmployes: f['hasPlanningEmployes'] as bool? ?? fallback.hasPlanningEmployes,
+          hasContratSignature: f['hasContratSignature'] as bool? ?? fallback.hasContratSignature,
+          hasPaiementEnLigne: f['hasPaiementEnLigne'] as bool? ?? fallback.hasPaiementEnLigne,
+          hasSyncGoogleAgenda: f['hasSyncGoogleAgenda'] as bool? ?? fallback.hasSyncGoogleAgenda,
+          hasMiseEnAvant: f['hasMiseEnAvant'] as bool? ?? fallback.hasMiseEnAvant,
+          prixMensuel: (row['prix_mensuel'] as num?)?.toDouble() ?? fallback.prixMensuel,
+          prixAnnuel: (row['prix_annuel'] as num?)?.toDouble() ?? fallback.prixAnnuel,
+        );
+      }
+      return out.isEmpty ? toilettageConfigs : out;
+    } catch (_) {
+      return toilettageConfigs;
+    }
+  }
+
+  /// Plan toiletteur actif pour ce uid — distinct des autres profils
+  /// (abonnements est scopé par profil_type).
+  static Future<String> getToilettagePlanCode(String uid) async {
+    try {
+      final res = await Supabase.instance.client
+          .from('abonnements')
+          .select('plan_code')
+          .eq('uid', uid)
+          .eq('profil_type', 'toilettage')
           .eq('statut', 'actif')
           .order('created_at', ascending: false)
           .limit(1)

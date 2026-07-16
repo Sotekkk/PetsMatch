@@ -5990,4 +5990,88 @@ le site, pas seulement l'app.
 
 ---
 
+## 41. Module "Toiletteur" — construction complète (session 2026-07-16)
+
+**Contexte** : `profile_type = 'toilettage'` existait déjà comme type de
+profil mais sans aucune fonctionnalité dédiée. Troisième et dernier des
+modules pro demandés (après Taxi animalier et Photographe animalier), et le
+plus complexe : prix variables selon espèce/poids, planning
+multi-employés avec détection de conflit, fiche client avec
+préférences/historique, grille tarifaire à 3 paliers (GRATUIT/PRO/PREMIUM)
+avec fonctionnalités gatées.
+
+**Décision validée avec l'utilisatrice** : planning multi-employés V1 en
+vue par employé + assignation simple (dropdown à la réservation) et
+détection de conflit à la création, sans glisser-déposer (hors scope V1).
+
+**Implémenté, par phase** :
+1. **Grille tarifaire** : `ToilettagePlanConfig` dans `plan_service.dart`
+   (dupliqué de `SantePlanConfig`) — free (1 employé, planning simple) /
+   pro 15€ (facturation, stats, galerie, export, notifications, employés
+   illimités) / premium 25€ (+ planning employés, contrats+signature,
+   paiement en ligne, sync Google Agenda, mise en avant — ces 3 derniers
+   affichés dans la grille mais non implémentés dans cette session).
+   `migration_toilettage_plans_tarifaires.sql`, `toilettage_abonnement_page.dart`
+   (app) + `website/src/app/toilettage/abonnement/page.tsx` (web), Stripe
+   déjà générique par `profil_type` (aucun code serveur à toucher).
+2. **Prestations à prix variables** : `migration_prestations_toilettage.sql`
+   (type/nom/prix_base/durée/`grille_prix` JSONB — tranches
+   espèce×poids/`supplements`/`especes`). `toilettage_prestations_page.dart`
+   (CRUD + éditeur de tranches) et fonction pure
+   `prixPourAnimal(prestation, espece, poidsKg)` (résout le prix depuis
+   `grille_prix`, fallback `prix_base`).
+3. **Réservation prestation + employé + conflit** :
+   `migration_postes_toilettage.sql` (table `postes_toilettage` +
+   `rdv.employe_id`/`poste_id`, drop de la FK trop stricte
+   `rdv_prestation_id_fkey` héritée du module photographe — `prestation_id`
+   est désormais une colonne générique partagée entre modules, plus
+   typée-table). Flag `isToilettage` sur `RdvBookingPage` : sélection
+   prestation, prix calculé selon l'animal sélectionné (espèce/poids),
+   sélection employé (`ChoiceChip`, uniquement si plusieurs employés actifs
+   non-bénévoles). Détection de conflit étendue : blocage par créneau
+   scopé à l'employé sélectionné (réservations parallèles autorisées entre
+   employés différents), sinon blocage pro-large classique.
+4. **Employés enrichis + planning (Premium)** :
+   `migration_employes_toilettage.sql` (colonnes `couleur_planning`/
+   `competences`/`horaires` sur `employes` + table `employe_conges`).
+   `toilettage_employes_page.dart` (page dédiée, n'altère pas
+   `employes_page.dart` existante), gatée `hasPlanningEmployes` avec
+   upsell vers l'abonnement si formule inférieure. Invitation d'employé
+   réutilise `EmployesPage`/`employe_profile_id` tel quel (déjà corrigé
+   cross-profil plus tôt dans la session). `toilettage_planning_employes_page.dart`
+   (vue jour, filtre par employé, RDV colorés par `couleur_planning`, sans
+   glisser-déposer).
+5. **Fiche client** : `migration_fiches_toilettage.sql` (`fiches_toilettage`
+   1/couple animal×profil pro : shampooing préféré/allergies/coupe
+   habituelle/notes, + `fiches_toilettage_photos` avant/après).
+   `toilettage_fiche_client_page.dart` (préférences, historique des RDV
+   terminés, upload photo caméra via `storage_helper.dart`). Nouveau
+   callback `onFiche` sur la carte RDV de `pro_agenda.dart`.
+6. **Facturation + tableau de bord** : `migration_toilettage_factures.sql`
+   (montant simple, pas d'acompte/solde — dérivée de
+   `migration_taxi_factures.sql`, contrairement au module photographe).
+   `toilettage_factures_page.dart` (liste/filtre par statut/export PDF/
+   marquer payée). Le callback `onFacturer` de `pro_agenda.dart`
+   (jusque-là dédié au photographe) est étendu avec une branche
+   `catPro == 'toilettage'` → nouvelle méthode `_facturerToilettage`
+   (montant unique, pas de dialogue acompte/solde).
+   `toilettage_dashboard_page.dart` : RDV terminés, CA (`toilettage_factures`
+   payées), temps moyen (moyenne `duree_minutes`), clients fidèles
+   (regroupement `client_uid` en mémoire, seuil ≥ 3 RDV), note moyenne
+   (`avis_pro`/`user_profiles.note_moyenne` déjà dénormalisée).
+
+**Vérifié** : `flutter analyze` complet (2217 issues, 0 nouvelle erreur —
+comparé à la baseline pré-session, `PetsMatch-main/` exclu).
+
+**How to apply** : 6 migrations à exécuter dans Supabase Dashboard avant
+mise en prod (`migration_toilettage_plans_tarifaires.sql`,
+`migration_prestations_toilettage.sql`, `migration_postes_toilettage.sql`,
+`migration_employes_toilettage.sql`, `migration_fiches_toilettage.sql`,
+`migration_toilettage_factures.sql`). Aucun compte `toilettage` actif n'a
+encore utilisé ces fonctionnalités — déploiement propre, rien à
+backfiller. Sync Google Agenda et paiement en ligne (items PREMIUM affichés
+dans la grille) restent à construire dans une session ultérieure.
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

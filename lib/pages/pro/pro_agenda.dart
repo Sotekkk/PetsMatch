@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
+import 'package:PetsMatch/pages/pro/toilettage_fiche_client_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/utils/geocoding_helper.dart';
@@ -1076,6 +1077,61 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         'montant_solde': total - acompte,
         'montant_total': total,
         'statut': 'acompte_du',
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Prestation facturée.', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Color(0xFF6E9E57),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  // Toiletteur — facture à montant simple (pas d'acompte/solde), montant
+  // pré-rempli depuis prix_calcule (rdv_booking_page.dart) si disponible.
+  Future<void> _facturerToilettage(Map<String, dynamic> rdv) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final supa = Supabase.instance.client;
+
+    final prixCalcule = (rdv['prix_calcule'] as num?)?.toDouble() ?? 0;
+    final montantCtrl = TextEditingController(text: prixCalcule > 0 ? prixCalcule.toStringAsFixed(2) : '');
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Facturer la prestation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: TextField(controller: montantCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'Montant (€)')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Facturer')),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    final montant = double.tryParse(montantCtrl.text.trim().replaceAll(',', '.')) ?? 0;
+    if (montant <= 0) return;
+
+    try {
+      final now = DateTime.now();
+      await supa.from('toilettage_factures').insert({
+        'pro_uid': uid,
+        'pro_profile_id': User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+        'rdv_id': rdv['id'],
+        'client_uid': rdv['client_uid'],
+        if (rdv['client_profile_id'] != null) 'client_profile_id': rdv['client_profile_id'],
+        'numero': 'TOIL-${DateFormat('yyyyMMdd-HHmm').format(now)}',
+        'client_nom': rdv['_client_name'],
+        'montant': montant,
+        'statut': 'envoyee',
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -2494,14 +2550,23 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           onContrat: (showProTools && User_Info.catPro == 'photographe')
               ? () => _genererContratPhoto(rdv)
               : null,
-          onFacturer: (showProTools && User_Info.catPro == 'photographe' && rdv['statut'] == 'termine')
-              ? () => _facturerPhoto(rdv)
+          onFacturer: (showProTools && rdv['statut'] == 'termine' &&
+                  (User_Info.catPro == 'photographe' || User_Info.catPro == 'toilettage'))
+              ? () => User_Info.catPro == 'toilettage' ? _facturerToilettage(rdv) : _facturerPhoto(rdv)
               : null,
           onAlbum: (showProTools && User_Info.catPro == 'photographe')
               ? () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => PhotographeAlbumPage(
                     rdvId: rdv['id'].toString(),
                     clientName: rdv['_client_name']?.toString() ?? 'Client',
+                  )))
+              : null,
+          onFiche: (showProTools && User_Info.catPro == 'toilettage' && hasAnimal)
+              ? () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => ToilettageFicheClientPage(
+                    animalId: animalId,
+                    animalNom: rdv['_animal_nom']?.toString() ?? rdv['_client_name']?.toString() ?? 'Animal',
+                    rdvId: rdv['id'].toString(),
                   )))
               : null,
         );
@@ -2554,6 +2619,7 @@ class _RdvCard extends StatelessWidget {
   final VoidCallback? onContrat;
   final VoidCallback? onFacturer;
   final VoidCallback? onAlbum;
+  final VoidCallback? onFiche;
 
   const _RdvCard({
     required this.rdv,
@@ -2572,6 +2638,7 @@ class _RdvCard extends StatelessWidget {
     this.onContrat,
     this.onFacturer,
     this.onAlbum,
+    this.onFiche,
   });
 
   @override
@@ -2771,6 +2838,16 @@ class _RdvCard extends StatelessWidget {
                   onPressed: onAlbum,
                   icon: const Icon(Icons.photo_library_outlined, size: 20, color: Color(0xFF90A4AE)),
                   tooltip: 'Galerie de livraison',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+              if (onFiche != null) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  onPressed: onFiche,
+                  icon: const Icon(Icons.badge_outlined, size: 20, color: Color(0xFFFFB74D)),
+                  tooltip: 'Fiche client',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),

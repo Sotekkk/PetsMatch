@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geocoding/geocoding.dart' as geo;
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart' show prixPourAnimal;
 
 class RdvBookingPage extends StatefulWidget {
   final String proUid;
@@ -16,6 +17,7 @@ class RdvBookingPage extends StatefulWidget {
   final bool isGarde;
   final bool isTaxi;
   final bool isPhotographe;
+  final bool isToilettage;
   final String? preselectedAnimalId;
   final String? proProfileId; // user_profiles.id si profil secondaire
   final Map<String, dynamic>? visiteAnimal; // animal de l'association à visiter (id, nom, espece, photo_url)
@@ -31,6 +33,7 @@ class RdvBookingPage extends StatefulWidget {
     this.isGarde = false,
     this.isTaxi = false,
     this.isPhotographe = false,
+    this.isToilettage = false,
     this.preselectedAnimalId,
     this.proProfileId,
     this.visiteAnimal,
@@ -100,11 +103,15 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   int _nombreAnimaux = 1;
   double? _latDepart, _lngDepart, _latArrivee, _lngArrivee;
 
-  // Photographe : prestation choisie (remplace le motif dynamique) + lieu
-  // du shooting (réutilise adresseDepart/latDepart/lngDepart, une seule
-  // adresse suffit ici contrairement au taxi).
+  // Photographe / Toiletteur : prestation choisie (remplace le motif
+  // dynamique). Photographe ajoute un lieu (réutilise adresseDepart/
+  // latDepart/lngDepart) ; toiletteur ajoute un employé assigné.
   List<Map<String, dynamic>> _prestations = [];
   Map<String, dynamic>? _selectedPrestation;
+
+  // Toiletteur : employé assigné (uniquement si le pro en a configuré).
+  List<Map<String, dynamic>> _employesToilettage = [];
+  Map<String, dynamic>? _selectedEmploye;
 
   static const _motifLabels = <String, String>{
     'consultation': 'Consultation', 'vaccination': 'Vaccination',
@@ -154,7 +161,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
   // Durée sélectionnée selon le motif choisi
   int get _selectedDuration {
-    if (widget.isPhotographe && _selectedPrestation != null) {
+    if ((widget.isPhotographe || widget.isToilettage) && _selectedPrestation != null) {
       return (_selectedPrestation!['duree_minutes'] as num?)?.toInt() ?? 60;
     }
     if (widget.isVet && _selectedVetMotif != null && _selectedVetMotif != 'autre') {
@@ -196,16 +203,31 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       _loadAnimaux(),
       _loadProProfile(),
       _loadAvailableSlots(),
-      if (widget.isPhotographe) _loadPrestations(),
+      if (widget.isPhotographe || widget.isToilettage) _loadPrestations(),
+      if (widget.isToilettage) _loadEmployesToilettage(),
     ]);
     if (mounted) setState(() => _loadingData = false);
   }
 
   Future<void> _loadPrestations() async {
     try {
-      final rows = await Supabase.instance.client.from('prestations_photographe').select()
+      final table = widget.isToilettage ? 'prestations_toilettage' : 'prestations_photographe';
+      final rows = await Supabase.instance.client.from(table).select()
           .eq('pro_uid', widget.proUid).eq('actif', true).order('created_at');
       if (mounted) setState(() => _prestations = List<Map<String, dynamic>>.from(rows as List));
+    } catch (_) {}
+  }
+
+  // Employés actifs du toiletteur — scopé eleveur_profile_id (jamais le
+  // seul uid_eleveur, qui fuiterait les employés d'un autre profil du même
+  // compte — cf. fix cross-profil de cette session). La sélection n'est
+  // proposée que s'il y en a plus d'un (mono-intervenant implicite sinon).
+  Future<void> _loadEmployesToilettage() async {
+    if (widget.proProfileId == null || widget.proProfileId!.isEmpty) return;
+    try {
+      final rows = await Supabase.instance.client.from('employes').select('id, prenom, nom, uid_employe')
+          .eq('eleveur_profile_id', widget.proProfileId!).eq('actif', true).neq('type', 'benevole');
+      if (mounted) setState(() => _employesToilettage = List<Map<String, dynamic>>.from(rows as List));
     } catch (_) {}
   }
 
@@ -290,7 +312,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       // voit les animaux de tous ses profils au lieu du seul profil courant.
       var directQ = supa
           .from('animaux')
-          .select('id, nom, espece, race, photo_url')
+          .select('id, nom, espece, race, photo_url, poids')
           .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid');
       if (pid.isNotEmpty) directQ = directQ.eq('profile_id', pid);
       final directRows = await directQ;
@@ -311,7 +333,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       List<Map<String, dynamic>> viaCession = [];
       if (missingIds.isNotEmpty) {
         final rows2 = await supa.from('animaux')
-            .select('id, nom, espece, race, photo_url')
+            .select('id, nom, espece, race, photo_url, poids')
             .inFilter('id', missingIds.toList());
         viaCession = List<Map<String, dynamic>>.from((rows2 as List).map((e) => Map<String, dynamic>.from(e as Map)));
       }
@@ -351,7 +373,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             .limit(1000),
         Supabase.instance.client
             .from('rdv')
-            .select('date_heure, duree_minutes, statut')
+            .select('date_heure, duree_minutes, statut, employe_id')
             .eq('pro_uid', widget.proUid)
             .eq('pro_profile_id', profileId)
             .inFilter('statut', ['confirme', 'demande'])
@@ -411,9 +433,15 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         }
       }
 
-      // 3. Intervals bloqués par les RDVs existants pour ce jour
+      // 3. Intervals bloqués par les RDVs existants pour ce jour. Toiletteur
+      // multi-employés : deux employés distincts peuvent travailler en
+      // parallèle — on ne bloque que les RDV du même employé sélectionné
+      // (mono-intervenant implicite si aucun employé sélectionné : blocage
+      // pro-wide comme pour tous les autres types de pro).
       final blocked = <({int startMin, int endMin})>[];
+      final filterByEmploye = widget.isToilettage && _selectedEmploye != null;
       for (final rdv in _existingRdvs) {
+        if (filterByEmploye && rdv['employe_id'] != _selectedEmploye!['id']) continue;
         final dh = DateTime.tryParse(rdv['date_heure'] as String? ?? '')?.toLocal();
         if (dh == null) continue;
         final rdvDate = '${dh.year}-${dh.month.toString().padLeft(2,'0')}-${dh.day.toString().padLeft(2,'0')}';
@@ -508,8 +536,13 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       }
     }
 
+    // Validation prestation (toiletteur)
+    if (widget.isToilettage && _selectedPrestation == null) {
+      _snack('Veuillez choisir une prestation', color: Colors.orange); return;
+    }
+
     // Validation motif selon type
-    if (widget.isPhotographe) {
+    if (widget.isPhotographe || widget.isToilettage) {
       // Motif dérivé de la prestation choisie — pas de saisie manuelle.
     } else if (widget.isPension) {
       if (_selectedMotif == null) {
@@ -548,7 +581,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           int.parse(heureDebut[0]), int.parse(heureDebut[1])).toUtc();
 
       final String motif;
-      if (widget.isPhotographe) {
+      if (widget.isPhotographe || widget.isToilettage) {
         motif = _selectedPrestation?['nom']?.toString() ?? '';
       } else if (widget.isPension) {
         motif = _selectedMotif == 'autre'
@@ -624,6 +657,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             'adresse_depart': _adresseDepartCtrl.text.trim(),
             if (_latDepart != null) 'lat_depart': _latDepart,
             if (_lngDepart != null) 'lng_depart': _lngDepart,
+          },
+          if (widget.isToilettage) ...{
+            'prestation_id': _selectedPrestation?['id'],
+            if (_selectedPrestation != null) 'prix_calcule': _prixAffiche(_selectedPrestation!),
+            if (_selectedEmploye != null) 'employe_id': _selectedEmploye!['id'],
           },
           if (_notesCtrl.text.trim().isNotEmpty && (widget.isPension ? _selectedMotif != 'autre' : true))
             'notes_client': _notesCtrl.text.trim(),
@@ -780,23 +818,41 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   List<Widget> _buildMotifSection() {
     if (widget.isPension) return _buildPensionMotif();
     if (widget.isVet) return _buildVetMotif();
-    if (widget.isPhotographe) return _buildPrestationSection();
+    if (widget.isPhotographe || widget.isToilettage) return _buildPrestationSection();
     // Pour les autres pros : motifs dynamiques si configurés, sinon champ libre
     return _buildDynamicMotif();
   }
 
-  // ── Sélection de prestation (photographe) — remplace le motif dynamique.
+  /// Prix affiché pour une prestation dans la liste : résolu selon
+  /// l'espèce/poids de l'animal sélectionné pour le toiletteur (grille de
+  /// prix), prix fixe pour le photographe.
+  double _prixAffiche(Map<String, dynamic> p) {
+    if (widget.isToilettage) {
+      final espece = _selectedAnimal?['espece']?.toString() ?? '';
+      final poids = (_selectedAnimal?['poids'] as num?)?.toDouble();
+      return prixPourAnimal(p, espece, poids);
+    }
+    return (p['prix'] as num?)?.toDouble() ?? 0;
+  }
+
+  // ── Sélection de prestation (photographe / toiletteur) — remplace le
+  // motif dynamique.
   List<Widget> _buildPrestationSection() {
     if (_prestations.isEmpty) {
       return [
         _sectionTitle('Prestation'),
         const SizedBox(height: 8),
-        Text('Ce photographe n\'a pas encore configuré de prestations.',
+        Text('Ce professionnel n\'a pas encore configuré de prestations.',
             style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
       ];
     }
     return [
       _sectionTitle('Prestation *'),
+      if (widget.isToilettage && _selectedAnimal == null) ...[
+        const SizedBox(height: 4),
+        Text('Sélectionnez d\'abord l\'animal ci-dessous pour voir le prix exact.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+      ],
       const SizedBox(height: 8),
       ..._prestations.map((p) {
         final selected = _selectedPrestation?['id'] == p['id'];
@@ -816,15 +872,30 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                 const SizedBox(height: 2),
                 Text('${p['duree_minutes']} min'
                     '${p['nb_photos'] != null ? ' · ${p['nb_photos']} photos' : ''}'
-                    ' · livraison ${p['delai_livraison_jours']}j',
+                    '${p['delai_livraison_jours'] != null ? ' · livraison ${p['delai_livraison_jours']}j' : ''}',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
               ])),
-              Text('${((p['prix'] as num?)?.toDouble() ?? 0).toStringAsFixed(0)} €',
+              Text('${_prixAffiche(p).toStringAsFixed(0)} €',
                   style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: widget.categoryColor)),
             ]),
           ),
         );
       }),
+      if (widget.isToilettage && _employesToilettage.length > 1) ...[
+        const SizedBox(height: 16),
+        _sectionTitle('Intervenant'),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 8, children: _employesToilettage.map((e) {
+          final selected = _selectedEmploye?['id'] == e['id'];
+          final nom = '${e['prenom'] ?? ''} ${e['nom'] ?? ''}'.trim();
+          return ChoiceChip(
+            label: Text(nom.isEmpty ? 'Employé' : nom, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+            selected: selected,
+            selectedColor: widget.categoryColor.withValues(alpha: 0.15),
+            onSelected: (_) => setState(() => _selectedEmploye = selected ? null : e),
+          );
+        }).toList()),
+      ],
     ];
   }
 

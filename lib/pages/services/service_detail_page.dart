@@ -739,6 +739,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                       isGarde: _proData?['cat_pro'] == 'garde',
                       isTaxi: _proData?['cat_pro'] == 'taxi_animalier',
                       isPhotographe: _proData?['cat_pro'] == 'photographe',
+                      isToilettage: _proData?['cat_pro'] == 'toilettage',
                       proProfileId: widget.profileTableId,
                     )))
                 : null,
