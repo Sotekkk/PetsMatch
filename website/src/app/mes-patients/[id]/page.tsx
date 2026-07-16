@@ -182,7 +182,8 @@ export default function PatientDetailPage() {
   }, [activeProfileId, userData]);
 
   const isPensionType = PENSION_TYPES.has(catPro);
-  const isVet = catPro === 'veterinaire' || catPro === 'sante';
+  const isVet = catPro === 'veterinaire' || catPro === 'sante' || catPro === 'marechal_ferrant';
+  const hasAnatomie = catPro === 'sante' || catPro === 'marechal_ferrant';
   const isEducation = catPro === 'education';
   const hasWriteAccess = isVet
     ? (grant?.statut === 'active' || grant?.statut === 'active_write')
@@ -197,7 +198,7 @@ export default function PatientDetailPage() {
   const TABS: string[] = isPensionType
     ? ['Identité', 'Santé', 'Alimentation', 'Propriétaire']
     : isVet
-      ? (catPro === 'sante'
+      ? (hasAnatomie
           ? ['Identité', 'Santé', 'Repro', 'Propriétaire', 'Consultations', 'Anatomie']
           : ['Identité', 'Santé', 'Repro', 'Propriétaire', 'Consultations'])
       : isEducation
@@ -1066,7 +1067,7 @@ export default function PatientDetailPage() {
         )}
 
         {tab === 'Anatomie' && animal && (
-          <AnatomieSeances animalId={String(animal.id)} espece={animal.espece} />
+          <AnatomieSeances animalId={String(animal.id)} espece={animal.espece} profilType={catPro} />
         )}
       </div>
 

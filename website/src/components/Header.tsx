@@ -607,9 +607,9 @@ export default function Header() {
   const isPrimaryPro = !resolvedProfileType && userData?.isPro === true;
   const primaryCatPro = userData?.catPro ?? '';
 
-  const effectiveIsVet = !!(resolvedProfileType === 'veterinaire' || resolvedProfileType === 'sante' ||
-    activeProfile?.cat_pro === 'veterinaire' || activeProfile?.cat_pro === 'sante'
-  ) || (isPrimaryPro && (primaryCatPro === 'veterinaire' || primaryCatPro === 'sante'));
+  const effectiveIsVet = !!(resolvedProfileType === 'veterinaire' || resolvedProfileType === 'sante' || resolvedProfileType === 'marechal_ferrant' ||
+    activeProfile?.cat_pro === 'veterinaire' || activeProfile?.cat_pro === 'sante' || activeProfile?.cat_pro === 'marechal_ferrant'
+  ) || (isPrimaryPro && (primaryCatPro === 'veterinaire' || primaryCatPro === 'sante' || primaryCatPro === 'marechal_ferrant'));
 
   const primaryDisplayName = userData?.nameElevage ?? userData?.firstname ?? user?.email ?? '';
   const primaryAvatar = userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;

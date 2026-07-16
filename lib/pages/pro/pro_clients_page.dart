@@ -8,9 +8,10 @@ import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/widgets/pro_day_timeline.dart';
 
 /// Tableau de bord commun pour les pros non-vétérinaires :
-/// - cat_pro = 'sante'     → ostéo, kiné, naturo, acupuncteur, homéopathe
-/// - cat_pro = 'education' → comportementaliste, éducateur, dresseur
-/// - cat_pro = 'garde'     → pet sitter, promeneur
+/// - cat_pro = 'sante'             → ostéo, kiné, naturo, acupuncteur, homéopathe
+/// - cat_pro = 'education'         → comportementaliste, éducateur, dresseur
+/// - cat_pro = 'garde'             → pet sitter, promeneur
+/// - cat_pro = 'marechal_ferrant'  → maréchal-ferrant
 ///
 /// Affiche les animaux ayant eu un accès accordé (animal_acces_pro) + agenda.
 class ProClientsPage extends StatefulWidget {
@@ -388,7 +389,7 @@ class _ProClientsPageState extends State<ProClientsPage>
       builder: (_) => AnimalFichePage(
         animalId: animalId,
         readOnly: true,
-        vetMode: User_Info.catPro == 'sante' || User_Info.catPro == 'veterinaire',
+        vetMode: User_Info.catPro == 'sante' || User_Info.catPro == 'veterinaire' || User_Info.catPro == 'marechal_ferrant',
         educationMode: User_Info.catPro == 'education',
       ),
     ));
@@ -686,8 +687,8 @@ class _AnimalCard extends StatelessWidget {
             ])),
             // Actions
             Column(mainAxisSize: MainAxisSize.min, children: [
-              // Carnet santé (sante seulement)
-              if (catPro == 'sante') ...[
+              // Carnet santé (sante et maréchal-ferrant)
+              if (catPro == 'sante' || catPro == 'marechal_ferrant') ...[
                 _ActionBtn(
                   icon: Icons.medical_information_outlined,
                   color: color,

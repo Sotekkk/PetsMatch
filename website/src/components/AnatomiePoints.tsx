@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
@@ -60,7 +61,7 @@ interface SeanceOsteo {
 
 // ── Liste des séances (pro) — remplace l'ancien canvas unique par un
 // historique de comptes rendus datés ────────────────────────────────────────
-export function AnatomieSeances({ animalId, espece }: { animalId: string; espece: string }) {
+export function AnatomieSeances({ animalId, espece, profilType }: { animalId: string; espece: string; profilType: string }) {
   const { user } = useAuth();
   const activeProfileId = useActiveProfile();
   const species = speciesKey(espece);
@@ -70,6 +71,15 @@ export function AnatomieSeances({ animalId, espece }: { animalId: string; espece
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [openSeance, setOpenSeance] = useState<SeanceOsteo | null>(null);
+  const [hasAjoutSeances, setHasAjoutSeances] = useState(false);
+  const [showUpgrade, setShowUpgrade] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('abonnements').select('plan_code').eq('uid', user.uid).eq('profil_type', profilType).eq('statut', 'actif')
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => setHasAjoutSeances((data?.plan_code ?? 'free') !== 'free'));
+  }, [user, profilType]);
 
   const load = useCallback(async () => {
     if (!animalId) return;
@@ -91,6 +101,7 @@ export function AnatomieSeances({ animalId, espece }: { animalId: string; espece
 
   async function nouvelleSeance() {
     if (!user || !species) return;
+    if (!hasAjoutSeances) { setShowUpgrade(true); return; }
     setCreating(true);
     const { data } = await supabase.from('seances_osteo').insert({
       animal_id: animalId,
@@ -129,6 +140,24 @@ export function AnatomieSeances({ animalId, espece }: { animalId: string; espece
         style={{ fontFamily: 'Galey, sans-serif' }}>
         {creating ? '…' : '+ Nouvelle séance'}
       </button>
+
+      {showUpgrade && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowUpgrade(false)}>
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+            <p className="font-bold text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Formule Essentiel requise</p>
+            <p className="text-sm text-gray-600 mb-4">
+              L&apos;ajout de séances au carnet santé (schéma anatomique) est réservé aux formules Essentiel et Pro.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowUpgrade(false)} className="px-4 py-2 text-sm text-gray-500">Annuler</button>
+              <Link href={profilType === 'marechal_ferrant' ? '/marechal-ferrant/abonnement' : '/sante/abonnement'}
+                className="px-4 py-2 text-sm font-semibold text-white bg-[#0C5C6C] rounded-xl hover:bg-[#094F5D]">
+                Voir les formules
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       {seances.length === 0 ? (
         <p className="text-center py-10 text-gray-400 text-sm">Aucune séance enregistrée pour l&apos;instant.</p>

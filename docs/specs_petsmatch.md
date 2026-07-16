@@ -5780,4 +5780,75 @@ production complet réussi.
 
 ---
 
+## 38. Module anatomie ostéo/kiné — gating abonnement + support maréchal-ferrant (session 2026-07-16)
+
+**Contexte** : suite du module anatomie livré §37bis (`b79605bf`, 2026-07-15).
+Deux manques identifiés en relisant la grille tarifaire §8.1 :
+1. L'ajout de séances au carnet santé (schéma anatomique) n'était soumis à
+   aucune vérification d'abonnement, alors que la grille tarifaire "Soins
+   para-médicaux" prévoit que FREE reste à l'annuaire basique (token 72h) et
+   que seules les formules Essentiel (19€/mois) et Pro (29€/mois) donnent
+   accès à l'ajout de séances.
+2. Le maréchal-ferrant, pourtant regroupé avec ostéo/kiné sous la même grille
+   tarifaire, n'avait accès ni au module anatomie ni même au menu "Mes
+   patients" — aucune trace de `marechal_ferrant` dans `eleveur_nav.dart`,
+   `pro_clients_page.dart`, `animal_fiche.dart` (app) ni `Header.tsx`
+   `effectiveIsVet` (web), alors que l'annuaire et les pages patients avaient
+   déjà un support partiel (labels, emoji) suggérant que l'intégration avait
+   été commencée puis jamais terminée.
+
+**Vérifié avant tout changement** : tables `seances_osteo`/`points_osteo`
+(migrations du 2026-07-15) bien présentes en base (requête REST directe,
+200 + tableau vide) — aucune régression à corriger là-dessus.
+
+**Fix 1 — gating abonnement** :
+- `plan_service.dart` (app) : nouvelle classe `SantePlanConfig` +
+  `santeConfigs`/`getSanteConfig`/`getSantePlansLive(profilType)`/
+  `getSantePlanCode(uid, profilType)`, sur le même modèle que
+  Garde/Éducation/Pension. `profilType` paramétré ('sante' ou
+  'marechal_ferrant') car ce sont deux abonnements distincts malgré une
+  grille tarifaire identique.
+- `supabase/migration_sante_plans_tarifaires.sql` : seed `plans_tarifaires`
+  pour `profil_type IN ('sante', 'marechal_ferrant')`, plans free/essentiel/
+  pro, `features` jsonb avec `hasAjoutSeances` comme différenciateur — à
+  exécuter dans Supabase Dashboard → SQL Editor.
+- `anatomie_points_page.dart` (app) et `AnatomiePoints.tsx` → `AnatomieSeances`
+  (web, nouveau prop `profilType`) : `_nouvelleSeance()`/`nouvelleSeance()`
+  vérifie `hasAjoutSeances` avant insertion ; si FREE, affiche un dialog/modal
+  d'upsell renvoyant vers la nouvelle page d'abonnement au lieu de créer la
+  séance.
+- Nouvelle page app `sante_abonnement_page.dart` (partagée sante/
+  maréchal-ferrant via prop `profilType`, sur le modèle de
+  `garde_abonnement_page.dart` — l'upgrade réel se fait sur le site, l'app
+  ne fait que rediriger via `launchUrl`, cohérent avec "paiement web
+  uniquement").
+- Nouvelles pages web `website/src/app/sante/abonnement/page.tsx` et
+  `website/src/app/marechal-ferrant/abonnement/page.tsx` (Stripe checkout/
+  portal, sur le modèle de `garde/abonnement/page.tsx`).
+
+**Fix 2 — support maréchal-ferrant** (étendu partout où `sante` était déjà
+géré, même traitement) :
+- App : `eleveur_nav.dart` + `app_nav_drawer.dart` (menu "Mes patients"/
+  "Mes équidés suivis" avec icône dédiée), `pro_clients_page.dart`
+  (`vetMode`, bouton "Carnet de santé"), `animal_fiche.dart` (3 endroits :
+  `_tabCount`, liste des tabs, contenu de l'onglet Anatomie).
+- Web : `Header.tsx` `effectiveIsVet` (menu "Mes patients", identique à
+  vétérinaire/santé — le nom `MENU_VET` est un artefact historique, son
+  contenu est en réalité générique), `mes-patients/[id]/page.tsx`
+  (`isVet`/`hasAnatomie`, onglet Anatomie).
+
+Vérifié : `flutter analyze` sur les 7 fichiers app touchés/créés — 0 erreur
+(uniquement des warnings de style pré-existants ailleurs dans les mêmes
+fichiers). `npx tsc --noEmit` sur le site — 0 nouvelle erreur (les erreurs
+restantes pré-existaient, confirmé via `git show HEAD`).
+
+**How to apply** : la migration `migration_sante_plans_tarifaires.sql` doit
+être exécutée manuellement avant que le gating ne prenne effet correctement
+(sinon `getSantePlansLive`/`getSantePlanCode` retombent sur le fallback
+statique `free`, ce qui bloque à tort l'ajout de séances pour les comptes
+Essentiel/Pro déjà souscrits ailleurs — à vérifier si des comptes sante/
+maréchal-ferrant existent déjà avant bascule en prod).
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

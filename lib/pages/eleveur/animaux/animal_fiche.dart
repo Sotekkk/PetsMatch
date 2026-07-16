@@ -193,7 +193,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   }
 
   int get _tabCount {
-    if (widget.vetMode) return User_Info.catPro == 'sante' ? 6 : 5;
+    if (widget.vetMode) return (User_Info.catPro == 'sante' || User_Info.catPro == 'marechal_ferrant') ? 6 : 5;
     if (widget.isAssociation) return 4;
     if (_statut == 'sorti' && !_isNewOwner) return 2; // ancien proprio : Identité + Documents
     if (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab) return 5; // particulier : sans Repro
@@ -1514,7 +1514,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           unselectedLabelColor: Colors.white60,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
           tabs: widget.vetMode
-              ? (User_Info.catPro == 'sante'
+              ? ((User_Info.catPro == 'sante' || User_Info.catPro == 'marechal_ferrant')
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Anatomie')]
                   : const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations')])
               : widget.educationMode
@@ -1537,7 +1537,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                 _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly('write_repro')),
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
                 _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId),
-                if (User_Info.catPro == 'sante')
+                if (User_Info.catPro == 'sante' || User_Info.catPro == 'marechal_ferrant')
                   AnatomieSeancesTab(animalId: widget.animalId ?? '', espece: _espece),
               ]
             : widget.educationMode

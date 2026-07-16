@@ -104,6 +104,28 @@ class GardePlanConfig {
   });
 }
 
+class SantePlanConfig {
+  final String code;
+  final String label;
+  final bool hasAjoutSeances;
+  final bool hasFactureExport;
+  final bool hasMultiIntervenants;
+  final int maxIntervenants; // -1 = illimité
+  final double prixMensuel;
+  final double prixAnnuel;
+
+  const SantePlanConfig({
+    required this.code,
+    required this.label,
+    required this.hasAjoutSeances,
+    required this.hasFactureExport,
+    required this.hasMultiIntervenants,
+    required this.maxIntervenants,
+    this.prixMensuel = 0,
+    this.prixAnnuel = 0,
+  });
+}
+
 class PlanService {
   static const String kWebsiteUrl = 'https://www.petsmatchapp.com';
 
@@ -325,6 +347,80 @@ class PlanService {
           .select('plan_code')
           .eq('uid', uid)
           .eq('profil_type', 'garde')
+          .eq('statut', 'actif')
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      return (res?['plan_code'] as String?) ?? 'free';
+    } catch (_) {
+      return 'free';
+    }
+  }
+
+  // "Soins para-médicaux" — profils santé (ostéo/kiné) et maréchal-ferrant,
+  // regroupés sous la même grille tarifaire (Spec §8.1) mais suivis comme des
+  // abonnements distincts par profil_type (un compte peut cumuler les deux).
+  static const Map<String, SantePlanConfig> santeConfigs = {
+    'free': SantePlanConfig(
+      code: 'free', label: 'Découverte', hasAjoutSeances: false, hasFactureExport: false,
+      hasMultiIntervenants: false, maxIntervenants: 1, prixMensuel: 0, prixAnnuel: 0,
+    ),
+    'essentiel': SantePlanConfig(
+      code: 'essentiel', label: 'Essentiel', hasAjoutSeances: true, hasFactureExport: false,
+      hasMultiIntervenants: false, maxIntervenants: 1, prixMensuel: 19, prixAnnuel: 190,
+    ),
+    'pro': SantePlanConfig(
+      code: 'pro', label: 'Pro', hasAjoutSeances: true, hasFactureExport: true,
+      hasMultiIntervenants: true, maxIntervenants: 3, prixMensuel: 29, prixAnnuel: 290,
+    ),
+  };
+
+  static SantePlanConfig getSanteConfig(String planCode) =>
+      santeConfigs[planCode] ?? santeConfigs['free']!;
+
+  /// Tarifs santé/maréchal-ferrant à jour depuis plans_tarifaires (éditables
+  /// depuis l'admin web sans déploiement). Retombe sur santeConfigs si la BDD
+  /// est injoignable. [profilType] : 'sante' ou 'marechal_ferrant'.
+  static Future<Map<String, SantePlanConfig>> getSantePlansLive(String profilType) async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('plans_tarifaires')
+          .select('plan_code, label, prix_mensuel, prix_annuel, features')
+          .eq('profil_type', profilType)
+          .eq('actif', true);
+      final out = <String, SantePlanConfig>{};
+      for (final row in (rows as List)) {
+        final code = row['plan_code'] as String?;
+        if (code == null) continue;
+        final fallback = getSanteConfig(code);
+        final f = (row['features'] as Map<String, dynamic>?) ?? {};
+        out[code] = SantePlanConfig(
+          code: code,
+          label: (row['label'] as String?) ?? fallback.label,
+          hasAjoutSeances: f['hasAjoutSeances'] as bool? ?? fallback.hasAjoutSeances,
+          hasFactureExport: f['hasFactureExport'] as bool? ?? fallback.hasFactureExport,
+          hasMultiIntervenants: f['hasMultiIntervenants'] as bool? ?? fallback.hasMultiIntervenants,
+          maxIntervenants: (f['maxIntervenants'] as num?)?.toInt() ?? fallback.maxIntervenants,
+          prixMensuel: (row['prix_mensuel'] as num?)?.toDouble() ?? fallback.prixMensuel,
+          prixAnnuel: (row['prix_annuel'] as num?)?.toDouble() ?? fallback.prixAnnuel,
+        );
+      }
+      return out.isEmpty ? santeConfigs : out;
+    } catch (_) {
+      return santeConfigs;
+    }
+  }
+
+  /// Plan santé/maréchal-ferrant actif pour ce uid — distinct des autres
+  /// profils (abonnements est scopé par profil_type). [profilType] : 'sante'
+  /// ou 'marechal_ferrant'.
+  static Future<String> getSantePlanCode(String uid, String profilType) async {
+    try {
+      final res = await Supabase.instance.client
+          .from('abonnements')
+          .select('plan_code')
+          .eq('uid', uid)
+          .eq('profil_type', profilType)
           .eq('statut', 'actif')
           .order('created_at', ascending: false)
           .limit(1)

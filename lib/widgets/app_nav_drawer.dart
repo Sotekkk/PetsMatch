@@ -522,18 +522,23 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
             ),
           if (User_Info.catPro == 'sante' ||
               User_Info.catPro == 'education' ||
-              User_Info.catPro == 'garde')
+              User_Info.catPro == 'garde' ||
+              User_Info.catPro == 'marechal_ferrant')
             _DrawerItem(
               icon: User_Info.catPro == 'education'
                   ? Icons.psychology_outlined
                   : User_Info.catPro == 'garde'
                       ? Icons.directions_walk_outlined
-                      : Icons.self_improvement_outlined,
+                      : User_Info.catPro == 'marechal_ferrant'
+                          ? Icons.handyman_outlined
+                          : Icons.self_improvement_outlined,
               label: User_Info.catPro == 'education'
                   ? 'Mes animaux suivis'
                   : User_Info.catPro == 'garde'
                       ? 'Mes animaux en garde'
-                      : 'Mes patients',
+                      : User_Info.catPro == 'marechal_ferrant'
+                          ? 'Mes équidés suivis'
+                          : 'Mes patients',
               onTap: () => _push(const ProClientsPage()),
             ),
           if (User_Info.catPro == 'pension')

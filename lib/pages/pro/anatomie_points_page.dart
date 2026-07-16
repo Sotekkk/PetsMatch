@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
 
 // Catégories de points — mirror du légende "Points d'ostéopathie" des
 // schémas anatomiques d'origine.
@@ -67,6 +69,7 @@ class _AnatomieSeancesTabState extends State<AnatomieSeancesTab> {
   bool _creating = false;
   List<Map<String, dynamic>> _seances = [];
   Map<String, int> _pointCounts = {};
+  String _planCode = 'free';
 
   String? get _speciesK => _speciesKey(widget.espece);
 
@@ -74,6 +77,14 @@ class _AnatomieSeancesTabState extends State<AnatomieSeancesTab> {
   void initState() {
     super.initState();
     _load();
+    _loadPlan();
+  }
+
+  Future<void> _loadPlan() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final code = await PlanService.getSantePlanCode(uid, User_Info.catPro);
+    if (mounted) setState(() => _planCode = code);
   }
 
   Future<void> _load() async {
@@ -99,6 +110,10 @@ class _AnatomieSeancesTabState extends State<AnatomieSeancesTab> {
   Future<void> _nouvelleSeance() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null || _speciesK == null) return;
+    if (!PlanService.getSanteConfig(_planCode).hasAjoutSeances) {
+      await _showUpgradePrompt();
+      return;
+    }
     setState(() => _creating = true);
     try {
       final pid = User_Info.activeProfileId;
@@ -123,6 +138,29 @@ class _AnatomieSeancesTabState extends State<AnatomieSeancesTab> {
       }
     } catch (_) {
       if (mounted) setState(() => _creating = false);
+    }
+  }
+
+  Future<void> _showUpgradePrompt() async {
+    if (!mounted) return;
+    final upgrade = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Formule Essentiel requise', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text(
+          'L\'ajout de séances au carnet santé (schéma anatomique) est réservé aux formules Essentiel et Pro.',
+          style: TextStyle(fontFamily: 'Galey'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Voir les formules', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (upgrade == true && mounted) {
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => SanteAbonnementPage(profilType: User_Info.catPro),
+      ));
     }
   }
 
