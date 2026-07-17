@@ -40,6 +40,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   List<Map<String, dynamic>> _coursCollectifs = [];
   Map<String, int> _participantsCount = {};
   bool _inscrivant = false;
+  List<Map<String, dynamic>> _prestations = [];
 
   @override
   void initState() {
@@ -125,6 +126,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
       }
       if (mounted) setState(() { _proData = row; _loading = false; });
       if (row?['cat_pro'] == 'education') await _loadCoursCollectifs();
+      if (row?['cat_pro'] == 'photographe' || row?['cat_pro'] == 'toilettage') await _loadPrestations();
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -152,6 +154,32 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
       }
       if (mounted) setState(() { _coursCollectifs = cours; _participantsCount = counts; });
     } catch (_) {}
+  }
+
+  Future<void> _loadPrestations() async {
+    final table = _proData?['cat_pro'] == 'toilettage' ? 'prestations_toilettage' : 'prestations_photographe';
+    final proUid = _proData?['uid']?.toString();
+    if (proUid == null) return;
+    try {
+      var query = _supa.from(table).select().eq('pro_uid', proUid).eq('actif', true);
+      if (widget.profileTableId != null) query = query.eq('pro_profile_id', widget.profileTableId!);
+      final rows = await query.order('created_at');
+      if (mounted) setState(() => _prestations = List<Map<String, dynamic>>.from(rows as List));
+    } catch (_) {}
+  }
+
+  String _prestationPrixLabel(Map<String, dynamic> p) {
+    if (_proData?['cat_pro'] != 'toilettage') {
+      return '${((p['prix'] as num?)?.toDouble() ?? 0).toStringAsFixed(0)} €';
+    }
+    final grille = (p['grille_prix'] as List?) ?? [];
+    if (grille.isEmpty) {
+      return 'à partir de ${((p['prix_base'] as num?)?.toDouble() ?? 0).toStringAsFixed(0)} €';
+    }
+    final prix = grille.map((t) => ((t as Map)['prix'] as num?)?.toDouble() ?? 0).toList();
+    final min = prix.reduce((a, b) => a < b ? a : b);
+    final max = prix.reduce((a, b) => a > b ? a : b);
+    return min == max ? '${min.toStringAsFixed(0)} €' : '${min.toStringAsFixed(0)}-${max.toStringAsFixed(0)} €';
   }
 
   Future<void> _inscrireAuCours(Map<String, dynamic> cours) async {
@@ -602,6 +630,52 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                 ),
               ],
             )),
+          ],
+
+          // Prestations (photographe / toilettage)
+          if (_prestations.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _card(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionTitle('Prestations'),
+                const SizedBox(height: 10),
+                ..._prestations.map((p) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(p['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+                      if ((p['description'] as String?)?.isNotEmpty == true)
+                        Text(p['description'].toString(), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                      Text('${p['duree_minutes'] ?? 0} min', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400)),
+                    ])),
+                    const SizedBox(width: 8),
+                    Text(_prestationPrixLabel(p), style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: widget.categoryColor)),
+                  ]),
+                )),
+              ],
+            )),
+          ],
+
+          // Tarifs de course (taxi animalier)
+          if (_proData?['cat_pro'] == 'taxi_animalier' && _proData?['tarifs_taxi'] is Map && (_proData!['tarifs_taxi'] as Map).isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _card(child: Builder(builder: (_) {
+              final t = _proData!['tarifs_taxi'] as Map;
+              final priseEnCharge = (t['prise_en_charge'] as num?)?.toDouble() ?? 0;
+              final prixKm = (t['prix_km'] as num?)?.toDouble() ?? 0;
+              final minimum = (t['minimum'] as num?)?.toDouble() ?? 0;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sectionTitle('Tarifs de course'),
+                  const SizedBox(height: 8),
+                  Text('${priseEnCharge.toStringAsFixed(2)} € de prise en charge + ${prixKm.toStringAsFixed(2)} €/km'
+                      '${minimum > 0 ? ' (minimum ${minimum.toStringAsFixed(2)} €)' : ''}',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5, color: Color(0xFF444444))),
+                ],
+              );
+            })),
           ],
 
           // Tarifs

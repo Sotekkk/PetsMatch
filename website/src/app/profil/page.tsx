@@ -742,6 +742,12 @@ const PRESTATIONS_GARDE = [
   { value: 'autre', label: 'Autre prestation' },
 ];
 
+const TARIFS_TAXI_FIELDS = [
+  { value: 'prise_en_charge', label: 'Prise en charge', suffix: '€' },
+  { value: 'prix_km', label: 'Prix au km', suffix: '€/km' },
+  { value: 'minimum', label: 'Minimum de course', suffix: '€' },
+];
+
 const JOURS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
 const MOTIFS_LABELS: Record<string, Record<string, string>> = {
@@ -826,6 +832,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [tarifsLogements, setTarifsLogements] = useState<Record<string, number>>({});
   const [tarifsEducation, setTarifsEducation] = useState<Record<string, number>>({});
   const [tarifsGarde, setTarifsGarde] = useState<Record<string, number>>({});
+  const [tarifsTaxi, setTarifsTaxi] = useState<Record<string, number>>({});
   const [educationBilanRequis, setEducationBilanRequis] = useState(true);
   const [forfaits, setForfaits] = useState<{ id: string; nom: string; nb_seances: number; prix: number }[]>([]);
   const [loadingForfaits, setLoadingForfaits] = useState(false);
@@ -909,6 +916,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         }
         if (r.tarifs_garde && typeof r.tarifs_garde === 'object') {
           setTarifsGarde(r.tarifs_garde as Record<string, number>);
+        }
+        if (r.tarifs_taxi && typeof r.tarifs_taxi === 'object') {
+          setTarifsTaxi(r.tarifs_taxi as Record<string, number>);
         }
         setEducationBilanRequis((r.education_bilan_requis as boolean) ?? true);
         setArrhesPourcentage(((r.arrhes_pourcentage as number) ?? 0));
@@ -1036,6 +1046,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         : {}),
       ...((data?.profile_type ?? data?.cat_pro) === 'garde'
         ? { tarifs_garde: tarifsGarde }
+        : {}),
+      ...((data?.profile_type ?? data?.cat_pro) === 'taxi_animalier'
+        ? { tarifs_taxi: tarifsTaxi }
         : {}),
       ...(['garde', 'education'].includes((data?.profile_type ?? data?.cat_pro) ?? '')
         ? { acaced: acacedNum.trim(), acaced_numero: acacedNum.trim() }
@@ -1384,6 +1397,24 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                   <input type="number" min={0} step={1}
                     value={tarifsEducation[value] ?? 0}
                     onChange={e => setTarifsEducation(t => ({ ...t, [value]: Number(e.target.value) }))}
+                    className={inputCls} />
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Tarifs de course (taxi animalier) */}
+        {catPro === 'taxi_animalier' && (
+          <Card title="Tarifs de course">
+            <p className="text-xs text-gray-400 mb-3">Affichés sur votre fiche publique. Le prix total dépend de la distance.</p>
+            <div className="grid grid-cols-3 gap-3">
+              {TARIFS_TAXI_FIELDS.map(({ value, label, suffix }) => (
+                <div key={value}>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">{label} ({suffix})</label>
+                  <input type="number" min={0} step={0.1}
+                    value={tarifsTaxi[value] ?? 0}
+                    onChange={e => setTarifsTaxi(t => ({ ...t, [value]: Number(e.target.value) }))}
                     className={inputCls} />
                 </div>
               ))}

@@ -22,6 +22,11 @@ interface ProData {
   statut_pro?: string; siret?: string; is_premium?: boolean;
   tarifs_education?: Record<string, number>;
   education_bilan_requis?: boolean;
+  tarifs_taxi?: { prise_en_charge?: number; prix_km?: number; minimum?: number };
+}
+interface Prestation {
+  id: string; nom: string; description?: string; duree_minutes?: number;
+  prix?: number; prix_base?: number; grille_prix?: { prix: number }[];
 }
 interface Slot { date: string; heureDebut: string; heureFin: string; }
 interface Animal { id: number; nom: string; espece: string; }
@@ -145,6 +150,9 @@ function ProDetailContent() {
   const [inscrivant, setInscrivant] = useState(false);
   const [isFirstTimeEducationClient, setIsFirstTimeEducationClient] = useState(false);
 
+  // Prestations (photographe / toilettage)
+  const [prestations, setPrestations] = useState<Prestation[]>([]);
+
   useEffect(() => { loadPro(); }, [uid]);
 
   async function loadPro() {
@@ -170,6 +178,7 @@ function ProDetailContent() {
           cat_pro: data.profile_type || data.cat_pro || '',
           tarifs_education: (data.tarifs_education as Record<string, number>) ?? {},
           education_bilan_requis: (data.education_bilan_requis as boolean) ?? true,
+          tarifs_taxi: (data.tarifs_taxi as ProData['tarifs_taxi']) ?? {},
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
         };
       } else {
@@ -197,6 +206,9 @@ function ProDetailContent() {
       if (row) setPro({ ...(row as unknown as ProData), profileTableId });
       const proRow = row as unknown as ProData | null;
       if (proRow && proRow.cat_pro === 'education') await loadCoursCollectifs(proRow.uid);
+      if (proRow && (proRow.cat_pro === 'photographe' || proRow.cat_pro === 'toilettage')) {
+        await loadPrestations(proRow.uid, proRow.cat_pro);
+      }
     } finally {
       setLoading(false);
     }
@@ -217,6 +229,23 @@ function ProDetailContent() {
     const counts: Record<string, number> = {};
     for (const p of parts ?? []) counts[p.cours_id] = (counts[p.cours_id] ?? 0) + 1;
     setParticipantsCount(counts);
+  }
+
+  async function loadPrestations(proUid: string, catPro: string) {
+    const table = catPro === 'toilettage' ? 'prestations_toilettage' : 'prestations_photographe';
+    let q = supabase.from(table).select('*').eq('pro_uid', proUid).eq('actif', true);
+    if (profileTableId) q = q.eq('pro_profile_id', profileTableId);
+    const { data } = await q.order('created_at');
+    setPrestations((data ?? []) as Prestation[]);
+  }
+
+  function prestationPrixLabel(p: Prestation, catPro: string) {
+    if (catPro !== 'toilettage') return `${(p.prix ?? 0).toFixed(0)} €`;
+    const grille = p.grille_prix ?? [];
+    if (grille.length === 0) return `à partir de ${(p.prix_base ?? 0).toFixed(0)} €`;
+    const prices = grille.map(t => t.prix);
+    const min = Math.min(...prices), max = Math.max(...prices);
+    return min === max ? `${min.toFixed(0)} €` : `${min.toFixed(0)}-${max.toFixed(0)} €`;
   }
 
   async function openInscription(cours: CoursCollectif) {
@@ -595,6 +624,34 @@ function ProDetailContent() {
                     </a>
                   ))}
                 </div>
+              </div>
+            )}
+            {prestations.length > 0 && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <p className="font-bold text-[#1E2025] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>Prestations</p>
+                <div className="space-y-3">
+                  {prestations.map(p => (
+                    <div key={p.id} className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>{p.nom}</p>
+                        {p.description && <p className="text-xs text-gray-500">{p.description}</p>}
+                        <p className="text-xs text-gray-400">{p.duree_minutes ?? 0} min</p>
+                      </div>
+                      <p className="text-sm font-bold whitespace-nowrap" style={{ color: CAT_COLORS[pro.cat_pro] ?? '#0C5C6C', fontFamily: 'Galey, sans-serif' }}>
+                        {prestationPrixLabel(p, pro.cat_pro)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {pro.cat_pro === 'taxi_animalier' && pro.tarifs_taxi && Object.keys(pro.tarifs_taxi).length > 0 && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <p className="font-bold text-[#1E2025] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Tarifs de course</p>
+                <p className="text-sm text-gray-600 leading-relaxed" style={{ fontFamily: 'Galey, sans-serif' }}>
+                  {(pro.tarifs_taxi.prise_en_charge ?? 0).toFixed(2)} € de prise en charge + {(pro.tarifs_taxi.prix_km ?? 0).toFixed(2)} €/km
+                  {(pro.tarifs_taxi.minimum ?? 0) > 0 ? ` (minimum ${(pro.tarifs_taxi.minimum ?? 0).toFixed(2)} €)` : ''}
+                </p>
               </div>
             )}
             {pro.tarifs && (

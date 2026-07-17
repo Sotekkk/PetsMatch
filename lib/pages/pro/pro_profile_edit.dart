@@ -86,6 +86,12 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     ('box', 'Box'), ('enclos', 'Enclos'), ('parc', 'Parc'), ('chatterie', 'Chatterie'), ('cage', 'Cage'),
   ];
 
+  // Taxi animalier : prise en charge + prix au km + minimum (€)
+  Map<String, double> _tarifsTaxi = {};
+  static const _tarifsTaxiFields = [
+    ('prise_en_charge', 'Prise en charge'), ('prix_km', 'Prix au km'), ('minimum', 'Minimum de course'),
+  ];
+
   // Garde (petsitter/promeneur) : tarifs par type de prestation (€)
   Map<String, int> _tarifsGarde = {};
   static const _prestationsGarde = [
@@ -254,6 +260,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           _tarifsGarde = Map<String, int>.from(
             (row['tarifs_garde'] as Map).map((k, v) =>
                 MapEntry(k.toString(), (v as num?)?.toInt() ?? 0)));
+        }
+        if (row['tarifs_taxi'] is Map) {
+          _tarifsTaxi = Map<String, double>.from(
+            (row['tarifs_taxi'] as Map).map((k, v) =>
+                MapEntry(k.toString(), (v as num?)?.toDouble() ?? 0)));
         }
         _educationBilanRequis = row['education_bilan_requis'] as bool? ?? true;
         _arrhesPourcentage = (row['arrhes_pourcentage'] as num?)?.toInt() ?? 0;
@@ -522,6 +533,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
+          if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
@@ -568,6 +580,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
+          if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
@@ -606,6 +619,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
+          if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
@@ -979,6 +993,54 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                         ]),
                       ),
                     ),
+                  ],
+
+                  // ── Tarifs course (taxi animalier) ─────────────────────────
+                  if (_catPro == 'taxi_animalier') ...[
+                    const SizedBox(height: 24),
+                    _sectionTitle('Tarifs de course'),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Affichés sur votre fiche publique. Le prix total dépend de la distance.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                    ),
+                    const SizedBox(height: 12),
+                    ..._tarifsTaxiFields.map((t) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(children: [
+                        Expanded(child: Text(t.$2,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                                fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
+                        const SizedBox(width: 12),
+                        SizedBox(
+                          width: 90,
+                          child: TextFormField(
+                            initialValue: (_tarifsTaxi[t.$1] ?? 0).toStringAsFixed(2),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                            decoration: InputDecoration(
+                              suffixText: t.$1 == 'prix_km' ? '€/km' : '€',
+                              suffixStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                              filled: true, fillColor: Colors.white,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFF00838F), width: 1.5)),
+                            ),
+                            onChanged: (val) {
+                              final v = double.tryParse(val.replaceAll(',', '.'));
+                              if (v != null && v >= 0) {
+                                setState(() => _tarifsTaxi = {..._tarifsTaxi, t.$1: v});
+                              }
+                            },
+                          ),
+                        ),
+                      ]),
+                    )),
                   ],
 
                   // ── Tarifs garde (petsitter/promeneur) ─────────────────────
