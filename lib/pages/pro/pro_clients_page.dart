@@ -12,6 +12,7 @@ import 'package:PetsMatch/widgets/pro_day_timeline.dart';
 /// - cat_pro = 'education'         → comportementaliste, éducateur, dresseur
 /// - cat_pro = 'garde'             → pet sitter, promeneur
 /// - cat_pro = 'marechal_ferrant'  → maréchal-ferrant
+/// - cat_pro = 'photographe'       → photographe animalier (pas de CR/carnet)
 ///
 /// Affiche les animaux ayant eu un accès accordé (animal_acces_pro) + agenda.
 class ProClientsPage extends StatefulWidget {
@@ -42,25 +43,28 @@ class _ProClientsPageState extends State<ProClientsPage>
 
   Color get _color {
     switch (User_Info.catPro) {
-      case 'education': return const Color(0xFFEF6C00);
-      case 'garde':     return const Color(0xFF26A69A);
-      default:          return const Color(0xFFE91E63); // sante
+      case 'education':   return const Color(0xFFEF6C00);
+      case 'garde':       return const Color(0xFF26A69A);
+      case 'photographe': return const Color(0xFF90A4AE);
+      default:            return const Color(0xFFE91E63); // sante
     }
   }
 
   String get _pageTitle {
     switch (User_Info.catPro) {
-      case 'education': return 'Mes animaux suivis';
-      case 'garde':     return 'Mes animaux en garde';
-      default:          return 'Mes patients';
+      case 'education':   return 'Mes animaux suivis';
+      case 'garde':       return 'Mes animaux en garde';
+      case 'photographe': return 'Mes clients';
+      default:            return 'Mes patients';
     }
   }
 
   String get _emptyLabel {
     switch (User_Info.catPro) {
-      case 'education': return 'Aucun animal suivi pour l\'instant';
-      case 'garde':     return 'Aucun animal en garde pour l\'instant';
-      default:          return 'Aucun patient pour l\'instant';
+      case 'education':   return 'Aucun animal suivi pour l\'instant';
+      case 'garde':       return 'Aucun animal en garde pour l\'instant';
+      case 'photographe': return 'Aucun client pour l\'instant';
+      default:            return 'Aucun patient pour l\'instant';
     }
   }
 
@@ -697,23 +701,24 @@ class _AnimalCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
               ],
-              // CR / Compte rendu (tous)
-              _ActionBtn(
-                icon: catPro == 'garde'
-                    ? Icons.summarize_outlined
-                    : catPro == 'education'
-                        ? Icons.school_outlined
-                        : Icons.description_outlined,
-                color: color,
-                tooltip: catPro == 'garde'
-                    ? 'Rapport de garde'
-                    : catPro == 'education'
-                        ? 'Compte rendu séance'
-                        : 'CR / Ordonnance',
-                onTap: catPro == 'education' && onProgression != null
-                    ? onProgression!
-                    : onCompteRendu,
-              ),
+              // CR / Compte rendu (tous sauf photographe — pas de suivi médical/pédagogique)
+              if (catPro != 'photographe')
+                _ActionBtn(
+                  icon: catPro == 'garde'
+                      ? Icons.summarize_outlined
+                      : catPro == 'education'
+                          ? Icons.school_outlined
+                          : Icons.description_outlined,
+                  color: color,
+                  tooltip: catPro == 'garde'
+                      ? 'Rapport de garde'
+                      : catPro == 'education'
+                          ? 'Compte rendu séance'
+                          : 'CR / Ordonnance',
+                  onTap: catPro == 'education' && onProgression != null
+                      ? onProgression!
+                      : onCompteRendu,
+                ),
             ]),
           ]),
         ),

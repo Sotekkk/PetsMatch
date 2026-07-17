@@ -789,6 +789,8 @@ interface ProProfileData {
   certifications: { nom: string; numero: string }[];
   durees_motifs: Record<string, number>;
   avatar_url: string;
+  banner_url: string;
+  photos_galerie: string[];
   phone: string;
 }
 
@@ -832,10 +834,24 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const avatarRef = useRef<HTMLInputElement>(null);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const bannerRef = useRef<HTMLInputElement>(null);
   const [acacedNum, setAcacedNum] = useState('');
   const [acacedDocFile, setAcacedDocFile] = useState<File | null>(null);
   const [acacedDocUrl, setAcacedDocUrl] = useState<string | null>(null);
   const acacedDocRef = useRef<HTMLInputElement>(null);
+  const [galeriePhotos, setGaleriePhotos] = useState<string[]>([]);
+  const [newGaleriePhotos, setNewGaleriePhotos] = useState<File[]>([]);
+  const galerieRef = useRef<HTMLInputElement>(null);
+
+  // Auto-complétion d'adresse (Google Places) — plomberie locale à ce
+  // composant, le composant parent a la sienne mais ne l'expose pas.
+  const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
+  const placesService = useRef<google.maps.places.PlacesService | null>(null);
+  const adresseDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [adresseSearch, setAdresseSearch] = useState('');
+  const [adressePredictions, setAdressePredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
 
   useEffect(() => {
     supabase.from('user_profiles').select('*').eq('id', profileId).single()
@@ -857,10 +873,15 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         setUrgences24h((r.urgences_24h as boolean) ?? false);
         setSiret((r.siret as string) ?? '');
         setRue((r.rue as string) ?? '');
+        setAdresseSearch((r.rue as string) ?? '');
         setVille((r.ville as string) ?? '');
         setCp((r.code_postal as string) ?? '');
         setPays(((r.pays as string) || 'France'));
         setAvatarPreview((r.avatar_url as string) ?? null);
+        setBannerPreview((r.banner_url as string) ?? null);
+        if (Array.isArray(r.photos_galerie)) {
+          setGaleriePhotos(r.photos_galerie as string[]);
+        }
         if (Array.isArray(r.especes_acceptees)) {
           setEspeces(new Set(r.especes_acceptees as string[]));
         }
@@ -897,6 +918,59 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         if (cat === 'education' || cat === 'garde') loadForfaits();
       });
   }, [profileId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return;
+    setOptions({ key: apiKey, v: 'weekly', language: 'fr' });
+    importLibrary('places').then(() => {
+      autocompleteService.current = new window.google.maps.places.AutocompleteService();
+      const dummyDiv = document.createElement('div');
+      placesService.current = new window.google.maps.places.PlacesService(dummyDiv);
+    }).catch(() => {});
+  }, []);
+
+  function onAdresseSearchChange(val: string) {
+    setAdresseSearch(val);
+    if (adresseDebounce.current) clearTimeout(adresseDebounce.current);
+    if (val.trim().length < 3) { setAdressePredictions([]); return; }
+    adresseDebounce.current = setTimeout(() => {
+      autocompleteService.current?.getPlacePredictions(
+        { input: val, componentRestrictions: { country: ['fr', 'be', 'ch', 'lu'] }, language: 'fr' } as google.maps.places.AutocompletionRequest,
+        (preds, status) => {
+          if (status === window.google.maps.places.PlacesServiceStatus.OK && preds) {
+            setAdressePredictions(preds);
+          } else {
+            setAdressePredictions([]);
+          }
+        }
+      );
+    }, 400);
+  }
+
+  function selectAdressePrediction(pred: google.maps.places.AutocompletePrediction) {
+    setAdresseSearch(pred.description);
+    setAdressePredictions([]);
+    placesService.current?.getDetails(
+      { placeId: pred.place_id, fields: ['address_components'] },
+      (place, status) => {
+        if (status !== window.google.maps.places.PlacesServiceStatus.OK || !place?.address_components) return;
+        let num = '', route = '', cpVal = '', city = '';
+        for (const c of place.address_components) {
+          if (c.types.includes('street_number')) num = c.long_name;
+          if (c.types.includes('route')) route = c.long_name;
+          if (c.types.includes('postal_code')) cpVal = c.long_name;
+          if (c.types.includes('locality')) city = c.long_name;
+          else if (c.types.includes('postal_town') && !city) city = c.long_name;
+        }
+        if (city) setVille(city);
+        if (cpVal) setCp(cpVal);
+        const rueVal = [num, route].filter(Boolean).join(' ') || pred.description;
+        setRue(rueVal);
+        setAdresseSearch(rueVal);
+      }
+    );
+  }
 
   function forfaitsTable() {
     const cat = data?.profile_type ?? data?.cat_pro ?? '';
@@ -977,6 +1051,30 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       }
     }
 
+    if (bannerFile) {
+      const path = `profiles/${uid}/pro_${profileId}_banner.jpg`;
+      const { data: uploaded } = await supabase.storage.from('petsmatch').upload(path, bannerFile, { upsert: true });
+      if (uploaded) {
+        const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+        payload.banner_url = pub.publicUrl;
+      }
+    }
+
+    if (catPro === 'photographe') {
+      const urls = [...galeriePhotos];
+      for (let i = 0; i < newGaleriePhotos.length; i++) {
+        const path = `profiles/${uid}/pro_${profileId}_galerie_${i}_${Date.now()}.jpg`;
+        const { data: uploaded } = await supabase.storage.from('petsmatch').upload(path, newGaleriePhotos[i], { upsert: true });
+        if (uploaded) {
+          const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+          urls.push(pub.publicUrl);
+        }
+      }
+      payload.photos_galerie = urls;
+      setGaleriePhotos(urls);
+      setNewGaleriePhotos([]);
+    }
+
     if (acacedDocFile) {
       const ext = acacedDocFile.name.split('.').pop() ?? 'jpg';
       const path = `documents/${uid}/pro_${profileId}_acaced.${ext}`;
@@ -1016,6 +1114,24 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         </h1>
       </div>
 
+      {/* Bannière */}
+      <div className="relative h-32 rounded-2xl overflow-hidden bg-gradient-to-br from-[#0C5C6C] to-[#6E9E57] mb-4 cursor-pointer group"
+        onClick={() => bannerRef.current?.click()}>
+        <input ref={bannerRef} type="file" accept="image/*" className="hidden"
+          onChange={e => {
+            const f = e.target.files?.[0];
+            if (f) { setBannerFile(f); setBannerPreview(URL.createObjectURL(f)); }
+            e.target.value = '';
+          }} />
+        {bannerPreview && (
+          // eslint-disable-next-line @next/next/no-img-element -- aperçu local (blob:) et URL distante mêlés, next/image ne gère pas blob:
+          <img src={bannerPreview} alt="Bannière" className="absolute inset-0 w-full h-full object-cover" />
+        )}
+        <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+          <span className="text-white text-sm font-medium">📷 Changer la bannière</span>
+        </div>
+      </div>
+
       {/* Avatar */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-4 flex items-center gap-4">
         <input ref={avatarRef} type="file" accept="image/*" className="hidden"
@@ -1027,7 +1143,8 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         <div className="w-16 h-16 rounded-full overflow-hidden bg-[#E3F2FD] flex items-center justify-center flex-shrink-0 cursor-pointer relative group border-2 border-[#2196F3]/30"
           onClick={() => avatarRef.current?.click()}>
           {avatarPreview
-            ? <Image src={avatarPreview} alt="" width={64} height={64} className="object-cover w-full h-full" />
+            // eslint-disable-next-line @next/next/no-img-element -- aperçu local (blob:) et URL distante mêlés, next/image ne gère pas blob:
+            ? <img src={avatarPreview} alt="" className="object-cover w-full h-full" />
             : <span className="text-xl font-bold text-[#0C5C6C]">{(nomStructure[0] ?? '?').toUpperCase()}</span>
           }
           <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
@@ -1101,9 +1218,24 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
 
         {/* Adresse */}
         <Card title="Adresse professionnelle">
-          <Field label="Rue / numéro">
-            <input value={rue} onChange={e => setRue(e.target.value)} className={inputCls} placeholder="12 rue des Fleurs" />
-          </Field>
+          <div className="relative">
+            <Field label="Rue / numéro">
+              <input value={adresseSearch}
+                onChange={e => { onAdresseSearchChange(e.target.value); setRue(e.target.value); }}
+                className={inputCls} placeholder="12 rue des Fleurs" autoComplete="off" />
+            </Field>
+            {adressePredictions.length > 0 && (
+              <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                {adressePredictions.map(p => (
+                  <button key={p.place_id} type="button"
+                    onMouseDown={() => selectAdressePrediction(p)}
+                    className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 border-b border-gray-50 last:border-0">
+                    {p.description}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="grid grid-cols-5 gap-3">
             <div className="col-span-2">
               <Field label="Code postal">
@@ -1340,6 +1472,42 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             + Ajouter une certification
           </button>
         </Card>
+
+        {/* Galerie / portfolio — photographe uniquement */}
+        {catPro === 'photographe' && (
+          <Card title="Galerie / portfolio">
+            <p className="text-xs text-gray-400 mb-3">Ces photos sont visibles par les clients sur votre fiche publique.</p>
+            <input ref={galerieRef} type="file" accept="image/*" multiple className="hidden"
+              onChange={e => {
+                const files = Array.from(e.target.files ?? []);
+                if (files.length > 0) setNewGaleriePhotos(prev => [...prev, ...files]);
+                e.target.value = '';
+              }} />
+            <div className="flex flex-wrap gap-2">
+              {galeriePhotos.map((url, i) => (
+                <div key={url} className="relative w-20 h-20 rounded-xl overflow-hidden group">
+                  <Image src={url} alt="" fill className="object-cover" />
+                  <button type="button" onClick={() => setGaleriePhotos(prev => prev.filter((_, j) => j !== i))}
+                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+                </div>
+              ))}
+              {newGaleriePhotos.map((file, i) => (
+                <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden group">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={URL.createObjectURL(file)} alt="" className="w-full h-full object-cover" />
+                  <button type="button" onClick={() => setNewGaleriePhotos(prev => prev.filter((_, j) => j !== i))}
+                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+                </div>
+              ))}
+              {galeriePhotos.length + newGaleriePhotos.length < 12 && (
+                <button type="button" onClick={() => galerieRef.current?.click()}
+                  className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-200 text-gray-300 hover:border-[#90A4AE] hover:text-[#90A4AE] flex items-center justify-center text-2xl transition-colors">
+                  +
+                </button>
+              )}
+            </div>
+          </Card>
+        )}
 
         {/* Réseaux sociaux */}
         <Card title="Présence en ligne">

@@ -604,21 +604,25 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                  if (User_Info.catPro == 'sante' || User_Info.catPro == 'education' || User_Info.catPro == 'garde' || User_Info.catPro == 'marechal_ferrant') _DrawerItem(
+                  if (User_Info.catPro == 'sante' || User_Info.catPro == 'education' || User_Info.catPro == 'garde' || User_Info.catPro == 'marechal_ferrant' || User_Info.catPro == 'photographe') _DrawerItem(
                     icon: User_Info.catPro == 'education'
                         ? Icons.psychology_outlined
                         : User_Info.catPro == 'garde'
                             ? Icons.directions_walk_outlined
                             : User_Info.catPro == 'marechal_ferrant'
                                 ? Icons.handyman_outlined
-                                : Icons.self_improvement_outlined,
+                                : User_Info.catPro == 'photographe'
+                                    ? Icons.people_outline
+                                    : Icons.self_improvement_outlined,
                     label: User_Info.catPro == 'education'
                         ? 'Mes animaux suivis'
                         : User_Info.catPro == 'garde'
                             ? 'Mes animaux en garde'
                             : User_Info.catPro == 'marechal_ferrant'
                                 ? 'Mes équidés suivis'
-                                : 'Mes patients',
+                                : User_Info.catPro == 'photographe'
+                                    ? 'Mes clients'
+                                    : 'Mes patients',
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(
