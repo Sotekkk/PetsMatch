@@ -811,6 +811,20 @@ class _AgendaPageState extends State<AgendaPage> {
   void _prevMonth() { _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1); _load(); _loadTasks(); }
   void _nextMonth() { _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1); _load(); _loadTasks(); }
 
+  // ── Vue semaine ──────────────────────────────────────────────────────────────
+
+  DateTime _mondayOf(DateTime d) => d.subtract(Duration(days: d.weekday - 1));
+
+  void _shiftWeek(int deltaDays) {
+    final newDay = (_selectedDay ?? DateTime.now()).add(Duration(days: deltaDays));
+    final monthChanged = newDay.month != _focusedMonth.month || newDay.year != _focusedMonth.year;
+    setState(() {
+      _selectedDay = newDay;
+      if (monthChanged) _focusedMonth = DateTime(newDay.year, newDay.month);
+    });
+    if (monthChanged) { _load(); _loadTasks(); }
+  }
+
   // ── Add protocole depuis l'agenda ──────────────────────────────────────────
 
   void _showAddProtocoleSheet(DateTime day) {
@@ -897,6 +911,68 @@ class _AgendaPageState extends State<AgendaPage> {
     );
   }
 
+  // ── Add tâche/protocole via FAB (choix) ──────────────────────────────────────
+
+  void _showAddChoiceSheet() {
+    final day = _selectedDay ?? DateTime.now();
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      isDismissible: true,
+      enableDrag: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (sheetCtx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+            const Align(alignment: Alignment.centerLeft, child: Text('Que voulez-vous ajouter ?',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1E2025)))),
+            const SizedBox(height: 16),
+            _addChoiceTile(
+              icon: Icons.add_task_rounded, iconBg: _kTeal.withValues(alpha: 0.1), iconColor: _kTeal,
+              title: 'Tâche rapide', subtitle: 'Un rappel ponctuel pour ce jour',
+              onTap: () { Navigator.pop(sheetCtx); _showAddTacheSheet(day); },
+            ),
+            const SizedBox(height: 10),
+            _addChoiceTile(
+              icon: Icons.assignment_outlined, iconBg: const Color(0xFFFFF7ED), iconColor: const Color(0xFF92400E),
+              title: 'Protocole', subtitle: 'Un plan de soins récurrent',
+              onTap: () { Navigator.pop(sheetCtx); _showAddProtocoleSheet(day); },
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _addChoiceTile({required IconData icon, required Color iconBg, required Color iconColor,
+      required String title, required String subtitle, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: const Color(0xFFF8F8F8), borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade200)),
+        child: Row(children: [
+          Container(width: 40, height: 40,
+              decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(12)),
+              child: Icon(icon, color: iconColor, size: 20)),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1E2025))),
+            const SizedBox(height: 2),
+            Text(subtitle, style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade500)),
+          ])),
+          Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
+        ]),
+      ),
+    );
+  }
+
   // ── Add event ──────────────────────────────────────────────────────────────
 
   void _showAddSheet({DateTime? initialDate}) {
@@ -932,6 +1008,42 @@ class _AgendaPageState extends State<AgendaPage> {
     );
   }
 
+  // ── Toggle vue Mois / Semaine / Jour ─────────────────────────────────────────
+
+  PreferredSizeWidget _viewModeToggleBar() {
+    Widget seg(String label, int value) {
+      final selected = _viewMode == value;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => setState(() => _viewMode = value),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            alignment: Alignment.center,
+            height: 30,
+            decoration: BoxDecoration(
+              color: selected ? Colors.white : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                fontWeight: FontWeight.w700, color: selected ? _kTeal : Colors.white)),
+          ),
+        ),
+      );
+    }
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(50),
+      child: Container(
+        color: _kTeal,
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+        child: Container(
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
+          child: Row(children: [seg('Mois', 0), seg('Semaine', 3), seg('Jour', 1)]),
+        ),
+      ),
+    );
+  }
+
   // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
@@ -955,24 +1067,19 @@ class _AgendaPageState extends State<AgendaPage> {
             : null,
         title: const Text('Mon Agenda',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        actions: [
-          IconButton(
-            tooltip: _viewMode == 0 ? 'Vue jour' : _viewMode == 1 ? 'Vue liste' : 'Vue calendrier',
-            icon: Icon(_viewMode == 0 ? Icons.view_day_outlined : _viewMode == 1 ? Icons.list_rounded : Icons.calendar_month_rounded),
-            onPressed: () => setState(() => _viewMode = (_viewMode + 1) % 3),
-          ),
-        ],
+        bottom: _viewModeToggleBar(),
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: _kTeal,
         foregroundColor: Colors.white,
-        onPressed: () => _showAddSheet(),
+        onPressed: _showAddChoiceSheet,
         child: const Icon(Icons.add_rounded),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _kTeal))
           : _viewMode == 0 ? _calendarView()
           : _viewMode == 1 ? _dayView()
+          : _viewMode == 3 ? _weekView()
           : _listView(),
     );
   }
@@ -984,6 +1091,7 @@ class _AgendaPageState extends State<AgendaPage> {
       _monthHeader(),
       _weekdayRow(),
       Expanded(child: _calendarGrid()),
+      _legend(showTasksEntry: _canShowTasks()),
     ]);
   }
 
@@ -1101,13 +1209,29 @@ class _AgendaPageState extends State<AgendaPage> {
     );
   }
 
+  // ── Légende ───────────────────────────────────────────────────────────────
+
+  Widget _legend({required bool showTasksEntry}) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
+      child: Wrap(spacing: 12, runSpacing: 6, children: [
+        ..._typesForProfile().map((t) => _legendDot(_kTypeColor[t] ?? Colors.grey, _kTypeLabel[t] ?? t)),
+        if (showTasksEntry) _legendDot(const Color(0xFF6E9E57), 'Tâches'),
+      ]),
+    );
+  }
+
+  Widget _legendDot(Color color, String label) => Row(mainAxisSize: MainAxisSize.min, children: [
+    Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+    const SizedBox(width: 5),
+    Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+  ]);
+
   // ── Day view ───────────────────────────────────────────────────────────────
 
   Widget _dayView() {
     final day = _selectedDay ?? DateTime.now();
-    final evts = _eventsForDay(day);
-    final dayTasks = _tasksForDay(day);
-
     return Column(children: [
       // Navigation jour
       Container(
@@ -1144,113 +1268,188 @@ class _AgendaPageState extends State<AgendaPage> {
           ),
         ]),
       ),
-      const Divider(height: 1),
-      if (dayTasks.isNotEmpty)
-        _buildDayTasksSection(dayTasks, day: day)
-      else
-        Container(
-          color: const Color(0xFFEDF6F7),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          child: Row(children: [
-            const Text('✅', style: TextStyle(fontSize: 12)),
-            const SizedBox(width: 6),
-            const Text('Tâches du jour',
-              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: _kTeal)),
-            const Spacer(),
-            GestureDetector(
-              onTap: () => _showAddProtocoleSheet(day),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF7ED),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFFED7AA)),
-                ),
-                child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.add, size: 12, color: Color(0xFF92400E)),
-                  SizedBox(width: 2),
-                  Text('Protocole', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                      fontWeight: FontWeight.w600, color: Color(0xFF92400E))),
-                ]),
-              ),
-            ),
-            const SizedBox(width: 6),
-            GestureDetector(
-              onTap: () => _showAddTacheSheet(day),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: _kTeal.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: _kTeal.withValues(alpha: 0.3)),
-                ),
-                child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.add, size: 12, color: _kTeal),
-                  SizedBox(width: 2),
-                  Text('Tâche', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                      fontWeight: FontWeight.w600, color: _kTeal)),
-                ]),
-              ),
-            ),
-          ]),
-        ),
-      Expanded(
-        child: RefreshIndicator(
-          onRefresh: () async { await _load(); await _loadTasks(); },
-          color: _kTeal,
-          child: evts.isEmpty
-              ? ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 80, left: 32, right: 32),
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.event_available_outlined, size: 64, color: Colors.grey.shade200),
-                      const SizedBox(height: 12),
-                      Text('Aucun événement ce jour',
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 15,
-                              color: Colors.grey.shade400, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 8),
-                      Text('Appuyez sur + pour en ajouter un',
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                              color: Colors.grey.shade300)),
-                    ]),
+      _dayBody(day),
+    ]);
+  }
+
+  Widget _dayBody(DateTime day) {
+    final evts = _eventsForDay(day);
+    final dayTasks = _tasksForDay(day);
+    return Expanded(
+      child: Column(children: [
+        const Divider(height: 1),
+        if (dayTasks.isNotEmpty)
+          _buildDayTasksSection(dayTasks, day: day)
+        else
+          Container(
+            color: const Color(0xFFEDF6F7),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Row(children: [
+              const Text('✅', style: TextStyle(fontSize: 12)),
+              const SizedBox(width: 6),
+              const Text('Tâches du jour',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: _kTeal)),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => _showAddProtocoleSheet(day),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7ED),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFFED7AA)),
                   ),
-                ])
-              : ProDayTimeline(
-                  rdvs: evts,
-                  date: day,
-                  heureDebut: 7,
-                  heureFin: 22,
-                  onRdvTap: (e) {
-                    if (e['type'] == 'rdv' && e['rdv_id'] != null) {
-                      showModalBottomSheet(
-                        context: context,
-                        isScrollControlled: true,
-                        useSafeArea: true,
-                        backgroundColor: Colors.white,
-                        shape: const RoundedRectangleBorder(
-                            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-                        builder: (_) => _RdvDetailSheet(event: e, onRefresh: _load),
-                      );
-                    } else {
-                      showModalBottomSheet(
-                        context: context,
-                        useSafeArea: true,
-                        backgroundColor: Colors.white,
-                        shape: const RoundedRectangleBorder(
-                            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-                        builder: (_) => _DaySheet(
-                          day: day,
-                          events: [e],
-                          onAdd: () { Navigator.pop(context); _showAddSheet(initialDate: day); },
-                          onRefresh: _load,
-                        ),
-                      );
-                    }
-                  },
-                  showCurrentTimeLine: true,
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.add, size: 12, color: Color(0xFF92400E)),
+                    SizedBox(width: 2),
+                    Text('Protocole', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                        fontWeight: FontWeight.w600, color: Color(0xFF92400E))),
+                  ]),
                 ),
+              ),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () => _showAddTacheSheet(day),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _kTeal.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: _kTeal.withValues(alpha: 0.3)),
+                  ),
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.add, size: 12, color: _kTeal),
+                    SizedBox(width: 2),
+                    Text('Tâche', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                        fontWeight: FontWeight.w600, color: _kTeal)),
+                  ]),
+                ),
+              ),
+            ]),
+          ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () async { await _load(); await _loadTasks(); },
+            color: _kTeal,
+            child: evts.isEmpty
+                ? ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 80, left: 32, right: 32),
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.event_available_outlined, size: 64, color: Colors.grey.shade200),
+                        const SizedBox(height: 12),
+                        Text('Aucun événement ce jour',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 15,
+                                color: Colors.grey.shade400, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 8),
+                        Text('Appuyez sur + pour en ajouter un',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                color: Colors.grey.shade300)),
+                      ]),
+                    ),
+                  ])
+                : ProDayTimeline(
+                    rdvs: evts,
+                    date: day,
+                    heureDebut: 7,
+                    heureFin: 22,
+                    onRdvTap: (e) {
+                      if (e['type'] == 'rdv' && e['rdv_id'] != null) {
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          useSafeArea: true,
+                          backgroundColor: Colors.white,
+                          shape: const RoundedRectangleBorder(
+                              borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+                          builder: (_) => _RdvDetailSheet(event: e, onRefresh: _load),
+                        );
+                      } else {
+                        showModalBottomSheet(
+                          context: context,
+                          useSafeArea: true,
+                          backgroundColor: Colors.white,
+                          shape: const RoundedRectangleBorder(
+                              borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                          builder: (_) => _DaySheet(
+                            day: day,
+                            events: [e],
+                            onAdd: () { Navigator.pop(context); _showAddSheet(initialDate: day); },
+                            onRefresh: _load,
+                          ),
+                        );
+                      }
+                    },
+                    showCurrentTimeLine: true,
+                  ),
+          ),
         ),
-      ),
+      ]),
+    );
+  }
+
+  // ── Week view ──────────────────────────────────────────────────────────────
+
+  Widget _weekStrip() {
+    final day = _selectedDay ?? DateTime.now();
+    final monday = _mondayOf(day);
+    final today = DateTime.now();
+    const dayAbbr = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      child: Row(children: [
+        IconButton(icon: const Icon(Icons.chevron_left, color: _kTeal), onPressed: () => _shiftWeek(-7)),
+        Expanded(child: Row(children: List.generate(7, (i) {
+          final d = monday.add(Duration(days: i));
+          final evts = _eventsForDay(d);
+          final tasks = _tasksForDay(d);
+          final isToday = d.year == today.year && d.month == today.month && d.day == today.day;
+          final isSelected = d.year == day.year && d.month == day.month && d.day == day.day;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedDay = d),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                decoration: BoxDecoration(
+                  color: isSelected ? _kTeal : isToday ? _kTeal.withValues(alpha: 0.1) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  border: isToday && !isSelected ? Border.all(color: _kTeal, width: 1.5) : null,
+                ),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text(dayAbbr[i], style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                      fontWeight: FontWeight.w600, color: isSelected ? Colors.white70 : Colors.grey)),
+                  const SizedBox(height: 2),
+                  Text('${d.day}', style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                      fontWeight: FontWeight.w700, color: isSelected ? Colors.white : const Color(0xFF1E2025))),
+                  const SizedBox(height: 3),
+                  SizedBox(height: 6, child: (evts.isNotEmpty || tasks.isNotEmpty) ? Wrap(
+                    alignment: WrapAlignment.center, spacing: 2,
+                    children: [
+                      ...evts.take(2).map((e) => Container(width: 5, height: 5,
+                        decoration: BoxDecoration(color: isSelected ? Colors.white.withValues(alpha: 0.8) : _colorFor(e), shape: BoxShape.circle))),
+                      if (tasks.isNotEmpty) Container(width: 5, height: 5,
+                        decoration: BoxDecoration(color: isSelected ? Colors.white.withValues(alpha: 0.8) : const Color(0xFF6E9E57), shape: BoxShape.circle)),
+                    ],
+                  ) : null),
+                ]),
+              ),
+            ),
+          );
+        }))),
+        IconButton(icon: const Icon(Icons.chevron_right, color: _kTeal), onPressed: () => _shiftWeek(7)),
+      ]),
+    );
+  }
+
+  Widget _weekView() {
+    final day = _selectedDay ?? DateTime.now();
+    return Column(children: [
+      _weekStrip(),
+      _dayBody(day),
+      _legend(showTasksEntry: _canShowTasks()),
     ]);
   }
 
