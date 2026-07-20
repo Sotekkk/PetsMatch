@@ -181,6 +181,16 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
+                      label: 'Inventaire',
+                      icon: Icons.inventory_2_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const InventairePage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
                       label: 'Protocoles',
                       icon: Icons.repeat_outlined,
                       onTap: () {
@@ -201,26 +211,6 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Entrées / Sorties',
-                      icon: Icons.swap_horiz_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const RegistreEntreeSortiePage(isAssociation: true),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Mes Annonces',
-                      icon: Icons.campaign_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const MesAnnoncesPage(isAssociation: true),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
                       label: 'Mes employés et bénévoles',
                       icon: Icons.groups_outlined,
                       onTap: () {
@@ -231,12 +221,12 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
-                      label: 'Inventaire',
-                      icon: Icons.inventory_2_outlined,
+                      label: 'Entrées / Sorties',
+                      icon: Icons.swap_horiz_outlined,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const InventairePage(),
+                          builder: (_) => const RegistreEntreeSortiePage(isAssociation: true),
                         ));
                       },
                     ),
@@ -285,6 +275,16 @@ class _AssociationNavState extends State<AssociationNav> {
                   icon: Icons.campaign_outlined,
                   label: 'Annonces',
                   children: [
+                    _DrawerSubItem(
+                      label: 'Mes Annonces',
+                      icon: Icons.campaign_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const MesAnnoncesPage(isAssociation: true),
+                        ));
+                      },
+                    ),
                     _DrawerSubItem(
                       label: 'Déposer une annonce',
                       icon: Icons.add_circle_outline_rounded,

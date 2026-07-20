@@ -317,7 +317,6 @@ const MENU_ASSOCIATION = [
       { href: '/association/inventaire',                 label: 'Inventaire',            icon: '📦' },
       { href: '/association/equipe',                     label: 'Mes employés et bénévoles', icon: '👥' },
       { href: '/association/registre-entree-sortie',     label: 'Entrée - Sortie',       icon: '📂' },
-      { href: '/mes-taches',                             label: 'Mes tâches',            icon: '✅' },
     ],
   },
   {
