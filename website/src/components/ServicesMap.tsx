@@ -116,7 +116,7 @@ export default function ServicesMap({ pros }: { pros: ProMapItem[] }) {
                   Disponible
                 </span>
               )}
-              <a href={`/services/pro/${p.uid}`}
+              <a href={`/services/pro/${p.uid}${p.profileTableId ? `?profileId=${p.profileTableId}` : ''}`}
                 style={{ display: 'block', textAlign: 'center', fontSize: 12, background: '#0C5C6C',
                   color: 'white', fontWeight: 600, padding: '6px 12px', borderRadius: 8, textDecoration: 'none' }}>
                 Voir le profil

@@ -1,10 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geocoding/geocoding.dart' as geo;
+import 'package:google_maps_webservice/places.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
-import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/main.dart' show User_Info, getApiKey;
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart' show prixPourAnimal;
 
 class RdvBookingPage extends StatefulWidget {
@@ -97,11 +99,17 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   bool _educationBilanRequis = true;
   bool _isFirstTimeEducationClient = false;
 
-  // Taxi animalier : trajet départ/arrivée + nombre d'animaux transportés
+  // Taxi animalier : trajet départ/arrivée + animaux transportés
   final _adresseDepartCtrl = TextEditingController();
   final _adresseArriveeCtrl = TextEditingController();
-  int _nombreAnimaux = 1;
+  List<Map<String, dynamic>> _animauxTaxi = [];
   double? _latDepart, _lngDepart, _latArrivee, _lngArrivee;
+
+  // Autocomplétion d'adresse (taxi départ/arrivée, aussi réutilisée par le
+  // lieu du shooting photographe qui partage _adresseDepartCtrl).
+  late final GoogleMapsPlaces _places;
+  Timer? _debounceDepart, _debounceArrivee;
+  List<Prediction> _predictionsDepart = [], _predictionsArrivee = [];
 
   // Photographe / Toiletteur : prestation choisie (remplace le motif
   // dynamique). Photographe ajoute un lieu (réutilise adresseDepart/
@@ -186,6 +194,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   @override
   void initState() {
     super.initState();
+    _places = GoogleMapsPlaces(apiKey: getApiKey());
     _loadAll();
   }
 
@@ -195,7 +204,46 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     _notesCtrl.dispose();
     _adresseDepartCtrl.dispose();
     _adresseArriveeCtrl.dispose();
+    _debounceDepart?.cancel();
+    _debounceArrivee?.cancel();
+    _places.dispose();
     super.dispose();
+  }
+
+  // ── Autocomplétion d'adresse (Google Places) ────────────────────────────
+
+  void _onDepartChanged(String val) {
+    _debounceDepart?.cancel();
+    if (val.trim().length < 3) { setState(() => _predictionsDepart = []); return; }
+    _debounceDepart = Timer(const Duration(milliseconds: 400), () async {
+      final res = await _places.autocomplete(val, components: [Component(Component.country, 'fr')], language: 'fr');
+      if (mounted) setState(() => _predictionsDepart = res.isOkay ? res.predictions : []);
+    });
+  }
+
+  void _onArriveeChanged(String val) {
+    _debounceArrivee?.cancel();
+    if (val.trim().length < 3) { setState(() => _predictionsArrivee = []); return; }
+    _debounceArrivee = Timer(const Duration(milliseconds: 400), () async {
+      final res = await _places.autocomplete(val, components: [Component(Component.country, 'fr')], language: 'fr');
+      if (mounted) setState(() => _predictionsArrivee = res.isOkay ? res.predictions : []);
+    });
+  }
+
+  Future<void> _selectDepartPrediction(Prediction p) async {
+    setState(() { _adresseDepartCtrl.text = p.description ?? ''; _predictionsDepart = []; });
+    if (p.placeId == null) return;
+    final det = await _places.getDetailsByPlaceId(p.placeId!);
+    final loc = det.isOkay ? det.result.geometry?.location : null;
+    if (loc != null) { _latDepart = loc.lat; _lngDepart = loc.lng; }
+  }
+
+  Future<void> _selectArriveePrediction(Prediction p) async {
+    setState(() { _adresseArriveeCtrl.text = p.description ?? ''; _predictionsArrivee = []; });
+    if (p.placeId == null) return;
+    final det = await _places.getDetailsByPlaceId(p.placeId!);
+    final loc = det.isOkay ? det.result.geometry?.location : null;
+    if (loc != null) { _latArrivee = loc.lat; _lngArrivee = loc.lng; }
   }
 
   Future<void> _loadAll() async {
@@ -524,6 +572,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       if (_adresseDepartCtrl.text.trim().isEmpty || _adresseArriveeCtrl.text.trim().isEmpty) {
         _snack('Veuillez indiquer l\'adresse de départ et d\'arrivée', color: Colors.orange); return;
       }
+      if (_animauxTaxi.isEmpty) {
+        _snack('Veuillez choisir au moins un animal à transporter', color: Colors.orange); return;
+      }
     }
 
     // Validation prestation + lieu (photographe uniquement)
@@ -598,23 +649,33 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       }
 
       // Géocodage des adresses de trajet (taxi) / lieu du shooting (photographe)
+      // — uniquement en filet de sécurité si aucune suggestion Google Places
+      // n'a été sélectionnée (lat/lng déjà résolus dans ce cas).
       if (widget.isTaxi) {
-        try {
-          final depart = await geo.locationFromAddress(_adresseDepartCtrl.text.trim());
-          if (depart.isNotEmpty) { _latDepart = depart.first.latitude; _lngDepart = depart.first.longitude; }
-        } catch (_) {}
-        try {
-          final arrivee = await geo.locationFromAddress(_adresseArriveeCtrl.text.trim());
-          if (arrivee.isNotEmpty) { _latArrivee = arrivee.first.latitude; _lngArrivee = arrivee.first.longitude; }
-        } catch (_) {}
+        if (_latDepart == null || _lngDepart == null) {
+          try {
+            final depart = await geo.locationFromAddress(_adresseDepartCtrl.text.trim());
+            if (depart.isNotEmpty) { _latDepart = depart.first.latitude; _lngDepart = depart.first.longitude; }
+          } catch (_) {}
+        }
+        if (_latArrivee == null || _lngArrivee == null) {
+          try {
+            final arrivee = await geo.locationFromAddress(_adresseArriveeCtrl.text.trim());
+            if (arrivee.isNotEmpty) { _latArrivee = arrivee.first.latitude; _lngArrivee = arrivee.first.longitude; }
+          } catch (_) {}
+        }
       } else if (widget.isPhotographe) {
-        try {
-          final lieu = await geo.locationFromAddress(_adresseDepartCtrl.text.trim());
-          if (lieu.isNotEmpty) { _latDepart = lieu.first.latitude; _lngDepart = lieu.first.longitude; }
-        } catch (_) {}
+        if (_latDepart == null || _lngDepart == null) {
+          try {
+            final lieu = await geo.locationFromAddress(_adresseDepartCtrl.text.trim());
+            if (lieu.isNotEmpty) { _latDepart = lieu.first.latitude; _lngDepart = lieu.first.longitude; }
+          } catch (_) {}
+        }
       }
 
-      final animalId = _selectedAnimal?['id']?.toString();
+      final animalId = widget.isTaxi
+          ? (_animauxTaxi.isNotEmpty ? _animauxTaxi.first['id']?.toString() : null)
+          : _selectedAnimal?['id']?.toString();
       final dureeToSend = _selectedDuration;
 
       // Récurrence (garde uniquement) : une série hebdomadaire à partir du
@@ -646,7 +707,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           if (widget.isTaxi) ...{
             'adresse_depart': _adresseDepartCtrl.text.trim(),
             'adresse_arrivee': _adresseArriveeCtrl.text.trim(),
-            'nombre_animaux': _nombreAnimaux,
+            'nombre_animaux': _animauxTaxi.length,
+            'animaux_ids': _animauxTaxi.map((a) => a['id']).toList(),
             if (_latDepart != null) 'lat_depart': _latDepart,
             if (_lngDepart != null) 'lng_depart': _lngDepart,
             if (_latArrivee != null) 'lat_arrivee': _latArrivee,
@@ -1315,6 +1377,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
   Widget _buildAnimalSection() {
     final color = widget.categoryColor;
+    // Taxi : la sélection des animaux transportés se fait dans
+    // _buildTaxiTrajetSection (multi-sélection), pas ici.
+    if (widget.isTaxi) return const SizedBox.shrink();
     if (widget.isAssociation) {
       if (_selectedAnimal == null) return const SizedBox.shrink();
       final photoUrl = _selectedAnimal!['photo_url'] as String? ?? '';
@@ -1435,39 +1500,90 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     );
   }
 
+  Widget _addressAutocompleteField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    required List<Prediction> predictions,
+    required void Function(String) onChanged,
+    required void Function(Prediction) onSelect,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: controller,
+          onChanged: onChanged,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+          decoration: _inputDecoration(label).copyWith(prefixIcon: Icon(icon, size: 18)),
+        ),
+        if (predictions.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 8, offset: const Offset(0, 4))],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: predictions.map((p) => InkWell(
+                onTap: () => onSelect(p),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Row(children: [
+                    Icon(Icons.location_on_outlined, size: 16, color: Colors.grey.shade400),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(p.description ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                  ]),
+                ),
+              )).toList(),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildTaxiTrajetSection() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       _sectionTitle('Trajet'),
       const SizedBox(height: 8),
-      TextField(
+      _addressAutocompleteField(
         controller: _adresseDepartCtrl,
-        style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-        decoration: _inputDecoration('Adresse de départ').copyWith(
-            prefixIcon: const Icon(Icons.trip_origin, size: 18)),
+        label: 'Adresse de départ',
+        icon: Icons.trip_origin,
+        predictions: _predictionsDepart,
+        onChanged: _onDepartChanged,
+        onSelect: _selectDepartPrediction,
       ),
       const SizedBox(height: 8),
-      TextField(
+      _addressAutocompleteField(
         controller: _adresseArriveeCtrl,
-        style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-        decoration: _inputDecoration('Adresse d\'arrivée').copyWith(
-            prefixIcon: const Icon(Icons.location_on_outlined, size: 18)),
+        label: 'Adresse d\'arrivée',
+        icon: Icons.location_on_outlined,
+        predictions: _predictionsArrivee,
+        onChanged: _onArriveeChanged,
+        onSelect: _selectArriveePrediction,
       ),
-      const SizedBox(height: 12),
-      Row(children: [
-        Text('Nombre d\'animaux transportés',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade700)),
-        const Spacer(),
-        IconButton(
-          icon: const Icon(Icons.remove_circle_outline, size: 20),
-          onPressed: _nombreAnimaux > 1 ? () => setState(() => _nombreAnimaux--) : null,
-        ),
-        Text('$_nombreAnimaux', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-        IconButton(
-          icon: const Icon(Icons.add_circle_outline, size: 20),
-          onPressed: _nombreAnimaux < 6 ? () => setState(() => _nombreAnimaux++) : null,
-        ),
-      ]),
+      const SizedBox(height: 16),
+      _sectionTitle('Animaux transportés'),
+      const SizedBox(height: 8),
+      AnimalPickerField(
+        selected: _animauxTaxi,
+        label: 'Choisir les animaux…',
+        accentColor: widget.categoryColor,
+        onTap: () async {
+          final result = await AnimalPickerSheet.pickMany(
+            context,
+            preloaded: _animaux,
+            current: _animauxTaxi,
+            accentColor: widget.categoryColor,
+          );
+          if (result != null && mounted) setState(() => _animauxTaxi = result);
+        },
+      ),
     ],
   );
 

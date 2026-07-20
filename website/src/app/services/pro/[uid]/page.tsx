@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -132,10 +133,75 @@ function ProDetailContent() {
   const [rdvSuccess, setRdvSuccess] = useState(false);
   const [rdvCount, setRdvCount] = useState(1);
 
-  // Taxi animalier : trajet départ/arrivée + nombre d'animaux transportés
+  // Taxi animalier : trajet départ/arrivée + animaux transportés
   const [adresseDepart, setAdresseDepart] = useState('');
   const [adresseArrivee, setAdresseArrivee] = useState('');
-  const [nombreAnimaux, setNombreAnimaux] = useState(1);
+  const [animauxTaxiIds, setAnimauxTaxiIds] = useState<number[]>([]);
+
+  // Autocomplétion d'adresse (Google Places) pour le trajet taxi
+  const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
+  const placesService = useRef<google.maps.places.PlacesService | null>(null);
+  const departDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const arriveeDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [departPredictions, setDepartPredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
+  const [arriveePredictions, setArriveePredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
+  const [latDepart, setLatDepart] = useState<number | null>(null);
+  const [lngDepart, setLngDepart] = useState<number | null>(null);
+  const [latArrivee, setLatArrivee] = useState<number | null>(null);
+  const [lngArrivee, setLngArrivee] = useState<number | null>(null);
+
+  useEffect(() => {
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return;
+    setOptions({ key: apiKey, v: 'weekly', language: 'fr' });
+    importLibrary('places').then(() => {
+      autocompleteService.current = new window.google.maps.places.AutocompleteService();
+      const dummyDiv = document.createElement('div');
+      placesService.current = new window.google.maps.places.PlacesService(dummyDiv);
+    }).catch(() => {});
+  }, []);
+
+  function onDepartChange(val: string) {
+    setAdresseDepart(val);
+    if (departDebounce.current) clearTimeout(departDebounce.current);
+    if (val.trim().length < 3) { setDepartPredictions([]); return; }
+    departDebounce.current = setTimeout(() => {
+      autocompleteService.current?.getPlacePredictions(
+        { input: val, componentRestrictions: { country: ['fr', 'be', 'ch', 'lu'] }, language: 'fr' } as google.maps.places.AutocompletionRequest,
+        (preds, status) => setDepartPredictions(status === window.google.maps.places.PlacesServiceStatus.OK && preds ? preds : [])
+      );
+    }, 400);
+  }
+
+  function onArriveeChange(val: string) {
+    setAdresseArrivee(val);
+    if (arriveeDebounce.current) clearTimeout(arriveeDebounce.current);
+    if (val.trim().length < 3) { setArriveePredictions([]); return; }
+    arriveeDebounce.current = setTimeout(() => {
+      autocompleteService.current?.getPlacePredictions(
+        { input: val, componentRestrictions: { country: ['fr', 'be', 'ch', 'lu'] }, language: 'fr' } as google.maps.places.AutocompletionRequest,
+        (preds, status) => setArriveePredictions(status === window.google.maps.places.PlacesServiceStatus.OK && preds ? preds : [])
+      );
+    }, 400);
+  }
+
+  function selectDepartPrediction(pred: google.maps.places.AutocompletePrediction) {
+    setAdresseDepart(pred.description);
+    setDepartPredictions([]);
+    placesService.current?.getDetails({ placeId: pred.place_id, fields: ['geometry'] }, (place, status) => {
+      const loc = status === window.google.maps.places.PlacesServiceStatus.OK ? place?.geometry?.location : null;
+      if (loc) { setLatDepart(loc.lat()); setLngDepart(loc.lng()); }
+    });
+  }
+
+  function selectArriveePrediction(pred: google.maps.places.AutocompletePrediction) {
+    setAdresseArrivee(pred.description);
+    setArriveePredictions([]);
+    placesService.current?.getDetails({ placeId: pred.place_id, fields: ['geometry'] }, (place, status) => {
+      const loc = status === window.google.maps.places.PlacesServiceStatus.OK ? place?.geometry?.location : null;
+      if (loc) { setLatArrivee(loc.lat()); setLngArrivee(loc.lng()); }
+    });
+  }
 
   // Garde uniquement : RDV récurrent (visites/promenades hebdomadaires)
   const [recurrent, setRecurrent] = useState(false);
@@ -389,7 +455,7 @@ function ProDetailContent() {
   async function confirmRdv() {
     if (!selectedSlot || !motifKey || !user || !pro) return;
     if (pro.cat_pro === 'veterinaire' && premiereVisite === null) return;
-    if (isTaxi && (!adresseDepart.trim() || !adresseArrivee.trim())) return;
+    if (isTaxi && (!adresseDepart.trim() || !adresseArrivee.trim() || animauxTaxiIds.length === 0)) return;
     setSaving(true);
     try {
       const motifInfo = (MOTIFS_BY_CAT[pro.cat_pro] ?? DEFAULT_MOTIFS).find(m => m.key === motifKey);
@@ -401,7 +467,7 @@ function ProDetailContent() {
         const dateFin   = new Date(`${slot.date}T${slot.heureFin}`);
         await supabase.from('rdv').insert({
           pro_uid: pro.uid, client_uid: user.uid,
-          animal_id: selectedAnimalId || null,
+          animal_id: isTaxi ? (animauxTaxiIds[0] ?? null) : (selectedAnimalId || null),
           date_debut: dateDebut.toISOString(), date_fin: dateFin.toISOString(),
           statut: 'en_attente',
           motif: premiereVisite !== null ? `${motifLabel}${premiereVisite ? ' (1ère visite)' : ''}` : motifLabel,
@@ -411,7 +477,10 @@ function ProDetailContent() {
           ...(isTaxi ? {
             adresse_depart: adresseDepart.trim(),
             adresse_arrivee: adresseArrivee.trim(),
-            nombre_animaux: nombreAnimaux,
+            nombre_animaux: animauxTaxiIds.length,
+            animaux_ids: animauxTaxiIds,
+            ...(latDepart != null ? { lat_depart: latDepart, lng_depart: lngDepart } : {}),
+            ...(latArrivee != null ? { lat_arrivee: latArrivee, lng_arrivee: lngArrivee } : {}),
           } : {}),
         });
         await supabase.from('creneaux_pro').update({ statut: 'reserve' })
@@ -455,7 +524,7 @@ function ProDetailContent() {
 
   const canConfirm = !!motifKey && !!selectedSlot &&
     (pro?.cat_pro !== 'veterinaire' || premiereVisite !== null) &&
-    (!isTaxi || (!!adresseDepart.trim() && !!adresseArrivee.trim()));
+    (!isTaxi || (!!adresseDepart.trim() && !!adresseArrivee.trim() && animauxTaxiIds.length > 0));
 
   if (loading) return (
     <div className="min-h-screen bg-[#F8F8F8] flex items-center justify-center">
@@ -811,23 +880,65 @@ function ProDetailContent() {
                     <div className="space-y-3">
                       <p className="text-xs font-bold text-gray-400 uppercase tracking-wide"
                         style={{ fontFamily: 'Galey, sans-serif' }}>Trajet</p>
-                      <input value={adresseDepart} onChange={e => setAdresseDepart(e.target.value)}
-                        placeholder="Adresse de départ"
-                        className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none"
-                        style={{ fontFamily: 'Galey, sans-serif' }} />
-                      <input value={adresseArrivee} onChange={e => setAdresseArrivee(e.target.value)}
-                        placeholder="Adresse d'arrivée"
-                        className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none"
-                        style={{ fontFamily: 'Galey, sans-serif' }} />
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
-                          Nombre d&apos;animaux transportés
-                        </span>
-                        <button onClick={() => setNombreAnimaux(n => Math.max(1, n - 1))}
-                          className="w-7 h-7 rounded-full border border-gray-200 text-gray-500">−</button>
-                        <span className="text-sm font-semibold w-4 text-center">{nombreAnimaux}</span>
-                        <button onClick={() => setNombreAnimaux(n => Math.min(6, n + 1))}
-                          className="w-7 h-7 rounded-full border border-gray-200 text-gray-500">+</button>
+                      <div className="relative">
+                        <input value={adresseDepart} onChange={e => onDepartChange(e.target.value)}
+                          placeholder="Adresse de départ" autoComplete="off"
+                          className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none"
+                          style={{ fontFamily: 'Galey, sans-serif' }} />
+                        {departPredictions.length > 0 && (
+                          <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                            {departPredictions.map(p => (
+                              <button key={p.place_id} type="button" onMouseDown={() => selectDepartPrediction(p)}
+                                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 border-b border-gray-50 last:border-0">
+                                {p.description}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <input value={adresseArrivee} onChange={e => onArriveeChange(e.target.value)}
+                          placeholder="Adresse d'arrivée" autoComplete="off"
+                          className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none"
+                          style={{ fontFamily: 'Galey, sans-serif' }} />
+                        {arriveePredictions.length > 0 && (
+                          <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                            {arriveePredictions.map(p => (
+                              <button key={p.place_id} type="button" onMouseDown={() => selectArriveePrediction(p)}
+                                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 border-b border-gray-50 last:border-0">
+                                {p.description}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600 mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          Animaux transportés
+                        </p>
+                        {animaux.length === 0 ? (
+                          <span className="text-gray-400 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>Aucun animal enregistré</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {animaux.map(a => {
+                              const checked = animauxTaxiIds.includes(a.id);
+                              return (
+                                <button key={a.id}
+                                  onClick={() => setAnimauxTaxiIds(ids => checked ? ids.filter(i => i !== a.id) : [...ids, a.id])}
+                                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-semibold transition-all"
+                                  style={{
+                                    fontFamily: 'Galey, sans-serif',
+                                    borderColor: checked ? catColor : '#E5E7EB',
+                                    backgroundColor: checked ? `${catColor}15` : 'white',
+                                    color: checked ? catColor : '#6B7280',
+                                  }}>
+                                  <span>{a.espece === 'chien' ? '🐶' : a.espece === 'chat' ? '🐱' : a.espece === 'cheval' ? '🐴' : '🐾'}</span>
+                                  {a.nom}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -880,7 +991,8 @@ function ProDetailContent() {
                     </div>
                   )}
 
-                  {/* Sélection animal — toujours visible */}
+                  {/* Sélection animal — taxi utilise le multi-select ci-dessus */}
+                  {!isTaxi && (
                   <div>
                     <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5"
                       style={{ fontFamily: 'Galey, sans-serif' }}>Pour quel animal ?</p>
@@ -912,6 +1024,7 @@ function ProDetailContent() {
                       </div>
                     )}
                   </div>
+                  )}
 
                   {/* Date */}
                   {availableDates.length === 0 ? (
@@ -1035,9 +1148,14 @@ function ProDetailContent() {
                         📋 {motifs.find(m => m.key === motifKey)?.label}
                         {premiereVisite === true ? ' — 1ère visite' : ''}
                       </p>
-                      {selectedAnimalId && (
+                      {selectedAnimalId && !isTaxi && (
                         <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
                           🐾 {animaux.find(a => a.id === selectedAnimalId)?.nom}
+                        </p>
+                      )}
+                      {isTaxi && animauxTaxiIds.length > 0 && (
+                        <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          🐾 {animauxTaxiIds.map(id => animaux.find(a => a.id === id)?.nom).filter(Boolean).join(', ')}
                         </p>
                       )}
                       {pro.cat_pro === 'garde' && recurrent && (

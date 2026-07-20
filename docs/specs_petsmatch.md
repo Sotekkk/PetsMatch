@@ -6074,4 +6074,65 @@ dans la grille) restent à construire dans une session ultérieure.
 
 ---
 
+## 42. Visibilité client — prestations, galerie, tarifs taxi, trajet (session 2026-07-17)
+
+**Contexte** : après tests utilisatrice sur les 3 nouveaux modules pro
+(taxi/photographe/toilettage), plusieurs manques identifiés côté client :
+prestations et galerie invisibles sur la fiche publique, aucun tarif
+structuré pour le taxi, adresses de trajet en texte libre sans
+autocomplétion, sélection du nombre d'animaux transportés sans choisir
+lesquels.
+
+**Implémenté** :
+1. **Prestations sur la fiche publique** (photographe/toilettage) :
+   `service_detail_page.dart` (app) et `services/pro/[uid]/page.tsx` (web)
+   affichent désormais une carte "Prestations" (nom/prix/durée/description)
+   — jusque-là visibles seulement pendant la réservation, jamais en amont.
+2. **Tarifs de course (taxi)** : nouveau `user_profiles.tarifs_taxi` JSONB
+   (`prise_en_charge`/`prix_km`/`minimum`), éditable depuis le profil pro
+   (app + web) et affiché publiquement. Migration
+   `migration_tarifs_taxi.sql`.
+3. **Galerie/portfolio (photographe)** : upload jusqu'à 12 photos depuis le
+   profil (app + web `SecondaryProEdit`), affichée en grille sur la fiche
+   publique. Bug corrigé au passage : l'aperçu local (`blob:`) de
+   l'avatar/bannière passait par `next/image` qui ne le supporte pas —
+   remplacé par `<img>` classique.
+4. **Autocomplétion d'adresse (trajet taxi)** : `rdv_booking_page.dart`
+   (app, `GoogleMapsPlaces` — même pattern que `pro_profile_edit.dart`) et
+   `services/pro/[uid]/page.tsx` (web, plomberie Google Places JS locale au
+   composant, absente jusqu'ici) — suggestions + résolution lat/lng à la
+   sélection, fallback géocodage au submit si l'utilisateur tape sans
+   sélectionner de suggestion. Bonus : le champ "Lieu du shooting"
+   (photographe) partage `_adresseDepartCtrl` et bénéficie de la même
+   autocomplétion sans code supplémentaire.
+5. **Sélection multi-animaux (taxi)** : remplace le compteur "nombre
+   d'animaux" par une vraie sélection (réutilise `AnimalPickerSheet.pickMany`
+   côté app, déjà générique et existant ; liste à cocher équivalente côté
+   web). Nouvelle colonne `rdv.animaux_ids` JSONB (migration
+   `migration_rdv_animaux_ids.sql`) — `rdv.animal_id` reste le premier
+   animal sélectionné pour compat avec le code existant,
+   `nombre_animaux` dérivé de la longueur de la liste au lieu d'être saisi
+   à la main.
+6. **Bug corrigé — carte des pros (web)** : `ServicesMap.tsx` construisait
+   le lien "Voir le profil" sans `profileId`, donc cliquer sur un profil
+   secondaire (taxi/photographe/toilettage/etc.) depuis la carte chargeait
+   le profil principal (éleveur) à la place — c'était la cause probable des
+   tarifs "invisibles" côté client. `services/carte/page.tsx` avait déjà le
+   bon pattern, `ServicesMap.tsx` (le composant carte lui-même) ne
+   l'appliquait pas.
+7. **Toilettage Test → Premium** : ligne `abonnements` (`plan_code=premium`,
+   `statut=actif`) ajoutée pour le profil de test, débloque planning
+   employés/contrats/paiement en ligne/sync agenda. Photographe et taxi
+   n'ont aucune fonctionnalité gatée par palier actuellement — rien à
+   activer pour ces deux modules.
+
+**Vérifié** : `flutter analyze` (0 nouvelle erreur), `npx tsc --noEmit` et
+`npm run build` (site) propres.
+
+**How to apply** : 2 migrations à exécuter (`migration_tarifs_taxi.sql`,
+`migration_rdv_animaux_ids.sql`). Aucune donnée existante à backfiller
+(nouvelles colonnes, défauts vides).
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*
