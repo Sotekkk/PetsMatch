@@ -596,7 +596,14 @@ export default function AgendaPage() {
     <div className="min-h-screen bg-[#F8F8F8]">
       <div className="bg-[#0C5C6C] text-white px-4 py-6">
         <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>Mon Agenda</h1>
+          <div className="flex items-center gap-3">
+            <button onClick={() => router.back()} className="p-2 -ml-2 rounded-xl hover:bg-white/10 transition-colors">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <h1 className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>Mon Agenda</h1>
+          </div>
           <div className="flex items-center gap-2">
             <div className="flex rounded-lg bg-white/10 overflow-hidden text-xs font-semibold">
               {([['calendar', 'Mois'], ['day', 'Jour'], ['list', 'Liste']] as const).map(([v, label]) => (

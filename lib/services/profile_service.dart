@@ -8,7 +8,8 @@ class ProfileService {
         .from('user_profiles')
         .select()
         .eq('uid', uid)
-        .order('created_at');
+        .order('is_main', ascending: false)
+        .order('created_at', ascending: true);
     return List<Map<String, dynamic>>.from(rows as List);
   }
 

@@ -252,7 +252,10 @@ class _AssociationNavState extends State<AssociationNav> {
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => AgendaPage(isAssociation: true),
+                          builder: (ctx) => AgendaPage(
+                            isAssociation: true,
+                            onBack: () => Navigator.pop(ctx),
+                          ),
                         ));
                       },
                     ),
