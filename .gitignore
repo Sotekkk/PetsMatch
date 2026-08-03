@@ -57,3 +57,9 @@ PetsMatch-main/
 
 # Build output
 build/
+
+# Next.js / Netlify / Deno / Supabase CLI
+.next/
+.netlify/
+deno.lock
+supabase/.temp/
