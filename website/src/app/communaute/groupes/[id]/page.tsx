@@ -168,9 +168,10 @@ export default function GroupeDetailPage() {
         const { data: myMem } = await memQ.maybeSingle();
         mem = myMem as Membership | null;
 
-        // Amis dans le groupe
-        const { data: friends } = await supabase.from('petfriends').select('uid_demandeur, uid_recepteur')
-          .or(`uid_demandeur.eq.${user.uid},uid_recepteur.eq.${user.uid}`).eq('statut', 'accepte');
+        // Amis dans le groupe — scopés au profil actif (chaque profil a sa
+        // propre liste de PetFriends, cf. demandeur_profile_id/recepteur_profile_id)
+        const { data: friends } = profileId ? await supabase.from('petfriends').select('uid_demandeur, uid_recepteur')
+          .or(`demandeur_profile_id.eq.${profileId},recepteur_profile_id.eq.${profileId}`).eq('statut', 'accepte') : { data: [] };
         const fUids = (friends ?? []).map((f: { uid_demandeur: string; uid_recepteur: string }) =>
           f.uid_demandeur === user.uid ? f.uid_recepteur : f.uid_demandeur
         );

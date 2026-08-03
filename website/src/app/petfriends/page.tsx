@@ -77,13 +77,13 @@ export default function PetFriendsPage() {
   // ─── Chargement amis ────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
-    if (!myUid) return;
+    if (!myUid || !activeProfileId) return;
     setLoading(true);
     try {
       const { data: sentRels } = await supabase.from('petfriends')
-        .select('id, uid_recepteur, statut').eq('uid_demandeur', myUid);
+        .select('id, uid_recepteur, statut').eq('demandeur_profile_id', activeProfileId);
       const { data: recvRels } = await supabase.from('petfriends')
-        .select('id, uid_demandeur, statut').eq('uid_recepteur', myUid);
+        .select('id, uid_demandeur, statut').eq('recepteur_profile_id', activeProfileId);
 
       const byUid: Record<string, { id: string; statut: string; dir: 'sent' | 'received' }> = {};
       for (const r of sentRels ?? []) byUid[r.uid_recepteur] = { id: r.id, statut: r.statut, dir: 'sent' };
@@ -114,7 +114,7 @@ export default function PetFriendsPage() {
     } finally {
       setLoading(false);
     }
-  }, [myUid]);
+  }, [myUid, activeProfileId]);
 
   // ─── Chargement groupes ──────────────────────────────────────────────────
 

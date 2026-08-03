@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 interface UserProfile {
   uid: string;
@@ -45,12 +46,14 @@ export default function PublicProfilePage() {
   const { user } = useAuth();
   const myUid = user?.uid ?? '';
   const isMe = targetUid === myUid;
+  const activeProfileId = useActiveProfile();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [relStatut, setRelStatut] = useState<RelStatut>(null);
   const [relDir, setRelDir] = useState<RelDir>(null);
   const [relId, setRelId] = useState<string | null>(null);
+  const [targetProfileId, setTargetProfileId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -58,7 +61,7 @@ export default function PublicProfilePage() {
     setLoading(true);
     try {
       const { data: p } = await supabase.from('user_profiles')
-        .select('firstname, lastname, avatar_url, ville')
+        .select('id, firstname, lastname, avatar_url, ville')
         .eq('uid', targetUid).eq('is_main', true).maybeSingle();
       setProfile(p ? {
         uid: targetUid,
@@ -67,16 +70,19 @@ export default function PublicProfilePage() {
         profile_picture_url: p.avatar_url,
         ville: p.ville,
       } : null);
+      const tgPid = p?.id ?? null;
+      setTargetProfileId(tgPid);
 
-      // Relation
+      // Relation — scopée au profil actif (chaque profil a sa propre liste
+      // de PetFriends, cf. demandeur_profile_id/recepteur_profile_id)
       let rStatut: RelStatut = null, rDir: RelDir = null, rId: string | null = null;
-      if (!isMe && myUid) {
+      if (!isMe && myUid && activeProfileId && tgPid) {
         const { data: sent } = await supabase.from('petfriends')
-          .select('id, statut').eq('uid_demandeur', myUid).eq('uid_recepteur', targetUid).maybeSingle();
+          .select('id, statut').eq('demandeur_profile_id', activeProfileId).eq('recepteur_profile_id', tgPid).maybeSingle();
         if (sent) { rId = sent.id; rStatut = sent.statut; rDir = 'sent'; }
         else {
           const { data: recv } = await supabase.from('petfriends')
-            .select('id, statut').eq('uid_demandeur', targetUid).eq('uid_recepteur', myUid).maybeSingle();
+            .select('id, statut').eq('demandeur_profile_id', tgPid).eq('recepteur_profile_id', activeProfileId).maybeSingle();
           if (recv) { rId = recv.id; rStatut = recv.statut; rDir = 'received'; }
         }
       }
@@ -101,14 +107,17 @@ export default function PublicProfilePage() {
     }
   }
 
-  useEffect(() => { if (targetUid) load(); }, [targetUid, myUid]);
+  useEffect(() => { if (targetUid) load(); }, [targetUid, myUid, activeProfileId]);
 
   async function sendRequest() {
     if (!myUid) return;
     setSaving(true);
     try {
       const { data: rel } = await supabase.from('petfriends').insert({
-        uid_demandeur: myUid, uid_recepteur: targetUid,
+        uid_demandeur: myUid,
+        ...(activeProfileId ? { demandeur_profile_id: activeProfileId } : {}),
+        uid_recepteur: targetUid,
+        ...(targetProfileId ? { recepteur_profile_id: targetProfileId } : {}),
         statut: 'en_attente', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       }).select('id').single();
       const { data: me } = await supabase.from('user_profiles').select('firstname, lastname').eq('uid', myUid).eq('is_main', true).maybeSingle();

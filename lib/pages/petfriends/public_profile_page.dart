@@ -29,6 +29,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
   String? _relStatut;
   String? _relDirection;
   String? _relId;
+  String? _targetProfileId;
   bool _loading = true;
   bool _saving = false;
 
@@ -46,14 +47,16 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
 
     // Étape 1 : profil
     Map<String, dynamic>? profileData;
+    String? targetProfileId;
     try {
       final up = await _supa
           .from('user_profiles')
-          .select('uid, firstname, lastname, avatar_url, ville')
+          .select('id, uid, firstname, lastname, avatar_url, ville')
           .eq('uid', widget.targetUid)
           .eq('is_main', true)
           .maybeSingle();
       if (up != null) {
+        targetProfileId = up['id']?.toString();
         profileData = {
           'uid':                 up['uid'],
           'firstname':           up['firstname'],
@@ -65,17 +68,19 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
     } catch (_) {}
 
     // Affiche le profil dès qu'on l'a, sans attendre le reste
-    if (mounted) setState(() => _profile = profileData);
+    if (mounted) setState(() { _profile = profileData; _targetProfileId = targetProfileId; });
 
-    // Étape 2 : relation PetFriend
+    // Étape 2 : relation PetFriend — scopée au profil actif (chaque profil a
+    // sa propre liste de PetFriends, cf. demandeur_profile_id/recepteur_profile_id)
+    final myProfileId = User_Info.activeProfileId;
     String? relStatut, relDir, relId;
     try {
-      if (!_isMe && _myUid.isNotEmpty) {
+      if (!_isMe && _myUid.isNotEmpty && myProfileId.isNotEmpty && targetProfileId != null) {
         final sent = await _supa
             .from('petfriends')
             .select('id, statut')
-            .eq('uid_demandeur', _myUid)
-            .eq('uid_recepteur', widget.targetUid)
+            .eq('demandeur_profile_id', myProfileId)
+            .eq('recepteur_profile_id', targetProfileId)
             .maybeSingle();
         if (sent != null) {
           relId = sent['id'].toString();
@@ -85,8 +90,8 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
           final received = await _supa
               .from('petfriends')
               .select('id, statut')
-              .eq('uid_demandeur', widget.targetUid)
-              .eq('uid_recepteur', _myUid)
+              .eq('demandeur_profile_id', targetProfileId)
+              .eq('recepteur_profile_id', myProfileId)
               .maybeSingle();
           if (received != null) {
             relId = received['id'].toString();
@@ -124,9 +129,12 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
   Future<void> _sendRequest() async {
     setState(() => _saving = true);
     try {
+      final myProfileId = User_Info.activeProfileId;
       final res = await _supa.from('petfriends').insert({
         'uid_demandeur': _myUid,
+        if (myProfileId.isNotEmpty) 'demandeur_profile_id': myProfileId,
         'uid_recepteur': widget.targetUid,
+        if (_targetProfileId != null) 'recepteur_profile_id': _targetProfileId,
         'statut': 'en_attente',
         'created_at': DateTime.now().toIso8601String(),
         'updated_at': DateTime.now().toIso8601String(),
