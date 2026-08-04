@@ -16,6 +16,7 @@ class AnimalPickerSheet extends StatefulWidget {
   final bool multiSelect;
   final List<Map<String, dynamic>> initialSelected;
   final Color accentColor;
+  final bool showPortees;
 
   const AnimalPickerSheet({
     super.key,
@@ -25,6 +26,7 @@ class AnimalPickerSheet extends StatefulWidget {
     this.multiSelect = false,
     this.initialSelected = const [],
     this.accentColor = const Color(0xFF0C5C6C),
+    this.showPortees = true,
   }) : assert(uid != null || preloaded != null, 'Provide uid or preloaded');
 
   /// Single-select convenience: opens sheet and returns the chosen animal or null.
@@ -35,6 +37,7 @@ class AnimalPickerSheet extends StatefulWidget {
     List<Map<String, dynamic>>? preloaded,
     Map<String, dynamic>? current,
     Color accentColor = const Color(0xFF0C5C6C),
+    bool showPortees = true,
   }) async {
     final result = await showModalBottomSheet<dynamic>(
       context: context,
@@ -47,6 +50,7 @@ class AnimalPickerSheet extends StatefulWidget {
         multiSelect: false,
         initialSelected: current != null ? [current] : [],
         accentColor: accentColor,
+        showPortees: showPortees,
       ),
     );
     if (result is Map<String, dynamic>) return result;
@@ -61,6 +65,7 @@ class AnimalPickerSheet extends StatefulWidget {
     List<Map<String, dynamic>>? preloaded,
     List<Map<String, dynamic>> current = const [],
     Color accentColor = const Color(0xFF0C5C6C),
+    bool showPortees = true,
   }) async {
     final result = await showModalBottomSheet<dynamic>(
       context: context,
@@ -73,6 +78,7 @@ class AnimalPickerSheet extends StatefulWidget {
         multiSelect: true,
         initialSelected: current,
         accentColor: accentColor,
+        showPortees: showPortees,
       ),
     );
     if (result is List) return List<Map<String, dynamic>>.from(result);
@@ -109,7 +115,7 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
       final pid = widget.profileId;
 
       var q = supa.from('animaux')
-          .select('id, nom, espece, race, photo_url, portee_id')
+          .select('id, nom, espece, race, photo_url, portee_id, nom_mere')
           .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid');
       if (pid != null && pid.isNotEmpty) q = q.eq('profile_id', pid);
       final directRows = await q;
@@ -127,7 +133,7 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
       List<Map<String, dynamic>> viaCession = [];
       if (missingIds.isNotEmpty) {
         final rows2 = await supa.from('animaux')
-            .select('id, nom, espece, race, photo_url, portee_id')
+            .select('id, nom, espece, race, photo_url, portee_id, nom_mere')
             .inFilter('id', missingIds.toList());
         viaCession = List<Map<String, dynamic>>.from((rows2 as List).map((e) => Map<String, dynamic>.from(e as Map)));
       }
@@ -162,7 +168,9 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
     return map;
   }
 
-  String _porteeLabel(String porteeId) {
+  String _porteeLabel(String porteeId, List<Map<String, dynamic>> membres) {
+    final nomMere = membres.map((a) => a['nom_mere']?.toString() ?? '').firstWhere((n) => n.isNotEmpty, orElse: () => '');
+    if (nomMere.isNotEmpty) return 'Portée de $nomMere';
     final msStr = porteeId.replaceFirst('portee_', '');
     final ms = int.tryParse(msStr);
     if (ms == null) return 'Portée';
@@ -213,7 +221,7 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
           ]),
         ),
         const Divider(height: 1),
-        if (widget.multiSelect && !_loading && _porteeGroups.isNotEmpty) ...[
+        if (widget.multiSelect && widget.showPortees && !_loading && _porteeGroups.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
             child: Wrap(
@@ -229,7 +237,7 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
                       border: Border.all(color: color.withValues(alpha: 0.3)),
                     ),
                     child: Text(
-                      '${_porteeLabel(e.key)} (${e.value.length}) — tout sélectionner',
+                      '${_porteeLabel(e.key, e.value)} (${e.value.length}) — tout sélectionner',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w600, color: color),
                     ),
                   ),

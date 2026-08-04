@@ -19,7 +19,7 @@ interface Task {
   eleveur_nom?: string;
 }
 
-interface AnimalOption { id: string; nom: string; espece?: string | null; portee_id?: string | null; }
+interface AnimalOption { id: string; nom: string; espece?: string | null; portee_id?: string | null; nom_mere?: string | null; }
 interface MembreOption { uid: string; nom: string; type: 'employe' | 'benevole'; }
 
 export default function MesTachesPage() {
@@ -122,7 +122,7 @@ function MesTachesPageInner() {
     // possédés en propre (is_association=true pour association) + reçus par
     // cession (animaux_proprietes.profile_id_proprio), sinon un animal du
     // profil élevage apparaît aussi dans le picker de tâche association.
-    let ownedQuery = supabase.from('animaux').select('id, nom, espece, portee_id').eq('uid_eleveur', user.uid);
+    let ownedQuery = supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere').eq('uid_eleveur', user.uid);
     ownedQuery = profilSource === 'association' ? ownedQuery.eq('is_association', true) : ownedQuery;
     const ownedRes = await ownedQuery.order('nom');
     const owned = (ownedRes.data ?? []) as AnimalOption[];
@@ -133,7 +133,7 @@ function MesTachesPageInner() {
         .select('animal_id').eq('uid_proprio', user.uid).eq('profile_id_proprio', profileId);
       const ids = [...new Set((byProfile ?? []).map(r => r.animal_id as string))].filter(id => !ownedIds.has(id));
       if (ids.length > 0) {
-        const { data } = await supabase.from('animaux').select('id, nom, espece, portee_id').in('id', ids).order('nom');
+        const { data } = await supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere').in('id', ids).order('nom');
         received = (data ?? []) as AnimalOption[];
       }
     }
@@ -355,12 +355,17 @@ function AddTacheModal({ uid, profileId, profilSource, animaux, membres, onClose
   const [showAddEmploye, setShowAddEmploye] = useState(false);
 
   const porteeGroups = new Map<string, AnimalOption[]>();
-  if (profilSource !== 'pension') {
+  if (profilSource === 'eleveur') {
     for (const a of animaux) {
       if (!a.portee_id) continue;
       if (!porteeGroups.has(a.portee_id)) porteeGroups.set(a.portee_id, []);
       porteeGroups.get(a.portee_id)!.push(a);
     }
+  }
+
+  function porteeLabel(membresPortee: AnimalOption[]): string {
+    const nomMere = membresPortee.map(a => a.nom_mere).find(n => !!n);
+    return nomMere ? `Portée de ${nomMere}` : 'Portée';
   }
 
   function toggleAnimal(id: string) {
@@ -469,7 +474,7 @@ function AddTacheModal({ uid, profileId, profilSource, animaux, membres, onClose
                   {[...porteeGroups.entries()].map(([porteeId, membresPortee]) => (
                     <button key={porteeId} type="button" onClick={() => selectPortee(membresPortee)}
                       className="text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-2.5 py-1 hover:bg-teal-100 transition-colors">
-                      Toute la portée ({membresPortee.length})
+                      {porteeLabel(membresPortee)} ({membresPortee.length})
                     </button>
                   ))}
                 </div>

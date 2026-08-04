@@ -2845,6 +2845,7 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
       uid: widget.uid,
       profileId: pid.isNotEmpty ? pid : null,
       current: _selectedAnimaux,
+      showPortees: widget.profilSource == 'eleveur',
     );
     if (result != null && mounted) setState(() => _selectedAnimaux = result);
   }
