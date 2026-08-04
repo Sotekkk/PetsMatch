@@ -258,19 +258,6 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
-                        label: 'Ajouter une tâche',
-                        icon: Icons.add_task_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (ctx) => AgendaPage(
-                              onBack: () => Navigator.pop(ctx),
-                              autoOpenAddTache: true,
-                            ),
-                          ));
-                        },
-                      ),
-                      _DrawerSubItem(
                         label: 'Suivi sanitaire',
                         icon: Icons.health_and_safety_outlined,
                         locked: _planCode == 'free',
@@ -702,19 +689,6 @@ class _EleveurNavState extends State<EleveurNav> {
                           builder: (_) => _pensionPlanCode == 'free'
                               ? const PensionAbonnementPage()
                               : const PlanTemplateListPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.add_task_outlined,
-                      label: 'Ajouter une tâche',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (ctx) => AgendaPage(
-                            onBack: () => Navigator.pop(ctx),
-                            autoOpenAddTache: true,
-                          ),
                         ));
                       },
                     ),

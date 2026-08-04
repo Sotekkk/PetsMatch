@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
+import { AddTacheModal, loadMembres, type AnimalOption, type MembreOption } from '@/components/agenda/AddTacheModal';
 
 async function resolveDisplayName(uid: string, fallback: string): Promise<string> {
   const { data } = await supabase.from('user_profiles')
@@ -943,6 +944,9 @@ export default function AgendaElevagePage() {
   const [editTache, setEditTache]               = useState<TacheManuelle | null>(null);
   const [editGroupe, setEditGroupe]             = useState<RoutineGroupe | null>(null);
   const [monthDates, setMonthDates]     = useState<Map<string, string[]>>(new Map());
+  const [showAddTache, setShowAddTache] = useState(false);
+  const [animaux, setAnimaux]           = useState<AnimalOption[]>([]);
+  const [membresAssign, setMembresAssign] = useState<MembreOption[]>([]);
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
 
@@ -970,6 +974,30 @@ export default function AgendaElevagePage() {
   }, [user]);
 
   useEffect(() => { if (user) loadEmployes(); }, [user, loadEmployes]);
+
+  // Animaux + membres assignables (Moi + employés/bénévoles) pour le formulaire de tâche.
+  const loadAnimauxEtMembres = useCallback(async () => {
+    if (!user) return;
+    setMembresAssign(await loadMembres(user.uid, profilSource));
+    let ownedQuery = supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere').eq('uid_eleveur', user.uid);
+    ownedQuery = profilSource === 'association' ? ownedQuery.eq('is_association', true) : ownedQuery;
+    const ownedRes = await ownedQuery.order('nom');
+    const owned = (ownedRes.data ?? []) as AnimalOption[];
+    const ownedIds = new Set(owned.map(a => a.id));
+    let received: AnimalOption[] = [];
+    if (activeProfileId) {
+      const { data: byProfile } = await supabase.from('animaux_proprietes')
+        .select('animal_id').eq('uid_proprio', user.uid).eq('profile_id_proprio', activeProfileId);
+      const ids = [...new Set((byProfile ?? []).map(r => r.animal_id as string))].filter(id => !ownedIds.has(id));
+      if (ids.length > 0) {
+        const { data } = await supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere').in('id', ids).order('nom');
+        received = (data ?? []) as AnimalOption[];
+      }
+    }
+    setAnimaux([...owned, ...received]);
+  }, [user, profilSource, activeProfileId]);
+
+  useEffect(() => { if (user) loadAnimauxEtMembres(); }, [user, loadAnimauxEtMembres]);
 
   // Applique le filtre profil : profile_id si disponible, sinon profil_source (rétrocompat)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1358,6 +1386,14 @@ export default function AgendaElevagePage() {
             </div>
           </div>
 
+          {/* Bouton ajout tâche pour le jour sélectionné */}
+          <div className="flex justify-end mb-3">
+            <button onClick={() => setShowAddTache(true)}
+              className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 hover:bg-teal-100 transition-colors">
+              <span className="text-base leading-none">+</span> Tâche
+            </button>
+          </div>
+
           {/* Liste du jour */}
           {loadingData ? (
             <div className="flex justify-center py-12">
@@ -1428,6 +1464,14 @@ export default function AgendaElevagePage() {
             </div>
           </div>
 
+          {/* Bouton ajout tâche pour le jour sélectionné */}
+          <div className="flex justify-end mb-3">
+            <button onClick={() => setShowAddTache(true)}
+              className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 hover:bg-teal-100 transition-colors">
+              <span className="text-base leading-none">+</span> Tâche
+            </button>
+          </div>
+
           {loadingData ? (
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
@@ -1485,6 +1529,14 @@ export default function AgendaElevagePage() {
             </div>
           </div>
 
+          {/* Bouton ajout tâche pour le jour sélectionné */}
+          <div className="flex justify-end mb-3">
+            <button onClick={() => setShowAddTache(true)}
+              className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 hover:bg-teal-100 transition-colors">
+              <span className="text-base leading-none">+</span> Tâche
+            </button>
+          </div>
+
           {loadingData ? (
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
@@ -1520,6 +1572,20 @@ export default function AgendaElevagePage() {
       )}
 
       {/* ── Modals ──────────────────────────────────────────────────────────── */}
+
+      {showAddTache && (
+        <AddTacheModal
+          uid={user.uid}
+          profileId={activeProfileId}
+          profilSource={profilSource}
+          selectedDate={selectedDate}
+          animaux={animaux}
+          membres={membresAssign}
+          onClose={() => setShowAddTache(false)}
+          onSaved={() => { setShowAddTache(false); load(); loadMonth(); }}
+          onEmployeCreated={loadAnimauxEtMembres}
+        />
+      )}
 
       {editTache && (
         <EditTacheModal

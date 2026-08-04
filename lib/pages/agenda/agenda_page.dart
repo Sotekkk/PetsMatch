@@ -143,8 +143,14 @@ class _AgendaPageState extends State<AgendaPage> {
   Future<void> _loadEmployes() async {
     try {
       final eleveurProfileData = await _supa.from('user_profiles')
-          .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
+          .select('id,firstname,lastname,nom,profile_type').eq('uid', _uid).eq('is_main', true).maybeSingle();
       final eleveurProfileId = eleveurProfileData?['id'] as String?;
+      final nomMoi = eleveurProfileData != null
+          ? (eleveurProfileData['profile_type'] == 'eleveur'
+              ? (eleveurProfileData['nom'] ?? 'Moi')
+              : '${eleveurProfileData['firstname'] ?? ''} ${eleveurProfileData['lastname'] ?? ''}'.trim())
+          : 'Moi';
+      final moiEntry = {'uid': _uid, 'nom': nomMoi.isEmpty ? 'Moi' : nomMoi};
 
       List emps;
       if (eleveurProfileId != null) {
@@ -154,7 +160,10 @@ class _AgendaPageState extends State<AgendaPage> {
         emps = await _supa.from('employes')
             .select('uid_employe, employe_profile_id').eq('uid_eleveur', _uid).eq('actif', true);
       }
-      if (emps.isEmpty) return;
+      if (emps.isEmpty) {
+        if (mounted) setState(() => _employes = [moiEntry]);
+        return;
+      }
 
       // Résoudre les UIDs depuis profile_id ou uid_employe
       final uids = <String>[];
@@ -169,16 +178,19 @@ class _AgendaPageState extends State<AgendaPage> {
           if (uid.isNotEmpty) uids.add(uid);
         }
       }
-      if (uids.isEmpty) return;
+      if (uids.isEmpty) {
+        if (mounted) setState(() => _employes = [moiEntry]);
+        return;
+      }
 
       final users = await _supa.from('user_profiles')
           .select('uid,firstname,lastname').inFilter('uid', uids).eq('is_main', true);
       if (mounted) {
         setState(() {
-          _employes = (users as List).map((u) => {
+          _employes = [moiEntry, ...(users as List).map((u) => {
             'uid': u['uid'] as String,
             'nom': '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim(),
-          }).toList();
+          })];
         });
       }
     } catch (_) {}
@@ -669,6 +681,24 @@ class _AgendaPageState extends State<AgendaPage> {
             const Spacer(),
             Text('$doneItems/$totalItems',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => _showAddTacheSheet(day ?? _selectedDay ?? DateTime.now()),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: _kTeal.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _kTeal.withValues(alpha: 0.3)),
+                ),
+                child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.add, size: 12, color: _kTeal),
+                  SizedBox(width: 2),
+                  Text('Tâche', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                      fontWeight: FontWeight.w600, color: _kTeal)),
+                ]),
+              ),
+            ),
           ]),
           const SizedBox(height: 8),
 
@@ -1164,7 +1194,36 @@ class _AgendaPageState extends State<AgendaPage> {
       child: Column(children: [
         const Divider(height: 1),
         if (dayTasks.isNotEmpty)
-          _buildDayTasksSection(dayTasks, day: day),
+          _buildDayTasksSection(dayTasks, day: day)
+        else if (_canShowTasks())
+          Container(
+            color: const Color(0xFFEDF6F7),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Row(children: [
+              const Text('✅', style: TextStyle(fontSize: 12)),
+              const SizedBox(width: 6),
+              const Text('Tâches du jour',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: _kTeal)),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => _showAddTacheSheet(day),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _kTeal.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: _kTeal.withValues(alpha: 0.3)),
+                  ),
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.add, size: 12, color: _kTeal),
+                    SizedBox(width: 2),
+                    Text('Tâche', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                        fontWeight: FontWeight.w600, color: _kTeal)),
+                  ]),
+                ),
+              ),
+            ]),
+          ),
         Expanded(
           child: RefreshIndicator(
             onRefresh: () async { await _load(); await _loadTasks(); },
@@ -2863,8 +2922,11 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
     // Résout le profil (particulier principal) de l'employé assigné — sans
     // ça, assigne_profile_id reste null et la tâche n'apparaît jamais dans
     // l'agenda de l'employé (filtré par assigne_profile_id = activeProfileId).
+    final isSelfAssign = _selectedEmployeUid == widget.uid;
     String? assigneProfileId;
-    if (_selectedEmployeUid != null) {
+    if (isSelfAssign) {
+      assigneProfileId = profileIdTache.isNotEmpty ? profileIdTache : null;
+    } else if (_selectedEmployeUid != null) {
       final assigneProfileData = await supa.from('user_profiles')
           .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').maybeSingle();
       assigneProfileId = assigneProfileData?['id'] as String?;
@@ -2884,7 +2946,7 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
       if (assigneProfileId != null) 'assigne_profile_id': assigneProfileId,
       if (animalNom != null) 'animal_nom': animalNom,
     });
-    if (_selectedEmployeUid != null) {
+    if (_selectedEmployeUid != null && !isSelfAssign) {
       try {
         final moi = await supa.from('user_profiles')
             .select('firstname,lastname,nom,profile_type')
