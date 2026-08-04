@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useState, useEffect, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useProfileSource, useActiveProfileState } from '@/hooks/useActiveProfile';
@@ -19,11 +19,20 @@ interface Task {
   eleveur_nom?: string;
 }
 
-interface AnimalOption { id: string; nom: string; espece?: string | null; }
+interface AnimalOption { id: string; nom: string; espece?: string | null; portee_id?: string | null; }
 interface MembreOption { uid: string; nom: string; type: 'employe' | 'benevole'; }
 
 export default function MesTachesPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center py-32 text-gray-400">Chargement…</div>}>
+      <MesTachesPageInner />
+    </Suspense>
+  );
+}
+
+function MesTachesPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const profilSource = useProfileSource();
   const { id: profileId, loaded: profileLoaded } = useActiveProfileState();
@@ -39,6 +48,10 @@ export default function MesTachesPage() {
     if (!authLoading && !user) router.push('/connexion');
   }, [authLoading, user, router]);
 
+  useEffect(() => {
+    if (searchParams.get('add') === '1') setShowAddTache(true);
+  }, [searchParams]);
+
   const load = useCallback(async () => {
     if (!user || !profileLoaded) return;
     setLoading(true);
@@ -49,9 +62,9 @@ export default function MesTachesPage() {
       } else {
         q = q.eq('assigne_a', user.uid) as typeof q;
       }
-      const { data: rows } = await (profilSource === 'association'
-        ? q.eq('profil_source', 'association')
-        : q.or('profil_source.is.null,profil_source.eq.eleveur'));
+      const { data: rows } = await (profilSource === 'eleveur'
+        ? q.or('profil_source.is.null,profil_source.eq.eleveur')
+        : q.eq('profil_source', profilSource));
 
       const result: Task[] = [];
       for (const t of (rows ?? [])) {
@@ -78,20 +91,40 @@ export default function MesTachesPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Charge les animaux et l'équipe (employés/bénévoles) pour la création de tâche côté association
+  // Charge les animaux et l'équipe (employés/bénévoles) pour la création de tâche.
   const loadEquipeEtAnimaux = useCallback(async () => {
-    if (!user || profilSource !== 'association') return;
+    if (!user) return;
+
+    const employesRes = await supabase.from('employes')
+      .select('uid_employe, type, prenom, nom')
+      .eq('uid_eleveur', user.uid).eq('actif', true).eq('profil_source', profilSource);
+    setMembres((employesRes.data ?? [])
+      .filter((e: { uid_employe?: string | null }) => !!e.uid_employe)
+      .map((e: { uid_employe: string; type: string; prenom?: string; nom?: string }) => ({
+        uid: e.uid_employe,
+        type: e.type === 'benevole' ? 'benevole' : 'employe',
+        nom: `${e.prenom ?? ''} ${e.nom ?? ''}`.trim() || 'Sans nom',
+      })));
+
+    if (profilSource === 'pension') {
+      // Pension : pas d'animaux possédés, on propose les pensionnaires actuels.
+      const { data } = await supabase.from('pension_entrees')
+        .select('id, animal_nom, espece')
+        .eq('pro_uid', user.uid).eq('statut', 'en_pension').order('animal_nom');
+      setAnimaux((data ?? []).map((r: { id: string; animal_nom: string; espece?: string | null }) => ({
+        id: r.id, nom: r.animal_nom, espece: r.espece,
+      })));
+      return;
+    }
+
     // Un même uid Firebase peut porter plusieurs profils (élevage +
     // association) — ne garder que les animaux réellement de CE profil :
-    // possédés en propre (is_association=true) + reçus par cession
-    // (animaux_proprietes.profile_id_proprio), sinon un animal du profil
-    // élevage apparaît aussi dans le picker de tâche association.
-    const [ownedRes, employesRes] = await Promise.all([
-      supabase.from('animaux').select('id, nom, espece')
-        .eq('uid_eleveur', user.uid).eq('is_association', true).order('nom'),
-      supabase.from('employes').select('uid_employe, type, prenom, nom')
-        .eq('uid_eleveur', user.uid).eq('actif', true).eq('profil_source', 'association'),
-    ]);
+    // possédés en propre (is_association=true pour association) + reçus par
+    // cession (animaux_proprietes.profile_id_proprio), sinon un animal du
+    // profil élevage apparaît aussi dans le picker de tâche association.
+    let ownedQuery = supabase.from('animaux').select('id, nom, espece, portee_id').eq('uid_eleveur', user.uid);
+    ownedQuery = profilSource === 'association' ? ownedQuery.eq('is_association', true) : ownedQuery;
+    const ownedRes = await ownedQuery.order('nom');
     const owned = (ownedRes.data ?? []) as AnimalOption[];
     const ownedIds = new Set(owned.map(a => a.id));
     let received: AnimalOption[] = [];
@@ -100,18 +133,11 @@ export default function MesTachesPage() {
         .select('animal_id').eq('uid_proprio', user.uid).eq('profile_id_proprio', profileId);
       const ids = [...new Set((byProfile ?? []).map(r => r.animal_id as string))].filter(id => !ownedIds.has(id));
       if (ids.length > 0) {
-        const { data } = await supabase.from('animaux').select('id, nom, espece').in('id', ids).order('nom');
+        const { data } = await supabase.from('animaux').select('id, nom, espece, portee_id').in('id', ids).order('nom');
         received = (data ?? []) as AnimalOption[];
       }
     }
     setAnimaux([...owned, ...received]);
-    setMembres((employesRes.data ?? [])
-      .filter((e: { uid_employe?: string | null }) => !!e.uid_employe)
-      .map((e: { uid_employe: string; type: string; prenom?: string; nom?: string }) => ({
-        uid: e.uid_employe,
-        type: e.type === 'benevole' ? 'benevole' : 'employe',
-        nom: `${e.prenom ?? ''} ${e.nom ?? ''}`.trim() || 'Sans nom',
-      })));
   }, [user, profilSource, profileId]);
 
   useEffect(() => { loadEquipeEtAnimaux(); }, [loadEquipeEtAnimaux]);
@@ -151,6 +177,12 @@ export default function MesTachesPage() {
     setToggling(null);
   }
 
+  async function deleteTache(t: Task) {
+    if (!confirm(`Supprimer la tâche "${t.titre}" ?`)) return;
+    setTaches(prev => prev.filter(x => x.id !== t.id));
+    await supabase.from('taches_elevage').delete().eq('id', t.id);
+  }
+
   if (authLoading || !user) {
     return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
   }
@@ -168,12 +200,10 @@ export default function MesTachesPage() {
         <h1 className="text-xl font-bold text-[#1F2A2E] flex-1" style={{ fontFamily: 'Galey, sans-serif' }}>
           Mes tâches
         </h1>
-        {profilSource === 'association' && (
-          <button onClick={() => setShowAddTache(true)}
-            className="flex items-center gap-1.5 text-sm font-semibold text-white bg-[#0C5C6C] hover:bg-[#094F5D] rounded-xl px-3 py-2 transition-colors">
-            <span className="text-base leading-none">+</span> Nouvelle tâche
-          </button>
-        )}
+        <button onClick={() => setShowAddTache(true)}
+          className="flex items-center gap-1.5 text-sm font-semibold text-white bg-[#0C5C6C] hover:bg-[#094F5D] rounded-xl px-3 py-2 transition-colors">
+          <span className="text-base leading-none">+</span> Nouvelle tâche
+        </button>
       </div>
 
       {/* Filtres */}
@@ -263,6 +293,12 @@ export default function MesTachesPage() {
                       À faire
                     </span>
                   )}
+                  <button onClick={() => deleteTache(t)} title="Supprimer"
+                    className="p-1.5 text-gray-300 hover:text-red-500 flex-shrink-0 transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </div>
 
                 {/* Bouton "Marquer comme fait" bien visible */}
@@ -284,10 +320,12 @@ export default function MesTachesPage() {
         <AddTacheModal
           uid={user.uid}
           profileId={profileId}
+          profilSource={profilSource}
           animaux={animaux}
           membres={membres}
           onClose={() => setShowAddTache(false)}
           onSaved={() => { setShowAddTache(false); load(); }}
+          onEmployeCreated={loadEquipeEtAnimaux}
         />
       )}
     </div>
@@ -296,22 +334,42 @@ export default function MesTachesPage() {
 
 // ── Modal création de tâche (côté association) ──────────────────────────────
 
-function AddTacheModal({ uid, profileId, animaux, membres, onClose, onSaved }: {
+function AddTacheModal({ uid, profileId, profilSource, animaux, membres, onClose, onSaved, onEmployeCreated }: {
   uid: string;
   profileId: string | null;
+  profilSource: 'eleveur' | 'association' | 'pension';
   animaux: AnimalOption[];
   membres: MembreOption[];
   onClose: () => void;
   onSaved: () => void;
+  onEmployeCreated: () => void;
 }) {
   const today = new Date().toISOString().split('T')[0];
   const [titre, setTitre] = useState('');
   const [date, setDate] = useState(today);
   const [heure, setHeure] = useState('');
-  const [animalId, setAnimalId] = useState('');
+  const [selectedAnimalIds, setSelectedAnimalIds] = useState<string[]>([]);
   const [assigneUid, setAssigneUid] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showAddEmploye, setShowAddEmploye] = useState(false);
+
+  const porteeGroups = new Map<string, AnimalOption[]>();
+  if (profilSource !== 'pension') {
+    for (const a of animaux) {
+      if (!a.portee_id) continue;
+      if (!porteeGroups.has(a.portee_id)) porteeGroups.set(a.portee_id, []);
+      porteeGroups.get(a.portee_id)!.push(a);
+    }
+  }
+
+  function toggleAnimal(id: string) {
+    setSelectedAnimalIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
+
+  function selectPortee(membresPortee: AnimalOption[]) {
+    setSelectedAnimalIds(prev => [...new Set([...prev, ...membresPortee.map(a => a.id)])]);
+  }
 
   async function save() {
     if (!titre.trim() || !date) return;
@@ -324,19 +382,27 @@ function AddTacheModal({ uid, profileId, animaux, membres, onClose, onSaved }: {
       assigneProfileId = data?.id ?? null;
     }
 
-    const { data: inserted, error } = await supabase.from('taches_elevage').insert({
-      uid_eleveur: uid,
-      titre: titre.trim(),
-      date, heure: heure || null,
-      notes: notes.trim() || null,
-      statut: 'a_faire',
-      profil_source: 'association',
-      ...(profileId ? { eleveur_profile_id: profileId, profile_id: profileId } : {}),
-      animal_id: animalId || null,
-      assigne_a: assigneUid || null,
-      assignes_a: assigneUid ? [assigneUid] : null,
-      ...(assigneProfileId ? { assigne_profile_id: assigneProfileId } : {}),
-    }).select().single();
+    // Une ligne par animal sélectionné (ou une seule ligne sans animal si aucun choisi).
+    const animalIds: (string | null)[] = selectedAnimalIds.length > 0 ? selectedAnimalIds : [null];
+    let error: { message: string } | null = null;
+    let firstInsertedId: string | null = null;
+    for (const animalId of animalIds) {
+      const { data: inserted, error: insertError } = await supabase.from('taches_elevage').insert({
+        uid_eleveur: uid,
+        titre: titre.trim(),
+        date, heure: heure || null,
+        notes: notes.trim() || null,
+        statut: 'a_faire',
+        profil_source: profilSource,
+        ...(profileId ? { eleveur_profile_id: profileId, profile_id: profileId } : {}),
+        animal_id: animalId,
+        assigne_a: assigneUid || null,
+        assignes_a: assigneUid ? [assigneUid] : null,
+        ...(assigneProfileId ? { assigne_profile_id: assigneProfileId } : {}),
+      }).select().single();
+      if (insertError) { error = insertError; break; }
+      firstInsertedId ??= (inserted as { id: string })?.id ?? null;
+    }
 
     if (!error && assigneUid) {
       try {
@@ -344,7 +410,7 @@ function AddTacheModal({ uid, profileId, animaux, membres, onClose, onSaved }: {
           uid: assigneUid, type: 'tache_assignee',
           title: 'Nouvelle tâche assignée 📋',
           body: titre.trim(),
-          data: { tacheId: (inserted as { id: string })?.id },
+          data: { tacheId: firstInsertedId },
           read: false,
           ...(assigneProfileId ? { profile_id: assigneProfileId } : {}),
         });
@@ -395,22 +461,39 @@ function AddTacheModal({ uid, profileId, animaux, membres, onClose, onSaved }: {
           </div>
           {animaux.length > 0 && (
             <div>
-              <label className="text-xs font-semibold text-gray-500 mb-1 block">Animal (optionnel)</label>
-              <select
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
-                value={animalId}
-                onChange={e => setAnimalId(e.target.value)}
-              >
-                <option value="">— Sélectionner —</option>
+              <label className="text-xs font-semibold text-gray-500 mb-1 block">
+                Animaux concernés (optionnel){selectedAnimalIds.length > 0 ? ` — ${selectedAnimalIds.length} sélectionné(s)` : ''}
+              </label>
+              {porteeGroups.size > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-1.5">
+                  {[...porteeGroups.entries()].map(([porteeId, membresPortee]) => (
+                    <button key={porteeId} type="button" onClick={() => selectPortee(membresPortee)}
+                      className="text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-2.5 py-1 hover:bg-teal-100 transition-colors">
+                      Toute la portée ({membresPortee.length})
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="border border-gray-200 rounded-xl max-h-32 overflow-y-auto">
                 {animaux.map(a => (
-                  <option key={a.id} value={a.id}>{a.nom}{a.espece ? ` (${a.espece})` : ''}</option>
+                  <label key={a.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0">
+                    <input type="checkbox" checked={selectedAnimalIds.includes(a.id)} onChange={() => toggleAnimal(a.id)}
+                      className="rounded text-teal-600 focus:ring-teal-400" />
+                    <span>{a.nom}{a.espece ? ` (${a.espece})` : ''}</span>
+                  </label>
                 ))}
-              </select>
+              </div>
             </div>
           )}
-          {membres.length > 0 && (
-            <div>
-              <label className="text-xs font-semibold text-gray-500 mb-1 block">Assigner à un bénévole ou employé (optionnel)</label>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-gray-500 block">Assigner à un bénévole ou employé (optionnel)</label>
+              <button type="button" onClick={() => setShowAddEmploye(v => !v)}
+                className="text-xs font-semibold text-teal-700 hover:text-teal-800">
+                + Nouvel employé
+              </button>
+            </div>
+            {membres.length > 0 && (
               <select
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
                 value={assigneUid}
@@ -421,8 +504,15 @@ function AddTacheModal({ uid, profileId, animaux, membres, onClose, onSaved }: {
                   <option key={m.uid} value={m.uid}>{m.nom} {m.type === 'benevole' ? '(Bénévole)' : '(Employé)'}</option>
                 ))}
               </select>
-            </div>
-          )}
+            )}
+            {showAddEmploye && (
+              <AddEmployeInline
+                uid={uid} profileId={profileId} profilSource={profilSource}
+                onClose={() => setShowAddEmploye(false)}
+                onCreated={() => { setShowAddEmploye(false); onEmployeCreated(); }}
+              />
+            )}
+          </div>
           <div>
             <label className="text-xs font-semibold text-gray-500 mb-1 block">Notes (optionnel)</label>
             <textarea
@@ -444,6 +534,77 @@ function AddTacheModal({ uid, profileId, animaux, membres, onClose, onSaved }: {
             {saving ? 'Ajout…' : 'Ajouter'}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Création rapide d'un employé/bénévole sans compte PetsMatch ─────────────
+// Le prénom sert d'identifiant d'affichage. Cet employé n'a pas de compte, il
+// n'est donc pas assignable tant qu'il n'en a pas créé un (comme sur "Mes
+// employés"), mais il est immédiatement visible dans l'équipe.
+
+function AddEmployeInline({ uid, profileId, profilSource, onClose, onCreated }: {
+  uid: string;
+  profileId: string | null;
+  profilSource: 'eleveur' | 'association' | 'pension';
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [prenom, setPrenom] = useState('');
+  const [nom, setNom] = useState('');
+  const [email, setEmail] = useState('');
+  const [telephone, setTelephone] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!prenom.trim() || !nom.trim()) return;
+    setSaving(true);
+    const { error } = await supabase.from('employes').insert({
+      uid_eleveur: uid,
+      ...(profileId ? { eleveur_profile_id: profileId } : {}),
+      prenom: prenom.trim(),
+      nom: nom.trim(),
+      email: email.trim() || null,
+      telephone: telephone.trim() || null,
+      actif: true,
+      type: 'employe',
+      profil_source: profilSource,
+    });
+    setSaving(false);
+    if (error) { alert(`Erreur: ${error.message}`); return; }
+    onCreated();
+  }
+
+  return (
+    <div className="mt-2 p-3 border border-teal-200 bg-teal-50/50 rounded-xl space-y-2">
+      <div className="flex gap-2">
+        <input
+          className="flex-1 border border-gray-200 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+          placeholder="Prénom *" value={prenom} onChange={e => setPrenom(e.target.value)} autoFocus
+        />
+        <input
+          className="flex-1 border border-gray-200 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+          placeholder="Nom *" value={nom} onChange={e => setNom(e.target.value)}
+        />
+      </div>
+      <input
+        className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+        placeholder="Email (optionnel)" type="email" value={email} onChange={e => setEmail(e.target.value)}
+      />
+      <input
+        className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+        placeholder="Téléphone (optionnel)" type="tel" value={telephone} onChange={e => setTelephone(e.target.value)}
+      />
+      <div className="flex gap-2">
+        <button type="button" onClick={onClose}
+          className="flex-1 py-2 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-white font-medium">
+          Annuler
+        </button>
+        <button type="button" onClick={save} disabled={!prenom.trim() || !nom.trim() || saving}
+          className="flex-1 py-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-40 text-white rounded-lg text-xs font-semibold transition-colors">
+          {saving ? 'Ajout…' : 'Ajouter l’employé'}
+        </button>
       </div>
     </div>
   );

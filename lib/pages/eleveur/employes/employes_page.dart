@@ -283,7 +283,10 @@ class _EmployesTabState extends State<_EmployesTab> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _AddEmployeManuelSheet(uid: _uid, teal: widget.teal),
+      builder: (_) => AddEmployeManuelSheet(
+        uid: _uid, teal: widget.teal,
+        profilSource: widget.isAssociation ? 'association' : 'eleveur',
+      ),
     );
     _load();
   }
@@ -858,16 +861,19 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
 // ─── Tab Tâches ───────────────────────────────────────────────────────────────
 
 // ─── Bottom sheet : Ajouter un employé manuellement (sans compte PetsMatch) ───
+// Publique : réutilisée depuis le formulaire de tâche de l'agenda (voir
+// agenda_page.dart, option "+ Nouvel employé").
 
-class _AddEmployeManuelSheet extends StatefulWidget {
+class AddEmployeManuelSheet extends StatefulWidget {
   final String uid;
   final Color teal;
-  const _AddEmployeManuelSheet({required this.uid, required this.teal});
+  final String profilSource;
+  const AddEmployeManuelSheet({super.key, required this.uid, required this.teal, this.profilSource = 'eleveur'});
   @override
-  State<_AddEmployeManuelSheet> createState() => _AddEmployeManuelSheetState();
+  State<AddEmployeManuelSheet> createState() => _AddEmployeManuelSheetState();
 }
 
-class _AddEmployeManuelSheetState extends State<_AddEmployeManuelSheet> {
+class _AddEmployeManuelSheetState extends State<AddEmployeManuelSheet> {
   final _supa = Supabase.instance.client;
   final _prenomCtrl = TextEditingController();
   final _nomCtrl = TextEditingController();
@@ -906,9 +912,9 @@ class _AddEmployeManuelSheetState extends State<_AddEmployeManuelSheet> {
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
         'actif': true,
         'type': 'employe',
-        'profil_source': 'association',
+        'profil_source': widget.profilSource,
       });
-      if (mounted) Navigator.pop(context);
+      if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

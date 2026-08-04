@@ -7,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/widgets/pro_day_timeline.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
+import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart' show AddEmployeManuelSheet;
 
 const _kTeal = Color(0xFF0C5C6C);
 
@@ -93,7 +94,8 @@ class AgendaPage extends StatefulWidget {
   final bool isAssociation;
   final bool isParticulier;
   final int initialViewMode; // 0 = mois, 1 = jour, 2 = liste
-  const AgendaPage({super.key, this.onBack, this.isAssociation = false, this.isParticulier = false, this.initialViewMode = 0});
+  final bool autoOpenAddTache;
+  const AgendaPage({super.key, this.onBack, this.isAssociation = false, this.isParticulier = false, this.initialViewMode = 0, this.autoOpenAddTache = false});
   @override
   State<AgendaPage> createState() => _AgendaPageState();
 }
@@ -117,7 +119,9 @@ class _AgendaPageState extends State<AgendaPage> {
     _selectedDay = DateTime.now();
     _load();
     _loadTasks();
-    _loadEmployes();
+    _loadEmployes().then((_) {
+      if (mounted && widget.autoOpenAddTache) _showAddTacheSheet(DateTime.now());
+    });
     // Rechargement automatique quand le profil actif change (ex: switcher d'avatar)
     User_Info.profileNotifier.addListener(_onProfileChanged);
   }
@@ -260,26 +264,26 @@ class _AgendaPageState extends State<AgendaPage> {
             .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
             .eq('profile_id', pid);
         if ((d1 as List).isEmpty) {
-          d1 = widget.isAssociation
+          d1 = _taskProfilSource == 'eleveur'
               ? await _supa.from('taches_elevage')
                   .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
                   .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
-                  .eq('profil_source', 'association')
+                  .or('profil_source.is.null,profil_source.eq.eleveur')
               : await _supa.from('taches_elevage')
                   .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
                   .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
-                  .or('profil_source.is.null,profil_source.eq.eleveur');
+                  .eq('profil_source', _taskProfilSource);
         }
       } else {
-        d1 = widget.isAssociation
+        d1 = _taskProfilSource == 'eleveur'
             ? await _supa.from('taches_elevage')
                 .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
                 .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
-                .eq('profil_source', 'association')
+                .or('profil_source.is.null,profil_source.eq.eleveur')
             : await _supa.from('taches_elevage')
                 .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
                 .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
-                .or('profil_source.is.null,profil_source.eq.eleveur');
+                .eq('profil_source', _taskProfilSource);
       }
       // Tâches assignées à cet utilisateur
       final myProfileId = pid.isNotEmpty ? pid : null;
@@ -307,30 +311,30 @@ class _AgendaPageState extends State<AgendaPage> {
               .gte('date_prevue', from).lte('date_prevue', to)
               .eq('profile_id', pid);
           if ((p1 as List).isEmpty) {
-            p1 = widget.isAssociation
+            p1 = _taskProfilSource == 'eleveur'
                 ? await _supa.from('plan_taches')
                     .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
                     .eq('uid_eleveur', _uid)
                     .gte('date_prevue', from).lte('date_prevue', to)
-                    .eq('profil_source', 'association')
+                    .or('profil_source.is.null,profil_source.eq.eleveur')
                 : await _supa.from('plan_taches')
                     .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
                     .eq('uid_eleveur', _uid)
                     .gte('date_prevue', from).lte('date_prevue', to)
-                    .or('profil_source.is.null,profil_source.eq.eleveur');
+                    .eq('profil_source', _taskProfilSource);
           }
         } else {
-          p1 = widget.isAssociation
+          p1 = _taskProfilSource == 'eleveur'
               ? await _supa.from('plan_taches')
                   .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
                   .eq('uid_eleveur', _uid)
                   .gte('date_prevue', from).lte('date_prevue', to)
-                  .eq('profil_source', 'association')
+                  .or('profil_source.is.null,profil_source.eq.eleveur')
               : await _supa.from('plan_taches')
                   .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
                   .eq('uid_eleveur', _uid)
                   .gte('date_prevue', from).lte('date_prevue', to)
-                  .or('profil_source.is.null,profil_source.eq.eleveur');
+                  .eq('profil_source', _taskProfilSource);
         }
         // plan_taches assignées à cet utilisateur — activeProfileId = UUID du profil actif
         dynamic p2;
@@ -404,8 +408,15 @@ class _AgendaPageState extends State<AgendaPage> {
     return User_Info.availableProfiles.any((p) {
       if (p['id']?.toString() != pid) return false;
       final t = p['profile_type']?.toString() ?? '';
-      return t == 'eleveur' || t == 'association';
+      return t == 'eleveur' || t == 'association' || t == 'pension';
     });
+  }
+
+  // Détermine le profil source pour les tâches/protocoles créés depuis l'agenda.
+  String get _taskProfilSource {
+    if (User_Info.activeType == 'association') return 'association';
+    if (User_Info.activeType == 'pension') return 'pension';
+    return 'eleveur';
   }
 
   List<Map<String, dynamic>> _tasksForDay(DateTime day) {
@@ -658,42 +669,6 @@ class _AgendaPageState extends State<AgendaPage> {
             const Spacer(),
             Text('$doneItems/$totalItems',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () => _showAddProtocoleSheet(day ?? _selectedDay ?? DateTime.now()),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF7ED),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFFED7AA)),
-                ),
-                child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.add, size: 12, color: Color(0xFF92400E)),
-                  SizedBox(width: 2),
-                  Text('Protocole', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                      fontWeight: FontWeight.w600, color: Color(0xFF92400E))),
-                ]),
-              ),
-            ),
-            const SizedBox(width: 6),
-            GestureDetector(
-              onTap: () => _showAddTacheSheet(day ?? _selectedDay ?? DateTime.now()),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: _kTeal.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: _kTeal.withValues(alpha: 0.3)),
-                ),
-                child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.add, size: 12, color: _kTeal),
-                  SizedBox(width: 2),
-                  Text('Tâche', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                      fontWeight: FontWeight.w600, color: _kTeal)),
-                ]),
-              ),
-            ),
           ]),
           const SizedBox(height: 8),
 
@@ -825,28 +800,6 @@ class _AgendaPageState extends State<AgendaPage> {
     if (monthChanged) { _load(); _loadTasks(); }
   }
 
-  // ── Add protocole depuis l'agenda ──────────────────────────────────────────
-
-  void _showAddProtocoleSheet(DateTime day) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      isDismissible: true,
-      enableDrag: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _AddProtocoleSheet(
-        day: day,
-        uid: _uid,
-        profilSource: User_Info.activeType == 'association' ? 'association' : 'eleveur',
-        employes: _employes,
-        onSaved: _loadTasks,
-      ),
-    );
-  }
-
   // ── Add tâche manuelle ─────────────────────────────────────────────────────
 
   void _showAddTacheSheet(DateTime day) {
@@ -862,7 +815,7 @@ class _AgendaPageState extends State<AgendaPage> {
       builder: (_) => _AddTacheSheet(
         day: day,
         uid: _uid,
-        profilSource: User_Info.activeType == 'association' ? 'association' : 'eleveur',
+        profilSource: _taskProfilSource,
         employes: _employes,
         onSaved: _loadTasks,
       ),
@@ -907,68 +860,6 @@ class _AgendaPageState extends State<AgendaPage> {
         uid: _uid,
         employes: _employes,
         onSaved: _loadTasks,
-      ),
-    );
-  }
-
-  // ── Add tâche/protocole via FAB (choix) ──────────────────────────────────────
-
-  void _showAddChoiceSheet() {
-    final day = _selectedDay ?? DateTime.now();
-    showModalBottomSheet(
-      context: context,
-      useSafeArea: true,
-      isDismissible: true,
-      enableDrag: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (sheetCtx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-            const Align(alignment: Alignment.centerLeft, child: Text('Que voulez-vous ajouter ?',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1E2025)))),
-            const SizedBox(height: 16),
-            _addChoiceTile(
-              icon: Icons.add_task_rounded, iconBg: _kTeal.withValues(alpha: 0.1), iconColor: _kTeal,
-              title: 'Tâche rapide', subtitle: 'Un rappel ponctuel pour ce jour',
-              onTap: () { Navigator.pop(sheetCtx); _showAddTacheSheet(day); },
-            ),
-            const SizedBox(height: 10),
-            _addChoiceTile(
-              icon: Icons.assignment_outlined, iconBg: const Color(0xFFFFF7ED), iconColor: const Color(0xFF92400E),
-              title: 'Protocole', subtitle: 'Un plan de soins récurrent',
-              onTap: () { Navigator.pop(sheetCtx); _showAddProtocoleSheet(day); },
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  Widget _addChoiceTile({required IconData icon, required Color iconBg, required Color iconColor,
-      required String title, required String subtitle, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: const Color(0xFFF8F8F8), borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.shade200)),
-        child: Row(children: [
-          Container(width: 40, height: 40,
-              decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(12)),
-              child: Icon(icon, color: iconColor, size: 20)),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1E2025))),
-            const SizedBox(height: 2),
-            Text(subtitle, style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade500)),
-          ])),
-          Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
-        ]),
       ),
     );
   }
@@ -1068,12 +959,6 @@ class _AgendaPageState extends State<AgendaPage> {
         title: const Text('Mon Agenda',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         bottom: _viewModeToggleBar(),
-      ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: _kTeal,
-        foregroundColor: Colors.white,
-        onPressed: _showAddChoiceSheet,
-        child: const Icon(Icons.add_rounded),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _kTeal))
@@ -1279,54 +1164,7 @@ class _AgendaPageState extends State<AgendaPage> {
       child: Column(children: [
         const Divider(height: 1),
         if (dayTasks.isNotEmpty)
-          _buildDayTasksSection(dayTasks, day: day)
-        else
-          Container(
-            color: const Color(0xFFEDF6F7),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            child: Row(children: [
-              const Text('✅', style: TextStyle(fontSize: 12)),
-              const SizedBox(width: 6),
-              const Text('Tâches du jour',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: _kTeal)),
-              const Spacer(),
-              GestureDetector(
-                onTap: () => _showAddProtocoleSheet(day),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF7ED),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFFED7AA)),
-                  ),
-                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.add, size: 12, color: Color(0xFF92400E)),
-                    SizedBox(width: 2),
-                    Text('Protocole', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                        fontWeight: FontWeight.w600, color: Color(0xFF92400E))),
-                  ]),
-                ),
-              ),
-              const SizedBox(width: 6),
-              GestureDetector(
-                onTap: () => _showAddTacheSheet(day),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: _kTeal.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: _kTeal.withValues(alpha: 0.3)),
-                  ),
-                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.add, size: 12, color: _kTeal),
-                    SizedBox(width: 2),
-                    Text('Tâche', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                        fontWeight: FontWeight.w600, color: _kTeal)),
-                  ]),
-                ),
-              ),
-            ]),
-          ),
+          _buildDayTasksSection(dayTasks, day: day),
         Expanded(
           child: RefreshIndicator(
             onRefresh: () async { await _load(); await _loadTasks(); },
@@ -2986,6 +2824,21 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
   @override void dispose() { _titreCtrl.dispose(); _notesCtrl.dispose(); super.dispose(); }
 
   Future<void> _pickAnimaux() async {
+    // Pension : pas d'animaux possédés, on propose les pensionnaires actuels.
+    if (widget.profilSource == 'pension') {
+      final rows = await Supabase.instance.client.from('pension_entrees')
+          .select('id, animal_nom, espece')
+          .eq('pro_uid', widget.uid).eq('statut', 'en_pension').order('animal_nom');
+      final preloaded = (rows as List).map((r) => {
+        'id': r['id'], 'nom': r['animal_nom'], 'espece': r['espece'],
+      }).toList();
+      if (!mounted) return;
+      final result = await AnimalPickerSheet.pickMany(
+        context, preloaded: preloaded, current: _selectedAnimaux,
+      );
+      if (result != null && mounted) setState(() => _selectedAnimaux = result);
+      return;
+    }
     final pid = User_Info.activeProfileId;
     final result = await AnimalPickerSheet.pickMany(
       context,
@@ -3131,10 +2984,31 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
             selected: _selectedAnimaux,
             onTap: _pickAnimaux,
           ),
-          if (widget.employes.isNotEmpty) ...[
-            const SizedBox(height: 12),
+          const SizedBox(height: 12),
+          Row(children: [
             const Text('Attribuer à (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
-            const SizedBox(height: 6),
+            const Spacer(),
+            GestureDetector(
+              onTap: () async {
+                final created = await showModalBottomSheet<bool>(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => AddEmployeManuelSheet(uid: widget.uid, teal: _kTeal, profilSource: widget.profilSource),
+                );
+                if (created == true && mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Employé ajouté — visible dans "Mes employés"', style: TextStyle(fontFamily: 'Galey')),
+                    backgroundColor: _kTeal,
+                  ));
+                }
+              },
+              child: const Text('+ Nouvel employé',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: _kTeal)),
+            ),
+          ]),
+          const SizedBox(height: 6),
+          if (widget.employes.isNotEmpty)
             DropdownButtonFormField<String?>(
               value: _selectedEmployeUid,
               onChanged: (v) => setState(() => _selectedEmployeUid = v),
@@ -3152,8 +3026,9 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
                   child: Text(e['nom'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
                 )),
               ],
-            ),
-          ],
+            )
+          else
+            Text('Aucun employé pour le moment', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade400)),
           const SizedBox(height: 20),
           Row(children: [
             Expanded(

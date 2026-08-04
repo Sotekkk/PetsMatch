@@ -199,6 +199,20 @@ class _AssociationNavState extends State<AssociationNav> {
                       },
                     ),
                     _DrawerSubItem(
+                      label: 'Ajouter une tâche',
+                      icon: Icons.add_task_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (ctx) => AgendaPage(
+                            onBack: () => Navigator.pop(ctx),
+                            isAssociation: true,
+                            autoOpenAddTache: true,
+                          ),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
                       label: 'Suivi sanitaire',
                       icon: Icons.health_and_safety_outlined,
                       onTap: () {

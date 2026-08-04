@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ── Shared animal picker bottom sheet ────────────────────────────────────────
@@ -108,7 +109,7 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
       final pid = widget.profileId;
 
       var q = supa.from('animaux')
-          .select('id, nom, espece, race, photo_url')
+          .select('id, nom, espece, race, photo_url, portee_id')
           .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid');
       if (pid != null && pid.isNotEmpty) q = q.eq('profile_id', pid);
       final directRows = await q;
@@ -126,7 +127,7 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
       List<Map<String, dynamic>> viaCession = [];
       if (missingIds.isNotEmpty) {
         final rows2 = await supa.from('animaux')
-            .select('id, nom, espece, race, photo_url')
+            .select('id, nom, espece, race, photo_url, portee_id')
             .inFilter('id', missingIds.toList());
         viaCession = List<Map<String, dynamic>>.from((rows2 as List).map((e) => Map<String, dynamic>.from(e as Map)));
       }
@@ -149,6 +150,32 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
 
   List<Map<String, dynamic>> get _selectedAnimaux =>
       _animaux.where((a) => _selectedIds.contains(a['id']?.toString())).toList();
+
+  // Groupes de portées (multi-select uniquement) — clé = portee_id.
+  Map<String, List<Map<String, dynamic>>> get _porteeGroups {
+    final map = <String, List<Map<String, dynamic>>>{};
+    for (final a in _animaux) {
+      final pid = a['portee_id']?.toString();
+      if (pid == null || pid.isEmpty) continue;
+      map.putIfAbsent(pid, () => []).add(a);
+    }
+    return map;
+  }
+
+  String _porteeLabel(String porteeId) {
+    final msStr = porteeId.replaceFirst('portee_', '');
+    final ms = int.tryParse(msStr);
+    if (ms == null) return 'Portée';
+    final date = DateTime.fromMillisecondsSinceEpoch(ms);
+    return 'Portée du ${DateFormat('d MMM yyyy', 'fr').format(date)}';
+  }
+
+  void _selectPortee(List<Map<String, dynamic>> membres) => setState(() {
+    for (final a in membres) {
+      final id = a['id']?.toString();
+      if (id != null) _selectedIds.add(id);
+    }
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -186,6 +213,32 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
           ]),
         ),
         const Divider(height: 1),
+        if (widget.multiSelect && !_loading && _porteeGroups.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+            child: Wrap(
+              spacing: 8, runSpacing: 8,
+              children: _porteeGroups.entries.map((e) {
+                return GestureDetector(
+                  onTap: () => _selectPortee(e.value),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: color.withValues(alpha: 0.3)),
+                    ),
+                    child: Text(
+                      '${_porteeLabel(e.key)} (${e.value.length}) — tout sélectionner',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w600, color: color),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const Divider(height: 1),
+        ],
         // List
         Flexible(
           child: _loading

@@ -115,119 +115,7 @@ function groupRoutines(routines: Routine[]): RoutineGroupe[] {
   }));
 }
 
-// ── Ajout tâche manuelle depuis l'agenda ─────────────────────────────────────
-
-function AddTacheModal({ selectedDate, uid, profilSource, activeProfileId, employes, onClose, onSaved }: {
-  selectedDate: string;
-  uid: string;
-  profilSource: string;
-  activeProfileId?: string | null;
-  employes: Employe[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [titre, setTitre] = useState('');
-  const [heure, setHeure] = useState('');
-  const [notes, setNotes] = useState('');
-  const [assignedTo, setAssignedTo] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  async function save() {
-    if (!titre.trim()) return;
-    setSaving(true);
-    const assigneUid = assignedTo || null;
-    await supabase.from('taches_elevage').insert({
-      uid_eleveur: uid, titre: titre.trim(), date: selectedDate,
-      heure: heure || null, notes: notes.trim() || null,
-      statut: 'a_faire', profil_source: profilSource,
-      profile_id: activeProfileId || null,
-      eleveur_profile_id: activeProfileId || null,
-      assigne_a: assigneUid, assignes_a: assigneUid ? [assigneUid] : null,
-    });
-    if (assigneUid) {
-      try {
-        const nomEleveur = await resolveDisplayName(uid, 'Votre éleveur');
-        const employeProfileId = await resolveParticulierProfileId(assigneUid);
-        await supabase.from('notifications').insert({
-          uid: assigneUid, type: 'tache_assignee',
-          title: 'Nouvelle tâche assignée 📋',
-          body: `${nomEleveur} vous a assigné : ${titre.trim()}`,
-          data: {}, read: false,
-          ...(employeProfileId ? { profile_id: employeProfileId } : {}),
-        });
-      } catch (_) {}
-    }
-    setSaving(false);
-    onSaved();
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl max-h-[90vh] overflow-y-auto">
-        <h2 className="font-bold text-gray-800 mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
-          Nouvelle tâche
-        </h2>
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">Titre *</label>
-            <input
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-              placeholder="Ex: Nettoyage cage, Pesée…"
-              value={titre}
-              onChange={e => setTitre(e.target.value)}
-              autoFocus
-              onKeyDown={e => e.key === 'Enter' && save()}
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">Heure (optionnel)</label>
-            <input
-              type="time"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-              value={heure}
-              onChange={e => setHeure(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">Notes (optionnel)</label>
-            <textarea
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none"
-              placeholder="Informations complémentaires…"
-              rows={2}
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-            />
-          </div>
-          {employes.length > 0 && (
-            <div>
-              <label className="text-xs font-semibold text-gray-500 mb-1 block">Attribuer à (optionnel)</label>
-              <select
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
-                value={assignedTo}
-                onChange={e => setAssignedTo(e.target.value)}
-              >
-                <option value="">— Personne —</option>
-                {employes.map(e => <option key={e.uid} value={e.uid}>{e.nom}</option>)}
-              </select>
-            </div>
-          )}
-        </div>
-        <div className="flex gap-3 mt-5">
-          <button onClick={onClose}
-            className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 font-medium">
-            Annuler
-          </button>
-          <button onClick={save} disabled={!titre.trim() || saving}
-            className="flex-1 py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition-colors">
-            {saving ? 'Ajout…' : 'Ajouter'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Ajout protocole depuis l'agenda ───────────────────────────────────────────
+// ── Types d'acte (partagé Édition tâche/protocole) ───────────────────────────
 
 const ACTE_OPTIONS = [
   { value: 'vermifuge',      label: '💊 Vermifuge' },
@@ -242,118 +130,6 @@ const ACTE_OPTIONS = [
   { value: 'socialisation',  label: '🦮 Socialisation' },
   { value: 'autre',          label: '📋 Autre' },
 ];
-
-function AddProtocoleModal({ selectedDate, uid, profilSource, activeProfileId, employes, onClose, onSaved }: {
-  selectedDate: string;
-  uid: string;
-  profilSource: string;
-  activeProfileId?: string | null;
-  employes: Employe[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [label, setLabel]         = useState('');
-  const [typeActe, setTypeActe]   = useState('autre');
-  const [animalNom, setAnimalNom] = useState('');
-  const [assignedTo, setAssignedTo] = useState('');
-  const [saving, setSaving]       = useState(false);
-
-  async function save() {
-    if (!label.trim()) return;
-    setSaving(true);
-    const assigneUid = assignedTo || null;
-    await supabase.from('plan_taches').insert({
-      uid_eleveur: uid, label: label.trim(), date_prevue: selectedDate,
-      statut: 'a_faire', type_acte: typeActe,
-      animal_nom: animalNom.trim() || null,
-      profil_source: profilSource, profile_id: activeProfileId || null,
-      assigned_to: assigneUid,
-    });
-    if (assigneUid) {
-      try {
-        const nomEleveur = await resolveDisplayName(uid, 'Votre éleveur');
-        const employeProfileId = await resolveParticulierProfileId(assigneUid);
-        await supabase.from('notifications').insert({
-          uid: assigneUid, type: 'tache_assignee',
-          title: 'Nouveau protocole assigné 📋',
-          body: `${nomEleveur} vous a assigné : ${label.trim()}`,
-          data: {}, read: false,
-          ...(employeProfileId ? { profile_id: employeProfileId } : {}),
-        });
-      } catch (_) {}
-    }
-    setSaving(false);
-    onSaved();
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl max-h-[90vh] overflow-y-auto">
-        <h2 className="font-bold text-gray-800 mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
-          Nouveau protocole
-        </h2>
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">Intitulé *</label>
-            <input
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-              placeholder="Ex: Vermifugation, Vaccination…"
-              value={label}
-              onChange={e => setLabel(e.target.value)}
-              autoFocus
-              onKeyDown={e => e.key === 'Enter' && save()}
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">Type d&apos;acte</label>
-            <select
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
-              value={typeActe}
-              onChange={e => setTypeActe(e.target.value)}
-            >
-              {ACTE_OPTIONS.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-500 mb-1 block">Animal concerné (optionnel)</label>
-            <input
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-              placeholder="Nom de l'animal…"
-              value={animalNom}
-              onChange={e => setAnimalNom(e.target.value)}
-            />
-          </div>
-          {employes.length > 0 && (
-            <div>
-              <label className="text-xs font-semibold text-gray-500 mb-1 block">Attribuer à (optionnel)</label>
-              <select
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
-                value={assignedTo}
-                onChange={e => setAssignedTo(e.target.value)}
-              >
-                <option value="">— Personne —</option>
-                {employes.map(e => <option key={e.uid} value={e.uid}>{e.nom}</option>)}
-              </select>
-            </div>
-          )}
-        </div>
-        <div className="flex gap-3 mt-5">
-          <button onClick={onClose}
-            className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 font-medium">
-            Annuler
-          </button>
-          <button onClick={save} disabled={!label.trim() || saving}
-            className="flex-1 py-2.5 disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition-colors"
-            style={{ backgroundColor: '#D97706' }}>
-            {saving ? 'Ajout…' : 'Ajouter'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ── Édition tâche manuelle ────────────────────────────────────────────────────
 
@@ -1164,8 +940,6 @@ export default function AgendaElevagePage() {
   const [validateGroupe, setValidateGroupe] = useState<RoutineGroupe | null>(null);
   const [attributionTask, setAttributionTask] = useState<TacheManuelle | null>(null);
   const [confirmDelete, setConfirmDelete]     = useState<{ label: string; onConfirm: () => void } | null>(null);
-  const [showAddTache, setShowAddTache]         = useState(false);
-  const [showAddProtocole, setShowAddProtocole] = useState(false);
   const [editTache, setEditTache]               = useState<TacheManuelle | null>(null);
   const [editGroupe, setEditGroupe]             = useState<RoutineGroupe | null>(null);
   const [monthDates, setMonthDates]     = useState<Map<string, string[]>>(new Map());
@@ -1584,21 +1358,6 @@ export default function AgendaElevagePage() {
             </div>
           </div>
 
-          {/* Boutons ajout */}
-          <div className="flex justify-end gap-2 mb-3">
-            <button onClick={() => setShowAddProtocole(true)}
-              className="flex items-center gap-1.5 text-sm font-semibold rounded-xl px-3 py-2 border transition-colors"
-              style={{ color: '#92400E', backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#FEF3C7')}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#FFF7ED')}>
-              <span className="text-base leading-none">+</span> Protocole
-            </button>
-            <button onClick={() => setShowAddTache(true)}
-              className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 hover:bg-teal-100 transition-colors">
-              <span className="text-base leading-none">+</span> Tâche
-            </button>
-          </div>
-
           {/* Liste du jour */}
           {loadingData ? (
             <div className="flex justify-center py-12">
@@ -1669,21 +1428,6 @@ export default function AgendaElevagePage() {
             </div>
           </div>
 
-          {/* Boutons ajout */}
-          <div className="flex justify-end gap-2 mb-3">
-            <button onClick={() => setShowAddProtocole(true)}
-              className="flex items-center gap-1.5 text-sm font-semibold rounded-xl px-3 py-2 border transition-colors"
-              style={{ color: '#92400E', backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#FEF3C7')}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#FFF7ED')}>
-              <span className="text-base leading-none">+</span> Protocole
-            </button>
-            <button onClick={() => setShowAddTache(true)}
-              className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 hover:bg-teal-100 transition-colors">
-              <span className="text-base leading-none">+</span> Tâche
-            </button>
-          </div>
-
           {loadingData ? (
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
@@ -1741,21 +1485,6 @@ export default function AgendaElevagePage() {
             </div>
           </div>
 
-          {/* Boutons ajout */}
-          <div className="flex justify-end gap-2 mb-3">
-            <button onClick={() => setShowAddProtocole(true)}
-              className="flex items-center gap-1.5 text-sm font-semibold rounded-xl px-3 py-2 border transition-colors"
-              style={{ color: '#92400E', backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#FEF3C7')}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#FFF7ED')}>
-              <span className="text-base leading-none">+</span> Protocole
-            </button>
-            <button onClick={() => setShowAddTache(true)}
-              className="flex items-center gap-1.5 text-sm font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 hover:bg-teal-100 transition-colors">
-              <span className="text-base leading-none">+</span> Tâche
-            </button>
-          </div>
-
           {loadingData ? (
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
@@ -1791,30 +1520,6 @@ export default function AgendaElevagePage() {
       )}
 
       {/* ── Modals ──────────────────────────────────────────────────────────── */}
-
-      {showAddTache && (
-        <AddTacheModal
-          selectedDate={selectedDate}
-          uid={user.uid}
-          profilSource={profilSource}
-          activeProfileId={activeProfileId}
-          employes={employes}
-          onClose={() => setShowAddTache(false)}
-          onSaved={() => { setShowAddTache(false); load(); loadMonth(); }}
-        />
-      )}
-
-      {showAddProtocole && (
-        <AddProtocoleModal
-          selectedDate={selectedDate}
-          uid={user.uid}
-          profilSource={profilSource}
-          activeProfileId={activeProfileId}
-          employes={employes}
-          onClose={() => setShowAddProtocole(false)}
-          onSaved={() => { setShowAddProtocole(false); load(); loadMonth(); }}
-        />
-      )}
 
       {editTache && (
         <EditTacheModal
