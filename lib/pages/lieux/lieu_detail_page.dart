@@ -1075,7 +1075,7 @@ class _AvisDetailSheetState extends State<_AvisDetailSheet> {
       await Supabase.instance.client.from('petfriendly_review_contests').insert({
         'review_id': widget.avis['id'],
         'place_id': widget.avis['place_id'],
-        'user_uid': widget.uid,
+        'uid_pro': widget.uid,
         if (userProfileId != null) 'user_profile_id': userProfileId,
         'motif': _reportCtrl.text.trim(),
         'type': type,

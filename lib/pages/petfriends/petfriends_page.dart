@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/petfriends/petfriend_chat_page.dart';
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
 
@@ -118,8 +119,9 @@ class _PetFriendsPageState extends State<PetFriendsPage>
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final sent     = await _supa.from('petfriends').select('id, uid_recepteur, statut').eq('uid_demandeur', _myUid);
-      final received = await _supa.from('petfriends').select('id, uid_demandeur, statut').eq('uid_recepteur', _myUid);
+      final myProfileId = User_Info.activeProfileId;
+      final sent     = await _supa.from('petfriends').select('id, uid_recepteur, statut').eq('demandeur_profile_id', myProfileId);
+      final received = await _supa.from('petfriends').select('id, uid_demandeur, statut').eq('recepteur_profile_id', myProfileId);
 
       final Map<String, Map<String, dynamic>> byUid = {};
       for (final r in (sent as List)) {
@@ -186,13 +188,12 @@ class _PetFriendsPageState extends State<PetFriendsPage>
 
   Future<void> _sendRequest(String targetUid) async {
     try {
-      final myPRow = await _supa.from('user_profiles').select('id').eq('uid', _myUid).eq('is_main', true).maybeSingle();
-      final myProfileId = myPRow?['id'] as String?;
+      final myProfileId = User_Info.activeProfileId;
       final tgPRow = await _supa.from('user_profiles').select('id').eq('uid', targetUid).eq('is_main', true).maybeSingle();
       final targetProfileId = tgPRow?['id'] as String?;
       await _supa.from('petfriends').insert({
         'uid_demandeur': _myUid,
-        if (myProfileId != null) 'demandeur_profile_id': myProfileId,
+        if (myProfileId.isNotEmpty) 'demandeur_profile_id': myProfileId,
         'uid_recepteur': targetUid,
         if (targetProfileId != null) 'recepteur_profile_id': targetProfileId,
         'statut': 'en_attente',

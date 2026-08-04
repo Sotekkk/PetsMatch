@@ -82,12 +82,13 @@ export default function GroupesPage() {
           if (m.statut === 'pending') pending.add(m.groupe_id);
         }
 
-        // Mes amis
-        const { data: friendsData } = await supabase
+        // Mes amis — scopés au profil actif (chaque profil a sa propre liste
+        // de PetFriends, cf. demandeur_profile_id/recepteur_profile_id)
+        const { data: friendsData } = profileId ? await supabase
           .from('petfriends')
           .select('uid_demandeur, uid_recepteur')
-          .or(`uid_demandeur.eq.${user.uid},uid_recepteur.eq.${user.uid}`)
-          .eq('statut', 'accepte');
+          .or(`demandeur_profile_id.eq.${profileId},recepteur_profile_id.eq.${profileId}`)
+          .eq('statut', 'accepte') : { data: [] };
 
         const friendUids = (friendsData ?? []).map((f) =>
           f.uid_demandeur === user.uid ? f.uid_recepteur : f.uid_demandeur

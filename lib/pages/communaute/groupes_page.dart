@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'groupe_detail_page.dart';
 
 const _tealC = Color(0xFF00ACC1);
@@ -72,13 +73,17 @@ class _GroupesPageState extends State<GroupesPage>
         mes = Set<String>.from(
             (memData as List).map((e) => e['groupe_id'].toString()));
 
-        // Mes amis
-        final friendsData = await _supa
-            .from('petfriends')
-            .select('uid_demandeur, uid_recepteur')
-            .or('uid_demandeur.eq.$_uid,uid_recepteur.eq.$_uid')
-            .eq('statut', 'accepte');
-        for (final f in (friendsData as List)) {
+        // Mes amis — scopés au profil actif (chaque profil a sa propre liste
+        // de PetFriends, cf. demandeur_profile_id/recepteur_profile_id)
+        final myProfileId = User_Info.activeProfileId;
+        final friendsData = myProfileId.isNotEmpty
+            ? await _supa
+                .from('petfriends')
+                .select('uid_demandeur, uid_recepteur')
+                .or('demandeur_profile_id.eq.$myProfileId,recepteur_profile_id.eq.$myProfileId')
+                .eq('statut', 'accepte')
+            : [];
+        for (final f in friendsData) {
           final other = f['uid_demandeur'] == _uid ? f['uid_recepteur'] : f['uid_demandeur'];
           friendUids.add(other.toString());
         }

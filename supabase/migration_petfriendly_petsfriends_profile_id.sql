@@ -27,14 +27,16 @@ WHERE up.uid = r.user_uid
 
 CREATE INDEX IF NOT EXISTS idx_petfriendly_reviews_user_profile ON petfriendly_reviews(user_profile_id);
 
--- ── 3. petfriendly_review_contests — user_uid → user_profile_id ──────────────
+-- ── 3. petfriendly_review_contests — uid_pro → user_profile_id ───────────────
+-- Cette table stocke la contestation du PRO (uid_pro), pas d'un "utilisateur"
+-- générique — pas de colonne user_uid ici (voir docs/specs_petsmatch.md §16).
 ALTER TABLE petfriendly_review_contests
   ADD COLUMN IF NOT EXISTS user_profile_id UUID REFERENCES user_profiles(id) ON DELETE SET NULL;
 
 UPDATE petfriendly_review_contests c
 SET user_profile_id = up.id
 FROM user_profiles up
-WHERE up.uid = c.user_uid
+WHERE up.uid = c.uid_pro
   AND up.is_main = true
   AND c.user_profile_id IS NULL;
 

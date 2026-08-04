@@ -14,7 +14,10 @@
       "Bash(git commit -m ' *)",
       "WebFetch(domain:www.vetocom.fr)",
       "PowerShell(New-Item *)",
-      "Bash(mkdir -p /Users/nabilksouri/Documents/Application/PetsMatch/lib/pages/lieux)"
+      "Bash(mkdir -p /Users/nabilksouri/Documents/Application/PetsMatch/lib/pages/lieux)",
+      "Bash(grep -n 'complet ? '\\\\''Complet'\\\\'' : '\\\\''\\\\$inscrits / \\\\$capacite' lib/pages/services/service_detail_page.dart)",
+      "Bash(grep -n \"complet ? 'Complet' : \\\\`\\\\${inscrits}\" \"website/src/app/services/pro/[uid]/page.tsx\")",
+      "Bash(node \"C:\\\\Users\\\\ANGLIQ~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--dev-PetsMatch\\\\da18caeb-58a6-49fe-b0b7-a5838523a36c\\\\scratchpad\\\\backfill_agenda_pro_profile.mjs\")"
     ],
     "additionalDirectories": [
       "/Users/nabilksouri/Documents/Application/PetsMatch/lib/pages"
