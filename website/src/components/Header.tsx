@@ -60,6 +60,12 @@ const NAV_PRO = [
   { href: '/communaute',           label: 'Communauté' },
 ];
 
+const NAV_PENSION = [
+  { href: '/',                     label: 'Accueil' },
+  { href: '/pension/registre',     label: 'Registre' },
+  { href: '/pension/chenil',       label: 'Logements / Chenil' },
+];
+
 const NAV_VET = [
   { href: '/',                     label: 'Accueil' },
   { href: '/adoptions', label: '💚 Adoptions' },
@@ -628,7 +634,7 @@ export default function Header() {
   const isSecondaryPro = !!(activeProfile && PRO_TYPES.has(activeProfile.profile_type));
   const isEffectivelyPro = isSecondaryPro || isPrimaryPro;
   const navLinks = loading || !user ? NAV_GUEST
-    : isEffectivelyPro ? (effectiveIsVet ? NAV_VET : NAV_PRO)
+    : isEffectivelyPro ? (effectiveIsVet ? NAV_VET : effectiveIsPension ? NAV_PENSION : NAV_PRO)
     : effectiveIsAssociation ? NAV_ASSOCIATION
     : effectiveIsEleveur ? NAV_ELEVEUR
     : NAV_PARTICULIER;

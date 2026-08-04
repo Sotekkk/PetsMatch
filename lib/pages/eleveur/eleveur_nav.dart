@@ -240,14 +240,6 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
-                        label: 'Agenda',
-                        icon: Icons.calendar_month_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          setState(() => _selectedIndex = 3);
-                        },
-                      ),
-                      _DrawerSubItem(
                         label: 'Protocoles',
                         icon: Icons.event_note_outlined,
                         locked: _planCode != 'premium',
@@ -531,7 +523,7 @@ class _EleveurNavState extends State<EleveurNav> {
                         style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                             fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
                   ),
-                  _DrawerItem(
+                  if (User_Info.catPro != 'pension') _DrawerItem(
                     icon: Icons.calendar_month_outlined,
                     label: 'Mon agenda RDV',
                     onTap: () {

@@ -11,9 +11,7 @@ import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/pages/association/admin/contrat_adoption_page.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
-import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
-import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
 import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
@@ -227,45 +225,6 @@ class _AssociationNavState extends State<AssociationNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const RegistreEntreeSortiePage(isAssociation: true),
-                        ));
-                      },
-                    ),
-                  ],
-                ),
-                _DrawerSection(
-                  icon: Icons.calendar_month_outlined,
-                  label: 'Agenda & RDV',
-                  children: [
-                    _DrawerSubItem(
-                      label: 'Mon Agenda',
-                      icon: Icons.calendar_month_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (ctx) => AgendaPage(
-                            isAssociation: true,
-                            onBack: () => Navigator.pop(ctx),
-                          ),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'RDV visites d\'adoption',
-                      icon: Icons.event_available_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const ProAgendaPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Planning du mois',
-                      icon: Icons.event_repeat_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PlanningMoisPage(isAssociation: true),
                         ));
                       },
                     ),
