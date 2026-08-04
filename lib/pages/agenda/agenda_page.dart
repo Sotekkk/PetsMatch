@@ -483,6 +483,7 @@ class _AgendaPageState extends State<AgendaPage> {
       final allDone = done == total;
 
       return GestureDetector(
+        key: ValueKey('proto_${first['etape_id'] ?? first['id']}'),
         onTap: effectuee
             ? null
             : () async {
@@ -572,6 +573,7 @@ class _AgendaPageState extends State<AgendaPage> {
       final borderColor = isDone ? kGreen : _kTeal;
 
       return Container(
+        key: ValueKey('manuel_${t['id']}'),
         margin: const EdgeInsets.only(bottom: 5),
         decoration: BoxDecoration(
           color: isDone ? const Color(0xFFF4FAF1) : Colors.white,
