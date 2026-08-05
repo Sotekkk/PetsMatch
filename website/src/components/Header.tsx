@@ -60,6 +60,12 @@ const NAV_PRO = [
   { href: '/communaute',           label: 'Communauté' },
 ];
 
+const NAV_PENSION = [
+  { href: '/',                     label: 'Accueil' },
+  { href: '/pension/registre',     label: 'Registre' },
+  { href: '/pension/chenil',       label: 'Logements / Chenil' },
+];
+
 const NAV_VET = [
   { href: '/',                     label: 'Accueil' },
   { href: '/adoptions', label: '💚 Adoptions' },
@@ -96,6 +102,7 @@ const MENU_ELEVEUR = [
       { href: '/mes-animaux',                    label: 'Mes Animaux',        icon: '🐾' },
       { href: '/elevage/agenda',                 label: 'Agenda',     icon: '🗓️' },
       { href: '/elevage/planning',               label: 'Protocoles',         icon: '📅' },
+      { href: '/mes-taches',                     label: 'Mes tâches',         icon: '✅' },
       { href: '/elevage/registre-sanitaire',     label: 'Suivi sanitaire',    icon: '🏥', pro: true },
       { href: '/elevage/inventaire',              label: 'Inventaire',         icon: '📦' },
       { href: '/employes',                        label: 'Mes employés',       icon: '👥' },
@@ -628,7 +635,7 @@ export default function Header() {
   const isSecondaryPro = !!(activeProfile && PRO_TYPES.has(activeProfile.profile_type));
   const isEffectivelyPro = isSecondaryPro || isPrimaryPro;
   const navLinks = loading || !user ? NAV_GUEST
-    : isEffectivelyPro ? (effectiveIsVet ? NAV_VET : NAV_PRO)
+    : isEffectivelyPro ? (effectiveIsVet ? NAV_VET : effectiveIsPension ? NAV_PENSION : NAV_PRO)
     : effectiveIsAssociation ? NAV_ASSOCIATION
     : effectiveIsEleveur ? NAV_ELEVEUR
     : NAV_PARTICULIER;

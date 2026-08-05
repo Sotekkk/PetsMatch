@@ -36,17 +36,18 @@ export function useActiveProfile(): string {
   return useActiveProfileState().id;
 }
 
-/** Retourne 'association' si le profil actif est une association, sinon 'eleveur'. */
-export function useProfileSource(): 'eleveur' | 'association' {
+/** Retourne 'association'/'pension' si le profil actif correspond, sinon 'eleveur'. */
+export function useProfileSource(): 'eleveur' | 'association' | 'pension' {
   const { id, loaded } = useActiveProfileState();
-  const [profileSource, setProfileSource] = useState<'eleveur' | 'association'>('eleveur');
+  const [profileSource, setProfileSource] = useState<'eleveur' | 'association' | 'pension'>('eleveur');
 
   useEffect(() => {
     if (!loaded) return;
     if (!id) { setProfileSource('eleveur'); return; }
     supabase.from('user_profiles').select('profile_type').eq('id', id).single()
       .then(({ data }) => {
-        setProfileSource(data?.profile_type === 'association' ? 'association' : 'eleveur');
+        const t = data?.profile_type;
+        setProfileSource(t === 'association' ? 'association' : t === 'pension' ? 'pension' : 'eleveur');
       });
   }, [id, loaded]);
 

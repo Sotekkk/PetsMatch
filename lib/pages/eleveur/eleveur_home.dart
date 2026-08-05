@@ -732,6 +732,15 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                 builder: (_) => _planCode == 'premium'
                     ? const PlanningMoisPage()
                     : const AbonnementPage()))),
+        _QuickTile(
+            icon: Icons.add_task_outlined,
+            label: 'Ajouter\nune tâche',
+            color: _teal,
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (ctx) => AgendaPage(
+                  onBack: () => Navigator.pop(ctx),
+                  autoOpenAddTache: true,
+                )))),
       ] else if (isVet) ...[
         _QuickTile(icon: Icons.favorite_outline, label: 'Mes\nPatients', color: const Color(0xFF5B8648),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VetPatientsPage()))),
