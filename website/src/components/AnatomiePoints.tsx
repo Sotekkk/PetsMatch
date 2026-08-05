@@ -21,11 +21,40 @@ export const CATEGORIES_OSTEO: { key: string; label: string; color: string }[] =
 function colorFor(cat: string) { return CATEGORIES_OSTEO.find(c => c.key === cat)?.color ?? '#9E9E9E'; }
 function labelFor(cat: string) { return CATEGORIES_OSTEO.find(c => c.key === cat)?.label ?? cat; }
 
-// Une seule vue par espèce (silhouette squelette pleine page, sans découpe).
-const ASSETS: Record<string, { src: string; ratio: number }> = {
-  chien:  { src: '/anatomie/chien_squelette.png', ratio: 1536 / 1024 },
-  chat:   { src: '/anatomie/chat_squelette.png', ratio: 1402 / 1122 },
-  cheval: { src: '/anatomie/cheval_squelette.png', ratio: 1536 / 1024 },
+// Vues disponibles pour le schéma anatomique interactif, dans l'ordre
+// d'affichage du sélecteur.
+export const VUES_ANATOMIE: { key: string; label: string }[] = [
+  { key: 'face', label: 'Face' },
+  { key: 'profil_g', label: 'Profil gauche' },
+  { key: 'profil_d', label: 'Profil droit' },
+  { key: 'arriere', label: 'Arrière' },
+  { key: 'ventrale', label: 'Ventrale' },
+];
+
+// 5 vues par espèce (silhouette avec zones anatomiques colorées, fond
+// transparent). Le ratio doit correspondre aux dimensions réelles du PNG.
+const ASSETS: Record<string, Record<string, { src: string; ratio: number }>> = {
+  chien: {
+    face: { src: '/anatomie/chien_face.png', ratio: 1024 / 1024 },
+    profil_g: { src: '/anatomie/chien_profil_gauche.png', ratio: 1024 / 1024 },
+    profil_d: { src: '/anatomie/chien_profil_droit.png', ratio: 1024 / 1024 },
+    arriere: { src: '/anatomie/chien_arriere.png', ratio: 1536 / 1024 },
+    ventrale: { src: '/anatomie/chien_ventrale.png', ratio: 1024 / 1024 },
+  },
+  chat: {
+    face: { src: '/anatomie/chat_face.png', ratio: 1536 / 1024 },
+    profil_g: { src: '/anatomie/chat_profil_gauche.png', ratio: 1536 / 1024 },
+    profil_d: { src: '/anatomie/chat_profil_droit.png', ratio: 1536 / 1024 },
+    arriere: { src: '/anatomie/chat_arriere.png', ratio: 1536 / 1024 },
+    ventrale: { src: '/anatomie/chat_ventrale.png', ratio: 1536 / 1024 },
+  },
+  cheval: {
+    face: { src: '/anatomie/cheval_face.png', ratio: 1536 / 1024 },
+    profil_g: { src: '/anatomie/cheval_profil_gauche.png', ratio: 1536 / 1024 },
+    profil_d: { src: '/anatomie/cheval_profil_droit.png', ratio: 1536 / 1024 },
+    arriere: { src: '/anatomie/cheval_arriere.png', ratio: 1024 / 1536 },
+    ventrale: { src: '/anatomie/cheval_ventrale.png', ratio: 1024 / 1536 },
+  },
 };
 
 function speciesKey(espece: string): 'chien' | 'chat' | 'cheval' | null {
@@ -45,6 +74,7 @@ interface PointOsteo {
   id: string;
   espece: string;
   seance_id: string;
+  vue: string;
   x_pct: number;
   y_pct: number;
   categorie: string;
@@ -249,7 +279,9 @@ function SeanceDetail({ seance, espece, readOnly, onBack }: {
   const [pendingNote, setPendingNote] = useState('');
   const [selected, setSelected] = useState<PointOsteo | null>(null);
   const [editing, setEditing] = useState(false);
+  const [currentVue, setCurrentVue] = useState(VUES_ANATOMIE[0].key);
   const containerRef = useRef<HTMLDivElement>(null);
+  const currentVuePoints = points.filter(p => p.vue === currentVue);
 
   useEffect(() => {
     supabase.from('points_osteo').select('*').eq('seance_id', seance.id).order('created_at', { ascending: false })
@@ -291,7 +323,7 @@ function SeanceDetail({ seance, espece, readOnly, onBack }: {
       pro_uid: user.uid,
       ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}),
       espece: species,
-      vue: 'squelette',
+      vue: currentVue,
       x_pct: pendingPos.x,
       y_pct: pendingPos.y,
       categorie: pendingCat,
@@ -333,7 +365,7 @@ function SeanceDetail({ seance, espece, readOnly, onBack }: {
 
   if (!species) return null;
 
-  const asset = ASSETS[species];
+  const asset = ASSETS[species][currentVue];
 
   return (
     <div className="space-y-4">
@@ -368,6 +400,21 @@ function SeanceDetail({ seance, espece, readOnly, onBack }: {
             {readOnly ? 'Points travaillés lors de cette séance' : 'Cliquez sur le schéma pour noter un point travaillé'}
           </p>
 
+          <div className="flex gap-2 justify-center flex-wrap">
+            {VUES_ANATOMIE.map(v => (
+              <button key={v.key} onClick={() => setCurrentVue(v.key)}
+                className="px-3 py-1.5 rounded-full text-xs font-medium border transition-colors"
+                style={{
+                  fontFamily: 'Galey, sans-serif',
+                  background: currentVue === v.key ? '#0C5C6C' : '#0C5C6C14',
+                  color: currentVue === v.key ? 'white' : '#374151',
+                  borderColor: '#0C5C6C',
+                }}>
+                {v.label}
+              </button>
+            ))}
+          </div>
+
           <div
             ref={containerRef}
             onClick={handleClick}
@@ -375,8 +422,8 @@ function SeanceDetail({ seance, espece, readOnly, onBack }: {
             style={{ aspectRatio: asset.ratio, maxWidth: 560 }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={asset.src} alt={`Schéma ${species}`} className="w-full h-full object-contain pointer-events-none" draggable={false} />
-            {points.map(p => (
+            <img key={currentVue} src={asset.src} alt={`Schéma ${species} - ${currentVue}`} className="w-full h-full object-contain pointer-events-none" draggable={false} />
+            {currentVuePoints.map(p => (
               <button key={p.id}
                 onClick={(e) => { e.stopPropagation(); openPoint(p); }}
                 className="absolute rounded-full border-2 border-white shadow"
