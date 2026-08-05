@@ -1155,11 +1155,16 @@ class _NotifBadgeState extends State<NotifBadge> with WidgetsBindingObserver {
     try {
       final data = await _supa
           .from('notifications')
-          .select('id, profile_type')
+          .select('id, profile_id, profile_type')
           .eq('uid', _uid)
           .eq('read', false);
       final currentType = _currentBadgeProfileType;
+      final activeProfileId = User_Info.activeProfileId;
+      // Même priorité que la liste de notifications (_fetch()) : profile_id
+      // prime s'il est renseigné, sinon repli sur profile_type.
       final count = (data as List).where((n) {
+        final pid = (n['profile_id'] as String?) ?? '';
+        if (pid.isNotEmpty) return pid == activeProfileId;
         final pt = (n['profile_type'] as String?) ?? '';
         return pt.isEmpty || pt == currentType;
       }).length;

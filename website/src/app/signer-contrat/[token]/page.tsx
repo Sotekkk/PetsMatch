@@ -444,6 +444,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: doc.uid_eleveur, type: 'contrat_signe_complet', title: '✅ Contrat signé !',
           body: `${acqNom} a apposé sa signature — ${titre} est désormais signé par les deux parties.`,
+          profileType: isAdoption ? 'association' : 'eleveur',
           data: { token } }) });
       if (acqEmail) fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: acqEmail, type: 'contrat_signe_complet', title: '✅ Contrat signé !',
@@ -454,6 +455,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: doc.uid_eleveur, type: 'contrat_signe_acquereur', title: '✍️ Signature reçue',
           body: `${acqNom} a signé ${titre} — à vous de signer pour finaliser.`,
+          profileType: isAdoption ? 'association' : 'eleveur',
           data: { token } }) });
     } else {
       // Éleveur vient de signer → notifier l'acquéreur
@@ -523,6 +525,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ uid: doc.uid_eleveur, type: 'contrat_refuse', title: '❌ Contrat refusé',
         body: `${acqNom} a refusé ${doc.titre ?? 'le contrat'}${reason ? ` — ${reason}` : ''}.`,
+        profileType: doc.type === 'contrat_adoption' ? 'association' : 'eleveur',
         data: { token } }) });
     setDoc(prev => prev ? { ...prev, statut: 'refuse', rejection_reason: reason } : prev);
     setRefusing(false);

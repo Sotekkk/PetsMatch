@@ -780,7 +780,7 @@ export default function Header() {
     await fetch('/api/notifications', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uid: user.uid }),
+      body: JSON.stringify({ uid: user.uid, profileId: activeProfileId }),
     });
   }
 

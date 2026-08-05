@@ -32,27 +32,39 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(filtered);
 }
 
-// PATCH /api/notifications — marquer tout comme lu
+// PATCH /api/notifications — marquer tout comme lu (uniquement les notifs du
+// profil actif, pas celles des autres profils du même compte)
 export async function PATCH(req: NextRequest) {
-  const { uid } = await req.json().catch(() => ({})) as { uid?: string };
+  const { uid, profileId } = await req.json().catch(() => ({})) as { uid?: string; profileId?: string };
   if (!uid) return NextResponse.json({ error: 'uid requis' }, { status: 400 });
 
-  await supabase
+  const { data } = await supabase
     .from('notifications')
-    .update({ read: true })
+    .select('id, profile_id')
     .eq('uid', uid)
     .eq('read', false);
+
+  const ids = (data ?? [])
+    .filter((n) => !n.profile_id || n.profile_id === profileId)
+    .map((n) => n.id);
+
+  if (ids.length > 0) {
+    await supabase.from('notifications').update({ read: true }).in('id', ids);
+  }
 
   return NextResponse.json({ success: true });
 }
 
 // POST /api/notifications — envoyer une notification (uid direct ou lookup par email)
 export async function POST(req: NextRequest) {
-  const { uid: directUid, email, type, title, body, data } =
+  const { uid: directUid, email, type, title, body, data, profileType } =
     await req.json().catch(() => ({})) as {
       uid?: string; email?: string;
       type: string; title: string; body: string;
       data?: Record<string, unknown>;
+      // Type de profil destinataire à résoudre (défaut 'particulier' — la
+      // notion "particulier toujours présent" sert d'ancrage par défaut).
+      profileType?: string;
     };
 
   let uid = directUid;
@@ -62,8 +74,13 @@ export async function POST(req: NextRequest) {
   }
   if (!uid || !type || !title) return NextResponse.json({ error: 'params manquants' }, { status: 400 });
 
+  const { data: prof } = await supabase.from('user_profiles').select('id')
+    .eq('uid', uid).eq('profile_type', profileType || 'particulier').maybeSingle();
+
   await supabase.from('notifications').insert({
-    uid, type, title, body: body ?? '', data: data ?? {}, profile_type: '', read: false,
+    uid, type, title, body: body ?? '', data: data ?? {},
+    ...(prof?.id ? { profile_id: prof.id } : {}),
+    read: false,
   });
 
   return NextResponse.json({ success: true });
