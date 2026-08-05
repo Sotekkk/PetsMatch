@@ -2106,7 +2106,16 @@ class _CreateTacheSheetState extends State<_CreateTacheSheet> {
       // Résoudre les profile_ids pour l'employeur et l'assigné — le profil
       // ACTIF pour l'employeur, pas son profil "is_main" (voir
       // _EmployesTabState._load pour le même correctif et son explication).
-      String? eleveurProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+      // Mais activeProfileId est celui de l'ACTEUR courant : si c'est un
+      // employé qui crée la tâche pour son employeur (widget.uid ≠ uid
+      // courant, cf. _buildTachesTab), il ne faut pas prendre le profil actif
+      // de l'employé — résoudre celui de l'éleveur via son uid à la place
+      // (bug constaté : eleveur_profile_id enregistrait le profil de
+      // l'employé au lieu de celui de l'éleveur).
+      final currentUid = FirebaseAuth.instance.currentUser?.uid;
+      String? eleveurProfileId = (currentUid == widget.uid && User_Info.activeProfileId.isNotEmpty)
+          ? User_Info.activeProfileId
+          : null;
       if (eleveurProfileId == null) {
         final eleveurProfileData = await _supa.from('user_profiles')
             .select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
