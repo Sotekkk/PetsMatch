@@ -25,8 +25,10 @@ interface Animal {
   uid_eleveur: string | null;
 }
 
+const COLS = 'id, nom, espece, race, sexe, photo_url, date_naissance, date_sortie, cession_prix, uid_eleveur';
+
 export default function MesAnimauxAcquisPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, activeProfileId, loading: authLoading } = useAuth();
   const router = useRouter();
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,16 +39,41 @@ export default function MesAnimauxAcquisPage() {
 
   useEffect(() => {
     if (!user) return;
-    supabase
-      .from('animaux')
-      .select('id, nom, espece, race, sexe, photo_url, date_naissance, date_sortie, cession_prix, uid_eleveur')
-      .eq('uid_acquereur', user.uid)
-      .order('date_sortie', { ascending: false })
-      .then(({ data }) => {
-        setAnimaux((data ?? []) as Animal[]);
-        setLoading(false);
-      }, () => setLoading(false));
-  }, [user]);
+    async function load() {
+      const uid = user!.uid;
+      // Un même uid Firebase peut porter plusieurs profils (particulier +
+      // éleveur + association...). On ne garde que les animaux réellement
+      // reçus par CE profil (animaux_proprietes.profile_id_proprio), sinon un
+      // animal cédé à un autre profil apparaît aussi ici.
+      let received: Animal[] = [];
+      if (activeProfileId) {
+        const { data: check } = await supabase.from('animaux_proprietes')
+          .select('animal_id').eq('uid_proprio', uid)
+          .not('profile_id_proprio', 'is', null).limit(1);
+        if ((check ?? []).length > 0) {
+          const { data: byProfile } = await supabase.from('animaux_proprietes')
+            .select('animal_id').eq('uid_proprio', uid).eq('profile_id_proprio', activeProfileId);
+          const ids = [...new Set((byProfile ?? []).map(r => r.animal_id as string))];
+          if (ids.length > 0) {
+            const { data } = await supabase.from('animaux').select(COLS)
+              .in('id', ids).order('date_sortie', { ascending: false });
+            received = (data ?? []) as Animal[];
+          }
+        } else {
+          const { data } = await supabase.from('animaux').select(COLS)
+            .eq('uid_acquereur', uid).order('date_sortie', { ascending: false });
+          received = (data ?? []) as Animal[];
+        }
+      } else {
+        const { data } = await supabase.from('animaux').select(COLS)
+          .eq('uid_acquereur', uid).order('date_sortie', { ascending: false });
+        received = (data ?? []) as Animal[];
+      }
+      setAnimaux(received);
+      setLoading(false);
+    }
+    load().catch(() => setLoading(false));
+  }, [user, activeProfileId]);
 
   if (authLoading || loading) {
     return (

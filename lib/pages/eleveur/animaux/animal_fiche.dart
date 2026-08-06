@@ -1005,6 +1005,27 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'uid_acquereur': uidAcq,
         'date_sortie':   dateCession,
       }).eq('id', widget.animalId!);
+      // Historique de propriété (animaux_proprietes) — clôture la ligne du
+      // cédant et ouvre celle de l'acquéreur sur son profil principal
+      // (is_main), pas forcément 'particulier' : cette étape manquait, ce qui
+      // rendait l'animal invisible pour l'acquéreur (filtré par profile_id_proprio).
+      if (uidAcq != null) {
+        try {
+          await _supa.from('animaux_proprietes')
+              .update({'date_fin': dateCession})
+              .eq('animal_id', widget.animalId!)
+              .eq('uid_proprio', FirebaseAuth.instance.currentUser?.uid ?? '')
+              .isFilter('date_fin', null);
+          final acqProfileOwn = await _supa.from('user_profiles')
+              .select('id').eq('uid', uidAcq).eq('is_main', true).maybeSingle();
+          await _supa.from('animaux_proprietes').insert({
+            'animal_id':   widget.animalId,
+            'uid_proprio': uidAcq,
+            'date_debut':  dateCession,
+            if (acqProfileOwn?['id'] != null) 'profile_id_proprio': acqProfileOwn!['id'],
+          });
+        } catch (_) {}
+      }
       // Insérer mouvements dans registre_mouvements (historique de vie de l'animal)
       final currentUid = FirebaseAuth.instance.currentUser?.uid;
       if (uidAcq != null && currentUid != null) {
