@@ -100,7 +100,7 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
     if (!animalId || !proUid) return;
     try {
       const { data: propRow } = await supabase.from('animaux_proprietes')
-        .select('uid_proprio').eq('animal_id', animalId).is('date_fin', null)
+        .select('uid_proprio, profile_id_proprio').eq('animal_id', animalId).is('date_fin', null)
         .order('date_debut', { ascending: false }).limit(1).maybeSingle();
       const ownerUid = propRow?.uid_proprio;
       if (!ownerUid) return;
@@ -113,6 +113,7 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
         body: hasMedia
           ? `${proNom} a partagé une photo/vidéo de ${animalNom}.`
           : `${proNom} a laissé une note pour ${animalNom}.`,
+        ...(propRow?.profile_id_proprio ? { profile_id: propRow.profile_id_proprio } : {}),
         data: { animalId, animalNom },
         read: false,
       });
@@ -143,10 +144,13 @@ export function PensionJournal({ animalId, pensionEntreeId, animalNom, proUid, r
 
   async function notifyPension(u: Update, action: 'like' | 'reply', message?: string) {
     try {
+      const { data: proProfile } = await supabase.from('user_profiles')
+        .select('id').eq('uid', u.pro_uid).eq('profile_type', 'pension').maybeSingle();
       await supabase.from('notifications').insert({
         uid: u.pro_uid, type: 'pension_journal_reply',
         title: action === 'like' ? `${animalNom} a aimé votre nouvelle` : `Réponse du propriétaire de ${animalNom}`,
         body: action === 'like' ? 'Le propriétaire a aimé votre nouvelle.' : (message ?? ''),
+        ...(proProfile?.id ? { profile_id: proProfile.id } : {}),
         data: { animalId, animalNom },
         read: false,
       });

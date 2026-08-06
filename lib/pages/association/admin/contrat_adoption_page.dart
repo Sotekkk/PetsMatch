@@ -83,11 +83,15 @@ class _ContratAdoptionPageState extends State<ContratAdoptionPage> {
     if (acqEmail != null && acqEmail.trim().isNotEmpty) {
       final target = await _supa.from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
       if (target != null) {
+        final acqUid = target['uid'] as String;
+        final acqProfile = await _supa.from('user_profiles')
+            .select('id').eq('uid', acqUid).eq('profile_type', 'particulier').maybeSingle();
         await _supa.from('notifications').insert({
-          'uid':  target['uid'],
+          'uid':  acqUid,
           'type': 'contrat_invite',
           'title': '📄 Contrat d\'adoption à signer',
           'body':  '${contrat['titre'] ?? 'Un contrat d\'adoption'} vous a été transmis — vérifiez et signez',
+          if (acqProfile?['id'] != null) 'profile_id': acqProfile!['id'],
           'data':  {'token': token, 'url': '$kSiteBaseUrl/signer-contrat/$token'},
           'read':  false,
           'created_at': DateTime.now().toIso8601String(),

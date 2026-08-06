@@ -174,6 +174,9 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
     try {
       final proUid = u['pro_uid'] as String?;
       if (proUid == null || proUid.isEmpty) return;
+      final proProfile = await _supa.from('user_profiles')
+          .select('id').eq('uid', proUid).eq('profile_type', 'pension').maybeSingle();
+      final proProfileId = proProfile?['id'] as String?;
       await _supa.from('notifications').insert({
         'uid': proUid, 'type': 'pension_journal_reply',
         'title': action == 'like'
@@ -182,6 +185,7 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
         'body': action == 'like'
             ? 'Le propriétaire a aimé votre nouvelle.'
             : (message ?? ''),
+        if (proProfileId != null) 'profile_id': proProfileId,
         'data': {'animalId': widget.animalId, 'animalNom': widget.animalNom},
         'read': false,
       });
@@ -192,10 +196,11 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
     if (widget.animalId == null) return;
     try {
       final propRow = await _supa.from('animaux_proprietes')
-          .select('uid_proprio').eq('animal_id', widget.animalId!)
+          .select('uid_proprio, profile_id_proprio').eq('animal_id', widget.animalId!)
           .filter('date_fin', 'is', null).order('date_debut', ascending: false)
           .limit(1).maybeSingle();
       final ownerUid = propRow?['uid_proprio'] as String?;
+      final ownerProfileId = propRow?['profile_id_proprio'] as String?;
       if (ownerUid == null || ownerUid.isEmpty) return;
       final pensionNom = User_Info.nameElevage.isNotEmpty
           ? User_Info.nameElevage : '${User_Info.firstname} ${User_Info.lastname}'.trim();
@@ -205,6 +210,7 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
         'body': hasMedia
             ? '$pensionNom a partagé une photo/vidéo de ${widget.animalNom}.'
             : '$pensionNom a laissé une note pour ${widget.animalNom}.',
+        if (ownerProfileId != null) 'profile_id': ownerProfileId,
         'data': {'animalId': widget.animalId, 'animalNom': widget.animalNom},
         'read': false,
       });

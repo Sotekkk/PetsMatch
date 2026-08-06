@@ -73,6 +73,7 @@ export async function requestAnimalAccess(animalId: string, ownerUid: string, pr
       uid: ownerUid, type: 'pension_acces',
       title: `Accès accordé à la fiche de ${animalNom}`,
       body: `${proNom} a été admis à consulter la fiche en pension (lecture). Vous pouvez révoquer l'accès si besoin.`,
+      profile_id: ownerProfileId,
       data: { pensionUid: proUid, pensionNom: proNom, animalId },
       read: false,
     });

@@ -82,3 +82,56 @@ WHERE t.id::text = (n.data->>'tacheId')
   AND n.type = 'tache_validee'
   AND n.profile_id IS NULL
   AND t.eleveur_profile_id IS NOT NULL;
+
+-- ── Round 2 (2026-08-06) : contrat_invite, contrat_saillie_invite,
+-- pension_journal(_reply), pension_acces, contrat_signe_*/contrat_refuse ──
+-- Découverts lors des tests utilisateur sur profil ostéo/toilettage (voir
+-- audit exhaustif des ~30 types de notifications non scopées, dont
+-- beaucoup restent à traiter : alerte_perdu, animal_trouve_*,
+-- matching_perdu_trouve, rdv_rappel/cours_collectif_rappel (Netlify),
+-- petfriend_request/accepted, promenade_*, etc. — voir conversation).
+
+-- contrat_invite (adoption/vente) : destinataire = acquéreur, profil particulier.
+UPDATE notifications n
+SET profile_id = up.id::text
+FROM user_profiles up
+WHERE up.uid = n.uid AND up.profile_type = 'particulier'
+  AND n.type = 'contrat_invite' AND n.profile_id IS NULL;
+
+-- contrat_saillie_invite : contrepartie éleveur.
+UPDATE notifications n
+SET profile_id = up.id::text
+FROM user_profiles up
+WHERE up.uid = n.uid AND up.profile_type = 'eleveur'
+  AND n.type = 'contrat_saillie_invite' AND n.profile_id IS NULL;
+
+-- pension_journal_reply : destinataire = le pro pension.
+UPDATE notifications n
+SET profile_id = up.id::text
+FROM user_profiles up
+WHERE up.uid = n.uid AND up.profile_type = 'pension'
+  AND n.type = 'pension_journal_reply' AND n.profile_id IS NULL;
+
+-- pension_journal / pension_acces : destinataire = propriétaire de l'animal
+-- (data->>'animalId' -> animaux_proprietes.profile_id_proprio).
+UPDATE notifications n
+SET profile_id = ap.profile_id_proprio::text
+FROM animaux_proprietes ap
+WHERE ap.animal_id::text = (n.data->>'animalId')
+  AND ap.date_fin IS NULL
+  AND n.type IN ('pension_journal', 'pension_acces')
+  AND n.profile_id IS NULL
+  AND ap.profile_id_proprio IS NOT NULL;
+
+-- contrat_signe_complet/acquereur/eleveur, contrat_refuse (anciennes lignes
+-- profile_type='' d'avant le fix de l'endpoint POST /api/notifications) :
+-- destinataire uid_eleveur -> profil association si contrat d'adoption,
+-- eleveur sinon (data->>'token' -> documents_animaux.type).
+UPDATE notifications n
+SET profile_id = up.id::text
+FROM documents_animaux d
+JOIN user_profiles up ON up.uid = n.uid
+  AND up.profile_type = (CASE WHEN d.type = 'contrat_adoption' THEN 'association' ELSE 'eleveur' END)
+WHERE d.token = (n.data->>'token')
+  AND n.type IN ('contrat_signe_complet', 'contrat_signe_acquereur', 'contrat_signe_eleveur', 'contrat_refuse')
+  AND n.profile_id IS NULL;

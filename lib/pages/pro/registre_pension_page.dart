@@ -1708,6 +1708,7 @@ class PensionEditSheetState extends State<PensionEditSheet> {
         'uid': ownerUid, 'type': 'pension_acces',
         'title': 'Accès accordé à la fiche de ${_clientCtrl.text.isEmpty ? "votre animal" : widget.entree['animal_nom']}',
         'body': '$pensionNom a été admis à consulter la fiche en pension (lecture). Vous pouvez révoquer l\'accès si besoin.',
+        'profile_id': ownerProfileId,
         'data': {'pensionUid': FirebaseAuth.instance.currentUser?.uid, 'pensionNom': pensionNom, 'animalId': animalId},
         'read': false,
       });
@@ -2516,6 +2517,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
         'type':  'pension_acces',
         'title': 'Accès accordé à la fiche de $animalNom',
         'body':  '$pensionNom a été admis à consulter la fiche de $animalNom en pension (lecture). Vous pouvez révoquer l\'accès si besoin.',
+        'profile_id': ownerProfileId,
         'data':  {
           'pensionUid': _uid,
           'pensionNom': pensionNom,
@@ -2781,6 +2783,7 @@ class _AccessRequestSheetState extends State<_AccessRequestSheet> {
         'type':  'pension_acces',
         'title': 'Accès accordé à la fiche de $animalNom',
         'body':  '${widget.pensionNom} a été admis à consulter la fiche de $animalNom en pension (lecture). Vous pouvez révoquer l\'accès si besoin.',
+        'profile_id': ownerProfileId,
         'data':  {
           'pensionUid': widget.pensionUid,
           'pensionNom': widget.pensionNom,

@@ -11370,12 +11370,16 @@ class _DocumentsTabState extends State<_DocumentsTab> {
     if (acqEmail != null && acqEmail.trim().isNotEmpty) {
       final target = await _supa.from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
       if (target != null) {
+        final acqUid = target['uid'] as String;
         final signingUrl = '$kSiteBaseUrl/signer-contrat/$token';
+        final acqProfile = await _supa.from('user_profiles')
+            .select('id').eq('uid', acqUid).eq('profile_type', 'particulier').maybeSingle();
         await _supa.from('notifications').insert({
-          'uid': target['uid'],
+          'uid': acqUid,
           'type': 'contrat_invite',
           'title': '📄 Contrat à signer',
           'body': '${doc['titre'] ?? 'Un contrat'} vous a été transmis — vérifiez et signez',
+          if (acqProfile?['id'] != null) 'profile_id': acqProfile!['id'],
           'data': {'token': token, 'url': signingUrl},
           'read': false,
           'created_at': DateTime.now().toIso8601String(),
