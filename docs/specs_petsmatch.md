@@ -1,5 +1,6 @@
 # Specs PetsMatch — Fonctionnalités à implémenter
-> Dernière mise à jour : 2026-07-03 — §19.4 espèces/filtres, dashboard disponibilité, clic-planning→réservation, fiche animal sans compte + lien de réclamation, journal de séjour  
+> Dernière mise à jour : 2026-08-06 — §43-46 notifications (doublons push + nom client RDV), annuaire pro (fuite santé→vétérinaires), animaux (fuite "acquis" + cession vers mauvais profil + Realtime instable), annonces (fuite association↔éleveur)
+> (mise à jour précédente : 2026-07-03 — §19.4 espèces/filtres, dashboard disponibilité, clic-planning→réservation, fiche animal sans compte + lien de réclamation, journal de séjour)  
 > Ce document est la référence fonctionnelle pour l'app Flutter (Android/iOS) et le site web Next.js.  
 > **Règle absolue** : chaque feature est implémentée sur les **3 surfaces** (Android, iOS, Web) et dans le **panel Admin**.
 
@@ -6132,6 +6133,217 @@ lesquels.
 **How to apply** : 2 migrations à exécuter (`migration_tarifs_taxi.sql`,
 `migration_rdv_animaux_ids.sql`). Aucune donnée existante à backfiller
 (nouvelles colonnes, défauts vides).
+
+---
+
+## 43. Notifications — doublons push Android + nom client manquant sur RDV (session 2026-08-06)
+
+**Contexte** : deux problèmes distincts remontés par l'utilisatrice : (1) réception
+de 2 notifications téléphone pour un seul événement (ex : "Antiparasitaire —
+Aiko"), (2) la notification "Nouvelle demande de RDV" affichait "Un client" au
+lieu du nom réel, sans indication claire du profil concerné.
+
+**Implémenté** :
+1. **Cause du doublon** : payload FCM mixte (bloc `notification` + `data`) →
+   double affichage Android (auto par le système + manuel par
+   `onMessage`/`onBackgroundMessage`, bug documenté FCM+Flutter). Passage en
+   **data-only** sur les 13 fichiers Cloud Functions qui envoient des push :
+   `sante.js`, `match.js`, `alertes.js` (3 fonctions, 5 sites d'envoi),
+   `retard.js`, `vet_notifications.js`, `agenda.js`, `rdv_reminders.js`,
+   `retraite.js`, `chaleurs.js`, `annonces.js`, `employes.js`, `taches.js`,
+   `stripe.js` (2 sites). `apns.payload.aps.alert` conservé à l'identique pour
+   iOS partout (aucun doublon rapporté côté iOS, pas de raison de changer son
+   comportement).
+2. `lib/main.dart` : `_firebaseMessagingBackgroundHandler` et `onMessage`
+   lisent désormais title/body depuis `data` (fallback `notification`), id de
+   notification unique au lieu de `id: 0` codé en dur.
+3. **Nom client manquant** : `rdv_booking_page.dart` utilisait
+   `FirebaseAuth.currentUser.displayName`, quasiment jamais renseigné dans
+   cette app → toujours "Un client" par défaut. Remplacé par
+   `User_Info.nameElevage`/`firstname`/`lastname` (mêmes champs utilisés
+   partout ailleurs dans l'app pour identifier l'utilisateur), fallback sur
+   Auth `displayName` en dernier recours seulement.
+
+**Vérifié** : `node --check` sur les 13 fichiers Cloud Functions, `flutter
+analyze` propre, build APK + install OK.
+
+**Déployé** : Cloud Functions déployées (`firebase deploy --only functions`) —
+un ESLint bloquant corrigé au passage (`match.js`, règle `block-spacing`).
+
+**How to apply** : rien à rejouer, pas de migration — modification du format
+du payload d'envoi uniquement, aucune donnée à backfiller.
+
+---
+
+## 44. Annuaire professionnels — fuite catégorie Santé → Vétérinaires + filtre profession inactif (session 2026-08-06)
+
+**Contexte** : signalé par l'utilisatrice — un profil ostéopathe apparaissait
+dans la liste "Vétérinaires" de l'annuaire.
+
+**Cause racine** : `services_page.dart` (point d'entrée réel de l'annuaire —
+`veterinaires_page.dart` s'est révélé être du code mort jamais branché à la
+navigation, découvert après un premier correctif dessus par erreur) filtrait
+"Vétérinaires" sur `catProValues: ['sante', 'veterinaire']` — `sante` est une
+catégorie professionnelle **distincte** (ostéo/kiné/naturopathe/...), pas un
+synonyme de vétérinaire.
+
+**Implémenté** :
+1. Toutes les catégories/sous-catégories de `services_page.dart` (app) et
+   `website/src/app/services/[categorie]/page.tsx` (web) réécrites avec les
+   **13 vraies valeurs `profile_type`** (vérifiées directement en base) :
+   `veterinaire, sante, education, garde, pension, toilettage, photographe,
+   marechal_ferrant, taxi_animalier, referencement` (+ `particulier, eleveur,
+   association, restauration` hors annuaire pro). Les anciennes valeurs
+   inventées (`osteo, kine, dentiste_equin, educateur, comportementaliste,
+   pet_sitter, promeneur, nutrition, nutritionniste, transport, vtc,
+   ambulance_vet, boutique, artisan, createur, alimentation, animalerie`) ne
+   correspondaient à **aucune** valeur réelle de `profile_type` → sous-listes
+   vides ou trop larges selon les cas.
+2. `professionValues` (filtre par `profession_pro`) : paramètre déjà accepté
+   par `ServiceListPage` mais **jamais appliqué** (mort) — câblé dans
+   `service_list_page.dart`. Permet de distinguer Ostéopathes/
+   Kinésithérapeutes (même `catPro=sante`), Éducateurs/Comportementalistes
+   (même `catPro=education`), Pet-sitters/Promeneurs (même `catPro=garde`),
+   avec les chaînes exactes utilisées à l'inscription (`add_profile_page.dart`
+   / `profil/ajouter/page.tsx`).
+3. Web `services/carte/page.tsx` : bug plus large — le filtre catégorie
+   comparait la chaîne complète `"veterinaire,sante"` à une seule valeur
+   `profile_type` (jamais égale) → **presque tout l'annuaire du site
+   retournait 0 résultat**, pas seulement Vétérinaires. Découpe désormais sur
+   la virgule + teste l'appartenance ; ajout d'un filtre `prof` (profession)
+   en miroir de l'app.
+4. Catégories "Alimentation" / "Boutiques & Créateurs" (web + app) : pointent
+   désormais vers la vraie catégorie `referencement`, sans sous-découpage
+   fiable — voir "Reste à faire".
+
+**Vérifié** : `flutter analyze` propre, `npx tsc --noEmit` + `npm run build`
+(site) propres.
+
+**Déployé** : app rebuild + install, site pushé sur `main` (déploiement Vercel
+auto sur push).
+
+**Reste à faire / manque** :
+- "Assurances & juridique" (`services_page.dart`) : aucun `profile_type`
+  n'existe pour ce métier dans l'app — tuile toujours vide, fonctionnalité
+  pas encore construite (pas un bug, juste non développée).
+- "Alimentation" et "Boutiques & Créateurs" pointent toutes les deux sur
+  `referencement` sans sous-catégorie distincte (boutique / créateur /
+  fournisseur alimentaire) faute de sous-professions standardisées à
+  l'inscription pour cette catégorie — à trancher si on veut les distinguer.
+- `veterinaires_page.dart` (code mort, jamais branché) a été corrigé par
+  inadvertance avant de découvrir qu'il n'était pas utilisé — laissé en l'état
+  corrigé (inoffensif), à supprimer ou réactiver un jour selon le besoin.
+
+---
+
+## 45. Animaux — fuite "Mes animaux acquis" + cession vers le mauvais profil + Realtime instable (session 2026-08-06)
+
+**Contexte** : l'utilisatrice a vu un animal cédé à son profil éleveur
+apparaître dans "Mes animaux acquis" de son profil **particulier**.
+Investigation étendue à toute la chaîne cession → `animaux_proprietes` sur sa
+demande explicite ("vérifie qu'à la création d'un animal ou cession cette
+table est bien mise à jour").
+
+**Implémenté** :
+1. `animaux_acquis_page.dart` (app) + `mes-animaux-acquis/page.tsx` (web) :
+   filtraient uniquement par `uid_acquereur = uid` (uid Firebase, partagé
+   entre tous les profils du compte) → tout animal cédé à **n'importe quel**
+   profil du compte apparaissait aussi côté particulier. Scopé désormais par
+   `animaux_proprietes.profile_id_proprio = profil actif`, même pattern déjà
+   établi sur `mes_animaux_asso.dart` (fallback rétrocompat si migration
+   V2.05 pas encore jouée pour cet uid).
+2. **Cause racine plus profonde** : `cession_sheet.dart` + `CessionModal.tsx`
+   (web) — la ligne `animaux_proprietes` ouverte pour l'acquéreur ciblait
+   **toujours** son profil `particulier`
+   (`.eq('profile_type', 'particulier')`), même quand l'animal est reçu sur
+   un autre profil (ex : transfert de reproducteur éleveur → éleveur,
+   exactement le cas rencontré). Remplacé par le profil **principal**
+   (`is_main`) de l'acquéreur.
+3. `_confirmerCession()` (`animal_fiche.dart`, flux de cession à 2
+   signatures) : **n'écrivait jamais** dans `animaux_proprietes` — l'acquéreur
+   se retrouvait sans ligne de propriété du tout après une cession signée,
+   l'animal devenait invisible partout. Ajout de la clôture cédant +
+   ouverture acquéreur manquantes.
+4. Vérifié en base : la naissance en élevage (`portee_form_page.dart`,
+   `animal_fiche.dart` en création) pose déjà correctement
+   `uid_proprio`/`profile_id_proprio` = profil éleveur actif au moment de la
+   création — pas de bug sur ce chemin.
+5. "Trouver un compagnon" (app) plantait avec un
+   `RealtimeSubscribeException`/`CHANNEL_ERROR` sur le canal Realtime
+   Postgres de la table `annonces`. Remplacé `.stream()` par une requête
+   ponctuelle + tire-pour-rafraîchir (`annonces_public_page.dart`,
+   `annonces_asso_feed_page.dart`) — même pattern que le reste de l'app, plus
+   de dépendance à la configuration Realtime côté Supabase.
+
+**Vérifié** : `flutter analyze` propre (0 erreur), `npx tsc --noEmit` propre,
+build APK + install OK, build site propre.
+
+**Trouvaille en base (compte "Le domaine de Negan")** : un animal ("fly") a
+une ligne `animaux_proprietes` clôturée (`date_fin` posée lors d'une
+re-cession) mais jamais réouverte pour le nouveau propriétaire — séquelle
+historique du bug #2/#3 ci-dessus sur un compte de test. **Correction
+ponctuelle des données pas encore faite** (décision à prendre : corriger
+cette ligne précise, ou laisser en l'état vu que c'est un compte de test).
+
+**How to apply** : aucune migration nécessaire — les 3 correctifs de code
+s'appliquent aux nouvelles cessions ; les cessions déjà passées par
+l'ancien chemin bugué gardent un historique `animaux_proprietes` incomplet ou
+mal orienté, à corriger au cas par cas si signalé par un utilisateur.
+
+---
+
+## 46. Annonces — fuite association ↔ éleveur (session 2026-08-06)
+
+**Contexte** : signalé par l'utilisatrice sur le compte d'une collègue ("Le
+domaine de Negan", qui a un profil éleveur ET un profil association) — une
+annonce d'adoption créée via le profil association apparaissait rattachée au
+profil éleveur.
+
+**Implémenté** — 3 endroits filtraient les annonces uniquement par
+`uid_eleveur`, sans exclure `profil_source='association'` :
+1. `user_detail_page_feed.dart` : page publique "profil de l'éleveur"
+   (ouverte depuis le détail d'une annonce) — affichait aussi les annonces
+   d'adoption de l'association du même compte. `AssociationDetailPage`
+   faisait déjà l'exclusion symétrique correctement côté association
+   (`.eq('profil_source', 'association')`) — il manquait juste l'exclusion
+   inverse côté éleveur.
+2. `plan_service.dart` `countActiveAnnonces()` : comptait les annonces
+   association dans le **quota du plan éleveur** (utilisé par
+   `abonnement_page.dart`, `eleveur_home.dart`, `create_annonce_page.dart`,
+   `mes_annonces_page.dart`) — pouvait bloquer à tort la création de
+   nouvelles annonces éleveur une fois le quota "atteint" par des annonces
+   qui ne devraient pas compter.
+3. `eleveur/user_elevage_feed.dart` : même fuite dans le feed "mes annonces"
+   de l'onglet éleveur (bottom nav).
+4. Le site web (`elevages/[id]/page.tsx`) excluait **déjà** correctement
+   `profil_source='association'` — aucun changement nécessaire côté web pour
+   ce point précis.
+
+**Diagnostic base** : sur seulement 2 annonces association existantes au
+total dans la base, une seule ("Adoption — Testeuse") avait un `nom_eleveur`
+figé incorrect (nom du profil éleveur au lieu du nom de l'association) malgré
+un `profile_id`/`profil_source` correct — probablement un glitch ponctuel de
+`User_Info.activeProfileId` au moment précis de la création (non reproductible
+avec le code actuel : l'autre annonce association en base est correcte).
+**Correction ponctuelle de cette ligne proposée à l'utilisatrice, pas encore
+faite** (en attente de confirmation).
+
+**Vérifié** : `flutter analyze` propre (0 erreur nouvelle).
+
+**Déployé** : app rebuild + install, commit + push effectués (`d7fa75ca`) ;
+pas de changement web dans ce lot.
+
+**Reste à faire / manque** :
+- Décider et corriger les 2 résidus de données identifiés ci-dessus (§45
+  animal "fly", §46 annonce "Testeuse") si jugé utile malgré leur statut de
+  données de test.
+- Cet audit (§43-46) a porté sur les chemins de code directement liés aux
+  signalements reçus ; il n'a pas été étendu de façon systématique à
+  **toutes** les autres tables portant un `uid_*` sans `profile_id_*`
+  correspondant (voir la règle générale déjà notée en §29/§32/§37) — un
+  passage exhaustif similaire à celui fait sur les notifications (§30)
+  reste possible si de nouveaux signalements de mélange cross-profil
+  remontent ailleurs (agenda, documents, avis, etc.).
 
 ---
 
