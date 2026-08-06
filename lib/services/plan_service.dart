@@ -582,6 +582,7 @@ class PlanService {
           .from('abonnements')
           .select('plan_code')
           .eq('uid', uid)
+          .eq('profil_type', 'eleveur')
           .eq('statut', 'actif')
           .order('created_at', ascending: false)
           .limit(1)
