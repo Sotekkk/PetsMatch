@@ -29,7 +29,7 @@ class VeterinairesPag extends StatelessWidget {
             categoryLabel: 'Vétérinaires',
             categoryColor: Color(0xFF6E9E57),
             categoryIcon: Icons.local_hospital_outlined,
-            catProValues: ['sante', 'veterinaire'],
+            catProValues: ['veterinaire'],
           ))),
         ),
         _Section(
@@ -45,7 +45,7 @@ class VeterinairesPag extends StatelessWidget {
             categoryLabel: 'Urgences vétérinaires',
             categoryColor: Color(0xFFE53935),
             categoryIcon: Icons.emergency_outlined,
-            catProValues: ['sante', 'veterinaire'],
+            catProValues: ['veterinaire'],
           ))),
         ),
       ],
@@ -72,7 +72,7 @@ class EducationPage extends StatelessWidget {
             categoryColor: Color(0xFFEF6C00),
             categoryIcon: Icons.psychology_outlined,
             catProValues: ['education', 'garde'],
-            professionValues: ['Éducateur comportementaliste', 'Maître-chien', 'Dresseur'],
+            professionValues: ['Éducateur canin', 'Comportementaliste', 'Dresseur'],
           ))),
         ),
         _Section(
@@ -139,7 +139,7 @@ class SantePage extends StatelessWidget {
             categoryColor: Color(0xFFE91E63),
             categoryIcon: Icons.self_improvement_outlined,
             catProValues: ['sante'],
-            professionValues: ['Ostéopathe animalier'],
+            professionValues: ['Ostéopathe'],
           ))),
         ),
         _Section(
@@ -151,7 +151,7 @@ class SantePage extends StatelessWidget {
             categoryColor: Color(0xFFE91E63),
             categoryIcon: Icons.accessibility_new_outlined,
             catProValues: ['sante'],
-            professionValues: ['Kinésithérapeute animalier'],
+            professionValues: ['Kinésithérapeute'],
           ))),
         ),
         _Section(
@@ -163,7 +163,7 @@ class SantePage extends StatelessWidget {
             categoryColor: Color(0xFFE91E63),
             categoryIcon: Icons.eco_outlined,
             catProValues: ['sante'],
-            professionValues: ['Naturopathe animalier'],
+            professionValues: ['Naturopathe'],
           ))),
         ),
         _Section(
@@ -175,7 +175,7 @@ class SantePage extends StatelessWidget {
             categoryColor: Color(0xFFE91E63),
             categoryIcon: Icons.spa_outlined,
             catProValues: ['sante'],
-            professionValues: ['Acupuncteur animalier'],
+            professionValues: ['Acupuncteur'],
           ))),
         ),
         _Section(
@@ -187,7 +187,7 @@ class SantePage extends StatelessWidget {
             categoryColor: Color(0xFFE91E63),
             categoryIcon: Icons.psychology_alt_outlined,
             catProValues: ['sante'],
-            professionValues: ['Homéopathe animalier'],
+            professionValues: ['Homéopathe'],
           ))),
         ),
         _Section(
@@ -394,7 +394,7 @@ class PoleSantePage extends StatelessWidget {
             categoryLabel: 'Vétérinaires',
             categoryColor: Color(0xFF6E9E57),
             categoryIcon: Icons.local_hospital_outlined,
-            catProValues: ['sante', 'veterinaire'],
+            catProValues: ['veterinaire'],
           ))),
         ),
         _Section(
@@ -405,7 +405,7 @@ class PoleSantePage extends StatelessWidget {
             categoryLabel: 'Urgences vétérinaires',
             categoryColor: Color(0xFFE53935),
             categoryIcon: Icons.emergency_outlined,
-            catProValues: ['sante', 'veterinaire'],
+            catProValues: ['veterinaire'],
           ))),
         ),
         _Section(
@@ -417,7 +417,7 @@ class PoleSantePage extends StatelessWidget {
             categoryColor: Color(0xFF6E9E57),
             categoryIcon: Icons.self_improvement_outlined,
             catProValues: ['sante'],
-            professionValues: ['Ostéopathe animalier'],
+            professionValues: ['Ostéopathe'],
           ))),
         ),
         _Section(
@@ -429,7 +429,7 @@ class PoleSantePage extends StatelessWidget {
             categoryColor: Color(0xFF6E9E57),
             categoryIcon: Icons.accessibility_new_outlined,
             catProValues: ['sante'],
-            professionValues: ['Kinésithérapeute animalier'],
+            professionValues: ['Kinésithérapeute'],
           ))),
         ),
         _Section(
@@ -441,7 +441,7 @@ class PoleSantePage extends StatelessWidget {
             categoryColor: Color(0xFF6E9E57),
             categoryIcon: Icons.eco_outlined,
             catProValues: ['sante'],
-            professionValues: ['Naturopathe animalier'],
+            professionValues: ['Naturopathe'],
           ))),
         ),
         _Section(

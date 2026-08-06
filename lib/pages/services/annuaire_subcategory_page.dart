@@ -56,6 +56,7 @@ class AnnuaireSubCategoryPage extends StatelessWidget {
             categoryColor: item.color ?? color,
             categoryIcon: item.icon,
             catProValues: item.catProValues,
+            professionValues: item.professionValues,
           ),
         ),
       ),
@@ -160,6 +161,7 @@ class AnnuaireSubItem {
   final IconData icon;
   final Color? color;
   final List<String> catProValues;
+  final List<String>? professionValues;
 
   const AnnuaireSubItem({
     required this.label,
@@ -167,5 +169,6 @@ class AnnuaireSubItem {
     required this.icon,
     this.color,
     required this.catProValues,
+    this.professionValues,
   });
 }

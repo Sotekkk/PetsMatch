@@ -59,6 +59,7 @@ function ServicesCarteContent() {
   const [pros, setPros] = useState<ProMapItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [catFilter, setCatFilter] = useState(() => searchParams.get('cat') ?? '');
+  const [profFilter] = useState(() => searchParams.get('prof') ?? '');
   const [especeFilter, setEspeceFilter] = useState('');
   const [search, setSearch] = useState('');
   const [nearMe, setNearMe] = useState(false);
@@ -151,10 +152,14 @@ function ServicesCarteContent() {
 
   const filtered = pros.filter(p => {
     if (catFilter) {
-      const catMatch = catFilter === 'garde'
-        ? (p.cat_pro === 'garde' || p.cat_pro === 'pension')
-        : p.cat_pro === catFilter;
+      const cats = catFilter.split(',').map(c => c.trim()).filter(Boolean);
+      const catMatch = cats.includes(p.cat_pro ?? '') ||
+        (cats.includes('garde') && p.cat_pro === 'pension');
       if (!catMatch) return false;
+    }
+    if (profFilter) {
+      const profs = profFilter.split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
+      if (!profs.includes((p.profession ?? '').toLowerCase())) return false;
     }
     if (especeFilter && !p.especes.includes(especeFilter)) return false;
     if (search) {
