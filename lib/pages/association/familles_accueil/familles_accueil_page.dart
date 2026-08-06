@@ -840,11 +840,14 @@ class _PlaceAnimalSheetState extends State<_PlaceAnimalSheet> {
       final faUid = widget.fa['fa_uid'] as String?;
       if (faUid != null) {
         final faName = '${widget.fa['prenom'] ?? ''} ${widget.fa['nom'] ?? ''}'.trim();
+        final faProfile = await _supa.from('user_profiles')
+            .select('id').eq('uid', faUid).eq('profile_type', 'particulier').maybeSingle();
         await _supa.from('notifications').insert({
           'uid':   faUid,
           'type':  'animal_en_accueil',
           'title': 'Un animal vous a été confié',
           'body':  '${animal['nom'] ?? 'Un animal'} a été placé dans votre famille d\'accueil',
+          if (faProfile?['id'] != null) 'profile_id': faProfile!['id'],
           'data':  {'animal_id': animal['id'], 'fa_id': widget.fa['id']},
           'read':  false,
         });

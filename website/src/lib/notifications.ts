@@ -8,12 +8,19 @@ export async function sendNotification(params: {
   profileType?: string;
   data?: Record<string, unknown>;
 }) {
+  // Résout profile_id du destinataire (pas seulement profile_type, souvent
+  // laissé vide par les appelants) — par défaut le profil particulier, qui
+  // sert d'ancrage aux notifications "grand public" (contrat_invite, etc.)
+  // dans tout le reste du projet.
+  const { data: prof } = await supabase.from('user_profiles')
+    .select('id').eq('uid', params.uid).eq('profile_type', params.profileType ?? 'particulier').maybeSingle();
   await supabase.from('notifications').insert({
     uid:          params.uid,
     type:         params.type,
     title:        params.title,
     body:         params.body,
     profile_type: params.profileType ?? '',
+    ...(prof?.id ? { profile_id: prof.id } : {}),
     data:         params.data ?? {},
     read:         false,
   });

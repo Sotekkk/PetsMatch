@@ -13,6 +13,7 @@ interface Ligne { description: string; quantite: number; prix_unitaire: number; 
 interface Devis {
   id: string;
   pro_uid: string;
+  pro_profile_id: string | null;
   numero_devis: string | null;
   date_devis: string;
   date_validite: string | null;
@@ -81,6 +82,7 @@ export default function DevisPublicPage({ params }: { params: Promise<{ token: s
         type: statut === 'accepte' ? 'devis_accepte' : 'devis_refuse',
         title: statut === 'accepte' ? 'Devis accepté' : 'Devis refusé',
         body: `${devis.prenom_client ?? ''} ${devis.nom_client} a ${statut === 'accepte' ? 'accepté' : 'refusé'} le devis de ${Number(devis.total_ttc).toFixed(2)} €.`,
+        ...(devis.pro_profile_id ? { profile_id: devis.pro_profile_id } : {}),
         data: { devis_id: devis.id },
         read: false,
       });

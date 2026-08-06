@@ -33,6 +33,7 @@ interface Slot { date: string; heureDebut: string; heureFin: string; }
 interface Animal { id: number; nom: string; espece: string; }
 interface CoursCollectif {
   id: string; titre: string; date_heure: string; capacite_max: number; lieu?: string | null;
+  pro_profile_id?: string | null;
 }
 
 // ─── Données statiques ─────────────────────────────────────────────────────────
@@ -282,7 +283,7 @@ function ProDetailContent() {
 
   async function loadCoursCollectifs(proUid: string) {
     const { data: cours } = await supabase.from('cours_collectifs')
-      .select('id, titre, date_heure, capacite_max, lieu')
+      .select('id, titre, date_heure, capacite_max, lieu, pro_profile_id')
       .eq('pro_uid', proUid).eq('statut', 'planifie')
       .gte('date_heure', new Date().toISOString())
       .order('date_heure');
@@ -355,6 +356,7 @@ function ProDetailContent() {
         uid: pro.uid, type: 'cours_collectif_inscription',
         title: `Nouvelle inscription — ${inscriptionCours.titre}`,
         body: `${clientName || 'Un client'} a inscrit ${animalNom} au cours du ${dateStr}.`,
+        ...(inscriptionCours.pro_profile_id ? { profile_id: inscriptionCours.pro_profile_id } : {}),
         data: { coursId: inscriptionCours.id },
         read: false,
       });

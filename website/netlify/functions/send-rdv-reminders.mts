@@ -23,6 +23,8 @@ interface RdvRow {
   id: string;
   pro_uid: string;
   client_uid: string;
+  pro_profile_id: string | null;
+  client_profile_id: string | null;
   date_heure: string;
   motif: string | null;
   animal_id: string | null;
@@ -31,6 +33,7 @@ interface RdvRow {
 interface CoursRow {
   id: string;
   pro_uid: string;
+  pro_profile_id: string | null;
   titre: string;
   date_heure: string;
   lieu: string | null;
@@ -49,7 +52,7 @@ async function sendRdvReminders() {
     const threshold = new Date(now.getTime() + tier.hoursBefore * 3600_000);
 
     const { data: rows, error } = await supabase.from('rdv')
-      .select('id, pro_uid, client_uid, date_heure, motif, animal_id')
+      .select('id, pro_uid, client_uid, pro_profile_id, client_profile_id, date_heure, motif, animal_id')
       .eq('statut', 'confirme')
       .eq(tier.column, false)
       .gt('date_heure', now.toISOString())
@@ -93,12 +96,14 @@ async function sendRdvReminders() {
         uid: rdv.client_uid, type: 'rdv_rappel',
         title: `Rappel de RDV ${tier.label}`,
         body: `Votre RDV avec ${proNom}${animalTxt ? ` pour ${animalTxt}` : ''} est prévu le ${heureStr}.`,
+        ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
         data: { rdv_id: rdv.id }, read: false,
       });
       notifRows.push({
         uid: rdv.pro_uid, type: 'rdv_rappel',
         title: `Rappel de RDV ${tier.label}`,
         body: `Votre RDV avec ${clientNom}${animalTxt ? ` pour ${animalTxt}` : ''}${rdv.motif ? ` (${rdv.motif})` : ''} est prévu le ${heureStr}.`,
+        ...(rdv.pro_profile_id ? { profile_id: rdv.pro_profile_id } : {}),
         data: { rdv_id: rdv.id }, read: false,
       });
     }
@@ -122,7 +127,7 @@ async function sendRdvReminders() {
     const threshold = new Date(now.getTime() + tier.hoursBefore * 3600_000);
 
     const { data: rows, error } = await supabase.from('cours_collectifs')
-      .select('id, pro_uid, titre, date_heure, lieu')
+      .select('id, pro_uid, pro_profile_id, titre, date_heure, lieu')
       .eq('statut', 'planifie')
       .eq(tier.column, false)
       .gt('date_heure', now.toISOString())
@@ -138,10 +143,10 @@ async function sendRdvReminders() {
     const coursIds = coursRows.map(c => c.id);
 
     const { data: participants } = await supabase.from('cours_collectifs_participants')
-      .select('cours_id, client_uid').in('cours_id', coursIds).eq('statut', 'inscrit');
-    const participantsByCourse: Record<string, string[]> = {};
-    for (const p of (participants ?? []) as { cours_id: string; client_uid: string }[]) {
-      (participantsByCourse[p.cours_id] ??= []).push(p.client_uid);
+      .select('cours_id, client_uid, client_profile_id').in('cours_id', coursIds).eq('statut', 'inscrit');
+    const participantsByCourse: Record<string, { client_uid: string; client_profile_id: string | null }[]> = {};
+    for (const p of (participants ?? []) as { cours_id: string; client_uid: string; client_profile_id: string | null }[]) {
+      (participantsByCourse[p.cours_id] ??= []).push({ client_uid: p.client_uid, client_profile_id: p.client_profile_id });
     }
 
     const notifRows: Record<string, unknown>[] = [];
@@ -154,13 +159,15 @@ async function sendRdvReminders() {
         uid: cours.pro_uid, type: 'cours_collectif_rappel',
         title: `Rappel de cours ${tier.label}`,
         body: `"${cours.titre}"${lieuTxt} est prévu le ${heureStr}.`,
+        ...(cours.pro_profile_id ? { profile_id: cours.pro_profile_id } : {}),
         data: { cours_id: cours.id }, read: false,
       });
-      for (const clientUid of participantsByCourse[cours.id] ?? []) {
+      for (const participant of participantsByCourse[cours.id] ?? []) {
         notifRows.push({
-          uid: clientUid, type: 'cours_collectif_rappel',
+          uid: participant.client_uid, type: 'cours_collectif_rappel',
           title: `Rappel de cours ${tier.label}`,
           body: `"${cours.titre}"${lieuTxt} est prévu le ${heureStr}.`,
+          ...(participant.client_profile_id ? { profile_id: participant.client_profile_id } : {}),
           data: { cours_id: cours.id }, read: false,
         });
       }

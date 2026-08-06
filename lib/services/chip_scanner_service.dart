@@ -673,6 +673,7 @@ class _VetResultSheetState extends State<_VetResultSheet> {
         'type':  'vet_access_demande',
         'title': 'Demande d\'accès — $vetDisplay',
         'body':  '$vetDisplay demande l\'accès au carnet de santé de $animalNom.',
+        'profile_id': ownerProfileId,
         'data':  <String, dynamic>{
           'animal_id':  animal['id']?.toString(),
           'vet_id':     vetUid,

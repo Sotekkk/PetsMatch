@@ -500,6 +500,7 @@ class _ProClientsPageState extends State<ProClientsPage>
             'type':  'education_rapport',
             'title': 'Rapport de séance — $animalNom',
             'body':  '${proNom.isNotEmpty ? proNom : 'Votre éducateur'} a envoyé un rapport de séance pour $animalNom.',
+            if (animal['_owner_profile_id'] != null) 'profile_id': animal['_owner_profile_id'],
             'data':  <String, dynamic>{
               'animalId': animal['id']?.toString() ?? '',
               'animalNom': animalNom,

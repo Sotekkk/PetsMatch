@@ -349,10 +349,14 @@ export default function PatientDetailPage() {
       });
       if (ownerUid) {
         const proNom = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || 'Votre éducateur';
+        const { data: propRow } = await supabase.from('animaux_proprietes')
+          .select('profile_id_proprio').eq('animal_id', animalId).is('date_fin', null)
+          .order('date_debut', { ascending: false }).limit(1).maybeSingle();
         await supabase.from('notifications').insert({
           uid: ownerUid, type: 'education_rapport',
           title: `Rapport de séance — ${animal?.nom ?? 'Animal'}`,
           body: `${proNom} a envoyé un rapport de séance pour ${animal?.nom ?? 'votre animal'}.`,
+          ...(propRow?.profile_id_proprio ? { profile_id: propRow.profile_id_proprio } : {}),
           data: { animalId, animalNom: animal?.nom ?? 'Animal' },
           read: false,
         });
@@ -403,10 +407,14 @@ export default function PatientDetailPage() {
     setGrant(g => g ? { ...g, statut: 'write_requested' } : g);
     const ownerUid = animal.uid_proprietaire ?? animal.uid_eleveur;
     if (ownerUid) {
+      const { data: propRow } = await supabase.from('animaux_proprietes')
+        .select('profile_id_proprio').eq('animal_id', animalId).is('date_fin', null)
+        .order('date_debut', { ascending: false }).limit(1).maybeSingle();
       await supabase.from('notifications').insert({
         uid: ownerUid, type: 'write_access_requested',
         title: "Demande d'accès en écriture",
         body: `${userData?.nameElevage ?? userData?.firstname ?? 'Un professionnel'} demande l'accès en écriture pour ${animal.nom}.`,
+        ...(propRow?.profile_id_proprio ? { profile_id: propRow.profile_id_proprio } : {}),
         data: { grant_id: grant.id, animal_id: String(animalId) }, read: false,
       });
     }

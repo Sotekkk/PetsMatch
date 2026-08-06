@@ -366,13 +366,15 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
         .eq('uid_proprio', uid)
         .is('date_fin', null);
       // Ouvrir une ligne pour le nouvel acquéreur (profil particulier par défaut)
+      let acqProfile: { id: string } | null = null;
       if (acqUid) {
-        const { data: acqProfile } = await supabase
+        const { data } = await supabase
           .from('user_profiles')
           .select('id')
           .eq('uid', acqUid)
           .eq('profile_type', 'particulier')
           .maybeSingle();
+        acqProfile = data;
         await supabase.from('animaux_proprietes').insert({
           animal_id:          animal.id,
           uid_proprio:        acqUid,
@@ -401,6 +403,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
           type:  'cession_animal',
           title: `🐾 Animal reçu : ${animal.nom ?? 'Animal'}`,
           body:  `${eleveurInfo.nom} vous a cédé ${animal.nom ?? 'un animal'}. Consultez vos animaux pour voir sa fiche.`,
+          ...(acqProfile?.id ? { profile_id: acqProfile.id } : {}),
           data:  { animalId: animal.id },
           read:  false,
         });

@@ -98,6 +98,7 @@ class _DevisPageState extends State<DevisPage> {
         'uid': clientUid, 'type': 'devis_recu',
         'title': 'Vous avez reçu un devis',
         'body': 'Un devis de ${(d['total_ttc'] as num).toStringAsFixed(2)} € vous a été envoyé.',
+        if (d['client_profile_id'] != null) 'profile_id': d['client_profile_id'],
         'data': {'devis_id': d['id'], 'token': d['token_acceptation']},
         'read': false,
       });
@@ -438,6 +439,7 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
           'uid': _clientUid, 'type': 'devis_recu',
           'title': 'Vous avez reçu un devis',
           'body': 'Un devis de ${_total.toStringAsFixed(2)} € vous a été envoyé.',
+          if (_clientProfileId != null) 'profile_id': _clientProfileId,
           'data': {'devis_id': inserted['id'], 'token': token},
           'read': false,
         });

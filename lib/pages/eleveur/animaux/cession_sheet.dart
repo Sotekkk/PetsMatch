@@ -336,9 +336,10 @@ class _CessionSheetState extends State<CessionSheet> {
           .eq('uid_proprio', widget.uid)
           .isFilter('date_fin', null);
       // Ouvrir la propriété de l'acquéreur (si compte PetsMatch)
+      Map<String, dynamic>? acqProfileRow;
       if (_foundUser?['uid'] != null) {
         // Profil particulier de l'acquéreur (les cessions vont toujours vers le profil particulier)
-        final acqProfileRow = await _supa
+        acqProfileRow = await _supa
             .from('user_profiles')
             .select('id')
             .eq('uid', _foundUser!['uid'])
@@ -360,6 +361,7 @@ class _CessionSheetState extends State<CessionSheet> {
           'type':  'cession_signature_demandee',
           'title': '✍️ Signature requise — ${widget.animal['nom'] ?? 'Animal'}',
           'body':  '${widget.nomElevage} souhaite vous céder ${widget.animal['nom'] ?? 'un animal'}. Signez le contrat pour valider.',
+          if (acqProfileRow?['id'] != null) 'profile_id': acqProfileRow!['id'],
           'data':  {'animalId': widget.animal['id'], 'token': token, 'signingUrl': signingUrl},
           'read':  false,
         });

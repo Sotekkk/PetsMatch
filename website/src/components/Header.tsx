@@ -1337,11 +1337,17 @@ export default function Header() {
             const { data: proProfiles } = await supabase.from('user_profiles')
               .select('id').eq('uid', pensionUid);
             const proProfileIds = (proProfiles ?? []).map(p => p.id);
+            let requestingProfileId: string | null = null;
             if (proProfileIds.length > 0) {
               await supabase.from('animal_access').update({
                 statut: approved ? 'active' : 'revoked',
                 ...(approved ? { granted_at: new Date().toISOString() } : { revoked_at: new Date().toISOString() }),
               }).in('pro_profile_id', proProfileIds).eq('animal_id', animalId);
+              // Le profil précis qui avait fait la demande — pas forcément is_main.
+              const { data: accessRow } = await supabase.from('animal_access')
+                .select('pro_profile_id').in('pro_profile_id', proProfileIds)
+                .eq('animal_id', animalId).maybeSingle();
+              requestingProfileId = accessRow?.pro_profile_id ?? null;
             }
 
             await supabase.from('notifications').insert({
@@ -1351,6 +1357,7 @@ export default function Header() {
               body:  approved
                 ? `Le propriétaire vous a autorisé à consulter la fiche de ${animalNom}.`
                 : `Le propriétaire a refusé votre demande pour ${animalNom}.`,
+              ...(requestingProfileId ? { profile_id: requestingProfileId } : {}),
               data:  { animalId, animalNom, approved: String(approved) },
               read:  false,
             });

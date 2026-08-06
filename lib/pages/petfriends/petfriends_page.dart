@@ -204,6 +204,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
       await _supa.from('notifications').insert({
         'uid': targetUid, 'type': 'petfriend_request',
         'title': '🐾 Nouvelle demande PetFriend', 'body': '$nom veut être ton PetFriend !',
+        if (targetProfileId != null) 'profile_id': targetProfileId,
         'data': {'fromUid': _myUid}, 'read': false, 'created_at': DateTime.now().toIso8601String(),
       });
       if (mounted) setState(() => _searchStatuts[targetUid] = 'en_attente');
@@ -214,9 +215,11 @@ class _PetFriendsPageState extends State<PetFriendsPage>
     await _supa.from('petfriends').update({'statut': 'accepte', 'updated_at': DateTime.now().toIso8601String()}).eq('id', row.relId);
     final me = await _supa.from('user_profiles').select('firstname, lastname').eq('uid', _myUid).eq('is_main', true).maybeSingle();
     final nom = me != null ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim() : 'Quelqu\'un';
+    final targetProfile = await _supa.from('user_profiles').select('id').eq('uid', row.uid).eq('is_main', true).maybeSingle();
     await _supa.from('notifications').insert({
       'uid': row.uid, 'type': 'petfriend_accepted',
       'title': '🐾 PetFriend accepté !', 'body': '$nom a accepté ta demande PetFriend.',
+      if (targetProfile?['id'] != null) 'profile_id': targetProfile!['id'],
       'data': {'fromUid': _myUid}, 'read': false, 'created_at': DateTime.now().toIso8601String(),
     });
     _load();

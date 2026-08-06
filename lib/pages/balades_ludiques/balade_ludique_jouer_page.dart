@@ -167,6 +167,7 @@ class _BaladeLudiqueJouerPageState extends State<BaladeLudiqueJouerPage> {
       await _supa.from('notifications').insert({
         'uid': _uid,
         'type': 'balade_ludique_xp',
+        if (_pid.isNotEmpty) 'profile_id': _pid,
         'data': {'balade_id': widget.baladeId, 'xp': xpGagne, 'titre': b['titre']},
         'read': false,
       });

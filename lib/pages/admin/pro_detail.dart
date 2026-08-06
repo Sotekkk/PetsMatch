@@ -132,12 +132,18 @@ class _ProDetailState extends State<ProDetail> {
             ? 'Votre profil a été validé. Vous pouvez maintenant l\'utiliser.'
             : 'Votre demande de profil a été refusée. Contactez-nous pour plus d\'infos.';
         try {
+          final profileType = (_supaRow['profile_type'] ?? _supaRow['cat_pro'] ?? '').toString();
+          final profile = profileType.isNotEmpty
+              ? await _supa.from('user_profiles')
+                  .select('id').eq('uid', widget.uid).eq('profile_type', profileType).maybeSingle()
+              : null;
           await _supa.from('notifications').insert({
             'uid': widget.uid,
             'type': 'profile_validation',
             'title': title,
             'body': body,
-            'data': {'profileType': _supaRow['profile_type'] ?? _supaRow['cat_pro'] ?? ''},
+            if (profile?['id'] != null) 'profile_id': profile!['id'],
+            'data': {'profileType': profileType},
             'read': false,
             'created_at': DateTime.now().toIso8601String(),
           });

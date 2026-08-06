@@ -907,10 +907,13 @@ function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
     setSaving(false);
     if (error) { alert(`Erreur: ${error.message}`); return; }
     if (assigneeUid) {
+      const { data: assigneeProfile } = await supabase.from('user_profiles')
+        .select('id').eq('uid', assigneeUid).eq('profile_type', 'particulier').maybeSingle();
       await supabase.from('notifications').insert({
         uid: assigneeUid, type: 'tache',
         title: 'Nouvelle tâche assignée',
         body: form.titre.trim(),
+        ...(assigneeProfile?.id ? { profile_id: assigneeProfile.id } : {}),
         data: { eleveurUid: uid, tacheId: (inserted as { id: string }).id },
         read: false,
       });

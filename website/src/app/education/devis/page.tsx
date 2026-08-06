@@ -16,6 +16,7 @@ interface Devis {
   date_devis: string;
   date_validite: string | null;
   client_uid: string | null;
+  client_profile_id: string | null;
   animal_id: string | null;
   nom_client: string | null;
   prenom_client: string | null;
@@ -275,6 +276,7 @@ export default function DevisPage() {
           type: 'devis_recu',
           title: 'Vous avez reçu un devis',
           body: `Un devis de ${totalTtc.toFixed(2)} € vous a été envoyé.`,
+          ...(clientProfileId ? { profile_id: clientProfileId } : {}),
           data: { devis_id: data.id, token },
           read: false,
         });
@@ -298,6 +300,7 @@ export default function DevisPage() {
         type: 'devis_recu',
         title: 'Vous avez reçu un devis',
         body: `Un devis de ${d.total_ttc.toFixed(2)} € vous a été envoyé.`,
+        ...(d.client_profile_id ? { profile_id: d.client_profile_id } : {}),
         data: { devis_id: d.id, token: d.token_acceptation },
         read: false,
       });
