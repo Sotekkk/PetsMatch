@@ -785,6 +785,9 @@ class _UserElevageFeedState extends State<UserElevageFeed>
           .from('annonces')
           .select()
           .eq('uid_eleveur', uid)
+          // Un même uid peut aussi porter un profil association — ses
+          // annonces d'adoption ne doivent pas apparaître dans le feed éleveur.
+          .neq('profil_source', 'association')
           .neq('statut', 'supprime')
           .order('created_at', ascending: false);
       if (!mounted) return;

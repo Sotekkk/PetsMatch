@@ -599,6 +599,10 @@ class PlanService {
           .from('annonces')
           .select('id')
           .eq('uid_eleveur', uid)
+          // Le quota d'annonces est propre au plan éleveur — un compte qui a
+          // aussi un profil association ne doit pas voir ses adoptions
+          // association compter dans sa limite d'annonces éleveur.
+          .neq('profil_source', 'association')
           .inFilter('statut', ['disponible', 'en_attente', 'pause', 'reserve']);
       return (res as List).length;
     } catch (_) {
