@@ -125,11 +125,9 @@ async function sendPush(uid, title, body, data = {}) {
             try {
                 await admin.messaging().send({
                     token,
-                    notification: {title, body},
-                    data: {type: "rdv_reminder", ...data},
+                    data: {type: "rdv_reminder", title, body, ...data},
                     android: {
                         priority: "high",
-                        notification: {channelId: "high_importance_channel", sound: "default"},
                     },
                     apns: {
                         headers: {"apns-priority": "10"},

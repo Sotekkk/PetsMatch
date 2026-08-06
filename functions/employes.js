@@ -19,26 +19,22 @@ exports.notifyEmployeeAdded = functions
 
             if (!fcmToken) return {success: false, reason: "no_fcm_token"};
 
+            const employeTitle = "Invitation à rejoindre un élevage";
+            const employeBody = `Vous avez été ajouté à l'équipe de ${nomElevage}`;
             await admin.messaging().send({
                 token: fcmToken,
-                notification: {
-                    title: "Invitation à rejoindre un élevage",
-                    body: `Vous avez été ajouté à l'équipe de ${nomElevage}`,
-                },
                 data: {
                     type: "employee_invite",
+                    title: employeTitle,
+                    body: employeBody,
                     click_action: "FLUTTER_NOTIFICATION_CLICK",
                 },
                 android: {
                     priority: "high",
-                    notification: {
-                        channelId: "employes",
-                        sound: "default",
-                    },
                 },
                 apns: {
                     headers: {"apns-priority": "10"},
-                    payload: {aps: {sound: "default"}},
+                    payload: {aps: {alert: {title: employeTitle, body: employeBody}, sound: "default"}},
                 },
             });
 

@@ -97,12 +97,12 @@ exports.sendRetardNotification = functions
                     .collection("users").doc(clientUid).get();
                 const fcmToken = tokenDoc.data()?.fcmToken;
                 if (fcmToken) {
+                    const retardTitle = `Retard de ${delaiText}`;
                     await admin.messaging().send({
                         token: fcmToken,
-                        notification: {title: `Retard de ${delaiText}`, body},
-                        data: {type: "rdv_retard", pro_uid: proUid},
+                        data: {type: "rdv_retard", title: retardTitle, body, pro_uid: proUid},
                         android: {priority: "high"},
-                        apns: {payload: {aps: {sound: "default"}}},
+                        apns: {payload: {aps: {alert: {title: retardTitle, body}, sound: "default"}}},
                     });
                     notified++;
                 }

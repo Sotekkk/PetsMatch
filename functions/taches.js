@@ -19,26 +19,21 @@ exports.notifyTacheAssignee = functions
 
             if (!fcmToken) return {success: false, reason: "no_fcm_token"};
 
+            const tacheTitle = "Nouvelle tâche assignée";
             await admin.messaging().send({
                 token: fcmToken,
-                notification: {
-                    title: "Nouvelle tâche assignée",
-                    body: titre,
-                },
                 data: {
                     type: "tache",
+                    title: tacheTitle,
+                    body: titre,
                     click_action: "FLUTTER_NOTIFICATION_CLICK",
                 },
                 android: {
                     priority: "high",
-                    notification: {
-                        channelId: "taches",
-                        sound: "default",
-                    },
                 },
                 apns: {
                     headers: {"apns-priority": "10"},
-                    payload: {aps: {sound: "default"}},
+                    payload: {aps: {alert: {title: tacheTitle, body: titre}, sound: "default"}},
                 },
             });
 

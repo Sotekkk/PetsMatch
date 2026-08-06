@@ -253,12 +253,14 @@ exports.sendNotificationOnNewMessage = functions
                 console.log(`📌 Token récupéré pour ${participantId}:`, fcmToken || apnsToken);
 
                 // 📩 Préparation du message pour Android (FCM) et iOS (APNs)
+                // Pas de bloc `notification`/`android.notification` : évite le
+                // doublon d'affichage Android (natif + manuel via onMessage/
+                // onBackgroundMessage). title/body passent par `data`.
                 const message = {
-                    notification: {
+                    data: {
+                        type: "chat_message",
                         title: "Nouveau message",
                         body: text,
-                    },
-                    data: {
                         conversationId: conversationId,
                     },
                 };
@@ -266,7 +268,7 @@ exports.sendNotificationOnNewMessage = functions
                 if (fcmToken) {
                     // 🎯 Envoi via Firebase Cloud Messaging (Android)
                     message.token = fcmToken;
-                    message.android = {notification: {sound: "default"}};
+                    message.android = {priority: "high"};
                 } else if (apnsToken) {
                     // 🍏 Envoi via Apple Push Notification Service (iOS)
                     message.token = apnsToken;
@@ -521,15 +523,12 @@ async function sendNotification({token, platform, title, body}) {
     }
 
     const message = {
-        notification: {
-            title,
-            body,
-        },
+        data: {title, body},
     };
 
     if (platform === "android") {
         message.token = token;
-        message.android = {notification: {sound: "default"}};
+        message.android = {priority: "high"};
     } else if (platform === "ios") {
         message.token = token;
         message.apns = {

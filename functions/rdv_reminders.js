@@ -183,15 +183,13 @@ exports.sendRdvReminders = functions
                     if (fcmToken) {
                         await admin.messaging().send({
                             token: fcmToken,
-                            notification: {title, body},
-                            data: {type: "rdv_rappel", rdv_id: rdv.id},
+                            data: {type: "rdv_rappel", title, body, rdv_id: rdv.id},
                             android: {
                                 priority: "high",
-                                notification: {channelId: "rdv_rappels", sound: "default"},
                             },
                             apns: {
                                 headers: {"apns-priority": "10"},
-                                payload: {aps: {sound: "default"}},
+                                payload: {aps: {alert: {title, body}, sound: "default"}},
                             },
                         });
                     }

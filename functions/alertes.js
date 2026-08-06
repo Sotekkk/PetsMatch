@@ -148,22 +148,18 @@ exports.notifyUsersNearLostAnimal = functions
                     fcmMessages.push({
                         token: user.fcmToken,
 
-                        notification: {
-                            title: notifTitle,
-                            body: notifBody,
-                        },
-
+                        // Pas de bloc `notification`/`android.notification` : évite le
+                        // doublon d'affichage Android (natif + manuel). title/body
+                        // passent par `data`, l'app les affiche elle-même sur Android.
                         data: {
                             type: "alerte_perdu",
+                            title: notifTitle,
+                            body: notifBody,
                             alerteId: alerteId || "",
                         },
 
                         android: {
                             priority: "high",
-                            notification: {
-                                channelId: "alertes_perdus",
-                                sound: "default",
-                            },
                         },
 
                         apns: {
@@ -258,15 +254,15 @@ exports.sendLikeNotification = functions
 
         const message = {
             token: fcmToken,
-            notification: {title, body},
             data: {
                 type: "like",
+                title,
+                body,
                 annonceId: annonceId || "",
                 bebeIndex: bebeIndex != null ? String(bebeIndex) : "",
             },
             android: {
                 priority: "high",
-                notification: {channelId: "high_importance_channel", sound: "default"},
             },
             apns: {
                 headers: {"apns-priority": "10"},
@@ -307,11 +303,9 @@ exports.notifyPlaceFavori = functions
         try {
             await admin.messaging().send({
                 token: fcmToken,
-                notification: {title, body},
-                data: {type: "place_favori", placeId: placeId || ""},
+                data: {type: "place_favori", title, body, placeId: placeId || ""},
                 android: {
                     priority: "high",
-                    notification: {channelId: "high_importance_channel", sound: "default"},
                 },
                 apns: {
                     headers: {"apns-priority": "10"},
@@ -416,15 +410,15 @@ exports.notifyNearFoundAnimal = functions
             if (fcmToken) {
                 fcmMessages.push({
                     token: fcmToken,
-                    notification: {title: notifTitle, body: notifBody},
                     data: {
                         type: "animal_trouve_proximite",
+                        title: notifTitle,
+                        body: notifBody,
                         trouveId: trouveId || "",
                         alerteId: String(alerte.id || ""),
                     },
                     android: {
                         priority: "high",
-                        notification: {channelId: "alertes_perdus", sound: "default"},
                     },
                     apns: {
                         headers: {"apns-priority": "10"},
@@ -487,14 +481,14 @@ exports.notifyAnimalOwner = functions
 
         const message = {
             token: fcmToken,
-            notification: {title, body},
             data: {
                 type: "animal_trouve_proprietaire",
+                title,
+                body,
                 trouveId: trouveId || "",
             },
             android: {
                 priority: "high",
-                notification: {channelId: "high_importance_channel", sound: "default"},
             },
             apns: {
                 headers: {"apns-priority": "10"},

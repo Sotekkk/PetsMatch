@@ -73,11 +73,9 @@ async function sendPush(uid, title, body, data = {}) {
             try {
                 await admin.messaging().send({
                     token,
-                    notification: {title, body},
-                    data: {type: "chaleur", ...data},
+                    data: {type: "chaleur", title, body, ...data},
                     android: {
                         priority: "high",
-                        notification: {channelId: "chaleurs_channel", sound: "default"},
                     },
                     apns: {
                         headers: {"apns-priority": "10"},
