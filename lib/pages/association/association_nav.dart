@@ -8,6 +8,7 @@ import 'package:PetsMatch/pages/association/familles_accueil/familles_accueil_pa
 import 'package:PetsMatch/pages/eleveur/admin/certificats_engagement_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
+import 'package:PetsMatch/pages/onboarding/onboarding_reminder_banner.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/pages/association/admin/contrat_adoption_page.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
@@ -63,7 +64,15 @@ class _AssociationNavState extends State<AssociationNav> {
       child: Scaffold(
         key: _scaffoldKey,
         endDrawer: _buildEndDrawer(context),
-        body: _tabContent(_selectedIndex),
+        body: Stack(
+          children: [
+            _tabContent(_selectedIndex),
+            const Positioned(
+              top: 0, left: 0, right: 0,
+              child: SafeArea(child: OnboardingReminderBanner()),
+            ),
+          ],
+        ),
         bottomNavigationBar: Container(
           decoration: const BoxDecoration(
             color: _dark,

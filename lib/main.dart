@@ -7,6 +7,7 @@ import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/eleveur/verification_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
+import 'package:PetsMatch/pages/onboarding/onboarding_bootstrap.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -561,6 +562,8 @@ Future<void> main() async {
     url: 'https://zyvpngcvzrkdytypjlyq.supabase.co',
     anonKey: 'sb_publishable_a48hAJ3vGsQsgWVUbkReYQ_J71heKGK',
   );
+
+  registerAllOnboardingFlows();
 
   // Gestion des messages en arrière-plan
   try {

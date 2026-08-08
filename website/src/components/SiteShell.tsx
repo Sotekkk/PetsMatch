@@ -5,6 +5,7 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import CookieBanner from '@/components/CookieBanner';
 import ValidationGuard from '@/components/ValidationGuard';
+import OnboardingGate from '@/components/onboarding/OnboardingGate';
 
 // Routes sans header/banner/footer (pages publiques de signature, etc.)
 const NO_CHROME = ['/signer-contrat', '/signer-cession', '/certificat'];
@@ -32,6 +33,7 @@ export default function SiteShell({ children }: { children: React.ReactNode }) {
       </ValidationGuard>
       <Footer />
       <CookieBanner />
+      <OnboardingGate />
     </>
   );
 }

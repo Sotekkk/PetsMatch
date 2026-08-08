@@ -19,6 +19,7 @@ import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
+import 'package:PetsMatch/pages/onboarding/onboarding_reminder_banner.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_associations_benevole.dart';
 import 'package:PetsMatch/widgets/profile_switcher_header.dart';
@@ -94,7 +95,15 @@ class _ParticulierNavState extends State<ParticulierNav> {
       child: Scaffold(
       key: drawerKey,
       endDrawer: _buildDrawer(context),
-      body: _tabContent(_selectedIndex),
+      body: Stack(
+        children: [
+          _tabContent(_selectedIndex),
+          const Positioned(
+            top: 0, left: 0, right: 0,
+            child: SafeArea(child: OnboardingReminderBanner()),
+          ),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           color: _dark,
