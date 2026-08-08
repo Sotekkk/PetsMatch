@@ -29,7 +29,7 @@ const ESPECES = [
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AjouterAnimalPage() {
-  const { user, userData } = useAuth();
+  const { user, userData, activeProfileId } = useAuth();
   const router = useRouter();
 
   const isEleveur = userData?.isElevage === true;
@@ -124,6 +124,18 @@ export default function AjouterAnimalPage() {
 
       const { error: err } = await supabase.from('animaux').insert([row]);
       if (err) throw err;
+
+      // Sans cette ligne, l'animal n'apparaît jamais dans "Mes Animaux" : la liste
+      // est filtrée par animaux_proprietes.profile_id_proprio depuis la migration V2.05
+      // (même pattern que association/animaux/nouveau/page.tsx).
+      try {
+        await supabase.from('animaux_proprietes').upsert({
+          animal_id:   id,
+          uid_proprio: user.uid,
+          date_debut:  dateNaissance || new Date().toISOString().slice(0, 10),
+          ...(activeProfileId ? { profile_id_proprio: activeProfileId } : {}),
+        }, { onConflict: 'animal_id,uid_proprio' });
+      } catch { /* ignore */ }
 
       // Protocoles automatiques pour un nouvel animal entrant (éleveurs uniquement)
       if (isEleveur) {

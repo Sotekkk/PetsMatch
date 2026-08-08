@@ -213,6 +213,8 @@ export default function FamillesAccueilWebPage() {
     setPlacing(animal.id);
     await supabase.from('animaux').update({
       fa_id: placingFa.id,
+      // Un animal ne peut pas être en FA et en enclos en même temps.
+      enclos_id: null,
       date_entree: new Date().toISOString().split('T')[0],
     }).eq('id', animal.id);
 
