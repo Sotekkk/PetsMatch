@@ -477,7 +477,7 @@ export default function PlanningPage() {
           onApplied={() => { setApplyingTemplate(null); loadTaches(); setView('jour'); }} />
       )}
       {validateGroup && (
-        <ValidateModal groupe={validateGroup} uid={user.uid}
+        <ValidateModal groupe={validateGroup} uid={user.uid} profileId={profileId || null}
           onClose={() => setValidateGroup(null)}
           onValidated={() => { setValidateGroup(null); loadTaches(); }} />
       )}
@@ -1471,8 +1471,8 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
 
 // ── Modale validation avec cases à cocher par animal ─────────────────────────
 
-function ValidateModal({ groupe, uid, onClose, onValidated }: {
-  groupe: TacheGroupe; uid: string; onClose: () => void; onValidated: () => void;
+function ValidateModal({ groupe, uid, profileId, onClose, onValidated }: {
+  groupe: TacheGroupe; uid: string; profileId: string | null; onClose: () => void; onValidated: () => void;
 }) {
   const { taches } = groupe;
   const [selected, setSelected] = useState<Record<string, boolean>>(
@@ -1491,7 +1491,7 @@ function ValidateModal({ groupe, uid, onClose, onValidated }: {
     const toValidate = taches.filter(t => selected[t.id]);
     for (const t of toValidate) {
       await supabase.from('plan_taches').update({
-        statut: 'fait', valide_par: uid,
+        statut: 'fait', valide_par: uid, valide_par_profile_id: profileId,
         valide_at: new Date().toISOString(),
         notes_validation: notes.trim() || null,
       }).eq('id', t.id);

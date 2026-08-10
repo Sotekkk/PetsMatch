@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/association/association_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 
@@ -170,10 +171,17 @@ class _MesAssociationsBenevoleState extends State<MesAssociationsBenevole> {
   }
 
   Future<void> _marquerFait(Map<String, dynamic> t) async {
+    final profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
     if (t['source'] == 'manuel') {
-      await _supa.from('taches_elevage').update({'statut': 'fait'}).eq('id', t['id']);
+      await _supa.from('taches_elevage').update({
+        'statut': 'fait', 'fait_par': _uid, 'fait_par_profile_id': profileId,
+        'fait_a': DateTime.now().toIso8601String(),
+      }).eq('id', t['id']);
     } else {
-      await _supa.from('plan_taches').update({'statut': 'fait'}).eq('id', t['id']);
+      await _supa.from('plan_taches').update({
+        'statut': 'fait', 'valide_par': _uid, 'valide_par_profile_id': profileId,
+        'valide_at': DateTime.now().toIso8601String(),
+      }).eq('id', t['id']);
     }
     _load();
   }

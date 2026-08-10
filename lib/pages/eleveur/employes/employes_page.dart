@@ -1222,7 +1222,13 @@ class _TachesTabState extends State<_TachesTab> {
       final idx = _taches.indexWhere((t) => t['id'] == id);
       if (idx != -1) _taches[idx] = {..._taches[idx], 'statut': newStatut};
     });
-    await _supa.from('taches_elevage').update({'statut': newStatut}).eq('id', id);
+    final profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+    await _supa.from('taches_elevage').update({
+      'statut': newStatut,
+      'fait_par': newStatut == 'fait' ? _uid : null,
+      'fait_par_profile_id': newStatut == 'fait' ? profileId : null,
+      'fait_a': newStatut == 'fait' ? DateTime.now().toIso8601String() : null,
+    }).eq('id', id);
   }
 
   Future<void> _delete(Map<String, dynamic> tache) async {
@@ -1633,7 +1639,14 @@ class _ProtoDetailSheetState extends State<_ProtoDetailSheet> {
     final newStatut = t['statut'] == 'fait' ? 'en_attente' : 'fait';
     setState(() => _items[index] = {...t, 'statut': newStatut});
     try {
-      await _supa.from('plan_taches').update({'statut': newStatut}).eq('id', t['id']);
+      final uid = FirebaseAuth.instance.currentUser!.uid;
+      final profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+      await _supa.from('plan_taches').update({
+        'statut': newStatut,
+        'valide_par': newStatut == 'fait' ? uid : null,
+        'valide_par_profile_id': newStatut == 'fait' ? profileId : null,
+        'valide_at': newStatut == 'fait' ? DateTime.now().toIso8601String() : null,
+      }).eq('id', t['id']);
       if (newStatut == 'fait' && widget.onMarquerFait != null) {
         await widget.onMarquerFait!(t);
       }
@@ -3033,10 +3046,17 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
   }
 
   Future<void> _marquerFait(Map<String, dynamic> t) async {
+    final profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
     if (t['source'] == 'manuel') {
-      await _supa.from('taches_elevage').update({'statut': 'fait'}).eq('id', t['id']);
+      await _supa.from('taches_elevage').update({
+        'statut': 'fait', 'fait_par': _uid, 'fait_par_profile_id': profileId,
+        'fait_a': DateTime.now().toIso8601String(),
+      }).eq('id', t['id']);
     } else {
-      await _supa.from('plan_taches').update({'statut': 'fait'}).eq('id', t['id']);
+      await _supa.from('plan_taches').update({
+        'statut': 'fait', 'valide_par': _uid, 'valide_par_profile_id': profileId,
+        'valide_at': DateTime.now().toIso8601String(),
+      }).eq('id', t['id']);
     }
     _load();
   }
@@ -3476,16 +3496,22 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
 
   Future<void> _marquerPlanTacheFait(Map<String, dynamic> t) async {
     try {
+      final profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
       await PlanningService.validerTache(
         t['id'] as String,
         validateurUid: _uid,
+        validateurProfileId: profileId,
         tacheData: t,
         insertRegistre: false,
       );
       _loadPlanTaches();
-      final moi = await _supa.from('user_profiles')
-          .select('firstname, lastname, nom, profile_type')
-          .eq('uid', _uid).eq('is_main', true).maybeSingle();
+      final moi = profileId != null
+          ? await _supa.from('user_profiles')
+              .select('firstname, lastname, nom, profile_type')
+              .eq('id', profileId).maybeSingle()
+          : await _supa.from('user_profiles')
+              .select('firstname, lastname, nom, profile_type')
+              .eq('uid', _uid).eq('is_main', true).maybeSingle();
       final nomEmploye = moi == null ? 'Votre employé'
           : moi['profile_type'] == 'eleveur'
               ? (moi['nom'] ?? 'Votre employé')
@@ -3532,13 +3558,21 @@ class _EmployeurDetailPageState extends State<EmployeurDetailPage>
   }
 
   Future<void> _marquerFait(Map<String, dynamic> t) async {
-    await _supa.from('taches_elevage').update({'statut': 'fait'}).eq('id', t['id']);
+    final profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+    await _supa.from('taches_elevage').update({
+      'statut': 'fait', 'fait_par': _uid, 'fait_par_profile_id': profileId,
+      'fait_a': DateTime.now().toIso8601String(),
+    }).eq('id', t['id']);
 
     // Notifier l'employeur
     try {
-      final moi = await _supa.from('user_profiles')
-          .select('firstname, lastname, nom, profile_type')
-          .eq('uid', _uid).eq('is_main', true).maybeSingle();
+      final moi = profileId != null
+          ? await _supa.from('user_profiles')
+              .select('firstname, lastname, nom, profile_type')
+              .eq('id', profileId).maybeSingle()
+          : await _supa.from('user_profiles')
+              .select('firstname, lastname, nom, profile_type')
+              .eq('uid', _uid).eq('is_main', true).maybeSingle();
       final nomEmploye = moi != null
           ? (moi['profile_type'] == 'eleveur'
               ? (moi['nom'] ?? 'Votre employé')

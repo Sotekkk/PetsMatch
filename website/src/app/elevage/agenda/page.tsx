@@ -7,14 +7,48 @@ import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
 import { AddTacheModal, loadMembres, type AnimalOption, type MembreOption } from '@/components/agenda/AddTacheModal';
 
-async function resolveDisplayName(uid: string, fallback: string): Promise<string> {
-  const { data } = await supabase.from('user_profiles')
-    .select('firstname,lastname,nom,profile_type').eq('uid', uid).eq('is_main', true).maybeSingle();
+function displayNameFromProfile(
+  data: { firstname?: string | null; lastname?: string | null; nom?: string | null; profile_type?: string | null } | null | undefined,
+  fallback: string,
+): string {
   if (!data) return fallback;
   const isElevage = data.profile_type === 'eleveur';
   return isElevage
     ? (data.nom || fallback)
     : (`${data.firstname ?? ''} ${data.lastname ?? ''}`.trim() || fallback);
+}
+
+async function resolveDisplayName(uid: string, fallback: string): Promise<string> {
+  const { data } = await supabase.from('user_profiles')
+    .select('firstname,lastname,nom,profile_type').eq('uid', uid).eq('is_main', true).maybeSingle();
+  return displayNameFromProfile(data, fallback);
+}
+
+// Un uid peut avoir plusieurs profils : on résout toujours le nom via l'id de profil
+// exact (fait_par_profile_id / valide_par_profile_id), jamais via uid+is_main seul.
+async function resolveProfileNames(ids: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (!ids.length) return map;
+  const { data } = await supabase.from('user_profiles')
+    .select('id, firstname, lastname, nom, profile_type').in('id', ids);
+  (data ?? []).forEach((p: { id: string; firstname?: string | null; lastname?: string | null; nom?: string | null; profile_type?: string | null }) => {
+    map.set(p.id, displayNameFromProfile(p, p.id.slice(0, 8)));
+  });
+  return map;
+}
+
+function nameForCompletion(
+  uid: string | null | undefined,
+  profileId: string | null | undefined,
+  profileNames: Map<string, string>,
+  employes: { uid: string; nom: string }[],
+): string | null {
+  if (!uid) return null;
+  if (profileId) {
+    const n = profileNames.get(profileId);
+    if (n) return n;
+  }
+  return employes.find(e => e.uid === uid)?.nom ?? uid.slice(0, 8);
 }
 
 // Une tâche assignée cible le profil particulier du destinataire (pas le profil élevage/employeur)
@@ -38,6 +72,7 @@ interface Routine {
   etape_id?: string | null;
   assigned_to?: string | null;
   valide_par?: string | null;
+  valide_par_profile_id?: string | null;
   valide_at?: string | null;
 }
 
@@ -52,6 +87,7 @@ interface TacheManuelle {
   assigne_a?: string | null;
   assignes_a?: string[] | null;
   fait_par?: string | null;
+  fait_par_profile_id?: string | null;
   notes?: string | null;
 }
 
@@ -429,11 +465,13 @@ function AttributionModal({ tache, employes, currentUid, onClose, onSaved }: {
 
 // ── Modal routines — checkboxes par animal + attribution employé ───────────────
 
-function RoutineModal({ groupe, selectedDate, employes, currentUid, onClose, onUpdated, onDeleteGroupe }: {
+function RoutineModal({ groupe, selectedDate, employes, currentUid, currentProfileId, profileNames, onClose, onUpdated, onDeleteGroupe }: {
   groupe: RoutineGroupe;
   selectedDate: string;
   employes: Employe[];
   currentUid: string;
+  currentProfileId: string | null;
+  profileNames: Map<string, string>;
   onClose: () => void;
   onUpdated: () => void;
   onDeleteGroupe: (g: RoutineGroupe) => void;
@@ -452,14 +490,17 @@ function RoutineModal({ groupe, selectedDate, employes, currentUid, onClose, onU
     const update: Record<string, unknown> = { statut: newStatut };
     if (newStatut === 'fait') {
       update.valide_par = currentUid;
+      update.valide_par_profile_id = currentProfileId;
       update.valide_at  = new Date().toISOString();
     } else {
       update.valide_par = null;
+      update.valide_par_profile_id = null;
       update.valide_at  = null;
     }
     await supabase.from('plan_taches').update(update).eq('id', r.id);
     setItems(prev => prev.map((it, i) => i === idx
-      ? { ...it, statut: newStatut, valide_par: newStatut === 'fait' ? currentUid : null }
+      ? { ...it, statut: newStatut, valide_par: newStatut === 'fait' ? currentUid : null,
+          valide_par_profile_id: newStatut === 'fait' ? currentProfileId : null }
       : it));
   };
 
@@ -571,7 +612,7 @@ function RoutineModal({ groupe, selectedDate, employes, currentUid, onClose, onU
           {items.map((r, idx) => {
             const isDone = r.statut === 'fait';
             const nom    = r.animal_nom?.trim() || `Animal #${idx + 1}`;
-            const valPar = nomFor(r.valide_par);
+            const valPar = nameForCompletion(r.valide_par, r.valide_par_profile_id, profileNames, employes);
             const assigneNom = nomFor(r.assigned_to);
             return (
               <div key={r.id} className="border-b border-gray-50 last:border-0">
@@ -646,13 +687,14 @@ function RoutineModal({ groupe, selectedDate, employes, currentUid, onClose, onU
 
 // ── DayTimeline ───────────────────────────────────────────────────────────────
 
-function DayTimeline({ groupes, tachesM, employes, currentUid, selectedDate, onValidateGroupe,
+function DayTimeline({ groupes, tachesM, employes, currentUid, profileNames, selectedDate, onValidateGroupe,
   onToggleManuel, onAttributeManuel, onDeleteManuel, onDeleteGroupe, load }:
 {
   groupes: RoutineGroupe[];
   tachesM: TacheManuelle[];
   employes: Employe[];
   currentUid: string;
+  profileNames: Map<string, string>;
   selectedDate: string;
   onValidateGroupe: (g: RoutineGroupe) => void;
   onToggleManuel: (t: TacheManuelle) => void;
@@ -714,7 +756,7 @@ function DayTimeline({ groupes, tachesM, employes, currentUid, selectedDate, onV
             {tachesAllDay.map(t => {
               const isDone    = t.statut === 'fait';
               const assignees = t.assignes_a?.length ? t.assignes_a : (t.assigne_a ? [t.assigne_a] : []);
-              const faitPar   = nomFor(t.fait_par);
+              const faitPar   = nameForCompletion(t.fait_par, t.fait_par_profile_id, profileNames, employes);
               return (
                 <div key={t.id}
                   className={`flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors ${
@@ -782,7 +824,7 @@ function DayTimeline({ groupes, tachesM, employes, currentUid, selectedDate, onV
               const mins    = timeToMinutes(t.heure!);
               const top     = (mins - HOUR_START * 60) * (PX_PER_HOUR / 60);
               const isDone  = t.statut === 'fait';
-              const faitPar = nomFor(t.fait_par);
+              const faitPar = nameForCompletion(t.fait_par, t.fait_par_profile_id, profileNames, employes);
               const assignees = t.assignes_a?.length ? t.assignes_a : (t.assigne_a ? [t.assigne_a] : []);
               if (top < 0 || top > (HOUR_END - HOUR_START) * PX_PER_HOUR) return null;
               return (
@@ -937,6 +979,7 @@ export default function AgendaElevagePage() {
   const [routines, setRoutines]         = useState<Routine[]>([]);
   const [tachesM, setTachesM]           = useState<TacheManuelle[]>([]);
   const [employes, setEmployes]         = useState<Employe[]>([]);
+  const [profileNames, setProfileNames] = useState<Map<string, string>>(new Map());
   const [loadingData, setLoadingData]   = useState(true);
   const [validateGroupe, setValidateGroupe] = useState<RoutineGroupe | null>(null);
   const [attributionTask, setAttributionTask] = useState<TacheManuelle | null>(null);
@@ -1012,19 +1055,26 @@ export default function AgendaElevagePage() {
     setLoadingData(true);
     const [r1, r2, tm] = await Promise.all([
       withProfileFilter(supabase.from('plan_taches')
-        .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_at')
+        .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
         .eq('uid_eleveur', user.uid).eq('date_prevue', selectedDate)),
       supabase.from('plan_taches')
-        .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_at')
+        .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
         .eq('assigned_to', user.uid).eq('date_prevue', selectedDate),
       withProfileFilter(supabase.from('taches_elevage')
-        .select('id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,assigne_a,assignes_a,fait_par,notes')
+        .select('id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,assigne_a,assignes_a,fait_par,fait_par_profile_id,notes')
         .eq('uid_eleveur', user.uid).eq('date', selectedDate)),
     ]);
     const seen = new Set<string>();
     const allR = [...(r1.data ?? []), ...(r2.data ?? [])] as Routine[];
-    setRoutines(allR.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; }));
-    setTachesM((tm.data ?? []) as TacheManuelle[]);
+    const routinesList = allR.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
+    const tachesList = (tm.data ?? []) as TacheManuelle[];
+    setRoutines(routinesList);
+    setTachesM(tachesList);
+    const profileIds = [...new Set([
+      ...routinesList.map(r => r.valide_par_profile_id),
+      ...tachesList.map(t => t.fait_par_profile_id),
+    ].filter((id): id is string => !!id))];
+    setProfileNames(profileIds.length ? await resolveProfileNames(profileIds) : new Map());
     setLoadingData(false);
   }, [user, selectedDate, withProfileFilter]);
 
@@ -1075,9 +1125,11 @@ export default function AgendaElevagePage() {
     const update: Record<string, unknown> = { statut: newStatut };
     if (newStatut === 'fait') {
       update.fait_par = user!.uid;
+      update.fait_par_profile_id = activeProfileId;
       update.fait_a   = new Date().toISOString();
     } else {
       update.fait_par = null;
+      update.fait_par_profile_id = null;
       update.fait_a   = null;
     }
     await supabase.from('taches_elevage').update(update).eq('id', t.id);
@@ -1099,7 +1151,7 @@ export default function AgendaElevagePage() {
     }
 
     load();
-  }, [user, load]);
+  }, [user, activeProfileId, load]);
 
   const deleteManuel = useCallback(async (t: TacheManuelle) => {
     setConfirmDelete({
@@ -1232,7 +1284,7 @@ export default function AgendaElevagePage() {
     const isDone    = t.statut === 'fait';
     const nomFor    = (uid: string | null | undefined) => uid ? (employes.find(e => e.uid === uid)?.nom ?? uid.slice(0,8)) : null;
     const assignees = t.assignes_a?.length ? t.assignes_a : (t.assigne_a ? [t.assigne_a] : []);
-    const faitPar   = nomFor(t.fait_par);
+    const faitPar   = nameForCompletion(t.fait_par, t.fait_par_profile_id, profileNames, employes);
     return (
       <div
         className="rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-3"
@@ -1487,6 +1539,7 @@ export default function AgendaElevagePage() {
               tachesM={tachesM}
               employes={employes}
               currentUid={user.uid}
+              profileNames={profileNames}
               selectedDate={selectedDate}
               onValidateGroupe={setValidateGroupe}
               onToggleManuel={toggleManuel}
@@ -1556,6 +1609,7 @@ export default function AgendaElevagePage() {
               tachesM={tachesM}
               employes={employes}
               currentUid={user.uid}
+              profileNames={profileNames}
               selectedDate={selectedDate}
               onValidateGroupe={setValidateGroupe}
               onToggleManuel={toggleManuel}
@@ -1613,6 +1667,8 @@ export default function AgendaElevagePage() {
           selectedDate={selectedDate}
           employes={employes}
           currentUid={user.uid}
+          currentProfileId={activeProfileId}
+          profileNames={profileNames}
           onClose={() => setValidateGroupe(null)}
           onUpdated={() => { setValidateGroupe(null); load(); }}
           onDeleteGroupe={g => {

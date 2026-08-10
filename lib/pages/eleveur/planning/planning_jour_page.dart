@@ -180,6 +180,7 @@ class _PlanningJourPageState extends State<PlanningJourPage> {
         await PlanningService.validerTache(
           t['id'] as String,
           validateurUid: _uid!,
+          validateurProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
           notes: notes,
           tacheData: t,
           insertRegistre: insertRegistre,

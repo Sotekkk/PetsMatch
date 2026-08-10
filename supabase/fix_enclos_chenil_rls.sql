@@ -2,6 +2,10 @@
 -- Cohérent avec les autres tables du projet (agenda_events, animaux, etc.)
 
 DROP POLICY IF EXISTS "Propriétaire enclos" ON enclos_chenil;
+DROP POLICY IF EXISTS "Select own enclos" ON enclos_chenil;
+DROP POLICY IF EXISTS "Insert enclos" ON enclos_chenil;
+DROP POLICY IF EXISTS "Update enclos" ON enclos_chenil;
+DROP POLICY IF EXISTS "Delete enclos" ON enclos_chenil;
 
 -- Lecture : chacun voit seulement ses enclos (filtré par uid_eleveur dans la query)
 CREATE POLICY "Select own enclos" ON enclos_chenil
@@ -25,6 +29,10 @@ DROP POLICY IF EXISTS "Owner chenil_boxes select" ON chenil_boxes;
 DROP POLICY IF EXISTS "Owner chenil_boxes update" ON chenil_boxes;
 DROP POLICY IF EXISTS "Owner chenil_boxes delete" ON chenil_boxes;
 DROP POLICY IF EXISTS "Owner chenil_boxes" ON chenil_boxes;
+DROP POLICY IF EXISTS "Select chenil_boxes" ON chenil_boxes;
+DROP POLICY IF EXISTS "Insert chenil_boxes" ON chenil_boxes;
+DROP POLICY IF EXISTS "Update chenil_boxes" ON chenil_boxes;
+DROP POLICY IF EXISTS "Delete chenil_boxes" ON chenil_boxes;
 
 CREATE POLICY "Select chenil_boxes" ON chenil_boxes
   FOR SELECT USING (true);

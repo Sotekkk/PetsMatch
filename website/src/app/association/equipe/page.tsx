@@ -888,6 +888,8 @@ function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
     e.preventDefault();
     if (!form.titre.trim() || !form.date) return;
     setSaving(true);
+    const { data: assigneeProfile } = await supabase.from('user_profiles')
+      .select('id').eq('uid', assigneeUid).eq('profile_type', 'particulier').maybeSingle();
     const payload: Record<string, unknown> = {
       uid_eleveur: uid,
       ...(activeProfileId ? { eleveur_profile_id: activeProfileId } : {}),
@@ -895,6 +897,7 @@ function AssignTaskModal({ uid, assigneeUid, assigneeName, onClose }: {
       date: form.date,
       statut: 'a_faire',
       assigne_a: assigneeUid,
+      assigne_profile_id: assigneeProfile?.id ?? null,
       profil_source: 'association',
       notes: form.notes.trim() || null,
       animal_id: form.cible === 'animal' && form.animal_id ? form.animal_id : null,
