@@ -424,7 +424,35 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
 
     // Quand le contrat de cession est entièrement signé → finaliser le transfert de l'animal
     if (bothSigned && (doc.type === 'contrat_vente' || doc.type === 'certificat_cession') && doc.animal_id) {
-      await supabase.from('animaux').update({ statut: 'sorti' }).eq('id', doc.animal_id).eq('statut', 'en_attente_cession');
+      const { data: cededAnimal } = await supabase.from('animaux')
+        .update({ statut: 'sorti' }).eq('id', doc.animal_id).eq('statut', 'en_attente_cession')
+        .select('uid_eleveur, uid_acquereur, date_sortie').maybeSingle();
+
+      // Historique de propriété — bascule seulement maintenant que la cession
+      // est définitive (contrat signé par les deux parties), pas avant : sinon
+      // l'animal apparaîtrait comme "ancien" dans la liste du cédant alors que
+      // la fiche autorisait encore d'annuler/recéder pendant la signature.
+      if (cededAnimal) {
+        const dateCession = (cededAnimal.date_sortie as string | null) ?? now.split('T')[0];
+        if (cededAnimal.uid_eleveur) {
+          await supabase.from('animaux_proprietes')
+            .update({ date_fin: dateCession })
+            .eq('animal_id', doc.animal_id)
+            .eq('uid_proprio', cededAnimal.uid_eleveur)
+            .is('date_fin', null);
+        }
+        if (cededAnimal.uid_acquereur) {
+          const { data: acqProfile } = await supabase.from('user_profiles')
+            .select('id').eq('uid', cededAnimal.uid_acquereur).eq('is_main', true).maybeSingle();
+          await supabase.from('animaux_proprietes').upsert({
+            animal_id:          doc.animal_id,
+            uid_proprio:        cededAnimal.uid_acquereur,
+            date_debut:         dateCession,
+            date_fin:           null,
+            profile_id_proprio: acqProfile?.id ?? null,
+          }, { onConflict: 'animal_id,uid_proprio' });
+        }
+      }
     }
     // Quand le contrat d'adoption est entièrement signé → l'animal passe adopté
     if (bothSigned && doc.type === 'contrat_adoption' && doc.animal_id) {

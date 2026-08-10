@@ -1509,6 +1509,10 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                   animal: {
                     'id': widget.animalId,
                     'nom': _nomCtrl.text.isNotEmpty ? _nomCtrl.text : null,
+                    'espece': _espece,
+                    'race': _raceCtrl.text.isNotEmpty ? _raceCtrl.text : null,
+                    'identification': _identCtrl.text.isNotEmpty ? _identCtrl.text : null,
+                    'date_naissance': _dateNaissance?.toIso8601String(),
                   },
                   uid: FirebaseAuth.instance.currentUser!.uid,
                   onReserved: () {

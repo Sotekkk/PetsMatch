@@ -1,10 +1,23 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 
 const _teal  = Color(0xFF0C5C6C);
 const _amber = Color(0xFFD97706);
 const _dark  = Color(0xFF1F2A2E);
+
+const _especesDelaiLegal = {'chien', 'chat'};
+
+({String prenom, String nom}) _splitNom(String nomComplet) {
+  final parts = nomComplet.trim().split(RegExp(r'\s+'));
+  if (parts.length <= 1) return (prenom: parts.isEmpty ? '' : parts.first, nom: '');
+  return (prenom: parts.first, nom: parts.skip(1).join(' '));
+}
 
 // ── Feuille de réservation (avant cession) ─────────────────────────────────────
 
@@ -27,7 +40,7 @@ class ReservationSheet extends StatefulWidget {
 class _ReservationSheetState extends State<ReservationSheet> {
   final _supa = Supabase.instance.client;
 
-  int _step = 0; // 0 = futur propriétaire, 1 = détails
+  int _step = 0; // 0 = futur propriétaire, 1 = détails, 2 = documents
 
   final _searchCtrl = TextEditingController();
   Map<String, dynamic>? _foundUser;
@@ -40,28 +53,58 @@ class _ReservationSheetState extends State<ReservationSheet> {
   final _emailCtrl   = TextEditingController();
   final _telCtrl     = TextEditingController();
   final _adresseCtrl = TextEditingController();
+  final _acompteCtrl = TextEditingController();
   final _notesCtrl   = TextEditingController();
   late DateTime _dateReservation;
+
+  // Documents optionnels — contrat de réservation (app) et/ou certificat
+  // d'engagement (légal, chien/chat). Si aucun n'est coché, la réservation
+  // reste simple : le formulaire papier de l'éleveur reste possible en
+  // dehors de l'application.
+  bool _wantContrat = false;
+  bool _wantCertificat = false;
+  final _certifPrenomCtrl = TextEditingController();
+  final _certifNomCtrl    = TextEditingController();
+  bool _certifNameTouched = false;
+
+  bool _generatingContrat = false;
+  bool _certifSaving = false;
+  String? _certifError;
+  String? _certifToken;
 
   bool _saving = false;
   String? _error;
 
-  static const _cpFields = 'uid, firstname, lastname, nom, profile_type, avatar_url, phone_number, adresse, rue, ville, code_postal, numero_elevage';
+  static const _cpFields = 'uid, firstname, lastname, nom, profile_type, avatar_url, phone_number, adresse, rue, ville, code_postal, numero_elevage, email_contact';
+
+  bool get _needsDelaiLegal => _especesDelaiLegal.contains((widget.animal['espece'] as String? ?? '').toLowerCase());
 
   @override
   void initState() {
     super.initState();
     _dateReservation = DateTime.now();
+    _nomCtrl.addListener(_syncCertifName);
+  }
+
+  void _syncCertifName() {
+    if (_certifNameTouched) return;
+    final split = _splitNom(_nomCtrl.text);
+    _certifPrenomCtrl.text = split.prenom;
+    _certifNomCtrl.text = split.nom;
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _nomCtrl.removeListener(_syncCertifName);
     _nomCtrl.dispose();
     _emailCtrl.dispose();
     _telCtrl.dispose();
     _adresseCtrl.dispose();
+    _acompteCtrl.dispose();
     _notesCtrl.dispose();
+    _certifPrenomCtrl.dispose();
+    _certifNomCtrl.dispose();
     super.dispose();
   }
 
@@ -74,7 +117,10 @@ class _ReservationSheetState extends State<ReservationSheet> {
     'adress': cp['adresse'], 'adress_elevage': cp['adresse'],
     'rue': cp['rue'], 'ville': cp['ville'], 'code_postal': cp['code_postal'],
     'numero_elevage': cp['numero_elevage'],
-    'email': email,
+    // email_contact est le champ fiable pour tous les types de profil
+    // (éleveur y compris) — email (login, table users) n'est fourni que si
+    // la recherche s'est faite par email.
+    'email': cp['email_contact'] ?? email,
   };
 
   Future<void> _searchUser() async {
@@ -136,7 +182,104 @@ class _ReservationSheetState extends State<ReservationSheet> {
       _adresseCtrl.text = adresse;
       _searchResults   = [];
       if (isElv) _qualite = 'eleveur';
+      if (!isElv) {
+        _certifNameTouched = true;
+        _certifPrenomCtrl.text = (r['firstname'] as String?) ?? '';
+        _certifNomCtrl.text    = (r['lastname'] as String?) ?? '';
+      }
     });
+  }
+
+  // Insère directement le document (comme cession_sheet.dart pour contrat_vente/
+  // certificat_cession) — signer-contrat/[token] génère le HTML à la volée à
+  // partir de ces métadonnées, pas besoin d'un formulaire interactif ici.
+  Future<void> _creerContratReservation() async {
+    setState(() { _generatingContrat = true; _error = null; });
+    try {
+      final animalId = widget.animal['id'] as String;
+      final nomAnimal = widget.animal['nom'] as String? ?? '';
+      final pid = User_Info.activeProfileId;
+      final res = await _supa.from('documents_animaux').insert({
+        'animal_id':   animalId,
+        'uid_eleveur': widget.uid,
+        if (pid.isNotEmpty) 'pro_profile_id': pid,
+        'type':        'contrat_reservation',
+        'titre':       'Contrat de réservation — $nomAnimal',
+        'statut':      'brouillon',
+        'metadata': {
+          'acquereur_nom':     _nomCtrl.text.trim(),
+          'acquereur_email':   _emailCtrl.text.trim(),
+          'acquereur_tel':     _telCtrl.text.trim(),
+          'acquereur_adresse': _adresseCtrl.text.trim(),
+          'prix':              _acompteCtrl.text.trim(),
+          'date_cession':      _dateReservation.toIso8601String().split('T').first,
+          'notes':             _notesCtrl.text.trim(),
+        },
+      }).select('token').single();
+
+      final token = res['token'] as String;
+      final url = Uri.parse('$kSiteBaseUrl/signer-contrat/$token');
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        await Clipboard.setData(ClipboardData(text: url.toString()));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Lien copié — ouvrez-le dans votre navigateur')),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _error = 'Erreur : $e');
+    } finally {
+      setState(() => _generatingContrat = false);
+    }
+  }
+
+  Future<void> _creerCertificatEngagement() async {
+    if (_certifPrenomCtrl.text.trim().isEmpty || _certifNomCtrl.text.trim().isEmpty || _emailCtrl.text.trim().isEmpty) {
+      setState(() => _certifError = 'Prénom, nom et email du futur propriétaire sont requis pour le certificat.');
+      return;
+    }
+    setState(() { _certifSaving = true; _certifError = null; });
+    try {
+      final dateRemise = DateTime.now();
+      final dateLimite = _needsDelaiLegal ? dateRemise.add(const Duration(days: 7)) : null;
+      final res = await http.post(
+        Uri.parse('$kSiteBaseUrl/api/certificat/create'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'uid':                    widget.uid,
+          'animal_id':              widget.animal['id'],
+          'espece':                 widget.animal['espece'] ?? '',
+          'race':                   widget.animal['race'],
+          'nom_animal':             widget.animal['nom'] ?? '',
+          'date_naissance_animal':  widget.animal['date_naissance'],
+          'num_identification':     widget.animal['identification'],
+          'acquereur_uid':          _foundUser?['uid'],
+          'acquereur_nom':          _certifNomCtrl.text.trim(),
+          'acquereur_prenom':       _certifPrenomCtrl.text.trim(),
+          'acquereur_email':        _emailCtrl.text.trim(),
+          'acquereur_telephone':    _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
+          'acquereur_adresse':      _adresseCtrl.text.trim().isEmpty ? null : _adresseCtrl.text.trim(),
+          'modalite_cession':       _qualite == 'autre' ? 'gratuit' : 'vente',
+          'prix':                   _acompteCtrl.text.trim().isEmpty ? null : double.tryParse(_acompteCtrl.text.replaceAll(',', '.')),
+          'date_remise':            dateRemise.toIso8601String(),
+          'date_limite_signature':  dateLimite?.toIso8601String(),
+          'notes':                  _notesCtrl.text.trim(),
+        }),
+      );
+      final json = jsonDecode(res.body) as Map<String, dynamic>;
+      if (res.statusCode != 200) {
+        setState(() => _certifError = json['error'] as String? ?? 'Erreur serveur');
+        return;
+      }
+      setState(() => _certifToken = json['token'] as String?);
+    } catch (e) {
+      setState(() => _certifError = 'Erreur : $e');
+    } finally {
+      setState(() => _certifSaving = false);
+    }
   }
 
   Future<void> _save() async {
@@ -171,6 +314,10 @@ class _ReservationSheetState extends State<ReservationSheet> {
     }
   }
 
+  String get _stepLabel => _step == 0 ? 'Étape 1/2 — Futur propriétaire'
+      : _step == 1 ? 'Étape 2/2 — Détails'
+      : 'Documents';
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -189,7 +336,7 @@ class _ReservationSheetState extends State<ReservationSheet> {
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('🔖 Réserver ${widget.animal['nom'] ?? 'cet animal'}',
                   style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _dark)),
-              Text('Étape ${_step + 1}/2', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+              Text(_stepLabel, style: const TextStyle(fontSize: 11, color: Colors.grey)),
             ])),
             if (_step > 0)
               GestureDetector(
@@ -375,11 +522,154 @@ class _ReservationSheetState extends State<ReservationSheet> {
               decoration: _inputDec('Adresse du futur propriétaire'),
             )),
             const SizedBox(height: 10),
+            _FieldBlock('Acompte / arrhes versé (€) — optionnel', child: TextField(
+              controller: _acompteCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: _inputDec('0'),
+            )),
+            const SizedBox(height: 10),
             _FieldBlock('Notes', child: TextField(
               controller: _notesCtrl, maxLines: 2,
-              decoration: _inputDec('Acompte versé, conditions…'),
+              decoration: _inputDec('Conditions, remarques…'),
             )),
             const SizedBox(height: 14),
+
+            // Documents optionnels — laisse le choix entre gérer le papier
+            // soi-même ou générer les documents depuis l'application.
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Documents (optionnel)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey)),
+                const SizedBox(height: 6),
+                CheckboxListTile(
+                  value: _wantContrat,
+                  onChanged: (v) => setState(() => _wantContrat = v ?? false),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  dense: true,
+                  title: const Text('Générer un contrat de réservation', style: TextStyle(fontSize: 13, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Arrhes, conditions d\'annulation, engagement des deux parties.', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                ),
+                CheckboxListTile(
+                  value: _wantCertificat,
+                  onChanged: (v) => setState(() => _wantCertificat = v ?? false),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  dense: true,
+                  title: const Text('Générer un certificat d\'engagement', style: TextStyle(fontSize: 13, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                    _needsDelaiLegal
+                        ? 'Obligatoire pour chien/chat (loi du 30/11/2021) — délai légal de 7 jours avant signature.'
+                        : "Attestation d'engagement et de connaissance de l'acquéreur.",
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ),
+                const Text('Rien à cocher si vous gérez ces documents vous-même en dehors de l\'application.',
+                    style: TextStyle(fontSize: 11, color: Colors.grey)),
+              ]),
+            ),
+            const SizedBox(height: 14),
+            ElevatedButton(
+              onPressed: _nomCtrl.text.trim().isNotEmpty && !_saving
+                  ? (_wantContrat || _wantCertificat ? () => setState(() => _step = 2) : _save)
+                  : null,
+              style: ElevatedButton.styleFrom(backgroundColor: _wantContrat || _wantCertificat ? _teal : _amber, foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 46),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              child: _saving
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : Text(_wantContrat || _wantCertificat ? 'Documents →' : '🔖 Réserver',
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            ),
+          ],
+
+          // ── Étape 2 : Documents ──────────────────────────────
+          if (_step == 2) ...[
+            if (_wantContrat) ...[
+              const Text('🐾 Contrat de réservation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _dark)),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _generatingContrat ? null : _creerContratReservation,
+                icon: _generatingContrat
+                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.add_circle_outline, size: 16),
+                label: Text(_generatingContrat ? 'Création…' : 'Créer le contrat', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _teal, side: const BorderSide(color: _teal),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  minimumSize: const Size(double.infinity, 0),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            if (_wantContrat && _wantCertificat) const Divider(height: 1),
+            if (_wantContrat && _wantCertificat) const SizedBox(height: 16),
+            if (_wantCertificat) ...[
+              const Text('📜 Certificat d\'engagement', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _dark)),
+              if (_needsDelaiLegal) ...[
+                const SizedBox(height: 4),
+                const Text('⚠ Signature possible par l\'acquéreur seulement 7 jours après la remise (loi 30/11/2021).',
+                    style: TextStyle(fontSize: 11, color: _amber)),
+              ],
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(child: _FieldBlock('Prénom *', child: TextField(
+                  controller: _certifPrenomCtrl,
+                  onChanged: (_) => _certifNameTouched = true,
+                  decoration: _inputDec('Prénom'),
+                ))),
+                const SizedBox(width: 8),
+                Expanded(child: _FieldBlock('Nom *', child: TextField(
+                  controller: _certifNomCtrl,
+                  onChanged: (_) => _certifNameTouched = true,
+                  decoration: _inputDec('Nom'),
+                ))),
+              ]),
+              const SizedBox(height: 8),
+              if (_certifError != null)
+                Container(margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(10)),
+                    child: Text(_certifError!, style: TextStyle(fontSize: 12, color: Colors.red.shade700))),
+              if (_certifToken != null)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF6E9E57).withValues(alpha: 0.3))),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('✅ Certificat créé — partagez ce lien :',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: Color(0xFF3D6B2E))),
+                    const SizedBox(height: 6),
+                    Text('$kSiteBaseUrl/certificat/$_certifToken',
+                        style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: Color(0xFF3D6B2E))),
+                    const SizedBox(height: 6),
+                    TextButton(
+                      onPressed: () => Clipboard.setData(ClipboardData(text: '$kSiteBaseUrl/certificat/$_certifToken')),
+                      style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                      child: const Text('📋 Copier le lien', style: TextStyle(fontSize: 12, color: Color(0xFF3D6B2E), fontFamily: 'Galey')),
+                    ),
+                  ]),
+                )
+              else
+                OutlinedButton.icon(
+                  onPressed: _certifSaving ? null : _creerCertificatEngagement,
+                  icon: _certifSaving
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.add_circle_outline, size: 16),
+                  label: Text(_certifSaving ? 'Création…' : 'Créer le certificat', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _teal, side: const BorderSide(color: _teal),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    minimumSize: const Size(double.infinity, 0),
+                  ),
+                ),
+            ],
+            const SizedBox(height: 16),
             ElevatedButton(
               onPressed: _saving || _nomCtrl.text.trim().isEmpty ? null : _save,
               style: ElevatedButton.styleFrom(backgroundColor: _amber, foregroundColor: Colors.white,
@@ -387,8 +677,11 @@ class _ReservationSheetState extends State<ReservationSheet> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               child: _saving
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : const Text('🔖 Réserver', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                  : const Text('🔖 Terminer la réservation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
             ),
+            const SizedBox(height: 6),
+            const Center(child: Text('Les documents sont optionnels. Vous pouvez les ajouter plus tard.',
+                style: TextStyle(fontSize: 11, color: Colors.grey))),
           ],
         ]),
       ),

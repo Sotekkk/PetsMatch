@@ -1278,19 +1278,43 @@ export default function AnimalFichePage() {
   }, [id, isNew, animal.statut]);
 
   async function confirmerCession() {
-    if (!cessionEnCours) return;
+    if (!cessionEnCours || !user) return;
     setConfirmingCession(true);
     const now = new Date().toISOString();
+    const dateCession = (cessionEnCours.date_cession as string) ?? now.split('T')[0];
     await supabase.from('cessions').update({ statut: 'confirme', confirmed_at: now }).eq('id', cessionEnCours.id);
     await supabase.from('animaux').update({
       statut: 'sorti',
-      date_sortie: (cessionEnCours.date_cession as string) ?? now.split('T')[0],
+      date_sortie: dateCession,
       destinataire_nom: cessionEnCours.nom_acquereur,
       destinataire_adresse: cessionEnCours.adresse_acquereur ?? null,
       destinataire_qualite: cessionEnCours.qualite ?? 'particulier',
       uid_acquereur: cessionEnCours.uid_acquereur ?? null,
     }).eq('id', id);
-    setAnimal(p => ({ ...p, statut: 'sorti', date_sortie: (cessionEnCours.date_cession as string) ?? now.split('T')[0], destinataire_nom: cessionEnCours.nom_acquereur as string }));
+
+    // Historique de propriété — bascule seulement maintenant que la cession
+    // est définitive (confirmée par l'éleveur), pas avant : sinon l'animal
+    // apparaîtrait comme "ancien" dans la liste dès la création de la
+    // cession alors que l'éleveur pouvait encore la révoquer.
+    await supabase.from('animaux_proprietes')
+      .update({ date_fin: dateCession })
+      .eq('animal_id', id)
+      .eq('uid_proprio', user.uid)
+      .is('date_fin', null);
+    const acqUid = cessionEnCours.uid_acquereur as string | null;
+    if (acqUid) {
+      const { data: acqProfile } = await supabase.from('user_profiles')
+        .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
+      await supabase.from('animaux_proprietes').upsert({
+        animal_id:          id,
+        uid_proprio:        acqUid,
+        date_debut:         dateCession,
+        date_fin:           null,
+        profile_id_proprio: acqProfile?.id ?? null,
+      }, { onConflict: 'animal_id,uid_proprio' });
+    }
+
+    setAnimal(p => ({ ...p, statut: 'sorti', date_sortie: dateCession, destinataire_nom: cessionEnCours.nom_acquereur as string }));
     setCessionEnCours(null);
     setConfirmingCession(false);
   }
