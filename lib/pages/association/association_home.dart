@@ -13,7 +13,7 @@ class AssociationHomePage extends StatefulWidget {
   State<AssociationHomePage> createState() => _AssociationHomePageState();
 }
 
-class _AssociationHomePageState extends State<AssociationHomePage> {
+class _AssociationHomePageState extends State<AssociationHomePage> with RouteAware {
   final _supa = Supabase.instance.client;
 
   int _nbAnimaux = 0;
@@ -34,6 +34,27 @@ class _AssociationHomePageState extends State<AssociationHomePage> {
   @override
   void initState() {
     super.initState();
+    _loadStats();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeObserver.subscribe(this, ModalRoute.of(context) as PageRoute);
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  // Recharge les stats quand on revient sur l'accueil après avoir modifié
+  // quelque chose sur un autre écran (ex. placer un animal en FA ou en
+  // enclos) — sans ça, les compteurs restaient figés à l'état du dernier
+  // chargement (même bug déjà corrigé sur EleveurHomePage).
+  @override
+  void didPopNext() {
     _loadStats();
   }
 
