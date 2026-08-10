@@ -146,7 +146,7 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
     setSaving(true);
     setError('');
     try {
-      await supabase.from('reservations_animaux').insert({
+      const { error: insertError } = await supabase.from('reservations_animaux').insert({
         animal_id:     animal.id,
         uid_eleveur:   uid,
         ...(profileId ? { eleveur_profile_id: profileId } : {}),
@@ -160,7 +160,9 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
         date_reservation: dateReservation || null,
         notes:         notes.trim() || null,
       });
-      await supabase.from('animaux').update({ statut: 'reserve' }).eq('id', animal.id);
+      if (insertError) throw insertError;
+      const { error: updateError } = await supabase.from('animaux').update({ statut: 'reserve' }).eq('id', animal.id);
+      if (updateError) throw updateError;
       onReserved();
     } catch (e) {
       setError(`Erreur : ${e}`);
