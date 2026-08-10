@@ -736,9 +736,14 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
       // Notification in-app (cloche) pour le pro
       try {
-        final clientName = FirebaseAuth.instance.currentUser?.displayName?.isNotEmpty == true
-            ? FirebaseAuth.instance.currentUser!.displayName!
-            : 'Un client';
+        final composedName = User_Info.nameElevage.isNotEmpty
+            ? User_Info.nameElevage
+            : '${User_Info.firstname} ${User_Info.lastname}'.trim();
+        final clientName = (composedName.isNotEmpty && composedName != 'none' && composedName != 'none none')
+            ? composedName
+            : (FirebaseAuth.instance.currentUser?.displayName?.isNotEmpty == true
+                ? FirebaseAuth.instance.currentUser!.displayName!
+                : 'Un client');
         final dateStr = _formatDate(dateHeure.toLocal());
         final isSerie = rows.length > 1;
         await Supabase.instance.client.from('notifications').insert({

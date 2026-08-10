@@ -52,6 +52,11 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
           .from('annonces')
           .select('id, titre, espece, race, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, type_vente, statut, uid_eleveur, ville_eleveur, created_at')
           .eq('uid_eleveur', widget.user.uid)
+          // Un même uid peut porter un profil association en plus du profil
+          // éleveur (profil_source) — cette page ne montre que le profil
+          // éleveur, les annonces association ont leur propre page
+          // (AssociationDetailPage).
+          .neq('profil_source', 'association')
           .eq('statut', 'disponible')
           .order('created_at', ascending: false);
       if (mounted) setState(() { _annonces = List<Map<String, dynamic>>.from(rows as List); _loadingAnnonces = false; });

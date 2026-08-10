@@ -191,6 +191,7 @@ export default function PetFriendsPage() {
     await supabase.from('notifications').insert({
       uid: targetUid, type: 'petfriend_request',
       title: '🐾 Nouvelle demande PetFriend', body: `${nom} veut être ton PetFriend !`,
+      ...(tgPid ? { profile_id: tgPid } : {}),
       data: { fromUid: myUid }, read: false, created_at: new Date().toISOString(),
     });
     setSearchStatuts(s => ({ ...s, [targetUid]: 'en_attente' }));
@@ -200,9 +201,11 @@ export default function PetFriendsPage() {
     await supabase.from('petfriends').update({ statut: 'accepte', updated_at: new Date().toISOString() }).eq('id', row.relId);
     const { data: me } = await supabase.from('user_profiles').select('firstname, lastname').eq('uid', myUid).eq('is_main', true).maybeSingle();
     const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
+    const { data: targetProfile } = await supabase.from('user_profiles').select('id').eq('uid', row.uid).eq('is_main', true).maybeSingle();
     await supabase.from('notifications').insert({
       uid: row.uid, type: 'petfriend_accepted',
       title: '🐾 PetFriend accepté !', body: `${nom} a accepté ta demande PetFriend.`,
+      ...(targetProfile?.id ? { profile_id: targetProfile.id } : {}),
       data: { fromUid: myUid }, read: false, created_at: new Date().toISOString(),
     });
     load();

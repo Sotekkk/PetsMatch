@@ -143,15 +143,13 @@ exports.notifyOwnerVetEntry = functions
             if (fcmToken) {
                 await admin.messaging().send({
                     token: fcmToken,
-                    notification: {title, body},
-                    data: {type: "vet_entry", animal_id: animalId},
+                    data: {type: "vet_entry", title, body, animal_id: animalId},
                     android: {
                         priority: "high",
-                        notification: {channelId: "sante_rappels", sound: "default"},
                     },
                     apns: {
                         headers: {"apns-priority": "10"},
-                        payload: {aps: {sound: "default"}},
+                        payload: {aps: {alert: {title, body}, sound: "default"}},
                     },
                 });
             }

@@ -126,6 +126,7 @@ export default function PublicProfilePage() {
         uid: targetUid, type: 'petfriend_request',
         title: '🐾 Nouvelle demande PetFriend',
         body: `${nom} veut être ton PetFriend !`,
+        ...(targetProfileId ? { profile_id: targetProfileId } : {}),
         data: { fromUid: myUid }, read: false, created_at: new Date().toISOString(),
       });
       setRelId(rel.id); setRelStatut('en_attente'); setRelDir('sent');
@@ -154,6 +155,7 @@ export default function PublicProfilePage() {
       uid: targetUid, type: 'petfriend_accepted',
       title: '🐾 PetFriend accepté !',
       body: `${nom} a accepté ta demande PetFriend.`,
+      ...(targetProfileId ? { profile_id: targetProfileId } : {}),
       data: { fromUid: myUid }, read: false, created_at: new Date().toISOString(),
     });
     setRelStatut('accepte'); setSaving(false);

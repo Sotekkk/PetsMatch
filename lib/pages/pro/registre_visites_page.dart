@@ -244,6 +244,7 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
             'type':  'visite_rapport',
             'title': 'Rapport de visite — ${rdv['_animal_nom']}',
             'body':  '${proNom.isNotEmpty ? proNom : 'Votre pet sitter'} a envoyé un rapport pour ${rdv['_animal_nom']}.',
+            if (rdv['client_profile_id'] != null) 'profile_id': rdv['client_profile_id'],
             'data':  <String, dynamic>{
               'animalId': rdv['animal_id']?.toString() ?? '',
               'animalNom': rdv['_animal_nom'],

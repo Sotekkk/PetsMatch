@@ -1708,6 +1708,7 @@ class PensionEditSheetState extends State<PensionEditSheet> {
         'uid': ownerUid, 'type': 'pension_acces',
         'title': 'Accès accordé à la fiche de ${_clientCtrl.text.isEmpty ? "votre animal" : widget.entree['animal_nom']}',
         'body': '$pensionNom a été admis à consulter la fiche en pension (lecture). Vous pouvez révoquer l\'accès si besoin.',
+        'profile_id': ownerProfileId,
         'data': {'pensionUid': FirebaseAuth.instance.currentUser?.uid, 'pensionNom': pensionNom, 'animalId': animalId},
         'read': false,
       });
@@ -2516,6 +2517,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
         'type':  'pension_acces',
         'title': 'Accès accordé à la fiche de $animalNom',
         'body':  '$pensionNom a été admis à consulter la fiche de $animalNom en pension (lecture). Vous pouvez révoquer l\'accès si besoin.',
+        'profile_id': ownerProfileId,
         'data':  {
           'pensionUid': _uid,
           'pensionNom': pensionNom,
@@ -2781,6 +2783,7 @@ class _AccessRequestSheetState extends State<_AccessRequestSheet> {
         'type':  'pension_acces',
         'title': 'Accès accordé à la fiche de $animalNom',
         'body':  '${widget.pensionNom} a été admis à consulter la fiche de $animalNom en pension (lecture). Vous pouvez révoquer l\'accès si besoin.',
+        'profile_id': ownerProfileId,
         'data':  {
           'pensionUid': widget.pensionUid,
           'pensionNom': widget.pensionNom,
@@ -3530,11 +3533,22 @@ class _FacturationSheetState extends State<_FacturationSheet> {
           ? User_Info.nameElevage
           : '${User_Info.firstname} ${User_Info.lastname}'.trim();
 
+      String? ownerProfileId;
+      final animalIdForProfile = widget.entree['animal_id']?.toString();
+      if (animalIdForProfile != null && animalIdForProfile.isNotEmpty) {
+        final propRow = await supa.from('animaux_proprietes')
+            .select('profile_id_proprio').eq('animal_id', animalIdForProfile)
+            .filter('date_fin', 'is', null).order('date_debut', ascending: false)
+            .limit(1).maybeSingle();
+        ownerProfileId = propRow?['profile_id_proprio'] as String?;
+      }
+
       await supa.from('notifications').insert({
         'uid':   ownerUid,
         'type':  'facture_pension',
         'title': 'Votre facture de pension est disponible',
         'body':  '$pensionNom vous a envoyé la facture pour le séjour de $animalNom.',
+        if (ownerProfileId != null) 'profile_id': ownerProfileId,
         'data':  {
           'url':        dlUrl,
           'invoice':    invNum,

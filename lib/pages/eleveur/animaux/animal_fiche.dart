@@ -1005,6 +1005,27 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'uid_acquereur': uidAcq,
         'date_sortie':   dateCession,
       }).eq('id', widget.animalId!);
+      // Historique de propriété (animaux_proprietes) — clôture la ligne du
+      // cédant et ouvre celle de l'acquéreur sur son profil principal
+      // (is_main), pas forcément 'particulier' : cette étape manquait, ce qui
+      // rendait l'animal invisible pour l'acquéreur (filtré par profile_id_proprio).
+      if (uidAcq != null) {
+        try {
+          await _supa.from('animaux_proprietes')
+              .update({'date_fin': dateCession})
+              .eq('animal_id', widget.animalId!)
+              .eq('uid_proprio', FirebaseAuth.instance.currentUser?.uid ?? '')
+              .isFilter('date_fin', null);
+          final acqProfileOwn = await _supa.from('user_profiles')
+              .select('id').eq('uid', uidAcq).eq('is_main', true).maybeSingle();
+          await _supa.from('animaux_proprietes').insert({
+            'animal_id':   widget.animalId,
+            'uid_proprio': uidAcq,
+            'date_debut':  dateCession,
+            if (acqProfileOwn?['id'] != null) 'profile_id_proprio': acqProfileOwn!['id'],
+          });
+        } catch (_) {}
+      }
       // Insérer mouvements dans registre_mouvements (historique de vie de l'animal)
       final currentUid = FirebaseAuth.instance.currentUser?.uid;
       if (uidAcq != null && currentUid != null) {
@@ -1054,11 +1075,14 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       }).eq('id', cessionId);
       // Notifier l'acquéreur
       if (uidAcq != null) {
+        final acqProfileNotif = await _supa.from('user_profiles')
+            .select('id').eq('uid', uidAcq).eq('is_main', true).maybeSingle();
         await _supa.from('notifications').insert({
           'uid':   uidAcq,
           'type':  'cession_confirmee',
           'title': '🐾 Animal transféré : ${_nomCtrl.text}',
           'body':  '${_nomElevage ?? 'L\'éleveur'} a confirmé la cession. L\'animal apparaît maintenant dans votre compte.',
+          if (acqProfileNotif?['id'] != null) 'profile_id': acqProfileNotif!['id'],
           'data':  {'animalId': widget.animalId},
           'read':  false,
         });
@@ -1096,11 +1120,14 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       await _supa.from('cessions').update({'statut': 'revoquee'}).eq('id', _cessionEnCours!['id']);
       await _supa.from('animaux').update({'statut': 'present'}).eq('id', widget.animalId!);
       if (uidAcq != null) {
+        final acqProfileNotif = await _supa.from('user_profiles')
+            .select('id').eq('uid', uidAcq).eq('is_main', true).maybeSingle();
         await _supa.from('notifications').insert({
           'uid':   uidAcq,
           'type':  'cession_revoquee',
           'title': '❌ Cession annulée — ${_nomCtrl.text}',
           'body':  'L\'éleveur a révoqué la cession de ${_nomCtrl.text}.',
+          if (acqProfileNotif?['id'] != null) 'profile_id': acqProfileNotif!['id'],
           'data':  {'animalId': widget.animalId},
           'read':  false,
         });
@@ -9595,17 +9622,23 @@ class _ConsultationsVetTabState extends State<_ConsultationsVetTab> {
     }
   }
 
-  void _notifyOwner(String type) {
+  void _notifyOwner(String type) async {
     if (widget.ownerUid == null || widget.ownerUid!.isEmpty) return;
     final vetName = 'Dr. ${User_Info.firstname} ${User_Info.lastname}'.trim();
     final label   = type == 'vaccin' ? 'une vaccination'
         : type == 'traitement' ? 'un traitement'
         : 'une visite';
+    final propRow = await _supa.from('animaux_proprietes')
+        .select('profile_id_proprio').eq('animal_id', widget.animalId!)
+        .filter('date_fin', 'is', null).order('date_debut', ascending: false)
+        .limit(1).maybeSingle();
+    final ownerProfileId = propRow?['profile_id_proprio'] as String?;
     _supa.from('notifications').insert({
       'uid':   widget.ownerUid,
       'type':  'sante_vet',
       'title': '🩺 Entrée vétérinaire ajoutée',
       'body':  '$vetName a enregistré $label pour ${widget.animalNom}',
+      if (ownerProfileId != null) 'profile_id': ownerProfileId,
       'data':  {'animalId': widget.animalId},
       'read':  false,
     }).catchError((_) {});
@@ -9821,11 +9854,17 @@ class _EducationTabState extends State<_EducationTab> {
             ? User_Info.nameElevage
             : '${User_Info.firstname} ${User_Info.lastname}'.trim();
         try {
+          final propRow = await _supa.from('animaux_proprietes')
+              .select('profile_id_proprio').eq('animal_id', widget.animalId!)
+              .filter('date_fin', 'is', null).order('date_debut', ascending: false)
+              .limit(1).maybeSingle();
+          final ownerProfileId = propRow?['profile_id_proprio'] as String?;
           await _supa.from('notifications').insert({
             'uid': widget.ownerUid,
             'type': 'education_rapport',
             'title': 'Rapport de séance — ${widget.animalNom}',
             'body': '${proNom.isNotEmpty ? proNom : 'Votre éducateur'} a envoyé un rapport de séance pour ${widget.animalNom}.',
+            if (ownerProfileId != null) 'profile_id': ownerProfileId,
             'data': <String, dynamic>{'animalId': widget.animalId, 'animalNom': widget.animalNom},
             'read': false,
           });
@@ -11370,12 +11409,16 @@ class _DocumentsTabState extends State<_DocumentsTab> {
     if (acqEmail != null && acqEmail.trim().isNotEmpty) {
       final target = await _supa.from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
       if (target != null) {
+        final acqUid = target['uid'] as String;
         final signingUrl = '$kSiteBaseUrl/signer-contrat/$token';
+        final acqProfile = await _supa.from('user_profiles')
+            .select('id').eq('uid', acqUid).eq('profile_type', 'particulier').maybeSingle();
         await _supa.from('notifications').insert({
-          'uid': target['uid'],
+          'uid': acqUid,
           'type': 'contrat_invite',
           'title': '📄 Contrat à signer',
           'body': '${doc['titre'] ?? 'Un contrat'} vous a été transmis — vérifiez et signez',
+          if (acqProfile?['id'] != null) 'profile_id': acqProfile!['id'],
           'data': {'token': token, 'url': signingUrl},
           'read': false,
           'created_at': DateTime.now().toIso8601String(),

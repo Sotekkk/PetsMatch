@@ -97,7 +97,9 @@ export default function JouerPage() {
     }
 
     await supabase.from('notifications').insert({
-      uid: user.uid, type: 'balade_ludique_xp', data: { balade_id: id, xp, titre: balade.titre }, read: false,
+      uid: user.uid, type: 'balade_ludique_xp',
+      ...(activeProfileId ? { profile_id: activeProfileId } : {}),
+      data: { balade_id: id, xp, titre: balade.titre }, read: false,
     });
 
     setTermine({ xp, badges: badgesDebloquees });

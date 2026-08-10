@@ -290,30 +290,6 @@ export default function PlanningPage() {
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
 
-  if (!loading && !planLoading && !planConfig.hasPlanning) {
-    return (
-      <div className="min-h-screen bg-[#F8F8F6] flex items-center justify-center p-6">
-        <div className="bg-white rounded-2xl shadow-sm border border-[#E5E7EB] max-w-md w-full p-8 text-center">
-          <div className="text-5xl mb-4">👑</div>
-          <h2 className="text-xl font-bold text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
-            Fonctionnalité Premium
-          </h2>
-          <p className="text-[#6B7280] text-sm mb-6" style={{ fontFamily: 'Galey, sans-serif' }}>
-            Le planning des protocoles est réservé aux abonnements <strong>Premium</strong>.
-            Créez des modèles de protocoles et planifiez-les pour toute votre portée.
-          </p>
-          <button
-            onClick={() => router.push('/abonnement')}
-            className="w-full py-3 rounded-xl text-white font-semibold text-sm"
-            style={{ backgroundColor: '#D97706', fontFamily: 'Galey, sans-serif' }}
-          >
-            Passer en Premium
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   const loadTaches = useCallback(async () => {
     if (!user || !profileLoaded) return;
     setLoadingData(true);
@@ -391,6 +367,30 @@ export default function PlanningPage() {
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600" />
     </div>
   );
+
+  if (!planLoading && !planConfig.hasPlanning) {
+    return (
+      <div className="min-h-screen bg-[#F8F8F6] flex items-center justify-center p-6">
+        <div className="bg-white rounded-2xl shadow-sm border border-[#E5E7EB] max-w-md w-full p-8 text-center">
+          <div className="text-5xl mb-4">👑</div>
+          <h2 className="text-xl font-bold text-[#1F2A2E] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Fonctionnalité Premium
+          </h2>
+          <p className="text-[#6B7280] text-sm mb-6" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Le planning des protocoles est réservé aux abonnements <strong>Premium</strong>.
+            Créez des modèles de protocoles et planifiez-les pour toute votre portée.
+          </p>
+          <button
+            onClick={() => router.push('/abonnement')}
+            className="w-full py-3 rounded-xl text-white font-semibold text-sm"
+            style={{ backgroundColor: '#D97706', fontFamily: 'Galey, sans-serif' }}
+          >
+            Passer en Premium
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const groupes = groupeTaches(taches);
 

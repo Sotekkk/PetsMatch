@@ -132,6 +132,7 @@ class _InventairePageState extends State<InventairePage> {
           'type': 'inventaire_alerte',
           'title': '⚠️ Stock bas : ${item['nom']}',
           'body': 'Il ne reste que ${_fmtQte(newQte)} ${_plural(item['unite'] as String? ?? '', newQte)} de ${item['nom']}.',
+          if (_profileId != null) 'profile_id': _profileId,
           'data': {'itemId': item['id']},
           'read': false,
         });
@@ -607,6 +608,7 @@ class _QuickMvtSheetState extends State<_QuickMvtSheet> {
           'type': 'inventaire_alerte',
           'title': '⚠️ Stock bas : ${widget.item['nom']}',
           'body': 'Il ne reste que ${_fmtQte(newQte)} ${_plural(widget.item['unite'] as String? ?? '', newQte)} de ${widget.item['nom']}.',
+          if (widget.profileId != null) 'profile_id': widget.profileId,
           'data': {'itemId': widget.item['id']},
           'read': false,
         });

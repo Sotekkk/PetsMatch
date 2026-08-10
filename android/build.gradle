@@ -17,6 +17,32 @@ tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }
 
+// Certains plugins (ex. photo_manager) déclarent une cible Java (javac) sans
+// fixer explicitement la cible Kotlin correspondante, qui hérite alors du JDK
+// utilisé par Gradle (ex. 21) au lieu de matcher leur propre javac (17) —
+// d'où l'erreur "Inconsistent JVM Target Compatibility". On harmonise les
+// deux à 17 pour tous les modules SAUF :app, qui fixe déjà explicitement
+// Java/Kotlin sur 1.8 dans son propre build.gradle.
+subprojects {
+    if (project.name != 'app') {
+        afterEvaluate { proj ->
+            if (proj.hasProperty('android')) {
+                proj.android {
+                    compileOptions {
+                        sourceCompatibility JavaVersion.VERSION_17
+                        targetCompatibility JavaVersion.VERSION_17
+                    }
+                }
+            }
+            proj.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+                kotlinOptions {
+                    jvmTarget = "17"
+                }
+            }
+        }
+    }
+}
+
 buildscript {
     ext {
         minSdkVersion = 23

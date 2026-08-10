@@ -166,6 +166,7 @@ class _PromenadesPageState extends State<PromenadePage> {
               'type': 'promenade_join',
               'title': 'Nouvelle demande de participation',
               'body': '$nom veut rejoindre "$titre"',
+              if (promenade['organisateur_profile_id'] != null) 'profile_id': promenade['organisateur_profile_id'],
               'data': {'promenadeId': id, 'fromUid': _uid},
               'read': false,
               'created_at': DateTime.now().toIso8601String(),

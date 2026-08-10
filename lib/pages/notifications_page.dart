@@ -717,6 +717,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
           .select('id').eq('uid', pensionUid);
       final proProfileIds = (proProfiles as List).map((p) => p['id'] as String).toList();
 
+      String? requestingProfileId;
       if (proProfileIds.isNotEmpty) {
         await _supa.from('animal_access')
             .update({
@@ -726,6 +727,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
             })
             .inFilter('pro_profile_id', proProfileIds)
             .eq('animal_id', animalId);
+        // Le profil précis qui avait fait la demande — pour scoper la
+        // notification retour au bon profil pension (pas forcément is_main).
+        final accessRow = await _supa.from('animal_access')
+            .select('pro_profile_id')
+            .inFilter('pro_profile_id', proProfileIds)
+            .eq('animal_id', animalId)
+            .maybeSingle();
+        requestingProfileId = accessRow?['pro_profile_id'] as String?;
       }
 
       // Notification retour à la pension
@@ -738,6 +747,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         'body': result
             ? 'Le propriétaire vous a autorisé à consulter la fiche de $animalNom.'
             : 'Le propriétaire a refusé votre demande pour $animalNom.',
+        if (requestingProfileId != null) 'profile_id': requestingProfileId,
         'data':  {'animalId': animalId, 'animalNom': animalNom, 'approved': result},
         'read':  false,
       });
@@ -801,12 +811,19 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final vetProfiles = await _supa.from('user_profiles')
           .select('id').eq('uid', vetId);
       final vetProfileIds = (vetProfiles as List).map((p) => p['id'] as String).toList();
+      String? requestingProfileId;
       if (vetProfileIds.isNotEmpty) {
         await _supa.from('animal_access').update({
           'statut': result ? 'active' : 'revoked',
           if (result) 'granted_at': DateTime.now().toUtc().toIso8601String(),
           if (!result) 'revoked_at': DateTime.now().toUtc().toIso8601String(),
         }).inFilter('pro_profile_id', vetProfileIds).eq('animal_id', animalId);
+        final accessRow = await _supa.from('animal_access')
+            .select('pro_profile_id')
+            .inFilter('pro_profile_id', vetProfileIds)
+            .eq('animal_id', animalId)
+            .maybeSingle();
+        requestingProfileId = accessRow?['pro_profile_id'] as String?;
       }
 
       // Notification retour au vétérinaire
@@ -817,6 +834,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         'body':  result
             ? 'Le propriétaire vous a autorisé à consulter la fiche de $animalNom.'
             : 'Le propriétaire a refusé votre demande pour $animalNom.',
+        if (requestingProfileId != null) 'profile_id': requestingProfileId,
         'data':  <String, dynamic>{'animal_id': animalId, 'animal_nom': animalNom, 'approved': result},
         'read':  false,
       });
@@ -1155,11 +1173,16 @@ class _NotifBadgeState extends State<NotifBadge> with WidgetsBindingObserver {
     try {
       final data = await _supa
           .from('notifications')
-          .select('id, profile_type')
+          .select('id, profile_id, profile_type')
           .eq('uid', _uid)
           .eq('read', false);
       final currentType = _currentBadgeProfileType;
+      final activeProfileId = User_Info.activeProfileId;
+      // Même priorité que la liste de notifications (_fetch()) : profile_id
+      // prime s'il est renseigné, sinon repli sur profile_type.
       final count = (data as List).where((n) {
+        final pid = (n['profile_id'] as String?) ?? '';
+        if (pid.isNotEmpty) return pid == activeProfileId;
         final pt = (n['profile_type'] as String?) ?? '';
         return pt.isEmpty || pt == currentType;
       }).length;

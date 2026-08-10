@@ -94,6 +94,33 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
   await setupNotifications();
   print("Message reçu en arrière-plan : ${message.messageId}");
+  // Payloads data-only (voir onMessage plus bas) : sur Android, plus aucun
+  // affichage n'est automatique côté OS puisqu'il n'y a plus de bloc
+  // `notification` FCM — c'est ce handler qui doit l'afficher. Sur iOS on ne
+  // touche à rien : l'alerte native (apns.payload.aps.alert) continue de
+  // s'afficher seule comme avant, donc on ne duplique pas ici.
+  if (Platform.isAndroid) {
+    final title = message.data['title'] as String?;
+    final body = message.data['body'] as String?;
+    if (title != null || body != null) {
+      try {
+        await flutterLocalNotificationsPlugin.show(
+          id: message.messageId?.hashCode ?? DateTime.now().millisecondsSinceEpoch.remainder(100000),
+          title: title,
+          body: body,
+          notificationDetails: const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'high_importance_channel',
+              'High Importance Notifications',
+              importance: Importance.max,
+              priority: Priority.high,
+            ),
+          ),
+          payload: message.data['conversationId'],
+        );
+      } catch (_) {}
+    }
+  }
 }
 
 Future<void> requestPermissions() async {
@@ -569,12 +596,18 @@ Future<void> main() async {
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
     print("Message reçu en premier plan : ${message.notification?.title}");
 
-    RemoteNotification? notification = message.notification;
-    if (notification != null) {
+    // Payloads data-only : title/body viennent de `data` (fallback sur
+    // `notification` pour les rares messages qui l'auraient encore, ex.
+    // envoyés depuis un ancien code non migré). Un id unique par message
+    // (au lieu de `0` fixe) pour ne pas écraser une notif précédente encore
+    // non lue par la suivante.
+    final title = message.data['title'] as String? ?? message.notification?.title;
+    final body = message.data['body'] as String? ?? message.notification?.body;
+    if (title != null || body != null) {
       flutterLocalNotificationsPlugin.show(
-        id: 0,
-        title: notification.title,
-        body: notification.body,
+        id: message.messageId?.hashCode ?? DateTime.now().millisecondsSinceEpoch.remainder(100000),
+        title: title,
+        body: body,
         notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails(
             'high_importance_channel',

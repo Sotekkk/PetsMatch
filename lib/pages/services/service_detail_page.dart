@@ -227,6 +227,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
           'type': 'cours_collectif_inscription',
           'title': 'Nouvelle inscription — ${cours['titre']}',
           'body': '$clientName a inscrit ${animal['nom'] ?? 'son animal'} au cours du $dateStr.',
+          if (cours['pro_profile_id'] != null) 'profile_id': cours['pro_profile_id'],
           'data': <String, dynamic>{'coursId': coursId},
           'read': false,
         });

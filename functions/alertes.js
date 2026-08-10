@@ -148,22 +148,18 @@ exports.notifyUsersNearLostAnimal = functions
                     fcmMessages.push({
                         token: user.fcmToken,
 
-                        notification: {
-                            title: notifTitle,
-                            body: notifBody,
-                        },
-
+                        // Pas de bloc `notification`/`android.notification` : évite le
+                        // doublon d'affichage Android (natif + manuel). title/body
+                        // passent par `data`, l'app les affiche elle-même sur Android.
                         data: {
                             type: "alerte_perdu",
+                            title: notifTitle,
+                            body: notifBody,
                             alerteId: alerteId || "",
                         },
 
                         android: {
                             priority: "high",
-                            notification: {
-                                channelId: "alertes_perdus",
-                                sound: "default",
-                            },
                         },
 
                         apns: {
@@ -184,6 +180,29 @@ exports.notifyUsersNearLostAnimal = functions
                     });
                 }
             }
+        }
+
+        // Résoudre le profil particulier de chaque destinataire — une alerte
+        // "animal perdu près de chez vous" concerne la personne, pas un
+        // contexte pro particulier, donc on l'ancre sur le profil particulier
+        // (même règle que les autres notifs "grand public" du projet).
+        const notifUids = [...new Set(notifRows.map((r) => r.uid))];
+        const profileByUid = {};
+        for (let i = 0; i < notifUids.length; i += 200) {
+            try {
+                const batch = notifUids.slice(i, i + 200);
+                const profiles = await supabaseFetch("user_profiles", {
+                    select: "uid,id",
+                    uid: `in.(${batch.join(",")})`,
+                    profile_type: "eq.particulier",
+                });
+                for (const p of profiles) profileByUid[p.uid] = p.id;
+            } catch (e) {
+                console.error("profile lookup error:", e);
+            }
+        }
+        for (const row of notifRows) {
+            if (profileByUid[row.uid]) row.profile_id = profileByUid[row.uid];
         }
 
         // Write in-app notifications to Supabase (batches of 500)
@@ -235,15 +254,15 @@ exports.sendLikeNotification = functions
 
         const message = {
             token: fcmToken,
-            notification: {title, body},
             data: {
                 type: "like",
+                title,
+                body,
                 annonceId: annonceId || "",
                 bebeIndex: bebeIndex != null ? String(bebeIndex) : "",
             },
             android: {
                 priority: "high",
-                notification: {channelId: "high_importance_channel", sound: "default"},
             },
             apns: {
                 headers: {"apns-priority": "10"},
@@ -284,11 +303,9 @@ exports.notifyPlaceFavori = functions
         try {
             await admin.messaging().send({
                 token: fcmToken,
-                notification: {title, body},
-                data: {type: "place_favori", placeId: placeId || ""},
+                data: {type: "place_favori", title, body, placeId: placeId || ""},
                 android: {
                     priority: "high",
-                    notification: {channelId: "high_importance_channel", sound: "default"},
                 },
                 apns: {
                     headers: {"apns-priority": "10"},
@@ -364,11 +381,25 @@ exports.notifyNearFoundAnimal = functions
                 `Un animal${especeLabel} a été trouvé à ${Math.round(dist)} km` +
                 ` de votre alerte "${alerte.nom_animal || "animal perdu"}"`;
 
+            let ownerProfileId = null;
+            try {
+                const profiles = await supabaseFetch("user_profiles", {
+                    select: "id",
+                    uid: `eq.${alerte.uid_proprietaire}`,
+                    profile_type: "eq.particulier",
+                    limit: "1",
+                });
+                if (profiles[0]) ownerProfileId = profiles[0].id;
+            } catch (e) {
+                console.error("profile lookup error:", e);
+            }
+
             notifRows.push({
                 uid: alerte.uid_proprietaire,
                 type: "animal_trouve_proximite",
                 title: notifTitle,
                 body: notifBody,
+                ...(ownerProfileId ? {profile_id: ownerProfileId} : {}),
                 data: {trouveId: trouveId || "", alerteId: String(alerte.id || "")},
                 read: false,
             });
@@ -379,15 +410,15 @@ exports.notifyNearFoundAnimal = functions
             if (fcmToken) {
                 fcmMessages.push({
                     token: fcmToken,
-                    notification: {title: notifTitle, body: notifBody},
                     data: {
                         type: "animal_trouve_proximite",
+                        title: notifTitle,
+                        body: notifBody,
                         trouveId: trouveId || "",
                         alerteId: String(alerte.id || ""),
                     },
                     android: {
                         priority: "high",
-                        notification: {channelId: "alertes_perdus", sound: "default"},
                     },
                     apns: {
                         headers: {"apns-priority": "10"},
@@ -450,14 +481,14 @@ exports.notifyAnimalOwner = functions
 
         const message = {
             token: fcmToken,
-            notification: {title, body},
             data: {
                 type: "animal_trouve_proprietaire",
+                title,
+                body,
                 trouveId: trouveId || "",
             },
             android: {
                 priority: "high",
-                notification: {channelId: "high_importance_channel", sound: "default"},
             },
             apns: {
                 headers: {"apns-priority": "10"},
@@ -470,13 +501,26 @@ exports.notifyAnimalOwner = functions
             console.log(`notifyAnimalOwner: push envoyé à ${ownerUid}`);
 
             try {
+                let ownerProfileId = null;
+                const profiles = await supabaseFetch("user_profiles", {
+                    select: "id",
+                    uid: `eq.${ownerUid}`,
+                    profile_type: "eq.particulier",
+                    limit: "1",
+                });
+                if (profiles[0]) ownerProfileId = profiles[0].id;
+                // Schéma corrigé — titre/corps/lien_id/lu n'existent pas sur
+                // la table notifications (title/body/data/read), l'insert
+                // échouait silencieusement (catch ci-dessous) et cette
+                // notif n'apparaissait donc jamais en base.
                 await supabaseInsert("notifications", [{
                     uid: ownerUid,
                     type: "animal_trouve_proprietaire",
-                    titre: title,
-                    corps: body,
-                    lien_id: trouveId || null,
-                    lu: false,
+                    title: title,
+                    body: body,
+                    data: {trouveId: trouveId || ""},
+                    read: false,
+                    ...(ownerProfileId ? {profile_id: ownerProfileId} : {}),
                 }]);
             } catch (e) {
                 console.error("notifyAnimalOwner: Supabase insert error:", e);

@@ -88,13 +88,19 @@ async function sendPush(uid, title, body, data = {}) {
         const token = doc.exists ? doc.data().fcmToken : null;
         if (!token) return false;
 
+        // Pas de bloc `notification` top-level ni `android.notification` :
+        // sur Android, le système affichait automatiquement CETTE notif en
+        // plus de celle affichée manuellement par l'app (onMessage/
+        // onBackgroundMessage) — doublon constaté en prod. title/body
+        // passent par `data` ; l'app les affiche elle-même sur Android.
+        // iOS inchangé (apns.payload.aps.alert), aucun doublon rapporté
+        // dessus, et l'app ne réaffiche pas manuellement côté iOS en
+        // arrière-plan (voir _firebaseMessagingBackgroundHandler).
         await admin.messaging().send({
             token,
-            notification: {title, body},
-            data: {type: "sante", ...data},
+            data: {type: "sante", title, body, ...data},
             android: {
                 priority: "high",
-                notification: {channelId: "high_importance_channel", sound: "default"},
             },
             apns: {
                 headers: {"apns-priority": "10"},

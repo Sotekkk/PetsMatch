@@ -9,7 +9,8 @@ interface SubItem {
   label: string;
   subtitle: string;
   icon: string;
-  catValues: string; // query param pour /services/carte
+  catValues: string; // query param `cat` pour /services/carte
+  profValues?: string; // query param `prof` pour /services/carte (filtre profession_pro)
 }
 
 interface CategoryDef {
@@ -25,33 +26,32 @@ const CATEGORIES: Record<string, CategoryDef> = {
     title: 'Santé & bien-être',
     icon: '🏥',
     color: '#2E7D5E',
-    allCatValues: 'sante,veterinaire,osteo,kine,marechal_ferrant,dentiste_equin',
+    allCatValues: 'sante,veterinaire,marechal_ferrant',
     items: [
-      { label: 'Vétérinaires',      subtitle: 'Consultations, urgences, chirurgie',              icon: '🩺', catValues: 'veterinaire,sante' },
-      { label: 'Ostéopathes',       subtitle: 'Manipulations ostéopathiques pour animaux',       icon: '🖐️', catValues: 'osteo,sante' },
-      { label: 'Kinésithérapeutes', subtitle: 'Rééducation fonctionnelle animale',               icon: '💪', catValues: 'kine,sante' },
-      { label: 'Maréchal-ferrant',  subtitle: 'Soins des sabots et ferrure',                    icon: '🔨', catValues: 'marechal_ferrant' },
-      { label: 'Dentiste équin',    subtitle: 'Soins dentaires pour chevaux',                   icon: '🦷', catValues: 'dentiste_equin,sante' },
+      { label: 'Vétérinaires',      subtitle: 'Consultations, urgences, chirurgie',              icon: '🩺', catValues: 'veterinaire' },
+      { label: 'Ostéopathes',       subtitle: 'Manipulations ostéopathiques pour animaux',       icon: '🖐️', catValues: 'sante', profValues: 'Ostéopathe' },
+      { label: 'Kinésithérapeutes', subtitle: 'Rééducation fonctionnelle animale',               icon: '💪', catValues: 'sante', profValues: 'Kinésithérapeute' },
+      { label: 'Maréchal-ferrant',  subtitle: 'Soins des sabots et ferrure',                    icon: '🔨', catValues: 'marechal_ferrant,sante', profValues: 'Maréchal-ferrant,Maréchal-ferrant traditionnel,Parage naturel' },
     ],
   },
   education: {
     title: 'Éducation & comportement',
     icon: '🎓',
     color: '#E65100',
-    allCatValues: 'education,educateur,comportementaliste',
+    allCatValues: 'education',
     items: [
-      { label: 'Éducateurs',           subtitle: 'Apprentissage, obéissance et socialisation',         icon: '🎓', catValues: 'education,educateur' },
-      { label: 'Comportementalistes',  subtitle: 'Troubles du comportement, anxiété, agressivité',     icon: '🧠', catValues: 'comportementaliste' },
+      { label: 'Éducateurs',           subtitle: 'Apprentissage, obéissance et socialisation',         icon: '🎓', catValues: 'education', profValues: 'Éducateur canin,Dresseur' },
+      { label: 'Comportementalistes',  subtitle: 'Troubles du comportement, anxiété, agressivité',     icon: '🧠', catValues: 'education', profValues: 'Comportementaliste' },
     ],
   },
   garde: {
     title: 'Garde & hébergement',
     icon: '🏠',
     color: '#F57C00',
-    allCatValues: 'garde,pet_sitter,promeneur,pension',
+    allCatValues: 'garde,pension',
     items: [
-      { label: 'Pet-sitters',  subtitle: 'Garde à domicile chez vous ou chez eux',   icon: '🏠', catValues: 'pet_sitter,garde' },
-      { label: 'Promeneurs',   subtitle: 'Sorties quotidiennes et balades',           icon: '🦮', catValues: 'promeneur' },
+      { label: 'Pet-sitters',  subtitle: 'Garde à domicile chez vous ou chez eux',   icon: '🏠', catValues: 'garde', profValues: 'Pet sitter' },
+      { label: 'Promeneurs',   subtitle: 'Sorties quotidiennes et balades',           icon: '🦮', catValues: 'garde', profValues: 'Promeneur de chiens' },
       { label: 'Pensions',     subtitle: 'Hébergement gardé en établissement',       icon: '🏡', catValues: 'pension' },
     ],
   },
@@ -59,31 +59,27 @@ const CATEGORIES: Record<string, CategoryDef> = {
     title: 'Alimentation',
     icon: '🥩',
     color: '#1565C0',
-    allCatValues: 'alimentation,animalerie,nutrition,nutritionniste',
+    allCatValues: 'referencement',
     items: [
-      { label: 'Animaleries',              subtitle: 'Magasins spécialisés alimentation & accessoires', icon: '🏪', catValues: 'animalerie,alimentation' },
-      { label: 'Nutritionnistes animaliers', subtitle: 'Conseils en alimentation adaptée & régimes',    icon: '🥗', catValues: 'nutrition,nutritionniste' },
+      { label: 'Animaleries & boutiques',  subtitle: 'Magasins spécialisés alimentation & accessoires', icon: '🏪', catValues: 'referencement' },
     ],
   },
   transport: {
     title: 'Transport',
     icon: '🚗',
     color: '#00838F',
-    allCatValues: 'transport,taxi_animalier,vtc,ambulance_vet',
+    allCatValues: 'taxi_animalier',
     items: [
-      { label: 'Taxi animalier',              subtitle: 'Transport spécialisé pour vos animaux',          icon: '🚕', catValues: 'taxi_animalier,transport' },
-      { label: 'VTC & Taxi avec animaux',     subtitle: 'Chauffeurs qui acceptent vos compagnons',        icon: '🚗', catValues: 'transport,vtc' },
-      { label: 'Ambulance vétérinaire',       subtitle: 'Transport médicalisé pour urgences',             icon: '🚑', catValues: 'ambulance_vet,transport' },
+      { label: 'Taxi animalier', subtitle: 'Transport spécialisé pour vos animaux', icon: '🚕', catValues: 'taxi_animalier' },
     ],
   },
   boutiques: {
     title: 'Boutiques & Créateurs',
     icon: '🛍️',
     color: '#6A1B9A',
-    allCatValues: 'boutique,artisan,createur',
+    allCatValues: 'referencement',
     items: [
-      { label: 'Boutiques spécialisées', subtitle: 'Petites boutiques professionnelles vérifiées', icon: '🛍️', catValues: 'boutique' },
-      { label: 'Créateurs & artisans',   subtitle: 'Accessoires faits main, personnalisation',    icon: '🎨', catValues: 'artisan,createur' },
+      { label: 'Boutiques & créateurs', subtitle: 'Petites boutiques professionnelles vérifiées', icon: '🛍️', catValues: 'referencement' },
     ],
   },
 };
@@ -126,7 +122,7 @@ export default function SousCategoriesPage() {
         {cat.items.map((item) => (
           <Link
             key={item.label}
-            href={`/services/carte?cat=${encodeURIComponent(item.catValues)}&view=list`}
+            href={`/services/carte?cat=${encodeURIComponent(item.catValues)}${item.profValues ? `&prof=${encodeURIComponent(item.profValues)}` : ''}&view=list`}
             className="bg-white rounded-2xl shadow-sm border border-gray-100 px-4 py-4 flex items-center gap-4 hover:shadow-md hover:border-gray-200 transition-all"
           >
             {/* Icône */}

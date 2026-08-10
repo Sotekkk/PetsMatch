@@ -83,7 +83,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
 
       final rawParts = await _supa
           .from('promenades_participants')
-          .select('user_uid, statut, rejoint_at')
+          .select('user_uid, user_profile_id, statut, rejoint_at')
           .eq('promenade_id', widget.promenadeId)
           .order('rejoint_at');
 
@@ -210,6 +210,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         'type': 'promenade_join',
         'title': 'Nouvelle demande de participation',
         'body': '$nom veut rejoindre "${p['titre']}"',
+        if (_promenade!['organisateur_profile_id'] != null) 'profile_id': _promenade!['organisateur_profile_id'],
         'data': {'promenadeId': widget.promenadeId, 'fromUid': _uid},
         'read': false,
         'created_at': DateTime.now().toUtc().toIso8601String(),
@@ -249,6 +250,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         'type': 'promenade_accepte',
         'title': 'Participation confirmée',
         'body': 'Votre demande pour "$titre" a été acceptée !',
+        if (partProfileId != null) 'profile_id': partProfileId,
         'data': {'promenadeId': widget.promenadeId},
         'read': false,
         'created_at': DateTime.now().toUtc().toIso8601String(),
@@ -258,6 +260,10 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
   }
 
   Future<void> _refuse(String userUid) async {
+    final partRow = await _supa.from('promenades_participants')
+        .select('user_profile_id').eq('promenade_id', widget.promenadeId)
+        .eq('user_uid', userUid).maybeSingle();
+    final partProfileId = partRow?['user_profile_id'] as String?;
     await _supa
         .from('promenades_participants')
         .delete()
@@ -269,6 +275,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         'type': 'promenade_refuse',
         'title': 'Participation refusée',
         'body': 'Votre demande pour "${_promenade!['titre']}" n\'a pas été retenue.',
+        if (partProfileId != null) 'profile_id': partProfileId,
         'data': {'promenadeId': widget.promenadeId},
         'read': false,
         'created_at': DateTime.now().toUtc().toIso8601String(),
@@ -323,6 +330,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
             'type': 'promenade_annulee',
             'title': 'Promenade annulée',
             'body': 'La promenade "$titre"${dateStr.isNotEmpty ? ' du $dateStr' : ''} a été annulée par l\'organisateur.',
+            if (part['user_profile_id'] != null) 'profile_id': part['user_profile_id'],
             'data': {'promenadeId': widget.promenadeId},
             'read': false,
             'created_at': DateTime.now().toUtc().toIso8601String(),
@@ -419,6 +427,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
           'type':       'promenade_message',
           'title':      '💬 ${_promenade!['titre']}',
           'body':       body,
+          if (part['user_profile_id'] != null) 'profile_id': part['user_profile_id'],
           'data':       {'promenadeId': widget.promenadeId},
           'read':       false,
           'created_at': DateTime.now().toUtc().toIso8601String(),
@@ -447,6 +456,7 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
                 'type': 'promenade_modifiee',
                 'title': 'Promenade modifiée',
                 'body': body,
+                if (part['user_profile_id'] != null) 'profile_id': part['user_profile_id'],
                 'data': {'promenadeId': widget.promenadeId},
                 'read': false,
                 'created_at': DateTime.now().toUtc().toIso8601String(),

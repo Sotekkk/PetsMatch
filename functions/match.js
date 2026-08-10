@@ -121,8 +121,20 @@ async function markNotified(alerteId, trouveId) {
 }
 
 async function insertNotification(uid, title, body, data) {
+    // Ancré sur le profil particulier du destinataire (matching perdu/trouvé
+    // est une préoccupation personnelle, pas un contexte pro).
+    let profileId = null;
+    try {
+        const profiles = await supabaseGet("user_profiles", {
+            select: "id", uid: `eq.${uid}`, profile_type: "eq.particulier", limit: "1",
+        });
+        if (profiles[0]) profileId = profiles[0].id;
+    } catch (_) {/* silencieux */}
     return new Promise((resolve) => {
-        const payload = JSON.stringify([{uid, type: "matching_perdu_trouve", title, body, data, read: false}]);
+        const payload = JSON.stringify([{
+            uid, type: "matching_perdu_trouve", title, body, data, read: false,
+            ...(profileId ? {profile_id: profileId} : {}),
+        }]);
         const options = {
             hostname: new URL(SUPABASE_URL).hostname,
             path: "/rest/v1/notifications",
@@ -238,13 +250,13 @@ async function notify(ownerUid, title, body, extraData) {
         const doc = await admin.firestore().collection("users").doc(ownerUid).get();
         const token = doc.exists ? doc.data().fcmToken : null;
         if (!token) return;
+        // Pas de notification top-level / android.notification (voir
+        // sante.js pour l'explication du doublon Android) — iOS inchangé.
         await admin.messaging().send({
             token,
-            notification: {title, body},
-            data: {...extraData, type: "matching_perdu_trouve"},
+            data: {...extraData, type: "matching_perdu_trouve", title, body},
             android: {
                 priority: "high",
-                notification: {channelId: "alertes_perdus", sound: "default"},
             },
             apns: {
                 headers: {"apns-priority": "10"},

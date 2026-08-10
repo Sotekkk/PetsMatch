@@ -184,6 +184,7 @@ export default function InventairePage() {
         uid: user.uid, type: 'inventaire_alerte',
         title: `⚠️ Stock bas : ${item.nom}`,
         body: `Il ne reste que ${newQte} ${pluralUnite(item.unite, newQte)} de ${item.nom}.`,
+        ...(pid ? { profile_id: pid } : {}),
         data: { itemId: item.id },
         read: false,
       });

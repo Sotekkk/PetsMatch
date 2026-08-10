@@ -873,12 +873,32 @@ class _ActiveChip extends StatelessWidget {
   );
 }
 
-// ─── Liste avec StreamBuilder ─────────────────────────────────────────────────
+// ─── Liste (fetch ponctuel + pull-to-refresh) ─────────────────────────────────
+//
+// Utilisait auparavant .stream() (Realtime Postgres changes) sur la table
+// annonces, mais le canal Realtime échoue en prod (RealtimeSubscribeException /
+// CHANNEL_ERROR — probablement la publication Realtime non configurée côté
+// Supabase pour cette table). On repasse sur une requête ponctuelle classique
+// + tire-pour-rafraîchir, comme le reste de l'app.
 
-class _AnnoncesList extends StatelessWidget {
+class _AnnoncesList extends StatefulWidget {
   final bool Function(Map<String, dynamic>) matches;
   final bool isSaillie;
   const _AnnoncesList({required this.matches, required this.isSaillie});
+
+  @override
+  State<_AnnoncesList> createState() => _AnnoncesListState();
+}
+
+class _AnnoncesListState extends State<_AnnoncesList> {
+  bool _loading = true;
+  List<Map<String, dynamic>> _rows = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
 
   static Timestamp? _ts(dynamic v) {
     if (v == null) return null;
@@ -903,52 +923,71 @@ class _AnnoncesList extends StatelessWidget {
     'profilSource':       row['profil_source'],
   };
 
+  Future<void> _load() async {
+    if (!mounted) return;
+    setState(() => _loading = true);
+    try {
+      final data = await Supabase.instance.client.from('annonces')
+          .select()
+          .eq('statut', 'disponible')
+          .order('created_at', ascending: false);
+      if (mounted) {
+        setState(() {
+          _rows = List<Map<String, dynamic>>.from(data as List).map(_norm).toList();
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: Supabase.instance.client.from('annonces')
-          .stream(primaryKey: ['id'])
-          .eq('statut', 'disponible')
-          .order('created_at', ascending: false),
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
-          return const Center(child: CircularProgressIndicator(
-              color: Color(0xFF0C5C6C)));
-        }
-        if (snap.hasError) {
-          return Center(child: Text('Erreur : ${snap.error}',
-              style: const TextStyle(fontFamily: 'Galey',
-                  color: Colors.redAccent)));
-        }
+    if (_loading && _rows.isEmpty) {
+      return const Center(child: CircularProgressIndicator(
+          color: Color(0xFF0C5C6C)));
+    }
 
-        final rows = (snap.data ?? []).map(_norm).where(matches).toList();
+    final rows = _rows.where(widget.matches).toList();
 
-        if (rows.isEmpty) {
-          return Center(child: Column(
-              mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(isSaillie
-                ? Icons.diversity_1_outlined : Icons.pets_outlined,
-                size: 64, color: Colors.grey.shade300),
-            const SizedBox(height: 14),
-            Text(isSaillie
-                ? 'Aucune saillie disponible'
-                : 'Aucune annonce disponible',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 16,
-                    color: Colors.grey.shade500)),
-            const SizedBox(height: 6),
-            Text('Essayez de modifier vos filtres',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 13,
-                    color: Colors.grey.shade400)),
-          ]));
-        }
+    if (rows.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _load,
+        color: const Color(0xFF0C5C6C),
+        child: ListView(children: [
+          SizedBox(
+            height: 420,
+            child: Center(child: Column(
+                mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(widget.isSaillie
+                  ? Icons.diversity_1_outlined : Icons.pets_outlined,
+                  size: 64, color: Colors.grey.shade300),
+              const SizedBox(height: 14),
+              Text(widget.isSaillie
+                  ? 'Aucune saillie disponible'
+                  : 'Aucune annonce disponible',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 16,
+                      color: Colors.grey.shade500)),
+              const SizedBox(height: 6),
+              Text('Essayez de modifier vos filtres',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                      color: Colors.grey.shade400)),
+            ])),
+          ),
+        ]),
+      );
+    }
 
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          itemCount: rows.length,
-          itemBuilder: (context, i) => _AnnonceCard(
-              id: rows[i]['id'] as String, data: rows[i]),
-        );
-      },
+    return RefreshIndicator(
+      onRefresh: _load,
+      color: const Color(0xFF0C5C6C),
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        itemCount: rows.length,
+        itemBuilder: (context, i) => _AnnonceCard(
+            id: rows[i]['id'] as String, data: rows[i]),
+      ),
     );
   }
 }

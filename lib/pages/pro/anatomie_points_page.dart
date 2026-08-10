@@ -29,11 +29,40 @@ class _SpeciesAsset {
   const _SpeciesAsset(this.asset, this.ratio);
 }
 
-// Une seule vue par espèce (silhouette squelette pleine page, sans découpe).
-const Map<String, _SpeciesAsset> _speciesAssets = {
-  'chien':  _SpeciesAsset('assets/anatomie/chien_squelette.png', 1536 / 1024),
-  'chat':   _SpeciesAsset('assets/anatomie/chat_squelette.png', 1402 / 1122),
-  'cheval': _SpeciesAsset('assets/anatomie/cheval_squelette.png', 1536 / 1024),
+// Vues disponibles pour le schéma anatomique interactif, dans l'ordre
+// d'affichage du sélecteur.
+const List<(String key, String label)> kVuesAnatomie = [
+  ('face', 'Face'),
+  ('profil_g', 'Profil gauche'),
+  ('profil_d', 'Profil droit'),
+  ('arriere', 'Arrière'),
+  ('ventrale', 'Ventrale'),
+];
+
+// 5 vues par espèce (silhouette avec zones anatomiques colorées, fond
+// transparent). Le ratio doit correspondre aux dimensions réelles du PNG.
+const Map<String, Map<String, _SpeciesAsset>> _speciesViewAssets = {
+  'chien': {
+    'face': _SpeciesAsset('assets/anatomie/chien_face.png', 1024 / 1024),
+    'profil_g': _SpeciesAsset('assets/anatomie/chien_profil_gauche.png', 1024 / 1024),
+    'profil_d': _SpeciesAsset('assets/anatomie/chien_profil_droit.png', 1024 / 1024),
+    'arriere': _SpeciesAsset('assets/anatomie/chien_arriere.png', 1536 / 1024),
+    'ventrale': _SpeciesAsset('assets/anatomie/chien_ventrale.png', 1024 / 1024),
+  },
+  'chat': {
+    'face': _SpeciesAsset('assets/anatomie/chat_face.png', 1536 / 1024),
+    'profil_g': _SpeciesAsset('assets/anatomie/chat_profil_gauche.png', 1536 / 1024),
+    'profil_d': _SpeciesAsset('assets/anatomie/chat_profil_droit.png', 1536 / 1024),
+    'arriere': _SpeciesAsset('assets/anatomie/chat_arriere.png', 1536 / 1024),
+    'ventrale': _SpeciesAsset('assets/anatomie/chat_ventrale.png', 1536 / 1024),
+  },
+  'cheval': {
+    'face': _SpeciesAsset('assets/anatomie/cheval_face.png', 1536 / 1024),
+    'profil_g': _SpeciesAsset('assets/anatomie/cheval_profil_gauche.png', 1536 / 1024),
+    'profil_d': _SpeciesAsset('assets/anatomie/cheval_profil_droit.png', 1536 / 1024),
+    'arriere': _SpeciesAsset('assets/anatomie/cheval_arriere.png', 1024 / 1536),
+    'ventrale': _SpeciesAsset('assets/anatomie/cheval_ventrale.png', 1024 / 1536),
+  },
 };
 
 String? _speciesKey(String espece) {
@@ -319,8 +348,11 @@ class _AnatomieSeanceDetailPageState extends State<AnatomieSeanceDetailPage> {
   bool _deleting = false;
   List<Map<String, dynamic>> _points = [];
   late DateTime _dateSeance;
+  String _currentVue = kVuesAnatomie.first.$1;
 
   String? get _speciesK => _speciesKey(widget.espece);
+  List<Map<String, dynamic>> get _currentVuePoints =>
+      _points.where((p) => (p['vue'] as String?) == _currentVue).toList();
 
   @override
   void initState() {
@@ -403,7 +435,7 @@ class _AnatomieSeanceDetailPageState extends State<AnatomieSeanceDetailPage> {
         'pro_uid': uid,
         if (pid.isNotEmpty) 'pro_profile_id': pid,
         'espece': _speciesK,
-        'vue': 'squelette',
+        'vue': _currentVue,
         'x_pct': xPct,
         'y_pct': yPct,
         'categorie': result['categorie'],
@@ -520,10 +552,31 @@ class _AnatomieSeanceDetailPageState extends State<AnatomieSeanceDetailPage> {
                         style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey),
                       ),
                       const SizedBox(height: 10),
+                      SizedBox(
+                        height: 34,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: kVuesAnatomie.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 8),
+                          itemBuilder: (_, i) {
+                            final vue = kVuesAnatomie[i];
+                            final selected = vue.$1 == _currentVue;
+                            return ChoiceChip(
+                              label: Text(vue.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: selected ? Colors.white : Colors.grey.shade700)),
+                              selected: selected,
+                              selectedColor: _teal,
+                              backgroundColor: _teal.withValues(alpha: 0.08),
+                              side: BorderSide(color: _teal.withValues(alpha: selected ? 1 : 0.3)),
+                              onSelected: (_) => setState(() => _currentVue = vue.$1),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 10),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(16),
                         child: AspectRatio(
-                          aspectRatio: _speciesAssets[_speciesK]!.ratio,
+                          aspectRatio: _speciesViewAssets[_speciesK]![_currentVue]!.ratio,
                           child: Container(
                             color: const Color(0xFFFAF9F6),
                             child: LayoutBuilder(builder: (context, constraints) {
@@ -536,8 +589,8 @@ class _AnatomieSeanceDetailPageState extends State<AnatomieSeanceDetailPage> {
                                 child: Stack(
                                   fit: StackFit.expand,
                                   children: [
-                                    Image.asset(_speciesAssets[_speciesK]!.asset, fit: BoxFit.contain),
-                                    ..._points.map((p) {
+                                    Image.asset(_speciesViewAssets[_speciesK]![_currentVue]!.asset, fit: BoxFit.contain, key: ValueKey(_currentVue)),
+                                    ..._currentVuePoints.map((p) {
                                       final xPct = (p['x_pct'] as num).toDouble();
                                       final yPct = (p['y_pct'] as num).toDouble();
                                       final color = colorForCategorie(p['categorie'] as String? ?? 'autre');

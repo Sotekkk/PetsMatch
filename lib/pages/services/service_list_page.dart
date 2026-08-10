@@ -90,12 +90,20 @@ class _ServiceListPageState extends State<ServiceListPage> {
               .inFilter('statut_pro', ['actif', 'validated'])
               .not('profile_type', 'in', _excluded);
 
+      final profFilter = (widget.professionValues ?? [])
+          .map((e) => e.toLowerCase())
+          .toSet();
+
       final seenUids = <String>{};
       final merged = <Map<String, dynamic>>[];
 
       for (final row in secondaryRows) {
         final uid = row['uid']?.toString() ?? '';
         if (!seenUids.add(uid)) continue;
+        if (profFilter.isNotEmpty &&
+            !profFilter.contains(((row['profession_pro'] ?? '') as String).toLowerCase())) {
+          continue;
+        }
         final nomVal = row['nom'] ?? row['name_elevage'] ?? '';
         final villeVal = row['ville_pro'] ?? row['ville'] ?? '';
         merged.add({

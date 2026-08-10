@@ -14,6 +14,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 interface Promenade {
   id: string;
   organisateur_uid: string;
+  organisateur_profile_id?: string | null;
   titre: string;
   lieu_rdv: string;
   lat?: number;
@@ -42,6 +43,7 @@ function especeEmojiDetail(e: string) {
 
 interface Participant {
   user_uid: string;
+  user_profile_id?: string | null;
   statut: string;
   rejoint_at: string;
   user?: { firstname?: string; lastname?: string; profile_picture_url?: string };
@@ -197,6 +199,7 @@ function EditModal({ promenade, participants, currentUid, onClose, onSaved }: {
           uid: part.user_uid, type: 'promenade_modifiee',
           title: 'Promenade modifiée',
           body: `La promenade "${titre.trim()}" a été modifiée. Nouvelles infos : ${lieu.trim()}, ${dateStr}.`,
+          ...(part.user_profile_id ? { profile_id: part.user_profile_id } : {}),
           data: { promenadeId: promenade.id }, read: false, created_at: new Date().toISOString(),
         });
       }
@@ -359,7 +362,7 @@ export default function PromenadeDetailPage() {
 
       // Participants
       const { data: parts } = await supabase.from('promenades_participants')
-        .select('user_uid, statut, rejoint_at')
+        .select('user_uid, user_profile_id, statut, rejoint_at')
         .eq('promenade_id', id)
         .order('rejoint_at');
 
@@ -370,7 +373,7 @@ export default function PromenadeDetailPage() {
           .in('uid', uids).eq('is_main', true);
         const usersMap: Record<string, UserProfile> = {};
         (users ?? []).forEach((u: UserProfile) => { usersMap[u.uid] = u; });
-        setParticipants(parts.map((part: { user_uid: string; statut: string; rejoint_at: string }) => ({
+        setParticipants(parts.map((part: { user_uid: string; user_profile_id: string | null; statut: string; rejoint_at: string }) => ({
           ...part,
           user: usersMap[part.user_uid],
         })));
@@ -479,6 +482,7 @@ export default function PromenadeDetailPage() {
         type: 'promenade_message',
         title: `💬 ${promenade.titre}`,
         body,
+        ...(part.user_profile_id ? { profile_id: part.user_profile_id } : {}),
         data: { promenadeId: id },
         read: false,
         created_at: new Date().toISOString(),
@@ -508,6 +512,7 @@ export default function PromenadeDetailPage() {
           type: 'promenade_join',
           title: 'Nouvelle demande de participation',
           body: `${nom} veut rejoindre "${promenade.titre}"`,
+          ...(promenade.organisateur_profile_id ? { profile_id: promenade.organisateur_profile_id } : {}),
           data: { promenadeId: id, fromUid: user.uid },
           read: false,
           created_at: new Date().toISOString(),
@@ -535,11 +540,13 @@ export default function PromenadeDetailPage() {
     await supabase.from('promenades_participants')
       .update({ statut: 'accepte' })
       .eq('promenade_id', id).eq('user_uid', userUid);
+    const partProfileId = participants.find(p => p.user_uid === userUid)?.user_profile_id;
     await supabase.from('notifications').insert({
       uid: userUid,
       type: 'promenade_accepte',
       title: 'Participation confirmée',
       body: `Votre demande pour "${promenade?.titre}" a été acceptée !`,
+      ...(partProfileId ? { profile_id: partProfileId } : {}),
       data: { promenadeId: id },
       read: false,
       created_at: new Date().toISOString(),
@@ -562,6 +569,7 @@ export default function PromenadeDetailPage() {
           type: 'promenade_annulee',
           title: 'Promenade annulée',
           body: `La promenade "${promenade.titre}" du ${dateStr} a été annulée par l'organisateur.`,
+          ...(part.user_profile_id ? { profile_id: part.user_profile_id } : {}),
           data: { promenadeId: id },
           read: false, created_at: new Date().toISOString(),
         });
@@ -575,6 +583,7 @@ export default function PromenadeDetailPage() {
   }
 
   async function refuse(userUid: string) {
+    const partProfileId = participants.find(p => p.user_uid === userUid)?.user_profile_id;
     await supabase.from('promenades_participants').delete()
       .eq('promenade_id', id).eq('user_uid', userUid);
     await supabase.from('notifications').insert({
@@ -582,6 +591,7 @@ export default function PromenadeDetailPage() {
       type: 'promenade_refuse',
       title: 'Participation refusée',
       body: `Votre demande pour "${promenade?.titre}" n'a pas été retenue.`,
+      ...(partProfileId ? { profile_id: partProfileId } : {}),
       data: { promenadeId: id },
       read: false,
       created_at: new Date().toISOString(),

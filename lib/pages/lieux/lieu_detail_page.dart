@@ -132,6 +132,7 @@ class _LieuDetailPageState extends State<LieuDetailPage> {
             'type': 'place_favori',
             'title': '⭐ Nouvel ajout en favori',
             'body': '$nom a ajouté $nomLieu à ses favoris !',
+            if (_lieu?['pro_profile_id'] != null) 'profile_id': _lieu!['pro_profile_id'],
             'data': {'fromUid': _uid, 'placeId': widget.id},
             'read': false,
             'created_at': DateTime.now().toIso8601String(),

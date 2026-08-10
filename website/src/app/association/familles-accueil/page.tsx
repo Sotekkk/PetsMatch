@@ -217,11 +217,14 @@ export default function FamillesAccueilWebPage() {
     }).eq('id', animal.id);
 
     if (placingFa.fa_uid) {
+      const { data: faProfile } = await supabase.from('user_profiles')
+        .select('id').eq('uid', placingFa.fa_uid).eq('profile_type', 'particulier').maybeSingle();
       await supabase.from('notifications').insert({
         uid: placingFa.fa_uid,
         type: 'animal_en_accueil',
         title: 'Un animal vous a été confié',
         body: `${animal.nom} a été placé dans votre famille d'accueil`,
+        ...(faProfile?.id ? { profile_id: faProfile.id } : {}),
         data: { animal_id: animal.id, fa_id: placingFa.id },
         read: false,
       });

@@ -12,6 +12,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 interface Promenade {
   id: string;
   organisateur_uid: string;
+  organisateur_profile_id?: string | null;
   titre: string;
   lieu_rdv: string;
   lat?: number;
@@ -532,6 +533,7 @@ export default function PromenadePage() {
             type: 'promenade_join',
             title: 'Nouvelle demande de participation',
             body: `${nom} veut rejoindre "${promenade.titre}"`,
+            ...(promenade.organisateur_profile_id ? { profile_id: promenade.organisateur_profile_id } : {}),
             data: { promenadeId: id, fromUid: user.uid },
             read: false, created_at: new Date().toISOString(),
           });

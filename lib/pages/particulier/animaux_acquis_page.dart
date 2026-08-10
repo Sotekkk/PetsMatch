@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/cession_sheet.dart';
 
@@ -33,23 +34,61 @@ class _AnimauxAcquisPageState extends State<AnimauxAcquisPage> {
   @override
   void initState() { super.initState(); _load(); }
 
+  static const _cols =
+      'id, nom, espece, race, sexe, date_naissance, photo_url, uid_eleveur, statut, date_sortie, cession_prix, destinataire_nom';
+
+  Future<List<Map<String, dynamic>>> _loadAnimauxAcquis() async {
+    // Un même compte peut avoir plusieurs profils (particulier + éleveur +
+    // association...) partageant le même uid Firebase. On ne garde que les
+    // animaux réellement reçus par CE profil (animaux_proprietes.profile_id_proprio),
+    // sinon un animal cédé à un autre profil apparaît aussi ici.
+    final activeProfileId = User_Info.activeProfileId;
+    if (activeProfileId.isEmpty) {
+      return List<Map<String, dynamic>>.from(
+        await _supa.from('animaux').select(_cols)
+            .eq('uid_acquereur', _uid).order('date_sortie', ascending: false) as List,
+      );
+    }
+    final migrated = await _supa.from('animaux_proprietes')
+        .select('animal_id')
+        .eq('uid_proprio', _uid)
+        .not('profile_id_proprio', 'is', null)
+        .limit(1);
+    if ((migrated as List).isEmpty) {
+      // Migration profile_id_proprio pas encore jouée → rétrocompat sur l'uid seul
+      return List<Map<String, dynamic>>.from(
+        await _supa.from('animaux').select(_cols)
+            .eq('uid_acquereur', _uid).order('date_sortie', ascending: false) as List,
+      );
+    }
+    final ownRows = await _supa.from('animaux_proprietes')
+        .select('animal_id')
+        .eq('uid_proprio', _uid)
+        .eq('profile_id_proprio', activeProfileId);
+    final ids = List<Map<String, dynamic>>.from(ownRows as List)
+        .map((r) => r['animal_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+    if (ids.isEmpty) return [];
+    return List<Map<String, dynamic>>.from(
+      await _supa.from('animaux').select(_cols)
+          .inFilter('id', ids).order('date_sortie', ascending: false) as List,
+    );
+  }
+
   Future<void> _load() async {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      final results = await Future.wait([
-        _supa.from('animaux')
-            .select('id, nom, espece, race, sexe, date_naissance, photo_url, uid_eleveur, statut, date_sortie, cession_prix, destinataire_nom')
-            .eq('uid_acquereur', _uid)
-            .order('date_sortie', ascending: false),
-        _supa.from('user_profiles')
-            .select('firstname, lastname, nom')
-            .eq('uid', _uid)
-            .eq('is_main', true)
-            .maybeSingle(),
-      ]);
-      final rows = List<Map<String, dynamic>>.from(results[0] as List);
-      final profil = results[1] as Map<String, dynamic>?;
+      final animauxFuture = _loadAnimauxAcquis();
+      final profilFuture = _supa.from('user_profiles')
+          .select('firstname, lastname, nom')
+          .eq('uid', _uid)
+          .eq('is_main', true)
+          .maybeSingle();
+      final rows = await animauxFuture;
+      final profil = await profilFuture;
       if (profil != null) {
         final elevage = profil['nom'] as String?;
         final nom = '${profil['firstname'] ?? ''} ${profil['lastname'] ?? ''}'.trim();

@@ -492,12 +492,14 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
                   .from('users').select('uid').eq('email', acqEmail).maybeSingle();
               final targetUid = targetRes?['uid'] as String?;
               if (targetUid != null) {
+                final targetProfile = await widget.supa.from('user_profiles')
+                    .select('id').eq('uid', targetUid).eq('profile_type', 'eleveur').maybeSingle();
                 await widget.supa.from('notifications').insert({
                   'uid': targetUid,
                   'type': 'contrat_saillie_invite',
                   'title': '💞 Contrat de saillie',
                   'body': 'Vous avez reçu un contrat de saillie à compléter et signer',
-                  'profile_type': '',
+                  if (targetProfile?['id'] != null) 'profile_id': targetProfile!['id'],
                   'data': {'token': token, 'url': url},
                   'read': false,
                 });

@@ -16,35 +16,31 @@ final _santeItems = [
     subtitle: 'Consultations, urgences, chirurgie',
     icon: Icons.local_hospital_outlined,
     color: Color(0xFF2E7D5E),
-    catProValues: ['sante', 'veterinaire'],
+    catProValues: ['veterinaire'],
   ),
   const AnnuaireSubItem(
     label: 'Ostéopathes',
     subtitle: 'Manipulations ostéopathiques pour animaux',
     icon: Icons.self_improvement_outlined,
     color: Color(0xFF2E7D5E),
-    catProValues: ['sante', 'osteo'],
+    catProValues: ['sante'],
+    professionValues: ['Ostéopathe'],
   ),
   const AnnuaireSubItem(
     label: 'Kinésithérapeutes',
     subtitle: 'Rééducation fonctionnelle animale',
     icon: Icons.fitness_center_outlined,
     color: Color(0xFF2E7D5E),
-    catProValues: ['sante', 'kine'],
+    catProValues: ['sante'],
+    professionValues: ['Kinésithérapeute'],
   ),
   const AnnuaireSubItem(
     label: 'Maréchal-ferrant',
     subtitle: 'Soins des sabots et ferrure',
     icon: Icons.hardware_outlined,
     color: Color(0xFF558B2F),
-    catProValues: ['marechal_ferrant'],
-  ),
-  const AnnuaireSubItem(
-    label: 'Dentiste équin',
-    subtitle: 'Soins dentaires pour chevaux',
-    icon: Icons.medical_information_outlined,
-    color: Color(0xFF558B2F),
-    catProValues: ['sante', 'dentiste_equin'],
+    catProValues: ['marechal_ferrant', 'sante'],
+    professionValues: ['Maréchal-ferrant', 'Maréchal-ferrant traditionnel', 'Parage naturel'],
   ),
 ];
 
@@ -54,14 +50,16 @@ final _educationItems = [
     subtitle: 'Apprentissage, obéissance et socialisation',
     icon: Icons.school_outlined,
     color: Color(0xFFE65100),
-    catProValues: ['education', 'educateur'],
+    catProValues: ['education'],
+    professionValues: ['Éducateur canin', 'Dresseur'],
   ),
   const AnnuaireSubItem(
     label: 'Comportementalistes',
     subtitle: 'Troubles du comportement, anxiété, agressivité',
     icon: Icons.psychology_outlined,
     color: Color(0xFFBF360C),
-    catProValues: ['comportementaliste'],
+    catProValues: ['education'],
+    professionValues: ['Comportementaliste'],
   ),
 ];
 
@@ -71,14 +69,16 @@ final _gardeItems = [
     subtitle: 'Garde à domicile chez vous ou chez eux',
     icon: Icons.home_outlined,
     color: Color(0xFFF57C00),
-    catProValues: ['pet_sitter', 'garde'],
+    catProValues: ['garde'],
+    professionValues: ['Pet sitter'],
   ),
   const AnnuaireSubItem(
     label: 'Promeneurs',
     subtitle: 'Sorties quotidiennes et balades',
     icon: Icons.directions_walk_outlined,
     color: Color(0xFFE65100),
-    catProValues: ['promeneur'],
+    catProValues: ['garde'],
+    professionValues: ['Promeneur de chiens'],
   ),
   const AnnuaireSubItem(
     label: 'Pensions',
@@ -89,61 +89,13 @@ final _gardeItems = [
   ),
 ];
 
-final _alimentationItems = [
-  const AnnuaireSubItem(
-    label: 'Animaleries',
-    subtitle: 'Magasins spécialisés alimentation & accessoires',
-    icon: Icons.store_outlined,
-    color: Color(0xFF1565C0),
-    catProValues: ['animalerie', 'alimentation'],
-  ),
-  const AnnuaireSubItem(
-    label: 'Nutritionnistes animaliers',
-    subtitle: 'Conseils en alimentation adaptée & régimes',
-    icon: Icons.restaurant_outlined,
-    color: Color(0xFF1976D2),
-    catProValues: ['nutrition', 'nutritionniste'],
-  ),
-];
-
 final _transportItems = [
   const AnnuaireSubItem(
     label: 'Taxi animalier',
     subtitle: 'Transport spécialisé pour vos animaux',
     icon: Icons.local_taxi_outlined,
     color: Color(0xFF00838F),
-    catProValues: ['taxi_animalier', 'transport'],
-  ),
-  const AnnuaireSubItem(
-    label: 'VTC & Taxi acceptant les animaux',
-    subtitle: 'Chauffeurs qui acceptent vos compagnons',
-    icon: Icons.directions_car_outlined,
-    color: Color(0xFF00695C),
-    catProValues: ['transport', 'vtc'],
-  ),
-  const AnnuaireSubItem(
-    label: 'Ambulance vétérinaire',
-    subtitle: 'Transport médicalisé pour urgences',
-    icon: Icons.emergency_outlined,
-    color: Color(0xFFC62828),
-    catProValues: ['ambulance_vet', 'transport'],
-  ),
-];
-
-final _boutiqueItems = [
-  const AnnuaireSubItem(
-    label: 'Boutiques spécialisées',
-    subtitle: 'Petites boutiques professionnelles vérifiées',
-    icon: Icons.shopping_bag_outlined,
-    color: Color(0xFF00695C),
-    catProValues: ['boutique'],
-  ),
-  const AnnuaireSubItem(
-    label: 'Créateurs & artisans',
-    subtitle: 'Accessoires faits main, personnalisation',
-    icon: Icons.palette_outlined,
-    color: Color(0xFF6A1B9A),
-    catProValues: ['artisan', 'createur'],
+    catProValues: ['taxi_animalier'],
   ),
 ];
 
@@ -185,41 +137,40 @@ class _ServicesPageState extends State<ServicesPage> {
       icon: Icons.medical_services_outlined,
       label: 'Santé\n& bien-être',
       color: const Color(0xFF2E7D5E),
-      catProValues: const ['sante', 'veterinaire', 'osteo', 'kine', 'marechal_ferrant'],
+      catProValues: const ['sante', 'veterinaire', 'marechal_ferrant'],
       subItems: _santeItems,
     ),
     _AnnuaireCategory(
       icon: Icons.school_outlined,
       label: 'Éducation\n& comportement',
       color: const Color(0xFFE65100),
-      catProValues: const ['education', 'educateur', 'comportementaliste'],
+      catProValues: const ['education'],
       subItems: _educationItems,
     ),
     _AnnuaireCategory(
       icon: Icons.home_outlined,
       label: 'Garde\n& hébergement',
       color: const Color(0xFFF57C00),
-      catProValues: const ['pension', 'garde', 'pet_sitter', 'promeneur'],
+      catProValues: const ['pension', 'garde'],
       subItems: _gardeItems,
     ),
     _AnnuaireCategory(
       icon: Icons.content_cut,
       label: 'Toilettage\n& soins',
       color: const Color(0xFFC62828),
-      catProValues: const ['toilettage', 'toiletteur'],
+      catProValues: const ['toilettage'],
     ),
     _AnnuaireCategory(
       icon: Icons.set_meal_outlined,
       label: 'Alimentation',
       color: const Color(0xFF1565C0),
-      catProValues: const ['alimentation', 'animalerie', 'nutrition'],
-      subItems: _alimentationItems,
+      catProValues: const ['referencement'],
     ),
     _AnnuaireCategory(
       icon: Icons.directions_car_outlined,
       label: 'Transport',
       color: const Color(0xFF00838F),
-      catProValues: const ['transport', 'taxi_animalier', 'ambulance_vet', 'vtc'],
+      catProValues: const ['taxi_animalier'],
       subItems: _transportItems,
     ),
     _AnnuaireCategory(
@@ -232,8 +183,7 @@ class _ServicesPageState extends State<ServicesPage> {
       icon: Icons.shopping_bag_outlined,
       label: 'Boutiques\n& Créateurs',
       color: const Color(0xFF6A1B9A),
-      catProValues: const ['boutique', 'artisan', 'createur'],
-      subItems: _boutiqueItems,
+      catProValues: const ['referencement'],
     ),
     _AnnuaireCategory(
       icon: Icons.shield_outlined,

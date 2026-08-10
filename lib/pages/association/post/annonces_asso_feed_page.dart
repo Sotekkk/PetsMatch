@@ -29,6 +29,11 @@ class _AnnoncesAssoFeedPageState extends State<AnnoncesAssoFeedPage> {
   final _likeCounts = <String, int>{};
   bool _likesLoaded = false;
 
+  // Annonces (fetch ponctuel + tire-pour-rafraîchir — remplace .stream() qui
+  // échouait en prod avec un RealtimeSubscribeException/CHANNEL_ERROR)
+  List<Map<String, dynamic>> _annonces = [];
+  bool _loadingAnnonces = true;
+
   static const _especeOptions = [
     ('tous',   'Tous'),
     ('chien',  'Chiens'),
@@ -44,6 +49,27 @@ class _AnnoncesAssoFeedPageState extends State<AnnoncesAssoFeedPage> {
   void initState() {
     super.initState();
     _loadLikes();
+    _loadAnnonces();
+  }
+
+  Future<void> _loadAnnonces() async {
+    if (!mounted) return;
+    setState(() => _loadingAnnonces = true);
+    try {
+      final rows = await Supabase.instance.client
+          .from('annonces')
+          .select()
+          .eq('statut', 'disponible')
+          .order('created_at', ascending: false);
+      if (mounted) {
+        setState(() {
+          _annonces = List<Map<String, dynamic>>.from(rows as List);
+          _loadingAnnonces = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingAnnonces = false);
+    }
   }
 
   @override
@@ -175,18 +201,12 @@ class _AnnoncesAssoFeedPageState extends State<AnnoncesAssoFeedPage> {
           ),
         ),
       ),
-      body: StreamBuilder<List<Map<String, dynamic>>>(
-        stream: Supabase.instance.client
-            .from('annonces')
-            .stream(primaryKey: ['id'])
-            .eq('statut', 'disponible')
-            .order('created_at', ascending: false),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
+      body: Builder(
+        builder: (context) {
+          if (_loadingAnnonces && _annonces.isEmpty) {
             return const Center(child: CircularProgressIndicator());
           }
-          final all = snap.data ?? [];
-          final assoc = all.where((d) => d['profil_source'] == 'association').toList();
+          final assoc = _annonces.where((d) => d['profil_source'] == 'association').toList();
 
           // Races disponibles pour filtre dynamique
           final races = {'toutes', ...assoc.map((d) => (d['race'] as String?) ?? '').where((r) => r.isNotEmpty)};
@@ -256,49 +276,57 @@ class _AnnoncesAssoFeedPageState extends State<AnnoncesAssoFeedPage> {
 
             // Grille
             Expanded(
-              child: filtered.isEmpty
-                  ? const Center(
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.favorite_border, size: 60, color: Colors.grey),
-                        SizedBox(height: 12),
-                        Text('Aucune annonce d\'adoption pour le moment',
-                            style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
-                      ]),
-                    )
-                  : GridView.builder(
-                      padding: const EdgeInsets.all(12),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
-                        childAspectRatio: 0.68,
+              child: RefreshIndicator(
+                onRefresh: _loadAnnonces,
+                child: filtered.isEmpty
+                    ? ListView(children: const [
+                        SizedBox(
+                          height: 420,
+                          child: Center(
+                            child: Column(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(Icons.favorite_border, size: 60, color: Colors.grey),
+                              SizedBox(height: 12),
+                              Text('Aucune annonce d\'adoption pour le moment',
+                                  style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
+                            ]),
+                          ),
+                        ),
+                      ])
+                    : GridView.builder(
+                        padding: const EdgeInsets.all(12),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                          childAspectRatio: 0.68,
+                        ),
+                        itemCount: filtered.length,
+                        itemBuilder: (_, i) {
+                          final a = filtered[i];
+                          final id = a['id']?.toString() ?? '';
+                          return _AdoptionCard(
+                            annonce: a,
+                            isLiked: _likedKeys.contains(id),
+                            likeCount: _likeCounts[id] ?? 0,
+                            onTap: () => Navigator.push(context, MaterialPageRoute(
+                                builder: (_) => AnnonceDetailPage(annonceId: id))),
+                            onLike: () => _toggleLike(id),
+                            onAssoProfil: () {
+                              final assoUid = a['uid_eleveur']?.toString() ?? '';
+                              final assoNom = a['nom_eleveur']?.toString() ?? '';
+                              final assoVille = a['ville_eleveur']?.toString() ?? '';
+                              if (assoUid.isNotEmpty) {
+                                Navigator.push(context, MaterialPageRoute(
+                                  builder: (_) => AssociationDetailPage(
+                                    uid: assoUid, name: assoNom, avatar: '', ville: assoVille,
+                                  ),
+                                ));
+                              }
+                            },
+                          );
+                        },
                       ),
-                      itemCount: filtered.length,
-                      itemBuilder: (_, i) {
-                        final a = filtered[i];
-                        final id = a['id']?.toString() ?? '';
-                        return _AdoptionCard(
-                          annonce: a,
-                          isLiked: _likedKeys.contains(id),
-                          likeCount: _likeCounts[id] ?? 0,
-                          onTap: () => Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => AnnonceDetailPage(annonceId: id))),
-                          onLike: () => _toggleLike(id),
-                          onAssoProfil: () {
-                            final assoUid = a['uid_eleveur']?.toString() ?? '';
-                            final assoNom = a['nom_eleveur']?.toString() ?? '';
-                            final assoVille = a['ville_eleveur']?.toString() ?? '';
-                            if (assoUid.isNotEmpty) {
-                              Navigator.push(context, MaterialPageRoute(
-                                builder: (_) => AssociationDetailPage(
-                                  uid: assoUid, name: assoNom, avatar: '', ville: assoVille,
-                                ),
-                              ));
-                            }
-                          },
-                        );
-                      },
-                    ),
+              ),
             ),
           ]);
         },
