@@ -178,10 +178,16 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
     return 'Portée du ${DateFormat('d MMM yyyy', 'fr').format(date)}';
   }
 
-  void _selectPortee(List<Map<String, dynamic>> membres) => setState(() {
-    for (final a in membres) {
-      final id = a['id']?.toString();
-      if (id != null) _selectedIds.add(id);
+  // Bascule toute la portée : si tous ses membres sont déjà sélectionnés, on
+  // les retire (permet de se rattraper après un clic par erreur), sinon on
+  // les ajoute à la sélection existante.
+  void _togglePortee(List<Map<String, dynamic>> membres) => setState(() {
+    final ids = membres.map((a) => a['id']?.toString()).whereType<String>().toList();
+    final allSelected = ids.every(_selectedIds.contains);
+    if (allSelected) {
+      _selectedIds.removeAll(ids);
+    } else {
+      _selectedIds.addAll(ids);
     }
   });
 
@@ -227,18 +233,27 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
             child: Wrap(
               spacing: 8, runSpacing: 8,
               children: _porteeGroups.entries.map((e) {
+                final allSelected = e.value
+                    .map((a) => a['id']?.toString())
+                    .whereType<String>()
+                    .every(_selectedIds.contains);
                 return GestureDetector(
-                  onTap: () => _selectPortee(e.value),
+                  onTap: () => _togglePortee(e.value),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.08),
+                      color: allSelected ? color : color.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: color.withValues(alpha: 0.3)),
+                      border: Border.all(color: allSelected ? color : color.withValues(alpha: 0.3)),
                     ),
                     child: Text(
-                      '${_porteeLabel(e.key, e.value)} (${e.value.length}) — tout sélectionner',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w600, color: color),
+                      allSelected
+                          ? '✓ ${_porteeLabel(e.key, e.value)} (${e.value.length})'
+                          : '${_porteeLabel(e.key, e.value)} (${e.value.length}) — tout sélectionner',
+                      style: TextStyle(
+                        fontFamily: 'Galey', fontSize: 11.5, fontWeight: FontWeight.w600,
+                        color: allSelected ? Colors.white : color,
+                      ),
                     ),
                   ),
                 );
@@ -266,6 +281,7 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
                         final photoUrl = a['photo_url'] as String? ?? '';
                         final selected = _selectedIds.contains(id);
                         return ListTile(
+                          tileColor: selected ? color.withValues(alpha: 0.12) : null,
                           onTap: () {
                             if (widget.multiSelect) {
                               _toggleId(id);

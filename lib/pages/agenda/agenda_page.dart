@@ -611,6 +611,10 @@ class _AgendaPageState extends State<AgendaPage> {
               Text(t['titre'] ?? '',
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1E2025)),
                 maxLines: 1, overflow: TextOverflow.ellipsis),
+              if ((t['animal_nom'] as String?)?.isNotEmpty == true)
+                Text('🐾 ${t['animal_nom']}',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, color: Colors.grey.shade500),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
               if (isDone)
                 Container(
                   margin: const EdgeInsets.only(top: 2),
@@ -2698,27 +2702,37 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
     final dateStr = DateFormat('yyyy-MM-dd').format(widget.day);
     final supa = Supabase.instance.client;
     final profileId = User_Info.activeProfileId;
-    final animalNom = _selectedAnimaux.isEmpty
-        ? null
-        : _selectedAnimaux.map((a) => a['nom']?.toString() ?? '').join(', ');
     String? employeProfileId;
     if (_selectedEmployeUid != null) {
       final p = await supa.from('user_profiles')
           .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').maybeSingle();
       employeProfileId = p?['id'] as String?;
     }
-    await supa.from('plan_taches').insert({
-      'uid_eleveur':   widget.uid,
-      'label':         _labelCtrl.text.trim(),
-      'date_prevue':   dateStr,
-      'statut':        'a_faire',
-      'type_acte':     _typeActe,
-      'animal_nom':    animalNom,
-      'profil_source': widget.profilSource,
-      if (profileId.isNotEmpty) 'profile_id': profileId,
-      'assigned_to':   _selectedEmployeUid,
-      if ((employeProfileId ?? '').isNotEmpty) 'assigned_profile_id': employeProfileId,
-    });
+
+    // Une ligne + une notification par animal sélectionné (portée entière =
+    // 1 tâche + 1 notif par chiot), ou une seule ligne sans animal si aucun
+    // choisi. Évite toute confusion à l'employé qui décoche au fur et à mesure.
+    final List<Map<String, dynamic>?> animaux =
+        _selectedAnimaux.isEmpty ? [null] : _selectedAnimaux;
+    final insertedPairs = <(Map<String, dynamic>?, String)>[];
+    for (final animal in animaux) {
+      final result = await supa.from('plan_taches').insert({
+        'uid_eleveur':   widget.uid,
+        'label':         _labelCtrl.text.trim(),
+        'date_prevue':   dateStr,
+        'statut':        'a_faire',
+        'type_acte':     _typeActe,
+        if (animal != null) 'animal_id':  animal['id'],
+        if (animal != null) 'animal_nom': animal['nom']?.toString(),
+        'profil_source': widget.profilSource,
+        if (profileId.isNotEmpty) 'profile_id': profileId,
+        'assigned_to':   _selectedEmployeUid,
+        if ((employeProfileId ?? '').isNotEmpty) 'assigned_profile_id': employeProfileId,
+      }).select('id').single();
+      final id = result['id'] as String?;
+      if (id != null) insertedPairs.add((animal, id));
+    }
+
     if (_selectedEmployeUid != null) {
       try {
         final moi = await supa.from('user_profiles')
@@ -2729,13 +2743,32 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
                 ? (moi['nom'] ?? 'Votre éleveur')
                 : '${moi['firstname'] ?? ''} ${moi['lastname'] ?? ''}'.trim())
             : 'Votre éleveur';
-        await supa.from('notifications').insert({
-          'uid': _selectedEmployeUid, 'type': 'tache_assignee',
-          'title': 'Nouveau protocole assigné 📋',
-          'body': '$nomEleveur vous a assigné : ${_labelCtrl.text.trim()}',
-          if ((employeProfileId ?? '').isNotEmpty) 'profile_id': employeProfileId,
-          'data': <String, dynamic>{}, 'read': false,
-        });
+        final nomEmploye = widget.employes.firstWhere(
+          (e) => e['uid'] == _selectedEmployeUid,
+          orElse: () => const {},
+        )['nom'] as String? ?? 'un employé';
+        for (final (animal, tacheId) in insertedPairs) {
+          final nomChiot = animal?['nom']?.toString();
+          final nomMere = animal?['nom_mere']?.toString();
+          final portee = (nomMere != null && nomMere.isNotEmpty) ? 'Portée de $nomMere' : null;
+          final suffix = nomChiot != null ? ' — $nomChiot${portee != null ? ' ($portee)' : ''}' : '';
+          await supa.from('notifications').insert({
+            'uid': _selectedEmployeUid, 'type': 'tache_assignee',
+            'title': 'Nouveau protocole assigné 📋',
+            'body': '$nomEleveur vous a assigné : ${_labelCtrl.text.trim()}$suffix',
+            if ((employeProfileId ?? '').isNotEmpty) 'profile_id': employeProfileId,
+            'data': <String, dynamic>{'tacheId': tacheId}, 'read': false,
+          });
+          // Copie à l'éleveur (créateur) pour qu'il puisse suivre quel chiot
+          // est assigné à qui sans se connecter sur le compte de l'employé.
+          await supa.from('notifications').insert({
+            'uid': widget.uid, 'type': 'tache_assignee',
+            'title': 'Protocole assigné 📋',
+            'body': 'Assigné à $nomEmploye : ${_labelCtrl.text.trim()}$suffix',
+            if (profileId.isNotEmpty) 'profile_id': profileId,
+            'data': <String, dynamic>{'tacheId': tacheId}, 'read': false,
+          });
+        }
       } catch (_) {}
     }
     setState(() => _saving = false);
@@ -2918,9 +2951,6 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
     final heureStr = '${_heure.hour.toString().padLeft(2, '0')}:${_heure.minute.toString().padLeft(2, '0')}';
     final supa = Supabase.instance.client;
     final profileIdTache = User_Info.activeProfileId;
-    final animalNom = _selectedAnimaux.isEmpty
-        ? null
-        : _selectedAnimaux.map((a) => a['nom']?.toString() ?? '').join(', ');
     // Résout le profil (particulier principal) de l'employé assigné — sans
     // ça, assigne_profile_id reste null et la tâche n'apparaît jamais dans
     // l'agenda de l'employé (filtré par assigne_profile_id = activeProfileId).
@@ -2933,21 +2963,34 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
           .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').maybeSingle();
       assigneProfileId = assigneProfileData?['id'] as String?;
     }
-    await supa.from('taches_elevage').insert({
-      'uid_eleveur': widget.uid,
-      'titre': _titreCtrl.text.trim(),
-      'date': dateStr,
-      'heure': heureStr,
-      'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
-      'statut': 'a_faire',
-      'profil_source': widget.profilSource,
-      if (profileIdTache.isNotEmpty) 'profile_id': profileIdTache,
-      if (profileIdTache.isNotEmpty) 'eleveur_profile_id': profileIdTache,
-      'assigne_a': _selectedEmployeUid,
-      'assignes_a': _selectedEmployeUid != null ? [_selectedEmployeUid] : null,
-      if (assigneProfileId != null) 'assigne_profile_id': assigneProfileId,
-      if (animalNom != null) 'animal_nom': animalNom,
-    });
+
+    // Une ligne + une notification par animal sélectionné (portée entière =
+    // 1 tâche + 1 notif par chiot), ou une seule ligne sans animal si aucun
+    // choisi. Évite toute confusion à l'employé qui décoche au fur et à mesure.
+    final List<Map<String, dynamic>?> animaux =
+        _selectedAnimaux.isEmpty ? [null] : _selectedAnimaux;
+    final insertedPairs = <(Map<String, dynamic>?, String)>[];
+    for (final animal in animaux) {
+      final result = await supa.from('taches_elevage').insert({
+        'uid_eleveur': widget.uid,
+        'titre': _titreCtrl.text.trim(),
+        'date': dateStr,
+        'heure': heureStr,
+        'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+        'statut': 'a_faire',
+        'profil_source': widget.profilSource,
+        if (profileIdTache.isNotEmpty) 'profile_id': profileIdTache,
+        if (profileIdTache.isNotEmpty) 'eleveur_profile_id': profileIdTache,
+        'assigne_a': _selectedEmployeUid,
+        'assignes_a': _selectedEmployeUid != null ? [_selectedEmployeUid] : null,
+        if (assigneProfileId != null) 'assigne_profile_id': assigneProfileId,
+        if (animal != null) 'animal_id': animal['id'],
+        if (animal != null) 'animal_nom': animal['nom']?.toString(),
+      }).select('id').single();
+      final id = result['id'] as String?;
+      if (id != null) insertedPairs.add((animal, id));
+    }
+
     if (_selectedEmployeUid != null && !isSelfAssign) {
       try {
         final moi = await supa.from('user_profiles')
@@ -2958,13 +3001,32 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
                 ? (moi['nom'] ?? 'Votre éleveur')
                 : '${moi['firstname'] ?? ''} ${moi['lastname'] ?? ''}'.trim())
             : 'Votre éleveur';
-        await supa.from('notifications').insert({
-          'uid': _selectedEmployeUid, 'type': 'tache_assignee',
-          'title': 'Nouvelle tâche assignée 📋',
-          'body': '$nomEleveur vous a assigné : ${_titreCtrl.text.trim()}',
-          if ((assigneProfileId ?? '').isNotEmpty) 'profile_id': assigneProfileId,
-          'data': <String, dynamic>{}, 'read': false,
-        });
+        final nomEmploye = widget.employes.firstWhere(
+          (e) => e['uid'] == _selectedEmployeUid,
+          orElse: () => const {},
+        )['nom'] as String? ?? 'un employé';
+        for (final (animal, tacheId) in insertedPairs) {
+          final nomChiot = animal?['nom']?.toString();
+          final nomMere = animal?['nom_mere']?.toString();
+          final portee = (nomMere != null && nomMere.isNotEmpty) ? 'Portée de $nomMere' : null;
+          final suffix = nomChiot != null ? ' — $nomChiot${portee != null ? ' ($portee)' : ''}' : '';
+          await supa.from('notifications').insert({
+            'uid': _selectedEmployeUid, 'type': 'tache_assignee',
+            'title': 'Nouvelle tâche assignée 📋',
+            'body': '$nomEleveur vous a assigné : ${_titreCtrl.text.trim()}$suffix',
+            if ((assigneProfileId ?? '').isNotEmpty) 'profile_id': assigneProfileId,
+            'data': <String, dynamic>{'tacheId': tacheId}, 'read': false,
+          });
+          // Copie à l'éleveur (créateur) pour qu'il puisse suivre quel chiot
+          // est assigné à qui sans se connecter sur le compte de l'employé.
+          await supa.from('notifications').insert({
+            'uid': widget.uid, 'type': 'tache_assignee',
+            'title': 'Tâche assignée 📋',
+            'body': 'Assigné à $nomEmploye : ${_titreCtrl.text.trim()}$suffix',
+            if (profileIdTache.isNotEmpty) 'profile_id': profileIdTache,
+            'data': <String, dynamic>{'tacheId': tacheId}, 'read': false,
+          });
+        }
       } catch (_) {}
     }
     setState(() => _saving = false);

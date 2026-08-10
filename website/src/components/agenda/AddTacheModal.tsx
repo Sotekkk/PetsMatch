@@ -92,8 +92,15 @@ export function AddTacheModal({ uid, profileId, profilSource, selectedDate, anim
     setSelectedAnimalIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   }
 
-  function selectPortee(membresPortee: AnimalOption[]) {
-    setSelectedAnimalIds(prev => [...new Set([...prev, ...membresPortee.map(a => a.id)])]);
+  // Bascule toute la portée : si tous ses membres sont déjà sélectionnés, on
+  // les retire (permet de se rattraper après un clic par erreur), sinon on
+  // les ajoute à la sélection existante.
+  function togglePortee(membresPortee: AnimalOption[]) {
+    const ids = membresPortee.map(a => a.id);
+    const allSelected = ids.every(id => selectedAnimalIds.includes(id));
+    setSelectedAnimalIds(prev => allSelected
+      ? prev.filter(id => !ids.includes(id))
+      : [...new Set([...prev, ...ids])]);
   }
 
   async function save() {
@@ -113,7 +120,7 @@ export function AddTacheModal({ uid, profileId, profilSource, selectedDate, anim
     // Une ligne par animal sélectionné (ou une seule ligne sans animal si aucun choisi).
     const animalIds: (string | null)[] = selectedAnimalIds.length > 0 ? selectedAnimalIds : [null];
     let error: { message: string } | null = null;
-    let firstInsertedId: string | null = null;
+    const insertedByAnimal: { animalId: string | null; tacheId: string }[] = [];
     for (const animalId of animalIds) {
       const { data: inserted, error: insertError } = await supabase.from('taches_elevage').insert({
         uid_eleveur: uid,
@@ -124,24 +131,48 @@ export function AddTacheModal({ uid, profileId, profilSource, selectedDate, anim
         profil_source: profilSource,
         ...(profileId ? { eleveur_profile_id: profileId, profile_id: profileId } : {}),
         animal_id: animalId,
+        animal_nom: animalId ? (animaux.find(a => a.id === animalId)?.nom ?? null) : null,
         assigne_a: assigneUid || null,
         assignes_a: assigneUid ? [assigneUid] : null,
         ...(assigneProfileId ? { assigne_profile_id: assigneProfileId } : {}),
       }).select().single();
       if (insertError) { error = insertError; break; }
-      firstInsertedId ??= (inserted as { id: string })?.id ?? null;
+      const tacheId = (inserted as { id: string })?.id ?? null;
+      if (tacheId) insertedByAnimal.push({ animalId, tacheId });
     }
 
+    // Une notification par animal (portée entière = 1 tâche + 1 notif par chiot),
+    // avec le nom du chiot et sa portée dans le corps pour éviter toute confusion
+    // à l'employé qui décoche les tâches une par une. On envoie aussi une copie
+    // à l'éleveur (créateur) pour qu'il puisse suivre quel chiot est assigné à
+    // qui sans avoir à se connecter sur le compte de l'employé.
     if (!error && assigneUid && !isSelf) {
       try {
-        await supabase.from('notifications').insert({
-          uid: assigneUid, type: 'tache_assignee',
-          title: 'Nouvelle tâche assignée 📋',
-          body: titre.trim(),
-          data: { tacheId: firstInsertedId },
-          read: false,
-          ...(assigneProfileId ? { profile_id: assigneProfileId } : {}),
-        });
+        const nomEmploye = membres.find(m => m.uid === assigneUid)?.nom ?? 'un employé';
+        await Promise.all(insertedByAnimal.map(({ animalId, tacheId }) => {
+          const animal = animalId ? animaux.find(a => a.id === animalId) : undefined;
+          const groupePortee = animal?.portee_id ? porteeGroups.get(animal.portee_id) : undefined;
+          const portee = groupePortee ? porteeLabel(groupePortee) : null;
+          const suffix = animal ? ` — ${animal.nom}${portee ? ` (${portee})` : ''}` : '';
+          return Promise.all([
+            supabase.from('notifications').insert({
+              uid: assigneUid, type: 'tache_assignee',
+              title: 'Nouvelle tâche assignée 📋',
+              body: `${titre.trim()}${suffix}`,
+              data: { tacheId },
+              read: false,
+              ...(assigneProfileId ? { profile_id: assigneProfileId } : {}),
+            }),
+            supabase.from('notifications').insert({
+              uid, type: 'tache_assignee',
+              title: 'Tâche assignée 📋',
+              body: `Assigné à ${nomEmploye} : ${titre.trim()}${suffix}`,
+              data: { tacheId },
+              read: false,
+              ...(profileId ? { profile_id: profileId } : {}),
+            }),
+          ]);
+        }));
       } catch (_) {}
     }
 
@@ -194,22 +225,34 @@ export function AddTacheModal({ uid, profileId, profilSource, selectedDate, anim
               </label>
               {porteeGroups.size > 0 && (
                 <div className="flex flex-wrap gap-1.5 mb-1.5">
-                  {[...porteeGroups.entries()].map(([porteeId, membresPortee]) => (
-                    <button key={porteeId} type="button" onClick={() => selectPortee(membresPortee)}
-                      className="text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-full px-2.5 py-1 hover:bg-teal-100 transition-colors">
-                      {porteeLabel(membresPortee)} ({membresPortee.length})
-                    </button>
-                  ))}
+                  {[...porteeGroups.entries()].map(([porteeId, membresPortee]) => {
+                    const allSelected = membresPortee.every(a => selectedAnimalIds.includes(a.id));
+                    return (
+                      <button key={porteeId} type="button" onClick={() => togglePortee(membresPortee)}
+                        className={`text-xs font-semibold rounded-full px-2.5 py-1 border transition-colors ${
+                          allSelected
+                            ? 'text-white bg-teal-600 border-teal-600 hover:bg-teal-700'
+                            : 'text-teal-700 bg-teal-50 border-teal-200 hover:bg-teal-100'
+                        }`}>
+                        {allSelected ? '✓ ' : ''}{porteeLabel(membresPortee)} ({membresPortee.length})
+                      </button>
+                    );
+                  })}
                 </div>
               )}
               <div className="border border-gray-200 rounded-xl max-h-32 overflow-y-auto">
-                {animaux.map(a => (
-                  <label key={a.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0">
-                    <input type="checkbox" checked={selectedAnimalIds.includes(a.id)} onChange={() => toggleAnimal(a.id)}
-                      className="rounded text-teal-600 focus:ring-teal-400" />
-                    <span>{a.nom}{a.espece ? ` (${a.espece})` : ''}</span>
-                  </label>
-                ))}
+                {animaux.map(a => {
+                  const checked = selectedAnimalIds.includes(a.id);
+                  return (
+                    <label key={a.id} className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer border-b border-gray-100 last:border-0 transition-colors ${
+                      checked ? 'bg-teal-100 text-teal-900 font-semibold' : 'hover:bg-gray-50'
+                    }`}>
+                      <input type="checkbox" checked={checked} onChange={() => toggleAnimal(a.id)}
+                        className="rounded text-teal-600 focus:ring-teal-400" />
+                      <span>{a.nom}{a.espece ? ` (${a.espece})` : ''}</span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
           )}

@@ -48,9 +48,9 @@ const NAV_GUEST = [
 
 const NAV_ELEVEUR = [
   { href: '/mes-animaux',             label: 'Mes Animaux' },
+  { href: '/annonces/creer',          label: 'Déposer une annonce' },
   { href: '/mes-annonces',            label: 'Mes Annonces' },
   { href: '/abonnement',              label: 'Abonnement' },
-  { href: '/communaute',              label: 'Communauté' },
   { href: '/services',                label: 'Annuaire des professionnels' },
 ];
 
