@@ -84,6 +84,8 @@ interface TacheManuelle {
   uid_eleveur: string;
   eleveur_profile_id?: string | null;
   heure?: string | null;
+  animal_id?: string | null;
+  animal_nom?: string | null;
   assigne_a?: string | null;
   assignes_a?: string[] | null;
   fait_par?: string | null;
@@ -688,7 +690,7 @@ function RoutineModal({ groupe, selectedDate, employes, currentUid, currentProfi
 // ── DayTimeline ───────────────────────────────────────────────────────────────
 
 function DayTimeline({ groupes, tachesM, employes, currentUid, profileNames, selectedDate, onValidateGroupe,
-  onToggleManuel, onAttributeManuel, onDeleteManuel, onDeleteGroupe, load }:
+  onToggleManuel, onAttributeManuel, onEditManuel, onDeleteManuel, onDeleteGroupe, load }:
 {
   groupes: RoutineGroupe[];
   tachesM: TacheManuelle[];
@@ -699,6 +701,7 @@ function DayTimeline({ groupes, tachesM, employes, currentUid, profileNames, sel
   onValidateGroupe: (g: RoutineGroupe) => void;
   onToggleManuel: (t: TacheManuelle) => void;
   onAttributeManuel: (t: TacheManuelle) => void;
+  onEditManuel: (t: TacheManuelle) => void;
   onDeleteManuel: (t: TacheManuelle) => void;
   onDeleteGroupe: (g: RoutineGroupe) => void;
   load: () => void;
@@ -772,6 +775,9 @@ function DayTimeline({ groupes, tachesM, employes, currentUid, profileNames, sel
                     <p className={`text-sm font-medium cursor-pointer ${isDone ? 'line-through text-gray-400' : 'text-gray-800'}`}>
                       {t.titre}
                     </p>
+                    {t.animal_nom && (
+                      <p className="text-xs text-gray-500 mt-0.5">🐾 {t.animal_nom}</p>
+                    )}
                     {isDone && faitPar && (
                       <p className="text-xs text-green-600 mt-0.5">✓ Fait par {faitPar}</p>
                     )}
@@ -787,6 +793,13 @@ function DayTimeline({ groupes, tachesM, employes, currentUid, profileNames, sel
                       {assignees.length > 0 ? '✎' : '+ Attrib.'}
                     </button>
                   )}
+                  <button onClick={() => onEditManuel(t)}
+                    className="p-1 rounded-lg hover:bg-teal-50 text-gray-300 hover:text-teal-400 flex-shrink-0">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
                   <button onClick={() => onDeleteManuel(t)}
                     className="p-1 rounded hover:bg-red-50 text-gray-300 hover:text-red-400 flex-shrink-0">
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -849,6 +862,7 @@ function DayTimeline({ groupes, tachesM, employes, currentUid, profileNames, sel
                       </p>
                       <p className="text-[10px] text-gray-400">
                         {t.heure?.slice(0, 5)}
+                        {t.animal_nom && <span className="ml-1">· 🐾 {t.animal_nom}</span>}
                         {isDone && faitPar && <span className="text-green-600 ml-1">· Fait par {faitPar}</span>}
                         {!isDone && assignees.length > 0 && (
                           <span className="text-teal-600 ml-1">
@@ -859,12 +873,19 @@ function DayTimeline({ groupes, tachesM, employes, currentUid, profileNames, sel
                     </div>
                     {employes.length > 0 && (
                       <button onClick={() => onAttributeManuel(t)}
-                        className="text-[10px] text-teal-600 opacity-0 group-hover:opacity-100 border border-teal-200 rounded-full px-1.5 flex-shrink-0">
+                        className="text-[10px] text-teal-600 border border-teal-200 rounded-full px-1.5 flex-shrink-0">
                         {assignees.length > 0 ? '✎' : '+'}
                       </button>
                     )}
+                    <button onClick={() => onEditManuel(t)}
+                      className="p-0.5 text-gray-300 hover:text-teal-400 flex-shrink-0">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
                     <button onClick={() => onDeleteManuel(t)}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-300 hover:text-red-400 flex-shrink-0">
+                      className="p-0.5 text-gray-300 hover:text-red-400 flex-shrink-0">
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
@@ -1061,7 +1082,7 @@ export default function AgendaElevagePage() {
         .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
         .eq('assigned_to', user.uid).eq('date_prevue', selectedDate),
       withProfileFilter(supabase.from('taches_elevage')
-        .select('id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,assigne_a,assignes_a,fait_par,fait_par_profile_id,notes')
+        .select('id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,animal_id,animal_nom,assigne_a,assignes_a,fait_par,fait_par_profile_id,notes')
         .eq('uid_eleveur', user.uid).eq('date', selectedDate)),
     ]);
     const seen = new Set<string>();
@@ -1302,6 +1323,9 @@ export default function AgendaElevagePage() {
         </button>
         <div className="flex-1 min-w-0">
           <span className="text-sm font-medium text-gray-800">{t.titre}</span>
+          {t.animal_nom && (
+            <p className="text-xs text-gray-500 mt-0.5">🐾 {t.animal_nom}</p>
+          )}
           {t.heure && !isDone && (
             <p className="text-xs text-gray-400 mt-0.5">🕐 {t.heure}</p>
           )}
@@ -1544,6 +1568,7 @@ export default function AgendaElevagePage() {
               onValidateGroupe={setValidateGroupe}
               onToggleManuel={toggleManuel}
               onAttributeManuel={setAttributionTask}
+              onEditManuel={setEditTache}
               onDeleteManuel={deleteManuel}
               onDeleteGroupe={g => setConfirmDelete({
                 label: `Supprimer le protocole "${g.label}" de ce jour ?`,
@@ -1614,6 +1639,7 @@ export default function AgendaElevagePage() {
               onValidateGroupe={setValidateGroupe}
               onToggleManuel={toggleManuel}
               onAttributeManuel={setAttributionTask}
+              onEditManuel={setEditTache}
               onDeleteManuel={deleteManuel}
               onDeleteGroupe={g => setConfirmDelete({
                 label: `Supprimer le protocole "${g.label}" de ce jour ?`,
