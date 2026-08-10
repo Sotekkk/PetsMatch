@@ -66,6 +66,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   String _filterSexe    = 'tous';
   String _filterRace     = '';
   String _presentsSubTab = 'tous'; // 'tous', 'repro', 'bebes'
+  String _selectedPorteeId = ''; // '' = toutes les portées (filtre "Bébés")
   bool _filterRetraite = false;
   bool _filterRepro    = false;
   bool _filterGestante = false;
@@ -1261,14 +1262,59 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         return db.compareTo(da);
       });
 
-    return RefreshIndicator(
-      onRefresh: _loadAnimaux,
-      color: _green,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: sortedKeys.length,
-        itemBuilder: (_, gi) {
-        final pid      = sortedKeys[gi];
+    // Filtre "une seule portée" — si la portée sélectionnée n'existe plus
+    // dans la vue courante (ex: tous ses membres sortis/décédés), retombe
+    // silencieusement sur "toutes".
+    final visibleKeys = _selectedPorteeId.isEmpty || !sortedKeys.contains(_selectedPorteeId)
+        ? sortedKeys
+        : [_selectedPorteeId];
+
+    return Column(
+      children: [
+        if (sortedKeys.length > 1)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _teal.withValues(alpha: 0.3)),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _selectedPorteeId.isEmpty || !sortedKeys.contains(_selectedPorteeId) ? '' : _selectedPorteeId,
+                  isExpanded: true,
+                  icon: const Icon(Icons.expand_more, color: _teal),
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal, fontWeight: FontWeight.w600),
+                  items: [
+                    DropdownMenuItem(value: '', child: Text('Toutes les portées (${sortedKeys.length})')),
+                    ...sortedKeys.map((pid) {
+                      final first = groups[pid]!.first;
+                      final dn = DateTime.tryParse(first['date_naissance'] as String? ?? '');
+                      final nomMere = ((first['nom_mere'] as String?) ?? '').trim();
+                      final label = [
+                        nomMere.isNotEmpty ? 'Portée de $nomMere' : 'Portée',
+                        if (dn != null) 'née le ${fmt.format(dn)}',
+                      ].join(' — ');
+                      return DropdownMenuItem(value: pid, child: Text(label, overflow: TextOverflow.ellipsis));
+                    }),
+                  ],
+                  onChanged: (v) => setState(() => _selectedPorteeId = v ?? ''),
+                ),
+              ),
+            ),
+          ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _loadAnimaux,
+            color: _green,
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: visibleKeys.length,
+              itemBuilder: (_, gi) {
+        final pid      = visibleKeys[gi];
         final members  = groups[pid]!;
         final first    = members.first;
         final dn       = DateTime.tryParse(first['date_naissance'] as String? ?? '');
@@ -1423,6 +1469,9 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         ]);
         },
       ),
+          ),
+        ),
+      ],
     );
   }
 

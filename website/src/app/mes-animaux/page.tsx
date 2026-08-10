@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
@@ -263,19 +263,42 @@ export default function MesAnimauxPage() {
   const { user, userData, loading, activeProfileId } = useAuth();
   const { plan } = usePlan();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const isEleveur = userData?.isElevage === true;
+
+  // Filtre restauré depuis l'URL (?tab=&sub=) pour que la flèche "retour" depuis
+  // la fiche d'un animal retrouve le même filtre au lieu de repartir à zéro.
+  const initialTab: 'presents' | 'anciens' = searchParams.get('tab') === 'anciens' ? 'anciens' : 'presents';
+  const initialSub = searchParams.get('sub');
+  const initialSubTab: 'tous' | 'repro' | 'bebes' =
+    initialSub === 'repro' || initialSub === 'bebes' ? initialSub : 'tous';
+  const initialPortee = searchParams.get('portee') ?? '';
 
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [cessionEnAttente, setCessionEnAttente] = useState<Set<string>>(new Set());
   const [fetching, setFetching] = useState(true);
   const [chaleurFlags, setChaleurFlags] = useState<Record<string, boolean>>({});
   const [gestanteFlags, setGestanteFlags] = useState<Record<string, boolean>>({});
-  const [tab, setTab] = useState<'presents' | 'anciens'>('presents');
+  const [tab, setTab] = useState<'presents' | 'anciens'>(initialTab);
   const [cederAnimal, setCederAnimal] = useState<Animal | null>(null);
   const [nomElevage, setNomElevage] = useState('');
   const [adresseElevage, setAdresseElevage] = useState('');
-  const [presentsSubTab, setPresentsSubTab] = useState<'tous' | 'repro' | 'bebes'>('tous');
+  const [presentsSubTab, setPresentsSubTab] = useState<'tous' | 'repro' | 'bebes'>(initialSubTab);
+  // Portée sélectionnée dans le filtre "Bébés" — '' = toutes les portées.
+  const [selectedPortee, setSelectedPortee] = useState(initialPortee);
+
+  // Garde l'URL synchro avec les filtres actifs (remplace l'entrée d'historique,
+  // pas de nouvelle entrée à chaque clic) pour que le retour depuis une fiche
+  // animal restaure le bon filtre.
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (tab !== 'presents') params.set('tab', tab);
+    if (presentsSubTab !== 'tous') params.set('sub', presentsSubTab);
+    if (presentsSubTab === 'bebes' && selectedPortee) params.set('portee', selectedPortee);
+    const qs = params.toString();
+    router.replace(qs ? `/mes-animaux?${qs}` : '/mes-animaux', { scroll: false });
+  }, [tab, presentsSubTab, selectedPortee, router]);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -551,6 +574,9 @@ export default function MesAnimauxPage() {
     for (const [k, v] of sorted) porteeGroups.set(k, v);
   }
 
+  // Filtre "une seule portée" — '' = toutes.
+  const visiblePorteeGroups = [...porteeGroups.entries()].filter(([pid]) => !selectedPortee || pid === selectedPortee);
+
   function resetFilters() {
     if (tab === 'presents') {
       setFiltreEspece('tous'); setFiltreSexe('tous'); setFiltreRace('');
@@ -661,6 +687,28 @@ export default function MesAnimauxPage() {
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Filtre portée (une seule portée à la fois, uniquement si plusieurs) */}
+      {tab === 'presents' && presentsSubTab === 'bebes' && porteeGroups.size > 1 && (
+        <div className="mb-4">
+          <select
+            value={selectedPortee}
+            onChange={e => setSelectedPortee(e.target.value)}
+            className="w-full sm:w-auto border border-gray-200 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white"
+            style={{ fontFamily: 'Galey, sans-serif' }}
+          >
+            <option value="">Toutes les portées ({porteeGroups.size})</option>
+            {[...porteeGroups.entries()].map(([pid, members]) => {
+              const first = members[0];
+              const dn = first.date_naissance ? new Date(first.date_naissance).toLocaleDateString('fr-FR') : null;
+              const nomMere = first.nom_mere?.trim() ?? '';
+              const label = [nomMere ? `Portée de ${nomMere}` : 'Portée', dn ? `née le ${dn}` : null]
+                .filter(Boolean).join(' — ');
+              return <option key={pid} value={pid}>{label}</option>;
+            })}
+          </select>
         </div>
       )}
 
@@ -789,7 +837,7 @@ export default function MesAnimauxPage() {
         <div className="flex justify-center py-16">
           <div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : currentList.length === 0 ? (
+      ) : (tab === 'presents' && presentsSubTab === 'bebes' ? visiblePorteeGroups.length === 0 : currentList.length === 0) ? (
         <div className="flex flex-col items-center py-20 text-center">
           <span className="text-5xl mb-4">🐾</span>
           <p className="text-gray-500 font-medium" style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -807,9 +855,9 @@ export default function MesAnimauxPage() {
               : 'Modifiez les filtres pour voir plus de résultats'}
           </p>
         </div>
-      ) : presentsSubTab === 'bebes' && porteeGroups.size > 0 ? (
+      ) : presentsSubTab === 'bebes' && visiblePorteeGroups.length > 0 ? (
         <div className="space-y-6">
-          {[...porteeGroups.entries()].map(([pid, members]) => {
+          {visiblePorteeGroups.map(([pid, members]) => {
             const first = members[0];
             const dn = first.date_naissance ? new Date(first.date_naissance).toLocaleDateString('fr-FR') : null;
             const race = first.race ?? '';

@@ -1,4 +1,5 @@
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/pages/onboarding/onboarding_reminder_banner.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
@@ -70,7 +71,6 @@ import 'package:PetsMatch/pages/marketplace/marketplace_page.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:PetsMatch/pages/onboarding/onboarding_eleveur.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -142,7 +142,15 @@ class _EleveurNavState extends State<EleveurNav> {
       child: Scaffold(
       key: drawerKey,
       endDrawer: _buildEndDrawer(context),
-      body: _tabContent(_selectedIndex),
+      body: Stack(
+        children: [
+          _tabContent(_selectedIndex),
+          const Positioned(
+            top: 0, left: 0, right: 0,
+            child: SafeArea(child: OnboardingReminderBanner()),
+          ),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           color: _dark,

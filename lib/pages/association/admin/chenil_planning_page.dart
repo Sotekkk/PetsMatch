@@ -194,7 +194,8 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
                 enabled: !full,
                 onTap: full ? null : () async {
                   Navigator.pop(context);
-                  await _supa.from('animaux').update({'enclos_id': enc.id}).eq('id', animal['id']);
+                  // Un animal ne peut pas être en FA et en enclos en même temps.
+                  await _supa.from('animaux').update({'enclos_id': enc.id, 'fa_id': null}).eq('id', animal['id']);
                   _load();
                 },
               );

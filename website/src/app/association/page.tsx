@@ -65,12 +65,12 @@ export default function AssociationDashboard() {
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <StatCard label="Animaux total" value={stats.total} color="teal" icon="🐾" />
-        <StatCard label="Disponibles" value={stats.disponible} color="green" icon="💚" />
-        <StatCard label="En soin" value={stats.enSoin} color="orange" icon="🏥" />
-        <StatCard label="En famille d'accueil" value={stats.enFa} color="purple" icon="🏡" />
-        <StatCard label="Adoptés" value={stats.adopte} color="blue" icon="🎉" />
-        <StatCard label="Bénévoles actifs" value={stats.benevoles} color="teal" icon="🤝" />
+        <StatCard label="Animaux total" value={stats.total} color="teal" icon="🐾" href="/association/animaux" />
+        <StatCard label="Disponibles" value={stats.disponible} color="green" icon="💚" href="/association/animaux?statut=disponible" />
+        <StatCard label="En soin" value={stats.enSoin} color="orange" icon="🏥" href="/association/animaux?statut=en_soin" />
+        <StatCard label="En famille d'accueil" value={stats.enFa} color="purple" icon="🏡" href="/association/animaux?statut=en_fa" />
+        <StatCard label="Adoptés" value={stats.adopte} color="blue" icon="🎉" href="/association/animaux?statut=adopte" />
+        <StatCard label="Bénévoles actifs" value={stats.benevoles} color="teal" icon="🤝" href="/association/benevoles" />
       </div>
 
       {/* Animaux récents */}
@@ -109,7 +109,7 @@ export default function AssociationDashboard() {
   );
 }
 
-function StatCard({ label, value, color, icon }: { label: string; value: number; color: string; icon: string }) {
+function StatCard({ label, value, color, icon, href }: { label: string; value: number; color: string; icon: string; href?: string }) {
   const colorMap: Record<string, string> = {
     teal: 'bg-teal-50 border-teal-100',
     green: 'bg-green-50 border-green-100',
@@ -121,13 +121,18 @@ function StatCard({ label, value, color, icon }: { label: string; value: number;
     teal: 'text-teal-700', green: 'text-green-700', orange: 'text-orange-600',
     purple: 'text-purple-700', blue: 'text-blue-700',
   };
-  return (
-    <div className={`rounded-2xl p-4 border ${colorMap[color] ?? 'bg-gray-50 border-gray-100'}`}>
+  const content = (
+    <>
       <div className="flex items-center gap-2 mb-1">
         <span className="text-xl">{icon}</span>
         <p className="text-xs text-gray-500 font-galey">{label}</p>
       </div>
       <p className={`text-3xl font-bold font-galey ${valColor[color] ?? 'text-gray-700'}`}>{value}</p>
-    </div>
+    </>
   );
+  const className = `rounded-2xl p-4 border ${colorMap[color] ?? 'bg-gray-50 border-gray-100'}${href ? ' transition-shadow hover:shadow-md cursor-pointer' : ''}`;
+  if (href) {
+    return <Link href={href} className={`block ${className}`}>{content}</Link>;
+  }
+  return <div className={className}>{content}</div>;
 }

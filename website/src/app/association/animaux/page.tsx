@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 
@@ -46,11 +46,18 @@ const ASSIGNABLE_STATUTS = ['en_soin', 'disponible', 'adopte', 'transfere', 'dec
 export default function AnimauxAssoPage() {
   const { user, activeProfileId } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Depuis le tableau de bord : ?statut=disponible|en_soin|en_fa|adopte — détermine
+  // aussi l'onglet (detenus/ancien) puisque "adopte" vit dans l'onglet "ancien".
+  const initialStatut = searchParams.get('statut');
+  const initialTab: 'detenus' | 'ancien' = initialStatut && ANCIENS_VALUES.has(initialStatut) ? 'ancien' : 'detenus';
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [filtered, setFiltered] = useState<Animal[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'detenus' | 'ancien'>('detenus');
-  const [filterStatut, setFilterStatut] = useState('tous');
+  const [tab, setTab] = useState<'detenus' | 'ancien'>(initialTab);
+  const [filterStatut, setFilterStatut] = useState(
+    initialStatut && Object.prototype.hasOwnProperty.call(STATUT_MAP, initialStatut) ? initialStatut : 'tous'
+  );
   const [search, setSearch] = useState('');
   const [myUid, setMyUid] = useState<string | null>(null);
 

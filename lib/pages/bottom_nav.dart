@@ -2,10 +2,9 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/admin/admin_panel.dart';
 import 'package:PetsMatch/pages/association/association_nav.dart';
 import 'package:PetsMatch/pages/eleveur/eleveur_nav.dart';
-import 'package:PetsMatch/pages/onboarding/onboarding_asso.dart';
-import 'package:PetsMatch/pages/onboarding/onboarding_eleveur.dart';
-import 'package:PetsMatch/pages/onboarding/onboarding_pension.dart';
-import 'package:PetsMatch/pages/onboarding/onboarding_garde.dart';
+import 'package:PetsMatch/pages/onboarding/onboarding_flow_page.dart';
+import 'package:PetsMatch/pages/onboarding/onboarding_registry.dart';
+import 'package:PetsMatch/pages/onboarding/onboarding_reminder_banner.dart';
 import 'package:PetsMatch/pages/particulier/particulier_nav.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
@@ -14,8 +13,8 @@ import 'package:PetsMatch/pages/main_feed.dart';
 import 'package:PetsMatch/pages/particulier/user_feed.dart';
 import 'package:PetsMatch/pages/eleveur/user_elevage_feed.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
+import 'package:PetsMatch/services/onboarding_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:PetsMatch/utils.dart';
 import 'package:flutter/material.dart';
@@ -109,6 +108,11 @@ class _BottomNavState extends State<BottomNav> {
     _checkOnboarding();
   }
 
+  // Déclenche l'onboarding métier du profil actif à la première connexion
+  // (onboarding_progress.completed_at IS NULL / aucune ligne — voir
+  // OnboardingService.shouldAutoLaunch). Accessible ensuite via
+  // Paramètres > "Reprendre le guide", pas de relance automatique une fois
+  // démarré ou passé.
   Future<void> _checkOnboarding() async {
     // Charger les profils Supabase si pas encore fait (cas app restart sans LoginPage)
     if (User_Info.availableProfiles.isEmpty) {
@@ -116,130 +120,20 @@ class _BottomNavState extends State<BottomNav> {
       if (uid != null) await User_Info.loadProfiles(uid);
     }
 
-    final prefs = await SharedPreferences.getInstance();
+    final profileId = User_Info.activeProfileId;
+    final profileType = User_Info.activeType;
+    if (profileId.isEmpty || !onboardingRegistry.containsKey(profileType)) return;
 
-    // Types de profils disponibles
-    final assoProfiles    = User_Info.availableProfiles.where((p) => p['profile_type'] == 'association').toList();
-    final pensionProfiles = User_Info.availableProfiles.where((p) => p['profile_type'] == 'pension').toList();
-    final gardeProfiles   = User_Info.availableProfiles.where((p) => p['profile_type'] == 'garde').toList();
-    final eleveurProfiles = User_Info.availableProfiles.where((p) =>
-        !['particulier', 'association', 'pension', 'garde'].contains(p['profile_type'] ?? '')).toList();
-
-    final hasAsso    = assoProfiles.isNotEmpty    || User_Info.isAssociation;
-    final hasPension = pensionProfiles.isNotEmpty;
-    final hasGarde   = gardeProfiles.isNotEmpty;
-    final hasEleveur = eleveurProfiles.isNotEmpty || User_Info.isElevage ||
-                       (User_Info.isPro && !hasPension && !hasGarde);
-
-    // ── Lire les flags AVANT de les modifier ──────────────────────────────────
-    bool assoDone    = prefs.getBool('onboarding_asso_done')    ?? false;
-    bool pensionDone = prefs.getBool(OnboardingPensionPage.prefKey) ?? false;
-    bool gardeDone   = prefs.getBool(OnboardingGardePage.prefKey) ?? false;
-    bool eleveurDone = prefs.getBool('onboarding_eleveur_done') ?? false;
-
-    // Si le profil existe déjà, on marque l'onboarding comme fait sans le montrer
-    if (hasAsso    && !assoDone)    { await prefs.setBool('onboarding_asso_done',    true); assoDone    = true; }
-    if (hasPension && !pensionDone) { await prefs.setBool(OnboardingPensionPage.prefKey, true); pensionDone = true; }
-    if (hasGarde   && !gardeDone)   { await prefs.setBool(OnboardingGardePage.prefKey, true); gardeDone = true; }
-    if (hasEleveur && !eleveurDone) { await prefs.setBool('onboarding_eleveur_done', true); eleveurDone = true; }
-
-    // ── Vérifier ce qui reste à montrer ──────────────────────────────────────
-    final needsAsso    = hasAsso    && !assoDone;
-    final needsPension = hasPension && !pensionDone;
-    final needsGarde   = hasGarde   && !gardeDone;
-    final needsEleveur = hasEleveur && !eleveurDone;
-
-    if (!needsAsso && !needsPension && !needsGarde && !needsEleveur) return;
-    if (!mounted) return;
+    final shouldLaunch = await OnboardingService.shouldAutoLaunch(profileId, profileType);
+    if (!shouldLaunch || !mounted) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (needsAsso && (needsEleveur || needsPension || needsGarde)) {
-        _showOnboardingChoice(prefs);
-      } else if (needsAsso) {
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => const OnboardingAssoPage(),
-        ));
-      } else if (needsPension) {
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => const OnboardingPensionPage(),
-        ));
-      } else if (needsGarde) {
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => const OnboardingGardePage(),
-        ));
-      } else if (needsEleveur) {
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => const OnboardingEleveurPage(),
-        ));
-      }
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => OnboardingFlowPage(profileId: profileId, profileType: profileType),
+        fullscreenDialog: true,
+      ));
     });
-  }
-
-  void _showOnboardingChoice(SharedPreferences prefs) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 36),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(width: 36, height: 4, decoration: BoxDecoration(
-              color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 20),
-            const Text('Bienvenue sur PetsMatch !',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                    fontSize: 20, color: Color(0xFF1F2A2E))),
-            const SizedBox(height: 6),
-            Text('Quel espace voulez-vous découvrir en premier ?',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500)),
-            const SizedBox(height: 24),
-            _OnboardingChoiceCard(
-              icon: Icons.favorite_outlined,
-              color: const Color(0xFF0C5C6C),
-              title: 'Espace Association',
-              subtitle: 'Refuge, adoptions, équipe, familles d\'accueil',
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => const OnboardingAssoPage(),
-                  fullscreenDialog: true,
-                ));
-              },
-            ),
-            const SizedBox(height: 12),
-            _OnboardingChoiceCard(
-              icon: Icons.home_work_outlined,
-              color: const Color(0xFF6E9E57),
-              title: 'Espace Éleveur',
-              subtitle: 'Animaux, annonces, planning, documents',
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => const OnboardingEleveurPage(),
-                  fullscreenDialog: true,
-                ));
-              },
-            ),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: () async {
-                await prefs.setBool('onboarding_asso_done', true);
-                await prefs.setBool('onboarding_eleveur_done', true);
-                if (context.mounted) Navigator.pop(context);
-              },
-              child: Text('Passer', style: TextStyle(
-                  fontFamily: 'Galey', color: Colors.grey.shade400, fontSize: 13)),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _getPage(int index) {
@@ -423,6 +317,11 @@ class _BottomNavState extends State<BottomNav> {
       body: Stack(
         children: [
           _getPage(_selectedIndex),
+          if (_previewRole.isEmpty)
+            const Positioned(
+              top: 0, left: 0, right: 0,
+              child: SafeArea(child: OnboardingReminderBanner()),
+            ),
           // Bandeau de prévisualisation
           if (_previewRole.isNotEmpty)
             Positioned(
@@ -530,54 +429,6 @@ class _BottomNavState extends State<BottomNav> {
             backgroundColor: Colors.transparent,
             type: BottomNavigationBarType.fixed,
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _OnboardingChoiceCard extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _OnboardingChoiceCard({
-    required this.icon, required this.color, required this.title,
-    required this.subtitle, required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: color.withAlpha(20),
-          border: Border.all(color: color.withAlpha(80)),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 48, height: 48,
-              decoration: BoxDecoration(color: color.withAlpha(30), shape: BoxShape.circle),
-              child: Icon(icon, color: color, size: 26),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(title, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                    fontSize: 15, color: color)),
-                const SizedBox(height: 2),
-                Text(subtitle, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                    color: Colors.grey.shade600)),
-              ]),
-            ),
-            Icon(Icons.chevron_right, color: color),
-          ],
         ),
       ),
     );

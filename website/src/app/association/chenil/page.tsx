@@ -341,7 +341,10 @@ export default function ChenilWebPage() {
         return;
       }
     }
-    await supabase.from('animaux').update({ enclos_id: assign ? enclosId : null }).eq('id', animalId);
+    // Un animal ne peut pas être en FA et en enclos en même temps.
+    await supabase.from('animaux')
+      .update(assign ? { enclos_id: enclosId, fa_id: null } : { enclos_id: null })
+      .eq('id', animalId);
     setAnimaux(prev => prev.map(a => a.id === animalId ? { ...a, enclos_id: assign ? enclosId : null } : a));
   }
 

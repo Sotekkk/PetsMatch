@@ -13,7 +13,7 @@ class AssociationHomePage extends StatefulWidget {
   State<AssociationHomePage> createState() => _AssociationHomePageState();
 }
 
-class _AssociationHomePageState extends State<AssociationHomePage> {
+class _AssociationHomePageState extends State<AssociationHomePage> with RouteAware {
   final _supa = Supabase.instance.client;
 
   int _nbAnimaux = 0;
@@ -34,6 +34,27 @@ class _AssociationHomePageState extends State<AssociationHomePage> {
   @override
   void initState() {
     super.initState();
+    _loadStats();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeObserver.subscribe(this, ModalRoute.of(context) as PageRoute);
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  // Recharge les stats quand on revient sur l'accueil après avoir modifié
+  // quelque chose sur un autre écran (ex. placer un animal en FA ou en
+  // enclos) — sans ça, les compteurs restaient figés à l'état du dernier
+  // chargement (même bug déjà corrigé sur EleveurHomePage).
+  @override
+  void didPopNext() {
     _loadStats();
   }
 
@@ -226,9 +247,13 @@ class _AssociationHomePageState extends State<AssociationHomePage> {
                           Navigator.push(context, MaterialPageRoute(
                               builder: (_) => const MesAnimauxAssoPage()))),
                       const SizedBox(width: 10),
-                      _StatCard('Disponibles', _nbDisponibles, Icons.favorite_border, _green),
+                      _StatCard('Disponibles', _nbDisponibles, Icons.favorite_border, _green, onTap: () =>
+                          Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const MesAnimauxAssoPage(initialFilterStatut: 'disponible')))),
                       const SizedBox(width: 10),
-                      _StatCard('En soin', _nbEnSoin, Icons.medical_services_outlined, Colors.orange),
+                      _StatCard('En soin', _nbEnSoin, Icons.medical_services_outlined, Colors.orange, onTap: () =>
+                          Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const MesAnimauxAssoPage(initialFilterStatut: 'en_soin')))),
                     ],
                   ),
                   const SizedBox(height: 10),
@@ -238,7 +263,9 @@ class _AssociationHomePageState extends State<AssociationHomePage> {
                           Navigator.push(context, MaterialPageRoute(
                               builder: (_) => const MesAnimauxAssoPage(initialFilterStatut: 'en_fa')))),
                       const SizedBox(width: 10),
-                      _StatCard('Adoptés', _nbAdoptes, Icons.celebration_outlined, const Color(0xFF00695C)),
+                      _StatCard('Adoptés', _nbAdoptes, Icons.celebration_outlined, const Color(0xFF00695C), onTap: () =>
+                          Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const MesAnimauxAssoPage(initialFilterStatut: 'adopte')))),
                       const SizedBox(width: 10),
                       _StatCard('Équipe', _nbBenevoles, Icons.volunteer_activism_outlined, _teal, onTap: () =>
                           Navigator.push(context, MaterialPageRoute(builder: (_) => const EquipePage()))),

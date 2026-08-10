@@ -833,6 +833,8 @@ class _PlaceAnimalSheetState extends State<_PlaceAnimalSheet> {
     try {
       await _supa.from('animaux').update({
         'fa_id': widget.fa['id'],
+        // Un animal ne peut pas être en FA et en enclos en même temps.
+        'enclos_id': null,
         'date_entree': DateTime.now().toIso8601String().split('T').first,
       }).eq('id', animal['id']);
 
