@@ -2940,10 +2940,15 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
             .gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue'),
       ]);
 
-      final users            = results[0] as List;
-      final invitingProfiles = results[1] as List;
-      final taches           = results[2] as List;
-      final planTaches       = results[3] as List;
+      // results vient de Future.wait sur des futures hétérogènes donc perd
+      // son type générique (List<dynamic>) : sans re-caster chaque élément en
+      // Map<String, dynamic>, le spread `...t` plus bas dans .map() infère un
+      // Map<dynamic, dynamic>, qui plante au .cast<Map<String, dynamic>>() du
+      // build() (écran gris uniforme en release, sans message d'erreur visible).
+      final users            = (results[0] as List).cast<Map<String, dynamic>>();
+      final invitingProfiles = (results[1] as List).cast<Map<String, dynamic>>();
+      final taches           = (results[2] as List).cast<Map<String, dynamic>>();
+      final planTaches       = (results[3] as List).cast<Map<String, dynamic>>();
 
       final invitingProfileById = <String, Map<String, dynamic>>{
         for (final p in invitingProfiles) (p as Map)['id'] as String: Map<String, dynamic>.from(p),
@@ -3030,7 +3035,10 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
               .map((t) => {...t, 'source': 'manuel', 'date': t['date']}),
           ...planTaches.where((t) => t['uid_eleveur'] == uid && t['eleveur_profile_id'] == eleveurProfileId)
               .map((t) => {...t, 'source': 'protocole', 'titre': t['label'] ?? 'Tâche', 'date': t['date_prevue']}),
-        ]..sort((a, b) => (a['date'] as String).compareTo(b['date'] as String));
+          // date peut être absente sur d'anciennes lignes — un cast forcé ici
+          // faisait planter tout le build de la carte (écran gris uniforme en
+          // release, sans message d'erreur visible).
+        ]..sort((a, b) => ((a['date'] as String?) ?? '').compareTo((b['date'] as String?) ?? ''));
         result.add({...e, 'user': u, 'animaux': anims, 'taches': allTaches});
       }
       if (mounted) setState(() { _employeurs = result; _permsMap = permsMap; _loading = false; });
