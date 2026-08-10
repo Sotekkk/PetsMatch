@@ -139,7 +139,7 @@ class _CessionSheetState extends State<CessionSheet> {
 
   List<Map<String, dynamic>> _searchResults = [];
 
-  static const _cpFields = 'uid, firstname, lastname, nom, profile_type, avatar_url, phone_number, adresse, rue, ville, code_postal, numero_elevage';
+  static const _cpFields = 'uid, firstname, lastname, nom, profile_type, avatar_url, phone_number, adresse, rue, ville, code_postal, numero_elevage, email_contact';
 
   Map<String, dynamic> _mapProfile(Map<String, dynamic> cp, {String? email}) => {
     'uid': cp['uid'],
@@ -150,7 +150,10 @@ class _CessionSheetState extends State<CessionSheet> {
     'adress': cp['adresse'], 'adress_elevage': cp['adresse'],
     'rue': cp['rue'], 'ville': cp['ville'], 'code_postal': cp['code_postal'],
     'numero_elevage': cp['numero_elevage'],
-    'email': email,
+    // email_contact est le champ fiable pour tous les types de profil
+    // (éleveur y compris) — email (login, table users) n'est fourni que si
+    // la recherche s'est faite par email.
+    'email': cp['email_contact'] ?? email,
   };
 
   Future<void> _searchUser() async {
@@ -344,32 +347,22 @@ class _CessionSheetState extends State<CessionSheet> {
         'cession_certificat_url': certificatUrl,
       }).eq('id', widget.animal['id']);
 
-      // 3. Historique de propriété
-      final dateStr = _dateCession.toIso8601String().split('T').first;
-      // Clôturer la propriété du cédant
-      await _supa.from('animaux_proprietes')
-          .update({'date_fin': dateStr})
-          .eq('animal_id', widget.animal['id'])
-          .eq('uid_proprio', widget.uid)
-          .isFilter('date_fin', null);
-      // Ouvrir la propriété de l'acquéreur (si compte PetsMatch)
+      // 3. Résoudre le profil (is_main) de l'acquéreur — utilisé pour la
+      // notification ci-dessous. Le transfert de propriété dans
+      // animaux_proprietes (clôture cédant + ouverture acquéreur,
+      // date_debut/date_fin) n'a lieu qu'à la cession DÉFINITIVE, une fois
+      // confirmée par l'éleveur — voir confirmerCession() côté web
+      // (mes-animaux/[id]/page.tsx). Le faire ici, dès 'cession_en_cours',
+      // ferait apparaître l'animal comme "ancien" dans la liste alors que la
+      // fiche permet encore de révoquer la cession.
       Map<String, dynamic>? acqProfileRow;
       if (_foundUser?['uid'] != null) {
-        // Profil principal (is_main) de l'acquéreur — pas forcément 'particulier' :
-        // un éleveur qui acquiert un reproducteur reçoit l'animal sur son profil
-        // éleveur, une association sur son profil association, etc.
         acqProfileRow = await _supa
             .from('user_profiles')
             .select('id')
             .eq('uid', _foundUser!['uid'])
             .eq('is_main', true)
             .maybeSingle();
-        await _supa.from('animaux_proprietes').insert({
-          'animal_id':          widget.animal['id'],
-          'uid_proprio':        _foundUser!['uid'],
-          'date_debut':         dateStr,
-          if (acqProfileRow != null) 'profile_id_proprio': acqProfileRow['id'],
-        });
       }
 
       // 4. Notifier l'acquéreur

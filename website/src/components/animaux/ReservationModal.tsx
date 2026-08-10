@@ -1,11 +1,15 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 interface Animal {
   id: string;
-  nom?: string;
+  nom?: string | null;
+  espece?: string | null;
+  race?: string | null;
+  date_naissance?: string | null;
+  identification?: string | null;
   uid_eleveur?: string | null;
 }
 
@@ -24,8 +28,20 @@ const QUALITES = [
   { value: 'autre',       label: 'Autre' },
 ];
 
+// Certificat d'engagement (loi du 30/11/2021) obligatoire pour ces espèces,
+// avec délai légal de 7 jours avant signature possible.
+const ESPECES_DELAI_LEGAL = ['chien', 'chat'];
+
+type DocEntry = { id: string; type: string; statut: string; url: string; created_at: string };
+
+function splitNom(nomComplet: string): { prenom: string; nom: string } {
+  const parts = nomComplet.trim().split(/\s+/);
+  if (parts.length <= 1) return { prenom: parts[0] ?? '', nom: '' };
+  return { prenom: parts[0], nom: parts.slice(1).join(' ') };
+}
+
 export default function ReservationModal({ animal, uid, profileId, onClose, onReserved }: Props) {
-  const [step, setStep] = useState<'acquéreur' | 'details'>('acquéreur');
+  const [step, setStep] = useState<'acquéreur' | 'details' | 'documents'>('acquéreur');
 
   // Acquéreur
   const [searchQuery, setSearchQuery]   = useState('');
@@ -34,6 +50,8 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
   const [searchDone, setSearchDone]     = useState(false);
   const [searching, setSearching]       = useState(false);
   const [manual, setManual]             = useState(false);
+  // Données brutes de l'utilisateur PetsMatch sélectionné (pour préremplir le contrat)
+  const [selectedUserData, setSelectedUserData] = useState<Record<string, unknown> | null>(null);
 
   // Autocomplétion adresse BAN
   const [adressSuggestions, setAdressSuggestions] = useState<{ label: string }[]>([]);
@@ -46,12 +64,146 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
   const [tel, setTel]                   = useState('');
   const [adresse, setAdresse]           = useState('');
   const [dateReservation, setDateReservation] = useState(new Date().toISOString().split('T')[0]);
+  const [acompte, setAcompte]           = useState('');
   const [notes, setNotes]               = useState('');
+
+  // Documents optionnels : contrat de réservation (app) et/ou certificat
+  // d'engagement (légal, chien/chat). Si aucun n'est coché, la réservation
+  // reste simple (comme aujourd'hui) — le formulaire papier de l'éleveur
+  // reste possible en dehors de l'app.
+  const [wantContrat, setWantContrat]       = useState(false);
+  const [wantCertificat, setWantCertificat] = useState(false);
+  // Prénom/nom séparés pour le certificat d'engagement (dérivés de `nom`,
+  // éditables si l'éleveur veut corriger la coupure automatique)
+  const [certifPrenom, setCertifPrenom] = useState('');
+  const [certifNom, setCertifNom]       = useState('');
+  const [certifPrenomTouched, setCertifPrenomTouched] = useState(false);
+
+  // Contrat de réservation (documents_animaux)
+  const [existingContrats, setExistingContrats] = useState<DocEntry[]>([]);
+  const [loadingDocs, setLoadingDocs]           = useState(false);
+  const contratPopupRef = useRef<Window | null>(null);
+
+  // Certificat d'engagement (certificats_engagement)
+  const [certifSaving, setCertifSaving] = useState(false);
+  const [certifError, setCertifError]   = useState('');
+  const [certifToken, setCertifToken]   = useState<string | null>(null);
+  const especeLower = (animal.espece ?? '').toLowerCase();
+  const needsDelaiLegal = ESPECES_DELAI_LEGAL.includes(especeLower);
 
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
+  // Reprend prénom/nom depuis le nom complet tant que l'éleveur n'a pas
+  // corrigé lui-même les champs dédiés du certificat d'engagement.
+  useEffect(() => {
+    if (certifPrenomTouched) return;
+    const { prenom, nom: n } = splitNom(nom);
+    setCertifPrenom(prenom);
+    setCertifNom(n);
+  }, [nom, certifPrenomTouched]);
+
+  // Charge les contrats de réservation déjà créés pour cet animal
+  useEffect(() => {
+    if (!wantContrat) return;
+    setLoadingDocs(true);
+    supabase.from('documents_animaux')
+      .select('id, type, statut, url, created_at')
+      .eq('animal_id', animal.id)
+      .eq('type', 'contrat_reservation')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        setExistingContrats((data ?? []) as DocEntry[]);
+        setLoadingDocs(false);
+      });
+  }, [wantContrat, animal.id]);
+
+  function reloadContrats() {
+    setLoadingDocs(true);
+    supabase.from('documents_animaux')
+      .select('id, type, statut, url, created_at')
+      .eq('animal_id', animal.id)
+      .eq('type', 'contrat_reservation')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        setExistingContrats((data ?? []) as DocEntry[]);
+        setLoadingDocs(false);
+      });
+  }
+
+  function openContratCreation() {
+    const isElv = selectedUserData?.is_elevage === true;
+    localStorage.setItem('cession_prefill', JSON.stringify({
+      animal_id:          animal.id,
+      animal_nom:         animal.nom ?? '',
+      form_type:          'contrat_reservation',
+      acq_is_eleveur:     isElv,
+      acq_raison_sociale: isElv ? (selectedUserData?.name_elevage as string ?? '') : '',
+      acq_siret:          isElv ? (selectedUserData?.siret as string ?? '') : '',
+      acq_prenom:         (selectedUserData?.firstname as string ?? ''),
+      acq_nom_famille:    (selectedUserData?.lastname as string ?? ''),
+      acq_email:          email.trim(),
+      acq_tel:            tel.trim(),
+      acq_adresse:        adresse.trim(),
+      prix:               acompte.trim(),
+      date:               dateReservation,
+    }));
+    const popup = window.open('/elevage/contrat?from=cession', '_blank', 'width=900,height=700,left=100,top=80');
+    contratPopupRef.current = popup;
+    const timer = setInterval(() => {
+      if (popup?.closed) {
+        clearInterval(timer);
+        reloadContrats();
+      }
+    }, 800);
+  }
+
+  async function createCertificatEngagement() {
+    if (!certifPrenom.trim() || !certifNom.trim() || !email.trim()) {
+      setCertifError('Prénom, nom et email du futur propriétaire sont requis pour le certificat.');
+      return;
+    }
+    setCertifSaving(true);
+    setCertifError('');
+    try {
+      const dateRemise = new Date();
+      const dateLimite = needsDelaiLegal ? new Date(dateRemise.getTime() + 7 * 86400_000) : null;
+      const res = await fetch('/api/certificat/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid,
+          animal_id:             animal.id,
+          espece:                animal.espece ?? '',
+          race:                  animal.race ?? null,
+          nom_animal:            animal.nom ?? '',
+          date_naissance_animal: animal.date_naissance ?? null,
+          num_identification:    animal.identification ?? null,
+          acquereur_uid:         searchResult?.uid ?? null,
+          acquereur_nom:         certifNom.trim(),
+          acquereur_prenom:      certifPrenom.trim(),
+          acquereur_email:       email.trim(),
+          acquereur_telephone:   tel.trim() || null,
+          acquereur_adresse:     adresse.trim() || null,
+          modalite_cession:      qualite === 'autre' ? 'gratuit' : 'vente',
+          prix:                  acompte ? parseFloat(acompte) : null,
+          date_remise:           dateRemise.toISOString(),
+          date_limite_signature: dateLimite?.toISOString() ?? null,
+          notes:                 notes.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) { setCertifError(json.error ?? 'Erreur serveur'); return; }
+      setCertifToken(json.token);
+    } catch (e) {
+      setCertifError(`Erreur : ${e}`);
+    } finally {
+      setCertifSaving(false);
+    }
+  }
+
   function fillFromUser(data: Record<string, unknown>) {
+    setSelectedUserData(data);
     const isElv = data.is_elevage === true;
     const n = isElv
       ? ((data.name_elevage as string) || `${data.firstname ?? ''} ${data.lastname ?? ''}`.trim())
@@ -67,6 +219,12 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
     setTel(phone.replace(/^\+33\s*$/, ''));
     setAdresse(addr || '');
     if (isElv) setQualite('eleveur');
+    if (!isElv) {
+      setCertifPrenomTouched(false);
+      setCertifPrenom((data.firstname as string) ?? '');
+      setCertifNom((data.lastname as string) ?? '');
+      setCertifPrenomTouched(true);
+    }
   }
 
   function mapProfile(cp: Record<string, unknown>, email?: string): Record<string, unknown> {
@@ -78,7 +236,10 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
       adress: cp.adresse, adress_elevage: cp.adresse,
       rue: cp.rue, ville: cp.ville, code_postal: cp.code_postal,
       numero_elevage: cp.numero_elevage,
-      email,
+      // email_contact est le champ fiable pour tous les types de profil
+      // (éleveur y compris) — l'email de la table `users` (login) n'est
+      // renseigné ici que si la recherche s'est faite par email.
+      email: (cp.email_contact as string) || email,
     };
   }
 
@@ -89,7 +250,7 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
     setSearchDone(false);
     setSearchResult(null);
     setSearchResults([]);
-    const CP_FIELDS = 'uid, firstname, lastname, nom, profile_type, avatar_url, phone_number, adresse, rue, ville, code_postal, numero_elevage';
+    const CP_FIELDS = 'uid, firstname, lastname, nom, profile_type, avatar_url, phone_number, adresse, rue, ville, code_postal, numero_elevage, email_contact';
     const isEmail = q.includes('@');
     let rows: Record<string, unknown>[] = [];
     if (isEmail) {
@@ -170,6 +331,10 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
     }
   }
 
+  const stepLabel = step === 'acquéreur' ? 'Étape 1/2 — Futur propriétaire'
+    : step === 'details' ? 'Étape 2/2 — Détails'
+    : 'Documents';
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4">
       <div className="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto">
@@ -178,9 +343,7 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
             <h2 className="text-base font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey,sans-serif' }}>
               🔖 Réserver {animal.nom ?? 'cet animal'}
             </h2>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {step === 'acquéreur' ? 'Étape 1/2 — Futur propriétaire' : 'Étape 2/2 — Détails'}
-            </p>
+            <p className="text-xs text-gray-400 mt-0.5">{stepLabel}</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors">✕</button>
         </div>
@@ -323,9 +486,44 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
               </div>
 
               <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Acompte / arrhes versé (€) — optionnel</label>
+                <input type="number" min="0" placeholder="0" value={acompte} onChange={e => setAcompte(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              </div>
+
+              <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1">Notes</label>
-                <textarea rows={3} placeholder="Acompte versé, conditions, remarques…" value={notes} onChange={e => setNotes(e.target.value)}
+                <textarea rows={2} placeholder="Conditions, remarques…" value={notes} onChange={e => setNotes(e.target.value)}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] resize-none" />
+              </div>
+
+              {/* Documents optionnels — laisse le choix entre gérer le papier
+                  soi-même ou générer les documents depuis l'application. */}
+              <div className="rounded-xl border border-gray-200 p-3 space-y-2">
+                <p className="text-xs font-semibold text-gray-500">Documents (optionnel)</p>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox" checked={wantContrat} onChange={e => setWantContrat(e.target.checked)}
+                    className="mt-0.5 rounded text-[#0C5C6C] focus:ring-[#0C5C6C]" />
+                  <span className="text-sm text-gray-700">
+                    Générer un <strong>contrat de réservation</strong>
+                    <span className="block text-xs text-gray-400">Arrhes, conditions d&apos;annulation, engagement des deux parties.</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox" checked={wantCertificat} onChange={e => setWantCertificat(e.target.checked)}
+                    className="mt-0.5 rounded text-[#0C5C6C] focus:ring-[#0C5C6C]" />
+                  <span className="text-sm text-gray-700">
+                    Générer un <strong>certificat d&apos;engagement</strong>
+                    <span className="block text-xs text-gray-400">
+                      {needsDelaiLegal
+                        ? "Obligatoire pour chien/chat (loi du 30/11/2021) — délai légal de 7 jours avant signature."
+                        : "Attestation d'engagement et de connaissance de l'acquéreur."}
+                    </span>
+                  </span>
+                </label>
+                <p className="text-xs text-gray-400">
+                  Rien à cocher si vous gérez ces documents vous-même en dehors de l&apos;application.
+                </p>
               </div>
 
               {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
@@ -335,11 +533,116 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
                   className="flex-1 border border-gray-200 text-gray-600 font-semibold py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors">
                   ← Retour
                 </button>
+                {wantContrat || wantCertificat ? (
+                  <button onClick={() => setStep('documents')} disabled={!nom.trim()}
+                    className="flex-1 bg-[#0C5C6C] text-white font-semibold py-2.5 rounded-xl text-sm hover:bg-[#094F5D] disabled:opacity-40 transition-colors">
+                    Documents →
+                  </button>
+                ) : (
+                  <button onClick={save} disabled={!nom.trim() || saving}
+                    className="flex-1 bg-amber-600 text-white font-semibold py-2.5 rounded-xl text-sm hover:bg-amber-700 disabled:opacity-40 transition-colors">
+                    {saving ? 'Enregistrement…' : '🔖 Réserver'}
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+
+          {step === 'documents' && (
+            <>
+              {wantContrat && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-[#1F2A2E]">🐾 Contrat de réservation</p>
+                    <button onClick={openContratCreation} className="text-xs font-semibold text-[#0C5C6C] hover:underline">
+                      + Créer un contrat
+                    </button>
+                  </div>
+                  {loadingDocs ? (
+                    <p className="text-xs text-gray-400">Chargement…</p>
+                  ) : existingContrats.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic">Aucun contrat existant — cliquez sur « Créer un contrat » ci-dessus.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {existingContrats.map(d => {
+                        const label = d.statut === 'signe' ? '✅ Signé' : d.statut === 'partiellement_signe' ? '✍️ Partiel' : d.statut === 'en_attente' ? '⏳ En attente' : '📝 Brouillon';
+                        const date = d.created_at ? new Date(d.created_at).toLocaleDateString('fr-FR') : '';
+                        return (
+                          <div key={d.id} className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-[#1F2A2E]">Contrat de réservation</p>
+                              <p className="text-[10px] text-gray-500">{label}{date ? `  ·  ${date}` : ''}</p>
+                            </div>
+                            <a href={`/signer-contrat/${(d as { id: string; token?: string }).token ?? d.id}`} target="_blank" rel="noreferrer"
+                              className="p-1.5 text-gray-400 hover:text-[#0C5C6C]" title="Ouvrir">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                            </a>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {wantContrat && wantCertificat && <hr className="border-gray-100" />}
+
+              {wantCertificat && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-[#1F2A2E]">📜 Certificat d&apos;engagement</p>
+                  {needsDelaiLegal && (
+                    <p className="text-[11px] text-amber-600">⚠ Signature possible par l&apos;acquéreur seulement 7 jours après la remise (loi 30/11/2021).</p>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] text-gray-500 mb-1">Prénom *</label>
+                      <input type="text" value={certifPrenom}
+                        onChange={e => { setCertifPrenomTouched(true); setCertifPrenom(e.target.value); }}
+                        className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-gray-500 mb-1">Nom *</label>
+                      <input type="text" value={certifNom}
+                        onChange={e => { setCertifPrenomTouched(true); setCertifNom(e.target.value); }}
+                        className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                    </div>
+                  </div>
+                  {certifError && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-xl">{certifError}</p>}
+                  {certifToken ? (
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+                      <p className="text-xs font-semibold text-green-800 mb-1">✅ Certificat créé — partagez ce lien :</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <code className="text-[10px] bg-white border border-green-200 rounded px-2 py-1.5 flex-1 text-green-700 break-all">
+                          {typeof window !== 'undefined' ? window.location.origin : ''}/certificat/{certifToken}
+                        </code>
+                        <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/certificat/${certifToken}`)}
+                          className="shrink-0 bg-green-600 hover:bg-green-700 text-white text-[10px] font-semibold px-2.5 py-1.5 rounded-lg">
+                          Copier
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={createCertificatEngagement} disabled={certifSaving}
+                      className="w-full text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C]/30 rounded-xl py-2 hover:bg-[#0C5C6C]/5 disabled:opacity-50">
+                      {certifSaving ? 'Création…' : '+ Créer le certificat d’engagement'}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}
+
+              <div className="flex gap-2 pt-2">
+                <button onClick={() => setStep('details')}
+                  className="flex-1 border border-gray-200 text-gray-600 font-semibold py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors">
+                  ← Retour
+                </button>
                 <button onClick={save} disabled={!nom.trim() || saving}
                   className="flex-1 bg-amber-600 text-white font-semibold py-2.5 rounded-xl text-sm hover:bg-amber-700 disabled:opacity-40 transition-colors">
-                  {saving ? 'Enregistrement…' : '🔖 Réserver'}
+                  {saving ? 'Enregistrement…' : '🔖 Terminer la réservation'}
                 </button>
               </div>
+              <p className="text-xs text-gray-400 text-center">Les documents sont optionnels. Vous pouvez les ajouter plus tard.</p>
             </>
           )}
         </div>

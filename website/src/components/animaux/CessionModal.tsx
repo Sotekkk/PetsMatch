@@ -229,7 +229,10 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
       adress: cp.adresse, adress_elevage: cp.adresse,
       rue: cp.rue, ville: cp.ville, code_postal: cp.code_postal,
       numero_elevage: cp.numero_elevage, siret: cp.siret,
-      email,
+      // email_contact est le champ fiable pour tous les types de profil
+      // (éleveur y compris) — l'email de la table `users` (login) n'est
+      // renseigné ici que si la recherche s'est faite par email.
+      email: (cp.email_contact as string) || email,
     };
   }
 
@@ -240,7 +243,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
     setSearchDone(false);
     setSearchResult(null);
     setSearchResults([]);
-    const CP_FIELDS = 'uid, firstname, lastname, nom, profile_type, avatar_url, phone_number, adresse, rue, ville, code_postal, numero_elevage, siret';
+    const CP_FIELDS = 'uid, firstname, lastname, nom, profile_type, avatar_url, phone_number, adresse, rue, ville, code_postal, numero_elevage, siret, email_contact';
     const isEmail = q.includes('@');
     let rows: Record<string, unknown>[] = [];
     if (isEmail) {
@@ -328,7 +331,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
       const finalContratUrl    = contratUrl    || selectedContrat?.url    || null;
       const finalCertificatUrl = certificatUrl || selectedCertificat?.url || null;
 
-      await supabase.from('animaux').update({
+      const { error: animalUpdateError } = await supabase.from('animaux').update({
         statut:                 'en_attente_cession',
         date_sortie:            dateCession,
         destinataire_qualite:   qualite,
@@ -340,6 +343,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
         cession_prix:           prix ? parseFloat(prix) : null,
         cession_notes:          notes.trim() || null,
       }).eq('id', animal.id);
+      if (animalUpdateError) throw animalUpdateError;
 
       // Enregistrer les mouvements dans le registre
       const acqUid = searchResult?.uid ?? null;
@@ -373,17 +377,13 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
         });
       }
 
-      // ── Historique de propriété ──────────────────────────────────────────
-      // Clôturer la ligne du cédant (date_fin = date de cession)
-      await supabase.from('animaux_proprietes')
-        .update({ date_fin: dateCession })
-        .eq('animal_id', animal.id)
-        .eq('uid_proprio', uid)
-        .is('date_fin', null);
-      // Ouvrir une ligne pour le nouvel acquéreur — profil principal (is_main),
-      // pas forcément 'particulier' : un éleveur qui acquiert un reproducteur
-      // reçoit l'animal sur son profil éleveur, une association sur son profil
-      // association, etc.
+      // Résoudre le profil (is_main) de l'acquéreur — utilisé pour la notification
+      // ci-dessous. NB : le transfert de propriété dans animaux_proprietes
+      // (clôture cédant + ouverture acquéreur, date_debut/date_fin) n'a lieu
+      // qu'à la cession DÉFINITIVE, une fois le contrat signé par les deux
+      // parties — voir signer-contrat/[token]/page.tsx. Le faire ici, dès
+      // 'en_attente_cession', ferait apparaître l'animal comme "ancien" dans
+      // la liste alors que la fiche permet encore d'annuler/recéder.
       let acqProfile: { id: string } | null = null;
       if (acqUid) {
         const { data } = await supabase
@@ -393,13 +393,6 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
           .eq('is_main', true)
           .maybeSingle();
         acqProfile = data;
-        await supabase.from('animaux_proprietes').insert({
-          animal_id:          animal.id,
-          uid_proprio:        acqUid,
-          date_debut:         dateCession,
-          date_fin:           null,
-          profile_id_proprio: acqProfile?.id ?? null,
-        });
       }
 
       // Certificat de bonne santé vétérinaire → documents_animaux
