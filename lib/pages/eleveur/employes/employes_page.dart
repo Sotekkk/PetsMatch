@@ -3004,14 +3004,20 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
         ...planTaches.map((t) => t['animal_id'] as String?),
       }.whereType<String>().toSet().toList();
       final animalNomsById = <String, String>{};
+      // Nom de la portée (dérivé de nom_mere, même convention que "Mes animaux")
+      // affiché à côté du nom de l'animal pour lever l'ambiguïté quand deux
+      // portées différentes contiennent un animal du même nom.
+      final animalPorteeById = <String, String>{};
       if (tacheAnimalIds.isNotEmpty) {
         final animRows = await _supa.from('animaux')
-            .select('id, nom')
+            .select('id, nom, nom_mere')
             .inFilter('id', tacheAnimalIds) as List;
         for (final a in animRows) {
           final id = a['id']?.toString();
           final nom = a['nom'] as String?;
+          final nomMere = (a['nom_mere'] as String?)?.trim();
           if (id != null && nom != null) animalNomsById[id] = nom;
+          if (id != null && nomMere != null && nomMere.isNotEmpty) animalPorteeById[id] = 'Portée de $nomMere';
         }
       }
 
@@ -3052,10 +3058,12 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
         final allTaches = [
           ...taches.where((t) => t['uid_eleveur'] == uid && t['eleveur_profile_id'] == eleveurProfileId)
               .map((t) => {...t, 'source': 'manuel', 'date': t['date'],
-                  'animal_nom': animalNomsById[t['animal_id']?.toString()]}),
+                  'animal_nom': animalNomsById[t['animal_id']?.toString()],
+                  'animal_portee': animalPorteeById[t['animal_id']?.toString()]}),
           ...planTaches.where((t) => t['uid_eleveur'] == uid && t['eleveur_profile_id'] == eleveurProfileId)
               .map((t) => {...t, 'source': 'protocole', 'titre': t['label'] ?? 'Tâche', 'date': t['date_prevue'],
-                  'animal_nom': animalNomsById[t['animal_id']?.toString()]}),
+                  'animal_nom': animalNomsById[t['animal_id']?.toString()],
+                  'animal_portee': animalPorteeById[t['animal_id']?.toString()]}),
           // date peut être absente sur d'anciennes lignes — un cast forcé ici
           // faisait planter tout le build de la carte (écran gris uniforme en
           // release, sans message d'erreur visible).
@@ -3333,7 +3341,11 @@ class _EmployeurExpandedCard extends StatelessWidget {
         final animalNom = t['animal_nom'] as String?;
         return GestureDetector(
           onTap: () => Navigator.push(context, MaterialPageRoute(
-            builder: (_) => TacheDetailPage(tache: t),
+            builder: (_) => TacheDetailPage(
+              tache: t,
+              eleveurUidOverride: uid,
+              animalReadOnly: !perms.contains('write_animaux'),
+            ),
           )),
           child: Container(
             margin: const EdgeInsets.only(bottom: 8),
@@ -4567,7 +4579,14 @@ class _SexeChipE extends StatelessWidget {
 
 class TacheDetailPage extends StatefulWidget {
   final Map<String, dynamic> tache;
-  const TacheDetailPage({super.key, required this.tache});
+  final bool animalReadOnly;
+  final String? eleveurUidOverride;
+  const TacheDetailPage({
+    super.key,
+    required this.tache,
+    this.animalReadOnly = true,
+    this.eleveurUidOverride,
+  });
   @override
   State<TacheDetailPage> createState() => _TacheDetailPageState();
 }
@@ -4647,7 +4666,9 @@ class _TacheDetailPageState extends State<TacheDetailPage> {
     final t = widget.tache;
     final date = DateTime.tryParse(t['date'] ?? '');
     final dateStr = date != null ? DateFormat('dd MMMM yyyy', 'fr_FR').format(date) : '';
-    final animalNom  = t['animal_nom']  as String?;
+    final animalNom    = t['animal_nom']    as String?;
+    final animalPortee = t['animal_portee'] as String?;
+    final animalId     = t['animal_id'] as String?;
     final assigneNom = t['assigne_nom'] as String?;
     final notes = t['notes'] as String?;
     final fait = t['statut'] == 'fait';
@@ -4701,7 +4722,24 @@ class _TacheDetailPageState extends State<TacheDetailPage> {
                   _InfoRow(icon: Icons.calendar_today_outlined, label: 'Date', value: dateStr),
                   if (animalNom != null) ...[
                     const SizedBox(height: 10),
-                    _InfoRow(icon: Icons.pets_outlined, label: 'Animal', value: animalNom),
+                    GestureDetector(
+                      onTap: animalId == null ? null : () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => AnimalFichePage(
+                          animalId: animalId,
+                          readOnly: widget.animalReadOnly,
+                          eleveurUidOverride: widget.eleveurUidOverride,
+                        ),
+                      )),
+                      child: Row(children: [
+                        Expanded(child: _InfoRow(icon: Icons.pets_outlined, label: 'Animal', value: animalNom)),
+                        if (animalId != null)
+                          Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade400),
+                      ]),
+                    ),
+                  ],
+                  if (animalPortee != null) ...[
+                    const SizedBox(height: 10),
+                    _InfoRow(icon: Icons.groups_outlined, label: 'Portée', value: animalPortee),
                   ],
                   if (assigneNom != null) ...[
                     const SizedBox(height: 10),

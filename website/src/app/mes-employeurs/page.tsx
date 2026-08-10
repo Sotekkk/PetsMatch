@@ -28,6 +28,7 @@ interface Tache {
   statut: string;
   animal_id: string | null;
   animal_nom?: string;
+  animal_portee?: string;
   source: 'manuel' | 'protocole';
 }
 
@@ -131,19 +132,29 @@ function TacheDetailModal({ tache, uid, activeProfileId, onClose }: {
           </div>
 
           <p className="font-semibold text-[#1F2A2E] mb-2">{tache.titre}</p>
-          <div className="flex flex-wrap gap-2 mb-5">
+          <div className={`flex flex-wrap gap-2 ${tache.animal_nom ? 'mb-2' : 'mb-5'}`}>
             <span className="text-xs text-gray-400">📅 {formatDate(tache.date)}</span>
-            {tache.animal_nom && (
-              <span className="text-xs bg-[#E8F4F6] text-[#0C5C6C] px-2 py-0.5 rounded-full font-medium">
-                🐾 {tache.animal_nom}
-              </span>
-            )}
             {tache.source === 'protocole' && (
               <span className="text-xs bg-[#F0F9FF] text-[#0C5C6C] px-2 py-0.5 rounded-full font-medium">
                 protocole
               </span>
             )}
           </div>
+          {tache.animal_nom && (
+            <Link
+              href={`/mes-animaux/${tache.animal_id}`}
+              className="flex items-center justify-between bg-[#E8F4F6] hover:bg-[#DCEDF0] rounded-xl px-3 py-2.5 mb-5 transition-colors">
+              <div>
+                <p className="text-sm font-semibold text-[#0C5C6C]">🐾 {tache.animal_nom}</p>
+                {tache.animal_portee && (
+                  <p className="text-xs text-[#0C5C6C]/70 mt-0.5">{tache.animal_portee}</p>
+                )}
+              </div>
+              <svg className="w-4 h-4 text-[#0C5C6C]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          )}
 
           <div className="border-t border-gray-100 pt-4">
             <p className="text-xs font-semibold text-gray-400 uppercase mb-3">Commentaires</p>
@@ -331,16 +342,24 @@ export default function MesEmployeursPage() {
       }
     }
 
-    // Résoudre les noms d'animaux
+    // Résoudre les noms d'animaux + nom de la portée (dérivé de nom_mere,
+    // même convention que "Mes animaux") pour lever l'ambiguïté quand deux
+    // portées différentes contiennent un animal du même nom.
     const animalIds = [
       ...(tachesRaw ?? []).map(t => t.animal_id),
       ...(planTachesRaw ?? []).map(t => t.animal_id),
     ].filter(Boolean) as string[];
     const uniqueIds = [...new Set(animalIds)];
     let animalNames: Record<string, string> = {};
+    let animalPortees: Record<string, string> = {};
     if (uniqueIds.length > 0) {
-      const { data: anNames } = await supabase.from('animaux').select('id, nom').in('id', uniqueIds);
+      const { data: anNames } = await supabase.from('animaux').select('id, nom, nom_mere').in('id', uniqueIds);
       animalNames = Object.fromEntries((anNames ?? []).map((a: { id: string; nom: string | null }) => [a.id, a.nom ?? 'Animal']));
+      animalPortees = Object.fromEntries(
+        (anNames ?? [])
+          .filter((a: { id: string; nom_mere: string | null }) => a.nom_mere?.trim())
+          .map((a: { id: string; nom_mere: string | null }) => [a.id, `Portée de ${a.nom_mere!.trim()}`])
+      );
     }
 
     const usersByUid = Object.fromEntries((users ?? []).map(u => [u.uid, u]));
@@ -359,6 +378,7 @@ export default function MesEmployeursPage() {
         .map(t => ({
           id: t.id, titre: t.titre, date: t.date, statut: t.statut,
           animal_id: t.animal_id, animal_nom: t.animal_id ? animalNames[t.animal_id] : undefined,
+          animal_portee: t.animal_id ? animalPortees[t.animal_id] : undefined,
           source: 'manuel' as const,
         }));
 
@@ -367,6 +387,7 @@ export default function MesEmployeursPage() {
         .map(t => ({
           id: t.id, titre: t.label ?? 'Tâche protocole', date: t.date_prevue, statut: t.statut,
           animal_id: t.animal_id, animal_nom: t.animal_id ? animalNames[t.animal_id] : undefined,
+          animal_portee: t.animal_id ? animalPortees[t.animal_id] : undefined,
           source: 'protocole' as const,
         }));
 
