@@ -2996,6 +2996,25 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
         }
       }
 
+      // Noms des animaux référencés par les tâches (taches_elevage/plan_taches
+      // ne stockent que animal_id) — une seule requête groupée pour tous les
+      // employeurs plutôt qu'une requête par tâche.
+      final tacheAnimalIds = {
+        ...taches.map((t) => t['animal_id'] as String?),
+        ...planTaches.map((t) => t['animal_id'] as String?),
+      }.whereType<String>().toSet().toList();
+      final animalNomsById = <String, String>{};
+      if (tacheAnimalIds.isNotEmpty) {
+        final animRows = await _supa.from('animaux')
+            .select('id, nom')
+            .inFilter('id', tacheAnimalIds) as List;
+        for (final a in animRows) {
+          final id = a['id']?.toString();
+          final nom = a['nom'] as String?;
+          if (id != null && nom != null) animalNomsById[id] = nom;
+        }
+      }
+
       final result = <Map<String, dynamic>>[];
       for (final e in emplois) {
         final uid = e['uid_eleveur'] as String;
@@ -3032,9 +3051,11 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
         final anims = eleveurProfileId != null ? (assocAnimalsByProfileId[eleveurProfileId] ?? []) : <Map<String, dynamic>>[];
         final allTaches = [
           ...taches.where((t) => t['uid_eleveur'] == uid && t['eleveur_profile_id'] == eleveurProfileId)
-              .map((t) => {...t, 'source': 'manuel', 'date': t['date']}),
+              .map((t) => {...t, 'source': 'manuel', 'date': t['date'],
+                  'animal_nom': animalNomsById[t['animal_id']?.toString()]}),
           ...planTaches.where((t) => t['uid_eleveur'] == uid && t['eleveur_profile_id'] == eleveurProfileId)
-              .map((t) => {...t, 'source': 'protocole', 'titre': t['label'] ?? 'Tâche', 'date': t['date_prevue']}),
+              .map((t) => {...t, 'source': 'protocole', 'titre': t['label'] ?? 'Tâche', 'date': t['date_prevue'],
+                  'animal_nom': animalNomsById[t['animal_id']?.toString()]}),
           // date peut être absente sur d'anciennes lignes — un cast forcé ici
           // faisait planter tout le build de la carte (écran gris uniforme en
           // release, sans message d'erreur visible).
@@ -3232,7 +3253,7 @@ class _EmployeurExpandedCard extends StatelessWidget {
         ),
         // Contenu
         if (activeTab == 'animaux') _buildAnimaux()
-        else if (activeTab == 'taches') _buildTaches()
+        else if (activeTab == 'taches') _buildTaches(context)
         else _buildInventaire(context),
       ]),
     );
@@ -3290,7 +3311,7 @@ class _EmployeurExpandedCard extends StatelessWidget {
     );
   }
 
-  Widget _buildTaches() {
+  Widget _buildTaches(BuildContext context) {
     if (taches.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(16),
@@ -3309,33 +3330,45 @@ class _EmployeurExpandedCard extends StatelessWidget {
         final dateStr = dt != null
             ? '${dt.day}/${dt.month}/${dt.year}'
             : date;
-        return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(10)),
-          child: Row(children: [
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(t['titre'] as String? ?? 'Tâche',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: dark)),
-              if (dateStr.isNotEmpty)
-                Text('📅 $dateStr', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
-              if (t['source'] == 'protocole')
-                Container(
-                  margin: const EdgeInsets.only(top: 2),
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(color: teal.withOpacity(0.08), borderRadius: BorderRadius.circular(4)),
-                  child: Text('protocole', style: TextStyle(fontSize: 10, color: teal)),
+        final animalNom = t['animal_nom'] as String?;
+        return GestureDetector(
+          onTap: () => Navigator.push(context, MaterialPageRoute(
+            builder: (_) => TacheDetailPage(tache: t),
+          )),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(10)),
+            child: Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(t['titre'] as String? ?? 'Tâche',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: dark)),
+                if (dateStr.isNotEmpty || animalNom != null)
+                  Text(
+                    [
+                      if (dateStr.isNotEmpty) '📅 $dateStr',
+                      if (animalNom != null) '🐾 $animalNom',
+                    ].join('   '),
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                  ),
+                if (t['source'] == 'protocole')
+                  Container(
+                    margin: const EdgeInsets.only(top: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(color: teal.withOpacity(0.08), borderRadius: BorderRadius.circular(4)),
+                    child: Text('protocole', style: TextStyle(fontSize: 10, color: teal)),
+                  ),
+              ])),
+              GestureDetector(
+                onTap: () => onMarquerFait(t),
+                child: Container(
+                  width: 28, height: 28,
+                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.grey.shade300)),
+                  child: Icon(Icons.check, size: 16, color: Colors.grey.shade400),
                 ),
-            ])),
-            GestureDetector(
-              onTap: () => onMarquerFait(t),
-              child: Container(
-                width: 28, height: 28,
-                decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.grey.shade300)),
-                child: Icon(Icons.check, size: 16, color: Colors.grey.shade400),
               ),
-            ),
-          ]),
+            ]),
+          ),
         );
       },
     );

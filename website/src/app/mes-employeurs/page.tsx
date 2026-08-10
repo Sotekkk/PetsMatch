@@ -62,12 +62,136 @@ function formatDate(d: string) {
   return dt.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
+interface Comment {
+  id: string;
+  uid_auteur: string;
+  contenu: string;
+  created_at: string;
+  auteur_nom?: string;
+}
+
+function TacheDetailModal({ tache, uid, activeProfileId, onClose }: {
+  tache: Tache; uid: string; activeProfileId: string | null; onClose: () => void;
+}) {
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const loadComments = useCallback(async () => {
+    setLoading(true);
+    const { data: rows } = await supabase.from('tache_commentaires')
+      .select().eq('tache_id', tache.id).order('created_at');
+    const authorNames: Record<string, string> = {};
+    for (const c of rows ?? []) {
+      if (!authorNames[c.uid_auteur]) {
+        const { data: u } = await supabase.from('user_profiles')
+          .select('firstname, lastname, nom, profile_type')
+          .eq('uid', c.uid_auteur).eq('is_main', true).maybeSingle();
+        if (u) {
+          authorNames[c.uid_auteur] = u.profile_type === 'eleveur'
+            ? (u.nom ?? 'Élevage')
+            : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
+        }
+      }
+    }
+    setComments((rows ?? []).map(c => ({ ...c, auteur_nom: authorNames[c.uid_auteur] ?? 'Utilisateur' })));
+    setLoading(false);
+  }, [tache.id]);
+
+  useEffect(() => { loadComments(); }, [loadComments]);
+
+  async function addComment() {
+    if (!text.trim()) return;
+    setSending(true);
+    await supabase.from('tache_commentaires').insert({
+      tache_id: tache.id,
+      uid_auteur: uid,
+      ...(activeProfileId ? { auteur_profile_id: activeProfileId } : {}),
+      contenu: text.trim(),
+    });
+    setText('');
+    await loadComments();
+    setSending(false);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-bold text-lg text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+              Détail de la tâche
+            </h2>
+            <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <p className="font-semibold text-[#1F2A2E] mb-2">{tache.titre}</p>
+          <div className="flex flex-wrap gap-2 mb-5">
+            <span className="text-xs text-gray-400">📅 {formatDate(tache.date)}</span>
+            {tache.animal_nom && (
+              <span className="text-xs bg-[#E8F4F6] text-[#0C5C6C] px-2 py-0.5 rounded-full font-medium">
+                🐾 {tache.animal_nom}
+              </span>
+            )}
+            {tache.source === 'protocole' && (
+              <span className="text-xs bg-[#F0F9FF] text-[#0C5C6C] px-2 py-0.5 rounded-full font-medium">
+                protocole
+              </span>
+            )}
+          </div>
+
+          <div className="border-t border-gray-100 pt-4">
+            <p className="text-xs font-semibold text-gray-400 uppercase mb-3">Commentaires</p>
+            {loading ? (
+              <div className="flex justify-center py-4">
+                <div className="w-5 h-5 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : comments.length === 0 ? (
+              <p className="text-sm text-gray-400 mb-4">Aucun commentaire</p>
+            ) : (
+              <div className="space-y-2.5 mb-4">
+                {comments.map(c => (
+                  <div key={c.id} className="bg-gray-50 rounded-xl p-3">
+                    <p className="text-xs font-semibold text-[#0C5C6C]">{c.auteur_nom}</p>
+                    <p className="text-sm text-[#1F2A2E] mt-0.5">{c.contenu}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                value={text}
+                onChange={e => setText(e.target.value)}
+                placeholder="Ajouter un commentaire…"
+                className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]"
+                onKeyDown={e => { if (e.key === 'Enter') addComment(); }}
+              />
+              <button
+                onClick={addComment}
+                disabled={sending || !text.trim()}
+                className="px-4 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold disabled:opacity-50 hover:bg-[#094F5D] transition-colors">
+                Envoyer
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function MesEmployeursPage() {
   const { user, loading: authLoading, activeProfileId } = useAuth();
   const router = useRouter();
   const [employers, setEmployers] = useState<Employer[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Record<string, 'animaux' | 'taches' | 'inventaire'>>({});
+  const [selectedTache, setSelectedTache] = useState<Tache | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/connexion');
@@ -452,9 +576,10 @@ export default function MesEmployeursPage() {
                       <div className="space-y-2">
                         {tachesEnCours.map(t => (
                           <div key={t.id}
-                            className="flex items-start gap-3 bg-gray-50 rounded-xl px-4 py-3">
+                            onClick={() => setSelectedTache(t)}
+                            className="flex items-start gap-3 bg-gray-50 rounded-xl px-4 py-3 cursor-pointer hover:bg-gray-100 transition-colors">
                             <button
-                              onClick={() => marquerFait(t, emp.uid)}
+                              onClick={e => { e.stopPropagation(); marquerFait(t, emp.uid); }}
                               className="mt-0.5 w-5 h-5 rounded border-2 border-gray-300 flex-shrink-0 hover:border-[#6E9E57] transition-colors"
                               title="Marquer comme fait"
                             />
@@ -519,6 +644,15 @@ export default function MesEmployeursPage() {
             );
           })}
         </div>
+      )}
+
+      {selectedTache && (
+        <TacheDetailModal
+          tache={selectedTache}
+          uid={user!.uid}
+          activeProfileId={activeProfileId}
+          onClose={() => setSelectedTache(null)}
+        />
       )}
     </div>
   );
