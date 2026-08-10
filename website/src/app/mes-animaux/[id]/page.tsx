@@ -1693,7 +1693,7 @@ export default function AnimalFichePage() {
     <div className="max-w-3xl mx-auto px-4 py-6">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
-        <Link href="/mes-animaux" className="text-gray-400 hover:text-gray-600 text-2xl">←</Link>
+        <button type="button" onClick={() => router.back()} className="text-gray-400 hover:text-gray-600 text-2xl">←</button>
         <div className="flex-1 min-w-0">
           <h1 className="text-xl font-bold text-[#1F2A2E] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
             {isNew ? 'Nouvel animal' : (animal.nom ?? 'Sans nom')}

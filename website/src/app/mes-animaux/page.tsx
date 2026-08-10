@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
@@ -263,19 +263,38 @@ export default function MesAnimauxPage() {
   const { user, userData, loading, activeProfileId } = useAuth();
   const { plan } = usePlan();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const isEleveur = userData?.isElevage === true;
+
+  // Filtre restauré depuis l'URL (?tab=&sub=) pour que la flèche "retour" depuis
+  // la fiche d'un animal retrouve le même filtre au lieu de repartir à zéro.
+  const initialTab: 'presents' | 'anciens' = searchParams.get('tab') === 'anciens' ? 'anciens' : 'presents';
+  const initialSub = searchParams.get('sub');
+  const initialSubTab: 'tous' | 'repro' | 'bebes' =
+    initialSub === 'repro' || initialSub === 'bebes' ? initialSub : 'tous';
 
   const [animaux, setAnimaux] = useState<Animal[]>([]);
   const [cessionEnAttente, setCessionEnAttente] = useState<Set<string>>(new Set());
   const [fetching, setFetching] = useState(true);
   const [chaleurFlags, setChaleurFlags] = useState<Record<string, boolean>>({});
   const [gestanteFlags, setGestanteFlags] = useState<Record<string, boolean>>({});
-  const [tab, setTab] = useState<'presents' | 'anciens'>('presents');
+  const [tab, setTab] = useState<'presents' | 'anciens'>(initialTab);
   const [cederAnimal, setCederAnimal] = useState<Animal | null>(null);
   const [nomElevage, setNomElevage] = useState('');
   const [adresseElevage, setAdresseElevage] = useState('');
-  const [presentsSubTab, setPresentsSubTab] = useState<'tous' | 'repro' | 'bebes'>('tous');
+  const [presentsSubTab, setPresentsSubTab] = useState<'tous' | 'repro' | 'bebes'>(initialSubTab);
+
+  // Garde l'URL synchro avec les filtres actifs (remplace l'entrée d'historique,
+  // pas de nouvelle entrée à chaque clic) pour que le retour depuis une fiche
+  // animal restaure le bon filtre.
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (tab !== 'presents') params.set('tab', tab);
+    if (presentsSubTab !== 'tous') params.set('sub', presentsSubTab);
+    const qs = params.toString();
+    router.replace(qs ? `/mes-animaux?${qs}` : '/mes-animaux', { scroll: false });
+  }, [tab, presentsSubTab, router]);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
