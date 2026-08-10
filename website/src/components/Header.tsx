@@ -541,6 +541,8 @@ function getNotifUrl(n: Notif): string | null {
     case 'employee_invite':
     case 'tache':
       return '/mes-employeurs';
+    case 'tache_assignee':
+      return '/mes-taches';
     case 'sante_vet':
       return d.animalId ? `/mes-animaux/${d.animalId}` : null;
     case 'vet_access_reponse':
@@ -1005,7 +1007,7 @@ export default function Header() {
                               : n.type === 'rdv_refuse' || n.type?.includes('annule') ? '❌'
                               : n.type?.startsWith('rdv') ? '📅'
                               : n.type === 'employee_invite' ? '🤝'
-                              : n.type === 'tache' ? '✅'
+                              : n.type === 'tache' || n.type === 'tache_assignee' ? '✅'
                               : n.type === 'profil_valide' ? '✅'
                               : n.type === 'profil_en_attente' ? '⏳'
                               : n.type === 'sante_vet' ? '🏥'
