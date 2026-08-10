@@ -772,7 +772,11 @@ export default function Header() {
       .subscribe();
 
     return () => { channel?.unsubscribe(); };
-  }, [user]);
+    // activeProfileId doit être dans les deps : sans ça, fetchNotifs() gardait
+    // le profil actif capturé au tout premier rendu (souvent le profil
+    // principal) et ne se remettait jamais à jour après un switch de profil —
+    // la cloche restait filtrée sur l'ancien profil indéfiniment.
+  }, [user, activeProfileId]);
 
   const totalBell = notifs.length + unreadMessages;
 

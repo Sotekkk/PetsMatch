@@ -90,39 +90,32 @@ export default function MesEmployeursPage() {
 
     if (!rows || rows.length === 0) { setLoading(false); return; }
 
-    // Grouper par uid_eleveur en séparant les profile IDs employé et bénévole
+    // Une entrée par RELATION (uid_eleveur, eleveur_profile_id), pas par
+    // uid_eleveur seul : un même employeur peut inviter depuis plusieurs de
+    // ses profils (ex: éleveur ET association) — ce sont deux relations
+    // distinctes avec leurs propres tâches/animaux/permissions. Les fusionner
+    // faisait perdre l'une des deux et affichait un nom choisi arbitrairement.
+    // On ne déduplique que les doublons exacts (même uid + même profil), en
+    // préférant la ligne non-bénévole.
     type EmpRow = { uid_eleveur: string; eleveur_profile_id: string | null; type: string | null };
-    const groupMap = new Map<string, { primary: EmpRow; allProfileIds: string[]; emploiProfileIds: string[] }>();
+    const relMap = new Map<string, EmpRow>();
     for (const r of rows as EmpRow[]) {
-      const uid = r.uid_eleveur;
-      if (!groupMap.has(uid)) groupMap.set(uid, { primary: r, allProfileIds: [], emploiProfileIds: [] });
-      const g = groupMap.get(uid)!;
-      // Préférer la ligne non-bénévole comme primaire pour les données d'affichage
-      if (r.type !== 'benevole' && g.primary.type === 'benevole') g.primary = r;
-      // Tous les profile IDs (pour permissions + inventaire)
-      if (r.eleveur_profile_id && !g.allProfileIds.includes(r.eleveur_profile_id))
-        g.allProfileIds.push(r.eleveur_profile_id);
-      // Profile IDs employé seulement (pas bénévole) — pour la query animaux
-      if (r.type !== 'benevole' && r.eleveur_profile_id && !g.emploiProfileIds.includes(r.eleveur_profile_id))
-        g.emploiProfileIds.push(r.eleveur_profile_id);
+      const key = `${r.uid_eleveur}|${r.eleveur_profile_id ?? ''}`;
+      const existing = relMap.get(key);
+      if (!existing || (r.type !== 'benevole' && existing.type === 'benevole')) relMap.set(key, r);
     }
-    const groups = [...groupMap.values()];
-    if (groups.length === 0) { setLoading(false); return; }
+    const relations = [...relMap.values()];
+    if (relations.length === 0) { setLoading(false); return; }
 
-    const uids = groups.map(g => g.primary.uid_eleveur);
-    const allProfileIds = groups.flatMap(g => g.allProfileIds);
-    // Profile IDs non-bénévole uniquement → pour animaux_proprietes dans mes-employeurs
-    const emploiProfileIds = groups.flatMap(g => g.emploiProfileIds);
-    const uidToProfileId: Record<string, string | null> = {};
-    const uidToAllProfileIds: Record<string, string[]> = {};
-    const profileIdToUid: Record<string, string> = {};
-    groups.forEach(g => {
-      uidToProfileId[g.primary.uid_eleveur] = g.primary.eleveur_profile_id ?? null;
-      uidToAllProfileIds[g.primary.uid_eleveur] = g.allProfileIds;
-      g.allProfileIds.forEach(pid => { profileIdToUid[pid] = g.primary.uid_eleveur; });
-    });
+    const uids = [...new Set(relations.map(r => r.uid_eleveur))];
+    // Profile IDs non-bénévole uniquement → pour animaux_proprietes/permissions
+    const emploiProfileIds = [...new Set(
+      relations.filter(r => r.type !== 'benevole').map(r => r.eleveur_profile_id).filter((p): p is string => !!p)
+    )];
+    const allProfileIds = [...new Set(relations.map(r => r.eleveur_profile_id).filter((p): p is string => !!p))];
 
-    // Charger les permissions granulaires depuis employe_permissions
+    // Charger les permissions granulaires depuis employe_permissions (déjà
+    // scopées par eleveur_profile_id, donc déjà correctes par relation).
     const permsMap: Record<string, string[]> = {};
     if (allProfileIds.length > 0) {
       const { data: permsRows } = await supabase.from('employe_permissions')
@@ -144,8 +137,8 @@ export default function MesEmployeursPage() {
 
     type UserRow = { uid: string; firstname: string | null; lastname: string | null; name_elevage: string | null; is_elevage: boolean; cat_pro: string | null; profile_picture_url: string | null; profile_picture_url_elevage: string | null };
     type AnimalRow = { id: string; nom: string | null; espece: string | null; race: string | null; sexe: string | null; photo_url: string | null; uid_eleveur: string };
-    type TacheRow = { id: string; titre: string; date: string; statut: string; animal_id: string | null; uid_eleveur: string };
-    type PlanRow  = { id: string; label: string | null; date_prevue: string; statut: string; animal_id: string | null; uid_eleveur: string };
+    type TacheRow = { id: string; titre: string; date: string; statut: string; animal_id: string | null; uid_eleveur: string; eleveur_profile_id: string | null };
+    type PlanRow  = { id: string; label: string | null; date_prevue: string; statut: string; animal_id: string | null; uid_eleveur: string; eleveur_profile_id: string | null };
     type InvRow   = InventaireItem & { eleveur_profile_id: string };
 
     const [
@@ -162,8 +155,8 @@ export default function MesEmployeursPage() {
           cat_pro: p.cat_pro, profile_picture_url: p.avatar_url,
           profile_picture_url_elevage: p.profile_picture_url_pro,
         })) as UserRow[] })),
-      supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigne_profile_id', profileId).neq('statut', 'fait').order('date') as unknown as Promise<{ data: TacheRow[] | null }>,
-      supabase.from('plan_taches').select('id, label, date_prevue, statut, animal_id, uid_eleveur').in('uid_eleveur', uids).eq('assigned_profile_id', profileId).neq('statut', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue') as unknown as Promise<{ data: PlanRow[] | null }>,
+      supabase.from('taches_elevage').select('id, titre, date, statut, animal_id, uid_eleveur, eleveur_profile_id').in('uid_eleveur', uids).eq('assigne_profile_id', profileId).neq('statut', 'fait').order('date') as unknown as Promise<{ data: TacheRow[] | null }>,
+      supabase.from('plan_taches').select('id, label, date_prevue, statut, animal_id, uid_eleveur, eleveur_profile_id').in('uid_eleveur', uids).eq('assigned_profile_id', profileId).neq('statut', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue') as unknown as Promise<{ data: PlanRow[] | null }>,
     ]);
 
     // Profils user_profiles précis utilisés à l'invitation (peut différer du
@@ -187,9 +180,11 @@ export default function MesEmployeursPage() {
       inventaireRaw = invData ?? [];
     }
 
-    // Animaux en accueil via profile_id_proprio — seulement profils employé (pas bénévole)
+    // Animaux en accueil via profile_id_proprio — bucketés par profil précis
+    // (pas par uid) pour rester scopés à LA relation, pas à toutes celles du
+    // même employeur — seulement profils employé (pas bénévole).
     type ApRow = { animal_id: string; profile_id_proprio: string };
-    const assocAnimalsByUid: Record<string, AnimalRow[]> = {};
+    const assocAnimalsByProfileId: Record<string, AnimalRow[]> = {};
     if (emploiProfileIds.length > 0) {
       const { data: apRows } = await supabase.from('animaux_proprietes')
         .select('animal_id, profile_id_proprio')
@@ -203,10 +198,10 @@ export default function MesEmployeursPage() {
           .not('statut', 'in', '("sorti","decede")') as unknown as { data: AnimalRow[] | null };
         for (const a of assocAnimaux ?? []) {
           const ap = (apRows ?? []).find(r => r.animal_id === String(a.id));
-          const ownerUid = ap ? profileIdToUid[ap.profile_id_proprio] : undefined;
-          if (ownerUid) {
-            if (!assocAnimalsByUid[ownerUid]) assocAnimalsByUid[ownerUid] = [];
-            assocAnimalsByUid[ownerUid].push({ ...a, uid_eleveur: ownerUid });
+          const pid = ap?.profile_id_proprio;
+          if (pid) {
+            if (!assocAnimalsByProfileId[pid]) assocAnimalsByProfileId[pid] = [];
+            assocAnimalsByProfileId[pid].push(a);
           }
         }
       }
@@ -224,9 +219,19 @@ export default function MesEmployeursPage() {
       animalNames = Object.fromEntries((anNames ?? []).map((a: { id: string; nom: string | null }) => [a.id, a.nom ?? 'Animal']));
     }
 
-    const list: Employer[] = (users ?? []).map(u => {
+    const usersByUid = Object.fromEntries((users ?? []).map(u => [u.uid, u]));
+
+    const list: Employer[] = [];
+    for (const rel of relations) {
+      const u = usersByUid[rel.uid_eleveur];
+      if (!u) continue;
+      const eleveurProfileId = rel.eleveur_profile_id;
+
+      // Tâches/animaux/inventaire scopés au profil précis de CETTE relation,
+      // jamais à tout ce qui porte le même uid_eleveur (un employeur avec
+      // plusieurs profils a des données distinctes par profil).
       const manuel: Tache[] = (tachesRaw ?? [])
-        .filter(t => t.uid_eleveur === u.uid)
+        .filter(t => t.uid_eleveur === rel.uid_eleveur && t.eleveur_profile_id === eleveurProfileId)
         .map(t => ({
           id: t.id, titre: t.titre, date: t.date, statut: t.statut,
           animal_id: t.animal_id, animal_nom: t.animal_id ? animalNames[t.animal_id] : undefined,
@@ -234,7 +239,7 @@ export default function MesEmployeursPage() {
         }));
 
       const protocoles: Tache[] = (planTachesRaw ?? [])
-        .filter(t => t.uid_eleveur === u.uid)
+        .filter(t => t.uid_eleveur === rel.uid_eleveur && t.eleveur_profile_id === eleveurProfileId)
         .map(t => ({
           id: t.id, titre: t.label ?? 'Tâche protocole', date: t.date_prevue, statut: t.statut,
           animal_id: t.animal_id, animal_nom: t.animal_id ? animalNames[t.animal_id] : undefined,
@@ -245,27 +250,20 @@ export default function MesEmployeursPage() {
         (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
       );
 
-      const eleveurProfileId = uidToProfileId[u.uid] ?? null;
-      const allPids = uidToAllProfileIds[u.uid] ?? [];
-      // Fusionner les permissions de tous les profils (employé + association)
-      const perms = [...new Set(allPids.flatMap(pid => permsMap[pid] ?? []))];
-      const inventaire = inventaireRaw.filter(item => allPids.includes(item.eleveur_profile_id));
+      const perms = eleveurProfileId ? (permsMap[eleveurProfileId] ?? []) : [];
+      const inventaire = eleveurProfileId ? inventaireRaw.filter(item => item.eleveur_profile_id === eleveurProfileId) : [];
+      const allAnimaux = eleveurProfileId ? (assocAnimalsByProfileId[eleveurProfileId] ?? []) : [];
 
-      // Animaux : uniquement via animaux_proprietes.profile_id_proprio, scopé aux
-      // profils employé (emploiProfileIds) réellement accordés à cet employé — ne
-      // jamais retomber sur un listing brut par uid_eleveur, qui exposerait aussi
-      // les animaux d'autres profils (ex : éleveur) du même compte employeur.
-      const allAnimaux = assocAnimalsByUid[u.uid] ?? [];
-
-      // Si l'invitation vient d'un profil secondaire (ex : pension), afficher
-      // le nom de CE profil plutôt que celui du compte principal.
+      // Affiche toujours le profil PRÉCIS qui a invité pour cette relation
+      // (éleveur, association...), jamais celui du compte principal — sinon
+      // deux relations du même employeur affichent le même nom.
       const invitingProfile = eleveurProfileId ? invitingProfileById[eleveurProfileId] : null;
       const invitingNom = invitingProfile?.nom || '';
       const nameOverride = invitingNom
         ? { name_elevage: invitingNom, is_elevage: true, profile_picture_url_elevage: invitingProfile?.avatar_url || u.profile_picture_url_elevage }
         : {};
 
-      return {
+      list.push({
         ...u,
         ...nameOverride,
         eleveur_profile_id: eleveurProfileId,
@@ -273,8 +271,8 @@ export default function MesEmployeursPage() {
         animaux: allAnimaux,
         taches,
         inventaire,
-      };
-    });
+      });
+    }
 
     setEmployers(list);
     setLoading(false);
@@ -303,8 +301,15 @@ export default function MesEmployeursPage() {
     );
   }
 
-  function getTab(uid: string): 'animaux' | 'taches' | 'inventaire' {
-    return tab[uid] ?? 'animaux';
+  // Clé par relation (uid + profil), pas par uid seul : un même employeur peut
+  // avoir 2 cartes (ex: éleveur + association) qui ne doivent pas partager
+  // leur onglet actif.
+  function relKey(emp: Employer): string {
+    return `${emp.uid}|${emp.eleveur_profile_id ?? ''}`;
+  }
+
+  function getTab(emp: Employer): 'animaux' | 'taches' | 'inventaire' {
+    return tab[relKey(emp)] ?? 'animaux';
   }
 
   return (
@@ -339,11 +344,11 @@ export default function MesEmployeursPage() {
             const photo = emp.is_elevage
               ? emp.profile_picture_url_elevage
               : emp.profile_picture_url;
-            const activeTab = getTab(emp.uid);
+            const activeTab = getTab(emp);
             const tachesEnCours = emp.taches.filter(t => t.statut !== 'fait');
 
             return (
-              <div key={emp.uid} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div key={relKey(emp)} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
 
                 {/* Header employeur */}
                 <div className="flex items-center gap-4 p-4 bg-[#F8FBFC]">
@@ -386,7 +391,7 @@ export default function MesEmployeursPage() {
                     ['inventaire', `🗃️ Inventaire`],
                   ] as const).map(([v, l]) => (
                     <button key={v}
-                      onClick={() => setTab(prev => ({ ...prev, [emp.uid]: v }))}
+                      onClick={() => setTab(prev => ({ ...prev, [relKey(emp)]: v }))}
                       className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${
                         activeTab === v
                           ? 'text-[#0C5C6C] border-b-2 border-[#0C5C6C]'

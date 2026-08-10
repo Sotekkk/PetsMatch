@@ -2870,49 +2870,41 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
             .eq('uid_employe', _uid).eq('actif', true).order('created_at');
       }
 
-      // Déduplique par uid_eleveur en préférant les lignes non-bénévole
+      // Une carte par RELATION (uid_eleveur, eleveur_profile_id), pas par
+      // uid_eleveur seul : un même employeur peut inviter depuis plusieurs de
+      // ses profils (ex: éleveur ET association), ce sont deux relations
+      // distinctes avec leurs propres tâches/animaux/permissions — les
+      // fusionner en une carte faisait perdre l'une des deux et affichait un
+      // nom choisi arbitrairement (tri instable sur des clés à égalité).
+      // On ne déduplique que les doublons exacts (même uid + même profil),
+      // en préférant la ligne non-bénévole.
       final sortedRows = List<Map<String, dynamic>>.from(rows)
         ..sort((a, b) {
           final aB = a['type'] == 'benevole' ? 1 : 0;
           final bB = b['type'] == 'benevole' ? 1 : 0;
           return aB.compareTo(bB);
         });
-      final seenUids = <String>{};
+      final seenKeys = <String>{};
       final emplois = <Map<String, dynamic>>[];
       for (final r in sortedRows) {
         final uid = r['uid_eleveur'] as String;
-        if (seenUids.add(uid)) emplois.add(r);
+        final pid = r['eleveur_profile_id'] as String? ?? '';
+        if (seenKeys.add('$uid|$pid')) emplois.add(r);
       }
       if (emplois.isEmpty) {
         if (mounted) setState(() { _employeurs = []; _loading = false; });
         return;
       }
 
-      final uids = emplois.map((e) => e['uid_eleveur'] as String).toList();
-
-      // Collecter les profile IDs par uid — séparé employé vs bénévole
-      final allProfileIdsByUid = <String, List<String>>{};
-      final emploiProfileIdsByUid = <String, List<String>>{}; // non-bénévole uniquement
-      for (final r in sortedRows) {
-        final uid = r['uid_eleveur'] as String;
-        final pid = r['eleveur_profile_id'] as String?;
-        final isBenevole = r['type'] == 'benevole';
-        if (pid != null) {
-          allProfileIdsByUid.putIfAbsent(uid, () => []);
-          if (!allProfileIdsByUid[uid]!.contains(pid)) allProfileIdsByUid[uid]!.add(pid);
-          if (!isBenevole) {
-            emploiProfileIdsByUid.putIfAbsent(uid, () => []);
-            if (!emploiProfileIdsByUid[uid]!.contains(pid)) emploiProfileIdsByUid[uid]!.add(pid);
-          }
-        }
-      }
-      final profileIdToUid = <String, String>{};
-      allProfileIdsByUid.forEach((uid, pids) {
-        for (final pid in pids) profileIdToUid[pid] = uid;
-      });
-      final allProfileIds = allProfileIdsByUid.values.expand((e) => e).toList();
-      // Profils employé (non-bénévole) → pour animaux_proprietes
-      final emploiProfileIds = emploiProfileIdsByUid.values.expand((e) => e).toList();
+      final uids = emplois.map((e) => e['uid_eleveur'] as String).toSet().toList();
+      // Profils employé (non-bénévole) → pour animaux_proprietes/tâches, un
+      // profile_id par relation (pas de fusion par uid).
+      final emploiProfileIds = emplois
+          .where((e) => e['type'] != 'benevole')
+          .map((e) => e['eleveur_profile_id'] as String?)
+          .whereType<String>()
+          .toSet()
+          .toList();
       final pastStr   = DateTime.now().subtract(const Duration(days: 7)).toIso8601String().substring(0, 10);
       final futureStr = DateTime.now().add(const Duration(days: 90)).toIso8601String().substring(0, 10);
 
@@ -2940,10 +2932,10 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                 .select('id, nom, avatar_url, profile_type')
                 .inFilter('id', invitingProfileIds),
         _supa.from('taches_elevage')
-            .select('id, titre, date, statut, animal_id, uid_eleveur')
+            .select('id, titre, date, statut, animal_id, uid_eleveur, eleveur_profile_id')
             .inFilter('uid_eleveur', uids).eq(tachesAssigneFilter, tachesAssigneValue).neq('statut', 'fait').order('date'),
         _supa.from('plan_taches')
-            .select('id, label, date_prevue, statut, animal_id, uid_eleveur')
+            .select('id, label, date_prevue, statut, animal_id, uid_eleveur, eleveur_profile_id')
             .inFilter('uid_eleveur', uids).eq(planAssigneFilter, planAssigneValue).neq('statut', 'fait')
             .gte('date_prevue', pastStr).lte('date_prevue', futureStr).order('date_prevue'),
       ]);
@@ -2970,8 +2962,10 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
         }
       }
 
-      // Animaux en accueil via profile_id_proprio — seulement profils employé (pas bénévole)
-      final assocAnimalsByUid = <String, List<Map<String, dynamic>>>{};
+      // Animaux en accueil via profile_id_proprio — bucketés par profil précis
+      // (pas par uid) pour rester scopés à LA relation, pas à toutes celles du
+      // même employeur — seulement profils employé (pas bénévole).
+      final assocAnimalsByProfileId = <String, List<Map<String, dynamic>>>{};
       if (emploiProfileIds.isNotEmpty) {
         final apRows = await _supa.from('animaux_proprietes')
             .select('animal_id, profile_id_proprio')
@@ -2989,11 +2983,9 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
               (r) => r['animal_id']?.toString() == animalId,
               orElse: () => <String, dynamic>{},
             );
-            final ownerUid = ap.isNotEmpty ? profileIdToUid[ap['profile_id_proprio'] as String?] : null;
-            if (ownerUid != null) {
-              assocAnimalsByUid.putIfAbsent(ownerUid, () => []).add(
-                Map<String, dynamic>.from(a as Map)..['uid_eleveur'] = ownerUid,
-              );
+            final pid = ap.isNotEmpty ? ap['profile_id_proprio'] as String? : null;
+            if (pid != null) {
+              assocAnimalsByProfileId.putIfAbsent(pid, () => []).add(Map<String, dynamic>.from(a as Map));
             }
           }
         }
@@ -3002,6 +2994,7 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
       final result = <Map<String, dynamic>>[];
       for (final e in emplois) {
         final uid = e['uid_eleveur'] as String;
+        final eleveurProfileId = e['eleveur_profile_id'] as String?;
         final primaryUser = users.firstWhere((u) => u['uid'] == uid, orElse: () => <String, dynamic>{});
         if ((primaryUser as Map).isEmpty) continue;
         var u = <String, dynamic>{
@@ -3014,10 +3007,10 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
           'profile_picture_url': primaryUser['avatar_url'],
           'profile_picture_url_elevage': primaryUser['profile_picture_url_pro'],
         };
-        // Si l'invitation vient d'un profil secondaire (ex : pension), afficher
-        // le nom de CE profil plutôt que celui du compte principal.
-        final invitingProfileId = e['eleveur_profile_id'] as String?;
-        final invitingProfile = invitingProfileId != null ? invitingProfileById[invitingProfileId] : null;
+        // Affiche toujours le profil PRÉCIS qui a invité pour cette relation
+        // (éleveur, association...) — jamais celui du compte principal, sinon
+        // deux relations du même employeur affichent le même nom.
+        final invitingProfile = eleveurProfileId != null ? invitingProfileById[eleveurProfileId] : null;
         if (invitingProfile != null) {
           final nom = (invitingProfile['nom'] as String?) ?? '';
           if (nom.isNotEmpty) {
@@ -3028,14 +3021,15 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
             u['profile_picture_url_elevage'] = invitingProfile['avatar_url'];
           }
         }
-        // Animaux : uniquement via animaux_proprietes.profile_id_proprio, scopé aux
-        // profils employé (emploiProfileIds) réellement accordés à cet employé — ne
-        // jamais retomber sur un listing brut par uid_eleveur, qui exposerait aussi
-        // les animaux d'autres profils (ex : éleveur) du même compte employeur.
-        final anims = assocAnimalsByUid[uid] ?? [];
+        // Animaux/tâches : scopés au profil précis de CETTE relation, jamais à
+        // tout ce qui porte le même uid_eleveur (un employeur avec plusieurs
+        // profils a des animaux/tâches distincts par profil).
+        final anims = eleveurProfileId != null ? (assocAnimalsByProfileId[eleveurProfileId] ?? []) : <Map<String, dynamic>>[];
         final allTaches = [
-          ...taches.where((t) => t['uid_eleveur'] == uid).map((t) => {...t, 'source': 'manuel', 'date': t['date']}),
-          ...planTaches.where((t) => t['uid_eleveur'] == uid).map((t) => {...t, 'source': 'protocole', 'titre': t['label'] ?? 'Tâche', 'date': t['date_prevue']}),
+          ...taches.where((t) => t['uid_eleveur'] == uid && t['eleveur_profile_id'] == eleveurProfileId)
+              .map((t) => {...t, 'source': 'manuel', 'date': t['date']}),
+          ...planTaches.where((t) => t['uid_eleveur'] == uid && t['eleveur_profile_id'] == eleveurProfileId)
+              .map((t) => {...t, 'source': 'protocole', 'titre': t['label'] ?? 'Tâche', 'date': t['date_prevue']}),
         ]..sort((a, b) => (a['date'] as String).compareTo(b['date'] as String));
         result.add({...e, 'user': u, 'animaux': anims, 'taches': allTaches});
       }
@@ -3104,7 +3098,11 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                         final perms = _permsMap[eleveurProfileId] ?? <String>{};
                         final animaux = e['animaux'] as List;
                         final taches  = e['taches'] as List;
-                        final activeTab = _tabState[uid] ?? 'animaux';
+                        // Clé par relation (uid + profil), pas par uid seul : un même
+                        // employeur peut avoir 2 cartes (ex: éleveur + association) qui
+                        // ne doivent pas partager leur onglet actif.
+                        final cardKey = '$uid|$eleveurProfileId';
+                        final activeTab = _tabState[cardKey] ?? 'animaux';
                         final catPro = u['cat_pro'] as String?;
                         return _EmployeurExpandedCard(
                           uid: uid, nom: nom, photo: photo, teal: _teal, dark: _dark,
@@ -3114,7 +3112,7 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                           catPro: catPro,
                           animaux: animaux.cast<Map<String, dynamic>>(),
                           taches: taches.cast<Map<String, dynamic>>(),
-                          onTabChange: (val) => setState(() => _tabState[uid] = val),
+                          onTabChange: (val) => setState(() => _tabState[cardKey] = val),
                           onVoirProfil: () => Navigator.push(context, MaterialPageRoute(
                             builder: (_) => EmployeurDetailPage(
                               eleveurUid: uid, eleveurNom: nom,

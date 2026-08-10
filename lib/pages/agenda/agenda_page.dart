@@ -258,19 +258,20 @@ class _AgendaPageState extends State<AgendaPage> {
   }).toList();
 
   Future<void> _loadTasks() async {
-    // Les tâches (taches_elevage / plan_taches) sont une feature éleveur/association uniquement.
-    // Un particulier n'en a pas — on vide et on sort immédiatement.
-    if (widget.isParticulier || User_Info.activeType == 'particulier') {
-      if (mounted) setState(() { _tasks = []; });
-      return;
-    }
+    // Un particulier ne possède pas d'élevage donc ne "crée" jamais de tâche
+    // (d1 ci-dessous), mais peut très bien être employé et se voir assigner
+    // des tâches par son employeur (d2/p2 plus bas) — ne pas confondre les
+    // deux : seul d1 est une feature éleveur/association/pension.
+    final isParticulierView = widget.isParticulier || User_Info.activeType == 'particulier';
     final from = '${_focusedMonth.year}-${(_focusedMonth.month - 1).clamp(1, 12).toString().padLeft(2, '0')}-01';
     final toDate = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0);
     final to   = '${toDate.year}-${toDate.month.toString().padLeft(2, '0')}-${toDate.day.toString().padLeft(2, '0')}';
     try {
       final pid = User_Info.activeProfileId;
-      dynamic d1;
-      if (pid.isNotEmpty) {
+      dynamic d1 = <dynamic>[];
+      if (isParticulierView) {
+        // pas de tâches "possédées" pour un particulier — d1 reste vide.
+      } else if (pid.isNotEmpty) {
         d1 = await _supa.from('taches_elevage')
             .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
             .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
@@ -387,16 +388,27 @@ class _AgendaPageState extends State<AgendaPage> {
       if (uids.isNotEmpty) {
         try {
           final users = await _supa.from('user_profiles')
-              .select('uid,firstname,lastname,nom,profile_type')
-              .inFilter('uid', uids.toList()).eq('is_main', true);
-          final nomMap = <String, String>{};
+              .select('uid,firstname,lastname,nom,profile_type,is_main')
+              .inFilter('uid', uids.toList());
+          // Un compte peut avoir plusieurs profils pour le même uid (ex: éleveur
+          // + particulier). On préfère toujours le profil particulier (identité
+          // personnelle) pour l'affichage — sinon l'assigné d'une tâche se
+          // retrouvait affiché avec la raison sociale de son propre élevage au
+          // lieu de son nom, dès que le compte en avait un.
+          final byUid = <String, List<Map<String, dynamic>>>{};
           for (final u in (users as List)) {
-            final uid = u['uid'] as String;
-            final nom = (u['profile_type'] == 'eleveur' && u['nom'] != null)
-                ? u['nom'] as String
-                : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
-            if (nom.isNotEmpty) nomMap[uid] = nom;
+            byUid.putIfAbsent(u['uid'] as String, () => []).add(Map<String, dynamic>.from(u));
           }
+          final nomMap = <String, String>{};
+          byUid.forEach((uid, profiles) {
+            Map<String, dynamic>? chosen;
+            for (final p in profiles) { if (p['profile_type'] == 'particulier') { chosen = p; break; } }
+            chosen ??= profiles.firstWhere((p) => p['is_main'] == true, orElse: () => profiles.first);
+            final nom = (chosen['profile_type'] == 'eleveur' && chosen['nom'] != null)
+                ? chosen['nom'] as String
+                : '${chosen['firstname'] ?? ''} ${chosen['lastname'] ?? ''}'.trim();
+            if (nom.isNotEmpty) nomMap[uid] = nom;
+          });
           for (final t in all) {
             final assignee = (t['assigne_a'] ?? t['assigned_to']) as String?;
             final resp = assignee ?? (t['uid_eleveur'] as String?);
@@ -432,7 +444,11 @@ class _AgendaPageState extends State<AgendaPage> {
   }
 
   List<Map<String, dynamic>> _tasksForDay(DateTime day) {
-    if (!_canShowTasks()) return [];
+    // _canShowTasks() ne gate que la capacité à GÉRER des tâches (éleveur/
+    // association/pension) — un particulier employé n'en crée pas mais doit
+    // quand même voir celles qui lui sont assignées (déjà scopées côté
+    // _loadTasks, _tasks reste vide pour lui sinon).
+    if (!_canShowTasks() && !widget.isParticulier) return [];
     final key = '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
     return _tasks.where((t) => (t['date'] ?? '').toString().startsWith(key)).toList();
   }
