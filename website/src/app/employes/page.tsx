@@ -540,7 +540,12 @@ function TachesTab({ uid, profileId }: { uid: string; profileId: string | null }
   async function toggleStatut(t: Task) {
     const newStatut = t.statut === 'fait' ? 'a_faire' : 'fait';
     setTaches(prev => prev.map(x => x.id === t.id ? { ...x, statut: newStatut } : x));
-    await supabase.from('taches_elevage').update({ statut: newStatut }).eq('id', t.id);
+    await supabase.from('taches_elevage').update({
+      statut: newStatut,
+      fait_par: newStatut === 'fait' ? uid : null,
+      fait_par_profile_id: newStatut === 'fait' ? profileId : null,
+      fait_a: newStatut === 'fait' ? new Date().toISOString() : null,
+    }).eq('id', t.id);
   }
 
   async function deleteTask(t: Task) {
@@ -658,12 +663,22 @@ function TaskModal({
   async function save() {
     if (!titre.trim() || !date) return;
     setSaving(true);
+    const isSelf = assigneA === uid;
+    let assigneProfileId: string | null = null;
+    if (assigneA && isSelf) {
+      assigneProfileId = profileId;
+    } else if (assigneA) {
+      const { data } = await supabase.from('user_profiles')
+        .select('id').eq('uid', assigneA).eq('profile_type', 'particulier').maybeSingle();
+      assigneProfileId = data?.id ?? null;
+    }
     const payload = {
       titre: titre.trim(),
       date,
       uid_eleveur: uid,
       ...(profileId ? { eleveur_profile_id: profileId } : {}),
       assigne_a: assigneA || null,
+      assigne_profile_id: assigneProfileId,
       animal_id: animalId || null,
       notes: notes.trim() || null,
     };

@@ -526,6 +526,7 @@ class PlanningService {
   static Future<void> validerTache(
     String tacheId, {
     required String validateurUid,
+    String? validateurProfileId,
     String? notes,
     required Map<String, dynamic> tacheData,
     bool insertRegistre = false,
@@ -533,6 +534,7 @@ class PlanningService {
     await _supa.from('plan_taches').update({
       'statut':           'fait',
       'valide_par':       validateurUid,
+      'valide_par_profile_id': validateurProfileId,
       'valide_at':        DateTime.now().toIso8601String(),
       if (notes != null && notes.isNotEmpty) 'notes_validation': notes,
     }).eq('id', tacheId);
@@ -609,6 +611,7 @@ class PlanningService {
       ..['date_prevue']    = newDateStr
       ..['statut']         = 'en_attente'
       ..['valide_par']     = null
+      ..['valide_par_profile_id'] = null
       ..['valide_at']      = null
       ..['notes_validation'] = null;
     await _supa.from('plan_taches').insert(newRow);

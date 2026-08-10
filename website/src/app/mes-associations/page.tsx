@@ -41,7 +41,7 @@ function formatDate(d: string) {
 }
 
 export default function MesAssociationsPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, activeProfileId } = useAuth();
   const router = useRouter();
   const [assos, setAssos] = useState<Asso[]>([]);
   const [loading, setLoading] = useState(true);
@@ -216,9 +216,13 @@ export default function MesAssociationsPage() {
 
   async function marquerFait(tache: Tache) {
     if (tache.source === 'manuel') {
-      await supabase.from('taches_elevage').update({ statut: 'fait' }).eq('id', tache.id);
+      await supabase.from('taches_elevage').update({
+        statut: 'fait', fait_par: user!.uid, fait_par_profile_id: activeProfileId, fait_a: new Date().toISOString(),
+      }).eq('id', tache.id);
     } else {
-      await supabase.from('plan_taches').update({ statut: 'fait' }).eq('id', tache.id);
+      await supabase.from('plan_taches').update({
+        statut: 'fait', valide_par: user!.uid, valide_par_profile_id: activeProfileId, valide_at: new Date().toISOString(),
+      }).eq('id', tache.id);
     }
     load();
   }
