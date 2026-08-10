@@ -454,6 +454,28 @@ class _NotificationsPageState extends State<NotificationsPage> {
           builder: (_) => const MesEmployeursPage(),
         ));
       }
+    } else if (type == 'tache_assignee') {
+      final tacheId = data is Map ? data['tacheId'] : null;
+      Map<String, dynamic>? tache;
+      if (tacheId != null) {
+        try {
+          tache = await Supabase.instance.client
+              .from('taches_elevage')
+              .select()
+              .eq('id', tacheId)
+              .maybeSingle();
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      if (tache != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => TacheDetailPage(tache: tache!),
+        ));
+      } else {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const MesEmployeursPage(),
+        ));
+      }
     }
   }
 
