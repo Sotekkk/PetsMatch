@@ -466,14 +466,26 @@ export default function AgendaPage() {
     if (taskUids.size > 0) {
       const { data: usersData } = await supabase
         .from('user_profiles')
-        .select('uid,firstname,lastname,nom,profile_type')
-        .in('uid', [...taskUids]).eq('is_main', true);
+        .select('uid,firstname,lastname,nom,profile_type,is_main')
+        .in('uid', [...taskUids]);
+      // Un compte peut avoir plusieurs profils pour le même uid (ex: éleveur +
+      // particulier). On préfère toujours le profil particulier (identité
+      // personnelle) pour l'affichage — sinon l'assigné d'une tâche se
+      // retrouvait affiché avec la raison sociale de son propre élevage.
+      const byUid = new Map<string, { firstname?: string; lastname?: string; nom?: string; profile_type?: string; is_main?: boolean }[]>();
+      for (const u of (usersData ?? []) as { uid: string; firstname?: string; lastname?: string; nom?: string; profile_type?: string; is_main?: boolean }[]) {
+        if (!byUid.has(u.uid)) byUid.set(u.uid, []);
+        byUid.get(u.uid)!.push(u);
+      }
       const nomMap: Record<string, string> = {};
-      for (const u of (usersData ?? []) as { uid: string; firstname?: string; lastname?: string; nom?: string; profile_type?: string }[]) {
-        const nom = (u.profile_type === 'eleveur' && u.nom)
-          ? u.nom
-          : `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
-        if (nom) nomMap[u.uid] = nom;
+      for (const [taskUid, profiles] of byUid) {
+        const chosen = profiles.find(p => p.profile_type === 'particulier')
+          ?? profiles.find(p => p.is_main)
+          ?? profiles[0];
+        const nom = (chosen.profile_type === 'eleveur' && chosen.nom)
+          ? chosen.nom
+          : `${chosen.firstname ?? ''} ${chosen.lastname ?? ''}`.trim();
+        if (nom) nomMap[taskUid] = nom;
       }
       setTasks(allTasks.map(t => ({ ...t, responsable_nom: nomMap[t.assigne_a ?? t.uid_eleveur ?? ''] ?? undefined })));
     } else {
