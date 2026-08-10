@@ -23,6 +23,8 @@ class CessionSheet extends StatefulWidget {
   final VoidCallback onCeded;
   /// true = l'utilisateur est l'acquéreur qui re-cède (pas l'éleveur d'origine)
   final bool isReCession;
+  /// Réservation active à préremplir — l'étape "Acquéreur" est alors sautée
+  final Map<String, dynamic>? reservation;
 
   const CessionSheet({
     super.key,
@@ -31,6 +33,7 @@ class CessionSheet extends StatefulWidget {
     required this.nomElevage,
     required this.onCeded,
     this.isReCession = false,
+    this.reservation,
   });
 
   @override
@@ -82,6 +85,20 @@ class _CessionSheetState extends State<CessionSheet> {
     super.initState();
     _dateCession = DateTime.now();
     _loadExistingDocs();
+    final r = widget.reservation;
+    if (r != null) {
+      _step = 1;
+      _qualite = r['qualite'] as String? ?? 'particulier';
+      _nomCtrl.text     = r['nom'] as String? ?? '';
+      _emailCtrl.text   = r['email'] as String? ?? '';
+      _telCtrl.text     = r['tel'] as String? ?? '';
+      _adresseCtrl.text = r['adresse'] as String? ?? '';
+      _notesCtrl.text   = r['notes'] as String? ?? '';
+      final acqUid = r['uid_acquereur'] as String?;
+      if (acqUid != null && acqUid.isNotEmpty) {
+        _foundUser = {'uid': acqUid, 'nom': r['nom'] as String? ?? 'Utilisateur PetsMatch'};
+      }
+    }
   }
 
   Future<void> _loadExistingDocs() async {
@@ -385,6 +402,13 @@ class _CessionSheetState extends State<CessionSheet> {
             }),
           );
         } catch (_) {}
+      }
+
+      // Clôturer la réservation d'origine s'il y en avait une
+      if (widget.reservation != null) {
+        await _supa.from('reservations_animaux')
+            .update({'statut': 'transformee', 'updated_at': DateTime.now().toIso8601String()})
+            .eq('id', widget.reservation!['id']);
       }
 
       if (mounted) {

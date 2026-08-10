@@ -34,6 +34,17 @@ interface CessionData {
   uid_acquereur: string | null;
 }
 
+interface Reservation {
+  id: string;
+  qualite?: string | null;
+  nom?: string | null;
+  email?: string | null;
+  tel?: string | null;
+  adresse?: string | null;
+  uid_acquereur?: string | null;
+  notes?: string | null;
+}
+
 interface Props {
   animal: Animal;
   uid: string;
@@ -43,6 +54,8 @@ interface Props {
   onCeded: () => void;
   /** true = l'utilisateur est acquéreur qui re-cède (don / abandon, pas de contrat) */
   isReCession?: boolean;
+  /** Réservation active à préremplir — l'étape "Acquéreur" est alors sautée */
+  reservation?: Reservation | null;
 }
 
 const QUALITES_FULL = [
@@ -61,16 +74,18 @@ function fmtDate(s?: string) {
   return new Date(s).toLocaleDateString('fr-FR');
 }
 
-export default function CessionModal({ animal, uid, profileId, eleveurInfo, onClose, onCeded, isReCession = false }: Props) {
-  const [step, setStep] = useState<'acquéreur' | 'details' | 'documents'>('acquéreur');
+export default function CessionModal({ animal, uid, profileId, eleveurInfo, onClose, onCeded, isReCession = false, reservation = null }: Props) {
+  const [step, setStep] = useState<'acquéreur' | 'details' | 'documents'>(reservation ? 'details' : 'acquéreur');
 
-  // Acquéreur
+  // Acquéreur — préremplis depuis la réservation active s'il y en a une
   const [searchQuery, setSearchQuery]   = useState('');
-  const [searchResult, setSearchResult] = useState<{ uid: string; nom: string; photo?: string } | null>(null);
+  const [searchResult, setSearchResult] = useState<{ uid: string; nom: string; photo?: string } | null>(
+    reservation?.uid_acquereur ? { uid: reservation.uid_acquereur, nom: reservation.nom ?? 'Utilisateur PetsMatch' } : null
+  );
   const [searchResults, setSearchResults] = useState<{ uid: string; nom: string; photo?: string }[]>([]);
   const [searchDone, setSearchDone]     = useState(false);
   const [searching, setSearching]       = useState(false);
-  const [manual, setManual]             = useState(false);
+  const [manual, setManual]             = useState(!!reservation && !reservation.uid_acquereur);
   // Données brutes de l'utilisateur PetsMatch sélectionné (pour préremplir le contrat)
   const [selectedUserData, setSelectedUserData] = useState<Record<string, unknown> | null>(null);
 
@@ -79,14 +94,14 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
   const adressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Détails
-  const [qualite, setQualite]       = useState('particulier');
-  const [nom, setNom]               = useState('');
-  const [email, setEmail]           = useState('');
-  const [tel, setTel]               = useState('');
-  const [adresse, setAdresse]       = useState('');
+  const [qualite, setQualite]       = useState(reservation?.qualite || 'particulier');
+  const [nom, setNom]               = useState(reservation?.nom ?? '');
+  const [email, setEmail]           = useState(reservation?.email ?? '');
+  const [tel, setTel]               = useState(reservation?.tel ?? '');
+  const [adresse, setAdresse]       = useState(reservation?.adresse ?? '');
   const [dateCession, setDateCession] = useState(new Date().toISOString().split('T')[0]);
   const [prix, setPrix]             = useState('');
-  const [notes, setNotes]           = useState('');
+  const [notes, setNotes]           = useState(reservation?.notes ?? '');
 
   // Documents uploadés manuellement
   const [contratUrl, setContratUrl]       = useState('');
@@ -410,6 +425,13 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
           data:  { animalId: animal.id },
           read:  false,
         });
+      }
+
+      // Clôturer la réservation d'origine s'il y en avait une
+      if (reservation?.id) {
+        await supabase.from('reservations_animaux')
+          .update({ statut: 'transformee', updated_at: new Date().toISOString() })
+          .eq('id', reservation.id);
       }
 
       onCeded();

@@ -9,6 +9,7 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { loadBreeds } from '@/lib/breeds';
 import HealthSection from '@/components/animaux/HealthSection';
 import CessionModal from '@/components/animaux/CessionModal';
+import ReservationModal from '@/components/animaux/ReservationModal';
 import { uploadBlob, uploadDocument as uploadDocToStorage } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
 import AlimentationTab from './AlimentationTab';
@@ -51,7 +52,7 @@ const CAUSES_MORT = ['maladie','accident','naturelle','inconnue'];
 const PROV_FR: Record<string,string> = { naissance:"Naissance dans l'élevage", eleveur:'Éleveur', particulier:'Particulier', refuge:'Refuge / Association', importation:'Importation', autre:'Autre' };
 const DEST_FR: Record<string,string> = { eleveur:'Éleveur', particulier:'Particulier', refuge:'Refuge', autre:'Autre' };
 const MORT_FR: Record<string,string> = { maladie:'Maladie', accident:'Accident', naturelle:'Mort naturelle', inconnue:'Inconnue' };
-const STATUT_FR: Record<string,{label:string;color:string}> = { present:{label:'Présent',color:'text-green-700 bg-green-100'}, sorti:{label:'Sorti',color:'text-blue-700 bg-blue-100'}, decede:{label:'Décédé',color:'text-red-600 bg-red-100'} };
+const STATUT_FR: Record<string,{label:string;color:string}> = { present:{label:'Présent',color:'text-green-700 bg-green-100'}, reserve:{label:'Réservé',color:'text-amber-700 bg-amber-100'}, sorti:{label:'Sorti',color:'text-blue-700 bg-blue-100'}, decede:{label:'Décédé',color:'text-red-600 bg-red-100'} };
 
 const PEDIGREE_CONFIG: Record<string, { label: string; types: string[] }> = {
   chien:  { label: 'LOF (Livre des Origines Français)', types: ['LOF', 'Non-LOF'] },
@@ -1084,6 +1085,11 @@ export default function AnimalFichePage() {
   const [confirmingCession, setConfirmingCession] = useState(false);
   const [revokingCession, setRevokingCession] = useState(false);
 
+  // ── Réservation (avant cession)
+  const [showReservation, setShowReservation] = useState(false);
+  const [reservation, setReservation] = useState<Record<string, unknown> | null>(null);
+  const [cancelingReservation, setCancelingReservation] = useState(false);
+
   // ── État enregistre entrée/sortie
   const [showRegistre, setShowRegistre] = useState(false);
   const [mouvements, setMouvements] = useState<{id:string;type:string;date_mouvement:string;motif?:string;provenance_qualite?:string;provenance_nom?:string;destinataire_qualite?:string;destinataire_nom?:string}[]>([]);
@@ -1299,9 +1305,33 @@ export default function AnimalFichePage() {
     setRevokingCession(false);
   }
 
+  const loadReservation = useCallback(async () => {
+    if (!id || isNew || animal.statut !== 'reserve') { setReservation(null); return; }
+    const { data } = await supabase
+      .from('reservations_animaux')
+      .select('*')
+      .eq('animal_id', id)
+      .eq('statut', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    setReservation(data ?? null);
+  }, [id, isNew, animal.statut]);
+
+  async function annulerReservation() {
+    if (!reservation || !confirm('Annuler la réservation ?')) return;
+    setCancelingReservation(true);
+    await supabase.from('reservations_animaux').update({ statut: 'annulee', updated_at: new Date().toISOString() }).eq('id', reservation.id);
+    await supabase.from('animaux').update({ statut: 'present' }).eq('id', id);
+    setAnimal(p => ({ ...p, statut: 'present' }));
+    setReservation(null);
+    setCancelingReservation(false);
+  }
+
   useEffect(() => { loadBreeds(animal.espece ?? 'chien').then(setBreeds); }, [animal.espece]);
   useEffect(() => { loadAnimal(); loadHealth(); loadRepro(); loadAlerte(); loadDocs(); loadMouvements(); }, [loadAnimal, loadHealth, loadRepro, loadAlerte, loadDocs, loadMouvements]);
   useEffect(() => { loadCessionEnCours(); }, [loadCessionEnCours]);
+  useEffect(() => { loadReservation(); }, [loadReservation]);
   useEffect(() => {
     if (!id || isNew) return;
     supabase.from('pension_updates').select('id').eq('animal_id', id).limit(1)
@@ -1714,6 +1744,18 @@ export default function AnimalFichePage() {
               className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 text-sm transition-colors">
               📊
             </button>
+            {isOwner && !isCede && animal.statut === 'present' && (
+              <button onClick={() => setShowReservation(true)}
+                className="text-sm text-amber-700 font-semibold border border-amber-300 rounded-full px-3 py-1.5 hover:bg-amber-50 transition-colors">
+                🔖 Réserver
+              </button>
+            )}
+            {isOwner && animal.statut === 'reserve' && (
+              <button onClick={annulerReservation} disabled={cancelingReservation}
+                className="text-sm text-gray-500 font-semibold border border-gray-200 rounded-full px-3 py-1.5 hover:bg-gray-50 disabled:opacity-50 transition-colors">
+                {cancelingReservation ? '…' : 'Annuler la réservation'}
+              </button>
+            )}
             {isOwner && !isCede && animal.statut !== 'cession_en_cours' && (
               <button onClick={() => setShowCession(true)}
                 className="text-sm text-amber-700 font-semibold border border-amber-300 rounded-full px-3 py-1.5 hover:bg-amber-50 transition-colors">
@@ -1799,6 +1841,27 @@ export default function AnimalFichePage() {
           </div>
         );
       })()}
+
+      {/* Bannière réservation active */}
+      {animal.statut === 'reserve' && reservation && (
+        <div className="mb-4 bg-amber-50 border border-amber-300 rounded-2xl p-4">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">🔖</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-amber-800" style={{ fontFamily:'Galey,sans-serif' }}>
+                Réservé pour {reservation.nom as string}
+              </p>
+              <p className="text-xs text-amber-700 mt-0.5">
+                {[reservation.email, reservation.tel].filter(Boolean).join(' · ')}
+                {reservation.date_reservation ? ` · réservé le ${new Date(reservation.date_reservation as string).toLocaleDateString('fr-FR')}` : ''}
+              </p>
+              <p className="text-xs text-amber-600 mt-2">
+                Les infos seront préremplies quand vous cliquerez sur « 🤝 Céder ».
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Bannière cession EN COURS — cédant (peut confirmer / révoquer) */}
       {animal.statut === 'cession_en_cours' && !isAcquereur && (
@@ -2826,9 +2889,21 @@ export default function AnimalFichePage() {
         <CessionModal
           animal={animal}
           uid={user.uid}
+          profileId={activeProfileId || null}
           eleveurInfo={{ nom: nomElevage || user.email || 'Éleveur', adresse: adresseElevage, email: user.email ?? '' }}
+          reservation={animal.statut === 'reserve' ? reservation : null}
           onClose={() => setShowCession(false)}
-          onCeded={() => { setShowCession(false); loadAnimal(); }}
+          onCeded={() => { setShowCession(false); setReservation(null); loadAnimal(); }}
+        />
+      )}
+
+      {showReservation && user && (
+        <ReservationModal
+          animal={animal}
+          uid={user.uid}
+          profileId={activeProfileId || null}
+          onClose={() => setShowReservation(false)}
+          onReserved={() => { setShowReservation(false); loadAnimal(); loadReservation(); }}
         />
       )}
 

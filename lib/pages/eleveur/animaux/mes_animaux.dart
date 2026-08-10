@@ -1850,6 +1850,20 @@ class _AnimalCard extends StatelessWidget {
                                   fontFamily: 'Galey', fontWeight: FontWeight.w600)),
                         ),
                       ),
+                    if (statut == 'reserve')
+                      Positioned(
+                        top: 6, right: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD97706),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text('🔖 Réservé',
+                              style: TextStyle(color: Colors.white, fontSize: 9,
+                                  fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                        ),
+                      ),
                     if (showStatut && (statut == 'sorti' || statut == 'decede'))
                       Positioned(
                         top: 6, right: 6,

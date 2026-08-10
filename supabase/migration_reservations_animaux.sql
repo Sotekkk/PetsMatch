@@ -1,23 +1,9 @@
--- ============================================================
--- PetsMatch — Migrations en attente à exécuter sur Supabase
--- ============================================================
--- Où l'exécuter : dashboard Supabase → SQL Editor → New query
--- → coller tout le contenu de ce fichier → Run.
--- Ce script est idempotent (IF NOT EXISTS partout), on peut le relancer
--- sans risque s'il a déjà tourné partiellement.
---
--- La migration "fait_par_profile_id / valide_par_profile_id" a déjà été
--- appliquée (2026-08-10) — ce fichier ne contient plus que la suivante.
--- ============================================================
-
-
--- ────────────────────────────────────────────────────────────
--- 1. Statut "Réservé" pour un animal, avant cession
---    Table reservations_animaux : stocke les infos du futur propriétaire
---    (saisie manuelle ou utilisateur PetsMatch) pour préremplir le
---    formulaire de cession existant. Sans cette migration, la
---    fonctionnalité "Réserver" ne peut pas écrire en base.
--- ────────────────────────────────────────────────────────────
+-- Migration : statut "Réservé" pour un animal, avant cession
+-- Un chiot réservé garde les infos du futur propriétaire (saisies manuellement
+-- ou reprises d'un utilisateur PetsMatch) pour préremplir automatiquement le
+-- formulaire de cession — il ne reste alors qu'à saisir la date de départ et
+-- valider "Céder". Si l'animal n'a pas été réservé, la cession directe reste
+-- inchangée (le formulaire démarre à l'étape "Acquéreur" comme aujourd'hui).
 
 CREATE TABLE IF NOT EXISTS reservations_animaux (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -41,6 +27,7 @@ CREATE TABLE IF NOT EXISTS reservations_animaux (
 
 CREATE INDEX IF NOT EXISTS idx_reservations_animal   ON reservations_animaux(animal_id);
 CREATE INDEX IF NOT EXISTS idx_reservations_eleveur   ON reservations_animaux(uid_eleveur);
+-- Une seule réservation active à la fois par animal
 CREATE UNIQUE INDEX IF NOT EXISTS idx_reservations_animal_active
   ON reservations_animaux(animal_id) WHERE statut = 'active';
 
@@ -51,6 +38,8 @@ DROP POLICY IF EXISTS "Insert reservations" ON reservations_animaux;
 DROP POLICY IF EXISTS "Update reservations" ON reservations_animaux;
 DROP POLICY IF EXISTS "Delete reservations" ON reservations_animaux;
 
+-- Auth Firebase (pas auth.uid() Supabase) : filtrage applicatif par uid_eleveur,
+-- même pattern que les autres tables du projet (ex. enclos_chenil).
 CREATE POLICY "Select reservations" ON reservations_animaux
   FOR SELECT USING (true);
 

@@ -15,6 +15,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/cession_sheet.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/reservation_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
@@ -147,6 +148,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   String? _cessionNotes;
   // Cession en cours
   Map<String, dynamic>? _cessionEnCours;
+  Map<String, dynamic>? _reservation;
   bool _confirmingCession = false;
   bool _revokingCession   = false;
 
@@ -865,6 +867,19 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     } else {
       _cessionEnCours = null;
     }
+    // Charger la réservation active si l'animal est réservé
+    if (_statut == 'reserve' && widget.animalId != null) {
+      final reservations = await _supa
+          .from('reservations_animaux')
+          .select()
+          .eq('animal_id', widget.animalId!)
+          .eq('statut', 'active')
+          .order('created_at', ascending: false)
+          .limit(1);
+      _reservation = reservations.isNotEmpty ? reservations.first : null;
+    } else {
+      _reservation = null;
+    }
   }
 
   @override
@@ -1482,6 +1497,58 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             ),
           if (widget.animalId != null && !widget.vetMode
               && !widget.readOnly && widget.eleveurUidOverride == null
+              && _statut == 'present')
+            IconButton(
+              icon: const Icon(Icons.bookmark_add_outlined, size: 20),
+              tooltip: 'Réserver cet animal',
+              onPressed: () => showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => ReservationSheet(
+                  animal: {
+                    'id': widget.animalId,
+                    'nom': _nomCtrl.text.isNotEmpty ? _nomCtrl.text : null,
+                  },
+                  uid: FirebaseAuth.instance.currentUser!.uid,
+                  onReserved: () {
+                    _refreshFromSupabase();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('🔖 Réservation enregistrée'), backgroundColor: Color(0xFFD97706)),
+                    );
+                  },
+                ),
+              ),
+            ),
+          if (widget.animalId != null && !widget.vetMode
+              && !widget.readOnly && widget.eleveurUidOverride == null
+              && _statut == 'reserve')
+            IconButton(
+              icon: const Icon(Icons.bookmark_remove_outlined, size: 20),
+              tooltip: 'Annuler la réservation',
+              onPressed: () async {
+                if (_reservation == null) return;
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    title: const Text('Annuler la réservation ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Non')),
+                      TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Oui, annuler')),
+                    ],
+                  ),
+                );
+                if (confirm != true) return;
+                await _supa.from('reservations_animaux')
+                    .update({'statut': 'annulee', 'updated_at': DateTime.now().toIso8601String()})
+                    .eq('id', _reservation!['id']);
+                await _supa.from('animaux').update({'statut': 'present'}).eq('id', widget.animalId!);
+                if (mounted) _refreshFromSupabase();
+              },
+            ),
+          if (widget.animalId != null && !widget.vetMode
+              && !widget.readOnly && widget.eleveurUidOverride == null
               && _statut != 'decede' && _statut != 'cession_en_cours'
               && (_statut != 'sorti' || _uidAcquereur == FirebaseAuth.instance.currentUser?.uid))
             IconButton(
@@ -1504,6 +1571,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                   uid: FirebaseAuth.instance.currentUser!.uid,
                   nomElevage: _nomElevage ?? '',
                   isReCession: _isNewOwner && !User_Info.isElevage && !User_Info.isAssociation,
+                  reservation: _statut == 'reserve' ? _reservation : null,
                   onCeded: () {
                     _refreshFromSupabase();
                     ScaffoldMessenger.of(context).showSnackBar(
