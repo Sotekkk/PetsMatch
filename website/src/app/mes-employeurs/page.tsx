@@ -617,7 +617,7 @@ export default function MesEmployeursPage() {
                                 <span className="text-xs text-gray-400">{formatDate(t.date)}</span>
                                 {t.animal_nom && (
                                   <span className="text-xs bg-[#E8F4F6] text-[#0C5C6C] px-2 py-0.5 rounded-full font-medium">
-                                    🐾 {t.animal_nom}
+                                    🐾 {t.animal_nom}{t.animal_portee ? ` · ${t.animal_portee}` : ''}
                                   </span>
                                 )}
                               </div>

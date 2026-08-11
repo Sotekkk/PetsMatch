@@ -3339,6 +3339,7 @@ class _EmployeurExpandedCard extends StatelessWidget {
             ? '${dt.day}/${dt.month}/${dt.year}'
             : date;
         final animalNom = t['animal_nom'] as String?;
+        final animalPortee = t['animal_portee'] as String?;
         return GestureDetector(
           onTap: () => Navigator.push(context, MaterialPageRoute(
             builder: (_) => TacheDetailPage(
@@ -3359,7 +3360,8 @@ class _EmployeurExpandedCard extends StatelessWidget {
                   Text(
                     [
                       if (dateStr.isNotEmpty) '📅 $dateStr',
-                      if (animalNom != null) '🐾 $animalNom',
+                      if (animalNom != null)
+                        '🐾 $animalNom${animalPortee != null ? " · $animalPortee" : ""}',
                     ].join('   '),
                     style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
                   ),
