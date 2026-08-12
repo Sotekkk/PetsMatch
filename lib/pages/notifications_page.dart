@@ -186,6 +186,32 @@ class _NotificationsPageState extends State<NotificationsPage> {
       }
       return;
     }
+    // Rappel santé (vaccin/vermifuge/antiparasitaire) → ouvre directement la
+    // liste du carnet correspondante (pas juste l'onglet Santé général).
+    if (type == 'sante') {
+      final animalId = data is Map ? data['animalId'] as String? : null;
+      final table    = data is Map ? data['table'] as String? : null;
+      const cats = {
+        'vaccinations':     (label: 'Vaccins', icon: Icons.vaccines_outlined, color: Color(0xFF0C5C6C)),
+        'vermifuges':       (label: 'Vermifuges', icon: Icons.bug_report_outlined, color: Color(0xFF6E9E57)),
+        'antiparasitaires': (label: 'Antiparasitaires', icon: Icons.pest_control_outlined, color: Color(0xFF5B8648)),
+      };
+      if (animalId == null) return;
+      final cat = table != null ? cats[table] : null;
+      if (cat != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => SanteDetailPage(
+            animalId: animalId, collection: table!,
+            label: cat.label, icon: cat.icon, color: cat.color,
+          ),
+        ));
+      } else {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => AnimalFichePage(animalId: animalId, readOnly: true, initialTabIndex: 2),
+        ));
+      }
+      return;
+    }
     if (type == 'sante_vet') {
       final animalId = data is Map ? (data['animalId'] as String?) : null;
       if (animalId != null) {

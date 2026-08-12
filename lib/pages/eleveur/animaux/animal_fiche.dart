@@ -4166,7 +4166,7 @@ class _SanteTile extends StatelessWidget {
         final count = snap.data?.length ?? 0;
         return GestureDetector(
           onTap: () => Navigator.push(context, MaterialPageRoute(
-            builder: (_) => _SanteDetailPage(
+            builder: (_) => SanteDetailPage(
               animalId: animalId, collection: collection,
               label: label, icon: icon, color: color, vetMode: vetMode,
             ),
@@ -4204,14 +4204,14 @@ class _SanteTile extends StatelessWidget {
   }
 }
 
-class _SanteDetailPage extends StatelessWidget {
+class SanteDetailPage extends StatelessWidget {
   final String animalId;
   final String collection;
   final String label;
   final IconData icon;
   final Color color;
   final bool vetMode;
-  const _SanteDetailPage({required this.animalId, required this.collection,
+  const SanteDetailPage({super.key, required this.animalId, required this.collection,
       required this.label, required this.icon, required this.color, this.vetMode = false});
 
   Widget _dialogFor(BuildContext ctx) {

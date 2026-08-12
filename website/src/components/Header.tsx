@@ -480,6 +480,10 @@ function getNotifUrl(n: Notif): string | null {
       return '/mes-animaux';
     case 'rappel_vaccin':
       return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
+    case 'sante':
+      return d.animalId
+        ? `/mes-animaux/${d.animalId}?tab=sante${d.table ? `&cat=${d.table}` : ''}`
+        : '/mes-animaux';
     case 'annonce_expiration':
       return '/mes-annonces';
     case 'cession_signature_demandee':
@@ -988,6 +992,7 @@ export default function Header() {
                               : n.type === 'like' ? '❤️'
                               : n.type === 'chaleur' ? '🌸'
                               : n.type === 'rappel_vaccin' ? '💉'
+                              : n.type === 'sante' ? (n.data?.table === 'vermifuges' ? '💊' : n.data?.table === 'antiparasitaires' ? '🛡️' : '💉')
                               : n.type === 'pension_acces' || n.type === 'pension_acces_reponse' ? '🏡'
                               : n.type === 'pension_journal' || n.type === 'pension_journal_reply' ? '📸'
                               : n.type === 'education_rapport' ? '🐾'

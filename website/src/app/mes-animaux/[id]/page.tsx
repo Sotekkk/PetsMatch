@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -1065,16 +1065,26 @@ export default function AnimalFichePage() {
   const { user, userData } = useAuth();
   const activeProfileId = useActiveProfile();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const isEleveur = userData?.isElevage === true;
   // isOwner = l'utilisateur est bien le propriétaire de cet animal (pas juste un employé)
   // Déterminé après chargement de l'animal (voir useMemo ci-dessous)
   const isNew = id === 'ajouter';
 
+  // Deep-link depuis une notification santé (rappel vaccin/vermifuge/
+  // antiparasitaire) : ?tab=sante&cat=antiparasitaires ouvre directement
+  // l'onglet et déplie/scrolle la bonne section, au lieu de forcer l'usager
+  // à retrouver la catégorie lui-même.
+  const tabParam = searchParams.get('tab');
+  const catParam = searchParams.get('cat');
+
   // ── État identité
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(isNew);
-  const [tab, setTab] = useState<'identite'|'sante'|'repro'|'alimentation'|'consultations'|'documents'>('identite');
+  const [tab, setTab] = useState<'identite'|'sante'|'repro'|'alimentation'|'consultations'|'documents'>(
+    tabParam === 'sante' ? 'sante' : 'identite'
+  );
 
   const [animal, setAnimal] = useState<Animal>({ id:'', espece:'chien', sexe:'male' });
   const [breeds, setBreeds] = useState<string[]>([]);
@@ -1354,6 +1364,13 @@ export default function AnimalFichePage() {
 
   useEffect(() => { loadBreeds(animal.espece ?? 'chien').then(setBreeds); }, [animal.espece]);
   useEffect(() => { loadAnimal(); loadHealth(); loadRepro(); loadAlerte(); loadDocs(); loadMouvements(); }, [loadAnimal, loadHealth, loadRepro, loadAlerte, loadDocs, loadMouvements]);
+  // Deep-link depuis une notification santé : scrolle jusqu'à la section
+  // ouverte par ?cat=... une fois l'onglet Santé affiché.
+  useEffect(() => {
+    if (tab !== 'sante' || !catParam) return;
+    const el = document.getElementById(`health-${catParam}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [tab, catParam, loading]);
   useEffect(() => { loadCessionEnCours(); }, [loadCessionEnCours]);
   useEffect(() => { loadReservation(); }, [loadReservation]);
   useEffect(() => {
@@ -2595,7 +2612,8 @@ export default function AnimalFichePage() {
       {tab === 'sante' && (
         <div className="space-y-3">
           {/* Vaccinations */}
-          <HealthSection title="Vaccinations" icon="💉" color="#2196F3" count={health.vaccinations.length}
+          <HealthSection id="health-vaccinations" defaultOpen={catParam==='vaccinations'}
+            title="Vaccinations" icon="💉" color="#2196F3" count={health.vaccinations.length}
             onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='vaccinations'?null:'vaccinations') : undefined}
             addFormOpen={addOpen==='vaccinations'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
@@ -2609,7 +2627,8 @@ export default function AnimalFichePage() {
           </HealthSection>
 
           {/* Vermifuges */}
-          <HealthSection title="Vermifuges" icon="🧪" color="#6E9E57" count={health.vermifuges.length}
+          <HealthSection id="health-vermifuges" defaultOpen={catParam==='vermifuges'}
+            title="Vermifuges" icon="🧪" color="#6E9E57" count={health.vermifuges.length}
             onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='vermifuges'?null:'vermifuges') : undefined}
             addFormOpen={addOpen==='vermifuges'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
@@ -2623,7 +2642,8 @@ export default function AnimalFichePage() {
           </HealthSection>
 
           {/* Antiparasitaires */}
-          <HealthSection title="Antiparasitaires" icon="🛡️" color="#5B8648" count={health.antiparasitaires.length}
+          <HealthSection id="health-antiparasitaires" defaultOpen={catParam==='antiparasitaires'}
+            title="Antiparasitaires" icon="🛡️" color="#5B8648" count={health.antiparasitaires.length}
             onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='antiparasitaires'?null:'antiparasitaires') : undefined}
             addFormOpen={addOpen==='antiparasitaires'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, ReactNode } from 'react';
+import { useState, ReactNode, CSSProperties } from 'react';
 
 interface Props {
   title: string;
@@ -11,13 +11,16 @@ interface Props {
   onAdd?: () => void;
   addForm?: ReactNode;
   addFormOpen?: boolean;
+  id?: string;
+  defaultOpen?: boolean;
 }
 
-export default function HealthSection({ title, icon, color, count, children, onAdd, addForm, addFormOpen }: Props) {
-  const [open, setOpen] = useState(false);
+export default function HealthSection({ title, icon, color, count, children, onAdd, addForm, addFormOpen, id, defaultOpen }: Props) {
+  const [open, setOpen] = useState(!!defaultOpen);
 
   return (
-    <div className="bg-white rounded-2xl overflow-hidden shadow-sm">
+    <div id={id} className={`bg-white rounded-2xl overflow-hidden shadow-sm ${defaultOpen ? 'ring-2 ring-offset-2' : ''}`}
+      style={defaultOpen ? ({ '--tw-ring-color': color } as CSSProperties) : undefined}>
       <div
         role="button" tabIndex={0}
         onClick={() => setOpen(!open)}
