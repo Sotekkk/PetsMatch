@@ -29,6 +29,67 @@ interface Animal {
   importation_ref?: string;
   nom_mere?: string;
   puce_mere?: string;
+  uid_eleveur?: string;
+  is_association?: boolean | null;
+  _viaMouvement?: boolean;
+}
+
+interface Mouvement {
+  animal_id: string;
+  type: 'entree' | 'sortie';
+  date_mouvement: string;
+  provenance_qualite?: string | null;
+  provenance_nom?: string | null;
+  provenance_adresse?: string | null;
+  destinataire_qualite?: string | null;
+  destinataire_nom?: string | null;
+  destinataire_adresse?: string | null;
+  cause_mort?: string | null;
+}
+
+// Retraduit un animal du point de vue de MOI (uid) à partir de mes propres
+// mouvements (registre_mouvements) : animaux.statut/date_entree/date_sortie
+// ne reflète que le dernier écrivain (ex: le cédant), donc un même animal
+// peut être "sorti" pour lui et "entré" pour l'acquéreur. Sans mouvement à
+// mon nom, je n'ai une vue correcte que si je suis le propriétaire de
+// référence (uid_eleveur) — sinon (cession pas encore finalisée) exclu.
+function resolveForViewer(doc: Animal, mouvements: Mouvement[], myUid: string): Animal | null {
+  const mine = mouvements
+    .filter(m => m.animal_id === doc.id)
+    .sort((a, b) => (a.date_mouvement ?? '').localeCompare(b.date_mouvement ?? ''));
+
+  if (mine.length === 0) {
+    if (doc.uid_eleveur !== myUid) return null;
+    return doc;
+  }
+
+  const last = mine[mine.length - 1];
+  const resolved: Animal = { ...doc, _viaMouvement: true };
+  if (last.type === 'entree') {
+    resolved.statut = 'present';
+    resolved.date_entree = last.date_mouvement;
+    resolved.provenance_qualite = last.provenance_qualite ?? undefined;
+    resolved.provenance_nom = last.provenance_nom ?? undefined;
+    resolved.provenance_adresse = last.provenance_adresse ?? undefined;
+    resolved.date_sortie = undefined;
+    resolved.destinataire_qualite = undefined;
+    resolved.destinataire_nom = undefined;
+    resolved.destinataire_adresse = undefined;
+    resolved.cause_mort = undefined;
+  } else {
+    const causeMort = last.cause_mort ?? undefined;
+    resolved.statut = causeMort ? 'decede' : 'sorti';
+    resolved.date_sortie = last.date_mouvement;
+    resolved.destinataire_qualite = last.destinataire_qualite ?? undefined;
+    resolved.destinataire_nom = last.destinataire_nom ?? undefined;
+    resolved.destinataire_adresse = last.destinataire_adresse ?? undefined;
+    resolved.cause_mort = causeMort;
+    const entreesAvant = mine.filter(m => m.type === 'entree' && (m.date_mouvement ?? '') <= (last.date_mouvement ?? ''));
+    resolved.date_entree = entreesAvant.length > 0
+      ? entreesAvant[entreesAvant.length - 1].date_mouvement
+      : doc.date_entree;
+  }
+  return resolved;
 }
 
 const ESPECE_LABELS: Record<string, string> = {
@@ -97,12 +158,21 @@ export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAss
   async function loadData() {
     if (!user) return;
     try {
-      const cols = 'id, nom, espece, race, sexe, identification, date_naissance, photo_url, statut, date_entree, date_sortie, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, importation_ref, nom_mere, puce_mere';
+      const cols = 'id, nom, espece, race, sexe, identification, date_naissance, photo_url, statut, date_entree, date_sortie, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort, importation_ref, nom_mere, puce_mere, uid_eleveur, is_association';
       const assoCond = isAssociation ? 'is_association.eq.true' : 'is_association.is.null,is_association.eq.false';
-      const [r1, r2] = await Promise.all([
+      // r2 (animaux acquis par cession) ne filtre PAS sur is_association : ce
+      // flag reflète le contexte du cédant, pas le mien — un animal reçu d'une
+      // association par un éleveur (ou l'inverse) serait sinon exclu à tort.
+      // Le filtre is_association n'est réappliqué plus bas que pour les
+      // animaux SANS mouvement à mon nom (cf. resolveForViewer).
+      const [r1, r2, mvtsRes] = await Promise.all([
         supabase.from('animaux').select(cols).eq('uid_eleveur', user.uid).or(assoCond).order('date_entree', { ascending: false }),
-        supabase.from('animaux').select(cols).eq('uid_acquereur', user.uid).neq('uid_eleveur', user.uid).or(assoCond),
+        supabase.from('animaux').select(cols).eq('uid_acquereur', user.uid).neq('uid_eleveur', user.uid),
+        supabase.from('registre_mouvements')
+          .select('animal_id, type, date_mouvement, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort')
+          .eq('uid_eleveur', user.uid),
       ]);
+      const mouvements = (mvtsRes.data ?? []) as unknown as Mouvement[];
       const seen = new Set<string>();
       const merged: Animal[] = [...(r1.data ?? []), ...(r2.data ?? [])].filter((a) => {
         if (seen.has((a as Animal).id)) return false;
@@ -110,9 +180,8 @@ export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAss
         return true;
       }) as Animal[];
       // Animaux historiques (re-cédés) : trouvés via registre_mouvements
-      const { data: mvts } = await supabase.from('registre_mouvements').select('animal_id').eq('uid_eleveur', user.uid);
-      if (mvts && mvts.length > 0) {
-        const historicalIds = [...new Set(mvts.map((m: { animal_id: string }) => m.animal_id))].filter(id => !seen.has(id));
+      if (mouvements.length > 0) {
+        const historicalIds = [...new Set(mouvements.map(m => m.animal_id))].filter(id => !seen.has(id));
         if (historicalIds.length > 0) {
           const { data: historical } = await supabase.from('animaux').select(cols).in('id', historicalIds);
           (historical ?? []).forEach((a) => {
@@ -124,7 +193,16 @@ export function RegistreEntreeSortieComponent({ isAssociation = false }: { isAss
           });
         }
       }
-      setAnimaux(merged as Animal[]);
+      // Retraduit chaque animal du point de vue de MOI à partir de mes
+      // mouvements — exclut les cessions reçues mais pas encore finalisées.
+      const resolved = merged
+        .map(a => resolveForViewer(a, mouvements, user.uid))
+        .filter((a): a is Animal => a !== null)
+        // Isolation multi-profil : filtre is_association pour ne pas mélanger
+        // — sauf pour les animaux résolus via un mouvement, déjà scopés à moi
+        // donc pertinents quel que soit le nav d'origine.
+        .filter(a => a._viaMouvement || (isAssociation ? a.is_association === true : !a.is_association));
+      setAnimaux(resolved);
     } catch { /* ignore */ } finally {
       setFetching(false);
     }

@@ -42,11 +42,15 @@ class _AnimauxAcquisPageState extends State<AnimauxAcquisPage> {
     // association...) partageant le même uid Firebase. On ne garde que les
     // animaux réellement reçus par CE profil (animaux_proprietes.profile_id_proprio),
     // sinon un animal cédé à un autre profil apparaît aussi ici.
+    // Ne garder que les animaux ENCORE possédés : statut == 'present' évite
+    // de continuer à afficher (et à proposer de re-céder) un animal déjà
+    // re-cédé à quelqu'un d'autre — sinon canCeder se basait uniquement sur
+    // != 'cession_en_cours', qui laissait passer un animal déjà 'sorti'.
     final activeProfileId = User_Info.activeProfileId;
     if (activeProfileId.isEmpty) {
       return List<Map<String, dynamic>>.from(
         await _supa.from('animaux').select(_cols)
-            .eq('uid_acquereur', _uid).order('date_sortie', ascending: false) as List,
+            .eq('uid_acquereur', _uid).eq('statut', 'present').order('date_sortie', ascending: false) as List,
       );
     }
     final migrated = await _supa.from('animaux_proprietes')
@@ -58,13 +62,14 @@ class _AnimauxAcquisPageState extends State<AnimauxAcquisPage> {
       // Migration profile_id_proprio pas encore jouée → rétrocompat sur l'uid seul
       return List<Map<String, dynamic>>.from(
         await _supa.from('animaux').select(_cols)
-            .eq('uid_acquereur', _uid).order('date_sortie', ascending: false) as List,
+            .eq('uid_acquereur', _uid).eq('statut', 'present').order('date_sortie', ascending: false) as List,
       );
     }
     final ownRows = await _supa.from('animaux_proprietes')
         .select('animal_id')
         .eq('uid_proprio', _uid)
-        .eq('profile_id_proprio', activeProfileId);
+        .eq('profile_id_proprio', activeProfileId)
+        .isFilter('date_fin', null);
     final ids = List<Map<String, dynamic>>.from(ownRows as List)
         .map((r) => r['animal_id']?.toString() ?? '')
         .where((id) => id.isNotEmpty)
@@ -156,7 +161,7 @@ class _AnimauxAcquisPageState extends State<AnimauxAcquisPage> {
                           data: animal,
                           teal: _teal, dark: _dark, green: _green,
                           espEmoji: _espEmoji,
-                          canCeder: statut != 'cession_en_cours',
+                          canCeder: statut == 'present',
                           cedantNom: _cedantNames[animal['uid_eleveur'] as String?],
                           onTap: () async {
                             await Navigator.push(context, MaterialPageRoute(

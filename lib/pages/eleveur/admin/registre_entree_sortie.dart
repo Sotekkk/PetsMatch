@@ -38,6 +38,10 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
   List<Map<String, dynamic>> _acquisAnimaux = [];
   // Animaux historiques passés par le registre mouvements (re-cédés)
   List<Map<String, dynamic>> _historiqueAnimaux = [];
+  // Mouvements (registre_mouvements) enregistrés à MON nom — un même animal
+  // peut avoir une sortie pour le cédant et une entrée pour l'acquéreur ;
+  // sert à retraduire animaux.statut du point de vue du visualisateur.
+  List<Map<String, dynamic>> _mouvements = [];
 
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   final _supa = Supabase.instance.client;
@@ -49,7 +53,7 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
     super.initState();
     _checkPlan();
     _loadAcquis();
-    _loadHistorique();
+    _loadMouvementsAndHistorique();
   }
 
   Future<void> _loadAcquis() async {
@@ -65,17 +69,20 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
     } catch (_) {}
   }
 
-  // Charge les animaux qui ont eu un mouvement enregistré par cet utilisateur
-  // (cas: acquéreur qui a re-cédé un animal — il n'est plus uid_eleveur ni uid_acquereur)
-  Future<void> _loadHistorique() async {
+  // Charge mes mouvements (registre_mouvements) puis les animaux qui n'ont eu
+  // un mouvement enregistré par moi que sur cet historique (cas: acquéreur qui
+  // a re-cédé un animal — il n'est plus uid_eleveur ni uid_acquereur).
+  Future<void> _loadMouvementsAndHistorique() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
       final mvts = await _supa
           .from('registre_mouvements')
-          .select('animal_id')
+          .select('animal_id, type, date_mouvement, provenance_qualite, provenance_nom, provenance_adresse, destinataire_qualite, destinataire_nom, destinataire_adresse, cause_mort')
           .eq('uid_eleveur', uid);
-      final animalIds = (mvts as List).map((m) => m['animal_id'] as String).toSet().toList();
+      final mouvements = List<Map<String, dynamic>>.from(mvts);
+      if (mounted) setState(() => _mouvements = mouvements);
+      final animalIds = mouvements.map((m) => m['animal_id'] as String).toSet().toList();
       if (animalIds.isEmpty) return;
       final res = await _supa
           .from('animaux')
@@ -83,6 +90,55 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
           .inFilter('id', animalIds);
       if (mounted) setState(() => _historiqueAnimaux = List<Map<String, dynamic>>.from(res));
     } catch (_) {}
+  }
+
+  // Retraduit un animal du point de vue de MOI (uid) à partir de mes propres
+  // mouvements : la fiche animaux.statut/date_entree/date_sortie ne reflète
+  // que le dernier écrivain (ex: le cédant), donc un même animal peut être
+  // "sorti" pour lui et "entré" pour l'acquéreur. Sans mouvement enregistré à
+  // mon nom, je ne peux avoir une vue correcte que si je suis le propriétaire
+  // de référence (uid_eleveur) — sinon (cession pas encore finalisée) exclu.
+  Map<String, dynamic>? _resolveForViewer(Map<String, dynamic> doc) {
+    final animalId = doc['id'];
+    final mine = _mouvements.where((m) => m['animal_id'] == animalId).toList()
+      ..sort((a, b) => ((a['date_mouvement'] as String?) ?? '')
+          .compareTo((b['date_mouvement'] as String?) ?? ''));
+
+    if (mine.isEmpty) {
+      if (doc['uid_eleveur'] != _uid) return null;
+      return doc;
+    }
+
+    final last = mine.last;
+    final resolved = Map<String, dynamic>.from(doc)..['_via_mouvement'] = true;
+    if (last['type'] == 'entree') {
+      resolved['statut']               = 'present';
+      resolved['date_entree']          = last['date_mouvement'];
+      resolved['provenance_qualite']   = last['provenance_qualite'];
+      resolved['provenance_nom']       = last['provenance_nom'];
+      resolved['provenance_adresse']   = last['provenance_adresse'];
+      resolved['date_sortie']          = null;
+      resolved['destinataire_qualite'] = null;
+      resolved['destinataire_nom']     = null;
+      resolved['destinataire_adresse'] = null;
+      resolved['cause_mort']           = null;
+    } else {
+      final causeMort = last['cause_mort'] as String?;
+      resolved['statut']               = (causeMort != null && causeMort.isNotEmpty) ? 'decede' : 'sorti';
+      resolved['date_sortie']          = last['date_mouvement'];
+      resolved['destinataire_qualite'] = last['destinataire_qualite'];
+      resolved['destinataire_nom']     = last['destinataire_nom'];
+      resolved['destinataire_adresse'] = last['destinataire_adresse'];
+      resolved['cause_mort']           = causeMort;
+      final entreesAvant = mine.where((m) =>
+          m['type'] == 'entree' &&
+          ((m['date_mouvement'] as String?) ?? '')
+              .compareTo(last['date_mouvement'] as String? ?? '') <= 0);
+      resolved['date_entree'] = entreesAvant.isNotEmpty
+          ? entreesAvant.last['date_mouvement']
+          : doc['date_entree'];
+    }
+    return resolved;
   }
 
   Future<void> _checkPlan() async {
@@ -378,8 +434,22 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
         final existingIds2 = allDocs.map((d) => d['id']).toSet();
         final historiqueFiltered = _historiqueAnimaux.where((d) => !existingIds2.contains(d['id'])).toList();
         allDocs = [...allDocs, ...historiqueFiltered];
+        // Retraduit chaque animal du point de vue de MOI à partir de mes
+        // mouvements — exclut les cessions reçues mais pas encore
+        // finalisées (aucun mouvement à mon nom, je ne suis pas encore
+        // uid_eleveur).
+        final resolvedDocs = <Map<String, dynamic>>[];
+        for (final d in allDocs) {
+          final r = _resolveForViewer(d);
+          if (r != null) resolvedDocs.add(r);
+        }
+        allDocs = resolvedDocs;
         // Isolation multi-profil : filtre is_association pour ne pas mélanger
+        // — sauf pour les animaux résolus via un mouvement, déjà scopés à moi
+        // (uid_eleveur du mouvement) donc pertinents quel que soit le nav
+        // d'origine.
         allDocs = allDocs.where((d) {
+          if (d['_via_mouvement'] == true) return true;
           final flag = d['is_association'];
           return widget.isAssociation
               ? flag == true
