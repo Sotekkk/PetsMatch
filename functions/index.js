@@ -52,6 +52,9 @@ exports.notifyEmployeeAdded = employesFunctions.notifyEmployeeAdded;
 // Santé — rappels vaccins, vermifuges, antiparasitaires (J-7, J-1, J-0)
 exports.sendSanteReminders = santeFunctions.sendSanteReminders;
 
+// Santé — rappels récurrents de traitement (ex: piqûre tous les 3 jours)
+exports.sendTraitementReminders = santeFunctions.sendTraitementReminders;
+
 // Annonces — expiration auto + rappels J-7 et J-1
 exports.sendAnnonceExpirationReminders = annonceFunctions.sendAnnonceExpirationReminders;
 

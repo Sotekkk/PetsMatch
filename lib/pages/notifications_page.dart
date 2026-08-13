@@ -195,6 +195,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         'vaccinations':     (label: 'Vaccins', icon: Icons.vaccines_outlined, color: Color(0xFF0C5C6C)),
         'vermifuges':       (label: 'Vermifuges', icon: Icons.bug_report_outlined, color: Color(0xFF6E9E57)),
         'antiparasitaires': (label: 'Antiparasitaires', icon: Icons.pest_control_outlined, color: Color(0xFF5B8648)),
+        'traitements':      (label: 'Traitements', icon: Icons.medication_outlined, color: Color(0xFF8D6E63)),
       };
       if (animalId == null) return;
       final cat = table != null ? cats[table] : null;

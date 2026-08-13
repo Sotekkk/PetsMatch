@@ -238,3 +238,105 @@ exports.sendSanteReminders = functions
         console.log(`sendSanteReminders: ${sent} notifications envoyées.`);
         return null;
     });
+
+// ─── Rappels récurrents de traitement ──────────────────────────────────────────
+
+/**
+ * Schedulée toutes les 15 minutes.
+ * Envoie un rappel pour chaque traitement actif (rappel_actif=true) dont
+ * l'heure programmée (rappel_heures, ex: ["08:00","20:00"]) tombe dans le
+ * créneau de 15 min en cours, ET dont le jour courant est un "jour dû"
+ * selon rappel_frequence_jours (répétition tous les N jours depuis la date
+ * de début), dans la fenêtre [date ; rappel_fin].
+ * Dédup via notifs_sent (clé par traitement + date + heure).
+ */
+exports.sendTraitementReminders = functions
+    .region("europe-west1")
+    .pubsub.schedule("*/15 * * * *")
+    .timeZone("Europe/Paris")
+    .onRun(async () => {
+        let sent = 0;
+        const paris = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Paris"}));
+        const todayStr = dateStr(0);
+        const bucketStart = paris.getHours() * 60 +
+            Math.floor(paris.getMinutes() / 15) * 15;
+
+        const rows = await supabaseGet(
+            "traitements?rappel_actif=eq.true" +
+            `&date=lte.${todayStr}&rappel_fin=gte.${todayStr}` +
+            "&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire)",
+        );
+        if (!Array.isArray(rows) || rows.length === 0) return null;
+
+        for (const row of rows) {
+            const animal = row.animaux;
+            const uid = animal?.uid_eleveur || animal?.uid_proprietaire;
+            if (!animal || !uid || !Array.isArray(row.rappel_heures)) continue;
+
+            const debut = new Date(`${row.date}T00:00:00`);
+            const today = new Date(`${todayStr}T00:00:00`);
+            const joursEcoules = Math.round((today - debut) / 86400000);
+            const frequence = row.rappel_frequence_jours || 1;
+            if (joursEcoules < 0 || joursEcoules % frequence !== 0) continue;
+
+            const heureDue = row.rappel_heures.find((h) => {
+                const [hh, mm] = String(h).split(":").map((v) => parseInt(v, 10));
+                if (Number.isNaN(hh) || Number.isNaN(mm)) return false;
+                const minutes = hh * 60 + mm;
+                return minutes >= bucketStart && minutes < bucketStart + 15;
+            });
+            if (!heureDue) continue;
+
+            const nomAnimal = animal.nom || "Votre animal";
+            const dedupKey = `traitement_${row.id}_${todayStr}_${heureDue}`;
+            const existing = await supabaseGet(
+                `notifs_sent?key=eq.${encodeURIComponent(dedupKey)}`,
+            );
+            if (Array.isArray(existing) && existing.length > 0) continue;
+
+            let profileId = null;
+            try {
+                const propRows = await supabaseGet(
+                    `animaux_proprietes?animal_id=eq.${row.animal_id}&uid_proprio=eq.${uid}` +
+                    "&date_fin=is.null&select=profile_id_proprio&limit=1",
+                );
+                if (Array.isArray(propRows) && propRows[0]) profileId = propRows[0].profile_id_proprio;
+            } catch (_) {/* pas bloquant */}
+
+            const title = `💊 Traitement — ${nomAnimal}`;
+            const body = `${row.nom || "Traitement"} (${heureDue}) pour ${nomAnimal}` +
+                (row.posologie ? ` — ${row.posologie}` : "");
+
+            const pushed = await sendPush(uid, title, body, {
+                animalId: String(row.animal_id),
+                table: "traitements",
+            });
+            if (pushed) sent++;
+
+            try {
+                await supabaseInsert("notifications", [{
+                    uid,
+                    type: "sante",
+                    title,
+                    body,
+                    data: {animalId: String(row.animal_id), table: "traitements", heure: heureDue},
+                    read: false,
+                    ...(profileId ? {profile_id: profileId} : {}),
+                }]);
+            } catch (e) {
+                console.error(`notifications insert error (traitement ${row.id}):`, e.message);
+            }
+
+            try {
+                await supabaseInsert("notifs_sent", [{
+                    key: dedupKey,
+                    sent_at: new Date().toISOString(),
+                }]);
+            } catch (e) {
+                console.error(`notifs_sent insert error (${dedupKey}):`, e.message);
+            }
+        }
+
+        console.log(`sendTraitementReminders: ${sent} notifications envoyées.`);
+        return null;
+    });

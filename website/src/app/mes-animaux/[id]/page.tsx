@@ -167,6 +167,16 @@ function age(dob?: string | null) {
 function Field({ label, value, onChange, type='text', rows, required }:
   { label:string; value:string; onChange:(v:string)=>void; type?:string; rows?:number; required?:boolean }) {
   const cls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30';
+  if (type === 'checkbox') {
+    return (
+      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+        <input type="checkbox" checked={value === 'true'}
+          onChange={e => onChange(e.target.checked ? 'true' : 'false')}
+          className="w-4 h-4 rounded border-gray-300 text-[#0C5C6C] focus:ring-[#0C5C6C]/30" />
+        {label}
+      </label>
+    );
+  }
   return (
     <div>
       <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">
@@ -1533,6 +1543,39 @@ export default function AnimalFichePage() {
     setSavingHealth(false);
   }
 
+  // Traitement avec rappels récurrents (ex: piqûre tous les 3 jours pendant
+  // 3 semaines) : transforme les champs texte du formulaire générique en
+  // colonnes typées (booléen, entiers, tableau d'heures, date de fin
+  // calculée) avant l'insert.
+  async function saveTraitement(data: Record<string,string>) {
+    if (!id) return;
+    setSavingHealth(true);
+    const rappelActif = data.rappel_actif === 'true';
+    const payload: Record<string, unknown> = {
+      animal_id: id, id: crypto.randomUUID(),
+      nom: data.nom, type: data.type, posologie: data.posologie,
+      date: data.date || null, date_fin: data.date_fin || null,
+      rappel_actif: rappelActif,
+    };
+    if (rappelActif) {
+      const frequence = parseInt(data.rappel_frequence_jours || '1', 10) || 1;
+      const duree = parseInt(data.rappel_duree_jours || '7', 10) || 7;
+      const heures = (data.rappel_heures || '').split(',').map(h => h.trim()).filter(Boolean);
+      payload.rappel_frequence_jours = frequence;
+      payload.rappel_duree_jours = duree;
+      payload.rappel_heures = heures;
+      if (data.date) {
+        const fin = new Date(data.date);
+        fin.setDate(fin.getDate() + duree);
+        payload.rappel_fin = fin.toISOString().slice(0, 10);
+      }
+    }
+    await supabase.from('traitements').insert(payload);
+    await loadHealth();
+    setAddOpen(null);
+    setSavingHealth(false);
+  }
+
   async function updateHealthRecord(table: string, recordId: string, data: Record<string,string>) {
     setSavingHealth(true);
     await supabase.from(table).update(data).eq('id', recordId);
@@ -2657,12 +2700,17 @@ export default function AnimalFichePage() {
           </HealthSection>
 
           {/* Traitements */}
-          <HealthSection title="Traitements" icon="💊" color="#8D6E63" count={health.traitements.length}
+          <HealthSection id="health-traitements" defaultOpen={catParam==='traitements'}
+            title="Traitements" icon="💊" color="#8D6E63" count={health.traitements.length}
             onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='traitements'?null:'traitements') : undefined}
             addFormOpen={addOpen==='traitements'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
-              onSave={d=>saveHealthRecord('traitements',d)}
-              fields={[{key:'nom',label:'Nom',required:true},{key:'type',label:'Type'},{key:'posologie',label:'Posologie'},{key:'date',label:'Date début',type:'date'},{key:'date_fin',label:'Date fin',type:'date'}]}/>}>
+              onSave={saveTraitement}
+              fields={[{key:'nom',label:'Nom',required:true},{key:'type',label:'Type'},{key:'posologie',label:'Posologie'},{key:'date',label:'Date début',type:'date'},{key:'date_fin',label:'Date fin',type:'date'},
+                {key:'rappel_actif',label:'Activer les rappels récurrents',type:'checkbox'},
+                {key:'rappel_frequence_jours',label:'Répéter tous les X jours',type:'number'},
+                {key:'rappel_duree_jours',label:'Durée du traitement (jours)',type:'number'},
+                {key:'rappel_heures',label:'Heures de rappel (ex: 08:00, 20:00)'}]}/>}>
             {health.traitements.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('traitements',r.id)}
                 fields={[{key:'nom',label:'Nom'},{key:'type',label:'Type'},{key:'posologie',label:'Posologie'},{key:'date',label:'Début'},{key:'date_fin',label:'Fin'}]}/>

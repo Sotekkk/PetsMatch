@@ -5550,15 +5550,99 @@ class _AddTraitementDialogState extends State<_AddTraitementDialog> {
   String _type = 'antiparasitaire';
   DateTime? _date;
   DateTime? _dateFin;
+
+  // ── Rappels récurrents (ex: piqûre tous les 3 jours pendant 3 semaines) ──
+  bool _rappelActif = false;
+  final _rappelFrequenceCtrl = TextEditingController(text: '1');
+  final _rappelDureeCtrl = TextEditingController(text: '7');
+  String _rappelDureeUnite = 'jours'; // 'jours' | 'semaines'
+  final List<String> _rappelHeures = [];
+
+  @override
+  void dispose() {
+    _rappelFrequenceCtrl.dispose();
+    _rappelDureeCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _addHeure() async {
+    final t = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+    if (t == null) return;
+    final s = '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    if (!_rappelHeures.contains(s)) setState(() { _rappelHeures.add(s); _rappelHeures.sort(); });
+  }
+
+  Widget _buildRappelSection() => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF8F8F6),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: const Color(0xFFE4E7E2)),
+    ),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Expanded(child: Text('Rappels récurrents',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade800))),
+        Switch(value: _rappelActif, activeThumbColor: const Color(0xFF6E9E57),
+            onChanged: (v) => setState(() => _rappelActif = v)),
+      ]),
+      if (_rappelActif) ...[
+        const SizedBox(height: 8),
+        Row(children: [
+          const Text('Répéter tous les', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          const SizedBox(width: 8),
+          SizedBox(width: 50, child: TextFormField(controller: _rappelFrequenceCtrl,
+              keyboardType: TextInputType.number, textAlign: TextAlign.center,
+              decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8),
+                  border: OutlineInputBorder()))),
+          const SizedBox(width: 8),
+          const Text('jour(s)', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          const Text('Pendant', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          const SizedBox(width: 8),
+          SizedBox(width: 50, child: TextFormField(controller: _rappelDureeCtrl,
+              keyboardType: TextInputType.number, textAlign: TextAlign.center,
+              decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8),
+                  border: OutlineInputBorder()))),
+          const SizedBox(width: 8),
+          DropdownButton<String>(value: _rappelDureeUnite, isDense: true,
+              items: const [DropdownMenuItem(value: 'jours', child: Text('jours', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                  DropdownMenuItem(value: 'semaines', child: Text('semaines', style: TextStyle(fontFamily: 'Galey', fontSize: 13)))],
+              onChanged: (v) => setState(() => _rappelDureeUnite = v!)),
+        ]),
+        const SizedBox(height: 10),
+        const Text('Heures de rappel', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+        const SizedBox(height: 6),
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          ..._rappelHeures.map((h) => Chip(
+              label: Text(h, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+              onDeleted: () => setState(() => _rappelHeures.remove(h)),
+              backgroundColor: const Color(0xFF6E9E57).withOpacity(0.12))),
+          ActionChip(avatar: const Icon(Icons.add, size: 16),
+              label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+              onPressed: _addHeure),
+        ]),
+      ],
+    ]),
+  );
+
   @override
   Widget build(BuildContext context) => _BaseDialog(title: 'Ajouter un traitement', fields: [
     _DDrop('Type', _type, ['antiparasitaire', 'medicament', 'autre'], (v) => setState(() => _type = v!)),
     _DF('Nom du produit *', _nom), _DF('Posologie', _posologie),
     _DD('Date début *', _date, (d) => setState(() => _date = d)),
     _DD('Date fin', _dateFin, (d) => setState(() => _dateFin = d)),
+    _DCustom(_buildRappelSection()),
   ], onSave: () async {
     if (_nom.text.isEmpty || _date == null) return false;
+    if (_rappelActif && _rappelHeures.isEmpty) return false;
     final id = DateTime.now().microsecondsSinceEpoch.toString();
+    final frequenceJours = int.tryParse(_rappelFrequenceCtrl.text) ?? 1;
+    final dureeValeur = int.tryParse(_rappelDureeCtrl.text) ?? 7;
+    final dureeJours = _rappelDureeUnite == 'semaines' ? dureeValeur * 7 : dureeValeur;
+    final rappelFin = _rappelActif ? _date!.add(Duration(days: dureeJours)) : null;
     await Supabase.instance.client.from('traitements').insert({
       'id': id, 'animal_id': widget.animalId,
       'type': _type, 'nom': _nom.text.trim(), 'posologie': _posologie.text.trim(),
@@ -5566,6 +5650,11 @@ class _AddTraitementDialogState extends State<_AddTraitementDialog> {
       'date_fin': _dateFin?.toIso8601String(),
       'source': widget.source,
       if (widget.vetId != null) 'vet_id': widget.vetId,
+      'rappel_actif': _rappelActif,
+      if (_rappelActif) 'rappel_frequence_jours': frequenceJours,
+      if (_rappelActif) 'rappel_duree_jours': dureeJours,
+      if (_rappelActif) 'rappel_fin': rappelFin!.toIso8601String(),
+      if (_rappelActif) 'rappel_heures': _rappelHeures,
     });
     RegistreHelper.writeActe(
       animalId: widget.animalId, typeActe: 'traitement', dateActe: _date!,
@@ -6796,6 +6885,7 @@ class _DD { final String label; final DateTime? value; final ValueChanged<DateTi
   const _DD(this.label, this.value, this.onChanged); }
 class _DDrop { final String label; final String value; final List<String> options; final ValueChanged<String?> onChanged;
   const _DDrop(this.label, this.value, this.options, this.onChanged); }
+class _DCustom { final Widget child; const _DCustom(this.child); }
 
 // ─── Dialog de base générique ─────────────────────────────────────────────────
 
@@ -6861,6 +6951,8 @@ class _BaseDialog extends StatelessWidget {
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
                     items: f.options.map((o) => DropdownMenuItem(value: o, child: Text(o))).toList(),
                     onChanged: f.onChanged));
+
+                if (f is _DCustom) return Padding(padding: const EdgeInsets.only(bottom: 10), child: f.child);
 
                 return const SizedBox.shrink();
               }).toList()),
