@@ -1337,7 +1337,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     final picked = await showDatePicker(
       context: context,
       initialDate: _dateNaissance ?? now,
-      firstDate: DateTime(now.year - 30),
+      firstDate: DateTime(now.year - 100),
       lastDate: now,
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6E9E57))),

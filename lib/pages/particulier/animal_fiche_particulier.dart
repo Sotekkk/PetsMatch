@@ -2215,7 +2215,7 @@ class _DateField extends StatelessWidget {
           final d = await showDatePicker(
             context: context,
             initialDate: date ?? DateTime.now().subtract(const Duration(days: 365)),
-            firstDate: DateTime(2000),
+            firstDate: DateTime(1900),
             lastDate: DateTime.now(),
           );
           if (d != null) onPicked(d);
