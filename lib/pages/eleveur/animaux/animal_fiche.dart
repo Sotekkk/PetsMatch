@@ -4610,20 +4610,42 @@ class _SanteCard extends StatelessWidget {
 
   void _showDetail(BuildContext context) {
     const _skip = {'id', 'animal_id', 'created_at', 'vet_id', 'visite_ref',
-                   'source', 'pro_uid', 'owner_uid', 'rdv_id', 'extra_data'};
+                   'source', 'pro_uid', 'owner_uid', 'rdv_id', 'extra_data',
+                   'rappel_actif', 'rappel_frequence_jours', 'rappel_duree_jours',
+                   'rappel_fin', 'rappel_heures'};
     final entries = data.entries.where((e) =>
         !_skip.contains(e.key) && e.value != null && e.value.toString().isNotEmpty).toList();
     final visiteRef = data['visite_ref'] as String?;
     final rdvId = data['rdv_id'] as String?;
+    // Résumé lisible des rappels récurrents (traitements) — les colonnes
+    // brutes (rappel_frequence_jours, rappel_fin...) sont exclues ci-dessus
+    // et remplacées par cette seule ligne formatée.
+    String? rappelSummary;
+    if (data['rappel_actif'] == true) {
+      final freq = data['rappel_frequence_jours'];
+      final fin  = data['rappel_fin'] as String?;
+      final heuresRaw = data['rappel_heures'];
+      final heures = heuresRaw is List ? heuresRaw.join(', ') : '';
+      final finFmt = fin != null ? (DateTime.tryParse(fin) != null ? DateFormat('dd/MM/yyyy').format(DateTime.parse(fin)) : fin) : null;
+      rappelSummary = [
+        'Tous les $freq jour${freq == 1 ? '' : 's'}',
+        if (heures.isNotEmpty) 'à $heures',
+        if (finFmt != null) 'jusqu\'au $finFmt',
+      ].join(' ');
+    }
     showModalBottomSheet(
       context: context,
       useRootNavigator: true,
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
+      builder: (ctx) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-        child: Column(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.85),
+          child: SingleChildScrollView(
+            child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -4640,6 +4662,20 @@ class _SanteCard extends StatelessWidget {
                   onPressed: () => Navigator.pop(context)),
             ]),
             const Divider(),
+            if (rappelSummary != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(width: 130,
+                        child: Text('Rappels', style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                            color: Color(0xFF6F767B), fontWeight: FontWeight.w500))),
+                    Expanded(child: Text(rappelSummary,
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600))),
+                  ],
+                ),
+              ),
             ...entries.map((e) {
               final label  = _labels[e.key] ?? e.key;
               final val    = _fmtVal(e.key, e.value);
@@ -4697,6 +4733,8 @@ class _SanteCard extends StatelessWidget {
             ),
           ],
           ],
+        ),
+          ),
         ),
       ),
     );
