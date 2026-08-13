@@ -243,13 +243,15 @@ exports.sendSanteReminders = functions
 
 /**
  * Schedulée toutes les 15 minutes.
- * Envoie un rappel pour chaque traitement actif (rappel_actif=true) dont
- * l'heure programmée (rappel_heures, ex: ["08:00","20:00"]) tombe dans le
- * créneau de 15 min en cours, ET dont le jour courant est un "jour dû"
- * selon rappel_frequence_jours (répétition tous les N jours depuis la date
- * de début), dans la fenêtre [date ; rappel_fin].
+ * Envoie un rappel PREAVIS_MIN minutes avant chaque heure programmée
+ * (rappel_heures, ex: ["08:00","20:00"]) d'un traitement actif
+ * (rappel_actif=true), pour laisser le temps de préparer le soin avant de
+ * l'administrer, ET dont le jour courant est un "jour dû" selon
+ * rappel_frequence_jours (répétition tous les N jours depuis la date de
+ * début), dans la fenêtre [date ; rappel_fin].
  * Dédup via notifs_sent (clé par traitement + date + heure).
  */
+const PREAVIS_MIN = 15;
 exports.sendTraitementReminders = functions
     .region("europe-west1")
     .pubsub.schedule("*/15 * * * *")
@@ -282,8 +284,8 @@ exports.sendTraitementReminders = functions
             const heureDue = row.rappel_heures.find((h) => {
                 const [hh, mm] = String(h).split(":").map((v) => parseInt(v, 10));
                 if (Number.isNaN(hh) || Number.isNaN(mm)) return false;
-                const minutes = hh * 60 + mm;
-                return minutes >= bucketStart && minutes < bucketStart + 15;
+                const minutesAvantRappel = hh * 60 + mm - PREAVIS_MIN;
+                return minutesAvantRappel >= bucketStart && minutesAvantRappel < bucketStart + 15;
             });
             if (!heureDue) continue;
 
@@ -303,8 +305,8 @@ exports.sendTraitementReminders = functions
                 if (Array.isArray(propRows) && propRows[0]) profileId = propRows[0].profile_id_proprio;
             } catch (_) {/* pas bloquant */}
 
-            const title = `💊 Traitement — ${nomAnimal}`;
-            const body = `${row.nom || "Traitement"} (${heureDue}) pour ${nomAnimal}` +
+            const title = `💊 Dans ${PREAVIS_MIN} min — ${nomAnimal}`;
+            const body = `${row.nom || "Traitement"} à ${heureDue} pour ${nomAnimal}` +
                 (row.posologie ? ` — ${row.posologie}` : "");
 
             const pushed = await sendPush(uid, title, body, {

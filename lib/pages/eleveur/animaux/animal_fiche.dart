@@ -4832,6 +4832,14 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
   bool _saving = false;
   String? _error;
 
+  // ── Rappels récurrents (traitements uniquement) ──────────────────────────
+  bool _rappelActif = false;
+  late final TextEditingController _rappelFrequenceCtrl;
+  late final TextEditingController _rappelDureeCtrl;
+  List<String> _rappelHeures = [];
+
+  bool get _isTraitement => widget.collection == 'traitements';
+
   @override
   void initState() {
     super.initState();
@@ -4839,10 +4847,81 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
     _ctrls = { for (final f in fields) f.$1: TextEditingController(text: (widget.data[f.$1] ?? '').toString()) };
     final raw = widget.data['date'] as String?;
     _date = raw != null ? (DateTime.tryParse(raw) ?? DateTime.now()) : DateTime.now();
+
+    _rappelActif = widget.data['rappel_actif'] == true;
+    _rappelFrequenceCtrl = TextEditingController(text: (widget.data['rappel_frequence_jours'] ?? 1).toString());
+    _rappelDureeCtrl = TextEditingController(text: (widget.data['rappel_duree_jours'] ?? 7).toString());
+    final heuresRaw = widget.data['rappel_heures'];
+    _rappelHeures = heuresRaw is List ? heuresRaw.map((h) => h.toString()).toList() : <String>[];
   }
 
   @override
-  void dispose() { for (final c in _ctrls.values) c.dispose(); super.dispose(); }
+  void dispose() {
+    for (final c in _ctrls.values) c.dispose();
+    _rappelFrequenceCtrl.dispose();
+    _rappelDureeCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _addHeure() async {
+    final t = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+    if (t == null) return;
+    final s = '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    if (!_rappelHeures.contains(s)) setState(() { _rappelHeures = [..._rappelHeures, s]..sort(); });
+  }
+
+  Widget _buildRappelSection() => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFF8F8F6),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: const Color(0xFFE4E7E2)),
+    ),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Expanded(child: Text('Rappels récurrents',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade800))),
+        Switch(value: _rappelActif, activeThumbColor: const Color(0xFF6E9E57),
+            onChanged: (v) => setState(() => _rappelActif = v)),
+      ]),
+      if (_rappelActif) ...[
+        const SizedBox(height: 8),
+        Row(children: [
+          const Text('Répéter tous les', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          const SizedBox(width: 8),
+          SizedBox(width: 50, child: TextFormField(controller: _rappelFrequenceCtrl,
+              keyboardType: TextInputType.number, textAlign: TextAlign.center,
+              decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8),
+                  border: OutlineInputBorder()))),
+          const SizedBox(width: 8),
+          const Text('jour(s)', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          const Text('Pendant', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          const SizedBox(width: 8),
+          SizedBox(width: 50, child: TextFormField(controller: _rappelDureeCtrl,
+              keyboardType: TextInputType.number, textAlign: TextAlign.center,
+              decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8),
+                  border: OutlineInputBorder()))),
+          const SizedBox(width: 8),
+          const Text('jours', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+        ]),
+        const SizedBox(height: 10),
+        const Text('Heures de rappel', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+        const SizedBox(height: 6),
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          ..._rappelHeures.map((h) => Chip(
+              label: Text(h, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+              onDeleted: () => setState(() => _rappelHeures = _rappelHeures.where((x) => x != h).toList()),
+              backgroundColor: const Color(0xFF6E9E57).withOpacity(0.12))),
+          ActionChip(avatar: const Icon(Icons.add, size: 16),
+              label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+              onPressed: _addHeure),
+        ]),
+      ],
+    ]),
+  );
 
   Future<void> _pickDate() async {
     final p = await showDatePicker(
@@ -4862,12 +4941,32 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
         return;
       }
     }
+    if (_isTraitement && _rappelActif && _rappelHeures.isEmpty) {
+      setState(() => _error = 'Ajoute au moins une heure de rappel.');
+      return;
+    }
     setState(() { _saving = true; _error = null; });
     try {
       final updates = <String, dynamic>{ 'date': _date.toIso8601String() };
       for (final f in fields) {
         final v = _ctrls[f.$1]?.text.trim() ?? '';
         updates[f.$1] = v;
+      }
+      if (_isTraitement) {
+        updates['rappel_actif'] = _rappelActif;
+        if (_rappelActif) {
+          final frequenceJours = int.tryParse(_rappelFrequenceCtrl.text) ?? 1;
+          final dureeJours = int.tryParse(_rappelDureeCtrl.text) ?? 7;
+          updates['rappel_frequence_jours'] = frequenceJours;
+          updates['rappel_duree_jours'] = dureeJours;
+          updates['rappel_fin'] = _date.add(Duration(days: dureeJours)).toIso8601String();
+          updates['rappel_heures'] = _rappelHeures;
+        } else {
+          updates['rappel_frequence_jours'] = null;
+          updates['rappel_duree_jours'] = null;
+          updates['rappel_fin'] = null;
+          updates['rappel_heures'] = null;
+        }
       }
       await Supabase.instance.client
           .from(widget.collection).update(updates).eq('id', widget.data['id'].toString());
@@ -4927,6 +5026,10 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
                 contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               ),
             ),
+            const SizedBox(height: 10),
+          ],
+          if (_isTraitement) ...[
+            _buildRappelSection(),
             const SizedBox(height: 10),
           ],
           if (_error != null) ...[
