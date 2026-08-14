@@ -4,7 +4,6 @@ import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/planning/planning_jour_page.dart';
-import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
@@ -260,7 +259,7 @@ class _EleveurNavState extends State<EleveurNav> {
                             ));
                           } else {
                             Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const PlanningMoisPage(),
+                              builder: (_) => const PlanTemplateListPage(),
                             ));
                           }
                         },

@@ -107,7 +107,12 @@ class PlanningService {
   }
 
   // ── Supprimer un template ────────────────────────────────────────────────────
+  // Supprime aussi les instances (plans_actifs) créées par ce template : la
+  // suppression de plans_actifs entraîne en cascade (FK ON DELETE CASCADE)
+  // celle des plan_taches déjà générées — sinon les lignes restaient visibles
+  // dans l'agenda/planning après suppression du protocole.
   static Future<void> deleteTemplate(String templateId) async {
+    await _supa.from('plans_actifs').delete().eq('template_id', templateId);
     await _supa.from('plan_templates').delete().eq('id', templateId);
   }
 

@@ -10,7 +10,7 @@ import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/eleveur/choice_publication.dart';
 import 'package:PetsMatch/pages/eleveur/elevage_gestion_select_menu.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
-import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
+import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/pages/eleveur/postDetail.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
@@ -1034,7 +1034,7 @@ class _UserElevageFeedState extends State<UserElevageFeed>
             title: 'Protocoles${isPremium ? '' : ' 👑'}',
             subtitle: isPremium ? 'Protocoles, planning quotidien' : 'Réservé aux abonnements Premium',
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
-                isPremium ? const PlanningMoisPage() : const AbonnementPage())),
+                isPremium ? const PlanTemplateListPage() : const AbonnementPage())),
           ),
         ],
       ),

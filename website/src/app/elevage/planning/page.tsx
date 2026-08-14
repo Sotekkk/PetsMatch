@@ -460,6 +460,11 @@ export default function PlanningPage() {
           onPrint={printProtocole}
           onDelete={async (id) => {
             if (!confirm('Supprimer ce protocole ?')) return;
+            // Supprime aussi les instances (plans_actifs) créées par ce
+            // template : leur suppression entraîne en cascade (FK ON DELETE
+            // CASCADE) celle des plan_taches déjà générées — sinon les
+            // lignes restaient visibles dans l'agenda après suppression.
+            await supabase.from('plans_actifs').delete().eq('template_id', id);
             await supabase.from('plan_templates').delete().eq('id', id);
             loadTemplates();
           }}

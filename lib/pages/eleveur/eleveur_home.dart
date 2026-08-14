@@ -3,7 +3,7 @@ import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
-import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
+import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/widgets/marketplace_banner.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
@@ -730,7 +730,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
             isLocked: _planCode != 'premium',
             onTap: () => Navigator.push(context, MaterialPageRoute(
                 builder: (_) => _planCode == 'premium'
-                    ? const PlanningMoisPage()
+                    ? const PlanTemplateListPage()
                     : const AbonnementPage()))),
         _QuickTile(
             icon: Icons.add_task_outlined,

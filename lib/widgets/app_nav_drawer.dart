@@ -30,7 +30,7 @@ import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 // Eleveur pages
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
-import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
+import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
@@ -366,7 +366,7 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
                 badgeLabel: 'Premium',
                 onTap: () => _push(_planCode != 'premium'
                     ? const AbonnementPage()
-                    : const PlanningMoisPage()),
+                    : const PlanTemplateListPage()),
               ),
               _DrawerSubItem(
                 label: 'Suivi sanitaire',
