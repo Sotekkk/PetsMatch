@@ -268,7 +268,10 @@ export default function PlanningPage() {
   const profilSource = pathname.startsWith('/association') ? 'association' : 'eleveur';
   const { config: planConfig, loading: planLoading } = usePlan();
 
-  const [view, setView] = useState<'jour' | 'mois' | 'protocoles'>('mois');
+  // 'protocoles' par défaut : la page est ouverte depuis le lien nav
+  // "Protocoles" — le planning (jour/mois) reste accessible via les onglets,
+  // mais ne doit pas s'afficher en premier ("en fond") à l'arrivée.
+  const [view, setView] = useState<'jour' | 'mois' | 'protocoles'>('protocoles');
   const [taches, setTaches] = useState<Tache[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(toISODate(new Date()));
