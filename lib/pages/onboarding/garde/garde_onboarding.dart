@@ -23,7 +23,7 @@ final List<OnboardingStepDef> _steps = [
       description: 'Pet sitter, promeneur ou les deux, SIRET ou statut, ACACED, espèces '
           'gardées, adresse... un profil complet inspire confiance aux propriétaires.',
       primaryLabel: 'Compléter mon profil →',
-      pageBuilder: (_) => const ProProfileEditPage(),
+      pageBuilder: (_) => ProProfileEditPage(secondaryProfileId: profileId),
       onNext: onNext,
       onSkip: onSkip,
     ),
@@ -54,7 +54,7 @@ final List<OnboardingStepDef> _steps = [
       description: 'Garde à domicile, garde chez vous, promenade individuelle ou en groupe, '
           'visite quotidienne, garde de nuit... activez vos services et indiquez un tarif de base pour chacun.',
       primaryLabel: 'Configurer mes services →',
-      pageBuilder: (_) => const ProProfileEditPage(),
+      pageBuilder: (_) => ProProfileEditPage(secondaryProfileId: profileId),
       onNext: onNext,
       onSkip: onSkip,
       secondaryLabel: 'Plus tard',
@@ -70,7 +70,7 @@ final List<OnboardingStepDef> _steps = [
       description: 'Cochez vos jours et horaires habituels, avec l\'option jours fériés si '
           'vous êtes disponible — vous pourrez toujours affiner plus tard.',
       primaryLabel: 'Renseigner mes disponibilités →',
-      pageBuilder: (_) => const ProProfileEditPage(),
+      pageBuilder: (_) => ProProfileEditPage(secondaryProfileId: profileId),
       onNext: onNext,
       onSkip: onSkip,
       secondaryLabel: 'Plus tard',

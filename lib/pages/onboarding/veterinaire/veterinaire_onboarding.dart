@@ -24,7 +24,7 @@ final List<OnboardingStepDef> _steps = [
           'spécialités, espèces traitées... un profil complet vous rend visible auprès des '
           'propriétaires à proximité.',
       primaryLabel: 'Compléter mon profil →',
-      pageBuilder: (_) => const ProProfileEditPage(),
+      pageBuilder: (_) => ProProfileEditPage(secondaryProfileId: profileId),
       onNext: onNext,
       onSkip: onSkip,
     ),
@@ -55,7 +55,7 @@ final List<OnboardingStepDef> _steps = [
       description: 'Cochez vos jours et horaires habituels — vous pourrez toujours affiner '
           'plus tard depuis votre profil.',
       primaryLabel: 'Renseigner mes horaires →',
-      pageBuilder: (_) => const ProProfileEditPage(),
+      pageBuilder: (_) => ProProfileEditPage(secondaryProfileId: profileId),
       onNext: onNext,
       onSkip: onSkip,
       secondaryLabel: 'Plus tard',

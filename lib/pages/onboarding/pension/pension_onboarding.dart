@@ -24,7 +24,7 @@ final List<OnboardingStepDef> _steps = [
       description: 'Nom de la pension, SIRET, agrément DDPP, ACACED, espèces accueillies, '
           'capacité totale, adresse... un profil complet rassure les propriétaires qui vous confient leur animal.',
       primaryLabel: 'Compléter mon profil →',
-      pageBuilder: (_) => const ProProfileEditPage(),
+      pageBuilder: (_) => ProProfileEditPage(secondaryProfileId: profileId),
       onNext: onNext,
       onSkip: onSkip,
     ),

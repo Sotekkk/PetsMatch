@@ -23,7 +23,7 @@ final List<OnboardingStepDef> _steps = [
       description: 'Nom du studio, SIRET, zone d\'intervention, espèces photographiées, '
           'style... et au moins 5 photos de portfolio, le minimum pour apparaître dans les recherches.',
       primaryLabel: 'Compléter mon profil →',
-      pageBuilder: (_) => const ProProfileEditPage(),
+      pageBuilder: (_) => ProProfileEditPage(secondaryProfileId: profileId),
       onNext: onNext,
       onSkip: onSkip,
     ),
@@ -54,7 +54,7 @@ final List<OnboardingStepDef> _steps = [
       description: 'Cochez vos jours et horaires habituels — les clients pourront vous '
           'contacter directement depuis votre profil PetsMatch.',
       primaryLabel: 'Renseigner mes disponibilités →',
-      pageBuilder: (_) => const ProProfileEditPage(),
+      pageBuilder: (_) => ProProfileEditPage(secondaryProfileId: profileId),
       onNext: onNext,
       onSkip: onSkip,
       secondaryLabel: 'C\'est parti',

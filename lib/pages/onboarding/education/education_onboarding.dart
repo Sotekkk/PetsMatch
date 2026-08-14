@@ -24,7 +24,7 @@ final List<OnboardingStepDef> _steps = [
       description: 'SIRET, ACACED, certifications (CCPCC, CNECAD...), méthodes pratiquées, '
           'espèces travaillées, adresse... un profil complet inspire confiance aux propriétaires.',
       primaryLabel: 'Compléter mon profil →',
-      pageBuilder: (_) => const ProProfileEditPage(),
+      pageBuilder: (_) => ProProfileEditPage(secondaryProfileId: profileId),
       onNext: onNext,
       onSkip: onSkip,
     ),
@@ -39,7 +39,7 @@ final List<OnboardingStepDef> _steps = [
       description: 'Cours individuel, cours collectif, bilan comportemental, stage intensif, '
           'suivi à distance... activez vos prestations et indiquez un tarif de base pour chacune.',
       primaryLabel: 'Configurer mes services →',
-      pageBuilder: (_) => const ProProfileEditPage(),
+      pageBuilder: (_) => ProProfileEditPage(secondaryProfileId: profileId),
       onNext: onNext,
       onSkip: onSkip,
       secondaryLabel: 'Plus tard',

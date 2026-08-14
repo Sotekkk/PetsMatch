@@ -23,7 +23,7 @@ final List<OnboardingStepDef> _steps = [
       description: 'Spécialité (ostéopathe, kinésithérapeute, acupuncteur...), SIRET, '
           'diplôme, ACACED, espèces traitées, zone d\'intervention... un profil complet inspire confiance.',
       primaryLabel: 'Compléter mon profil →',
-      pageBuilder: (_) => const ProProfileEditPage(),
+      pageBuilder: (_) => ProProfileEditPage(secondaryProfileId: profileId),
       onNext: onNext,
       onSkip: onSkip,
     ),
@@ -38,7 +38,7 @@ final List<OnboardingStepDef> _steps = [
       description: 'Consultation initiale (bilan), séance de suivi, à domicile ou en cabinet '
           '— indiquez une durée et un tarif pour chacune, elles serviront à calculer vos créneaux disponibles.',
       primaryLabel: 'Configurer mes séances →',
-      pageBuilder: (_) => const ProProfileEditPage(),
+      pageBuilder: (_) => ProProfileEditPage(secondaryProfileId: profileId),
       onNext: onNext,
       onSkip: onSkip,
       secondaryLabel: 'Plus tard',

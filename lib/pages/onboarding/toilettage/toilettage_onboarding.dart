@@ -23,7 +23,7 @@ final List<OnboardingStepDef> _steps = [
       description: 'Nom du salon, SIRET, certifications (BTM Toiletteur...), adresse, '
           'service à domicile ou non, races travaillées... un profil complet inspire confiance.',
       primaryLabel: 'Compléter mon profil →',
-      pageBuilder: (_) => const ProProfileEditPage(),
+      pageBuilder: (_) => ProProfileEditPage(secondaryProfileId: profileId),
       onNext: onNext,
       onSkip: onSkip,
     ),
@@ -54,7 +54,7 @@ final List<OnboardingStepDef> _steps = [
       description: 'Cochez vos jours et horaires habituels — vous pourrez toujours affiner '
           'plus tard depuis votre profil.',
       primaryLabel: 'Renseigner mes disponibilités →',
-      pageBuilder: (_) => const ProProfileEditPage(),
+      pageBuilder: (_) => ProProfileEditPage(secondaryProfileId: profileId),
       onNext: onNext,
       onSkip: onSkip,
       secondaryLabel: 'Plus tard',
