@@ -511,14 +511,30 @@ export default function AgendaPage() {
     }).sort((a, b) => new Date(a.date_debut).getTime() - new Date(b.date_debut).getTime());
   }
 
+  function tasksForKey(key: string) {
+    const onDay = tasks.filter(t => (t.date ?? '').startsWith(key));
+    const todayKey = new Date().toISOString().slice(0, 10);
+    if (key !== todayKey) return onDay;
+    // Reporte sur "aujourd'hui" les tâches en retard non validées, pour ne
+    // pas les perdre de vue tant qu'elles ne sont pas faites ou supprimées
+    // (ex : "Commander Purina" créée le 5 août reste visible le 14 août).
+    const overdue = tasks.filter(t => {
+      const d = t.date ?? '';
+      if (!d || d.startsWith(key)) return false;
+      if (t.statut === 'fait') return false;
+      return d < key;
+    });
+    return [...onDay, ...overdue];
+  }
+
   function tasksForDate(date: Date) {
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    return tasks.filter(t => (t.date ?? '').startsWith(key));
+    return tasksForKey(key);
   }
 
   function tasksForDay(day: number) {
     const key = `${focusedMonth.year}-${String(focusedMonth.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return tasks.filter(t => (t.date ?? '').startsWith(key));
+    return tasksForKey(key);
   }
 
   async function toggleTask(t: Task) {

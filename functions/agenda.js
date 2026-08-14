@@ -465,5 +465,83 @@ exports.sendMiseBasReminders = functions
         }
 
         console.log(`sendMiseBasReminders: ${sent} rappels envoyés`);
+
+        const overdueSent = await sendOverdueMiseBasReminders();
+        console.log(`sendOverdueMiseBasReminders: ${overdueSent} rappels envoyés`);
         return null;
     });
+
+/**
+ * Appelée à la suite de sendMiseBasReminders (même run, 8h Paris).
+ * Si une mise-bas prévue est dépassée (date_prevue < aujourd'hui) et
+ * qu'aucune naissance n'a été enregistrée (date_naissance vide), renvoie un
+ * rappel CHAQUE JOUR tant que l'éleveur n'a pas confirmé la naissance ou
+ * explicitement coupé le rappel (notifs_sent : gestation_overdue_muted_<id>).
+ */
+async function sendOverdueMiseBasReminders() {
+    let sent = 0;
+    const parisNow = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Paris"}));
+    const y = parisNow.getFullYear();
+    const m = String(parisNow.getMonth() + 1).padStart(2, "0");
+    const d = String(parisNow.getDate()).padStart(2, "0");
+    const todayStr = `${y}-${m}-${d}`;
+
+    const gestations = await supabaseSelect("gestations",
+        `gestation_confirmee=eq.true&date_naissance=is.null&date_prevue=lt.${todayStr}`);
+
+    for (const g of gestations) {
+        const muteKey = `gestation_overdue_muted_${g.id}`;
+        const muted = await supabaseSelect("notifs_sent", `key=eq.${encodeURIComponent(muteKey)}`);
+        if (Array.isArray(muted) && muted.length > 0) continue;
+
+        const dedupKey = `gestation_overdue_${g.id}_${todayStr}`;
+        const existing = await supabaseSelect("notifs_sent", `key=eq.${encodeURIComponent(dedupKey)}`);
+        if (Array.isArray(existing) && existing.length > 0) continue;
+
+        const animals = await supabaseSelect("animaux", `id=eq.${g.animal_id}`);
+        const animal = animals[0];
+        if (!animal || !animal.uid_eleveur) continue;
+
+        let profileId = null;
+        try {
+            const propRows = await supabaseSelect("animaux_proprietes",
+                `animal_id=eq.${g.animal_id}&uid_proprio=eq.${animal.uid_eleveur}&date_fin=is.null`);
+            if (propRows[0]) profileId = propRows[0].profile_id_proprio;
+        } catch (_) {/* pas bloquant */}
+
+        const animalNom = animal.nom || "votre femelle";
+        const joursRetard = Math.round((new Date(todayStr) - new Date(g.date_prevue)) / 86400000);
+
+        const title = `⚠️ Mise-bas en retard — ${animalNom}`;
+        const body = `${animalNom} devait mettre bas il y a ${joursRetard} jour${joursRetard > 1 ? "s" : ""}. ` +
+            "Tout va bien ?";
+
+        const pushed = await sendPush(
+            animal.uid_eleveur, title, body,
+            {type: "mise_bas", animalId: String(g.animal_id), overdue: true},
+        );
+        if (pushed) sent++;
+
+        try {
+            await supabaseInsert("notifications", [{
+                uid: animal.uid_eleveur,
+                type: "mise_bas",
+                title,
+                body,
+                data: {animalId: String(g.animal_id), overdue: true, gestationId: g.id},
+                read: false,
+                ...(profileId ? {profile_id: profileId} : {}),
+            }]);
+        } catch (e) {
+            console.error(`notifications insert error overdue (gestation ${g.id}):`, e.message);
+        }
+
+        try {
+            await supabaseInsert("notifs_sent", [{key: dedupKey, sent_at: new Date().toISOString()}]);
+        } catch (e) {
+            console.error(`notifs_sent insert error (${dedupKey}):`, e.message);
+        }
+    }
+
+    return sent;
+}

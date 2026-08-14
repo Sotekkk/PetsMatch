@@ -236,8 +236,102 @@ exports.sendSanteReminders = functions
         }
 
         console.log(`sendSanteReminders: ${sent} notifications envoyées.`);
+
+        const overdueSent = await sendOverdueSanteReminders();
+        console.log(`sendOverdueSanteReminders: ${overdueSent} notifications envoyées.`);
         return null;
     });
+
+// ─── Rappels quotidiens pour les retards non résolus ──────────────────────────
+
+/**
+ * Appelée à la suite de sendSanteReminders (même run, 8h Paris).
+ * Pour vaccinations/vermifuges/antiparasitaires : si le dernier rappel connu
+ * d'un animal est dépassé (date_rappel < aujourd'hui), renvoie un rappel
+ * CHAQUE JOUR tant que l'éleveur n'a pas :
+ *   - loggé un traitement plus récent pour cet animal (date_rappel plus
+ *     récente prend le relais automatiquement), ou
+ *   - explicitement coupé le rappel depuis l'app/le site (notifs_sent avec
+ *     la clé sante_<table>_muted_<id>).
+ */
+async function sendOverdueSanteReminders() {
+    let sent = 0;
+    const todayStr = dateStr(0);
+
+    for (const {table, label, nomField} of TABLES) {
+        const rows = await supabaseGet(
+            `${table}?date_rappel=lt.${todayStr}` +
+            `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire)`,
+        );
+        if (!Array.isArray(rows) || rows.length === 0) continue;
+
+        // Un traitement plus récent déjà loggé pour le même animal annule
+        // le retard de l'ancien enregistrement.
+        const latestByAnimal = new Map();
+        for (const row of rows) {
+            const prev = latestByAnimal.get(row.animal_id);
+            if (!prev || row.date_rappel > prev.date_rappel) latestByAnimal.set(row.animal_id, row);
+        }
+
+        for (const row of latestByAnimal.values()) {
+            const animal = row.animaux;
+            const uid = animal?.uid_eleveur || animal?.uid_proprietaire;
+            if (!animal || !uid) continue;
+
+            const muteKey = `sante_${table}_muted_${row.id}`;
+            const muted = await supabaseGet(`notifs_sent?key=eq.${encodeURIComponent(muteKey)}`);
+            if (Array.isArray(muted) && muted.length > 0) continue;
+
+            const dedupKey = `sante_${table}_overdue_${row.id}_${todayStr}`;
+            const existing = await supabaseGet(`notifs_sent?key=eq.${encodeURIComponent(dedupKey)}`);
+            if (Array.isArray(existing) && existing.length > 0) continue;
+
+            const nomAnimal = animal.nom || "Votre animal";
+            const produit = row[nomField] || label;
+            const joursRetard = Math.round((new Date(todayStr) - new Date(row.date_rappel)) / 86400000);
+
+            let profileId = null;
+            try {
+                const propRows = await supabaseGet(
+                    `animaux_proprietes?animal_id=eq.${row.animal_id}&uid_proprio=eq.${uid}` +
+                    `&date_fin=is.null&select=profile_id_proprio&limit=1`,
+                );
+                if (Array.isArray(propRows) && propRows[0]) profileId = propRows[0].profile_id_proprio;
+            } catch (_) {/* pas bloquant */}
+
+            const title = `⚠️ ${label} en retard — ${nomAnimal}`;
+            const body = `${produit} pour ${nomAnimal} devait être fait il y a ${joursRetard} ` +
+                `jour${joursRetard > 1 ? "s" : ""}.`;
+
+            const pushed = await sendPush(uid, title, body, {
+                animalId: String(row.animal_id), table, overdue: true,
+            });
+            if (pushed) sent++;
+
+            try {
+                await supabaseInsert("notifications", [{
+                    uid,
+                    type: "sante",
+                    title,
+                    body,
+                    data: {animalId: String(row.animal_id), table, overdue: true, recordId: row.id},
+                    read: false,
+                    ...(profileId ? {profile_id: profileId} : {}),
+                }]);
+            } catch (e) {
+                console.error(`notifications insert error overdue (${table} ${row.id}):`, e.message);
+            }
+
+            try {
+                await supabaseInsert("notifs_sent", [{key: dedupKey, sent_at: new Date().toISOString()}]);
+            } catch (e) {
+                console.error(`notifs_sent insert error (${dedupKey}):`, e.message);
+            }
+        }
+    }
+
+    return sent;
+}
 
 // ─── Rappels récurrents de traitement ──────────────────────────────────────────
 
@@ -340,5 +434,70 @@ exports.sendTraitementReminders = functions
         }
 
         console.log(`sendTraitementReminders: ${sent} notifications envoyées.`);
+        return null;
+    });
+
+// ─── Rappels de stock bas (inventaire) ─────────────────────────────────────────
+
+/**
+ * Schedulée quotidiennement à 8h (heure de Paris).
+ * Renvoie un rappel CHAQUE JOUR pour tout article dont le stock est toujours
+ * sous son seuil d'alerte, tant que l'éleveur n'a pas réapprovisionné (la
+ * quantité repasse au-dessus du seuil) ou désactivé l'alerte pour cet
+ * article (inventaire_items.alerte_active=false, réglable depuis la fiche
+ * article — c'est le mécanisme d'annulation manuel).
+ * Dédup via notifs_sent (clé par article + date).
+ */
+exports.sendInventaireReminders = functions
+    .region("europe-west1")
+    .pubsub.schedule("0 8 * * *")
+    .timeZone("Europe/Paris")
+    .onRun(async () => {
+        let sent = 0;
+        const todayStr = dateStr(0);
+
+        const items = await supabaseGet("inventaire_items?alerte_active=eq.true");
+        if (!Array.isArray(items) || items.length === 0) return null;
+
+        for (const item of items) {
+            const seuil = item.quantite_alerte;
+            if (seuil == null || Number(item.quantite) > Number(seuil)) continue;
+            if (!item.uid_eleveur) continue;
+
+            const dedupKey = `inventaire_overdue_${item.id}_${todayStr}`;
+            const existing = await supabaseGet(`notifs_sent?key=eq.${encodeURIComponent(dedupKey)}`);
+            if (Array.isArray(existing) && existing.length > 0) continue;
+
+            const title = `⚠️ Stock bas : ${item.nom}`;
+            const body = `Il ne reste que ${item.quantite} ${item.unite || ""} de ${item.nom}. ` +
+                "Pensez à commander.";
+
+            const pushed = await sendPush(item.uid_eleveur, title, body, {
+                itemId: String(item.id), table: "inventaire_items",
+            });
+            if (pushed) sent++;
+
+            try {
+                await supabaseInsert("notifications", [{
+                    uid: item.uid_eleveur,
+                    type: "inventaire_alerte",
+                    title,
+                    body,
+                    data: {itemId: item.id},
+                    read: false,
+                    ...(item.eleveur_profile_id ? {profile_id: item.eleveur_profile_id} : {}),
+                }]);
+            } catch (e) {
+                console.error(`notifications insert error (inventaire ${item.id}):`, e.message);
+            }
+
+            try {
+                await supabaseInsert("notifs_sent", [{key: dedupKey, sent_at: new Date().toISOString()}]);
+            } catch (e) {
+                console.error(`notifs_sent insert error (${dedupKey}):`, e.message);
+            }
+        }
+
+        console.log(`sendInventaireReminders: ${sent} notifications envoyées.`);
         return null;
     });

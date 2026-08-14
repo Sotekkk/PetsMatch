@@ -450,7 +450,20 @@ class _AgendaPageState extends State<AgendaPage> {
     // _loadTasks, _tasks reste vide pour lui sinon).
     if (!_canShowTasks() && !widget.isParticulier) return [];
     final key = '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
-    return _tasks.where((t) => (t['date'] ?? '').toString().startsWith(key)).toList();
+    final onDay = _tasks.where((t) => (t['date'] ?? '').toString().startsWith(key)).toList();
+    final today = DateTime.now();
+    final isToday = day.year == today.year && day.month == today.month && day.day == today.day;
+    if (!isToday) return onDay;
+    // Reporte sur "aujourd'hui" les tâches en retard non validées, pour ne
+    // pas les perdre de vue tant qu'elles ne sont pas faites ou supprimées
+    // (ex : "Commander Purina" créée le 5 août reste visible le 14 août).
+    final overdue = _tasks.where((t) {
+      final d = (t['date'] ?? '').toString();
+      if (d.isEmpty || d.startsWith(key)) return false;
+      if ((t['statut'] ?? '') == 'fait') return false;
+      return d.compareTo(key) < 0;
+    });
+    return [...onDay, ...overdue];
   }
 
   // ── Section tâches du jour (agenda) — groupée par etape_id ─────────────────

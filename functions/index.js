@@ -55,6 +55,9 @@ exports.sendSanteReminders = santeFunctions.sendSanteReminders;
 // Santé — rappels récurrents de traitement (ex: piqûre tous les 3 jours)
 exports.sendTraitementReminders = santeFunctions.sendTraitementReminders;
 
+// Inventaire — rappels de stock bas tant que non réapprovisionné
+exports.sendInventaireReminders = santeFunctions.sendInventaireReminders;
+
 // Annonces — expiration auto + rappels J-7 et J-1
 exports.sendAnnonceExpirationReminders = annonceFunctions.sendAnnonceExpirationReminders;
 

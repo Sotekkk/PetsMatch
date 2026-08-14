@@ -3979,7 +3979,16 @@ class _ReproListState extends State<_ReproList> {
 
   Future<void> _delete(String id) async {
     try {
-      await Supabase.instance.client.from(widget.collection).delete().eq('id', id);
+      final supa = Supabase.instance.client;
+      await supa.from(widget.collection).delete().eq('id', id);
+      // La gestation supprimée peut avoir un événement "Mise-bas prévue" lié
+      // dans l'agenda (agenda_events.gestation_id) : sans ce nettoyage, il
+      // reste orphelin et continue de s'afficher indéfiniment.
+      if (widget.collection == 'gestations') {
+        try {
+          await supa.from('agenda_events').delete().eq('gestation_id', id);
+        } catch (_) {}
+      }
       if (mounted) setState(() => _data.removeWhere((d) => d['id']?.toString() == id));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
@@ -4572,6 +4581,34 @@ class _SanteCard extends StatelessWidget {
   const _SanteCard({required this.title, required this.data, required this.icon,
       required this.onDelete, this.onTap, this.onEdit, this.collection, this.canDelete = true});
 
+  static const _overdueTables = {'vaccinations', 'vermifuges', 'antiparasitaires'};
+
+  bool get _isOverdue {
+    if (!_overdueTables.contains(collection)) return false;
+    final rappel = data['date_rappel'] as String?;
+    if (rappel == null || rappel.isEmpty) return false;
+    final dt = DateTime.tryParse(rappel);
+    if (dt == null) return false;
+    final today = DateTime.now();
+    return dt.isBefore(DateTime(today.year, today.month, today.day));
+  }
+
+  Future<void> _muteReminder(BuildContext context) async {
+    try {
+      await Supabase.instance.client.from('notifs_sent').upsert({
+        'key': 'sante_${collection}_muted_${data['id']}',
+        'sent_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'key');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Rappel arrêté — vous ne serez plus relancé pour ce soin')));
+      }
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red));
+    }
+  }
+
   static const _labels = {
     'vaccin': 'Vaccin', 'lot': 'N° de lot', 'veterinaire': 'Vétérinaire',
     'date': 'Date', 'date_rappel': 'Rappel', 'date_fin': 'Date de fin',
@@ -4794,6 +4831,10 @@ class _SanteCard extends StatelessWidget {
             ],
           ])),
           const Icon(Icons.chevron_right, color: Color(0xFFCCCCCC), size: 18),
+          if (_isOverdue)
+            IconButton(icon: const Icon(Icons.notifications_off_outlined, size: 18, color: Color(0xFF9CA3AF)),
+                tooltip: 'Arrêter les rappels pour ce soin',
+                onPressed: () => _muteReminder(context), padding: EdgeInsets.zero, constraints: const BoxConstraints()),
           if (canDelete)
             IconButton(icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
                 onPressed: onDelete, padding: EdgeInsets.zero, constraints: const BoxConstraints()),

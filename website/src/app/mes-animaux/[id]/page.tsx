@@ -1645,6 +1645,12 @@ export default function AnimalFichePage() {
 
   async function deleteRepro(table: string, recordId: string) {
     await supabase.from(table).delete().eq('id', recordId);
+    // La gestation supprimée peut avoir un événement "Mise-bas prévue" lié
+    // dans l'agenda (agenda_events.gestation_id) : sans ce nettoyage, il
+    // reste orphelin et continue de s'afficher indéfiniment.
+    if (table === 'gestations') {
+      await supabase.from('agenda_events').delete().eq('gestation_id', recordId);
+    }
     await loadRepro();
   }
 
