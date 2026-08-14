@@ -162,13 +162,16 @@ class _RdvBlock extends StatelessWidget {
     final dhRaw = rdv['date_heure']?.toString() ?? rdv['date_debut']?.toString() ?? '';
     DateTime? dt;
     try { dt = DateTime.parse(dhRaw).toLocal(); } catch (_) {}
-    if (dt == null || dt.hour < heureDebut || dt.hour >= heureFin) {
-      return const SizedBox.shrink();
-    }
+    if (dt == null) return const SizedBox.shrink();
 
+    // Les événements sans horaire précis (ex. mise-bas prévue, stockés à
+    // 00:00) tombent souvent hors de la plage visible [heureDebut, heureFin[ :
+    // on les épingle en haut/bas de la timeline plutôt que de les cacher.
+    final totalHeight = (heureFin - heureDebut) * 60 * pixelsParMinute;
     final duree = (rdv['duree_minutes'] as num?)?.toDouble() ?? 30.0;
-    final top = ((dt.hour - heureDebut) * 60 + dt.minute) * pixelsParMinute;
-    final maxHeight = (heureFin - heureDebut) * 60 * pixelsParMinute - top;
+    final rawTop = ((dt.hour - heureDebut) * 60 + dt.minute) * pixelsParMinute;
+    final top = rawTop.clamp(0.0, totalHeight - 20.0);
+    final maxHeight = totalHeight - top;
     final height = (duree * pixelsParMinute).clamp(20.0, maxHeight);
     final statut = rdv['statut']?.toString() ?? 'confirme';
     final isDemande = statut == 'demande';

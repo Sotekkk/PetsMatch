@@ -463,11 +463,18 @@ export default function PlanningPage() {
           onPrint={printProtocole}
           onDelete={async (id) => {
             if (!confirm('Supprimer ce protocole ?')) return;
-            // Supprime aussi les instances (plans_actifs) créées par ce
-            // template : leur suppression entraîne en cascade (FK ON DELETE
-            // CASCADE) celle des plan_taches déjà générées — sinon les
-            // lignes restaient visibles dans l'agenda après suppression.
-            await supabase.from('plans_actifs').delete().eq('template_id', id);
+            // Ne retire que les occurrences FUTURES de l'agenda ; l'historique
+            // passé reste visible. On ne supprime donc pas les lignes
+            // plans_actifs (ça cascaderait aussi sur l'historique via
+            // plan_taches.plan_id ON DELETE CASCADE) : on les détache du
+            // template et on les marque annulées à la place.
+            const today = new Date().toISOString().slice(0, 10);
+            const { data: plans } = await supabase.from('plans_actifs').select('id').eq('template_id', id);
+            const planIds = (plans ?? []).map(p => p.id);
+            if (planIds.length > 0) {
+              await supabase.from('plan_taches').delete().in('plan_id', planIds).gt('date_prevue', today);
+              await supabase.from('plans_actifs').update({ template_id: null, statut: 'annule' }).eq('template_id', id);
+            }
             await supabase.from('plan_templates').delete().eq('id', id);
             loadTemplates();
           }}

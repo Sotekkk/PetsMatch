@@ -107,12 +107,22 @@ class PlanningService {
   }
 
   // ── Supprimer un template ────────────────────────────────────────────────────
-  // Supprime aussi les instances (plans_actifs) créées par ce template : la
-  // suppression de plans_actifs entraîne en cascade (FK ON DELETE CASCADE)
-  // celle des plan_taches déjà générées — sinon les lignes restaient visibles
-  // dans l'agenda/planning après suppression du protocole.
+  // Ne retire que les occurrences FUTURES (date_prevue après aujourd'hui) de
+  // l'agenda ; l'historique passé reste visible comme trace. On ne supprime
+  // donc pas les lignes plans_actifs (ça cascaderait aussi sur l'historique
+  // via plan_taches.plan_id ON DELETE CASCADE) : on les détache du template
+  // et on les marque annulées à la place.
   static Future<void> deleteTemplate(String templateId) async {
-    await _supa.from('plans_actifs').delete().eq('template_id', templateId);
+    final today = DateTime.now().toIso8601String().split('T').first;
+    final plans = await _supa.from('plans_actifs').select('id').eq('template_id', templateId);
+    final planIds = (plans as List).map((p) => p['id'] as String).toList();
+    if (planIds.isNotEmpty) {
+      await _supa.from('plan_taches').delete()
+          .inFilter('plan_id', planIds).gt('date_prevue', today);
+      await _supa.from('plans_actifs')
+          .update({'template_id': null, 'statut': 'annule'})
+          .eq('template_id', templateId);
+    }
     await _supa.from('plan_templates').delete().eq('id', templateId);
   }
 
