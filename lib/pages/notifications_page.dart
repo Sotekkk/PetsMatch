@@ -23,7 +23,8 @@ import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
-import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/promenades/promenade_detail_page.dart';
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
@@ -412,16 +413,55 @@ class _NotificationsPageState extends State<NotificationsPage> {
     // Profil validé / en attente → rester sur BottomNav (pas de page profil dédiée)
     if (type == 'profil_en_attente' || type == 'profil_valide') return;
     if (type == 'annonce_expiration' && annonceId != null) {
-      // Charger les données de l'annonce depuis Supabase pour ouvrir directement l'édition
       final supa = Supabase.instance.client;
       final res = await supa.from('annonces').select().eq('id', annonceId).maybeSingle();
+      if (!mounted || res == null) return;
+      final annonceData = Map<String, dynamic>.from(res);
+      final titre = (annonceData['titre'] as String?)?.trim();
+      final label = (titre != null && titre.isNotEmpty) ? titre : 'Cette annonce';
+      // Renouvellement en un tap directement depuis la notif, sans rouvrir
+      // tout le formulaire d'édition — l'utilisateur peut quand même choisir
+      // de voir l'annonce d'abord.
+      final action = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Annonce bientôt expirée',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          content: Text('$label va bientôt expirer. La renouveler pour 30 jours de plus ?',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'voir'),
+              child: const Text('Voir l\'annonce', style: TextStyle(color: Colors.grey, fontFamily: 'Galey')),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'renouveler'),
+              child: const Text('Renouveler',
+                  style: TextStyle(color: Color(0xFF0C5C6C), fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      );
       if (!mounted) return;
-      if (res != null) {
+      if (action == 'renouveler') {
+        try {
+          await renewAnnonceListing(annonceId);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: const Text('Annonce renouvelée pour 30 jours ✓', style: TextStyle(fontFamily: 'Galey')),
+                backgroundColor: const Color(0xFF6E9E57)));
+          }
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+                backgroundColor: Colors.redAccent));
+          }
+        }
+      } else if (action == 'voir') {
         await Navigator.push(context, MaterialPageRoute(
-          builder: (_) => CreateAnnoncePage(
-            annonceId: annonceId,
-            initialData: Map<String, dynamic>.from(res),
-          ),
+          builder: (_) => AnnonceDetailPage(annonceId: annonceId!, initialData: annonceData),
         ));
       }
       return;

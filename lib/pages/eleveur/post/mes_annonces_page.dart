@@ -13,6 +13,16 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+// Réutilisée depuis la carte annonce ET depuis le tap sur une notification
+// d'expiration (voir notifications_page.dart) — évite de dupliquer la
+// logique de renouvellement (+30 jours à partir de maintenant).
+Future<void> renewAnnonceListing(String annonceId) async {
+  final newExpires = DateTime.now().add(const Duration(days: 30)).toIso8601String();
+  await Supabase.instance.client.from('annonces').update({
+    'statut': 'disponible', 'expires_at': newExpires,
+  }).eq('id', annonceId);
+}
+
 class MesAnnoncesPage extends StatefulWidget {
   final bool isAssociation;
   const MesAnnoncesPage({super.key, this.isAssociation = false});
@@ -498,15 +508,13 @@ class _AnnonceCardState extends State<_AnnonceCard> {
   }
 
   Future<void> _renew() async {
-    final newExpires = DateTime.now().add(const Duration(days: 30)).toIso8601String();
+    final prevStatut = _statut;
     setState(() => _statut = 'disponible');
     try {
-      await Supabase.instance.client.from('annonces').update({
-        'statut': 'disponible', 'expires_at': newExpires,
-      }).eq('id', widget.id);
+      await renewAnnonceListing(widget.id);
       widget.onRefresh();
     } catch (e) {
-      setState(() => _statut = 'expiree');
+      setState(() => _statut = prevStatut);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Erreur: $e', style: const TextStyle(fontFamily: 'Galey'))));
@@ -700,6 +708,18 @@ class _AnnonceCardState extends State<_AnnonceCard> {
                   color: isPaused ? _green : const Color(0xFF9CA3AF),
                   onTap: _togglePause,
                 ),
+                if (expiryLabel.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  // Renouveler (proactif — visible dès J-7, pas besoin d'attendre
+                  // l'expiration complète, utile notamment pour les associations
+                  // dont le processus d'adoption dépasse souvent 30 jours).
+                  _ActionBtn(
+                    icon: Icons.refresh_outlined,
+                    label: 'Renouveler',
+                    color: Colors.orange.shade800,
+                    onTap: _renew,
+                  ),
+                ],
                 const SizedBox(width: 8),
                 // Modifier
                 _ActionBtn(

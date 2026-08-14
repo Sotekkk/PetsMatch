@@ -17,6 +17,7 @@ interface Annonce {
   vues?: number;
   contacts?: number;
   created_at?: string;
+  expires_at?: string;
 }
 
 const STATUT_LABEL: Record<string, string> = {
@@ -47,7 +48,7 @@ export default function AnnoncesAssoPage() {
     if (!user) return;
     supabase
       .from('annonces')
-      .select('id, titre, type_vente, espece, race, statut, photos, vues, contacts, created_at')
+      .select('id, titre, type_vente, espece, race, statut, photos, vues, contacts, created_at, expires_at')
       .eq('uid_eleveur', user.uid)
       .eq('profil_source', 'association')
       .order('created_at', { ascending: false })
@@ -72,6 +73,23 @@ export default function AnnoncesAssoPage() {
     const next = a.statut === 'pause' ? 'disponible' : 'pause';
     await supabase.from('annonces').update({ statut: next }).eq('id', a.id);
     setAnnonces(prev => prev.map(x => x.id === a.id ? { ...x, statut: next } : x));
+  };
+
+  const handleRenew = async (a: Annonce) => {
+    const newExpires = new Date();
+    newExpires.setDate(newExpires.getDate() + 30);
+    const newExpiresIso = newExpires.toISOString();
+    await supabase.from('annonces').update({ statut: 'disponible', expires_at: newExpiresIso }).eq('id', a.id);
+    setAnnonces(prev => prev.map(x => x.id === a.id ? { ...x, statut: 'disponible', expires_at: newExpiresIso } : x));
+  };
+
+  // Renouvellement proposé dès J-7 — les adoptions associatives dépassent
+  // souvent la durée de vie standard d'une annonce (30 jours), pas la peine
+  // d'attendre l'expiration complète pour prolonger.
+  const expiresWithinDays = (a: Annonce, days: number): boolean => {
+    if (!a.expires_at) return false;
+    const remaining = (new Date(a.expires_at).getTime() - Date.now()) / 86400000;
+    return remaining <= days;
   };
 
   const handleDelete = async (id: string) => {
@@ -209,6 +227,13 @@ export default function AnnoncesAssoPage() {
                       }`}>
                       {statut === 'pause' ? '▶' : '⏸'}
                     </button>
+                    {(statut === 'expiree' || expiresWithinDays(a, 7)) && (
+                      <button onClick={() => handleRenew(a)}
+                        title="Renouveler pour 30 jours"
+                        className="px-2.5 py-2 text-xs border border-orange-200 text-orange-600 hover:bg-orange-50 rounded-xl transition-colors">
+                        🔄
+                      </button>
+                    )}
                     <button onClick={() => handleDelete(a.id)} disabled={deleting === a.id}
                       className="px-2.5 py-2 text-xs border border-red-100 hover:bg-red-50 text-red-400 rounded-xl transition-colors disabled:opacity-50">
                       {deleting === a.id ? '…' : '🗑'}

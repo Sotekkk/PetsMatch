@@ -485,7 +485,7 @@ function getNotifUrl(n: Notif): string | null {
         ? `/mes-animaux/${d.animalId}?tab=sante${d.table ? `&cat=${d.table}` : ''}`
         : '/mes-animaux';
     case 'annonce_expiration':
-      return '/mes-annonces';
+      return null; // géré par dialog (renouvellement en un clic)
     case 'cession_signature_demandee':
       return d.signingUrl ?? (d.token ? `/signer-cession/${d.token}` : null);
     case 'cession_confirmee':
@@ -570,6 +570,7 @@ export default function Header() {
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [pensionDialog, setPensionDialog] = useState<Notif | null>(null);
+  const [renewDialog, setRenewDialog] = useState<Notif | null>(null);
   // Profile switching — utilise directement les profils chargés par AuthContext
   const profiles: UserProfile[] = authProfiles as unknown as UserProfile[];
   const [isFa, setIsFa] = useState(false);
@@ -964,7 +965,7 @@ export default function Header() {
                       const isDifferentProfile = notifProfileType && notifProfileType !== effectiveType;
                       const dest = getNotifUrl(n);
                       const isExternal = dest?.startsWith('http') ?? false;
-                      const isActionable = isDifferentProfile || n.type === 'pension_acces' || !!dest;
+                      const isActionable = isDifferentProfile || n.type === 'pension_acces' || n.type === 'annonce_expiration' || !!dest;
 
                       const handleClick = async () => {
                         if (isDifferentProfile) {
@@ -978,6 +979,7 @@ export default function Header() {
                         supabase.from('notifications').update({ read: true }).eq('id', n.id).then(() => {});
                         setBellOpen(false);
                         if (n.type === 'pension_acces') { setPensionDialog(n); return; }
+                        if (n.type === 'annonce_expiration') { setRenewDialog(n); return; }
                         if (!dest) return;
                         if (isExternal) window.open(dest, '_blank', 'noopener noreferrer');
                         else router.push(dest);
@@ -1379,7 +1381,69 @@ export default function Header() {
           }}
         />
       )}
+
+      {/* Dialog annonce_expiration — renouveler en un clic */}
+      {renewDialog && (
+        <AnnonceRenewDialog
+          notif={renewDialog}
+          onClose={() => setRenewDialog(null)}
+        />
+      )}
     </header>
+  );
+}
+
+// ── Dialog Renouveler une annonce bientôt expirée ─────────────────────────────
+
+function AnnonceRenewDialog({ notif, onClose }: { notif: Notif; onClose: () => void }) {
+  const router = useRouter();
+  const annonceId = notif.data?.annonceId;
+  const [titre, setTitre] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [renewing, setRenewing] = useState(false);
+
+  useEffect(() => {
+    if (!annonceId) { setLoading(false); return; }
+    supabase.from('annonces').select('titre').eq('id', annonceId).maybeSingle()
+      .then(({ data }) => { setTitre((data as { titre?: string } | null)?.titre ?? null); setLoading(false); });
+  }, [annonceId]);
+
+  async function renew() {
+    if (!annonceId) return;
+    setRenewing(true);
+    const newExpires = new Date();
+    newExpires.setDate(newExpires.getDate() + 30);
+    await supabase.from('annonces').update({
+      statut: 'disponible', expires_at: newExpires.toISOString(),
+    }).eq('id', annonceId);
+    setRenewing(false);
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
+        <h3 className="font-bold text-[#1F2A2E] text-base mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Annonce bientôt expirée
+        </h3>
+        <p className="text-sm text-gray-600 mb-5">
+          {loading ? '…' : (titre ?? 'Cette annonce')} va bientôt expirer. La renouveler pour 30 jours de plus ?
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { onClose(); if (annonceId) router.push(`/annonces/${annonceId}`); }}
+            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors">
+            Voir l&apos;annonce
+          </button>
+          <button
+            onClick={renew}
+            disabled={renewing || !annonceId}
+            className="flex-1 py-2.5 rounded-xl bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-50 text-white text-sm font-semibold transition-colors">
+            {renewing ? '…' : 'Renouveler'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

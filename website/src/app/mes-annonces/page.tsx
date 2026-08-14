@@ -26,6 +26,7 @@ interface Annonce {
   statut?: string;
   vues?: number;
   contacts?: number;
+  expires_at?: string;
 }
 
 const STATUT_LABEL: Record<string, string> = {
@@ -63,7 +64,7 @@ export default function MesAnnoncesPage() {
 
   useEffect(() => {
     if (!user || loading) return;
-    const SELECT = 'id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, statut, vues, contacts, created_at';
+    const SELECT = 'id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, statut, vues, contacts, created_at, expires_at';
 
     async function load() {
       // Vérifie si la migration profile_id a été jouée
@@ -112,6 +113,22 @@ export default function MesAnnoncesPage() {
     const newStatut = a.statut === 'pause' ? 'disponible' : 'pause';
     await supabase.from('annonces').update({ statut: newStatut }).eq('id', a.id);
     setAnnonces(prev => prev.map(x => x.id === a.id ? { ...x, statut: newStatut } : x));
+  }
+
+  async function handleRenew(a: Annonce) {
+    const newExpires = new Date();
+    newExpires.setDate(newExpires.getDate() + 30);
+    const newExpiresIso = newExpires.toISOString();
+    await supabase.from('annonces').update({ statut: 'disponible', expires_at: newExpiresIso }).eq('id', a.id);
+    setAnnonces(prev => prev.map(x => x.id === a.id ? { ...x, statut: 'disponible', expires_at: newExpiresIso } : x));
+  }
+
+  // Renouvellement proposé dès J-7, pas seulement une fois l'annonce
+  // effectivement expirée — utile pour anticiper avant la coupure.
+  function expiresWithinDays(a: Annonce, days: number): boolean {
+    if (!a.expires_at) return false;
+    const remaining = (new Date(a.expires_at).getTime() - Date.now()) / 86400000;
+    return remaining <= days;
   }
 
   if (loading || !user) {
@@ -289,6 +306,14 @@ export default function MesAnnoncesPage() {
                       className={`px-2.5 py-2 text-xs border rounded-xl transition-colors ${statut === 'pause' ? 'border-[#6E9E57] text-[#6E9E57] hover:bg-[#EEF5EA]' : 'border-gray-200 text-gray-400 hover:border-[#0C5C6C]/40 hover:text-[#0C5C6C]'}`}>
                       {statut === 'pause' ? '▶' : '⏸'}
                     </button>
+                    {(statut === 'expiree' || expiresWithinDays(a, 7)) && (
+                      <button
+                        onClick={() => handleRenew(a)}
+                        title="Renouveler pour 30 jours"
+                        className="px-2.5 py-2 text-xs border border-orange-200 text-orange-600 hover:bg-orange-50 rounded-xl transition-colors">
+                        🔄
+                      </button>
+                    )}
                     <button
                       onClick={() => handleDelete(a.id)}
                       disabled={deleting === a.id}
