@@ -72,7 +72,7 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
         enclosQuery,
         _supa
             .from('animaux')
-            .select('id, nom, espece, photo_url, statut, date_entree, date_sortie, enclos_id')
+            .select('id, nom, espece, photo_url, statut, date_entree, date_sortie, enclos_id, fa_id')
             .eq('uid_eleveur', uid)
             .eq('is_association', true)
             .order('nom'),
@@ -279,8 +279,11 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
     // Stats globales
     final totalPlaces = _enclos.fold(0, (s, e) => s + e.capacite);
     final occupes = _animaux.where((a) => a['enclos_id'] != null).length;
+    // fa_id != null : animal en famille d'accueil, pas "sans enclos" au sens
+    // inquiétant du terme (FA et enclos sont mutuellement exclusifs) — il ne
+    // doit pas remonter dans cette alerte, déjà pris en charge ailleurs.
     final sansEnclos = _animaux.where((a) =>
-        a['enclos_id'] == null &&
+        a['enclos_id'] == null && a['fa_id'] == null &&
         ['present', 'en_soin', 'disponible'].contains(a['statut'])).length;
 
     if (_animaux.isEmpty && _enclos.isEmpty) {
@@ -350,7 +353,7 @@ class _ChenilPlanningPageState extends State<ChenilPlanningPage>
                 Wrap(
                   spacing: 8, runSpacing: 8,
                   children: _animaux
-                      .where((a) => a['enclos_id'] == null &&
+                      .where((a) => a['enclos_id'] == null && a['fa_id'] == null &&
                           ['present', 'en_soin', 'disponible'].contains(a['statut']))
                       .map((a) => _AnimalChip(
                         animal: a,

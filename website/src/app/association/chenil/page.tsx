@@ -23,6 +23,7 @@ interface Animal {
   photo_url: string | null;
   statut: string | null;
   enclos_id: string | null;
+  fa_id: string | null;
 }
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -317,7 +318,7 @@ export default function ChenilWebPage() {
       : enclosQuery.eq('uid_eleveur', user.uid)) as typeof enclosQuery;
     const [{ data: enc }, { data: ani }] = await Promise.all([
       enclosQuery,
-      supabase.from('animaux').select('id, nom, espece, photo_url, statut, enclos_id, date_entree, date_sortie')
+      supabase.from('animaux').select('id, nom, espece, photo_url, statut, enclos_id, fa_id, date_entree, date_sortie')
         .eq('uid_eleveur', user.uid).eq('is_association', true).order('nom'),
     ]);
     setEnclos((enc ?? []) as Enclos[]);
@@ -381,7 +382,10 @@ export default function ChenilWebPage() {
   // Stats globales
   const totalPlaces = enclos.reduce((s, e) => s + e.capacite, 0);
   const occupes = animaux.filter(a => a.enclos_id).length;
-  const sansEnclos = animaux.filter(a => !a.enclos_id && ['present', 'en_soin', 'disponible'].includes(a.statut ?? '')).length;
+  // fa_id renseigné : animal en famille d'accueil, pas "sans enclos" au sens
+  // inquiétant du terme (FA et enclos sont mutuellement exclusifs) — il ne
+  // doit pas remonter dans cette alerte, déjà pris en charge ailleurs.
+  const sansEnclos = animaux.filter(a => !a.enclos_id && !a.fa_id && ['present', 'en_soin', 'disponible'].includes(a.statut ?? '')).length;
 
   return (
     <div className="space-y-4">
@@ -474,7 +478,7 @@ export default function ChenilWebPage() {
               <p className="text-sm font-bold font-galey text-amber-700 mb-2">⚠️ Animaux sans enclos assigné ({sansEnclos})</p>
               <div className="flex flex-wrap gap-2">
                 {animaux
-                  .filter(a => !a.enclos_id && ['present', 'en_soin', 'disponible'].includes(a.statut ?? ''))
+                  .filter(a => !a.enclos_id && !a.fa_id && ['present', 'en_soin', 'disponible'].includes(a.statut ?? ''))
                   .map(a => (
                     <div key={a.id} className="flex items-center gap-1.5 bg-white rounded-full px-3 py-1 border border-amber-200">
                       <span className="text-xs font-galey font-semibold text-gray-700">{a.nom}</span>
