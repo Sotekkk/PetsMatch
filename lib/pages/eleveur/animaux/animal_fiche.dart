@@ -5800,16 +5800,49 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
   final _veto = TextEditingController();
   DateTime? _date;
   DateTime? _rappel;
+
+  // Suggestion de la date de rappel selon l'intervalle habituel du vaccin
+  // (n'écrase jamais un choix déjà fait manuellement).
+  static const Map<String, int> _rappelAnsParVaccin = {
+    'rage': 3,
+    'chppi': 1, 'cpv': 1, 'parvovirose': 1, 'distemper': 1,
+    'toux du chenil': 1, 'bordetella': 1, 'kc': 1,
+    'typhus': 1, 'coryza': 1, 'leucose': 1, 'rcp': 1, 'lepto': 1,
+  };
+
+  int? _rappelAnsPour(String nom) {
+    final n = nom.toLowerCase();
+    for (final e in _rappelAnsParVaccin.entries) {
+      if (n.contains(e.key)) return e.value;
+    }
+    return null;
+  }
+
+  void _suggestRappel() {
+    if (_rappel != null || _date == null) return;
+    final ans = _rappelAnsPour(_vaccin.text);
+    if (ans == null) return;
+    setState(() => _rappel = DateTime(_date!.year + ans, _date!.month, _date!.day));
+  }
+
   @override
   void initState() {
     super.initState();
     if (widget.vetName != null) _veto.text = widget.vetName!;
+    _vaccin.addListener(_suggestRappel);
   }
+
+  @override
+  void dispose() {
+    _vaccin.removeListener(_suggestRappel);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => _BaseDialog(title: 'Ajouter un vaccin', fields: [
     _DF('Vaccin *', _vaccin), _DF('N° de lot', _lot),
     _DF('Vétérinaire', _veto, readOnly: widget.source == 'veterinaire'),
-    _DD('Date *', _date, (d) => setState(() => _date = d)),
+    _DD('Date *', _date, (d) { setState(() => _date = d); _suggestRappel(); }),
     _DD('Date de rappel', _rappel, (d) => setState(() => _rappel = d)),
   ], onSave: () async {
     if (_vaccin.text.isEmpty || _date == null) return false;

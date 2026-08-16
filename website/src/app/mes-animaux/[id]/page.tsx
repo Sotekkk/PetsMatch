@@ -206,16 +206,45 @@ function SelectField({ label, value, onChange, options }:
 
 // ─── Section santé générique ──────────────────────────────────────────────────
 
+// Suggestion de la date de rappel selon l'intervalle habituel du vaccin (même
+// table que l'app Flutter). N'écrase jamais un choix déjà fait manuellement.
+const RAPPEL_ANS_PAR_VACCIN: Record<string, number> = {
+  rage: 3,
+  chppi: 1, cpv: 1, parvovirose: 1, distemper: 1,
+  'toux du chenil': 1, bordetella: 1, kc: 1,
+  typhus: 1, coryza: 1, leucose: 1, rcp: 1, lepto: 1,
+};
+
+function suggestDateRappel(nomVaccin: string, dateInjection: string): string | null {
+  const n = nomVaccin.toLowerCase();
+  const ans = Object.entries(RAPPEL_ANS_PAR_VACCIN).find(([k]) => n.includes(k))?.[1];
+  if (!ans || !dateInjection) return null;
+  const d = new Date(dateInjection);
+  if (isNaN(d.getTime())) return null;
+  d.setFullYear(d.getFullYear() + ans);
+  return d.toISOString().slice(0, 10);
+}
+
 function AddHealthForm({ fields, onSave, onCancel, saving, initial }:
   { fields: { key:string; label:string; type?:string; required?:boolean }[];
     onSave:(data:Record<string,string>)=>Promise<void>;
     onCancel:()=>void; saving:boolean; initial?: Record<string,string> }) {
   const [form, setForm] = useState<Record<string,string>>(initial ?? {});
+  const hasRappelField = fields.some(f => f.key === 'date_rappel');
   return (
     <div className="space-y-3">
       {fields.map(f => (
         <Field key={f.key} label={f.label} value={form[f.key]??''} required={f.required}
-          type={f.type??'text'} onChange={v => setForm(p=>({...p,[f.key]:v}))} />
+          type={f.type??'text'} onChange={v => setForm(p=>{
+            const next = {...p,[f.key]:v};
+            // Vaccin : suggère la date de rappel dès que le nom et la date
+            // d'injection sont connus, sauf si déjà renseignée manuellement.
+            if (hasRappelField && (f.key === 'vaccin' || f.key === 'date') && !p.date_rappel) {
+              const suggestion = suggestDateRappel(next.vaccin ?? '', next.date ?? '');
+              if (suggestion) next.date_rappel = suggestion;
+            }
+            return next;
+          })} />
       ))}
       <div className="flex gap-2 pt-1">
         <button onClick={onCancel} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
@@ -232,11 +261,18 @@ function HealthRecord({ fields, record, onDelete }:
   { fields:{key:string;label:string}[]; record:HealthRecord; onDelete:()=>void }) {
   const [open, setOpen] = useState(false);
   const mainField = fields[0];
+  // Un acte saisi par un vétérinaire est certifié : le propriétaire ne peut
+  // pas le supprimer ni le modifier, seul le vétérinaire qui l'a rédigé le
+  // peut (depuis son propre espace pro).
+  const isVetEntry = record.source === 'veterinaire';
   return (
     <div className="px-4 py-3">
       <div className="flex items-center gap-2 cursor-pointer" onClick={() => setOpen(!open)}>
         <div className="flex-1">
-          <p className="text-sm font-medium text-[#1F2A2E]">{String(record[mainField.key] ?? '—')}</p>
+          <p className="text-sm font-medium text-[#1F2A2E] flex items-center gap-1.5">
+            {String(record[mainField.key] ?? '—')}
+            {isVetEntry && <span title="Certifié par un vétérinaire" className="text-xs">🔒</span>}
+          </p>
           {fields[1] && <p className="text-xs text-gray-400">{fmtDate(record[fields[1].key] as string)}</p>}
         </div>
         <svg className={`w-4 h-4 text-gray-400 transition-transform ${open?'rotate-180':''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -251,7 +287,13 @@ function HealthRecord({ fields, record, onDelete }:
               <span className="text-gray-700">{f.key.includes('date') ? fmtDate(record[f.key] as string) : String(record[f.key])}</span>
             </div>
           ) : null)}
-          <button onClick={onDelete} className="mt-2 text-xs text-red-400 hover:text-red-600 font-medium">Supprimer</button>
+          {isVetEntry ? (
+            <p className="mt-2 text-xs text-gray-400">
+              🔒 Certifié{record.veterinaire ? ` par ${String(record.veterinaire)}` : ' par un vétérinaire'} — non modifiable
+            </p>
+          ) : (
+            <button onClick={onDelete} className="mt-2 text-xs text-red-400 hover:text-red-600 font-medium">Supprimer</button>
+          )}
         </div>
       )}
     </div>
