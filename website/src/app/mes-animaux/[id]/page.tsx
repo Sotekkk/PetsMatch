@@ -2942,6 +2942,7 @@ export default function AnimalFichePage() {
           dateNaissance={animal.date_naissance}
           nom={animal.nom}
           userId={user?.uid ?? ''}
+          poidsFiche={animal.poids}
         />
       )}
 

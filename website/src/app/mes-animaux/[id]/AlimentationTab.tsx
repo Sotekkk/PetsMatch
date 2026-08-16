@@ -46,6 +46,9 @@ interface Props {
   dateNaissance?: string;
   nom?: string;
   userId: string;
+  // Poids renseigné sur la fiche animale — dernier repli si aucun pesage
+  // n'a été enregistré dans l'historique (table `poids`).
+  poidsFiche?: string;
 }
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
@@ -266,7 +269,7 @@ function BrandPickerModal({ espece, phase, onSelect, onClose }: {
 
 // ─── Composant AlimentationTab ────────────────────────────────────────────────
 
-export default function AlimentationTab({ animalId, espece, sexe, sterilise, dateNaissance, nom, userId }: Props) {
+export default function AlimentationTab({ animalId, espece, sexe, sterilise, dateNaissance, nom, userId, poidsFiche }: Props) {
   const [alim, setAlim] = useState<AlimData>({
     type_ration: 'croquettes', phase: 'adulte', activite: 'normal',
     cat_energie: 'normale', poids_ref: 0, densite_kcal: 350,
@@ -318,11 +321,14 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
       } else {
         setView('calc');
       }
-      if (poidsData && poidsData.length > 0) {
-        setPoidsActuel(parseFloat(poidsData[0].valeur) || 0);
-      }
+      // Dernier pesage de l'historique, sinon le poids renseigné sur la fiche
+      // animale (ex : aucune entrée dans le suivi de poids mais un poids a
+      // été saisi à la création de la fiche).
+      const dernierPesage = poidsData && poidsData.length > 0 ? parseFloat(poidsData[0].valeur) || 0 : 0;
+      const poidsFicheNum = poidsFiche ? parseFloat(poidsFiche.replace(',', '.')) || 0 : 0;
+      setPoidsActuel(dernierPesage || poidsFicheNum || 0);
     } finally { setLoading(false); }
-  }, [animalId]);
+  }, [animalId, poidsFiche]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -593,12 +599,12 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
         <div className="flex items-center gap-3">
           <input type="number" step="0.1" min="0" value={alim.poids_ref || ''}
             onChange={e => setAlim(p => ({ ...p, poids_ref: parseFloat(e.target.value) || 0 }))}
-            placeholder={poidsActuel > 0 ? `${poidsActuel} kg (dernier pesage)` : 'Ex: 12.5'}
+            placeholder={poidsActuel > 0 ? `${poidsActuel} kg` : 'Ex: 12.5'}
             className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#0C5C6C]" />
           <span className="text-sm text-gray-400">kg</span>
         </div>
         {poidsActuel > 0 && !alim.poids_ref && (
-          <p className="text-xs text-gray-400 mt-1.5">Dernier pesage : {poidsActuel} kg
+          <p className="text-xs text-gray-400 mt-1.5">Poids connu : {poidsActuel} kg
             <button onClick={() => setAlim(p => ({ ...p, poids_ref: poidsActuel }))} className="text-[#0C5C6C] ml-2 font-medium">Utiliser</button>
           </p>
         )}

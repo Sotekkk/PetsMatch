@@ -447,7 +447,7 @@ export default function AnimalAssoFichePage() {
 
       {/* ─── Alimentation ─────────────────────────────────────────────── */}
       {tab === 'alimentation' && (
-        <AlimentationTab animalId={id} espece={animal.espece ?? ''} sexe={animal.sexe ?? ''} sterilise={animal.sterilise ?? false} dateNaissance={animal.date_naissance} nom={animal.nom} userId={''} />
+        <AlimentationTab animalId={id} espece={animal.espece ?? ''} sexe={animal.sexe ?? ''} sterilise={animal.sterilise ?? false} dateNaissance={animal.date_naissance} nom={animal.nom} userId={''} poidsFiche={animal.poids} />
       )}
 
       {/* ─── Consultations ────────────────────────────────────────────── */}
