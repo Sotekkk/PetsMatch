@@ -189,14 +189,27 @@ exports.sendChaleursNotifications = functions
             const diffMs = nextHeat.getTime() - now.getTime();
             const diff = Math.trunc(diffMs / 86400000);
 
-            // Notify only if within 7 days ahead or overdue (up to 30 days)
-            if (diff > 7 || diff < -30) continue;
+            // Notify only if within 7 days ahead or overdue (up to 60 days)
+            if (diff > 7 || diff < -60) continue;
 
-            // Deduplication key: one notif per animal per heat cycle
+            const isOverdue = diff <= 0;
+            // Avant l'échéance : un seul rappel par cycle (nextHeatKey). Une
+            // fois échue/dépassée : un rappel CHAQUE JOUR tant que l'éleveur
+            // n'a pas loggé un nouveau cycle (lastChaleur avance alors
+            // automatiquement) ou coupé le rappel (notifs_sent
+            // chaleur_muted_<animalId>).
             const nextHeatKey = nextHeat.toISOString().slice(0, 10);
-            const key = `chaleur_${animal.id}_${nextHeatKey}`;
+            const key = isOverdue ?
+                `chaleur_overdue_${animal.id}_${todayStr}` :
+                `chaleur_${animal.id}_${nextHeatKey}`;
 
-            // Check if already sent this cycle
+            if (isOverdue) {
+                const muteKey = `chaleur_muted_${animal.id}`;
+                const muted = await supabaseSelect("notifs_sent", `key=eq.${encodeURIComponent(muteKey)}`);
+                if (muted.length > 0) continue;
+            }
+
+            // Check if already sent this cycle / today
             const existing = await supabaseSelect("notifs_sent", `key=eq.${encodeURIComponent(key)}`);
             if (existing.length > 0) continue;
 
