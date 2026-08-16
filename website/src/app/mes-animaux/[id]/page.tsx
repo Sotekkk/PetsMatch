@@ -1170,6 +1170,11 @@ export default function AnimalFichePage() {
   const [mesMales, setMesMales] = useState<{id:string;nom:string;identification?:string;race?:string;photo_url?:string}[]>([]);
   const [showPerePicker, setShowPerePicker] = useState(false);
   const [pereSearch, setPereSearch] = useState('');
+  // Rattachement par puce : recherche l'animal (tous propriétaires confondus,
+  // ex. saillie extérieure) correspondant au numéro de puce saisi, pour
+  // permettre plus tard une vraie généalogie inter-éleveurs.
+  const [perePuceMatch, setPerePuceMatch] = useState<{id:string;nom:string;race?:string}|null>(null);
+  const [merePuceMatch, setMerePuceMatch] = useState<{id:string;nom:string;race?:string}|null>(null);
 
   // ── Chargement
   const loadAnimal = useCallback(async () => {
@@ -1373,6 +1378,28 @@ export default function AnimalFichePage() {
   }
 
   useEffect(() => { loadBreeds(animal.espece ?? 'chien').then(setBreeds); }, [animal.espece]);
+
+  useEffect(() => {
+    const puce = (animal.puce_pere ?? '').trim();
+    if (puce.length < 4) { setPerePuceMatch(null); return; }
+    const t = setTimeout(async () => {
+      const { data } = await supabase.from('animaux').select('id,nom,race')
+        .eq('identification', puce).neq('id', id ?? '').limit(1);
+      setPerePuceMatch(data && data[0] ? data[0] : null);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [animal.puce_pere, id]);
+
+  useEffect(() => {
+    const puce = (animal.puce_mere ?? '').trim();
+    if (puce.length < 4) { setMerePuceMatch(null); return; }
+    const t = setTimeout(async () => {
+      const { data } = await supabase.from('animaux').select('id,nom,race')
+        .eq('identification', puce).neq('id', id ?? '').limit(1);
+      setMerePuceMatch(data && data[0] ? data[0] : null);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [animal.puce_mere, id]);
   useEffect(() => { loadAnimal(); loadHealth(); loadRepro(); loadAlerte(); loadDocs(); loadMouvements(); }, [loadAnimal, loadHealth, loadRepro, loadAlerte, loadDocs, loadMouvements]);
   // Deep-link depuis une notification santé : scrolle jusqu'à la section
   // ouverte par ?cat=... une fois l'onglet Santé affiché.
@@ -2258,8 +2285,23 @@ export default function AnimalFichePage() {
                   )}
                   <Field label="Nom du père" value={animal.nom_pere??''} onChange={v=>set('nom_pere',v)} />
                   <Field label="Puce père" value={animal.puce_pere??''} onChange={v=>set('puce_pere',v)} />
+                  {perePuceMatch && animal.nom_pere !== perePuceMatch.nom && (
+                    <div className="col-span-2 flex items-center justify-between gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                      <span className="text-xs text-[#0C5C6C]">
+                        🔗 Puce trouvée en base : <strong>{perePuceMatch.nom}</strong>{perePuceMatch.race ? ` (${perePuceMatch.race})` : ''}
+                      </span>
+                      <button type="button" onClick={() => {
+                        set('nom_pere', perePuceMatch.nom);
+                        set('race_pere', perePuceMatch.race ?? '');
+                        setPerePuceMatch(null);
+                      }} className="text-xs font-semibold text-[#0C5C6C] hover:underline flex-shrink-0">Rattacher</button>
+                    </div>
+                  )}
                   <div className="col-span-2">
-                    <Field label="Race du père" value={animal.race_pere??''} onChange={v=>set('race_pere',v)} />
+                    <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Race du père</label>
+                    <input list={`breeds-pere-${id}`} value={animal.race_pere??''} onChange={e=>set('race_pere',e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30" placeholder="Sélectionner ou saisir" />
+                    <datalist id={`breeds-pere-${id}`}>{breeds.map(b => <option key={b} value={b}/>)}</datalist>
                   </div>
                   {mesFemelles.length > 0 && (
                     <div className="col-span-2 flex items-center justify-between pt-1">
@@ -2272,8 +2314,23 @@ export default function AnimalFichePage() {
                   )}
                   <Field label="Nom de la mère" value={animal.nom_mere??''} onChange={v=>set('nom_mere',v)} />
                   <Field label="Puce mère" value={animal.puce_mere??''} onChange={v=>set('puce_mere',v)} />
+                  {merePuceMatch && animal.nom_mere !== merePuceMatch.nom && (
+                    <div className="col-span-2 flex items-center justify-between gap-2 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
+                      <span className="text-xs text-[#5A8A45]">
+                        🔗 Puce trouvée en base : <strong>{merePuceMatch.nom}</strong>{merePuceMatch.race ? ` (${merePuceMatch.race})` : ''}
+                      </span>
+                      <button type="button" onClick={() => {
+                        set('nom_mere', merePuceMatch.nom);
+                        set('race_mere', merePuceMatch.race ?? '');
+                        setMerePuceMatch(null);
+                      }} className="text-xs font-semibold text-[#5A8A45] hover:underline flex-shrink-0">Rattacher</button>
+                    </div>
+                  )}
                   <div className="col-span-2">
-                    <Field label="Race de la mère" value={animal.race_mere??''} onChange={v=>set('race_mere',v)} />
+                    <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Race de la mère</label>
+                    <input list={`breeds-mere-${id}`} value={animal.race_mere??''} onChange={e=>set('race_mere',e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30" placeholder="Sélectionner ou saisir" />
+                    <datalist id={`breeds-mere-${id}`}>{breeds.map(b => <option key={b} value={b}/>)}</datalist>
                   </div>
                 </div>
               ) : (
