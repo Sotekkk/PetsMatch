@@ -4738,7 +4738,7 @@ class _SanteCard extends StatelessWidget {
 
   static const _labels = {
     'vaccin': 'Vaccin', 'lot': 'N° de lot', 'veterinaire': 'Vétérinaire',
-    'date': 'Date', 'date_rappel': 'Rappel', 'date_fin': 'Date de fin',
+    'date': 'Date', 'date_validite_debut': 'Valide à partir de', 'date_rappel': 'Rappel', 'date_fin': 'Date de fin',
     'produit': 'Produit', 'dosage': 'Dosage', 'frequence': 'Fréquence',
     'type': 'Type', 'nom': 'Nom', 'posologie': 'Posologie',
     'description': 'Description', 'severite': 'Sévérité',
@@ -5800,6 +5800,7 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
   final _veto = TextEditingController();
   DateTime? _date;
   DateTime? _rappel;
+  DateTime? _validite;
 
   // Suggestion de la date de rappel selon l'intervalle habituel du vaccin
   // (n'écrase jamais un choix déjà fait manuellement).
@@ -5808,6 +5809,11 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
     'chppi': 1, 'cpv': 1, 'parvovirose': 1, 'distemper': 1,
     'toux du chenil': 1, 'bordetella': 1, 'kc': 1,
     'typhus': 1, 'coryza': 1, 'leucose': 1, 'rcp': 1, 'lepto': 1,
+  };
+  // Délai avant que le vaccin soit légalement valide (ex: rage = 21 jours
+  // pour les déplacements UE) — autres vaccins : valides dès l'injection.
+  static const Map<String, int> _validiteJoursApresDelaiParVaccin = {
+    'rage': 21,
   };
 
   int? _rappelAnsPour(String nom) {
@@ -5818,8 +5824,20 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
     return null;
   }
 
+  int _validiteJoursPour(String nom) {
+    final n = nom.toLowerCase();
+    for (final e in _validiteJoursApresDelaiParVaccin.entries) {
+      if (n.contains(e.key)) return e.value;
+    }
+    return 0;
+  }
+
   void _suggestRappel() {
-    if (_rappel != null || _date == null) return;
+    if (_date == null) return;
+    if (_validite == null) {
+      setState(() => _validite = _date!.add(Duration(days: _validiteJoursPour(_vaccin.text))));
+    }
+    if (_rappel != null) return;
     final ans = _rappelAnsPour(_vaccin.text);
     if (ans == null) return;
     setState(() => _rappel = DateTime(_date!.year + ans, _date!.month, _date!.day));
@@ -5842,7 +5860,8 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
   Widget build(BuildContext context) => _BaseDialog(title: 'Ajouter un vaccin', fields: [
     _DF('Vaccin *', _vaccin), _DF('N° de lot', _lot),
     _DF('Vétérinaire', _veto, readOnly: widget.source == 'veterinaire'),
-    _DD('Date *', _date, (d) { setState(() => _date = d); _suggestRappel(); }),
+    _DD('Date *', _date, (d) { setState(() { _date = d; _validite = null; }); _suggestRappel(); }),
+    _DD('Valide à partir de', _validite, (d) => setState(() => _validite = d)),
     _DD('Date de rappel', _rappel, (d) => setState(() => _rappel = d)),
   ], onSave: () async {
     if (_vaccin.text.isEmpty || _date == null) return false;
@@ -5851,6 +5870,7 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
       'id': id, 'animal_id': widget.animalId,
       'vaccin': _vaccin.text.trim(), 'lot': _lot.text.trim(), 'veterinaire': _veto.text.trim(),
       'date': _date!.toIso8601String(),
+      'date_validite_debut': (_validite ?? _date)!.toIso8601String(),
       'date_rappel': _rappel?.toIso8601String(),
       'source': widget.source,
       if (widget.vetId != null) 'vet_id': widget.vetId,

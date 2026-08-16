@@ -215,6 +215,10 @@ const RAPPEL_ANS_PAR_VACCIN: Record<string, number> = {
   typhus: 1, coryza: 1, leucose: 1, rcp: 1, lepto: 1,
 };
 
+// Délai avant qu'un vaccin soit légalement valide (ex: rage = 21 jours pour
+// les déplacements UE) — vaccins non listés : valides dès l'injection.
+const VALIDITE_JOURS_PAR_VACCIN: Record<string, number> = { rage: 21 };
+
 function suggestDateRappel(nomVaccin: string, dateInjection: string): string | null {
   const n = nomVaccin.toLowerCase();
   const ans = Object.entries(RAPPEL_ANS_PAR_VACCIN).find(([k]) => n.includes(k))?.[1];
@@ -225,23 +229,41 @@ function suggestDateRappel(nomVaccin: string, dateInjection: string): string | n
   return d.toISOString().slice(0, 10);
 }
 
+function suggestDateValidite(nomVaccin: string, dateInjection: string): string | null {
+  if (!dateInjection) return null;
+  const d = new Date(dateInjection);
+  if (isNaN(d.getTime())) return null;
+  const n = nomVaccin.toLowerCase();
+  const jours = Object.entries(VALIDITE_JOURS_PAR_VACCIN).find(([k]) => n.includes(k))?.[1] ?? 0;
+  d.setDate(d.getDate() + jours);
+  return d.toISOString().slice(0, 10);
+}
+
 function AddHealthForm({ fields, onSave, onCancel, saving, initial }:
   { fields: { key:string; label:string; type?:string; required?:boolean }[];
     onSave:(data:Record<string,string>)=>Promise<void>;
     onCancel:()=>void; saving:boolean; initial?: Record<string,string> }) {
   const [form, setForm] = useState<Record<string,string>>(initial ?? {});
   const hasRappelField = fields.some(f => f.key === 'date_rappel');
+  const hasValiditeField = fields.some(f => f.key === 'date_validite_debut');
   return (
     <div className="space-y-3">
       {fields.map(f => (
         <Field key={f.key} label={f.label} value={form[f.key]??''} required={f.required}
           type={f.type??'text'} onChange={v => setForm(p=>{
             const next = {...p,[f.key]:v};
-            // Vaccin : suggère la date de rappel dès que le nom et la date
-            // d'injection sont connus, sauf si déjà renseignée manuellement.
-            if (hasRappelField && (f.key === 'vaccin' || f.key === 'date') && !p.date_rappel) {
-              const suggestion = suggestDateRappel(next.vaccin ?? '', next.date ?? '');
-              if (suggestion) next.date_rappel = suggestion;
+            // Vaccin : suggère la date de rappel et la date de validité dès
+            // que le nom et la date d'injection sont connus, sauf si déjà
+            // renseignées manuellement.
+            if ((f.key === 'vaccin' || f.key === 'date')) {
+              if (hasRappelField && !p.date_rappel) {
+                const suggestion = suggestDateRappel(next.vaccin ?? '', next.date ?? '');
+                if (suggestion) next.date_rappel = suggestion;
+              }
+              if (hasValiditeField && !p.date_validite_debut) {
+                const suggestion = suggestDateValidite(next.vaccin ?? '', next.date ?? '');
+                if (suggestion) next.date_validite_debut = suggestion;
+              }
             }
             return next;
           })} />
@@ -2766,10 +2788,10 @@ export default function AnimalFichePage() {
             addFormOpen={addOpen==='vaccinations'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
               onSave={d=>saveHealthRecord('vaccinations',d)}
-              fields={[{key:'vaccin',label:'Vaccin',required:true},{key:'date',label:'Date',type:'date'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'lot',label:'N° de lot'},{key:'veterinaire',label:'Vétérinaire'}]}/>}>
+              fields={[{key:'vaccin',label:'Vaccin',required:true},{key:'date',label:'Date',type:'date'},{key:'date_validite_debut',label:'Valide à partir de',type:'date'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'lot',label:'N° de lot'},{key:'veterinaire',label:'Vétérinaire'}]}/>}>
             {health.vaccinations.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('vaccinations',r.id)}
-                fields={[{key:'vaccin',label:'Vaccin'},{key:'date',label:'Date'},{key:'date_rappel',label:'Rappel'},{key:'lot',label:'Lot'},{key:'veterinaire',label:'Vétérinaire'}]}/>
+                fields={[{key:'vaccin',label:'Vaccin'},{key:'date',label:'Date'},{key:'date_validite_debut',label:'Valide à partir de'},{key:'date_rappel',label:'Rappel'},{key:'lot',label:'Lot'},{key:'veterinaire',label:'Vétérinaire'}]}/>
             ))}
             {health.vaccinations.length===0 && <p className="p-4 text-sm text-gray-400">Aucune vaccination</p>}
           </HealthSection>
