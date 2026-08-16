@@ -423,6 +423,23 @@ exports.sendTraitementReminders = functions
                 console.error(`notifications insert error (traitement ${row.id}):`, e.message);
             }
 
+            // Tâche agenda cochable — sans elle, le rappel n'était qu'un push
+            // qui disparaissait sans laisser de trace validable/visible.
+            try {
+                await supabaseInsert("taches_elevage", [{
+                    uid_eleveur: uid,
+                    titre: `💊 ${row.nom || "Traitement"} — ${nomAnimal}`,
+                    date: todayStr,
+                    heure: heureDue,
+                    notes: row.posologie || null,
+                    statut: "a_faire",
+                    profil_source: animal.uid_eleveur ? "eleveur" : "particulier",
+                    animal_nom: nomAnimal,
+                }]);
+            } catch (e) {
+                console.error(`taches_elevage insert error (traitement ${row.id}):`, e.message);
+            }
+
             try {
                 await supabaseInsert("notifs_sent", [{
                     key: dedupKey,
