@@ -8638,6 +8638,10 @@ class _AlimentationTabState extends State<_AlimentationTab> {
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
               labelText:'Objectif (kg)',
+              // Vide = utilise le poids actuel du chien (voir _poidsRef) ;
+              // le hint le rend visible sans figer une valeur en base.
+              hintText: _poidsActuel != null ? '${_poidsActuel!.toStringAsFixed(1)} (poids actuel)' : null,
+              hintStyle: TextStyle(fontFamily:'Galey',fontSize:13,color:Colors.grey.shade400),
               labelStyle:TextStyle(fontFamily:'Galey',fontSize:13,color:Colors.grey.shade500),
               filled:true, fillColor:Colors.grey.shade50,
               contentPadding:const EdgeInsets.symmetric(horizontal:14,vertical:12),
@@ -9223,12 +9227,16 @@ class _AlimentationTabState extends State<_AlimentationTab> {
                 const SizedBox(height:4),
                 if (_rationMixteSecond != null)
                   _AlimCalcRow(
-                    _typeMixte2 == 'barf' ? '🥩 BARF (${(100-_pctCroquMix).round()}%)' : '🥫 Pâtée (${(100-_pctCroquMix).round()}%)',
+                    _typeMixte2 == 'barf' ? '🥩 BARF (${(100-_pctCroquMix).round()}%)'
+                      : _typeMixte2 == 'menagere' ? '🍲 Ménagère (${(100-_pctCroquMix).round()}%)'
+                      : '🥫 Pâtée (${(100-_pctCroquMix).round()}%)',
                     '${_rationMixteSecond!.round()} g/j', highlight:true)
                 else
                   _AlimCalcRow(
-                    _typeMixte2 == 'barf' ? '🥩 BARF (${(100-_pctCroquMix).round()}%)' : '🥫 Pâtée (${(100-_pctCroquMix).round()}%)',
-                    _typeMixte2 == 'barf' ? '— (poids requis)' : '— (densité manquante)', highlight:false),
+                    _typeMixte2 == 'barf' ? '🥩 BARF (${(100-_pctCroquMix).round()}%)'
+                      : _typeMixte2 == 'menagere' ? '🍲 Ménagère (${(100-_pctCroquMix).round()}%)'
+                      : '🥫 Pâtée (${(100-_pctCroquMix).round()}%)',
+                    _typeMixte2 == 'patee' ? '— (densité manquante)' : '— (poids requis)', highlight:false),
               ],
             ]),
           ),
