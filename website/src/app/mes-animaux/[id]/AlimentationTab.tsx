@@ -26,6 +26,13 @@ interface AlimData {
   etat_repro?: string;
   notes_alim?: string;
   supplements?: string[];
+  // Second composant d'une ration mixte (chien/chat) : BARF, pâtée ou
+  // ration ménagère + densité de la pâtée si applicable, et si les deux
+  // composants sont mélangés à chaque repas ou donnés séparément
+  // (ex. croquettes le matin, pâtée le soir).
+  type_mixte2?: 'barf' | 'patee' | 'menagere';
+  densite_patee?: number;
+  mixte_separe_repas?: boolean;
 }
 
 interface MarqueAliment {
@@ -129,11 +136,40 @@ function isGrandEspece(espece: string): boolean {
   return ['cheval', 'lapin', 'ovin', 'caprin', 'porcin'].includes(espece);
 }
 
+// ─── Encodage `notes` compatible avec l'app Flutter ───────────────────────────
+// lib/pages/eleveur/animaux/animal_fiche.dart encode certains réglages
+// (sans colonne dédiée) dans `notes` :
+// foinMix|granMix|compMix|nbRepas|separeParRepas|doseMan|doseMan2|typeMixte2|densitePatee|densiteGran|pctCroquMix|densiteCtrl
+// Le site ne pilote que nbRepas/separeParRepas/typeMixte2/densitePatee : le
+// reste est préservé tel quel pour ne pas écraser des réglages faits côté app.
+function parseNotes(raw: string | null | undefined) {
+  const parts = (raw ?? '').split('|');
+  return {
+    foinMix: parts[0] ?? '67', granMix: parts[1] ?? '28', compMix: parts[2] ?? '5',
+    nbRepas: parseInt(parts[3] ?? '', 10) || 2,
+    separeParRepas: parts[4] === '1',
+    doseMan: parts[5] ?? '', doseMan2: parts[6] ?? '',
+    typeMixte2: ((parts[7] || 'barf') as 'barf' | 'patee' | 'menagere'),
+    densitePatee: parts[8] ?? '', densiteGran: parts[9] ?? '', densiteCtrl: parts[11] ?? '',
+  };
+}
+
+function buildNotes(existingRaw: string, nbRepas: number, separeParRepas: boolean,
+    typeMixte2: string, densitePatee: number | undefined, pctCroquMix: number): string {
+  const p = parseNotes(existingRaw);
+  return [
+    p.foinMix, p.granMix, p.compMix, String(nbRepas), separeParRepas ? '1' : '0',
+    p.doseMan, p.doseMan2, typeMixte2, densitePatee ? String(densitePatee) : '',
+    p.densiteGran, String(Math.round(pctCroquMix)), p.densiteCtrl,
+  ].join('|');
+}
+
 // ─── Plan de repas ───────────────────────────────────────────────────────────
 
 interface RepasItem { emoji: string; label: string; qte: string; desc: string; color: string; }
 
-function getMealPlan(espece: string, type: string, nbRepas: number, derKcal: number, poids: number, densiteKcal: number, barfPct: number, mixtePct: number): RepasItem[] {
+function getMealPlan(espece: string, type: string, nbRepas: number, derKcal: number, poids: number, densiteKcal: number, barfPct: number, mixtePct: number,
+    typeMixte2: 'barf' | 'patee' | 'menagere' = 'barf', densitePatee = 0, separeParRepas = false): RepasItem[] {
   const c = '#0C5C6C'; const g = '#6E9E57'; const o = '#E8A020'; const p = '#7B68EE';
   const doseCroq = densiteKcal > 0 ? derKcal * 100 / densiteKcal : 0;
   const doseBarf = poids * 1000 * 0.025;
@@ -157,10 +193,31 @@ function getMealPlan(espece: string, type: string, nbRepas: number, derKcal: num
     if (type === 'mixte') {
       const ratio = mixtePct / 100;
       const croqG = doseCroq * ratio;
-      const barfG = doseBarf * (1 - ratio);
+      const secondG = typeMixte2 === 'menagere' ? (derKcal * (1 - ratio) / 120) * 100
+        : typeMixte2 === 'patee' && densitePatee > 0 ? (derKcal * (1 - ratio) / densitePatee) * 100
+        : doseBarf * (1 - ratio);
+      const secondLabel = typeMixte2 === 'menagere' ? 'Ménagère' : typeMixte2 === 'patee' ? 'Pâtée' : 'BARF';
+      const secondEmoji = typeMixte2 === 'menagere' ? '🍲' : typeMixte2 === 'patee' ? '🥫' : '🥩';
+
+      if (separeParRepas && nbRepas >= 2) {
+        // Un type par repas (ex : croquettes le matin, second composant le
+        // soir) plutôt que mélangés à chaque repas.
+        const croqRepas = Math.max(1, nbRepas - Math.floor(nbRepas / 2));
+        const secondRepas = nbRepas - croqRepas;
+        const items: RepasItem[] = [];
+        for (let i = 0; i < croqRepas; i++) {
+          items.push({ emoji: '🥣', label: `Repas ${i + 1} — Croquettes`, color: c,
+            qte: `${Math.round(croqG / croqRepas)} g`, desc: `${Math.round(croqG)} g/jour au total` });
+        }
+        for (let i = 0; i < secondRepas; i++) {
+          items.push({ emoji: secondEmoji, label: `Repas ${croqRepas + i + 1} — ${secondLabel}`, color: g,
+            qte: `${Math.round(secondG / secondRepas)} g`, desc: `${Math.round(secondG)} g/jour au total` });
+        }
+        return items;
+      }
       return [
         { emoji: '🥣', label: 'Portion croquettes', qte: `${Math.round(croqG / nbRepas)} g × ${nbRepas}`, desc: `${Math.round(croqG)} g/jour`, color: c },
-        { emoji: '🥩', label: 'Portion BARF', qte: `${Math.round(barfG / nbRepas)} g × ${nbRepas}`, desc: `${Math.round(barfG)} g/jour`, color: g },
+        { emoji: secondEmoji, label: `Portion ${secondLabel}`, qte: `${Math.round(secondG / nbRepas)} g × ${nbRepas}`, desc: `${Math.round(secondG)} g/jour`, color: g },
       ];
     }
     if (type === 'menagere') {
@@ -275,7 +332,11 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
     cat_energie: 'normale', poids_ref: 0, densite_kcal: 350,
     barf_muscle: 70, barf_os: 15, barf_abats: 10, barf_legumes: 5,
     mixte_ratio_croq: 50, nb_repas: 2, etat_repro: 'normal', supplements: [],
+    type_mixte2: 'barf', mixte_separe_repas: false,
   });
+  // Notes brutes telles que chargées, pour préserver au réenregistrement les
+  // champs qu'on ne pilote pas depuis le site (voir buildNotes plus haut).
+  const [notesRaw, setNotesRaw] = useState('');
   const [poidsActuel, setPoidsActuel] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -315,7 +376,12 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
           barf_abats: alimData.pourcentage_abats ?? prev.barf_abats,
           barf_legumes: alimData.pourcentage_legumes ?? prev.barf_legumes,
           mixte_ratio_croq: alimData.mixte_ratio_croq ?? prev.mixte_ratio_croq,
+          type_mixte2: parseNotes(alimData.notes).typeMixte2,
+          mixte_separe_repas: parseNotes(alimData.notes).separeParRepas,
+          densite_patee: parseFloat(parseNotes(alimData.notes).densitePatee) || undefined,
+          nb_repas: parseNotes(alimData.notes).nbRepas,
         }));
+        setNotesRaw(alimData.notes ?? '');
         setHasData(true);
         setView('summary');
       } else {
@@ -350,6 +416,18 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
   const doseBarf = poids > 0 ? poids * 1000 * 0.025 : null;
   const rationGrandEspece = poids > 0 ? poids * rationPctPoidsvif(espece) / 100 : null;
 
+  // Second composant d'une ration mixte : BARF, pâtée (densité requise) ou
+  // ration ménagère (calcul énergétique, sans densité à saisir).
+  const typeMixte2 = alim.type_mixte2 ?? 'barf';
+  const mixteSepareParRepas = alim.mixte_separe_repas ?? false;
+  const densitePatee = alim.densite_patee ?? 0;
+  const pctSecond = 1 - (alim.mixte_ratio_croq ?? 50) / 100;
+  const doseMixteSecond = !derVal ? null
+    : typeMixte2 === 'menagere' ? (derVal * pctSecond / 120) * 100
+    : typeMixte2 === 'patee' ? (densitePatee > 0 ? (derVal * pctSecond / densitePatee) * 100 : null)
+    : doseBarf != null ? doseBarf * pctSecond : null;
+  const mixteSecondLabel = typeMixte2 === 'menagere' ? '🍲 Ménagère' : typeMixte2 === 'patee' ? '🥫 Pâtée' : '🥩 BARF';
+
   // ── Save ────────────────────────────────────────────────────────────────────
 
   async function save() {
@@ -357,8 +435,10 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
     setSaving(true);
     try {
       // N'écrit que des colonnes qui existent réellement sur `alimentations`
-      // (mêmes noms que l'app Flutter) — étatRepro/suppléments/notes/nb de
-      // repas n'ont pas de colonne dédiée et restent locaux à cette session.
+      // (mêmes noms que l'app Flutter) — étatRepro/suppléments n'ont pas de
+      // colonne dédiée et restent locaux à cette session ; nb de repas, type
+      // du 2e composant mixte et densité pâtée passent par `notes` (même
+      // encodage que l'app, voir buildNotes plus haut).
       const payload = {
         animal_id: animalId,
         uid_eleveur: userId,
@@ -376,6 +456,8 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
         pourcentage_os: alim.barf_os ?? null,
         pourcentage_legumes: alim.barf_legumes ?? null,
         mixte_ratio_croq: alim.mixte_ratio_croq ?? null,
+        notes: buildNotes(notesRaw, alim.nb_repas ?? 2, alim.mixte_separe_repas ?? false,
+          alim.type_mixte2 ?? 'barf', alim.densite_patee, alim.mixte_ratio_croq ?? 50),
         updated_at: new Date().toISOString(),
       };
       if (alim.id) {
@@ -384,6 +466,7 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
         const { data } = await supabase.from('alimentations').insert({ ...payload, id: crypto.randomUUID() }).select().single();
         if (data) setAlim(prev => ({ ...prev, id: data.id }));
       }
+      setNotesRaw(payload.notes);
       setHasData(true);
       setView('summary');
     } finally { setSaving(false); }
@@ -411,7 +494,8 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
   // ── Meal plan ───────────────────────────────────────────────────────────────
 
   const mealPlan = derVal && poids > 0
-    ? getMealPlan(espece, type, nbRepas, derVal, poids, densiteKcal, alim.barf_muscle ?? 70, alim.mixte_ratio_croq ?? 50)
+    ? getMealPlan(espece, type, nbRepas, derVal, poids, densiteKcal, alim.barf_muscle ?? 70, alim.mixte_ratio_croq ?? 50,
+        typeMixte2, densitePatee, mixteSepareParRepas)
     : [];
 
   const COLOR_MAP: Record<string, string> = {
@@ -507,10 +591,11 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
               {type === 'barf' && doseBarf && (
                 <div className="flex justify-between"><span className="text-gray-500">Ration BARF / jour</span><span className="font-bold text-[#1F2A2E]">{doseBarf.toFixed(0)} g</span></div>
               )}
-              {type === 'mixte' && doseCroquettes && doseBarf && (
+              {type === 'mixte' && doseCroquettes && (
                 <>
                   <div className="flex justify-between"><span className="text-gray-500">Croquettes / jour</span><span className="font-bold text-[#1F2A2E]">{(doseCroquettes * (alim.mixte_ratio_croq ?? 50) / 100).toFixed(0)} g</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">BARF / jour</span><span className="font-bold text-[#1F2A2E]">{(doseBarf * (1 - (alim.mixte_ratio_croq ?? 50) / 100)).toFixed(0)} g</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">{mixteSecondLabel} / jour</span><span className="font-bold text-[#1F2A2E]">{doseMixteSecond != null ? `${doseMixteSecond.toFixed(0)} g` : '— (densité manquante)'}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-500">Répartition</span><span className="text-gray-400">{mixteSepareParRepas ? 'Un type par repas' : 'Mélangés à chaque repas'}</span></div>
                 </>
               )}
               {isGrandEspece(espece) && rationGrandEspece && (
@@ -727,8 +812,32 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
         </section>
       )}
 
+      {/* Second composant (mixte uniquement) */}
+      {type === 'mixte' && (
+        <section>
+          <p className="text-xs font-bold text-[#1F2A2E] mb-2 uppercase tracking-wide">2ᵉ composant (avec les croquettes)</p>
+          <div className="grid grid-cols-3 gap-2">
+            {([['barf', '🥩', 'BARF'], ['patee', '🥫', 'Pâtée'], ['menagere', '🍲', 'Ménagère']] as const).map(([k, e, l]) => (
+              <button key={k} onClick={() => setAlim(p => ({ ...p, type_mixte2: k }))}
+                className={`py-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1 ${typeMixte2 === k ? 'bg-[#0C5C6C] text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-[#0C5C6C]/30'}`}>
+                {e} {l}
+              </button>
+            ))}
+          </div>
+          {typeMixte2 === 'patee' && (
+            <div className="mt-2">
+              <p className="text-xs text-gray-400 mb-1">Densité pâtée (kcal/100g, sur l&apos;emballage)</p>
+              <input type="number" min="50" max="200" value={alim.densite_patee || ''}
+                onChange={e => setAlim(p => ({ ...p, densite_patee: parseInt(e.target.value) || undefined }))}
+                placeholder="Ex : 85"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#0C5C6C]" />
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Paramètres BARF */}
-      {(type === 'barf' || type === 'mixte') && (
+      {(type === 'barf' || (type === 'mixte' && typeMixte2 === 'barf')) && (
         <section>
           <p className="text-xs font-bold text-[#1F2A2E] mb-3 uppercase tracking-wide">
             {type === 'mixte' ? 'Composition BARF (partie crue)' : 'Composition BARF'}
@@ -759,13 +868,29 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
       {/* Ratio mixte */}
       {type === 'mixte' && (
         <section>
-          <p className="text-xs font-bold text-[#1F2A2E] mb-2 uppercase tracking-wide">Ratio croquettes / BARF</p>
+          <p className="text-xs font-bold text-[#1F2A2E] mb-2 uppercase tracking-wide">
+            Ratio croquettes / {typeMixte2 === 'menagere' ? 'ménagère' : typeMixte2 === 'patee' ? 'pâtée' : 'BARF'}
+          </p>
           <div className="flex items-center gap-3 text-xs">
             <span className="text-gray-500 w-20 text-right">Croq. {alim.mixte_ratio_croq ?? 50}%</span>
             <input type="range" min={0} max={100} value={alim.mixte_ratio_croq ?? 50}
               onChange={e => setAlim(p => ({ ...p, mixte_ratio_croq: parseInt(e.target.value) }))}
               className="flex-1 accent-[#0C5C6C] h-1" />
-            <span className="text-gray-500 w-20">BARF {100 - (alim.mixte_ratio_croq ?? 50)}%</span>
+            <span className="text-gray-500 w-20">{mixteSecondLabel.replace(/^[^\s]+\s/, '')} {100 - (alim.mixte_ratio_croq ?? 50)}%</span>
+          </div>
+
+          <p className="text-xs font-bold text-[#1F2A2E] mb-2 mt-4 uppercase tracking-wide">Répartition des repas</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => setAlim(p => ({ ...p, mixte_separe_repas: false }))}
+              className={`text-left px-3 py-2.5 rounded-xl border transition-all ${!mixteSepareParRepas ? 'bg-[#0C5C6C] border-[#0C5C6C]' : 'bg-white border-gray-200 hover:border-[#0C5C6C]/30'}`}>
+              <p className={`text-xs font-semibold ${!mixteSepareParRepas ? 'text-white' : 'text-[#1F2A2E]'}`}>Mélangés à chaque repas</p>
+              <p className={`text-[10px] mt-0.5 ${!mixteSepareParRepas ? 'text-white/70' : 'text-gray-400'}`}>Les deux composants à chaque repas</p>
+            </button>
+            <button onClick={() => setAlim(p => ({ ...p, mixte_separe_repas: true }))}
+              className={`text-left px-3 py-2.5 rounded-xl border transition-all ${mixteSepareParRepas ? 'bg-[#0C5C6C] border-[#0C5C6C]' : 'bg-white border-gray-200 hover:border-[#0C5C6C]/30'}`}>
+              <p className={`text-xs font-semibold ${mixteSepareParRepas ? 'text-white' : 'text-[#1F2A2E]'}`}>Un type par repas</p>
+              <p className={`text-[10px] mt-0.5 ${mixteSepareParRepas ? 'text-white/70' : 'text-gray-400'}`}>Ex : croquettes le matin, {typeMixte2 === 'menagere' ? 'ménagère' : typeMixte2 === 'patee' ? 'pâtée' : 'BARF'} le soir</p>
+            </button>
           </div>
         </section>
       )}
@@ -811,6 +936,18 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
                 <span className="font-semibold text-[#1F2A2E]">Ration BARF / jour</span>
                 <span className="font-bold text-[#1F2A2E]">{doseBarf.toFixed(0)} g</span>
               </div>
+            )}
+            {type === 'mixte' && doseCroquettes && (
+              <>
+                <div className="flex justify-between border-t border-[#0C5C6C]/15 pt-1.5">
+                  <span className="font-semibold text-[#1F2A2E]">Croquettes / jour</span>
+                  <span className="font-bold text-[#1F2A2E]">{(doseCroquettes * (alim.mixte_ratio_croq ?? 50) / 100).toFixed(0)} g</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-semibold text-[#1F2A2E]">{mixteSecondLabel} / jour</span>
+                  <span className="font-bold text-[#1F2A2E]">{doseMixteSecond != null ? `${doseMixteSecond.toFixed(0)} g` : '—'}</span>
+                </div>
+              </>
             )}
             {isGrandEspece(espece) && rationGrandEspece && (
               <div className="flex justify-between border-t border-[#0C5C6C]/15 pt-1.5">
