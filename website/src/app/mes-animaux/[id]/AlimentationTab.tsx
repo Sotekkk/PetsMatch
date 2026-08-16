@@ -15,12 +15,12 @@ interface AlimData {
   dose_croquettes?: number;
   densite_kcal?: number;
   marque_id?: string;
-  marque_label?: string;
+  marque?: string;
+  gamme?: string;
   barf_muscle?: number;
   barf_os?: number;
   barf_abats?: number;
   barf_legumes?: number;
-  barf_complementaires?: number;
   mixte_ratio_croq?: number;
   nb_repas?: number;
   etat_repro?: string;
@@ -270,7 +270,7 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
   const [alim, setAlim] = useState<AlimData>({
     type_ration: 'croquettes', phase: 'adulte', activite: 'normal',
     cat_energie: 'normale', poids_ref: 0, densite_kcal: 350,
-    barf_muscle: 70, barf_os: 15, barf_abats: 10, barf_legumes: 5, barf_complementaires: 0,
+    barf_muscle: 70, barf_os: 15, barf_abats: 10, barf_legumes: 5,
     mixte_ratio_croq: 50, nb_repas: 2, etat_repro: 'normal', supplements: [],
   });
   const [poidsActuel, setPoidsActuel] = useState<number>(0);
@@ -291,7 +291,28 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
         supabase.from('poids').select('valeur').eq('animal_id', animalId).order('date', { ascending: false }).limit(1),
       ]);
       if (alimData) {
-        setAlim(prev => ({ ...prev, ...alimData }));
+        // La table `alimentations` utilise des noms de colonnes différents de
+        // l'état local (aligné historiquement sur un autre schéma) : on
+        // traduit explicitement plutôt que de spreader alimData tel quel,
+        // sinon rien ne se charge (ni ne s'enregistre, voir save() plus bas).
+        setAlim(prev => ({
+          ...prev,
+          id: alimData.id,
+          type_ration: alimData.type_ration ?? prev.type_ration,
+          phase: (alimData.phase_vie && alimData.phase_vie !== 'auto') ? alimData.phase_vie : phaseAuto(),
+          activite: alimData.niveau_activite ?? prev.activite,
+          cat_energie: alimData.categorie_energie ?? prev.cat_energie,
+          poids_ref: alimData.poids_objectif ?? 0,
+          densite_kcal: alimData.densite_calorique ?? prev.densite_kcal,
+          marque_id: alimData.marque_id ?? undefined,
+          marque: alimData.marque ?? undefined,
+          gamme: alimData.gamme ?? undefined,
+          barf_muscle: alimData.pourcentage_muscles ?? prev.barf_muscle,
+          barf_os: alimData.pourcentage_os ?? prev.barf_os,
+          barf_abats: alimData.pourcentage_abats ?? prev.barf_abats,
+          barf_legumes: alimData.pourcentage_legumes ?? prev.barf_legumes,
+          mixte_ratio_croq: alimData.mixte_ratio_croq ?? prev.mixte_ratio_croq,
+        }));
         setHasData(true);
         setView('summary');
       } else {
@@ -329,11 +350,26 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
     if (!animalId) return;
     setSaving(true);
     try {
+      // N'écrit que des colonnes qui existent réellement sur `alimentations`
+      // (mêmes noms que l'app Flutter) — étatRepro/suppléments/notes/nb de
+      // repas n'ont pas de colonne dédiée et restent locaux à cette session.
       const payload = {
-        ...alim,
         animal_id: animalId,
         uid_eleveur: userId,
-        poids_ref: poids,
+        type_ration: alim.type_ration,
+        niveau_activite: alim.activite,
+        categorie_energie: alim.cat_energie,
+        phase_vie: alim.phase,
+        poids_objectif: poids || null,
+        marque_id: alim.marque_id ?? null,
+        marque: alim.marque ?? null,
+        gamme: alim.gamme ?? null,
+        densite_calorique: alim.densite_kcal ?? null,
+        pourcentage_muscles: alim.barf_muscle ?? null,
+        pourcentage_abats: alim.barf_abats ?? null,
+        pourcentage_os: alim.barf_os ?? null,
+        pourcentage_legumes: alim.barf_legumes ?? null,
+        mixte_ratio_croq: alim.mixte_ratio_croq ?? null,
         updated_at: new Date().toISOString(),
       };
       if (alim.id) {
@@ -453,10 +489,12 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
           <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
             <p className="font-bold text-[#1F2A2E] text-sm mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>🥗 Ration du jour</p>
             <div className="space-y-1.5 text-xs">
+              {(type === 'croquettes' || type === 'mixte') && alim.marque && (
+                <div className="flex justify-between"><span className="text-gray-500">Marque</span><span className="text-gray-600">{alim.marque}{alim.gamme ? ` — ${alim.gamme}` : ''}</span></div>
+              )}
               {type === 'croquettes' && doseCroquettes && (
                 <>
                   <div className="flex justify-between"><span className="text-gray-500">Croquettes / jour</span><span className="font-bold text-[#1F2A2E]">{doseCroquettes.toFixed(0)} g</span></div>
-                  {alim.marque_label && <div className="flex justify-between"><span className="text-gray-500">Marque</span><span className="text-gray-600">{alim.marque_label}</span></div>}
                   <div className="flex justify-between"><span className="text-gray-500">Densité</span><span className="text-gray-400">{densiteKcal} kcal/100g</span></div>
                 </>
               )}
@@ -662,8 +700,8 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
           <p className="text-xs font-bold text-[#1F2A2E] mb-2 uppercase tracking-wide">Produit</p>
           <button onClick={() => setShowBrand(true)}
             className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-left flex items-center justify-between hover:border-[#0C5C6C]/40 transition-colors">
-            <span className={alim.marque_label ? 'text-[#1F2A2E] font-medium' : 'text-gray-400'}>
-              {alim.marque_label ?? 'Sélectionner une marque…'}
+            <span className={alim.marque ? 'text-[#1F2A2E] font-medium' : 'text-gray-400'}>
+              {alim.marque ? `${alim.marque} — ${alim.gamme}` : 'Sélectionner une marque…'}
             </span>
             <span className="text-gray-300">›</span>
           </button>
@@ -694,7 +732,6 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
             { k: 'barf_os'           as const, e: '🦴', l: 'Os charnus',       c: '#6E9E57' },
             { k: 'barf_abats'        as const, e: '🫀', l: 'Abats',            c: '#E8A020' },
             { k: 'barf_legumes'      as const, e: '🥬', l: 'Légumes / fruits', c: '#7B68EE' },
-            { k: 'barf_complementaires' as const, e: '🌿', l: 'Compléments',   c: '#888'    },
           ]).map(({ k, e, l, c }) => {
             const val = (alim[k] as number | undefined) ?? 0;
             return (
@@ -849,7 +886,8 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
             setAlim(p => ({
               ...p,
               marque_id: b.id,
-              marque_label: `${b.marque} — ${b.gamme}`,
+              marque: b.marque,
+              gamme: b.gamme,
               densite_kcal: b.densite_kcal_100g ?? p.densite_kcal,
             }));
             setShowBrand(false);
