@@ -114,8 +114,16 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   // Généalogie structurée
   final _nomPereCtrl  = TextEditingController();
   final _pucePereCtrl = TextEditingController();
+  final _racePereCtrl = TextEditingController();
   final _nomMereCtrl  = TextEditingController();
   final _puceMereCtrl = TextEditingController();
+  // Rattachement par puce : recherche l'animal (tous propriétaires confondus,
+  // ex. saillie extérieure) correspondant au numéro de puce saisi, pour
+  // permettre plus tard une vraie généalogie inter-éleveurs.
+  Map<String, dynamic>? _perePuceMatch;
+  Map<String, dynamic>? _merePuceMatch;
+  Timer? _pucePereDebounce;
+  Timer? _puceMereDebounce;
 
   String _espece = 'chien';
   final _especeAutreCtrl = TextEditingController();
@@ -202,6 +210,40 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     return 6; // éleveur / employé élevage : tous les onglets
   }
 
+  void _onPucePereChanged() {
+    _pucePereDebounce?.cancel();
+    final puce = _pucePereCtrl.text.trim();
+    if (puce.length < 4) {
+      if (_perePuceMatch != null) setState(() => _perePuceMatch = null);
+      return;
+    }
+    _pucePereDebounce = Timer(const Duration(milliseconds: 500), () async {
+      try {
+        final rows = await _supa.from('animaux').select('id,nom,race')
+            .eq('identification', puce).neq('id', widget.animalId ?? '').limit(1);
+        if (!mounted) return;
+        setState(() => _perePuceMatch = (rows as List).isNotEmpty ? Map<String, dynamic>.from(rows.first) : null);
+      } catch (_) {}
+    });
+  }
+
+  void _onPuceMereChanged() {
+    _puceMereDebounce?.cancel();
+    final puce = _puceMereCtrl.text.trim();
+    if (puce.length < 4) {
+      if (_merePuceMatch != null) setState(() => _merePuceMatch = null);
+      return;
+    }
+    _puceMereDebounce = Timer(const Duration(milliseconds: 500), () async {
+      try {
+        final rows = await _supa.from('animaux').select('id,nom,race')
+            .eq('identification', puce).neq('id', widget.animalId ?? '').limit(1);
+        if (!mounted) return;
+        setState(() => _merePuceMatch = (rows as List).isNotEmpty ? Map<String, dynamic>.from(rows.first) : null);
+      } catch (_) {}
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -218,6 +260,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _loadBreeds();
     _loadMesAnimaux();
     _loadEleveurProfile();
+    _pucePereCtrl.addListener(_onPucePereChanged);
+    _puceMereCtrl.addListener(_onPuceMereChanged);
     if (widget.animalId != null) {
       _loadActiveAlerte();
       _refreshFromSupabase();
@@ -801,6 +845,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _notesCtrl.text  = d['notes'] ?? '';
     _nomPereCtrl.text  = d['nom_pere'] ?? '';
     _pucePereCtrl.text = d['puce_pere'] ?? '';
+    _racePereCtrl.text = (d['race_pere'] as String?) ?? '';
     _nomMereCtrl.text  = d['nom_mere'] ?? '';
     _puceMereCtrl.text = d['puce_mere'] ?? '';
     _sexe = d['sexe'] ?? 'male';
@@ -885,8 +930,12 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   @override
   void dispose() {
     _tabs.dispose();
+    _pucePereDebounce?.cancel();
+    _puceMereDebounce?.cancel();
+    _pucePereCtrl.removeListener(_onPucePereChanged);
+    _puceMereCtrl.removeListener(_onPuceMereChanged);
     for (final c in [_nomCtrl, _raceCtrl, _couleurCtrl, _identCtrl,
-      _tailleCtrl, _poidsCtrl, _notesCtrl, _nomPereCtrl, _pucePereCtrl,
+      _tailleCtrl, _poidsCtrl, _notesCtrl, _nomPereCtrl, _pucePereCtrl, _racePereCtrl,
       _nomMereCtrl, _puceMereCtrl, _passeportCtrl, _clubRegistreCtrl, _pedigreeNumeroCtrl, _descriptionCtrl,
       _provenanceNomCtrl, _provenanceAdresseCtrl, _importationRefCtrl,
       _raceMereCtrl, _destinataireNomCtrl, _destinataireAdresseCtrl]) { c.dispose(); }
@@ -931,6 +980,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'poids':               _poidsCtrl.text.trim(),
         'nom_pere':            _nomPereCtrl.text.trim(),
         'puce_pere':           _pucePereCtrl.text.trim(),
+        'race_pere':           _racePereCtrl.text.trim(),
         'nom_mere':            _nomMereCtrl.text.trim(),
         'puce_mere':           _puceMereCtrl.text.trim(),
         'notes':               _notesCtrl.text.trim(),
@@ -2226,6 +2276,71 @@ class _IdentiteTab extends StatelessWidget {
     );
   }
 
+  Widget _racePereAutocomplete(BuildContext context) {
+    final breeds = s._currentBreeds;
+    return GestureDetector(
+      onTap: () => _openBreedPicker(context, breeds, s._racePereCtrl, 'Race du père'),
+      child: AbsorbPointer(
+        child: TextFormField(
+          controller: s._racePereCtrl,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+          decoration: InputDecoration(
+            labelText: 'Race du père',
+            labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF0C5C6C), width: 1.5)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            isDense: true,
+            suffixIcon: const Icon(Icons.keyboard_arrow_down, size: 18, color: Color(0xFF0C5C6C)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _puceMatchBanner(BuildContext context, {
+    required Map<String, dynamic>? match,
+    required TextEditingController nomCtrl,
+    required TextEditingController raceCtrl,
+    required VoidCallback onClear,
+    required Color color,
+  }) {
+    if (match == null || nomCtrl.text == (match['nom'] as String? ?? '')) return const SizedBox.shrink();
+    final race = match['race'] as String?;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Row(children: [
+          Expanded(
+            child: Text(
+              '🔗 Puce trouvée en base : ${match['nom']}${race != null && race.isNotEmpty ? ' ($race)' : ''}',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: color, fontWeight: FontWeight.w600),
+            ),
+          ),
+          GestureDetector(
+            onTap: () {
+              s.setState(() {
+                nomCtrl.text = match['nom'] ?? '';
+                raceCtrl.text = race ?? '';
+              });
+              onClear();
+            },
+            child: Text('Rattacher',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: color, fontWeight: FontWeight.w700,
+                  decoration: TextDecoration.underline)),
+          ),
+        ]),
+      ),
+    );
+  }
+
   Widget _card(List<Widget> children) {
     return Container(
       decoration: BoxDecoration(
@@ -2861,13 +2976,15 @@ class _IdentiteTab extends StatelessWidget {
                           onTap: () {
                             nomCtrl.text = a['nom'] ?? '';
                             puceCtrl.text = a['identification'] ?? '';
+                            final race = a['race'] as String?;
                             if (isMere) {
                               final dn = a['date_naissance'] as String?;
-                              final race = a['race'] as String?;
                               s.setState(() {
                                 if (dn != null && dn.isNotEmpty) s._dateNaissanceMere = DateTime.tryParse(dn);
                                 if (race != null && race.isNotEmpty) s._raceMereCtrl.text = race;
                               });
+                            } else if (race != null && race.isNotEmpty) {
+                              s.setState(() => s._racePereCtrl.text = race);
                             }
                             Navigator.pop(context);
                           },
@@ -2909,6 +3026,11 @@ class _IdentiteTab extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(child: _inlineField('N° puce père', s._pucePereCtrl)),
       ]),
+      _puceMatchBanner(context,
+        match: s._perePuceMatch, nomCtrl: s._nomPereCtrl, raceCtrl: s._racePereCtrl,
+        onClear: () => s.setState(() => s._perePuceMatch = null), color: const Color(0xFF0C5C6C)),
+      const SizedBox(height: 8),
+      _hasBreeds ? _racePereAutocomplete(context) : _inlineField('Race du père', s._racePereCtrl),
       const SizedBox(height: 8),
       Row(children: [
         const SizedBox(width: 6),
@@ -2929,6 +3051,11 @@ class _IdentiteTab extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(child: _inlineField('N° puce mère', s._puceMereCtrl)),
       ]),
+      _puceMatchBanner(context,
+        match: s._merePuceMatch, nomCtrl: s._nomMereCtrl, raceCtrl: s._raceMereCtrl,
+        onClear: () => s.setState(() => s._merePuceMatch = null), color: const Color(0xFF6E9E57)),
+      const SizedBox(height: 8),
+      _hasBreeds ? _raceMereAutocomplete(context) : _inlineField('Race de la mère', s._raceMereCtrl),
     ]);
   }
 
