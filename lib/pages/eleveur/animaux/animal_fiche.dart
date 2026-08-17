@@ -4997,6 +4997,11 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
 
   late final Map<String, TextEditingController> _ctrls;
   late DateTime _date;
+  // Vaccinations uniquement : rappel et début de validité, absents du
+  // formulaire jusqu'ici (seuls vaccin/lot/vétérinaire/date étaient
+  // modifiables), ce qui bloquait toute correction après coup.
+  DateTime? _dateRappel;
+  DateTime? _dateValidite;
   bool _saving = false;
   String? _error;
 
@@ -5015,6 +5020,8 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
     _ctrls = { for (final f in fields) f.$1: TextEditingController(text: (widget.data[f.$1] ?? '').toString()) };
     final raw = widget.data['date'] as String?;
     _date = raw != null ? (DateTime.tryParse(raw) ?? DateTime.now()) : DateTime.now();
+    _dateRappel = DateTime.tryParse((widget.data['date_rappel'] ?? '').toString());
+    _dateValidite = DateTime.tryParse((widget.data['date_validite_debut'] ?? '').toString());
 
     _rappelActif = widget.data['rappel_actif'] == true;
     _rappelFrequenceCtrl = TextEditingController(text: (widget.data['rappel_frequence_jours'] ?? 1).toString());
@@ -5101,6 +5108,45 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
     if (p != null) setState(() => _date = p);
   }
 
+  Widget _optionalDateRow(String label, DateTime? value, ValueChanged<DateTime?> onChanged) {
+    final fmt = DateFormat('dd/MM/yyyy');
+    return GestureDetector(
+      onTap: () async {
+        final p = await showDatePicker(
+          context: context, initialDate: value ?? DateTime.now(),
+          firstDate: DateTime(2000), lastDate: DateTime(2100),
+          locale: const Locale('fr'),
+          builder: (ctx, child) => Theme(data: ThemeData.light().copyWith(
+              colorScheme: const ColorScheme.light(primary: _teal)), child: child!),
+        );
+        if (p != null) onChanged(p);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8F8F6), borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _teal.withOpacity(0.2)),
+        ),
+        child: Row(children: [
+          Icon(Icons.event_outlined, size: 16, color: value != null ? _teal : Colors.grey.shade400),
+          const SizedBox(width: 8),
+          Expanded(child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600))),
+          Text(value != null ? fmt.format(value) : '—',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                  fontWeight: FontWeight.w600, color: value != null ? const Color(0xFF1F2A2E) : Colors.grey.shade400)),
+          if (value != null)
+            GestureDetector(
+              onTap: () => onChanged(null),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Icon(Icons.close, size: 16, color: Colors.grey.shade400),
+              ),
+            ),
+        ]),
+      ),
+    );
+  }
+
   Future<void> _save() async {
     final fields = _config[widget.collection] ?? [];
     for (final f in fields) {
@@ -5116,6 +5162,10 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
     setState(() { _saving = true; _error = null; });
     try {
       final updates = <String, dynamic>{ 'date': _date.toIso8601String() };
+      if (widget.collection == 'vaccinations') {
+        updates['date_rappel'] = _dateRappel?.toIso8601String();
+        updates['date_validite_debut'] = _dateValidite?.toIso8601String();
+      }
       for (final f in fields) {
         final v = _ctrls[f.$1]?.text.trim() ?? '';
         updates[f.$1] = v;
@@ -5175,6 +5225,14 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
               ]),
             ),
           ),
+          if (widget.collection == 'vaccinations') ...[
+            const SizedBox(height: 10),
+            _optionalDateRow('Valide à partir de', _dateValidite,
+                (d) => setState(() => _dateValidite = d)),
+            const SizedBox(height: 10),
+            _optionalDateRow('Date de rappel', _dateRappel,
+                (d) => setState(() => _dateRappel = d)),
+          ],
           const SizedBox(height: 12),
           for (final f in fields) ...[
             TextField(
