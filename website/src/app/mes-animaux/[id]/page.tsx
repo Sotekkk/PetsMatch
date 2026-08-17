@@ -279,14 +279,29 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial }:
   );
 }
 
-function HealthRecord({ fields, record, onDelete }:
-  { fields:{key:string;label:string}[]; record:HealthRecord; onDelete:()=>void }) {
+function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite }:
+  { fields:{key:string;label:string;type?:string;required?:boolean}[]; record:HealthRecord; onDelete:()=>void;
+    onSave?:(data:Record<string,string>)=>Promise<void>; saving?:boolean; canWrite?:boolean }) {
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   const mainField = fields[0];
   // Un acte saisi par un vétérinaire est certifié : le propriétaire ne peut
   // pas le supprimer ni le modifier, seul le vétérinaire qui l'a rédigé le
   // peut (depuis son propre espace pro).
   const isVetEntry = record.source === 'veterinaire';
+
+  if (editing && onSave) {
+    const initial: Record<string,string> = {};
+    fields.forEach(f => { initial[f.key] = String(record[f.key] ?? ''); });
+    return (
+      <div className="px-4 py-3">
+        <AddHealthForm saving={!!saving} onCancel={()=>setEditing(false)}
+          onSave={async d => { await onSave(d); setEditing(false); }}
+          initial={initial} fields={fields} />
+      </div>
+    );
+  }
+
   return (
     <div className="px-4 py-3">
       <div className="flex items-center gap-2 cursor-pointer" onClick={() => setOpen(!open)}>
@@ -314,7 +329,12 @@ function HealthRecord({ fields, record, onDelete }:
               🔒 Certifié{record.veterinaire ? ` par ${String(record.veterinaire)}` : ' par un vétérinaire'} — non modifiable
             </p>
           ) : (
-            <button onClick={onDelete} className="mt-2 text-xs text-red-400 hover:text-red-600 font-medium">Supprimer</button>
+            <div className="flex gap-3 mt-2">
+              {canWrite && onSave && (
+                <button onClick={()=>setEditing(true)} className="text-xs text-[#0C5C6C] hover:text-[#094F5D] font-medium">Modifier</button>
+              )}
+              <button onClick={onDelete} className="text-xs text-red-400 hover:text-red-600 font-medium">Supprimer</button>
+            </div>
           )}
         </div>
       )}
@@ -2791,7 +2811,8 @@ export default function AnimalFichePage() {
               fields={[{key:'vaccin',label:'Vaccin',required:true},{key:'date',label:'Date',type:'date'},{key:'date_validite_debut',label:'Valide à partir de',type:'date'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'lot',label:'N° de lot'},{key:'veterinaire',label:'Vétérinaire'}]}/>}>
             {health.vaccinations.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('vaccinations',r.id)}
-                fields={[{key:'vaccin',label:'Vaccin'},{key:'date',label:'Date'},{key:'date_validite_debut',label:'Valide à partir de'},{key:'date_rappel',label:'Rappel'},{key:'lot',label:'Lot'},{key:'veterinaire',label:'Vétérinaire'}]}/>
+                onSave={d=>updateHealthRecord('vaccinations',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
+                fields={[{key:'vaccin',label:'Vaccin',required:true},{key:'date',label:'Date',type:'date'},{key:'date_validite_debut',label:'Valide à partir de',type:'date'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'lot',label:'Lot'},{key:'veterinaire',label:'Vétérinaire'}]}/>
             ))}
             {health.vaccinations.length===0 && <p className="p-4 text-sm text-gray-400">Aucune vaccination</p>}
           </HealthSection>
@@ -2806,7 +2827,8 @@ export default function AnimalFichePage() {
               fields={[{key:'produit',label:'Produit',required:true},{key:'date',label:'Date',type:'date'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'dosage',label:'Dosage'},{key:'notes',label:'Notes'}]}/>}>
             {health.vermifuges.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('vermifuges',r.id)}
-                fields={[{key:'produit',label:'Produit'},{key:'date',label:'Date'},{key:'date_rappel',label:'Rappel'},{key:'dosage',label:'Dosage'},{key:'notes',label:'Notes'}]}/>
+                onSave={d=>updateHealthRecord('vermifuges',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
+                fields={[{key:'produit',label:'Produit',required:true},{key:'date',label:'Date',type:'date'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'dosage',label:'Dosage'},{key:'notes',label:'Notes'}]}/>
             ))}
             {health.vermifuges.length===0 && <p className="p-4 text-sm text-gray-400">Aucun vermifuge</p>}
           </HealthSection>
@@ -2821,7 +2843,8 @@ export default function AnimalFichePage() {
               fields={[{key:'produit',label:'Produit',required:true},{key:'type',label:'Type (collier, pipette…)'},{key:'date',label:'Date',type:'date'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'frequence',label:'Fréquence'},{key:'notes',label:'Notes'}]}/>}>
             {health.antiparasitaires.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('antiparasitaires',r.id)}
-                fields={[{key:'produit',label:'Produit'},{key:'type',label:'Type'},{key:'date',label:'Date'},{key:'date_rappel',label:'Rappel'},{key:'frequence',label:'Fréquence'},{key:'notes',label:'Notes'}]}/>
+                onSave={d=>updateHealthRecord('antiparasitaires',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
+                fields={[{key:'produit',label:'Produit',required:true},{key:'type',label:'Type'},{key:'date',label:'Date',type:'date'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'frequence',label:'Fréquence'},{key:'notes',label:'Notes'}]}/>
             ))}
             {health.antiparasitaires.length===0 && <p className="p-4 text-sm text-gray-400">Aucun antiparasitaire</p>}
           </HealthSection>
@@ -2854,7 +2877,8 @@ export default function AnimalFichePage() {
               fields={[{key:'description',label:'Description',required:true},{key:'type',label:'Type'},{key:'severite',label:'Sévérité (légère/modérée/sévère)'},{key:'date',label:'Date constatée',type:'date'},{key:'notes',label:'Notes'}]}/>}>
             {health.allergies.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('allergies',r.id)}
-                fields={[{key:'description',label:'Description'},{key:'type',label:'Type'},{key:'severite',label:'Sévérité'},{key:'date',label:'Date'},{key:'notes',label:'Notes'}]}/>
+                onSave={d=>updateHealthRecord('allergies',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
+                fields={[{key:'description',label:'Description',required:true},{key:'type',label:'Type'},{key:'severite',label:'Sévérité'},{key:'date',label:'Date',type:'date'},{key:'notes',label:'Notes'}]}/>
             ))}
             {health.allergies.length===0 && <p className="p-4 text-sm text-gray-400">Aucune allergie</p>}
           </HealthSection>
@@ -2918,7 +2942,8 @@ export default function AnimalFichePage() {
               fields={[{key:'motif',label:'Motif',required:true},{key:'date',label:'Date',type:'date'},{key:'veterinaire',label:'Vétérinaire'},{key:'diagnostic',label:'Diagnostic'},{key:'notes',label:'Notes'}]}/>}>
             {health.visites.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('visites',r.id)}
-                fields={[{key:'motif',label:'Motif'},{key:'date',label:'Date'},{key:'veterinaire',label:'Vétérinaire'},{key:'diagnostic',label:'Diagnostic'},{key:'notes',label:'Notes'}]}/>
+                onSave={d=>updateHealthRecord('visites',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
+                fields={[{key:'motif',label:'Motif',required:true},{key:'date',label:'Date',type:'date'},{key:'veterinaire',label:'Vétérinaire'},{key:'diagnostic',label:'Diagnostic'},{key:'notes',label:'Notes'}]}/>
             ))}
             {health.visites.length===0 && <p className="p-4 text-sm text-gray-400">Aucune visite</p>}
           </HealthSection>
