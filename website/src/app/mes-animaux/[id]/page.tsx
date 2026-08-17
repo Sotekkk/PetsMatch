@@ -229,20 +229,29 @@ function suggestDateRappel(nomVaccin: string, dateInjection: string): string | n
   return d.toISOString().slice(0, 10);
 }
 
-function suggestDateValidite(nomVaccin: string, dateInjection: string): string | null {
+function categorieVaccin(nomVaccin: string): string | null {
+  const n = nomVaccin.toLowerCase();
+  return Object.keys(RAPPEL_ANS_PAR_VACCIN).find(k => n.includes(k)) ?? null;
+}
+
+// Le délai légal (ex: rage = 21 jours) ne s'applique qu'à la toute première
+// injection de ce type de vaccin pour cet animal : un rappel d'un vaccin
+// déjà administré est valide dès le jour même.
+function suggestDateValidite(nomVaccin: string, dateInjection: string, existingVaccins?: string[]): string | null {
   if (!dateInjection) return null;
   const d = new Date(dateInjection);
   if (isNaN(d.getTime())) return null;
-  const n = nomVaccin.toLowerCase();
-  const jours = Object.entries(VALIDITE_JOURS_PAR_VACCIN).find(([k]) => n.includes(k))?.[1] ?? 0;
+  const cat = categorieVaccin(nomVaccin);
+  const dejaVaccine = cat != null && (existingVaccins ?? []).some(v => categorieVaccin(v) === cat);
+  const jours = dejaVaccine || cat == null ? 0 : (VALIDITE_JOURS_PAR_VACCIN[cat] ?? 0);
   d.setDate(d.getDate() + jours);
   return d.toISOString().slice(0, 10);
 }
 
-function AddHealthForm({ fields, onSave, onCancel, saving, initial }:
+function AddHealthForm({ fields, onSave, onCancel, saving, initial, existingVaccins }:
   { fields: { key:string; label:string; type?:string; required?:boolean }[];
     onSave:(data:Record<string,string>)=>Promise<void>;
-    onCancel:()=>void; saving:boolean; initial?: Record<string,string> }) {
+    onCancel:()=>void; saving:boolean; initial?: Record<string,string>; existingVaccins?: string[] }) {
   const [form, setForm] = useState<Record<string,string>>(initial ?? {});
   const hasRappelField = fields.some(f => f.key === 'date_rappel');
   const hasValiditeField = fields.some(f => f.key === 'date_validite_debut');
@@ -261,7 +270,7 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial }:
                 if (suggestion) next.date_rappel = suggestion;
               }
               if (hasValiditeField && !p.date_validite_debut) {
-                const suggestion = suggestDateValidite(next.vaccin ?? '', next.date ?? '');
+                const suggestion = suggestDateValidite(next.vaccin ?? '', next.date ?? '', existingVaccins);
                 if (suggestion) next.date_validite_debut = suggestion;
               }
             }
@@ -279,9 +288,10 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial }:
   );
 }
 
-function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite }:
+function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, existingVaccins, onRappel }:
   { fields:{key:string;label:string;type?:string;required?:boolean}[]; record:HealthRecord; onDelete:()=>void;
-    onSave?:(data:Record<string,string>)=>Promise<void>; saving?:boolean; canWrite?:boolean }) {
+    onSave?:(data:Record<string,string>)=>Promise<void>; saving?:boolean; canWrite?:boolean; existingVaccins?: string[];
+    onRappel?:()=>void }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const mainField = fields[0];
@@ -297,7 +307,7 @@ function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite }:
       <div className="px-4 py-3">
         <AddHealthForm saving={!!saving} onCancel={()=>setEditing(false)}
           onSave={async d => { await onSave(d); setEditing(false); }}
-          initial={initial} fields={fields} />
+          initial={initial} fields={fields} existingVaccins={existingVaccins} />
       </div>
     );
   }
@@ -324,18 +334,22 @@ function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite }:
               <span className="text-gray-700">{f.key.includes('date') ? fmtDate(record[f.key] as string) : String(record[f.key])}</span>
             </div>
           ) : null)}
-          {isVetEntry ? (
+          {isVetEntry && (
             <p className="mt-2 text-xs text-gray-400">
               🔒 Certifié{record.veterinaire ? ` par ${String(record.veterinaire)}` : ' par un vétérinaire'} — non modifiable
             </p>
-          ) : (
-            <div className="flex gap-3 mt-2">
-              {canWrite && onSave && (
-                <button onClick={()=>setEditing(true)} className="text-xs text-[#0C5C6C] hover:text-[#094F5D] font-medium">Modifier</button>
-              )}
-              <button onClick={onDelete} className="text-xs text-red-400 hover:text-red-600 font-medium">Supprimer</button>
-            </div>
           )}
+          <div className="flex gap-3 mt-2">
+            {canWrite && onRappel && (
+              <button onClick={onRappel} className="text-xs text-[#0C5C6C] hover:text-[#094F5D] font-medium">+ Rappel</button>
+            )}
+            {!isVetEntry && canWrite && onSave && (
+              <button onClick={()=>setEditing(true)} className="text-xs text-[#0C5C6C] hover:text-[#094F5D] font-medium">Modifier</button>
+            )}
+            {!isVetEntry && (
+              <button onClick={onDelete} className="text-xs text-red-400 hover:text-red-600 font-medium">Supprimer</button>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -1212,6 +1226,9 @@ export default function AnimalFichePage() {
   const [addOpen, setAddOpen] = useState<string|null>(null);
   const [savingHealth, setSavingHealth] = useState(false);
   const [editPoids, setEditPoids] = useState<string|null>(null);
+  // "+ Rappel" sur un vaccin : pré-remplit le formulaire d'ajout avec le
+  // même vaccin/vétérinaire, il ne reste qu'à changer date et lot.
+  const [rappelPrefill, setRappelPrefill] = useState<Record<string,string>|null>(null);
 
   // ── État documents vétérinaires
   const [ordonnances, setOrdonnances] = useState<HealthRecord[]>([]);
@@ -2804,14 +2821,21 @@ export default function AnimalFichePage() {
           {/* Vaccinations */}
           <HealthSection id="health-vaccinations" defaultOpen={catParam==='vaccinations'}
             title="Vaccinations" icon="💉" color="#2196F3" count={health.vaccinations.length}
-            onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='vaccinations'?null:'vaccinations') : undefined}
+            onAdd={canWriteSante ? ()=>{ setRappelPrefill(null); setAddOpen(addOpen==='vaccinations'?null:'vaccinations'); } : undefined}
             addFormOpen={addOpen==='vaccinations'}
-            addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
-              onSave={d=>saveHealthRecord('vaccinations',d)}
+            addForm={<AddHealthForm key={JSON.stringify(rappelPrefill)} saving={savingHealth} onCancel={()=>{ setAddOpen(null); setRappelPrefill(null); }}
+              onSave={async d=>{ await saveHealthRecord('vaccinations',d); setRappelPrefill(null); }}
+              initial={rappelPrefill ?? undefined}
+              existingVaccins={health.vaccinations.map(v=>String(v.vaccin??''))}
               fields={[{key:'vaccin',label:'Vaccin',required:true},{key:'date',label:'Date',type:'date'},{key:'date_validite_debut',label:'Valide à partir de',type:'date'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'lot',label:'N° de lot'},{key:'veterinaire',label:'Vétérinaire'}]}/>}>
             {health.vaccinations.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('vaccinations',r.id)}
                 onSave={d=>updateHealthRecord('vaccinations',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
+                existingVaccins={health.vaccinations.map(v=>String(v.vaccin??''))}
+                onRappel={canWriteSante ? ()=>{
+                  setRappelPrefill({ vaccin: String(r.vaccin??''), veterinaire: String(r.veterinaire??'') });
+                  setAddOpen('vaccinations');
+                } : undefined}
                 fields={[{key:'vaccin',label:'Vaccin',required:true},{key:'date',label:'Date',type:'date'},{key:'date_validite_debut',label:'Valide à partir de',type:'date'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'lot',label:'Lot'},{key:'veterinaire',label:'Vétérinaire'}]}/>
             ))}
             {health.vaccinations.length===0 && <p className="p-4 text-sm text-gray-400">Aucune vaccination</p>}

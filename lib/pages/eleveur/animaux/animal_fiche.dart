@@ -4448,6 +4448,20 @@ class _SanteListState extends State<_SanteList> {
     );
   }
 
+  // Pré-remplit "Ajouter un vaccin" avec le même vaccin/vétérinaire — pour
+  // saisir un rappel il ne reste alors qu'à changer date et lot.
+  void _addRappel(Map<String, dynamic> data) async {
+    await showDialog(
+      context: context,
+      builder: (_) => _AddVaccinDialog(
+        animalId: widget.animalId,
+        prefillVaccin: data['vaccin'] as String?,
+        prefillVeto: data['veterinaire'] as String?,
+      ),
+    );
+    _refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -4480,6 +4494,7 @@ class _SanteListState extends State<_SanteList> {
                       title: _title(d), data: d, icon: widget.icon,
                       onDelete: () => _delete(d['id']?.toString() ?? ''),
                       onEdit: canEdit ? () => _edit(d) : null,
+                      onRappel: (!widget.vetMode && widget.collection == 'vaccinations') ? () => _addRappel(d) : null,
                       collection: widget.collection,
                       canDelete: canDelete,
                     );
@@ -4703,10 +4718,11 @@ class _SanteCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback? onTap;
   final VoidCallback? onEdit;
+  final VoidCallback? onRappel;
   final String? collection;
   final bool canDelete;
   const _SanteCard({required this.title, required this.data, required this.icon,
-      required this.onDelete, this.onTap, this.onEdit, this.collection, this.canDelete = true});
+      required this.onDelete, this.onTap, this.onEdit, this.onRappel, this.collection, this.canDelete = true});
 
   static const _overdueTables = {'vaccinations', 'vermifuges', 'antiparasitaires'};
 
@@ -4958,6 +4974,10 @@ class _SanteCard extends StatelessWidget {
             ],
           ])),
           const Icon(Icons.chevron_right, color: Color(0xFFCCCCCC), size: 18),
+          if (onRappel != null)
+            IconButton(icon: const Icon(Icons.add_alarm_outlined, size: 18, color: Color(0xFF0C5C6C)),
+                tooltip: 'Ajouter un rappel (même vaccin)',
+                onPressed: onRappel, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
           if (_isOverdue)
             IconButton(icon: const Icon(Icons.notifications_off_outlined, size: 18, color: Color(0xFF9CA3AF)),
                 tooltip: 'Arrêter les rappels pour ce soin',
@@ -5849,7 +5869,12 @@ class _AddVaccinDialog extends StatefulWidget {
   final String source;
   final String? vetId;
   final String? vetName;
-  const _AddVaccinDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName});
+  // Pré-remplissage pour "Ajouter un rappel" depuis un vaccin existant :
+  // même vaccin/vétérinaire, seuls date et lot changent.
+  final String? prefillVaccin;
+  final String? prefillVeto;
+  const _AddVaccinDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName,
+      this.prefillVaccin, this.prefillVeto});
   @override State<_AddVaccinDialog> createState() => _AddVaccinDialogState();
 }
 class _AddVaccinDialogState extends State<_AddVaccinDialog> {
@@ -5882,29 +5907,52 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
     return null;
   }
 
-  int _validiteJoursPour(String nom) {
+  String? _categoriePour(String nom) {
     final n = nom.toLowerCase();
-    for (final e in _validiteJoursApresDelaiParVaccin.entries) {
-      if (n.contains(e.key)) return e.value;
+    for (final k in _rappelAnsParVaccin.keys) {
+      if (n.contains(k)) return k;
     }
-    return 0;
+    return null;
   }
 
-  void _suggestRappel() {
+  // Le délai légal (ex: rage = 21 jours) ne s'applique qu'à la toute
+  // première injection de ce type de vaccin pour cet animal : un rappel
+  // d'un vaccin déjà administré est valide dès le jour même.
+  Future<bool> _estPremiereFois(String categorie) async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('vaccinations').select('vaccin').eq('animal_id', widget.animalId);
+      for (final r in (rows as List)) {
+        final v = (r['vaccin'] as String? ?? '');
+        if (_categoriePour(v) == categorie) return false;
+      }
+    } catch (_) {}
+    return true;
+  }
+
+  void _suggestRappel() async {
     if (_date == null) return;
+    final cat = _categoriePour(_vaccin.text);
     if (_validite == null) {
-      setState(() => _validite = _date!.add(Duration(days: _validiteJoursPour(_vaccin.text))));
+      var delaiJours = 0;
+      if (cat != null && _validiteJoursApresDelaiParVaccin.containsKey(cat)) {
+        final premiereFois = await _estPremiereFois(cat);
+        if (premiereFois) delaiJours = _validiteJoursApresDelaiParVaccin[cat]!;
+      }
+      if (mounted && _validite == null) setState(() => _validite = _date!.add(Duration(days: delaiJours)));
     }
     if (_rappel != null) return;
-    final ans = _rappelAnsPour(_vaccin.text);
+    final ans = cat != null ? _rappelAnsParVaccin[cat] : null;
     if (ans == null) return;
-    setState(() => _rappel = DateTime(_date!.year + ans, _date!.month, _date!.day));
+    if (mounted) setState(() => _rappel = DateTime(_date!.year + ans, _date!.month, _date!.day));
   }
 
   @override
   void initState() {
     super.initState();
     if (widget.vetName != null) _veto.text = widget.vetName!;
+    if (widget.prefillVaccin != null) _vaccin.text = widget.prefillVaccin!;
+    if (widget.prefillVeto != null) _veto.text = widget.prefillVeto!;
     _vaccin.addListener(_suggestRappel);
   }
 
