@@ -453,6 +453,7 @@ exports.sendMiseBasReminders = functions
                             statut: "a_faire",
                             profil_source: "eleveur",
                             animal_nom: animalNom,
+                            ...(profileId ? {profile_id: profileId, eleveur_profile_id: profileId} : {}),
                         }]);
                     } catch (e) {
                         console.error(`taches_elevage insert error for gestation ${g.id}:`, e.message);

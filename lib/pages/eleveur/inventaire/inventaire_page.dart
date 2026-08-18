@@ -165,6 +165,8 @@ class _InventairePageState extends State<InventairePage> {
     await _supa.from('plan_taches').insert({
       'uid_eleveur': _uid,
       if (_profileId != null) 'eleveur_profile_id': _profileId,
+      if (_profileId != null) 'profile_id': _profileId,
+      'profil_source': 'eleveur',
       'label': label,
       'type_acte': 'commande',
       'date_prevue': today,

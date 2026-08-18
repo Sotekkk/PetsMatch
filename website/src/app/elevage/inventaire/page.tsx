@@ -145,7 +145,8 @@ export default function InventairePage() {
     if (existing) return;
     await supabase.from('plan_taches').insert({
       uid_eleveur: uid,
-      ...(pid ? { eleveur_profile_id: pid } : {}),
+      ...(pid ? { eleveur_profile_id: pid, profile_id: pid } : {}),
+      profil_source: 'eleveur',
       label,
       type_acte: 'commande',
       date_prevue: today,

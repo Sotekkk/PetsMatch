@@ -216,6 +216,7 @@ exports.sendSanteReminders = functions
                                 statut: "a_faire",
                                 profil_source: animal.uid_eleveur ? "eleveur" : "particulier",
                                 animal_nom: nomAnimal,
+                                ...(profileId ? {profile_id: profileId, eleveur_profile_id: profileId} : {}),
                             }]);
                         } catch (e) {
                             console.error(`taches_elevage insert error (${table} ${row.id}):`, e.message);
@@ -435,6 +436,7 @@ exports.sendTraitementReminders = functions
                     statut: "a_faire",
                     profil_source: animal.uid_eleveur ? "eleveur" : "particulier",
                     animal_nom: nomAnimal,
+                    ...(profileId ? {profile_id: profileId, eleveur_profile_id: profileId} : {}),
                 }]);
             } catch (e) {
                 console.error(`taches_elevage insert error (traitement ${row.id}):`, e.message);
