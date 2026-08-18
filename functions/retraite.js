@@ -230,9 +230,10 @@ exports.sendRetraiteReminders = functions
                         statut: "a_faire",
                         profil_source: "eleveur",
                         animal_nom: nom,
-                        ...(profileIdByAnimal[animal.id]
-                            ? {profile_id: profileIdByAnimal[animal.id], eleveur_profile_id: profileIdByAnimal[animal.id]}
-                            : {}),
+                        ...(profileIdByAnimal[animal.id] ? {
+                            profile_id: profileIdByAnimal[animal.id],
+                            eleveur_profile_id: profileIdByAnimal[animal.id],
+                        } : {}),
                     }]);
                 } catch (e) {
                     console.error(`taches_elevage insert error for animal ${animal.id}:`, e.message);
