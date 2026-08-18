@@ -1986,8 +1986,8 @@ export default function AnimalFichePage() {
   }
 
   const isAcquereur = !!user && user.uid === animal.uid_acquereur;
-  // isOwner : propriétaire original OU acquéreur après cession confirmée
-  const isOwner = !!user && (user.uid === animal.uid_eleveur || isAcquereur);
+  // isOwner : propriétaire original (éleveur OU particulier) OU acquéreur après cession confirmée
+  const isOwner = !!user && (user.uid === animal.uid_eleveur || user.uid === animal.uid_proprietaire || isAcquereur);
   // canWrite : propriétaire OU employé avec write_animaux
   const canWrite = isOwner || (isEmployeOfOwner && employePerms.includes('write_animaux'));
   // canWriteSante : propriétaire OU employé avec write_sante (ou write_animaux)
