@@ -890,7 +890,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
-        title: const Text('Registre pension',
+        title: const Text('Nos pensionnaires',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),

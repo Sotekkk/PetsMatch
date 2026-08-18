@@ -542,7 +542,7 @@ class _EleveurNavState extends State<EleveurNav> {
                   ),
                   if (User_Info.catPro == 'pension') _DrawerItem(
                     icon: Icons.home_work_outlined,
-                    label: 'Registre pension',
+                    label: 'Nos pensionnaires',
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(
