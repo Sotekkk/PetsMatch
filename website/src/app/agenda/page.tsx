@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useActiveProfile, useProfileSource } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -372,6 +372,7 @@ export default function AgendaPage() {
   const { user } = useAuth();
   const router = useRouter();
   const activeProfileId = useActiveProfile();
+  const taskProfilSource = useProfileSource();
   const [events, setEvents]   = useState<AgendaEvent[]>([]);
   const [tasks, setTasks]     = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -432,23 +433,58 @@ export default function AgendaPage() {
       setEvents(list);
     }
 
-    // Charger les tâches du mois — vue particulier : uniquement les tâches assignées à l'utilisateur
+    // Charger les tâches du mois — deux sources à fusionner : les tâches que
+    // je POSSÈDE en tant qu'éleveur/association/pension (créées pour mon
+    // profil, ex. rappels automatiques sans assigne_a) et celles qui me sont
+    // ASSIGNÉES (vue particulier / employé). Miroir de agenda_page.dart
+    // _loadTasks (d1/d2, p1/p2) pour garder les deux plateformes alignées.
     const taskFrom = new Date(focusedMonth.year, focusedMonth.month - 1, 1).toISOString().slice(0, 10);
     const taskTo   = new Date(focusedMonth.year, focusedMonth.month + 2, 0).toISOString().slice(0, 10);
+    const manuelCols = 'id,titre,date,statut,uid_eleveur,assigne_a,profile_id,profil_source';
+    const protoCols  = 'id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id,profile_id,profil_source';
 
-    const { data: manuelData } = await supabase
+    let d1Res = activeProfileId
+      ? await supabase.from('taches_elevage').select(manuelCols).eq('uid_eleveur', uid)
+          .gte('date', taskFrom).lte('date', taskTo).eq('profile_id', activeProfileId)
+      : { data: [] as unknown[] };
+    if (!activeProfileId || (d1Res.data ?? []).length === 0) {
+      d1Res = taskProfilSource === 'eleveur'
+        ? await supabase.from('taches_elevage').select(manuelCols).eq('uid_eleveur', uid)
+            .gte('date', taskFrom).lte('date', taskTo).or('profil_source.is.null,profil_source.eq.eleveur')
+        : await supabase.from('taches_elevage').select(manuelCols).eq('uid_eleveur', uid)
+            .gte('date', taskFrom).lte('date', taskTo).eq('profil_source', taskProfilSource);
+    }
+    const { data: manuelAssigneData } = await supabase
       .from('taches_elevage')
       .select('id,titre,date,statut,uid_eleveur,assigne_a')
       .eq('assigne_a', uid)
       .gte('date', taskFrom).lte('date', taskTo);
-    const manuelTasks: Task[] = ((manuelData ?? []) as { id: string; titre: string; date: string; statut: string; uid_eleveur: string; assigne_a: string | null }[]).map(t => ({ ...t, _source: 'manuel' as const, etape_id: null }));
+    const seenManuel = new Set<string>();
+    const manuelTasks: Task[] = [];
+    for (const t of [...(d1Res.data ?? []), ...(manuelAssigneData ?? [])]) {
+      const mt = t as { id: string; titre: string; date: string; statut: string; uid_eleveur: string; assigne_a: string | null };
+      if (seenManuel.has(mt.id)) continue;
+      seenManuel.add(mt.id);
+      manuelTasks.push({ ...mt, _source: 'manuel' as const, etape_id: null });
+    }
 
+    let p1Res = activeProfileId
+      ? await supabase.from('plan_taches').select(protoCols).eq('uid_eleveur', uid)
+          .gte('date_prevue', taskFrom).lte('date_prevue', taskTo).eq('profile_id', activeProfileId)
+      : { data: [] as unknown[] };
+    if (!activeProfileId || (p1Res.data ?? []).length === 0) {
+      p1Res = taskProfilSource === 'eleveur'
+        ? await supabase.from('plan_taches').select(protoCols).eq('uid_eleveur', uid)
+            .gte('date_prevue', taskFrom).lte('date_prevue', taskTo).or('profil_source.is.null,profil_source.eq.eleveur')
+        : await supabase.from('plan_taches').select(protoCols).eq('uid_eleveur', uid)
+            .gte('date_prevue', taskFrom).lte('date_prevue', taskTo).eq('profil_source', taskProfilSource);
+    }
     const [p2Res] = await Promise.all([
       supabase.from('plan_taches').select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id').eq('assigned_to', uid).gte('date_prevue', taskFrom).lte('date_prevue', taskTo),
     ]);
     const seenProto = new Set<string>();
     const protoTasks: Task[] = [];
-    for (const t of [...(p2Res.data ?? [])]) {
+    for (const t of [...(p1Res.data ?? []), ...(p2Res.data ?? [])]) {
       const pt = t as { id: string; label: string; date_prevue: string; statut: string; assigned_to: string | null; uid_eleveur: string; type_acte?: string; animal_nom?: string; etape_id?: string | null };
       if (seenProto.has(pt.id)) continue;
       seenProto.add(pt.id);
@@ -493,7 +529,7 @@ export default function AgendaPage() {
     }
 
     setLoading(false);
-  }, [uid, focusedMonth, activeProfileId]);
+  }, [uid, focusedMonth, activeProfileId, taskProfilSource]);
 
   useEffect(() => { if (uid) load(); }, [uid, load]);
 
