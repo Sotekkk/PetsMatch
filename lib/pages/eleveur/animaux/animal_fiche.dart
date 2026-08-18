@@ -1682,7 +1682,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         children: widget.vetMode
             ? [
                 _IdentiteTab(this),
-                _CarnetSanteTab(animalId: widget.animalId, vetMode: true),
+                _CarnetSanteTab(animalId: widget.animalId, vetMode: true, espece: _espece),
                 _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly('write_repro')),
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
                 _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId),
@@ -1692,13 +1692,13 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             : widget.educationMode
                 ? [
                     _IdentiteTab(this),
-                    _CarnetSanteTab(animalId: widget.animalId),
+                    _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
                     _EducationTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text),
                   ]
                 : widget.isAssociation
                 ? [
                     _IdentiteTab(this),
-                    _CarnetSanteTab(animalId: widget.animalId),
+                    _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
                     _AlimentationTab(this),
                     _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
                   ]
@@ -1710,7 +1710,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                     : (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab
                         ? [
                             _IdentiteTab(this),
-                            _CarnetSanteTab(animalId: widget.animalId),
+                            _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
                             _AlimentationTab(this),
                             _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
                             _DocumentsTab(animalId: widget.animalId ?? ''),
@@ -1719,7 +1719,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                             _IdentiteTab(this),
                             _DocumentsTab(animalId: widget.animalId ?? ''),
                             _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly('write_repro')),
-                            _CarnetSanteTab(animalId: widget.animalId),
+                            _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
                             _AlimentationTab(this),
                             _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
                           ])),
@@ -4243,7 +4243,8 @@ class _ReproListState extends State<_ReproList> {
 class _CarnetSanteTab extends StatelessWidget {
   final String? animalId;
   final bool vetMode;
-  const _CarnetSanteTab({this.animalId, this.vetMode = false});
+  final String espece;
+  const _CarnetSanteTab({this.animalId, this.vetMode = false, required this.espece});
 
   static const _cats = [
     (key: 'vaccinations',     label: 'Vaccins',              icon: Icons.vaccines_outlined,             color: Color(0xFF0C5C6C)),
@@ -4277,6 +4278,7 @@ class _CarnetSanteTab extends StatelessWidget {
           icon: cat.icon,
           color: cat.color,
           vetMode: vetMode,
+          espece: espece,
         );
       },
     );
@@ -4290,8 +4292,9 @@ class _SanteTile extends StatelessWidget {
   final IconData icon;
   final Color color;
   final bool vetMode;
+  final String espece;
   const _SanteTile({required this.animalId, required this.collection,
-      required this.label, required this.icon, required this.color, this.vetMode = false});
+      required this.label, required this.icon, required this.color, this.vetMode = false, required this.espece});
 
   @override
   Widget build(BuildContext context) {
@@ -4304,7 +4307,7 @@ class _SanteTile extends StatelessWidget {
           onTap: () => Navigator.push(context, MaterialPageRoute(
             builder: (_) => SanteDetailPage(
               animalId: animalId, collection: collection,
-              label: label, icon: icon, color: color, vetMode: vetMode,
+              label: label, icon: icon, color: color, vetMode: vetMode, espece: espece,
             ),
           )),
           child: Container(
@@ -4347,22 +4350,23 @@ class SanteDetailPage extends StatelessWidget {
   final IconData icon;
   final Color color;
   final bool vetMode;
+  final String espece;
   const SanteDetailPage({super.key, required this.animalId, required this.collection,
-      required this.label, required this.icon, required this.color, this.vetMode = false});
+      required this.label, required this.icon, required this.color, this.vetMode = false, required this.espece});
 
   Widget _dialogFor(BuildContext ctx) {
     final src   = vetMode ? 'veterinaire' : 'owner';
     final vid   = vetMode ? FirebaseAuth.instance.currentUser?.uid : null;
     final vname = vetMode ? '${User_Info.firstname} ${User_Info.lastname}'.trim() : null;
     switch (collection) {
-      case 'vaccinations':     return _AddVaccinDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
+      case 'vaccinations':     return _AddVaccinDialog(animalId: animalId, espece: espece, source: src, vetId: vid, vetName: vname);
       case 'vermifuges':       return _AddVermifugeDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'antiparasitaires': return _AddAntiparasitaireDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'traitements':      return _AddTraitementDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'allergies':        return _AddAllergieDialog(animalId: animalId);
       case 'visites':          return _AddVisiteDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'radios':           return _AddRadioDialog(animalId: animalId);
-      default:                 return _AddVaccinDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
+      default:                 return _AddVaccinDialog(animalId: animalId, espece: espece, source: src, vetId: vid, vetName: vname);
     }
   }
 
@@ -4378,7 +4382,7 @@ class SanteDetailPage extends StatelessWidget {
       ),
       body: collection == 'poids'
           ? _PoidsTab(animalId: animalId)
-          : _SanteList(animalId: animalId, collection: collection, icon: icon, addBuilder: _dialogFor, vetMode: vetMode),
+          : _SanteList(animalId: animalId, collection: collection, icon: icon, addBuilder: _dialogFor, vetMode: vetMode, espece: espece),
     );
   }
 }
@@ -4389,7 +4393,8 @@ class _SanteList extends StatefulWidget {
   final IconData icon;
   final Widget Function(BuildContext) addBuilder;
   final bool vetMode;
-  const _SanteList({required this.animalId, required this.collection, required this.icon, required this.addBuilder, this.vetMode = false});
+  final String espece;
+  const _SanteList({required this.animalId, required this.collection, required this.icon, required this.addBuilder, this.vetMode = false, required this.espece});
   @override
   State<_SanteList> createState() => _SanteListState();
 }
@@ -4444,7 +4449,7 @@ class _SanteListState extends State<_SanteList> {
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _QuickEditSheet(data: data, collection: widget.collection, onSaved: _refresh),
+      builder: (_) => _QuickEditSheet(data: data, collection: widget.collection, espece: widget.espece, onSaved: _refresh),
     );
   }
 
@@ -4455,8 +4460,10 @@ class _SanteListState extends State<_SanteList> {
       context: context,
       builder: (_) => _AddVaccinDialog(
         animalId: widget.animalId,
+        espece: widget.espece,
         prefillVaccin: data['vaccin'] as String?,
         prefillVeto: data['veterinaire'] as String?,
+        prefillCategorie: data['categorie'] as String?,
       ),
     );
     _refresh();
@@ -4996,8 +5003,9 @@ class _SanteCard extends StatelessWidget {
 class _QuickEditSheet extends StatefulWidget {
   final Map<String, dynamic> data;
   final String collection;
+  final String? espece;
   final VoidCallback onSaved;
-  const _QuickEditSheet({required this.data, required this.collection, required this.onSaved});
+  const _QuickEditSheet({required this.data, required this.collection, this.espece, required this.onSaved});
   @override State<_QuickEditSheet> createState() => _QuickEditSheetState();
 }
 
@@ -5022,6 +5030,10 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
   // modifiables), ce qui bloquait toute correction après coup.
   DateTime? _dateRappel;
   DateTime? _dateValidite;
+  // Vaccinations uniquement : type de vaccin — permet de corriger une
+  // catégorie après coup (les délais par défaut affichés lors de l'ajout
+  // ne sont pas re-suggérés ici, seule la valeur est éditable).
+  String? _categorie;
   bool _saving = false;
   String? _error;
 
@@ -5042,6 +5054,7 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
     _date = raw != null ? (DateTime.tryParse(raw) ?? DateTime.now()) : DateTime.now();
     _dateRappel = DateTime.tryParse((widget.data['date_rappel'] ?? '').toString());
     _dateValidite = DateTime.tryParse((widget.data['date_validite_debut'] ?? '').toString());
+    _categorie = widget.data['categorie'] as String?;
 
     _rappelActif = widget.data['rappel_actif'] == true;
     _rappelFrequenceCtrl = TextEditingController(text: (widget.data['rappel_frequence_jours'] ?? 1).toString());
@@ -5185,6 +5198,7 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
       if (widget.collection == 'vaccinations') {
         updates['date_rappel'] = _dateRappel?.toIso8601String();
         updates['date_validite_debut'] = _dateValidite?.toIso8601String();
+        updates['categorie'] = _categorie;
       }
       for (final f in fields) {
         final v = _ctrls[f.$1]?.text.trim() ?? '';
@@ -5227,6 +5241,25 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
           const SizedBox(height: 16),
           const Text('Modifier', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
           const SizedBox(height: 16),
+          if (widget.collection == 'vaccinations') ...[
+            DropdownButtonFormField<String>(
+              initialValue: _categorie,
+              decoration: InputDecoration(
+                labelText: 'Type de vaccin',
+                labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
+                filled: true, fillColor: const Color(0xFFF8F8F6),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _teal.withValues(alpha: 0.2))),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: _teal.withValues(alpha: 0.2))),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _teal, width: 1.5)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1F2A2E)),
+              items: _typesVaccinPour(widget.espece).map((t) => t.$1)
+                  .toList().map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
+              onChanged: (v) => setState(() => _categorie = v),
+            ),
+            const SizedBox(height: 10),
+          ],
           // Date
           GestureDetector(
             onTap: _pickDate,
@@ -5864,17 +5897,57 @@ class _ChartPainter extends CustomPainter {
 
 // ─── Dialogs d'ajout ──────────────────────────────────────────────────────────
 
+// Types de vaccins par espèce, avec délais par défaut (indicatifs, toujours
+// modifiables) : intervalle de rappel en années, et délai avant mise en
+// validité légale en jours (ex: rage = 21 jours pour les déplacements UE —
+// ne s'applique qu'à la toute première injection de ce type pour l'animal,
+// un rappel étant valide dès le jour même). Utilisé pour l'ajout ET la
+// modification d'un vaccin.
+const Map<String, List<(String label, int rappelAns, int validiteJours)>> _typesVaccinParEspece = {
+  'chien': [
+    ('Rage', 3, 21),
+    ('CHPPI (Carré, Hépatite, Parvovirose, Parainfluenza)', 1, 0),
+    ('Leptospirose (L4)', 1, 0),
+    ('Toux du chenil (Bordetella)', 1, 0),
+    ('Piroplasmose', 1, 0),
+  ],
+  'chat': [
+    ('Rage', 3, 21),
+    ('Typhus (panleucopénie)', 1, 0),
+    ('Coryza', 1, 0),
+    ('Leucose (FeLV)', 1, 0),
+    ('PIF (coronavirus félin)', 1, 0),
+  ],
+  'lapin': [
+    ('Myxomatose', 1, 0),
+    ('VHD (maladie hémorragique)', 1, 0),
+  ],
+  'cheval': [
+    ('Rage', 3, 21),
+    ('Grippe équine', 1, 0),
+    ('Tétanos', 1, 0),
+  ],
+};
+const List<(String label, int rappelAns, int validiteJours)> _typesVaccinDefaut = [
+  ('Rage', 3, 21),
+  ('Autre', 1, 0),
+];
+List<(String label, int rappelAns, int validiteJours)> _typesVaccinPour(String? espece) =>
+    _typesVaccinParEspece[espece] ?? _typesVaccinDefaut;
+
 class _AddVaccinDialog extends StatefulWidget {
   final String animalId;
+  final String espece;
   final String source;
   final String? vetId;
   final String? vetName;
   // Pré-remplissage pour "Ajouter un rappel" depuis un vaccin existant :
-  // même vaccin/vétérinaire, seuls date et lot changent.
+  // même vaccin/type/vétérinaire, seuls date et lot changent.
   final String? prefillVaccin;
   final String? prefillVeto;
-  const _AddVaccinDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName,
-      this.prefillVaccin, this.prefillVeto});
+  final String? prefillCategorie;
+  const _AddVaccinDialog({required this.animalId, required this.espece, this.source = 'owner', this.vetId, this.vetName,
+      this.prefillVaccin, this.prefillVeto, this.prefillCategorie});
   @override State<_AddVaccinDialog> createState() => _AddVaccinDialogState();
 }
 class _AddVaccinDialogState extends State<_AddVaccinDialog> {
@@ -5884,33 +5957,15 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
   DateTime? _date;
   DateTime? _rappel;
   DateTime? _validite;
+  String? _categorie;
 
-  // Suggestion de la date de rappel selon l'intervalle habituel du vaccin
-  // (n'écrase jamais un choix déjà fait manuellement).
-  static const Map<String, int> _rappelAnsParVaccin = {
-    'rage': 3,
-    'chppi': 1, 'cpv': 1, 'parvovirose': 1, 'distemper': 1,
-    'toux du chenil': 1, 'bordetella': 1, 'kc': 1,
-    'typhus': 1, 'coryza': 1, 'leucose': 1, 'rcp': 1, 'lepto': 1,
-  };
-  // Délai avant que le vaccin soit légalement valide (ex: rage = 21 jours
-  // pour les déplacements UE) — autres vaccins : valides dès l'injection.
-  static const Map<String, int> _validiteJoursApresDelaiParVaccin = {
-    'rage': 21,
-  };
+  List<(String label, int rappelAns, int validiteJours)> get _typesDisponibles =>
+      _typesVaccinPour(widget.espece);
 
-  int? _rappelAnsPour(String nom) {
-    final n = nom.toLowerCase();
-    for (final e in _rappelAnsParVaccin.entries) {
-      if (n.contains(e.key)) return e.value;
-    }
-    return null;
-  }
-
-  String? _categoriePour(String nom) {
-    final n = nom.toLowerCase();
-    for (final k in _rappelAnsParVaccin.keys) {
-      if (n.contains(k)) return k;
+  (int ans, int jours)? get _defautsPourCategorie {
+    if (_categorie == null) return null;
+    for (final t in _typesDisponibles) {
+      if (t.$1 == _categorie) return (t.$2, t.$3);
     }
     return null;
   }
@@ -5921,30 +5976,32 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
   Future<bool> _estPremiereFois(String categorie) async {
     try {
       final rows = await Supabase.instance.client
-          .from('vaccinations').select('vaccin').eq('animal_id', widget.animalId);
-      for (final r in (rows as List)) {
-        final v = (r['vaccin'] as String? ?? '');
-        if (_categoriePour(v) == categorie) return false;
-      }
-    } catch (_) {}
-    return true;
+          .from('vaccinations').select('id').eq('animal_id', widget.animalId).eq('categorie', categorie);
+      return (rows as List).isEmpty;
+    } catch (_) {
+      return true;
+    }
   }
 
-  void _suggestRappel() async {
-    if (_date == null) return;
-    final cat = _categoriePour(_vaccin.text);
-    if (_validite == null) {
-      var delaiJours = 0;
-      if (cat != null && _validiteJoursApresDelaiParVaccin.containsKey(cat)) {
-        final premiereFois = await _estPremiereFois(cat);
-        if (premiereFois) delaiJours = _validiteJoursApresDelaiParVaccin[cat]!;
-      }
-      if (mounted && _validite == null) setState(() => _validite = _date!.add(Duration(days: delaiJours)));
+  Future<void> _recomputeSuggestions({bool force = false}) async {
+    if (_date == null || _categorie == null) return;
+    final d = _defautsPourCategorie;
+    if (d == null) return;
+    final premiereFois = await _estPremiereFois(_categorie!);
+    if (!mounted) return;
+    if (force || _validite == null) {
+      setState(() => _validite = _date!.add(Duration(days: premiereFois ? d.$2 : 0)));
     }
-    if (_rappel != null) return;
-    final ans = cat != null ? _rappelAnsParVaccin[cat] : null;
-    if (ans == null) return;
-    if (mounted) setState(() => _rappel = DateTime(_date!.year + ans, _date!.month, _date!.day));
+    if (force || _rappel == null) {
+      setState(() => _rappel = DateTime(_date!.year + d.$1, _date!.month, _date!.day));
+    }
+  }
+
+  void _onCategorieChanged(String? label) {
+    if (label == null) return;
+    setState(() => _categorie = label);
+    if (_vaccin.text.trim().isEmpty) _vaccin.text = label;
+    _recomputeSuggestions(force: true);
   }
 
   @override
@@ -5953,20 +6010,15 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
     if (widget.vetName != null) _veto.text = widget.vetName!;
     if (widget.prefillVaccin != null) _vaccin.text = widget.prefillVaccin!;
     if (widget.prefillVeto != null) _veto.text = widget.prefillVeto!;
-    _vaccin.addListener(_suggestRappel);
-  }
-
-  @override
-  void dispose() {
-    _vaccin.removeListener(_suggestRappel);
-    super.dispose();
+    _categorie = widget.prefillCategorie;
   }
 
   @override
   Widget build(BuildContext context) => _BaseDialog(title: 'Ajouter un vaccin', fields: [
+    _DDrop('Type de vaccin', _categorie, _typesDisponibles.map((t) => t.$1).toList(), _onCategorieChanged),
     _DF('Vaccin *', _vaccin), _DF('N° de lot', _lot),
     _DF('Vétérinaire', _veto, readOnly: widget.source == 'veterinaire'),
-    _DD('Date *', _date, (d) { setState(() { _date = d; _validite = null; }); _suggestRappel(); }),
+    _DD('Date *', _date, (d) { setState(() { _date = d; _validite = null; }); _recomputeSuggestions(); }),
     _DD('Valide à partir de', _validite, (d) => setState(() => _validite = d)),
     _DD('Date de rappel', _rappel, (d) => setState(() => _rappel = d)),
   ], onSave: () async {
@@ -5978,6 +6030,7 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
       'date': _date!.toIso8601String(),
       'date_validite_debut': (_validite ?? _date)!.toIso8601String(),
       'date_rappel': _rappel?.toIso8601String(),
+      'categorie': _categorie,
       'source': widget.source,
       if (widget.vetId != null) 'vet_id': widget.vetId,
     });
@@ -7351,7 +7404,7 @@ class _DF { final String label; final TextEditingController ctrl; final int maxL
   const _DF(this.label, this.ctrl, {this.maxLines = 1, this.inputType, this.readOnly = false}); }
 class _DD { final String label; final DateTime? value; final ValueChanged<DateTime> onChanged;
   const _DD(this.label, this.value, this.onChanged); }
-class _DDrop { final String label; final String value; final List<String> options; final ValueChanged<String?> onChanged;
+class _DDrop { final String label; final String? value; final List<String> options; final ValueChanged<String?> onChanged;
   const _DDrop(this.label, this.value, this.options, this.onChanged); }
 class _DCustom { final Widget child; const _DCustom(this.child); }
 

@@ -206,72 +206,99 @@ function SelectField({ label, value, onChange, options }:
 
 // ─── Section santé générique ──────────────────────────────────────────────────
 
-// Suggestion de la date de rappel selon l'intervalle habituel du vaccin (même
-// table que l'app Flutter). N'écrase jamais un choix déjà fait manuellement.
-const RAPPEL_ANS_PAR_VACCIN: Record<string, number> = {
-  rage: 3,
-  chppi: 1, cpv: 1, parvovirose: 1, distemper: 1,
-  'toux du chenil': 1, bordetella: 1, kc: 1,
-  typhus: 1, coryza: 1, leucose: 1, rcp: 1, lepto: 1,
+// Types de vaccins par espèce, avec délais par défaut (indicatifs, toujours
+// modifiables) : intervalle de rappel en années, et délai avant mise en
+// validité légale en jours (ex: rage = 21 jours pour les déplacements UE —
+// ne s'applique qu'à la toute première injection de ce type pour l'animal,
+// un rappel étant valide dès le jour même). Même table que l'app Flutter.
+const TYPES_VACCIN_PAR_ESPECE: Record<string, { label: string; rappelAns: number; validiteJours: number }[]> = {
+  chien: [
+    { label: 'Rage', rappelAns: 3, validiteJours: 21 },
+    { label: 'CHPPI (Carré, Hépatite, Parvovirose, Parainfluenza)', rappelAns: 1, validiteJours: 0 },
+    { label: 'Leptospirose (L4)', rappelAns: 1, validiteJours: 0 },
+    { label: 'Toux du chenil (Bordetella)', rappelAns: 1, validiteJours: 0 },
+    { label: 'Piroplasmose', rappelAns: 1, validiteJours: 0 },
+  ],
+  chat: [
+    { label: 'Rage', rappelAns: 3, validiteJours: 21 },
+    { label: 'Typhus (panleucopénie)', rappelAns: 1, validiteJours: 0 },
+    { label: 'Coryza', rappelAns: 1, validiteJours: 0 },
+    { label: 'Leucose (FeLV)', rappelAns: 1, validiteJours: 0 },
+    { label: 'PIF (coronavirus félin)', rappelAns: 1, validiteJours: 0 },
+  ],
+  lapin: [
+    { label: 'Myxomatose', rappelAns: 1, validiteJours: 0 },
+    { label: 'VHD (maladie hémorragique)', rappelAns: 1, validiteJours: 0 },
+  ],
+  cheval: [
+    { label: 'Rage', rappelAns: 3, validiteJours: 21 },
+    { label: 'Grippe équine', rappelAns: 1, validiteJours: 0 },
+    { label: 'Tétanos', rappelAns: 1, validiteJours: 0 },
+  ],
 };
-
-// Délai avant qu'un vaccin soit légalement valide (ex: rage = 21 jours pour
-// les déplacements UE) — vaccins non listés : valides dès l'injection.
-const VALIDITE_JOURS_PAR_VACCIN: Record<string, number> = { rage: 21 };
-
-function suggestDateRappel(nomVaccin: string, dateInjection: string): string | null {
-  const n = nomVaccin.toLowerCase();
-  const ans = Object.entries(RAPPEL_ANS_PAR_VACCIN).find(([k]) => n.includes(k))?.[1];
-  if (!ans || !dateInjection) return null;
-  const d = new Date(dateInjection);
-  if (isNaN(d.getTime())) return null;
-  d.setFullYear(d.getFullYear() + ans);
-  return d.toISOString().slice(0, 10);
+const TYPES_VACCIN_DEFAUT = [
+  { label: 'Rage', rappelAns: 3, validiteJours: 21 },
+  { label: 'Autre', rappelAns: 1, validiteJours: 0 },
+];
+function typesVaccinPour(espece?: string) {
+  return (espece ? TYPES_VACCIN_PAR_ESPECE[espece] : undefined) ?? TYPES_VACCIN_DEFAUT;
 }
-
-function categorieVaccin(nomVaccin: string): string | null {
-  const n = nomVaccin.toLowerCase();
-  return Object.keys(RAPPEL_ANS_PAR_VACCIN).find(k => n.includes(k)) ?? null;
+function categorieOptions(espece?: string) {
+  return [{ value: '', label: 'Sélectionner…' }, ...typesVaccinPour(espece).map(t => ({ value: t.label, label: t.label }))];
 }
 
 // Le délai légal (ex: rage = 21 jours) ne s'applique qu'à la toute première
 // injection de ce type de vaccin pour cet animal : un rappel d'un vaccin
 // déjà administré est valide dès le jour même.
-function suggestDateValidite(nomVaccin: string, dateInjection: string, existingVaccins?: string[]): string | null {
-  if (!dateInjection) return null;
-  const d = new Date(dateInjection);
-  if (isNaN(d.getTime())) return null;
-  const cat = categorieVaccin(nomVaccin);
-  const dejaVaccine = cat != null && (existingVaccins ?? []).some(v => categorieVaccin(v) === cat);
-  const jours = dejaVaccine || cat == null ? 0 : (VALIDITE_JOURS_PAR_VACCIN[cat] ?? 0);
-  d.setDate(d.getDate() + jours);
-  return d.toISOString().slice(0, 10);
+function suggestFromCategorie(espece: string | undefined, categorie: string, dateInjection: string, dejaVaccine: boolean) {
+  const def = typesVaccinPour(espece).find(t => t.label === categorie);
+  if (!def || !dateInjection) return null;
+  const dInj = new Date(dateInjection);
+  if (isNaN(dInj.getTime())) return null;
+  const validite = new Date(dInj);
+  validite.setDate(validite.getDate() + (dejaVaccine ? 0 : def.validiteJours));
+  const rappel = new Date(dInj);
+  rappel.setFullYear(rappel.getFullYear() + def.rappelAns);
+  return { validite: validite.toISOString().slice(0, 10), rappel: rappel.toISOString().slice(0, 10) };
 }
 
-function AddHealthForm({ fields, onSave, onCancel, saving, initial, existingVaccins }:
-  { fields: { key:string; label:string; type?:string; required?:boolean }[];
+function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, existingCategories }:
+  { fields: { key:string; label:string; type?:string; required?:boolean; options?:{value:string;label:string}[] }[];
     onSave:(data:Record<string,string>)=>Promise<void>;
-    onCancel:()=>void; saving:boolean; initial?: Record<string,string>; existingVaccins?: string[] }) {
+    onCancel:()=>void; saving:boolean; initial?: Record<string,string>; espece?: string; existingCategories?: string[] }) {
   const [form, setForm] = useState<Record<string,string>>(initial ?? {});
   const hasRappelField = fields.some(f => f.key === 'date_rappel');
   const hasValiditeField = fields.some(f => f.key === 'date_validite_debut');
   return (
     <div className="space-y-3">
-      {fields.map(f => (
+      {fields.map(f => f.type === 'select' ? (
+        <SelectField key={f.key} label={f.label} value={form[f.key]??''} options={f.options ?? []}
+          onChange={v => setForm(p=>{
+            const next = {...p,[f.key]:v};
+            // Sélectionner un type pré-remplit le nom du vaccin s'il est
+            // encore vide, et déclenche la suggestion des dates.
+            if (f.key === 'categorie') {
+              if (!next.vaccin) next.vaccin = v;
+              if ((hasRappelField || hasValiditeField) && next.date) {
+                const dejaVaccine = (existingCategories ?? []).includes(v);
+                const sug = suggestFromCategorie(espece, v, next.date, dejaVaccine);
+                if (sug) { next.date_rappel = sug.rappel; next.date_validite_debut = sug.validite; }
+              }
+            }
+            return next;
+          })} />
+      ) : (
         <Field key={f.key} label={f.label} value={form[f.key]??''} required={f.required}
           type={f.type??'text'} onChange={v => setForm(p=>{
             const next = {...p,[f.key]:v};
-            // Vaccin : suggère la date de rappel et la date de validité dès
-            // que le nom et la date d'injection sont connus, sauf si déjà
-            // renseignées manuellement.
-            if ((f.key === 'vaccin' || f.key === 'date')) {
-              if (hasRappelField && !p.date_rappel) {
-                const suggestion = suggestDateRappel(next.vaccin ?? '', next.date ?? '');
-                if (suggestion) next.date_rappel = suggestion;
-              }
-              if (hasValiditeField && !p.date_validite_debut) {
-                const suggestion = suggestDateValidite(next.vaccin ?? '', next.date ?? '', existingVaccins);
-                if (suggestion) next.date_validite_debut = suggestion;
+            // Date d'injection changée après avoir choisi un type : on
+            // recalcule, sauf si les dates ont déjà été éditées à la main.
+            if (f.key === 'date' && p.categorie && (hasRappelField || hasValiditeField)) {
+              const dejaVaccine = (existingCategories ?? []).includes(p.categorie);
+              const sug = suggestFromCategorie(espece, p.categorie, v, dejaVaccine);
+              if (sug) {
+                if (!p.date_rappel) next.date_rappel = sug.rappel;
+                if (!p.date_validite_debut) next.date_validite_debut = sug.validite;
               }
             }
             return next;
@@ -288,9 +315,9 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, existingVacc
   );
 }
 
-function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, existingVaccins, onRappel }:
-  { fields:{key:string;label:string;type?:string;required?:boolean}[]; record:HealthRecord; onDelete:()=>void;
-    onSave?:(data:Record<string,string>)=>Promise<void>; saving?:boolean; canWrite?:boolean; existingVaccins?: string[];
+function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, espece, existingCategories, onRappel }:
+  { fields:{key:string;label:string;type?:string;required?:boolean;options?:{value:string;label:string}[]}[]; record:HealthRecord; onDelete:()=>void;
+    onSave?:(data:Record<string,string>)=>Promise<void>; saving?:boolean; canWrite?:boolean; espece?: string; existingCategories?: string[];
     onRappel?:()=>void }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -307,7 +334,7 @@ function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, exis
       <div className="px-4 py-3">
         <AddHealthForm saving={!!saving} onCancel={()=>setEditing(false)}
           onSave={async d => { await onSave(d); setEditing(false); }}
-          initial={initial} fields={fields} existingVaccins={existingVaccins} />
+          initial={initial} fields={fields} espece={espece} existingCategories={existingCategories} />
       </div>
     );
   }
@@ -2826,17 +2853,19 @@ export default function AnimalFichePage() {
             addForm={<AddHealthForm key={JSON.stringify(rappelPrefill)} saving={savingHealth} onCancel={()=>{ setAddOpen(null); setRappelPrefill(null); }}
               onSave={async d=>{ await saveHealthRecord('vaccinations',d); setRappelPrefill(null); }}
               initial={rappelPrefill ?? undefined}
-              existingVaccins={health.vaccinations.map(v=>String(v.vaccin??''))}
-              fields={[{key:'vaccin',label:'Vaccin',required:true},{key:'date',label:'Date',type:'date'},{key:'date_validite_debut',label:'Valide à partir de',type:'date'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'lot',label:'N° de lot'},{key:'veterinaire',label:'Vétérinaire'}]}/>}>
+              espece={animal.espece}
+              existingCategories={health.vaccinations.map(v=>String(v.categorie??'')).filter(Boolean)}
+              fields={[{key:'categorie',label:'Type de vaccin',type:'select',options:categorieOptions(animal.espece)},{key:'vaccin',label:'Vaccin (marque/produit)',required:true},{key:'date',label:'Date',type:'date'},{key:'date_validite_debut',label:'Valide à partir de',type:'date'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'lot',label:'N° de lot'},{key:'veterinaire',label:'Vétérinaire'}]}/>}>
             {health.vaccinations.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('vaccinations',r.id)}
                 onSave={d=>updateHealthRecord('vaccinations',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
-                existingVaccins={health.vaccinations.map(v=>String(v.vaccin??''))}
+                espece={animal.espece}
+                existingCategories={health.vaccinations.map(v=>String(v.categorie??'')).filter(Boolean)}
                 onRappel={canWriteSante ? ()=>{
-                  setRappelPrefill({ vaccin: String(r.vaccin??''), veterinaire: String(r.veterinaire??'') });
+                  setRappelPrefill({ vaccin: String(r.vaccin??''), veterinaire: String(r.veterinaire??''), categorie: String(r.categorie??'') });
                   setAddOpen('vaccinations');
                 } : undefined}
-                fields={[{key:'vaccin',label:'Vaccin',required:true},{key:'date',label:'Date',type:'date'},{key:'date_validite_debut',label:'Valide à partir de',type:'date'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'lot',label:'Lot'},{key:'veterinaire',label:'Vétérinaire'}]}/>
+                fields={[{key:'vaccin',label:'Vaccin',required:true},{key:'date',label:'Date',type:'date'},{key:'categorie',label:'Type de vaccin',type:'select',options:categorieOptions(animal.espece)},{key:'date_validite_debut',label:'Valide à partir de',type:'date'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'lot',label:'Lot'},{key:'veterinaire',label:'Vétérinaire'}]}/>
             ))}
             {health.vaccinations.length===0 && <p className="p-4 text-sm text-gray-400">Aucune vaccination</p>}
           </HealthSection>
