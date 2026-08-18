@@ -4,7 +4,6 @@ import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/services/planning_pdf_service.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_form_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/apply_plan_sheet.dart';
-import 'package:PetsMatch/pages/eleveur/planning/planning_mois_page.dart';
 
 class PlanTemplateListPage extends StatefulWidget {
   final bool isAssociation;
@@ -68,15 +67,6 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
         backgroundColor: const Color(0xFF0C5C6C),
         foregroundColor: Colors.white,
         title: const Text('Mes protocoles', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        actions: [
-          TextButton.icon(
-            onPressed: () => Navigator.push(context, MaterialPageRoute(
-              builder: (_) => const PlanningMoisPage(),
-            )),
-            icon: const Icon(Icons.calendar_month_outlined, color: Colors.white, size: 18),
-            label: const Text('Planning', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
-          ),
-        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: _green,
