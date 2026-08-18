@@ -267,6 +267,29 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
               ),
             ),
           ),
+        if (widget.multiSelect && _selectedIds.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
+            child: Wrap(
+              spacing: 6, runSpacing: 6,
+              children: _selectedAnimaux.map((a) {
+                final id = a['id']?.toString() ?? '';
+                return GestureDetector(
+                  onTap: () => _toggleId(id),
+                  child: Container(
+                    padding: const EdgeInsets.only(left: 10, right: 6, top: 5, bottom: 5),
+                    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(20)),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text(a['nom']?.toString() ?? '—',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.close, size: 14, color: Colors.white),
+                    ]),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
         if (widget.multiSelect && widget.showPortees && _query.isEmpty && !_loading && _porteeGroups.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),

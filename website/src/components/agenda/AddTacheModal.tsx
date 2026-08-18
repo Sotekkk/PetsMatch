@@ -254,6 +254,21 @@ export function AddTacheModal({ uid, profileId, profilSource, selectedDate, anim
                   onChange={e => setAnimalSearch(e.target.value)}
                 />
               )}
+              {selectedAnimalIds.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-1.5">
+                  {selectedAnimalIds.map(id => {
+                    const a = animaux.find(x => x.id === id);
+                    if (!a) return null;
+                    return (
+                      <button key={id} type="button" onClick={() => toggleAnimal(id)}
+                        className="flex items-center gap-1 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-full pl-2.5 pr-1.5 py-1">
+                        {a.nom}
+                        <span className="text-teal-100">×</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               <div className="border border-gray-200 rounded-xl max-h-32 overflow-y-auto">
                 {filteredAnimaux.length === 0 ? (
                   <p className="px-3 py-2 text-sm text-gray-400">Aucun animal pour « {animalSearch.trim()} »</p>
