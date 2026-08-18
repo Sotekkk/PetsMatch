@@ -4292,9 +4292,9 @@ class _SanteTile extends StatelessWidget {
   final IconData icon;
   final Color color;
   final bool vetMode;
-  final String espece;
+  final String? espece;
   const _SanteTile({required this.animalId, required this.collection,
-      required this.label, required this.icon, required this.color, this.vetMode = false, required this.espece});
+      required this.label, required this.icon, required this.color, this.vetMode = false, this.espece});
 
   @override
   Widget build(BuildContext context) {
@@ -4350,9 +4350,9 @@ class SanteDetailPage extends StatelessWidget {
   final IconData icon;
   final Color color;
   final bool vetMode;
-  final String espece;
+  final String? espece;
   const SanteDetailPage({super.key, required this.animalId, required this.collection,
-      required this.label, required this.icon, required this.color, this.vetMode = false, required this.espece});
+      required this.label, required this.icon, required this.color, this.vetMode = false, this.espece});
 
   Widget _dialogFor(BuildContext ctx) {
     final src   = vetMode ? 'veterinaire' : 'owner';
@@ -4393,8 +4393,8 @@ class _SanteList extends StatefulWidget {
   final IconData icon;
   final Widget Function(BuildContext) addBuilder;
   final bool vetMode;
-  final String espece;
-  const _SanteList({required this.animalId, required this.collection, required this.icon, required this.addBuilder, this.vetMode = false, required this.espece});
+  final String? espece;
+  const _SanteList({required this.animalId, required this.collection, required this.icon, required this.addBuilder, this.vetMode = false, this.espece});
   @override
   State<_SanteList> createState() => _SanteListState();
 }
@@ -5910,6 +5910,7 @@ const Map<String, List<(String label, int rappelAns, int validiteJours)>> _types
     ('Leptospirose (L4)', 1, 0),
     ('Toux du chenil (Bordetella)', 1, 0),
     ('Piroplasmose', 1, 0),
+    ('Autre', 1, 0),
   ],
   'chat': [
     ('Rage', 3, 21),
@@ -5917,17 +5918,22 @@ const Map<String, List<(String label, int rappelAns, int validiteJours)>> _types
     ('Coryza', 1, 0),
     ('Leucose (FeLV)', 1, 0),
     ('PIF (coronavirus félin)', 1, 0),
+    ('Autre', 1, 0),
   ],
   'lapin': [
     ('Myxomatose', 1, 0),
     ('VHD (maladie hémorragique)', 1, 0),
+    ('Autre', 1, 0),
   ],
   'cheval': [
     ('Rage', 3, 21),
     ('Grippe équine', 1, 0),
     ('Tétanos', 1, 0),
+    ('Autre', 1, 0),
   ],
 };
+// Espèces hors liste ci-dessus (oiseau, nac, ovin, caprin, porcin, autre) :
+// choix générique, toujours avec "Autre" pour saisie manuelle libre.
 const List<(String label, int rappelAns, int validiteJours)> _typesVaccinDefaut = [
   ('Rage', 3, 21),
   ('Autre', 1, 0),
@@ -5937,7 +5943,7 @@ List<(String label, int rappelAns, int validiteJours)> _typesVaccinPour(String? 
 
 class _AddVaccinDialog extends StatefulWidget {
   final String animalId;
-  final String espece;
+  final String? espece;
   final String source;
   final String? vetId;
   final String? vetName;
@@ -5946,7 +5952,7 @@ class _AddVaccinDialog extends StatefulWidget {
   final String? prefillVaccin;
   final String? prefillVeto;
   final String? prefillCategorie;
-  const _AddVaccinDialog({required this.animalId, required this.espece, this.source = 'owner', this.vetId, this.vetName,
+  const _AddVaccinDialog({required this.animalId, this.espece, this.source = 'owner', this.vetId, this.vetName,
       this.prefillVaccin, this.prefillVeto, this.prefillCategorie});
   @override State<_AddVaccinDialog> createState() => _AddVaccinDialogState();
 }

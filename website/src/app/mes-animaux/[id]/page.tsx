@@ -218,6 +218,7 @@ const TYPES_VACCIN_PAR_ESPECE: Record<string, { label: string; rappelAns: number
     { label: 'Leptospirose (L4)', rappelAns: 1, validiteJours: 0 },
     { label: 'Toux du chenil (Bordetella)', rappelAns: 1, validiteJours: 0 },
     { label: 'Piroplasmose', rappelAns: 1, validiteJours: 0 },
+    { label: 'Autre', rappelAns: 1, validiteJours: 0 },
   ],
   chat: [
     { label: 'Rage', rappelAns: 3, validiteJours: 21 },
@@ -225,17 +226,22 @@ const TYPES_VACCIN_PAR_ESPECE: Record<string, { label: string; rappelAns: number
     { label: 'Coryza', rappelAns: 1, validiteJours: 0 },
     { label: 'Leucose (FeLV)', rappelAns: 1, validiteJours: 0 },
     { label: 'PIF (coronavirus félin)', rappelAns: 1, validiteJours: 0 },
+    { label: 'Autre', rappelAns: 1, validiteJours: 0 },
   ],
   lapin: [
     { label: 'Myxomatose', rappelAns: 1, validiteJours: 0 },
     { label: 'VHD (maladie hémorragique)', rappelAns: 1, validiteJours: 0 },
+    { label: 'Autre', rappelAns: 1, validiteJours: 0 },
   ],
   cheval: [
     { label: 'Rage', rappelAns: 3, validiteJours: 21 },
     { label: 'Grippe équine', rappelAns: 1, validiteJours: 0 },
     { label: 'Tétanos', rappelAns: 1, validiteJours: 0 },
+    { label: 'Autre', rappelAns: 1, validiteJours: 0 },
   ],
 };
+// Espèces hors liste ci-dessus (oiseau, nac, ovin, caprin, porcin, autre) :
+// choix générique, toujours avec "Autre" pour saisie manuelle libre.
 const TYPES_VACCIN_DEFAUT = [
   { label: 'Rage', rappelAns: 3, validiteJours: 21 },
   { label: 'Autre', rappelAns: 1, validiteJours: 0 },
