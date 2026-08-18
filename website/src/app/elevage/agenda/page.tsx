@@ -1093,9 +1093,17 @@ export default function AgendaElevagePage() {
       withProfileFilter(() => supabase.from('plan_taches')
         .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
         .eq('uid_eleveur', user.uid).eq('date_prevue', selectedDate)),
-      supabase.from('plan_taches')
-        .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
-        .eq('assigned_to', user.uid).eq('date_prevue', selectedDate),
+      // Assignée à moi : scopée par assigned_profile_id quand un profil est
+      // actif — sinon assigned_to=uid seul fait fuiter la tâche vers TOUS
+      // les profils du compte (ex: tâche assignée sous le profil éleveur
+      // visible aussi sous association/pension).
+      activeProfileId
+        ? supabase.from('plan_taches')
+            .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
+            .eq('assigned_profile_id', activeProfileId).eq('date_prevue', selectedDate)
+        : supabase.from('plan_taches')
+            .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
+            .eq('assigned_to', user.uid).eq('date_prevue', selectedDate),
       withProfileFilter(() => supabase.from('taches_elevage')
         .select('id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,animal_id,animal_nom,assigne_a,assignes_a,fait_par,fait_par_profile_id,notes')
         .eq('uid_eleveur', user.uid).eq('date', selectedDate)),
@@ -1120,9 +1128,13 @@ export default function AgendaElevagePage() {
         withProfileFilter(() => supabase.from('plan_taches')
           .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
           .eq('uid_eleveur', user.uid).neq('statut', 'fait').lt('date_prevue', selectedDate)),
-        supabase.from('plan_taches')
-          .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
-          .eq('assigned_to', user.uid).neq('statut', 'fait').lt('date_prevue', selectedDate),
+        activeProfileId
+          ? supabase.from('plan_taches')
+              .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
+              .eq('assigned_profile_id', activeProfileId).neq('statut', 'fait').lt('date_prevue', selectedDate)
+          : supabase.from('plan_taches')
+              .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
+              .eq('assigned_to', user.uid).neq('statut', 'fait').lt('date_prevue', selectedDate),
         withProfileFilter(() => supabase.from('taches_elevage')
           .select('id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,animal_id,animal_nom,assigne_a,assignes_a,fait_par,fait_par_profile_id,notes')
           .eq('uid_eleveur', user.uid).neq('statut', 'fait').lt('date', selectedDate)),
@@ -1158,8 +1170,11 @@ export default function AgendaElevagePage() {
     const [r1, r2, tm, evRes] = await Promise.all([
       withProfileFilter(() => supabase.from('plan_taches').select('date_prevue,type_acte').eq('uid_eleveur', user.uid)
         .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`)),
-      supabase.from('plan_taches').select('date_prevue,type_acte').eq('assigned_to', user.uid)
-        .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`),
+      activeProfileId
+        ? supabase.from('plan_taches').select('date_prevue,type_acte').eq('assigned_profile_id', activeProfileId)
+            .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`)
+        : supabase.from('plan_taches').select('date_prevue,type_acte').eq('assigned_to', user.uid)
+            .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`),
       withProfileFilter(() => supabase.from('taches_elevage').select('date').eq('uid_eleveur', user.uid)
         .gte('date', from).lte('date', to)),
       activeProfileId

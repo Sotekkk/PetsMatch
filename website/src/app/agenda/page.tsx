@@ -454,11 +454,19 @@ export default function AgendaPage() {
         : await supabase.from('taches_elevage').select(manuelCols).eq('uid_eleveur', uid)
             .gte('date', taskFrom).lte('date', taskTo).eq('profil_source', taskProfilSource);
     }
-    const { data: manuelAssigneData } = await supabase
-      .from('taches_elevage')
-      .select('id,titre,date,statut,uid_eleveur,assigne_a')
-      .eq('assigne_a', uid)
-      .gte('date', taskFrom).lte('date', taskTo);
+    // Tâches assignées à moi : scopées par profil actif quand il y en a un
+    // (assigne_profile_id) — sinon assigne_a=uid seul fait fuiter la tâche
+    // vers TOUS les profils du compte (ex: tâche assignée sous le profil
+    // éleveur visible aussi sous association/pension).
+    const { data: manuelAssigneData } = activeProfileId
+      ? await supabase.from('taches_elevage')
+          .select('id,titre,date,statut,uid_eleveur,assigne_a')
+          .eq('assigne_profile_id', activeProfileId)
+          .gte('date', taskFrom).lte('date', taskTo)
+      : await supabase.from('taches_elevage')
+          .select('id,titre,date,statut,uid_eleveur,assigne_a')
+          .eq('assigne_a', uid)
+          .gte('date', taskFrom).lte('date', taskTo);
     const seenManuel = new Set<string>();
     const manuelTasks: Task[] = [];
     for (const t of [...(d1Res.data ?? []), ...(manuelAssigneData ?? [])]) {
@@ -479,9 +487,11 @@ export default function AgendaPage() {
         : await supabase.from('plan_taches').select(protoCols).eq('uid_eleveur', uid)
             .gte('date_prevue', taskFrom).lte('date_prevue', taskTo).eq('profil_source', taskProfilSource);
     }
-    const [p2Res] = await Promise.all([
-      supabase.from('plan_taches').select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id').eq('assigned_to', uid).gte('date_prevue', taskFrom).lte('date_prevue', taskTo),
-    ]);
+    const p2Res = activeProfileId
+      ? await supabase.from('plan_taches').select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+          .eq('assigned_profile_id', activeProfileId).gte('date_prevue', taskFrom).lte('date_prevue', taskTo)
+      : await supabase.from('plan_taches').select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+          .eq('assigned_to', uid).gte('date_prevue', taskFrom).lte('date_prevue', taskTo);
     const seenProto = new Set<string>();
     const protoTasks: Task[] = [];
     for (const t of [...(p1Res.data ?? []), ...(p2Res.data ?? [])]) {
