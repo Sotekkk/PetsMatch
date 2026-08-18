@@ -4435,6 +4435,9 @@ class _SanteListState extends State<_SanteList> {
   Future<void> _delete(String id) async {
     try {
       await Supabase.instance.client.from(widget.collection).delete().eq('id', id);
+      // Sans ça, la ligne du registre sanitaire liee a cet acte restait
+      // orpheline indefiniment apres suppression.
+      await RegistreHelper.deleteActe(sourceTable: widget.collection, sourceId: id);
       if (mounted) setState(() => _data.removeWhere((d) => d['id']?.toString() == id));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
@@ -5220,12 +5223,59 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
           updates['rappel_heures'] = null;
         }
       }
+      final id = widget.data['id'].toString();
       await Supabase.instance.client
-          .from(widget.collection).update(updates).eq('id', widget.data['id'].toString());
+          .from(widget.collection).update(updates).eq('id', id);
+      await _syncRegistre(id, updates);
       if (mounted) { Navigator.pop(context); widget.onSaved(); }
     } catch (e) {
       if (mounted) setState(() { _saving = false; _error = 'Erreur: $e'; });
     }
+  }
+
+  // Répercute la modification sur la ligne du registre sanitaire liée
+  // (source_table/source_id) — sans quoi une correction ici n'apparaissait
+  // jamais dans le registre.
+  static const _typeActeParCollection = {
+    'vaccinations': 'vaccination', 'vermifuges': 'vermifuge',
+    'antiparasitaires': 'antiparasitaire', 'traitements': 'traitement',
+    'visites': 'visite',
+  };
+
+  Future<void> _syncRegistre(String id, Map<String, dynamic> updates) async {
+    final typeActe = _typeActeParCollection[widget.collection];
+    if (typeActe == null) return;
+    String description;
+    switch (widget.collection) {
+      case 'vaccinations':
+        final lot = (updates['lot'] as String? ?? '').trim();
+        description = 'Vaccin : ${updates['vaccin']}${lot.isNotEmpty ? ' (lot $lot)' : ''}';
+        break;
+      case 'vermifuges':
+        final dosage = (updates['dosage'] as String? ?? '').trim();
+        description = '${updates['produit']}${dosage.isNotEmpty ? ' — $dosage' : ''}';
+        break;
+      case 'antiparasitaires':
+        description = '${updates['produit']}';
+        break;
+      case 'traitements':
+        final posologie = (updates['posologie'] as String? ?? '').trim();
+        description = '${updates['nom']}${posologie.isNotEmpty ? ' — $posologie' : ''}';
+        break;
+      case 'visites':
+        final diag = (updates['diagnostic'] as String? ?? '').trim();
+        description = diag.isNotEmpty ? diag : 'Visite vétérinaire';
+        break;
+      default:
+        return;
+    }
+    await RegistreHelper.writeActe(
+      animalId: widget.data['animal_id'] as String? ?? '',
+      typeActe: typeActe, dateActe: _date,
+      intervenant: (updates['veterinaire'] as String?) ?? (widget.data['veterinaire'] as String? ?? ''),
+      description: description,
+      sourceTable: widget.collection, sourceId: id,
+    );
   }
 
   @override
@@ -6051,6 +6101,7 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
       animalId: widget.animalId, typeActe: 'vaccination', dateActe: _date!,
       intervenant: _veto.text.trim(),
       description: 'Vaccin : ${_vaccin.text.trim()}${_lot.text.trim().isNotEmpty ? ' (lot ${_lot.text.trim()})' : ''}',
+      sourceTable: 'vaccinations', sourceId: id,
     );
     if (widget.vetId != null) {
       try {
@@ -6187,6 +6238,7 @@ class _AddTraitementDialogState extends State<_AddTraitementDialog> {
       animalId: widget.animalId, typeActe: 'traitement', dateActe: _date!,
       intervenant: widget.vetName ?? '',
       description: '${_nom.text.trim()}${_posologie.text.trim().isNotEmpty ? ' — ${_posologie.text.trim()}' : ''}',
+      sourceTable: 'traitements', sourceId: id,
     );
     if (widget.vetId != null) {
       try {
@@ -6258,8 +6310,9 @@ class _AddVisiteDialogState extends State<_AddVisiteDialog> {
       if (widget.vetId != null) 'vet_id': widget.vetId,
       if (vetProfileId != null) 'vet_profile_id': vetProfileId,
     });
+    String? vacId;
     if (_isVaccin) {
-      final vacId = (DateTime.now().microsecondsSinceEpoch + 1).toString();
+      vacId = (DateTime.now().microsecondsSinceEpoch + 1).toString();
       await supa.from('vaccinations').insert({
         'id': vacId, 'animal_id': widget.animalId,
         'vaccin': _vaccin.text.trim(), 'lot': _lot.text.trim(),
@@ -6287,6 +6340,8 @@ class _AddVisiteDialogState extends State<_AddVisiteDialog> {
         if (_isVaccin && _vaccin.text.trim().isNotEmpty) 'Vaccin : ${_vaccin.text.trim()}',
         if (_diag.text.trim().isNotEmpty) _diag.text.trim(),
       ].join(' — '),
+      sourceTable: _isVaccin ? 'vaccinations' : 'visites',
+      sourceId: _isVaccin ? vacId : visiteId,
     );
     if (widget.vetId != null) {
       try {
@@ -6342,6 +6397,7 @@ class _AddVermifugeDialogState extends State<_AddVermifugeDialog> {
       animalId: widget.animalId, typeActe: 'vermifuge', dateActe: _date!,
       intervenant: widget.vetName ?? '',
       description: '${_produit.text.trim()}${_dosage.text.trim().isNotEmpty ? ' — ${_dosage.text.trim()}' : ''}',
+      sourceTable: 'vermifuges', sourceId: id,
     );
     if (widget.vetId != null) {
       try {
@@ -6399,6 +6455,7 @@ class _AddAntiparasitaireDialogState extends State<_AddAntiparasitaireDialog> {
       animalId: widget.animalId, typeActe: 'antiparasitaire', dateActe: _date!,
       intervenant: widget.vetName ?? '',
       description: '${_produit.text.trim()} ($_type)',
+      sourceTable: 'antiparasitaires', sourceId: id,
     );
     if (widget.vetId != null) {
       try {

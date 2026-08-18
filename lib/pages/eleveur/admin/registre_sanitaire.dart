@@ -50,6 +50,11 @@ class RegistreHelper {
     required String intervenant,
     required String description,
     String ordonnanceNum = '',
+    // Quand fournis, relie cette ligne du registre à l'enregistrement
+    // d'origine (ex: vaccinations.id) : un enregistrement existant est mis
+    // à jour au lieu de créer une nouvelle ligne à chaque modification.
+    String? sourceTable,
+    String? sourceId,
   }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -59,9 +64,7 @@ class RegistreHelper {
           .select('nom, espece, date_naissance, identification, sexe')
           .eq('id', animalId);
       final d = (rows as List).isNotEmpty ? (rows.first as Map<String, dynamic>) : <String, dynamic>{};
-      final id = DateTime.now().microsecondsSinceEpoch.toString();
-      await supa.from('registre_sanitaire').insert({
-        'id':             id,
+      final payload = {
         'uid_eleveur':    uid,
         if (User_Info.activeProfileId != null) 'eleveur_profile_id': User_Info.activeProfileId,
         'animal_id':      animalId,
@@ -76,7 +79,25 @@ class RegistreHelper {
         'description':    description,
         'ordonnance_num': ordonnanceNum,
         'profil_source':  (User_Info.activeType == 'association' || User_Info.isAssociation) ? 'association' : 'eleveur',
-      });
+      };
+      if (sourceTable != null && sourceId != null) {
+        await supa.from('registre_sanitaire').upsert({
+          ...payload, 'source_table': sourceTable, 'source_id': sourceId,
+        }, onConflict: 'source_table,source_id');
+      } else {
+        final id = DateTime.now().microsecondsSinceEpoch.toString();
+        await supa.from('registre_sanitaire').insert({'id': id, ...payload});
+      }
+    } catch (_) {}
+  }
+
+  // Supprime la ligne du registre liée à un enregistrement source (ex: quand
+  // le vaccin/traitement qui l'a générée est supprimé). Sans effet si aucune
+  // ligne n'est liée (ex: enregistrements créés avant cette fonctionnalité).
+  static Future<void> deleteActe({required String sourceTable, required String sourceId}) async {
+    try {
+      await Supabase.instance.client.from('registre_sanitaire')
+          .delete().eq('source_table', sourceTable).eq('source_id', sourceId);
     } catch (_) {}
   }
 }

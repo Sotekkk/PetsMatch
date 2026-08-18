@@ -1694,10 +1694,79 @@ export default function AnimalFichePage() {
   }
 
   // ── Ajout enregistrement santé
+  // Répercute un acte de santé (créé, modifié) dans le registre sanitaire.
+  // Une ligne existante liée à ce même enregistrement (source_table +
+  // source_id) est mise à jour plutôt que dupliquée. Le site n'écrivait
+  // jamais dans ce registre jusqu'ici (seule l'app le faisait, et
+  // uniquement à la création) : les vaccins/soins saisis ici n'y
+  // apparaissaient donc jamais, et une suppression ne nettoyait rien.
+  const REGISTRE_TYPE_ACTE: Record<string,string> = {
+    vaccinations: 'vaccination', vermifuges: 'vermifuge',
+    antiparasitaires: 'antiparasitaire', traitements: 'traitement', visites: 'visite',
+  };
+  function registreDescription(table: string, data: Record<string,unknown>): string {
+    switch (table) {
+      case 'vaccinations': {
+        const lot = String(data.lot ?? '').trim();
+        return `Vaccin : ${data.vaccin}${lot ? ` (lot ${lot})` : ''}`;
+      }
+      case 'vermifuges': {
+        const dosage = String(data.dosage ?? '').trim();
+        return `${data.produit}${dosage ? ` — ${dosage}` : ''}`;
+      }
+      case 'antiparasitaires':
+        return String(data.produit ?? '');
+      case 'traitements': {
+        const posologie = String(data.posologie ?? '').trim();
+        return `${data.nom}${posologie ? ` — ${posologie}` : ''}`;
+      }
+      case 'visites': {
+        const diag = String(data.diagnostic ?? '').trim();
+        return diag || 'Visite vétérinaire';
+      }
+      default:
+        return '';
+    }
+  }
+  async function writeRegistreActe(table: string, recordId: string, data: Record<string,unknown>) {
+    const typeActe = REGISTRE_TYPE_ACTE[table];
+    if (!typeActe || !user || !id) return;
+    const dateActe = String(data.date ?? '');
+    if (!dateActe) return;
+    try {
+      await supabase.from('registre_sanitaire').upsert({
+        uid_eleveur: user.uid,
+        ...(activeProfileId ? { eleveur_profile_id: activeProfileId } : {}),
+        animal_id: id,
+        animal_nom: animal.nom ?? '',
+        espece: animal.espece ?? '',
+        date_naissance: animal.date_naissance ?? null,
+        identification: animal.identification ?? '',
+        sexe: animal.sexe ?? '',
+        date_acte: dateActe,
+        type_acte: typeActe,
+        intervenant: String(data.veterinaire ?? ''),
+        description: registreDescription(table, data),
+        ordonnance_num: '',
+        profil_source: 'eleveur',
+        source_table: table,
+        source_id: recordId,
+      }, { onConflict: 'source_table,source_id' });
+    } catch {}
+  }
+  async function deleteRegistreActe(table: string, recordId: string) {
+    if (!REGISTRE_TYPE_ACTE[table]) return;
+    try {
+      await supabase.from('registre_sanitaire').delete().eq('source_table', table).eq('source_id', recordId);
+    } catch {}
+  }
+
   async function saveHealthRecord(table: string, data: Record<string,string>) {
     if (!id) return;
     setSavingHealth(true);
-    await supabase.from(table).insert({ ...data, animal_id: id, id: crypto.randomUUID() });
+    const recordId = crypto.randomUUID();
+    await supabase.from(table).insert({ ...data, animal_id: id, id: recordId });
+    await writeRegistreActe(table, recordId, data);
     await loadHealth();
     setAddOpen(null);
     setSavingHealth(false);
@@ -1731,6 +1800,7 @@ export default function AnimalFichePage() {
       }
     }
     await supabase.from('traitements').insert(payload);
+    await writeRegistreActe('traitements', payload.id as string, payload as Record<string,unknown>);
     await loadHealth();
     setAddOpen(null);
     setSavingHealth(false);
@@ -1739,6 +1809,7 @@ export default function AnimalFichePage() {
   async function updateHealthRecord(table: string, recordId: string, data: Record<string,string>) {
     setSavingHealth(true);
     await supabase.from(table).update(data).eq('id', recordId);
+    await writeRegistreActe(table, recordId, data);
     await loadHealth();
     setEditPoids(null);
     setSavingHealth(false);
@@ -1746,6 +1817,7 @@ export default function AnimalFichePage() {
 
   async function deleteHealthRecord(table: string, recordId: string) {
     await supabase.from(table).delete().eq('id', recordId);
+    await deleteRegistreActe(table, recordId);
     await loadHealth();
   }
 
