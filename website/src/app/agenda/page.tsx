@@ -369,10 +369,17 @@ function ModifierModal({ event, onClose, onDone }: { event: AgendaEvent; onClose
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function AgendaPage() {
-  const { user } = useAuth();
+  const { user, userData } = useAuth();
   const router = useRouter();
   const activeProfileId = useActiveProfile();
   const taskProfilSource = useProfileSource();
+  // Un profil particulier ne "possède" jamais de tâches (concept éleveur/
+  // association/pension) — seulement des tâches qui lui sont ASSIGNÉES.
+  // useProfileSource() ne connaît pas 'particulier' et retombe sur
+  // 'eleveur' par défaut : sans ce garde-fou, les tâches éleveur (ex.
+  // "Commander Purina") fuitent dans la vue particulier via le fallback
+  // profil_source. Miroir de agenda_page.dart isParticulierView.
+  const isParticulierView = userData?.profileType === 'particulier';
   const [events, setEvents]   = useState<AgendaEvent[]>([]);
   const [tasks, setTasks]     = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -443,16 +450,19 @@ export default function AgendaPage() {
     const manuelCols = 'id,titre,date,statut,uid_eleveur,assigne_a,profile_id,profil_source';
     const protoCols  = 'id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id,profile_id,profil_source';
 
-    let d1Res = activeProfileId
-      ? await supabase.from('taches_elevage').select(manuelCols).eq('uid_eleveur', uid)
-          .gte('date', taskFrom).lte('date', taskTo).eq('profile_id', activeProfileId)
-      : { data: [] as unknown[] };
-    if (!activeProfileId || (d1Res.data ?? []).length === 0) {
-      d1Res = taskProfilSource === 'eleveur'
+    let d1Res: { data: unknown[] | null } = { data: [] };
+    if (!isParticulierView) {
+      d1Res = activeProfileId
         ? await supabase.from('taches_elevage').select(manuelCols).eq('uid_eleveur', uid)
-            .gte('date', taskFrom).lte('date', taskTo).or('profil_source.is.null,profil_source.eq.eleveur')
-        : await supabase.from('taches_elevage').select(manuelCols).eq('uid_eleveur', uid)
-            .gte('date', taskFrom).lte('date', taskTo).eq('profil_source', taskProfilSource);
+            .gte('date', taskFrom).lte('date', taskTo).eq('profile_id', activeProfileId)
+        : { data: [] as unknown[] };
+      if (!activeProfileId || (d1Res.data ?? []).length === 0) {
+        d1Res = taskProfilSource === 'eleveur'
+          ? await supabase.from('taches_elevage').select(manuelCols).eq('uid_eleveur', uid)
+              .gte('date', taskFrom).lte('date', taskTo).or('profil_source.is.null,profil_source.eq.eleveur')
+          : await supabase.from('taches_elevage').select(manuelCols).eq('uid_eleveur', uid)
+              .gte('date', taskFrom).lte('date', taskTo).eq('profil_source', taskProfilSource);
+      }
     }
     // Tâches assignées à moi : scopées par profil actif quand il y en a un
     // (assigne_profile_id) — sinon assigne_a=uid seul fait fuiter la tâche
@@ -476,16 +486,19 @@ export default function AgendaPage() {
       manuelTasks.push({ ...mt, _source: 'manuel' as const, etape_id: null });
     }
 
-    let p1Res = activeProfileId
-      ? await supabase.from('plan_taches').select(protoCols).eq('uid_eleveur', uid)
-          .gte('date_prevue', taskFrom).lte('date_prevue', taskTo).eq('profile_id', activeProfileId)
-      : { data: [] as unknown[] };
-    if (!activeProfileId || (p1Res.data ?? []).length === 0) {
-      p1Res = taskProfilSource === 'eleveur'
+    let p1Res: { data: unknown[] | null } = { data: [] };
+    if (!isParticulierView) {
+      p1Res = activeProfileId
         ? await supabase.from('plan_taches').select(protoCols).eq('uid_eleveur', uid)
-            .gte('date_prevue', taskFrom).lte('date_prevue', taskTo).or('profil_source.is.null,profil_source.eq.eleveur')
-        : await supabase.from('plan_taches').select(protoCols).eq('uid_eleveur', uid)
-            .gte('date_prevue', taskFrom).lte('date_prevue', taskTo).eq('profil_source', taskProfilSource);
+            .gte('date_prevue', taskFrom).lte('date_prevue', taskTo).eq('profile_id', activeProfileId)
+        : { data: [] as unknown[] };
+      if (!activeProfileId || (p1Res.data ?? []).length === 0) {
+        p1Res = taskProfilSource === 'eleveur'
+          ? await supabase.from('plan_taches').select(protoCols).eq('uid_eleveur', uid)
+              .gte('date_prevue', taskFrom).lte('date_prevue', taskTo).or('profil_source.is.null,profil_source.eq.eleveur')
+          : await supabase.from('plan_taches').select(protoCols).eq('uid_eleveur', uid)
+              .gte('date_prevue', taskFrom).lte('date_prevue', taskTo).eq('profil_source', taskProfilSource);
+      }
     }
     const p2Res = activeProfileId
       ? await supabase.from('plan_taches').select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
