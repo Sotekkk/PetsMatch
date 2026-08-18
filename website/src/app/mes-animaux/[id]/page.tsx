@@ -297,15 +297,14 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
         <Field key={f.key} label={f.label} value={form[f.key]??''} required={f.required}
           type={f.type??'text'} onChange={v => setForm(p=>{
             const next = {...p,[f.key]:v};
-            // Date d'injection changée après avoir choisi un type : on
-            // recalcule, sauf si les dates ont déjà été éditées à la main.
+            // Date d'injection changée (y compris une correction après un
+            // premier choix) : on recalcule toujours les deux dates tant
+            // qu'un type est sélectionné, pour éviter qu'une suggestion
+            // figée sur une date precedente ne reste affichee par erreur.
             if (f.key === 'date' && p.categorie && (hasRappelField || hasValiditeField)) {
               const dejaVaccine = (existingCategories ?? []).includes(p.categorie);
               const sug = suggestFromCategorie(espece, p.categorie, v, dejaVaccine);
-              if (sug) {
-                if (!p.date_rappel) next.date_rappel = sug.rappel;
-                if (!p.date_validite_debut) next.date_validite_debut = sug.validite;
-              }
+              if (sug) { next.date_rappel = sug.rappel; next.date_validite_debut = sug.validite; }
             }
             return next;
           })} />

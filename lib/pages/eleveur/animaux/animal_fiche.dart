@@ -6024,7 +6024,7 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
     _DDrop('Type de vaccin', _categorie, _typesDisponibles.map((t) => t.$1).toList(), _onCategorieChanged),
     _DF('Vaccin *', _vaccin), _DF('N° de lot', _lot),
     _DF('Vétérinaire', _veto, readOnly: widget.source == 'veterinaire'),
-    _DD('Date *', _date, (d) { setState(() { _date = d; _validite = null; }); _recomputeSuggestions(); }),
+    _DD('Date *', _date, (d) { setState(() => _date = d); _recomputeSuggestions(force: true); }),
     _DD('Valide à partir de', _validite, (d) => setState(() => _validite = d)),
     _DD('Date de rappel', _rappel, (d) => setState(() => _rappel = d)),
   ], onSave: () async {
