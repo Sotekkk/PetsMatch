@@ -73,6 +73,11 @@ export function AddTacheModal({ uid, profileId, profilSource, selectedDate, anim
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [showAddEmploye, setShowAddEmploye] = useState(false);
+  const [animalSearch, setAnimalSearch] = useState('');
+
+  const filteredAnimaux = animalSearch.trim()
+    ? animaux.filter(a => a.nom.toLowerCase().includes(animalSearch.trim().toLowerCase()))
+    : animaux;
 
   const porteeGroups = new Map<string, AnimalOption[]>();
   if (profilSource === 'eleveur') {
@@ -240,8 +245,19 @@ export function AddTacheModal({ uid, profileId, profilSource, selectedDate, anim
                   })}
                 </div>
               )}
+              {animaux.length > 5 && (
+                <input
+                  type="text"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mb-1.5 focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  placeholder="Rechercher un animal…"
+                  value={animalSearch}
+                  onChange={e => setAnimalSearch(e.target.value)}
+                />
+              )}
               <div className="border border-gray-200 rounded-xl max-h-32 overflow-y-auto">
-                {animaux.map(a => {
+                {filteredAnimaux.length === 0 ? (
+                  <p className="px-3 py-2 text-sm text-gray-400">Aucun animal pour « {animalSearch.trim()} »</p>
+                ) : filteredAnimaux.map(a => {
                   const checked = selectedAnimalIds.includes(a.id);
                   return (
                     <label key={a.id} className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer border-b border-gray-100 last:border-0 transition-colors ${

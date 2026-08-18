@@ -93,6 +93,8 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
   List<Map<String, dynamic>> _animaux = [];
   final Set<String> _selectedIds = {};
   bool _loading = true;
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
 
   @override
   void initState() {
@@ -101,7 +103,19 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
       final id = a['id']?.toString();
       if (id != null) _selectedIds.add(id);
     }
+    _searchCtrl.addListener(() => setState(() => _query = _searchCtrl.text.trim().toLowerCase()));
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  List<Map<String, dynamic>> get _filteredAnimaux {
+    if (_query.isEmpty) return _animaux;
+    return _animaux.where((a) => (a['nom']?.toString() ?? '').toLowerCase().contains(_query)).toList();
   }
 
   Future<void> _load() async {
@@ -227,7 +241,33 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
           ]),
         ),
         const Divider(height: 1),
-        if (widget.multiSelect && widget.showPortees && !_loading && _porteeGroups.isNotEmpty) ...[
+        if (!_loading && _animaux.length > 5)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+            child: TextField(
+              controller: _searchCtrl,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Rechercher un animal…',
+                hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500),
+                prefixIcon: Icon(Icons.search, color: Colors.grey.shade500, size: 20),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: Icon(Icons.close, color: Colors.grey.shade500, size: 18),
+                        onPressed: () => _searchCtrl.clear(),
+                      ),
+                filled: true,
+                fillColor: const Color(0xFFF5F5F5),
+                contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: color, width: 1.5)),
+              ),
+            ),
+          ),
+        if (widget.multiSelect && widget.showPortees && _query.isEmpty && !_loading && _porteeGroups.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
             child: Wrap(
@@ -271,12 +311,18 @@ class _AnimalPickerSheetState extends State<AnimalPickerSheet> {
                       padding: EdgeInsets.all(32),
                       child: Text('Aucun animal enregistré', style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey)),
                     )
-                  : ListView.separated(
+                  : _filteredAnimaux.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Text('Aucun animal pour « ${_searchCtrl.text.trim()} »',
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey)),
+                        )
+                      : ListView.separated(
                       shrinkWrap: true,
-                      itemCount: _animaux.length,
+                      itemCount: _filteredAnimaux.length,
                       separatorBuilder: (_, __) => const Divider(height: 1, indent: 16, endIndent: 16),
                       itemBuilder: (_, i) {
-                        final a = _animaux[i];
+                        final a = _filteredAnimaux[i];
                         final id = a['id']?.toString() ?? '';
                         final photoUrl = a['photo_url'] as String? ?? '';
                         final selected = _selectedIds.contains(id);
