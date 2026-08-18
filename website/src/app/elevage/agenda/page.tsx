@@ -93,6 +93,12 @@ interface TacheManuelle {
   notes?: string | null;
 }
 
+interface AgendaEventLite {
+  id: number | string;
+  titre: string;
+  date_debut: string;
+}
+
 interface RoutineGroupe {
   etapeId: string;
   routines: Routine[];
@@ -999,6 +1005,7 @@ export default function AgendaElevagePage() {
   const [focusedMois, setFocusedMois]   = useState(new Date().getMonth());
   const [routines, setRoutines]         = useState<Routine[]>([]);
   const [tachesM, setTachesM]           = useState<TacheManuelle[]>([]);
+  const [dayEvents, setDayEvents]       = useState<AgendaEventLite[]>([]);
   const [employes, setEmployes]         = useState<Employe[]>([]);
   const [profileNames, setProfileNames] = useState<Map<string, string>>(new Map());
   const [loadingData, setLoadingData]   = useState(true);
@@ -1081,7 +1088,8 @@ export default function AgendaElevagePage() {
   const load = useCallback(async () => {
     if (!user) return;
     setLoadingData(true);
-    const [r1, r2, tm] = await Promise.all([
+    const isToday = selectedDate === toISODate(new Date());
+    const [r1, r2, tm, evRes] = await Promise.all([
       withProfileFilter(() => supabase.from('plan_taches')
         .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
         .eq('uid_eleveur', user.uid).eq('date_prevue', selectedDate)),
@@ -1091,20 +1099,54 @@ export default function AgendaElevagePage() {
       withProfileFilter(() => supabase.from('taches_elevage')
         .select('id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,animal_id,animal_nom,assigne_a,assignes_a,fait_par,fait_par_profile_id,notes')
         .eq('uid_eleveur', user.uid).eq('date', selectedDate)),
+      // Rappels agenda_events du jour (chaleurs J-7/J-1, mise-bas, RDV...) —
+      // absents jusqu'ici de cette page, qui n'affichait que des tâches.
+      activeProfileId
+        ? supabase.from('agenda_events').select('id,titre,date_debut').eq('uid', user.uid).eq('pro_profile_id', activeProfileId)
+            .gte('date_debut', `${selectedDate}T00:00:00`).lte('date_debut', `${selectedDate}T23:59:59`)
+        : supabase.from('agenda_events').select('id,titre,date_debut').eq('uid', user.uid)
+            .or('pro_profile_id.is.null,pro_profile_id.eq.')
+            .gte('date_debut', `${selectedDate}T00:00:00`).lte('date_debut', `${selectedDate}T23:59:59`),
     ]);
+
+    // Reporte sur "aujourd'hui" les tâches en retard non validées, pour ne
+    // pas les perdre de vue tant qu'elles ne sont pas faites ou supprimées —
+    // miroir de agenda_page.dart _tasksForDay / src/app/agenda/page.tsx tasksForKey,
+    // absent jusqu'ici de cette page (elle ne chargeait que la date exacte).
+    let overdueR: Routine[] = [];
+    let overdueT: TacheManuelle[] = [];
+    if (isToday) {
+      const [or1, or2, otm] = await Promise.all([
+        withProfileFilter(() => supabase.from('plan_taches')
+          .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
+          .eq('uid_eleveur', user.uid).neq('statut', 'fait').lt('date_prevue', selectedDate)),
+        supabase.from('plan_taches')
+          .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
+          .eq('assigned_to', user.uid).neq('statut', 'fait').lt('date_prevue', selectedDate),
+        withProfileFilter(() => supabase.from('taches_elevage')
+          .select('id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,animal_id,animal_nom,assigne_a,assignes_a,fait_par,fait_par_profile_id,notes')
+          .eq('uid_eleveur', user.uid).neq('statut', 'fait').lt('date', selectedDate)),
+      ]);
+      overdueR = [...(or1.data ?? []), ...(or2.data ?? [])] as Routine[];
+      overdueT = (otm.data ?? []) as TacheManuelle[];
+    }
+
     const seen = new Set<string>();
-    const allR = [...(r1.data ?? []), ...(r2.data ?? [])] as Routine[];
+    const allR = [...(r1.data ?? []), ...(r2.data ?? []), ...overdueR] as Routine[];
     const routinesList = allR.filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true; });
-    const tachesList = (tm.data ?? []) as TacheManuelle[];
+    const seenT = new Set<string>();
+    const allT = [...(tm.data ?? []), ...overdueT] as TacheManuelle[];
+    const tachesList = allT.filter(t => { if (seenT.has(t.id)) return false; seenT.add(t.id); return true; });
     setRoutines(routinesList);
     setTachesM(tachesList);
+    setDayEvents((evRes.data ?? []) as AgendaEventLite[]);
     const profileIds = [...new Set([
       ...routinesList.map(r => r.valide_par_profile_id),
       ...tachesList.map(t => t.fait_par_profile_id),
     ].filter((id): id is string => !!id))];
     setProfileNames(profileIds.length ? await resolveProfileNames(profileIds) : new Map());
     setLoadingData(false);
-  }, [user, selectedDate, withProfileFilter]);
+  }, [user, selectedDate, activeProfileId, withProfileFilter]);
 
   useEffect(() => { if (user) load(); }, [user, load]);
 
@@ -1113,13 +1155,19 @@ export default function AgendaElevagePage() {
     const mm   = String(focusedMois + 1).padStart(2, '0');
     const from = `${focusedYear}-${mm}-01`;
     const to   = `${focusedYear}-${mm}-${String(daysInMonthFn(focusedYear, focusedMois)).padStart(2, '0')}`;
-    const [r1, r2, tm] = await Promise.all([
+    const [r1, r2, tm, evRes] = await Promise.all([
       withProfileFilter(() => supabase.from('plan_taches').select('date_prevue,type_acte').eq('uid_eleveur', user.uid)
         .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`)),
       supabase.from('plan_taches').select('date_prevue,type_acte').eq('assigned_to', user.uid)
         .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`),
       withProfileFilter(() => supabase.from('taches_elevage').select('date').eq('uid_eleveur', user.uid)
         .gte('date', from).lte('date', to)),
+      activeProfileId
+        ? supabase.from('agenda_events').select('date_debut').eq('uid', user.uid).eq('pro_profile_id', activeProfileId)
+            .gte('date_debut', `${from}T00:00:00`).lte('date_debut', `${to}T23:59:59`)
+        : supabase.from('agenda_events').select('date_debut').eq('uid', user.uid)
+            .or('pro_profile_id.is.null,pro_profile_id.eq.')
+            .gte('date_debut', `${from}T00:00:00`).lte('date_debut', `${to}T23:59:59`),
     ]);
     const map = new Map<string, Set<string>>();
     const addC = (date: string, c: string) => {
@@ -1129,8 +1177,9 @@ export default function AgendaElevagePage() {
     [...(r1.data ?? []), ...(r2.data ?? [])].forEach((r: { date_prevue: string; type_acte?: string }) =>
       addC(r.date_prevue.split('T')[0], ACTE_COLOR[r.type_acte ?? ''] ?? '#9E9E9E'));
     ((tm.data ?? []) as { date: string }[]).forEach(t => addC(t.date, '#6E9E57'));
+    ((evRes.data ?? []) as { date_debut: string }[]).forEach(e => addC(e.date_debut.split('T')[0], '#E91E63'));
     setMonthDates(new Map([...map.entries()].map(([d, s]) => [d, [...s]])));
-  }, [user, focusedYear, focusedMois, withProfileFilter]);
+  }, [user, focusedYear, focusedMois, activeProfileId, withProfileFilter]);
 
   useEffect(() => { if (user) loadMonth(); }, [user, loadMonth]);
 
@@ -1372,6 +1421,20 @@ export default function AgendaElevagePage() {
     );
   };
 
+  const EventsSection = () => {
+    if (dayEvents.length === 0) return null;
+    return (
+      <div className="space-y-2 mb-3">
+        {dayEvents.map(e => (
+          <div key={e.id} className="rounded-2xl shadow-sm border border-pink-100 bg-pink-50 p-3 flex items-center gap-3">
+            <span className="text-xl">🌸</span>
+            <span className="text-sm font-medium text-gray-800">{e.titre}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-6">
 
@@ -1478,19 +1541,22 @@ export default function AgendaElevagePage() {
           </div>
 
           {/* Liste du jour */}
+          <EventsSection />
           {loadingData ? (
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
             </div>
           ) : totalItems === 0 ? (
-            <div className="text-center py-16">
-              <div className="text-5xl mb-4">✅</div>
-              <p className="text-gray-500 mb-2">Rien de prévu ce jour</p>
-              <p className="text-gray-400 text-sm">
-                Créez des protocoles depuis{' '}
-                <a href="/elevage/planning" className="text-teal-600 underline font-medium">Planning</a>
-              </p>
-            </div>
+            dayEvents.length === 0 && (
+              <div className="text-center py-16">
+                <div className="text-5xl mb-4">✅</div>
+                <p className="text-gray-500 mb-2">Rien de prévu ce jour</p>
+                <p className="text-gray-400 text-sm">
+                  Créez des protocoles depuis{' '}
+                  <a href="/elevage/planning" className="text-teal-600 underline font-medium">Planning</a>
+                </p>
+              </div>
+            )
           ) : (
             <div className="space-y-3">
               {groupesEnCours.map(g => <GroupeCard key={g.etapeId} g={g} />)}
@@ -1555,15 +1621,18 @@ export default function AgendaElevagePage() {
             </button>
           </div>
 
+          <EventsSection />
           {loadingData ? (
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
             </div>
           ) : totalItems === 0 ? (
-            <div className="text-center py-16">
-              <div className="text-5xl mb-4">✅</div>
-              <p className="text-gray-500 mb-2">Rien de prévu ce jour</p>
-            </div>
+            dayEvents.length === 0 && (
+              <div className="text-center py-16">
+                <div className="text-5xl mb-4">✅</div>
+                <p className="text-gray-500 mb-2">Rien de prévu ce jour</p>
+              </div>
+            )
           ) : (
             <DayTimeline
               groupes={groupes}
@@ -1622,19 +1691,22 @@ export default function AgendaElevagePage() {
             </button>
           </div>
 
+          <EventsSection />
           {loadingData ? (
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
             </div>
           ) : totalItems === 0 ? (
-            <div className="text-center py-16">
-              <div className="text-5xl mb-4">✅</div>
-              <p className="text-gray-500 mb-2">Rien de prévu ce jour</p>
-              <p className="text-gray-400 text-sm">
-                Créez des protocoles depuis{' '}
-                <a href="/elevage/planning" className="text-teal-600 underline font-medium">Planning</a>
-              </p>
-            </div>
+            dayEvents.length === 0 && (
+              <div className="text-center py-16">
+                <div className="text-5xl mb-4">✅</div>
+                <p className="text-gray-500 mb-2">Rien de prévu ce jour</p>
+                <p className="text-gray-400 text-sm">
+                  Créez des protocoles depuis{' '}
+                  <a href="/elevage/planning" className="text-teal-600 underline font-medium">Planning</a>
+                </p>
+              </div>
+            )
           ) : (
             <DayTimeline
               groupes={groupes}
