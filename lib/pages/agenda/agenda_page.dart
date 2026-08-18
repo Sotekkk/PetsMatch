@@ -11,6 +11,16 @@ import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart' show AddEmp
 
 const _kTeal = Color(0xFF0C5C6C);
 
+// Types de profil qui ne "possèdent" jamais de taches_elevage/plan_taches
+// (concept réservé à éleveur/association/pension) — particulier ET tous les
+// profils pro (véto, ostéo/santé, éducateur, pet-sitter/garde, toilettage,
+// photographe, maréchal-ferrant, restauration, taxi animalier). Même liste
+// que PRO_TYPES côté site (website/src/lib/auth-context.tsx) + particulier.
+const _kNonElevageProfileTypes = {
+  'particulier', 'veterinaire', 'sante', 'education', 'garde',
+  'toilettage', 'photographe', 'marechal_ferrant', 'restauration', 'taxi_animalier',
+};
+
 // ── Types (catalogue complet — le sous-ensemble affiché dépend du profil) ─────
 
 const _kTypeLabel = {
@@ -258,11 +268,12 @@ class _AgendaPageState extends State<AgendaPage> {
   }).toList();
 
   Future<void> _loadTasks() async {
-    // Un particulier ne possède pas d'élevage donc ne "crée" jamais de tâche
-    // (d1 ci-dessous), mais peut très bien être employé et se voir assigner
-    // des tâches par son employeur (d2/p2 plus bas) — ne pas confondre les
-    // deux : seul d1 est une feature éleveur/association/pension.
-    final isParticulierView = widget.isParticulier || User_Info.activeType == 'particulier';
+    // Un profil particulier ou pro (véto, ostéo, pet-sitter, taxi...) ne
+    // possède pas d'élevage donc ne "crée" jamais de tâche (d1 ci-dessous),
+    // mais peut très bien être employé et se voir assigner des tâches par
+    // son employeur (d2/p2 plus bas) — ne pas confondre les deux : seul d1
+    // est une feature éleveur/association/pension.
+    final isParticulierView = widget.isParticulier || _kNonElevageProfileTypes.contains(User_Info.activeType);
     final from = '${_focusedMonth.year}-${(_focusedMonth.month - 1).clamp(1, 12).toString().padLeft(2, '0')}-01';
     final toDate = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0);
     final to   = '${toDate.year}-${toDate.month.toString().padLeft(2, '0')}-${toDate.day.toString().padLeft(2, '0')}';

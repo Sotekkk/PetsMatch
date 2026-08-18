@@ -58,6 +58,16 @@ interface TaskGroupe {
   tasks: Task[];
 }
 
+// Types de profil qui ne "possèdent" jamais de taches_elevage/plan_taches
+// (concept réservé à éleveur/association/pension) — particulier ET tous les
+// profils pro (véto, ostéo/santé, éducateur, pet-sitter/garde, toilettage,
+// photographe, maréchal-ferrant, restauration, taxi animalier). Même liste
+// que agenda_page.dart _kNonElevageProfileTypes côté app.
+const NON_ELEVAGE_PROFILE_TYPES = new Set([
+  'particulier', 'veterinaire', 'sante', 'education', 'garde',
+  'toilettage', 'photographe', 'marechal_ferrant', 'restauration', 'taxi_animalier',
+]);
+
 const TYPE_LABEL: Record<string, string> = {
   rdv:        'RDV',
   mise_bas:   'Mise-bas',
@@ -373,13 +383,14 @@ export default function AgendaPage() {
   const router = useRouter();
   const activeProfileId = useActiveProfile();
   const taskProfilSource = useProfileSource();
-  // Un profil particulier ne "possède" jamais de tâches (concept éleveur/
-  // association/pension) — seulement des tâches qui lui sont ASSIGNÉES.
-  // useProfileSource() ne connaît pas 'particulier' et retombe sur
-  // 'eleveur' par défaut : sans ce garde-fou, les tâches éleveur (ex.
-  // "Commander Purina") fuitent dans la vue particulier via le fallback
-  // profil_source. Miroir de agenda_page.dart isParticulierView.
-  const isParticulierView = userData?.profileType === 'particulier';
+  // Un profil particulier OU pro (véto, ostéo, pet-sitter, taxi...) ne
+  // "possède" jamais de tâches (concept éleveur/association/pension) —
+  // seulement des tâches qui lui sont ASSIGNÉES. useProfileSource() ne
+  // connaît que eleveur/association/pension et retombe sur 'eleveur' par
+  // défaut pour tout le reste : sans ce garde-fou, les tâches éleveur (ex.
+  // "Commander Purina") fuitent dans n'importe quelle vue non-élevage via
+  // le fallback profil_source. Miroir de agenda_page.dart isParticulierView.
+  const isParticulierView = !!userData?.profileType && NON_ELEVAGE_PROFILE_TYPES.has(userData.profileType);
   const [events, setEvents]   = useState<AgendaEvent[]>([]);
   const [tasks, setTasks]     = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
