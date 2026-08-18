@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
@@ -993,10 +993,15 @@ function WeekStrip({ selectedDate, onSelectDay, monthDates }:
 // ════════════════════════════════════════════════════════════════════════════════
 
 export default function AgendaElevagePage() {
-  const { user, loading, activeProfileId } = useAuth();
+  const { user, loading, activeProfileId, userData } = useAuth();
   const router = useRouter();
-  const pathname = usePathname();
-  const profilSource = pathname.startsWith('/association') ? 'association' : 'eleveur';
+  // Le type du profil ACTIF (pas la route) détermine le filtre profil_source
+  // du fallback — se fier au pathname faisait retomber tout profil pension
+  // (aucune route /pension dédiée) sur le fallback éleveur, laissant fuiter
+  // les tâches éleveur (profil_source='eleveur') vers la vue pension.
+  const profilSource = userData?.profileType === 'association' ? 'association'
+    : userData?.profileType === 'pension' ? 'pension'
+    : 'eleveur';
   const { config: planConfig, loading: planLoading } = usePlan();
 
   const [viewMode, setViewMode]         = useState<ViewMode>('mois');
@@ -1076,9 +1081,9 @@ export default function AgendaElevagePage() {
   // Miroir de agenda_page.dart _loadTasks (d1 puis fallback).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const withProfileFilter = useCallback(async (buildQuery: () => any) => {
-    const fallback = () => profilSource === 'association'
-      ? buildQuery().eq('profil_source', 'association')
-      : buildQuery().or('profil_source.is.null,profil_source.eq.eleveur');
+    const fallback = () => profilSource === 'eleveur'
+      ? buildQuery().or('profil_source.is.null,profil_source.eq.eleveur')
+      : buildQuery().eq('profil_source', profilSource);
     if (!activeProfileId) return fallback();
     const strict = await buildQuery().eq('profile_id', activeProfileId);
     if ((strict.data ?? []).length > 0) return strict;
