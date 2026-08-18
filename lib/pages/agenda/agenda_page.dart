@@ -429,6 +429,50 @@ class _AgendaPageState extends State<AgendaPage> {
           }
         } catch (_) {}
       }
+
+      // ── Résoudre "attribué par" pour les tâches reçues d'un employeur ──────
+      // (assignées par quelqu'un d'autre que soi-même, ex. le bénévolat
+      // associatif) : préfère le nom du profil précis (ex. "Refuge des
+      // Hirondelles") à celui de la personne, plus utile quand l'employeur a
+      // plusieurs profils (éleveur/association/pension...).
+      final assignedByOthers = all.where((t) => (t['uid_eleveur'] as String?) != null && t['uid_eleveur'] != _uid).toList();
+      if (assignedByOthers.isNotEmpty) {
+        try {
+          final profileIds = assignedByOthers.map((t) => t['eleveur_profile_id'] as String?).whereType<String>().toSet();
+          final profileNomMap = <String, String>{};
+          if (profileIds.isNotEmpty) {
+            final profs = await _supa.from('user_profiles').select('id,nom').inFilter('id', profileIds.toList());
+            for (final p in (profs as List)) {
+              final nom = p['nom'] as String?;
+              if (nom != null && nom.isNotEmpty) profileNomMap[p['id'] as String] = nom;
+            }
+          }
+          final uidNomMap = <String, String>{};
+          final ownerUids = assignedByOthers.map((t) => t['uid_eleveur'] as String).toSet();
+          if (ownerUids.isNotEmpty) {
+            final users = await _supa.from('user_profiles')
+                .select('uid,firstname,lastname,nom,profile_type,is_main')
+                .inFilter('uid', ownerUids.toList());
+            final byUid = <String, List<Map<String, dynamic>>>{};
+            for (final u in (users as List)) {
+              byUid.putIfAbsent(u['uid'] as String, () => []).add(Map<String, dynamic>.from(u));
+            }
+            byUid.forEach((uid, profiles) {
+              Map<String, dynamic>? chosen;
+              for (final p in profiles) { if (p['profile_type'] == 'particulier') { chosen = p; break; } }
+              chosen ??= profiles.firstWhere((p) => p['is_main'] == true, orElse: () => profiles.first);
+              final nom = (chosen['profile_type'] == 'eleveur' && chosen['nom'] != null)
+                  ? chosen['nom'] as String
+                  : '${chosen['firstname'] ?? ''} ${chosen['lastname'] ?? ''}'.trim();
+              if (nom.isNotEmpty) uidNomMap[uid] = nom;
+            });
+          }
+          for (final t in assignedByOthers) {
+            final epid = t['eleveur_profile_id'] as String?;
+            t['employeur_nom'] = (epid != null ? profileNomMap[epid] : null) ?? uidNomMap[t['uid_eleveur']];
+          }
+        } catch (_) {}
+      }
       print('[AGENDA _loadTasks] RESULT: ${all.length} tâches. Titres: ${all.map((t) => t['titre'] ?? t['label']).toList()}');
       if (mounted) setState(() => _tasks = all);
     } catch (e) {
@@ -683,10 +727,16 @@ class _AgendaPageState extends State<AgendaPage> {
                   ),
                 )
               else ...[
-                if (t['heure'] != null)
+                if (t['employeur_nom'] != null) ...[
+                  Text('🏢 Attribué par ${t['employeur_nom']}',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, color: Colors.grey.shade500)),
+                  if ((t['date'] as String?)?.isNotEmpty == true)
+                    Text('📅 Le ${DateFormat('d MMM yyyy', 'fr').format(DateTime.parse(t['date'] as String))}${t['heure'] != null ? ' à ${(t['heure'] as String).substring(0, 5)}' : ''}',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, color: Colors.grey.shade500)),
+                ] else if (t['heure'] != null)
                   Text('🕐 ${(t['heure'] as String).substring(0, 5)}',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, color: Colors.grey.shade500)),
-                if (t['responsable_nom'] != null)
+                if (t['responsable_nom'] != null && t['employeur_nom'] == null)
                   Text('👤 ${t['responsable_nom']}',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, color: Colors.grey.shade500)),
               ],

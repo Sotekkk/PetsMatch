@@ -45,6 +45,8 @@ interface Task {
   uid_eleveur: string;
   assigne_a: string | null;
   responsable_nom?: string;
+  employeur_nom?: string;
+  eleveur_profile_id?: string | null;
   _source: 'manuel' | 'protocole';
   type_acte?: string;
   animal_nom?: string;
@@ -458,8 +460,8 @@ export default function AgendaPage() {
     // _loadTasks (d1/d2, p1/p2) pour garder les deux plateformes alignées.
     const taskFrom = new Date(focusedMonth.year, focusedMonth.month - 1, 1).toISOString().slice(0, 10);
     const taskTo   = new Date(focusedMonth.year, focusedMonth.month + 2, 0).toISOString().slice(0, 10);
-    const manuelCols = 'id,titre,date,statut,uid_eleveur,assigne_a,profile_id,profil_source';
-    const protoCols  = 'id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id,profile_id,profil_source';
+    const manuelCols = 'id,titre,date,statut,uid_eleveur,assigne_a,profile_id,profil_source,eleveur_profile_id';
+    const protoCols  = 'id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id,profile_id,profil_source,eleveur_profile_id';
 
     let d1Res: { data: unknown[] | null } = { data: [] };
     if (!isParticulierView) {
@@ -481,17 +483,17 @@ export default function AgendaPage() {
     // éleveur visible aussi sous association/pension).
     const { data: manuelAssigneData } = activeProfileId
       ? await supabase.from('taches_elevage')
-          .select('id,titre,date,statut,uid_eleveur,assigne_a')
+          .select('id,titre,date,statut,uid_eleveur,assigne_a,eleveur_profile_id')
           .eq('assigne_profile_id', activeProfileId)
           .gte('date', taskFrom).lte('date', taskTo)
       : await supabase.from('taches_elevage')
-          .select('id,titre,date,statut,uid_eleveur,assigne_a')
+          .select('id,titre,date,statut,uid_eleveur,assigne_a,eleveur_profile_id')
           .eq('assigne_a', uid)
           .gte('date', taskFrom).lte('date', taskTo);
     const seenManuel = new Set<string>();
     const manuelTasks: Task[] = [];
     for (const t of [...(d1Res.data ?? []), ...(manuelAssigneData ?? [])]) {
-      const mt = t as { id: string; titre: string; date: string; statut: string; uid_eleveur: string; assigne_a: string | null };
+      const mt = t as { id: string; titre: string; date: string; statut: string; uid_eleveur: string; assigne_a: string | null; eleveur_profile_id?: string | null };
       if (seenManuel.has(mt.id)) continue;
       seenManuel.add(mt.id);
       manuelTasks.push({ ...mt, _source: 'manuel' as const, etape_id: null });
@@ -512,17 +514,17 @@ export default function AgendaPage() {
       }
     }
     const p2Res = activeProfileId
-      ? await supabase.from('plan_taches').select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+      ? await supabase.from('plan_taches').select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id,eleveur_profile_id')
           .eq('assigned_profile_id', activeProfileId).gte('date_prevue', taskFrom).lte('date_prevue', taskTo)
-      : await supabase.from('plan_taches').select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+      : await supabase.from('plan_taches').select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id,eleveur_profile_id')
           .eq('assigned_to', uid).gte('date_prevue', taskFrom).lte('date_prevue', taskTo);
     const seenProto = new Set<string>();
     const protoTasks: Task[] = [];
     for (const t of [...(p1Res.data ?? []), ...(p2Res.data ?? [])]) {
-      const pt = t as { id: string; label: string; date_prevue: string; statut: string; assigned_to: string | null; uid_eleveur: string; type_acte?: string; animal_nom?: string; etape_id?: string | null };
+      const pt = t as { id: string; label: string; date_prevue: string; statut: string; assigned_to: string | null; uid_eleveur: string; type_acte?: string; animal_nom?: string; etape_id?: string | null; eleveur_profile_id?: string | null };
       if (seenProto.has(pt.id)) continue;
       seenProto.add(pt.id);
-      protoTasks.push({ id: pt.id, titre: pt.label, date: (pt.date_prevue ?? '').split('T')[0], statut: pt.statut, uid_eleveur: pt.uid_eleveur, assigne_a: pt.assigned_to, _source: 'protocole', type_acte: pt.type_acte, animal_nom: pt.animal_nom, etape_id: pt.etape_id ?? null });
+      protoTasks.push({ id: pt.id, titre: pt.label, date: (pt.date_prevue ?? '').split('T')[0], statut: pt.statut, uid_eleveur: pt.uid_eleveur, assigne_a: pt.assigned_to, eleveur_profile_id: pt.eleveur_profile_id, _source: 'protocole', type_acte: pt.type_acte, animal_nom: pt.animal_nom, etape_id: pt.etape_id ?? null });
     }
 
     const allTasks = [...manuelTasks, ...protoTasks];
@@ -557,7 +559,26 @@ export default function AgendaPage() {
           : `${chosen.firstname ?? ''} ${chosen.lastname ?? ''}`.trim();
         if (nom) nomMap[taskUid] = nom;
       }
-      setTasks(allTasks.map(t => ({ ...t, responsable_nom: nomMap[t.assigne_a ?? t.uid_eleveur ?? ''] ?? undefined })));
+      // "Attribué par" pour les tâches reçues d'un employeur (uid_eleveur !==
+      // moi) : préfère le nom du profil précis (ex. "Refuge des Hirondelles")
+      // à celui de la personne, plus utile quand l'employeur a plusieurs
+      // profils (éleveur/association/pension...).
+      const assignedByOthers = allTasks.filter(t => t.uid_eleveur && t.uid_eleveur !== uid);
+      const profileIds = [...new Set(assignedByOthers.map(t => t.eleveur_profile_id).filter((v): v is string => !!v))];
+      const profileNomMap: Record<string, string> = {};
+      if (profileIds.length > 0) {
+        const { data: profs } = await supabase.from('user_profiles').select('id,nom').in('id', profileIds);
+        for (const p of (profs ?? []) as { id: string; nom?: string }[]) {
+          if (p.nom) profileNomMap[p.id] = p.nom;
+        }
+      }
+      setTasks(allTasks.map(t => {
+        const responsable_nom = nomMap[t.assigne_a ?? t.uid_eleveur ?? ''] ?? undefined;
+        const employeur_nom = (t.uid_eleveur && t.uid_eleveur !== uid)
+          ? (t.eleveur_profile_id ? profileNomMap[t.eleveur_profile_id] : undefined) ?? nomMap[t.uid_eleveur]
+          : undefined;
+        return { ...t, responsable_nom, employeur_nom };
+      }));
     } else {
       setTasks(allTasks);
     }
@@ -1122,7 +1143,14 @@ function ManuelRow({ t, onToggle, onReport, onAssign }: {
       </button>
       <div className="flex-1 min-w-0">
         <span className={`block text-sm truncate ${done ? 'line-through text-gray-400' : 'text-[#1E2025]'}`} style={{ fontFamily: 'Galey, sans-serif' }}>{t.titre}</span>
-        {t.responsable_nom && <span className="block text-[11px] text-gray-400">{done ? `Fait par : ${t.responsable_nom}` : `👤 ${t.responsable_nom}`}</span>}
+        {!done && t.employeur_nom ? (
+          <>
+            <span className="block text-[11px] text-gray-400">🏢 Attribué par {t.employeur_nom}</span>
+            {t.date && <span className="block text-[11px] text-gray-400">📅 Le {new Date(t.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}</span>}
+          </>
+        ) : (
+          t.responsable_nom && <span className="block text-[11px] text-gray-400">{done ? `Fait par : ${t.responsable_nom}` : `👤 ${t.responsable_nom}`}</span>
+        )}
       </div>
       {!done && (
         <div className="flex gap-0.5 flex-shrink-0">
