@@ -604,32 +604,41 @@ class _AgendaPageState extends State<AgendaPage> {
       return Container(
         key: ValueKey('manuel_${t['id']}'),
         margin: const EdgeInsets.only(bottom: 5),
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: isDone ? const Color(0xFFF4FAF1) : Colors.white,
           borderRadius: BorderRadius.circular(8),
-          border: Border(
-            left: BorderSide(color: borderColor, width: 3),
-            top: BorderSide(color: Colors.grey.shade200),
-            right: BorderSide(color: Colors.grey.shade200),
-            bottom: BorderSide(color: Colors.grey.shade200),
-          ),
+          border: Border.all(color: Colors.grey.shade200),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: Row(children: [
+        child: IntrinsicHeight(child: Row(children: [
+          Container(width: 3, color: borderColor),
+          Expanded(child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(children: [
           GestureDetector(
             onTap: () async {
               final newStatut = isDone ? 'a_faire' : 'fait';
+              // Mise à jour optimiste immédiate
+              setState(() => t['statut'] = newStatut);
               await _supa.from('taches_elevage').update({'statut': newStatut}).eq('id', t['id']);
               _loadTasks();
             },
-            child: Container(
-              width: 18, height: 18,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              width: 22, height: 22,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(color: borderColor, width: 2),
                 color: isDone ? kGreen : Colors.transparent,
+                boxShadow: isDone ? [BoxShadow(color: kGreen.withValues(alpha: 0.35), blurRadius: 6, spreadRadius: 1)] : [],
               ),
-              child: isDone ? const Icon(Icons.check, size: 11, color: Colors.white) : null,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: isDone
+                    ? const Icon(Icons.check_rounded, size: 13, color: Colors.white, key: ValueKey('check'))
+                    : const SizedBox.shrink(key: ValueKey('empty')),
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -693,7 +702,9 @@ class _AgendaPageState extends State<AgendaPage> {
               child: Icon(Icons.delete_outline, size: 16, color: Colors.grey.shade400),
             ),
           ),
-        ]),
+        ]),    // inner Row
+          )), // Padding + Expanded
+        ])),  // outer Row + IntrinsicHeight
       );
     }
 
@@ -1225,11 +1236,37 @@ class _AgendaPageState extends State<AgendaPage> {
   Widget _dayBody(DateTime day) {
     final evts = _eventsForDay(day);
     final dayTasks = _tasksForDay(day);
+    final hasTasks = dayTasks.isNotEmpty;
+    final hasEvents = evts.isNotEmpty;
+
+    // Pas d'événement mais des tâches : la section tâches occupe tout l'écran,
+    // pas besoin d'afficher le placeholder "Aucun événement ce jour".
+    if (hasTasks && !hasEvents) {
+      return Expanded(
+        child: Column(children: [
+          const Divider(height: 1),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () async { await _load(); await _loadTasks(); },
+              color: _kTeal,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: _buildDayTasksSection(dayTasks, day: day),
+              ),
+            ),
+          ),
+        ]),
+      );
+    }
+
     return Expanded(
       child: Column(children: [
         const Divider(height: 1),
         if (dayTasks.isNotEmpty)
-          _buildDayTasksSection(dayTasks, day: day)
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.4),
+            child: SingleChildScrollView(child: _buildDayTasksSection(dayTasks, day: day)),
+          )
         else if (_canShowTasks())
           Container(
             color: const Color(0xFFEDF6F7),
@@ -2942,9 +2979,55 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
   TimeOfDay _heure = const TimeOfDay(hour: 8, minute: 0);
   String? _selectedEmployeUid;
   List<Map<String, dynamic>> _selectedAnimaux = [];
+  late DateTime _dateDebut;
+  DateTime? _dateFin;
   bool _saving = false;
 
+  List<DateTime> get _jours {
+    if (_dateFin == null) return [_dateDebut];
+    final days = <DateTime>[];
+    var cur = _dateDebut;
+    while (!cur.isAfter(_dateFin!)) {
+      days.add(cur);
+      cur = cur.add(const Duration(days: 1));
+    }
+    return days;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _dateDebut = widget.day;
+  }
+
   @override void dispose() { _titreCtrl.dispose(); _notesCtrl.dispose(); super.dispose(); }
+
+  Future<void> _pickDebut() async {
+    final d = await showDatePicker(
+      context: context,
+      initialDate: _dateDebut,
+      firstDate: DateTime.now().subtract(const Duration(days: 365)),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+      locale: const Locale('fr'),
+    );
+    if (d != null && mounted) {
+      setState(() {
+        _dateDebut = d;
+        if (_dateFin != null && _dateFin!.isBefore(d)) _dateFin = null;
+      });
+    }
+  }
+
+  Future<void> _pickFin() async {
+    final d = await showDatePicker(
+      context: context,
+      initialDate: (_dateFin ?? _dateDebut).add(const Duration(days: 1)),
+      firstDate: _dateDebut.add(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+      locale: const Locale('fr'),
+    );
+    if (d != null && mounted) setState(() => _dateFin = d);
+  }
 
   Future<void> _pickAnimaux() async {
     // Pension : pas d'animaux possédés, on propose les pensionnaires actuels.
@@ -2976,91 +3059,96 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
   Future<void> _save() async {
     if (_titreCtrl.text.trim().isEmpty) return;
     setState(() => _saving = true);
-    final dateStr = DateFormat('yyyy-MM-dd').format(widget.day);
-    final heureStr = '${_heure.hour.toString().padLeft(2, '0')}:${_heure.minute.toString().padLeft(2, '0')}';
-    final supa = Supabase.instance.client;
-    final profileIdTache = User_Info.activeProfileId;
-    // Résout le profil (particulier principal) de l'employé assigné — sans
-    // ça, assigne_profile_id reste null et la tâche n'apparaît jamais dans
-    // l'agenda de l'employé (filtré par assigne_profile_id = activeProfileId).
-    final isSelfAssign = _selectedEmployeUid == widget.uid;
-    String? assigneProfileId;
-    if (isSelfAssign) {
-      assigneProfileId = profileIdTache.isNotEmpty ? profileIdTache : null;
-    } else if (_selectedEmployeUid != null) {
-      final assigneProfileData = await supa.from('user_profiles')
-          .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').maybeSingle();
-      assigneProfileId = assigneProfileData?['id'] as String?;
-    }
+    try {
+      final heureStr = '${_heure.hour.toString().padLeft(2, '0')}:${_heure.minute.toString().padLeft(2, '0')}';
+      final supa = Supabase.instance.client;
+      final profileIdTache = User_Info.activeProfileId;
+      final isSelfAssign = _selectedEmployeUid == widget.uid;
+      String? assigneProfileId;
+      if (isSelfAssign) {
+        assigneProfileId = profileIdTache.isNotEmpty ? profileIdTache : null;
+      } else if (_selectedEmployeUid != null) {
+        final assigneProfileData = await supa.from('user_profiles')
+            .select('id').eq('uid', _selectedEmployeUid!).eq('profile_type', 'particulier').maybeSingle();
+        assigneProfileId = assigneProfileData?['id'] as String?;
+      }
 
-    // Une ligne + une notification par animal sélectionné (portée entière =
-    // 1 tâche + 1 notif par chiot), ou une seule ligne sans animal si aucun
-    // choisi. Évite toute confusion à l'employé qui décoche au fur et à mesure.
-    final List<Map<String, dynamic>?> animaux =
-        _selectedAnimaux.isEmpty ? [null] : _selectedAnimaux;
-    final insertedPairs = <(Map<String, dynamic>?, String)>[];
-    for (final animal in animaux) {
-      final result = await supa.from('taches_elevage').insert({
-        'uid_eleveur': widget.uid,
-        'titre': _titreCtrl.text.trim(),
-        'date': dateStr,
-        'heure': heureStr,
-        'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
-        'statut': 'a_faire',
-        'profil_source': widget.profilSource,
-        if (profileIdTache.isNotEmpty) 'profile_id': profileIdTache,
-        if (profileIdTache.isNotEmpty) 'eleveur_profile_id': profileIdTache,
-        'assigne_a': _selectedEmployeUid,
-        'assignes_a': _selectedEmployeUid != null ? [_selectedEmployeUid] : null,
-        if (assigneProfileId != null) 'assigne_profile_id': assigneProfileId,
-        if (animal != null) 'animal_id': animal['id'],
-        if (animal != null) 'animal_nom': animal['nom']?.toString(),
-      }).select('id').single();
-      final id = result['id'] as String?;
-      if (id != null) insertedPairs.add((animal, id));
-    }
-
-    if (_selectedEmployeUid != null && !isSelfAssign) {
-      try {
-        final moi = await supa.from('user_profiles')
-            .select('firstname,lastname,nom,profile_type')
-            .eq('uid', widget.uid).eq('is_main', true).maybeSingle();
-        final nomEleveur = moi != null
-            ? (moi['profile_type'] == 'eleveur'
-                ? (moi['nom'] ?? 'Votre éleveur')
-                : '${moi['firstname'] ?? ''} ${moi['lastname'] ?? ''}'.trim())
-            : 'Votre éleveur';
-        final nomEmploye = widget.employes.firstWhere(
-          (e) => e['uid'] == _selectedEmployeUid,
-          orElse: () => const {},
-        )['nom'] as String? ?? 'un employé';
-        for (final (animal, tacheId) in insertedPairs) {
-          final nomChiot = animal?['nom']?.toString();
-          final nomMere = animal?['nom_mere']?.toString();
-          final portee = (nomMere != null && nomMere.isNotEmpty) ? 'Portée de $nomMere' : null;
-          final suffix = nomChiot != null ? ' — $nomChiot${portee != null ? ' ($portee)' : ''}' : '';
-          await supa.from('notifications').insert({
-            'uid': _selectedEmployeUid, 'type': 'tache_assignee',
-            'title': 'Nouvelle tâche assignée 📋',
-            'body': '$nomEleveur vous a assigné : ${_titreCtrl.text.trim()}$suffix',
-            if ((assigneProfileId ?? '').isNotEmpty) 'profile_id': assigneProfileId,
-            'data': <String, dynamic>{'tacheId': tacheId}, 'read': false,
-          });
-          // Copie à l'éleveur (créateur) pour qu'il puisse suivre quel chiot
-          // est assigné à qui sans se connecter sur le compte de l'employé.
-          await supa.from('notifications').insert({
-            'uid': widget.uid, 'type': 'tache_assignee',
-            'title': 'Tâche assignée 📋',
-            'body': 'Assigné à $nomEmploye : ${_titreCtrl.text.trim()}$suffix',
+      final List<Map<String, dynamic>?> animaux =
+          _selectedAnimaux.isEmpty ? [null] : _selectedAnimaux;
+      final insertedPairs = <(Map<String, dynamic>?, String)>[];
+      // Une tâche par jour × par animal
+      for (final jour in _jours) {
+        final dateStr = DateFormat('yyyy-MM-dd').format(jour);
+        for (final animal in animaux) {
+          final result = await supa.from('taches_elevage').insert({
+            'uid_eleveur': widget.uid,
+            'titre': _titreCtrl.text.trim(),
+            'date': dateStr,
+            'heure': heureStr,
+            'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+            'statut': 'a_faire',
+            'profil_source': widget.profilSource,
             if (profileIdTache.isNotEmpty) 'profile_id': profileIdTache,
-            'data': <String, dynamic>{'tacheId': tacheId}, 'read': false,
-          });
+            if (profileIdTache.isNotEmpty) 'eleveur_profile_id': profileIdTache,
+            'assigne_a': _selectedEmployeUid,
+            'assignes_a': _selectedEmployeUid != null ? [_selectedEmployeUid] : null,
+            if (assigneProfileId != null) 'assigne_profile_id': assigneProfileId,
+            if (animal != null) 'animal_id': animal['id'],
+            if (animal != null) 'animal_nom': animal['nom']?.toString(),
+          }).select('id').single();
+          final id = result['id']?.toString();
+          if (id != null) insertedPairs.add((animal, id));
         }
-      } catch (_) {}
+      }
+
+      if (_selectedEmployeUid != null && !isSelfAssign) {
+        try {
+          final moi = await supa.from('user_profiles')
+              .select('firstname,lastname,nom,profile_type')
+              .eq('uid', widget.uid).eq('is_main', true).maybeSingle();
+          final nomEleveur = moi != null
+              ? (moi['profile_type'] == 'eleveur'
+                  ? (moi['nom'] ?? 'Votre éleveur')
+                  : '${moi['firstname'] ?? ''} ${moi['lastname'] ?? ''}'.trim())
+              : 'Votre éleveur';
+          final nomEmploye = widget.employes.firstWhere(
+            (e) => e['uid'] == _selectedEmployeUid,
+            orElse: () => const {},
+          )['nom'] as String? ?? 'un employé';
+          for (final (animal, tacheId) in insertedPairs) {
+            final nomChiot = animal?['nom']?.toString();
+            final nomMere = animal?['nom_mere']?.toString();
+            final portee = (nomMere != null && nomMere.isNotEmpty) ? 'Portée de $nomMere' : null;
+            final suffix = nomChiot != null ? ' — $nomChiot${portee != null ? ' ($portee)' : ''}' : '';
+            await supa.from('notifications').insert({
+              'uid': _selectedEmployeUid, 'type': 'tache_assignee',
+              'title': 'Nouvelle tâche assignée 📋',
+              'body': '$nomEleveur vous a assigné : ${_titreCtrl.text.trim()}$suffix',
+              if ((assigneProfileId ?? '').isNotEmpty) 'profile_id': assigneProfileId,
+              'data': <String, dynamic>{'tacheId': tacheId}, 'read': false,
+            });
+            await supa.from('notifications').insert({
+              'uid': widget.uid, 'type': 'tache_assignee',
+              'title': 'Tâche assignée 📋',
+              'body': 'Assigné à $nomEmploye : ${_titreCtrl.text.trim()}$suffix',
+              if (profileIdTache.isNotEmpty) 'profile_id': profileIdTache,
+              'data': <String, dynamic>{'tacheId': tacheId}, 'read': false,
+            });
+          }
+        } catch (_) {}
+      }
+
+      widget.onSaved();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Erreur lors de l\'ajout de la tâche')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
-    setState(() => _saving = false);
-    widget.onSaved();
-    if (mounted) Navigator.pop(context);
   }
 
   @override
@@ -3116,6 +3204,66 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          const Text('Période', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+          const SizedBox(height: 6),
+          Row(children: [
+            Expanded(child: GestureDetector(
+              onTap: _pickDebut,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade400),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Du', style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade500)),
+                  const SizedBox(height: 2),
+                  Text(DateFormat('EEE d MMM', 'fr_FR').format(_dateDebut),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1E2025))),
+                ]),
+              ),
+            )),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Icon(Icons.arrow_forward, size: 16, color: Colors.grey.shade400),
+            ),
+            Expanded(child: GestureDetector(
+              onTap: _pickFin,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  border: Border.all(color: _dateFin != null ? _kTeal : Colors.grey.shade400),
+                  borderRadius: BorderRadius.circular(10),
+                  color: _dateFin != null ? const Color(0xFFE8F5E9) : null,
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Au', style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade500)),
+                  const SizedBox(height: 2),
+                  Text(
+                    _dateFin != null
+                      ? DateFormat('EEE d MMM', 'fr_FR').format(_dateFin!)
+                      : 'Même jour',
+                    style: TextStyle(
+                      fontFamily: 'Galey', fontSize: 13,
+                      color: _dateFin != null ? const Color(0xFF1E2025) : Colors.grey.shade400,
+                    )),
+                ]),
+              ),
+            )),
+          ]),
+          if (_dateFin != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(children: [
+                Text('${_jours.length} jours', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _kTeal, fontWeight: FontWeight.w600)),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => setState(() => _dateFin = null),
+                  child: Text('Effacer', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500, decoration: TextDecoration.underline)),
+                ),
+              ]),
+            ),
           const SizedBox(height: 12),
           const Text('Notes (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
           const SizedBox(height: 6),
