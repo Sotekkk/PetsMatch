@@ -327,8 +327,10 @@ class _AgendaPageState extends State<AgendaPage> {
 
       // ── Tâches protocole (plan_taches) ───────────────────────────────────
       try {
-        dynamic p1;
-        if (pid.isNotEmpty) {
+        dynamic p1 = <dynamic>[];
+        if (isParticulierView) {
+          // pas de tâches "possédées" pour un particulier/profil pro — p1 reste vide.
+        } else if (pid.isNotEmpty) {
           p1 = await _supa.from('plan_taches')
               .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
               .eq('uid_eleveur', _uid)
