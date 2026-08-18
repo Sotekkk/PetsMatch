@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import HealthSection from '@/components/animaux/HealthSection';
 import AlimentationTab from '@/app/mes-animaux/[id]/AlimentationTab';
+import { typesVaccinPour, suggestFromCategorie } from '@/lib/vaccinTypes';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -106,6 +107,65 @@ function AddForm({ fields, onSave, onCancel, saving }:
   );
 }
 
+// Formulaire vaccination dédié : liste de types par espèce (avec délais de
+// rappel/validité par défaut, modifiables) + "Autre" en saisie libre — même
+// logique que mes-animaux/[id] et l'appli, pour que "Type de vaccin" existe
+// partout où on peut ajouter un vaccin, quel que soit le profil.
+function VaccinAddForm({ espece, existingCategories, onSave, onCancel, saving }:
+  { espece?: string; existingCategories: string[];
+    onSave: (d: Record<string, string>) => Promise<void>; onCancel: () => void; saving: boolean }) {
+  const [form, setForm] = useState<Record<string, string>>({});
+  const cls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30';
+
+  function applySuggestion(next: Record<string, string>) {
+    if (!next.categorie || !next.date) return next;
+    const dejaVaccine = existingCategories.includes(next.categorie);
+    const sug = suggestFromCategorie(espece, next.categorie, next.date, dejaVaccine);
+    if (sug) { next.date_rappel = sug.rappel; next.date_validite_debut = sug.validite; }
+    return next;
+  }
+
+  return (
+    <div className="space-y-3 p-4">
+      <div>
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Type de vaccin</label>
+        <select value={form.categorie ?? ''} className={cls}
+          onChange={e => setForm(p => applySuggestion({
+            ...p, categorie: e.target.value,
+            vaccin: p.vaccin?.trim() ? p.vaccin : e.target.value,
+          }))}>
+          <option value="">Sélectionner…</option>
+          {typesVaccinPour(espece).map(t => <option key={t.label} value={t.label}>{t.label}</option>)}
+        </select>
+      </div>
+      {[
+        { key: 'vaccin', label: 'Vaccin', required: true },
+        { key: 'date', label: 'Date', type: 'date' },
+        { key: 'date_validite_debut', label: 'Valide à partir de', type: 'date' },
+        { key: 'date_rappel', label: 'Date de rappel', type: 'date' },
+        { key: 'lot', label: 'N° lot' },
+        { key: 'notes', label: 'Notes' },
+      ].map(f => (
+        <div key={f.key}>
+          <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">
+            {f.label}{f.required && <span className="text-red-400 ml-0.5">*</span>}
+          </label>
+          <input type={f.type ?? 'text'} value={form[f.key] ?? ''}
+            onChange={e => setForm(p => f.key === 'date' ? applySuggestion({ ...p, date: e.target.value }) : ({ ...p, [f.key]: e.target.value }))}
+            className={cls} />
+        </div>
+      ))}
+      <div className="flex gap-2 pt-1">
+        <button onClick={onCancel} className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
+        <button onClick={() => onSave(form)} disabled={saving}
+          className="flex-1 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold disabled:opacity-50">
+          {saving ? '…' : 'Enregistrer'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function RecordRow({ record, mainKey, dateKey, onDelete }:
   { record: HealthRecord; mainKey: string; dateKey?: string; onDelete: () => void }) {
   const [open, setOpen] = useState(false);
@@ -129,7 +189,7 @@ function RecordRow({ record, mainKey, dateKey, onDelete }:
   );
 }
 
-function SanteTab({ animalId }: { animalId: string }) {
+function SanteTab({ animalId, espece }: { animalId: string; espece?: string }) {
   const [health, setHealth] = useState<Record<string, HealthRecord[]>>({});
   const [addOpen, setAddOpen] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -166,9 +226,16 @@ function SanteTab({ animalId }: { animalId: string }) {
             onAdd={() => setAddOpen(isOpen ? null : s.table)}
             addFormOpen={isOpen}
             addForm={isOpen ? (
-              <AddForm fields={s.fields} saving={saving}
-                onCancel={() => setAddOpen(null)}
-                onSave={d => handleAdd(s.table, d)} />
+              s.table === 'vaccinations' ? (
+                <VaccinAddForm espece={espece} saving={saving}
+                  existingCategories={(health.vaccinations ?? []).map(r => r.categorie as string).filter(Boolean)}
+                  onCancel={() => setAddOpen(null)}
+                  onSave={d => handleAdd(s.table, d)} />
+              ) : (
+                <AddForm fields={s.fields} saving={saving}
+                  onCancel={() => setAddOpen(null)}
+                  onSave={d => handleAdd(s.table, d)} />
+              )
             ) : undefined}>
             {records.map(r => (
               <RecordRow key={r.id} record={r}
@@ -443,7 +510,7 @@ export default function AnimalAssoFichePage() {
       )}
 
       {/* ─── Santé ────────────────────────────────────────────────────── */}
-      {tab === 'sante' && <SanteTab animalId={id} />}
+      {tab === 'sante' && <SanteTab animalId={id} espece={animal.espece} />}
 
       {/* ─── Alimentation ─────────────────────────────────────────────── */}
       {tab === 'alimentation' && (

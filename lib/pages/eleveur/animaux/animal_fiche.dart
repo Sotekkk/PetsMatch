@@ -33,6 +33,7 @@ import 'package:PetsMatch/pages/pro/anatomie_points_page.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/data/vaccin_types.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
 // ─── Contact urgence ─────────────────────────────────────────────────────────
@@ -5304,7 +5305,7 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
                 contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               ),
               style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1F2A2E)),
-              items: _typesVaccinPour(widget.espece).map((t) => t.$1)
+              items: typesVaccinPour(widget.espece).map((t) => t.$1)
                   .toList().map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
               onChanged: (v) => setState(() => _categorie = v),
             ),
@@ -5953,43 +5954,8 @@ class _ChartPainter extends CustomPainter {
 // ne s'applique qu'à la toute première injection de ce type pour l'animal,
 // un rappel étant valide dès le jour même). Utilisé pour l'ajout ET la
 // modification d'un vaccin.
-const Map<String, List<(String label, int rappelAns, int validiteJours)>> _typesVaccinParEspece = {
-  'chien': [
-    ('Rage', 3, 21),
-    ('CHPPI (Carré, Hépatite, Parvovirose, Parainfluenza)', 1, 0),
-    ('Leptospirose (L4)', 1, 0),
-    ('Toux du chenil (Bordetella)', 1, 0),
-    ('Piroplasmose', 1, 0),
-    ('Autre', 1, 0),
-  ],
-  'chat': [
-    ('Rage', 3, 21),
-    ('Typhus (panleucopénie)', 1, 0),
-    ('Coryza', 1, 0),
-    ('Leucose (FeLV)', 1, 0),
-    ('PIF (coronavirus félin)', 1, 0),
-    ('Autre', 1, 0),
-  ],
-  'lapin': [
-    ('Myxomatose', 1, 0),
-    ('VHD (maladie hémorragique)', 1, 0),
-    ('Autre', 1, 0),
-  ],
-  'cheval': [
-    ('Rage', 3, 21),
-    ('Grippe équine', 1, 0),
-    ('Tétanos', 1, 0),
-    ('Autre', 1, 0),
-  ],
-};
-// Espèces hors liste ci-dessus (oiseau, nac, ovin, caprin, porcin, autre) :
-// choix générique, toujours avec "Autre" pour saisie manuelle libre.
-const List<(String label, int rappelAns, int validiteJours)> _typesVaccinDefaut = [
-  ('Rage', 3, 21),
-  ('Autre', 1, 0),
-];
-List<(String label, int rappelAns, int validiteJours)> _typesVaccinPour(String? espece) =>
-    _typesVaccinParEspece[espece] ?? _typesVaccinDefaut;
+// Types de vaccins par espèce : voir lib/data/vaccin_types.dart (partagé
+// avec animal_fiche_particulier.dart pour ne jamais diverger entre profils).
 
 class _AddVaccinDialog extends StatefulWidget {
   final String animalId;
@@ -6016,7 +5982,7 @@ class _AddVaccinDialogState extends State<_AddVaccinDialog> {
   String? _categorie;
 
   List<(String label, int rappelAns, int validiteJours)> get _typesDisponibles =>
-      _typesVaccinPour(widget.espece);
+      typesVaccinPour(widget.espece);
 
   (int ans, int jours)? get _defautsPourCategorie {
     if (_categorie == null) return null;

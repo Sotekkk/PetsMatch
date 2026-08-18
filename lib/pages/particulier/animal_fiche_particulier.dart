@@ -12,6 +12,7 @@ import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/data/vaccin_types.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/particulier/partage_animal_sheet.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
@@ -1421,12 +1422,60 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   void _showVaccinationSheet() {
     final vaccin = TextEditingController(), lot = TextEditingController(),
         veto = TextEditingController();
-    DateTime? date, dateRappel;
+    DateTime? date, dateRappel, dateValidite;
+    String? categorie;
+
+    (int ans, int jours)? defautsPourCategorie() {
+      if (categorie == null) return null;
+      for (final t in typesVaccinPour(_espece)) {
+        if (t.$1 == categorie) return (t.$2, t.$3);
+      }
+      return null;
+    }
+
+    // Le délai légal (ex: rage = 21 jours) ne s'applique qu'à la toute
+    // première injection de ce type de vaccin pour cet animal : un rappel
+    // d'un vaccin déjà administré est valide dès le jour même.
+    Future<bool> estPremiereFois(String cat) async {
+      try {
+        final rows = await _supa.from('vaccinations').select('id')
+            .eq('animal_id', _animalId!).eq('categorie', cat);
+        return (rows as List).isEmpty;
+      } catch (_) {
+        return true;
+      }
+    }
+
+    Future<void> recomputeSuggestions(StateSetter ss, {bool force = false}) async {
+      if (date == null || categorie == null) return;
+      final d = defautsPourCategorie();
+      if (d == null) return;
+      final premiereFois = await estPremiereFois(categorie!);
+      if (force || dateValidite == null) {
+        ss(() => dateValidite = date!.add(Duration(days: premiereFois ? d.$2 : 0)));
+      }
+      if (force || dateRappel == null) {
+        ss(() => dateRappel = DateTime(date!.year + d.$1, date!.month, date!.day));
+      }
+    }
+
     _openSheet('Ajouter une vaccination', (ss) => [
+      _SDrop(
+        label: 'Type de vaccin',
+        value: categorie,
+        options: typesVaccinPour(_espece).map((t) => t.$1).toList(),
+        onChanged: (v) {
+          if (v == null) return;
+          ss(() => categorie = v);
+          if (vaccin.text.trim().isEmpty) vaccin.text = v;
+          recomputeSuggestions(ss, force: true);
+        },
+      ),
       _SFld(ctrl: vaccin, label: 'Vaccin', hint: 'Ex: Rage, CCHPPI...'),
       _SFld(ctrl: lot, label: 'N° de lot', hint: 'Numéro de lot'),
       _SFld(ctrl: veto, label: 'Vétérinaire', hint: 'Nom du vétérinaire'),
-      _SDate(label: 'Date', date: date, onPicked: (d) => ss(() => date = d)),
+      _SDate(label: 'Date', date: date, onPicked: (d) { ss(() => date = d); recomputeSuggestions(ss, force: true); }),
+      _SDate(label: 'Valide à partir de', date: dateValidite, onPicked: (d) => ss(() => dateValidite = d)),
       _SDate(label: 'Date de rappel', date: dateRappel, onPicked: (d) => ss(() => dateRappel = d)),
     ], () async {
       await _supa.from('vaccinations').insert({
@@ -1436,7 +1485,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'lot': lot.text.trim().isEmpty ? null : lot.text.trim(),
         'veterinaire': veto.text.trim().isEmpty ? null : veto.text.trim(),
         'date': date?.toIso8601String().substring(0, 10),
+        'date_validite_debut': (dateValidite ?? date)?.toIso8601String().substring(0, 10),
         'date_rappel': dateRappel?.toIso8601String().substring(0, 10),
+        'categorie': categorie,
         'created_at': DateTime.now().toIso8601String(),
       });
       if (dateRappel != null) {
@@ -1985,6 +2036,40 @@ class _SFld extends StatelessWidget {
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey, fontSize: 13),
+            filled: true,
+            fillColor: const Color(0xFFF5F5F5),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+          ),
+        ),
+        const SizedBox(height: 14),
+      ],
+    );
+  }
+}
+
+class _SDrop extends StatelessWidget {
+  final String label;
+  final String? value;
+  final List<String> options;
+  final ValueChanged<String?> onChanged;
+  const _SDrop({required this.label, required this.value, required this.options, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<String>(
+          initialValue: options.contains(value) ? value : null,
+          items: options.map((o) => DropdownMenuItem(value: o, child: Text(o, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)))).toList(),
+          onChanged: onChanged,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.black87),
+          decoration: InputDecoration(
             filled: true,
             fillColor: const Color(0xFFF5F5F5),
             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

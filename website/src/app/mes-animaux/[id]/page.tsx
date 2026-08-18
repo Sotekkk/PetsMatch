@@ -16,6 +16,7 @@ import AlimentationTab from './AlimentationTab';
 import { AnatomieOwnerSection } from '@/components/AnatomiePoints';
 import { triggerAutoProtocoles } from '@/lib/planning-service';
 import { PensionJournal } from '@/components/PensionJournal';
+import { typesVaccinPour, categorieOptions, suggestFromCategorie } from '@/lib/vaccinTypes';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -205,68 +206,8 @@ function SelectField({ label, value, onChange, options }:
 }
 
 // ─── Section santé générique ──────────────────────────────────────────────────
-
-// Types de vaccins par espèce, avec délais par défaut (indicatifs, toujours
-// modifiables) : intervalle de rappel en années, et délai avant mise en
-// validité légale en jours (ex: rage = 21 jours pour les déplacements UE —
-// ne s'applique qu'à la toute première injection de ce type pour l'animal,
-// un rappel étant valide dès le jour même). Même table que l'app Flutter.
-const TYPES_VACCIN_PAR_ESPECE: Record<string, { label: string; rappelAns: number; validiteJours: number }[]> = {
-  chien: [
-    { label: 'Rage', rappelAns: 3, validiteJours: 21 },
-    { label: 'CHPPI (Carré, Hépatite, Parvovirose, Parainfluenza)', rappelAns: 1, validiteJours: 0 },
-    { label: 'Leptospirose (L4)', rappelAns: 1, validiteJours: 0 },
-    { label: 'Toux du chenil (Bordetella)', rappelAns: 1, validiteJours: 0 },
-    { label: 'Piroplasmose', rappelAns: 1, validiteJours: 0 },
-    { label: 'Autre', rappelAns: 1, validiteJours: 0 },
-  ],
-  chat: [
-    { label: 'Rage', rappelAns: 3, validiteJours: 21 },
-    { label: 'Typhus (panleucopénie)', rappelAns: 1, validiteJours: 0 },
-    { label: 'Coryza', rappelAns: 1, validiteJours: 0 },
-    { label: 'Leucose (FeLV)', rappelAns: 1, validiteJours: 0 },
-    { label: 'PIF (coronavirus félin)', rappelAns: 1, validiteJours: 0 },
-    { label: 'Autre', rappelAns: 1, validiteJours: 0 },
-  ],
-  lapin: [
-    { label: 'Myxomatose', rappelAns: 1, validiteJours: 0 },
-    { label: 'VHD (maladie hémorragique)', rappelAns: 1, validiteJours: 0 },
-    { label: 'Autre', rappelAns: 1, validiteJours: 0 },
-  ],
-  cheval: [
-    { label: 'Rage', rappelAns: 3, validiteJours: 21 },
-    { label: 'Grippe équine', rappelAns: 1, validiteJours: 0 },
-    { label: 'Tétanos', rappelAns: 1, validiteJours: 0 },
-    { label: 'Autre', rappelAns: 1, validiteJours: 0 },
-  ],
-};
-// Espèces hors liste ci-dessus (oiseau, nac, ovin, caprin, porcin, autre) :
-// choix générique, toujours avec "Autre" pour saisie manuelle libre.
-const TYPES_VACCIN_DEFAUT = [
-  { label: 'Rage', rappelAns: 3, validiteJours: 21 },
-  { label: 'Autre', rappelAns: 1, validiteJours: 0 },
-];
-function typesVaccinPour(espece?: string) {
-  return (espece ? TYPES_VACCIN_PAR_ESPECE[espece] : undefined) ?? TYPES_VACCIN_DEFAUT;
-}
-function categorieOptions(espece?: string) {
-  return [{ value: '', label: 'Sélectionner…' }, ...typesVaccinPour(espece).map(t => ({ value: t.label, label: t.label }))];
-}
-
-// Le délai légal (ex: rage = 21 jours) ne s'applique qu'à la toute première
-// injection de ce type de vaccin pour cet animal : un rappel d'un vaccin
-// déjà administré est valide dès le jour même.
-function suggestFromCategorie(espece: string | undefined, categorie: string, dateInjection: string, dejaVaccine: boolean) {
-  const def = typesVaccinPour(espece).find(t => t.label === categorie);
-  if (!def || !dateInjection) return null;
-  const dInj = new Date(dateInjection);
-  if (isNaN(dInj.getTime())) return null;
-  const validite = new Date(dInj);
-  validite.setDate(validite.getDate() + (dejaVaccine ? 0 : def.validiteJours));
-  const rappel = new Date(dInj);
-  rappel.setFullYear(rappel.getFullYear() + def.rappelAns);
-  return { validite: validite.toISOString().slice(0, 10), rappel: rappel.toISOString().slice(0, 10) };
-}
+// Types de vaccins par espèce : voir @/lib/vaccinTypes (partagé avec
+// association/animaux/[id]/page.tsx pour ne jamais diverger entre profils).
 
 function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, existingCategories }:
   { fields: { key:string; label:string; type?:string; required?:boolean; options?:{value:string;label:string}[] }[];
