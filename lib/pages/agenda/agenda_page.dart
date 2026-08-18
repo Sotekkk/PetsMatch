@@ -1236,11 +1236,37 @@ class _AgendaPageState extends State<AgendaPage> {
   Widget _dayBody(DateTime day) {
     final evts = _eventsForDay(day);
     final dayTasks = _tasksForDay(day);
+    final hasTasks = dayTasks.isNotEmpty;
+    final hasEvents = evts.isNotEmpty;
+
+    // Pas d'événement mais des tâches : la section tâches occupe tout l'écran,
+    // pas besoin d'afficher le placeholder "Aucun événement ce jour".
+    if (hasTasks && !hasEvents) {
+      return Expanded(
+        child: Column(children: [
+          const Divider(height: 1),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () async { await _load(); await _loadTasks(); },
+              color: _kTeal,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: _buildDayTasksSection(dayTasks, day: day),
+              ),
+            ),
+          ),
+        ]),
+      );
+    }
+
     return Expanded(
       child: Column(children: [
         const Divider(height: 1),
         if (dayTasks.isNotEmpty)
-          _buildDayTasksSection(dayTasks, day: day)
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.4),
+            child: SingleChildScrollView(child: _buildDayTasksSection(dayTasks, day: day)),
+          )
         else if (_canShowTasks())
           Container(
             color: const Color(0xFFEDF6F7),
