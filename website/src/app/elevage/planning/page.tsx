@@ -38,6 +38,7 @@ interface Template {
   cible_type: string;
   reference_event: string;
   declencheur_auto?: string | null;
+  default_animal_ids?: string[] | null;
   plan_template_etapes?: Etape[];
 }
 
@@ -406,7 +407,9 @@ export default function PlanningPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <h1 className="text-2xl font-bold text-gray-800">Planning</h1>
+          <h1 className="text-2xl font-bold text-gray-800">
+            {view === 'protocoles' ? 'Protocoles' : 'Planning'}
+          </h1>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setView('mois')}
@@ -889,6 +892,28 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
   const [cibleType, setCibleType] = useState(existing?.cible_type ?? 'individuel');
   const [refEvent, setRefEvent] = useState(existing?.reference_event ?? 'manuel');
   const [declencheurAuto, setDeclencheurAuto] = useState(existing?.declencheur_auto ?? '');
+  const [animalIds, setAnimalIds] = useState<string[]>(existing?.default_animal_ids ?? []);
+  const [showAnimalPicker, setShowAnimalPicker] = useState(false);
+  const [animalSearch, setAnimalSearch] = useState('');
+  const [animaux, setAnimaux] = useState<{ id: string; nom: string; espece?: string; photo_url?: string | null }[]>([]);
+
+  useEffect(() => {
+    if (cibleType !== 'individuel') return;
+    let q = supabase.from('animaux').select('id, nom, espece, photo_url').eq('uid_eleveur', uid);
+    if (profileId) q = q.eq('profile_id', profileId) as typeof q;
+    (profilSource === 'association' ? q.eq('is_association', true) : q.or('is_association.is.null,is_association.eq.false'))
+      .order('nom')
+      .then(({ data }) => setAnimaux((data ?? []) as { id: string; nom: string; espece?: string; photo_url?: string | null }[]));
+  }, [uid, profileId, profilSource, cibleType]);
+
+  const selectedAnimaux = animaux.filter(a => animalIds.includes(a.id));
+  const filteredAnimaux = animalSearch.trim()
+    ? animaux.filter(a => a.nom.toLowerCase().includes(animalSearch.trim().toLowerCase()))
+    : animaux;
+
+  function toggleAnimal(id: string) {
+    setAnimalIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
   const [etapes, setEtapes] = useState<Etape[]>(
     existing?.plan_template_etapes?.map(e => ({
       ...e,
@@ -940,6 +965,7 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
         cible_type: isNett ? 'cheptel' : cibleType,
         reference_event: isNett ? 'manuel' : refEvent,
         declencheur_auto: (isNett || !declencheurAuto) ? null : declencheurAuto,
+        default_animal_ids: (!isNett && cibleType === 'individuel' && animalIds.length > 0) ? animalIds : null,
       };
       if (existing) {
         await supabase.from('plan_templates').update(templatePayload).eq('id', existing.id);
@@ -1028,15 +1054,97 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
               </div>
               <div className="space-y-2">
                 {cibleOptions.map(c => (
-                  <button key={c.value} onClick={() => handleCible(c.value)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition-colors ${cibleType === c.value ? 'bg-green-50 border border-green-400' : 'bg-white border border-gray-200 hover:bg-gray-50'}`}>
-                    <span className="text-lg">{c.emoji}</span>
-                    <div className="flex-1">
-                      <span className={`text-sm font-semibold ${cibleType === c.value ? 'text-green-800' : 'text-gray-700'}`}>{c.label}</span>
-                      <p className="text-xs text-gray-400">{c.desc}</p>
-                    </div>
-                    {cibleType === c.value && <span className="text-green-600 text-base">✓</span>}
-                  </button>
+                  <div key={c.value}>
+                    <button onClick={() => handleCible(c.value)}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition-colors ${cibleType === c.value ? 'bg-green-50 border border-green-400' : 'bg-white border border-gray-200 hover:bg-gray-50'}`}>
+                      <span className="text-lg">{c.emoji}</span>
+                      <div className="flex-1">
+                        <span className={`text-sm font-semibold ${cibleType === c.value ? 'text-green-800' : 'text-gray-700'}`}>{c.label}</span>
+                        <p className="text-xs text-gray-400">{c.desc}</p>
+                      </div>
+                      {cibleType === c.value && <span className="text-green-600 text-base">✓</span>}
+                    </button>
+                    {c.value === 'individuel' && cibleType === 'individuel' && (
+                      <div className="mt-2 pl-3 border-l-2 border-green-200">
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">
+                          Chien(s){selectedAnimaux.length > 0 ? ` — ${selectedAnimaux.length} sélectionné(s)` : ' (optionnel)'}
+                        </label>
+                        <div className="relative">
+                          <button type="button" onClick={() => setShowAnimalPicker(v => !v)}
+                            className="w-full flex items-center gap-2 px-3 py-2.5 border border-gray-200 rounded-xl text-sm hover:border-green-500 focus:outline-none focus:border-green-500 bg-white">
+                            {selectedAnimaux.length > 0 ? (
+                              <span className="font-medium text-gray-800 flex-1 text-left truncate">
+                                {selectedAnimaux.map(a => a.nom).join(', ')}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 flex-1 text-left">— Choisir un ou plusieurs chiens —</span>
+                            )}
+                            <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          {selectedAnimaux.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                              {selectedAnimaux.map(a => (
+                                <button key={a.id} type="button" onClick={() => toggleAnimal(a.id)}
+                                  className="flex items-center gap-1 text-xs font-semibold text-white bg-green-600 hover:bg-green-700 rounded-full pl-2.5 pr-1.5 py-1">
+                                  {a.nom}
+                                  <span className="text-green-100">×</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {showAnimalPicker && (
+                            <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                              <div className="p-2 border-b border-gray-100">
+                                <input
+                                  autoFocus
+                                  value={animalSearch}
+                                  onChange={e => setAnimalSearch(e.target.value)}
+                                  placeholder="Rechercher un animal…"
+                                  className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-green-500"
+                                />
+                              </div>
+                              <div className="max-h-48 overflow-y-auto">
+                                {filteredAnimaux.length === 0
+                                  ? <p className="text-sm text-gray-400 text-center py-4">Aucun animal</p>
+                                  : filteredAnimaux.map(a => {
+                                    const checked = animalIds.includes(a.id);
+                                    return (
+                                      <button key={a.id} type="button"
+                                        onClick={() => toggleAnimal(a.id)}
+                                        className={`w-full flex items-center gap-3 px-3 py-2 text-left border-b border-gray-50 last:border-0 transition-colors ${
+                                          checked ? 'bg-green-100' : 'hover:bg-green-50'
+                                        }`}>
+                                        <input type="checkbox" checked={checked} readOnly
+                                          className="rounded text-green-600 focus:ring-green-400 flex-shrink-0" />
+                                        <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
+                                          {a.photo_url
+                                            ? <img src={a.photo_url} alt="" className="w-full h-full object-cover" />
+                                            : <span className="text-sm">🐾</span>}
+                                        </div>
+                                        <div className="min-w-0">
+                                          <p className="text-sm font-semibold text-gray-800 truncate">{a.nom}</p>
+                                          {a.espece && <p className="text-xs text-gray-400">{a.espece}</p>}
+                                        </div>
+                                      </button>
+                                    );
+                                  })
+                                }
+                              </div>
+                              <button type="button" onClick={() => { setShowAnimalPicker(false); setAnimalSearch(''); }}
+                                className="w-full py-2 text-sm font-semibold text-green-700 bg-green-50 hover:bg-green-100 border-t border-gray-100">
+                                Terminé
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Laisser vide pour choisir le/les chien(s) plus tard, au moment d&apos;appliquer le protocole.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
@@ -1252,7 +1360,7 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
   template: Template; uid: string; profileId: string | null; profilSource?: string; onClose: () => void; onApplied: () => void;
 }) {
   const [dateRef, setDateRef] = useState(toISODate(new Date()));
-  const [animalId, setAnimalId] = useState('');
+  const [animalIds, setAnimalIds] = useState<string[]>(template.default_animal_ids ?? []);
   const [showPicker, setShowPicker] = useState(false);
   const [animalSearch, setAnimalSearch] = useState('');
   const [animaux, setAnimaux] = useState<{ id: string; nom: string; espece?: string; photo_url?: string | null }[]>([]);
@@ -1262,10 +1370,14 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
   const isBebes = cibleType === 'bebes';
   const needsAnimal = cibleType === 'individuel';
   const showDate = cibleType !== 'bebes' && cibleType !== 'gestantes';
-  const selectedAnimal = animaux.find(a => a.id === animalId);
+  const selectedAnimaux = animaux.filter(a => animalIds.includes(a.id));
   const filteredAnimaux = animalSearch.trim()
     ? animaux.filter(a => a.nom.toLowerCase().includes(animalSearch.trim().toLowerCase()))
     : animaux;
+
+  function toggleAnimal(id: string) {
+    setAnimalIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
 
   useEffect(() => {
     if (!needsAnimal) return;
@@ -1277,15 +1389,17 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
   }, [uid, needsAnimal, profilSource, profileId]);
 
   const apply = async () => {
-    if (needsAnimal && !animalId) { alert('Sélectionnez un animal'); return; }
+    if (needsAnimal && animalIds.length === 0) { alert('Sélectionnez au moins un animal'); return; }
     setSaving(true);
     try {
       const etapes = template.plan_template_etapes ?? [];
       const targets: { animal_id?: string; date_base: string; animal_nom?: string }[] = [];
 
       if (cibleType === 'individuel') {
-        const animal = animaux.find(a => a.id === animalId);
-        targets.push({ animal_id: animalId, date_base: dateRef, animal_nom: animal?.nom });
+        for (const id of animalIds) {
+          const animal = animaux.find(a => a.id === id);
+          targets.push({ animal_id: id, date_base: dateRef, animal_nom: animal?.nom });
+        }
       } else if (cibleType === 'gestantes') {
         const { data: gestations } = await supabase.from('gestations')
           .select('animal_id, date_prevue, animaux(nom)').eq('uid_eleveur', uid).is('date_mise_bas', null);
@@ -1406,27 +1520,34 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
           </div>
           {needsAnimal && (
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Animal</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                Animaux{selectedAnimaux.length > 0 ? ` — ${selectedAnimaux.length} sélectionné(s)` : ''}
+              </label>
               <div className="relative">
                 <button type="button" onClick={() => setShowPicker(v => !v)}
                   className="w-full flex items-center gap-2 px-3 py-2.5 border border-gray-200 rounded-xl text-sm hover:border-green-500 focus:outline-none focus:border-green-500 bg-white">
-                  {selectedAnimal ? (
-                    <>
-                      <div className="w-7 h-7 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
-                        {selectedAnimal.photo_url
-                          ? <img src={selectedAnimal.photo_url} alt="" className="w-full h-full object-cover" />
-                          : <span className="text-sm">🐾</span>}
-                      </div>
-                      <span className="font-medium text-gray-800 flex-1 text-left">{selectedAnimal.nom}</span>
-                      <span className="text-xs text-gray-400">{selectedAnimal.espece}</span>
-                    </>
+                  {selectedAnimaux.length > 0 ? (
+                    <span className="font-medium text-gray-800 flex-1 text-left truncate">
+                      {selectedAnimaux.map(a => a.nom).join(', ')}
+                    </span>
                   ) : (
-                    <span className="text-gray-400 flex-1 text-left">— Choisir un animal —</span>
+                    <span className="text-gray-400 flex-1 text-left">— Choisir un ou plusieurs animaux —</span>
                   )}
                   <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
+                {selectedAnimaux.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {selectedAnimaux.map(a => (
+                      <button key={a.id} type="button" onClick={() => toggleAnimal(a.id)}
+                        className="flex items-center gap-1 text-xs font-semibold text-white bg-green-600 hover:bg-green-700 rounded-full pl-2.5 pr-1.5 py-1">
+                        {a.nom}
+                        <span className="text-green-100">×</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {showPicker && (
                   <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
                     <div className="p-2 border-b border-gray-100">
@@ -1441,23 +1562,34 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
                     <div className="max-h-48 overflow-y-auto">
                       {filteredAnimaux.length === 0
                         ? <p className="text-sm text-gray-400 text-center py-4">Aucun animal</p>
-                        : filteredAnimaux.map(a => (
-                          <button key={a.id} type="button"
-                            onClick={() => { setAnimalId(a.id); setShowPicker(false); setAnimalSearch(''); }}
-                            className="w-full flex items-center gap-3 px-3 py-2 hover:bg-green-50 text-left border-b border-gray-50 last:border-0 transition-colors">
-                            <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
-                              {a.photo_url
-                                ? <img src={a.photo_url} alt="" className="w-full h-full object-cover" />
-                                : <span className="text-sm">🐾</span>}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold text-gray-800 truncate">{a.nom}</p>
-                              {a.espece && <p className="text-xs text-gray-400">{a.espece}</p>}
-                            </div>
-                          </button>
-                        ))
+                        : filteredAnimaux.map(a => {
+                          const checked = animalIds.includes(a.id);
+                          return (
+                            <button key={a.id} type="button"
+                              onClick={() => toggleAnimal(a.id)}
+                              className={`w-full flex items-center gap-3 px-3 py-2 text-left border-b border-gray-50 last:border-0 transition-colors ${
+                                checked ? 'bg-green-100' : 'hover:bg-green-50'
+                              }`}>
+                              <input type="checkbox" checked={checked} readOnly
+                                className="rounded text-green-600 focus:ring-green-400 flex-shrink-0" />
+                              <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100 flex items-center justify-center">
+                                {a.photo_url
+                                  ? <img src={a.photo_url} alt="" className="w-full h-full object-cover" />
+                                  : <span className="text-sm">🐾</span>}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-gray-800 truncate">{a.nom}</p>
+                                {a.espece && <p className="text-xs text-gray-400">{a.espece}</p>}
+                              </div>
+                            </button>
+                          );
+                        })
                       }
                     </div>
+                    <button type="button" onClick={() => { setShowPicker(false); setAnimalSearch(''); }}
+                      className="w-full py-2 text-sm font-semibold text-green-700 bg-green-50 hover:bg-green-100 border-t border-gray-100">
+                      Terminé
+                    </button>
                   </div>
                 )}
               </div>

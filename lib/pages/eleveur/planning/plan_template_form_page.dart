@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/planning_service.dart';
+import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -29,6 +30,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   String _refEvent        = 'manuel';
   String _declencheurAuto = '';
   bool   _saving          = false;
+  List<Map<String, dynamic>> _selectedAnimaux = [];
 
   static const _lieuxBase = [
     'Cuisine', 'Salle de soins', 'Salle de quarantaine', 'Jardin', 'Couloir',
@@ -97,9 +99,35 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           _etapes.add(_EtapeCtrl.fromData(Map<String, dynamic>.from(et)));
         }
       }
+      final defaultIds = e['default_animal_ids'];
+      if (defaultIds is List && defaultIds.isNotEmpty) {
+        _loadDefaultAnimaux(defaultIds.map((id) => id.toString()).toList());
+      }
     }
     if (_etapes.isEmpty) _addEtape();
     _loadBoxes();
+  }
+
+  Future<void> _loadDefaultAnimaux(List<String> ids) async {
+    try {
+      final rows = await Supabase.instance.client.from('animaux')
+          .select('id, nom, espece, photo_url').inFilter('id', ids);
+      if (mounted) setState(() => _selectedAnimaux = List<Map<String, dynamic>>.from(rows));
+    } catch (_) {}
+  }
+
+  Future<void> _pickAnimaux() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final pid = User_Info.activeProfileId;
+    final result = await AnimalPickerSheet.pickMany(
+      context,
+      uid: uid,
+      profileId: pid.isNotEmpty ? pid : null,
+      current: _selectedAnimaux,
+      accentColor: _green,
+      showPortees: !_isAssociation,
+    );
+    if (result != null && mounted) setState(() => _selectedAnimaux = result);
   }
 
   Future<void> _loadBoxes() async {
@@ -152,6 +180,9 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
       final etapesData = _etapes.map((e) => e.toMap(isBebes: _cibleType == 'bebes')).toList();
       final lieuNett = _lieuNettCtrl.text.trim().isEmpty ? null : _lieuNettCtrl.text.trim();
       final auto = _type == 'nettoyage' ? null : (_declencheurAuto.isEmpty ? null : _declencheurAuto);
+      final defaultAnimalIds = (_type != 'nettoyage' && _cibleType == 'individuel' && _selectedAnimaux.isNotEmpty)
+          ? _selectedAnimaux.map((a) => a['id'].toString()).toList()
+          : null;
       if (widget.existing != null) {
         await PlanningService.updateTemplate(
           templateId:      widget.existing!['id'] as String,
@@ -162,6 +193,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           cibleType:       _type == 'nettoyage' ? 'cheptel' : _cibleType,
           referenceEvent:  _type == 'nettoyage' ? 'manuel' : _refEvent,
           declencheurAuto: auto,
+          defaultAnimalIds: defaultAnimalIds,
           etapes:          etapesData,
         );
       } else {
@@ -175,6 +207,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           cibleType:       _type == 'nettoyage' ? 'cheptel' : _cibleType,
           referenceEvent:  _type == 'nettoyage' ? 'manuel' : _refEvent,
           declencheurAuto: auto,
+          defaultAnimalIds: defaultAnimalIds,
           etapes:          etapesData,
         );
       }
@@ -273,18 +306,46 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
                 onChanged: (v) => setState(() => _espece = v ?? ''),
               ),
               const SizedBox(height: 10),
-              ...(_cibles.map((c) => _RadioTile(
-                emoji: c.$1,
-                title: c.$3,
-                subtitle: c.$4,
-                selected: _cibleType == c.$1,
-                onTap: () => setState(() {
-                  _cibleType = c.$1;
-                  if (c.$1 == 'gestantes') { _refEvent = 'mise_bas'; }
-                  else if (c.$1 == 'bebes') { _refEvent = 'age_semaines'; }
-                  else if (c.$1 == 'individuel') { _refEvent = 'manuel'; }
-                }),
-              ))),
+              ...(_cibles.map((c) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _RadioTile(
+                  emoji: c.$1,
+                  title: c.$3,
+                  subtitle: c.$4,
+                  selected: _cibleType == c.$1,
+                  onTap: () => setState(() {
+                    _cibleType = c.$1;
+                    if (c.$1 == 'gestantes') { _refEvent = 'mise_bas'; }
+                    else if (c.$1 == 'bebes') { _refEvent = 'age_semaines'; }
+                    else if (c.$1 == 'individuel') { _refEvent = 'manuel'; }
+                  }),
+                ),
+                if (c.$1 == 'individuel' && _cibleType == 'individuel')
+                  Padding(
+                    padding: const EdgeInsets.only(left: 12, right: 4, top: 4, bottom: 8),
+                    child: Container(
+                      padding: const EdgeInsets.only(left: 10),
+                      decoration: BoxDecoration(border: Border(left: BorderSide(color: _green.withValues(alpha: 0.25), width: 2))),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(
+                          _selectedAnimaux.isEmpty ? 'Chien(s) (optionnel)' : 'Chien(s) — ${_selectedAnimaux.length} sélectionné(s)',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey),
+                        ),
+                        const SizedBox(height: 4),
+                        AnimalPickerField(
+                          selected: _selectedAnimaux,
+                          onTap: _pickAnimaux,
+                          label: 'Choisir un ou plusieurs chiens…',
+                          accentColor: _green,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Laisser vide pour choisir le/les chien(s) plus tard, au moment d\'appliquer le protocole.',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, color: Colors.grey.shade400),
+                        ),
+                      ]),
+                    ),
+                  ),
+              ]))),
             ]),
             const SizedBox(height: 12),
           ],

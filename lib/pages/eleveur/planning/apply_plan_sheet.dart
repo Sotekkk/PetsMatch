@@ -33,7 +33,11 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
   @override
   void initState() {
     super.initState();
-    if (_cibleType == 'individuel') _loadAnimaux();
+    if (_cibleType == 'individuel') {
+      _loadAnimaux();
+      final defaultIds = widget.template['default_animal_ids'];
+      if (defaultIds is List) _selectedIds.addAll(defaultIds.map((id) => id.toString()));
+    }
   }
 
   bool get _showDatePicker =>

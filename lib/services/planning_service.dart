@@ -35,6 +35,7 @@ class PlanningService {
     String cibleType      = 'individuel',
     String referenceEvent = 'manuel',
     String? declencheurAuto,
+    List<String>? defaultAnimalIds,
     required List<Map<String, dynamic>> etapes,
   }) async {
     final row = await _supa.from('plan_templates').insert({
@@ -49,6 +50,7 @@ class PlanningService {
       if (espece != null && espece.isNotEmpty) 'espece': espece,
       if (description != null && description.isNotEmpty) 'description': description,
       if (lieu != null && lieu.isNotEmpty) 'lieu': lieu,
+      if (defaultAnimalIds != null && defaultAnimalIds.isNotEmpty) 'default_animal_ids': defaultAnimalIds,
     }).select('id').single();
 
     final templateId = row['id'] as String;
@@ -66,6 +68,7 @@ class PlanningService {
     String cibleType      = 'individuel',
     String referenceEvent = 'manuel',
     String? declencheurAuto,
+    List<String>? defaultAnimalIds,
     required List<Map<String, dynamic>> etapes,
   }) async {
     await _supa.from('plan_templates').update({
@@ -76,6 +79,7 @@ class PlanningService {
       'reference_event':  referenceEvent,
       'lieu':             lieu,
       'declencheur_auto': (declencheurAuto != null && declencheurAuto.isNotEmpty) ? declencheurAuto : null,
+      'default_animal_ids': (defaultAnimalIds != null && defaultAnimalIds.isNotEmpty) ? defaultAnimalIds : null,
     }).eq('id', templateId);
 
     await _supa.from('plan_template_etapes').delete().eq('template_id', templateId);
