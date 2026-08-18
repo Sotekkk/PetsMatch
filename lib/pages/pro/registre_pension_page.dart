@@ -2222,13 +2222,14 @@ Future<Map<String, dynamic>> _lookupAnimalByChip(String chip) async {
         break;
       }
     }
+    String? ownerProfileId;
     if (found != null) {
       final animalId = found['id'] as String;
       // Propriétaire actuel = animaux_proprietes (source unique, date_fin IS NULL),
       // fallback sur uid_eleveur/uid_proprietaire si jamais peuplée pour cet animal.
       try {
         final propRow = await supa.from('animaux_proprietes')
-            .select('uid_proprio')
+            .select('uid_proprio, profile_id_proprio')
             .eq('animal_id', animalId)
             .filter('date_fin', 'is', null)
             .order('date_debut', ascending: false)
@@ -2236,6 +2237,7 @@ Future<Map<String, dynamic>> _lookupAnimalByChip(String chip) async {
             .maybeSingle();
         ownerUid = (propRow?['uid_proprio'] as String?) ??
             (found['uid_eleveur'] ?? found['uid_proprietaire'])?.toString();
+        ownerProfileId = propRow?['profile_id_proprio'] as String?;
       } catch (_) {
         ownerUid = (found['uid_eleveur'] ?? found['uid_proprietaire'])?.toString();
       }
@@ -2244,7 +2246,13 @@ Future<Map<String, dynamic>> _lookupAnimalByChip(String chip) async {
         try {
           // Supabase, pas Firestore (obsolète depuis la migration — documents
           // vides/périmés, ce qui laissait ces champs vides à l'admission).
-          final d = await supa.from('user_profiles').select().eq('uid', ownerUid).eq('is_main', true).maybeSingle();
+          // Profil PRÉCIS lié via animaux_proprietes en priorité (un compte
+          // peut avoir plusieurs profils — éleveur, particulier... — et le
+          // profil "principal" n'est pas forcément celui qui possède cet
+          // animal, ex: animal du profil particulier d'un éleveur).
+          final d = ownerProfileId != null
+              ? await supa.from('user_profiles').select().eq('id', ownerProfileId).maybeSingle()
+              : await supa.from('user_profiles').select().eq('uid', ownerUid).eq('is_main', true).maybeSingle();
           if (d != null) {
             // Éleveur/pro → nom d'élevage + adresse pro en priorité, sinon nom perso.
             final nameElevage = d['nom'] as String?;
