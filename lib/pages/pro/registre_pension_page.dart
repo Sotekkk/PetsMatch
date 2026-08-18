@@ -1677,11 +1677,23 @@ class PensionEditSheetState extends State<PensionEditSheet> {
     try {
       final pid = User_Info.activeProfileId;
       if (pid.isEmpty) return;
-      // Profil du propriétaire — is_main en priorité, sinon n'importe quel profil du compte.
-      final ownerProfiles = await widget.supa.from('user_profiles')
-          .select('id, is_main').eq('uid', ownerUid) as List;
-      final ownerProfileId = ownerProfiles.isEmpty ? null : (ownerProfiles.firstWhere(
-          (p) => (p as Map)['is_main'] == true, orElse: () => ownerProfiles.first) as Map)['id'] as String?;
+      // Profil du propriétaire — celui PRÉCIS lié via animaux_proprietes en
+      // priorité (peut différer du profil principal du compte, ex: animal du
+      // profil particulier d'un éleveur), sinon repli sur is_main.
+      String? ownerProfileId;
+      try {
+        final propRow = await widget.supa.from('animaux_proprietes')
+            .select('profile_id_proprio').eq('animal_id', animalId)
+            .filter('date_fin', 'is', null).order('date_debut', ascending: false)
+            .limit(1).maybeSingle();
+        ownerProfileId = propRow?['profile_id_proprio'] as String?;
+      } catch (_) {}
+      if (ownerProfileId == null) {
+        final ownerProfiles = await widget.supa.from('user_profiles')
+            .select('id, is_main').eq('uid', ownerUid) as List;
+        ownerProfileId = ownerProfiles.isEmpty ? null : (ownerProfiles.firstWhere(
+            (p) => (p as Map)['is_main'] == true, orElse: () => ownerProfiles.first) as Map)['id'] as String?;
+      }
       if (ownerProfileId == null) return;
       final existing = await widget.supa.from('animal_access')
           .select('id, statut').eq('pro_profile_id', pid).eq('animal_id', animalId).maybeSingle();
