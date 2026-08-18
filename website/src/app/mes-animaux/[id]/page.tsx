@@ -1168,6 +1168,11 @@ export default function AnimalFichePage() {
   );
 
   const [animal, setAnimal] = useState<Animal>({ id:'', espece:'chien', sexe:'male' });
+  // Propriétaire courant selon animaux_proprietes (date_fin IS NULL) — source
+  // de vérité pour la propriété (voir migration_fix_animaux_proprietes_
+  // unique_constraint.sql), contrairement à animaux.uid_eleveur/uid_
+  // proprietaire qui ne bougent pas forcément à chaque cession/transfert.
+  const [currentProprioUid, setCurrentProprioUid] = useState<string | null>(null);
   const [breeds, setBreeds] = useState<string[]>([]);
 
   // ── Cession
@@ -1256,6 +1261,9 @@ export default function AnimalFichePage() {
     const { data } = await supabase.from('animaux').select('*').eq('id', id).single();
     if (data) {
       setAnimal(data as Animal);
+      supabase.from('animaux_proprietes').select('uid_proprio')
+        .eq('animal_id', id).is('date_fin', null).maybeSingle()
+        .then(({ data: prop }) => setCurrentProprioUid(prop?.uid_proprio ?? null));
       if (data.uid_eleveur && data.uid_eleveur !== user.uid) {
         // Cherche la relation employé en essayant d'abord par uid, puis par profile_id
         let empRow: { id: string; eleveur_profile_id: string | null } | null = null;
@@ -1986,8 +1994,15 @@ export default function AnimalFichePage() {
   }
 
   const isAcquereur = !!user && user.uid === animal.uid_acquereur;
-  // isOwner : propriétaire original (éleveur OU particulier) OU acquéreur après cession confirmée
-  const isOwner = !!user && (user.uid === animal.uid_eleveur || user.uid === animal.uid_proprietaire || isAcquereur);
+  // isOwner : propriétaire courant selon animaux_proprietes (source de
+  // vérité, gère les cessions/transferts) — repli sur les colonnes
+  // uid_eleveur/uid_proprietaire/uid_acquereur si l'animal n'a pas (encore)
+  // de ligne animaux_proprietes (ex: anciennes fiches jamais migrées).
+  const isOwner = !!user && (
+    currentProprioUid != null
+      ? user.uid === currentProprioUid
+      : (user.uid === animal.uid_eleveur || user.uid === animal.uid_proprietaire || isAcquereur)
+  );
   // canWrite : propriétaire OU employé avec write_animaux
   const canWrite = isOwner || (isEmployeOfOwner && employePerms.includes('write_animaux'));
   // canWriteSante : propriétaire OU employé avec write_sante (ou write_animaux)
