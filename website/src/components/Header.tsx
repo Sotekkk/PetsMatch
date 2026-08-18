@@ -213,7 +213,7 @@ const MENU_PENSION = [
     section: 'Ma Pension',
     icon: '🏡',
     items: [
-      { href: '/pension/registre',  label: 'Registre pension',     icon: '📋' },
+      { href: '/pension/registre',  label: 'Nos pensionnaires',    icon: '📋' },
       { href: '/pension/demandes',  label: 'Demandes d\'accès',    icon: '🔑' },
       { href: '/pension/chenil',    label: 'Logements / Chenil',   icon: '🏘️' },
       { href: '/pension/planning',  label: 'Planning occupation',  icon: '📆', pro: true },

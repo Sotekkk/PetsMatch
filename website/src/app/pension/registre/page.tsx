@@ -154,7 +154,7 @@ export default function RegistrePensionPage() {
             <button onClick={() => router.back()}
               style={{ background: 'none', border: 'none', color: 'white', fontSize: 20, cursor: 'pointer', padding: 0 }}>←</button>
             <h1 style={{ margin: 0, fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 20, color: 'white', flex: 1 }}>
-              Registre pension
+              Nos pensionnaires
             </h1>
             <button onClick={() => setShowFilter(f => !f)}
               style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)',

@@ -511,7 +511,7 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
           if (User_Info.catPro == 'garde' || User_Info.catPro == 'pension')
             _DrawerItem(
               icon: Icons.home_work_outlined,
-              label: 'Registre pension',
+              label: 'Nos pensionnaires',
               onTap: () => _push(const RegistrePensionPage()),
             ),
           if (User_Info.catPro == 'veterinaire')
