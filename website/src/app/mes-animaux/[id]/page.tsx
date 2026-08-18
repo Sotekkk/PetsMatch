@@ -1861,6 +1861,30 @@ export default function AnimalFichePage() {
         animalId: id, dateEvenement: new Date(data.date),
         espece: animal.espece,
       }).catch(() => {});
+      // Rappels agenda J-7 et J-1 pour la prochaine chaleur — miroir de
+      // l'appli (_AddChaleursDialog.onSave) pour que le calendrier affiche
+      // la même chose que sur mobile.
+      const interval = animal.intervalle_chaleurs_jours ?? CHALEURS_INTERVAL[animal.espece ?? ''];
+      if (interval) {
+        const startDate = new Date(data.date);
+        const nextHeat = new Date(startDate);
+        nextHeat.setDate(nextHeat.getDate() + interval);
+        const nomAnimal = animal.nom || 'animal';
+        for (const offset of [7, 1]) {
+          const rappel = new Date(nextHeat);
+          rappel.setDate(rappel.getDate() - offset);
+          if (rappel.getTime() > Date.now()) {
+            const dateAt8 = new Date(rappel.getFullYear(), rappel.getMonth(), rappel.getDate(), 8, 0, 0);
+            await supabase.from('agenda_events').insert({
+              uid: user.uid,
+              titre: `Chaleurs prévues J-${offset} — ${nomAnimal}`,
+              type: 'medication',
+              date_debut: dateAt8.toISOString(),
+              ...(activeProfileId ? { pro_profile_id: activeProfileId, profile_id: activeProfileId } : {}),
+            }).then(({ error }) => { if (error) console.error('agenda_events chaleurs error:', error.message); });
+          }
+        }
+      }
     }
     if (table === 'gestations' && processed.gestation_confirmee === true && data.date_prevue) {
       triggerAutoProtocoles({
