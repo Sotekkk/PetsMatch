@@ -216,9 +216,48 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
   const [form, setForm] = useState<Record<string,string>>(initial ?? {});
   const hasRappelField = fields.some(f => f.key === 'date_rappel');
   const hasValiditeField = fields.some(f => f.key === 'date_validite_debut');
+  // Fréquence (ex: antiparasitaires) : valeur + unité au lieu d'un texte
+  // libre, pour calculer automatiquement la date de rappel. Best-effort pour
+  // relire une fréquence texte existante en édition (ex: "1 mois").
+  const parsedFreq = /^(\d+)\s*(jour|semaine|mois)/i.exec(initial?.frequence ?? '');
+  const [freqValeur, setFreqValeur] = useState(parsedFreq?.[1] ?? '1');
+  const [freqUnite, setFreqUnite] = useState<'jour'|'semaine'|'mois'>(
+    (parsedFreq?.[2]?.toLowerCase() as 'jour'|'semaine'|'mois') ?? 'mois');
+  function applyFrequence(valeur: string, unite: 'jour'|'semaine'|'mois', dateStr?: string) {
+    const n = parseInt(valeur, 10);
+    setForm(p => {
+      if (!(n > 0)) return p;
+      const next = {...p};
+      const uniteLabel = unite === 'jour' ? `jour${n>1?'s':''}` : unite === 'semaine' ? `semaine${n>1?'s':''}` : 'mois';
+      next.frequence = `${n} ${uniteLabel}`;
+      const d0 = dateStr ?? p.date;
+      if (d0) {
+        const days = unite === 'jour' ? n : unite === 'semaine' ? n*7 : n*30;
+        const d = new Date(d0); d.setDate(d.getDate() + days);
+        next.date_rappel = d.toISOString().slice(0,10);
+      }
+      return next;
+    });
+  }
   return (
     <div className="space-y-3">
-      {fields.map(f => f.type === 'select' ? (
+      {fields.map(f => f.type === 'frequence' ? (
+        <div key={f.key}>
+          <label className="block text-xs font-semibold text-gray-500 mb-1">{f.label}</label>
+          <div className="flex gap-2">
+            <input type="number" min={1} value={freqValeur}
+              onChange={e => { setFreqValeur(e.target.value); applyFrequence(e.target.value, freqUnite); }}
+              className="w-20 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30" />
+            <select value={freqUnite}
+              onChange={e => { const u = e.target.value as 'jour'|'semaine'|'mois'; setFreqUnite(u); applyFrequence(freqValeur, u); }}
+              className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30">
+              <option value="jour">Jour(s)</option>
+              <option value="semaine">Semaine(s)</option>
+              <option value="mois">Mois</option>
+            </select>
+          </div>
+        </div>
+      ) : f.type === 'select' ? (
         <SelectField key={f.key} label={f.label} value={form[f.key]??''} options={f.options ?? []}
           onChange={v => setForm(p=>{
             const next = {...p,[f.key]:v};
@@ -246,6 +285,16 @@ function AddHealthForm({ fields, onSave, onCancel, saving, initial, espece, exis
               const dejaVaccine = (existingCategories ?? []).includes(p.categorie);
               const sug = suggestFromCategorie(espece, p.categorie, v, dejaVaccine);
               if (sug) { next.date_rappel = sug.rappel; next.date_validite_debut = sug.validite; }
+            }
+            // Date changée alors qu'une fréquence est déjà saisie (ex:
+            // antiparasitaires) : recalcule le rappel sur la nouvelle date.
+            if (f.key === 'date' && fields.some(ff => ff.type === 'frequence')) {
+              const n = parseInt(freqValeur, 10);
+              if (n > 0) {
+                const days = freqUnite === 'jour' ? n : freqUnite === 'semaine' ? n*7 : n*30;
+                const d = new Date(v); d.setDate(d.getDate() + days);
+                next.date_rappel = d.toISOString().slice(0,10);
+              }
             }
             return next;
           })} />
@@ -293,7 +342,12 @@ function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, espe
             {String(record[mainField.key] ?? '—')}
             {isVetEntry && <span title="Certifié par un vétérinaire" className="text-xs">🔒</span>}
           </p>
-          {fields[1] && <p className="text-xs text-gray-400">{fmtDate(record[fields[1].key] as string)}</p>}
+          {(() => {
+            const dateField = fields.find(f => f.type === 'date');
+            return dateField && record[dateField.key]
+              ? <p className="text-xs text-gray-400">{fmtDate(record[dateField.key] as string)}</p>
+              : null;
+          })()}
         </div>
         <svg className={`w-4 h-4 text-gray-400 transition-transform ${open?'rotate-180':''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
@@ -304,7 +358,7 @@ function HealthRecord({ fields, record, onDelete, onSave, saving, canWrite, espe
           {fields.map(f => record[f.key] ? (
             <div key={f.key} className="flex gap-2 text-xs">
               <span className="text-gray-400 w-24 flex-shrink-0">{f.label}</span>
-              <span className="text-gray-700">{f.key.includes('date') ? fmtDate(record[f.key] as string) : String(record[f.key])}</span>
+              <span className="text-gray-700">{f.type === 'date' ? fmtDate(record[f.key] as string) : String(record[f.key])}</span>
             </div>
           ) : null)}
           {isVetEntry && (
@@ -2950,11 +3004,11 @@ export default function AnimalFichePage() {
             addFormOpen={addOpen==='antiparasitaires'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
               onSave={d=>saveHealthRecord('antiparasitaires',d)}
-              fields={[{key:'produit',label:'Produit',required:true},{key:'type',label:'Type (collier, pipette…)'},{key:'date',label:'Date',type:'date'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'frequence',label:'Fréquence'},{key:'notes',label:'Notes'}]}/>}>
+              fields={[{key:'produit',label:'Produit',required:true},{key:'type',label:'Type (collier, pipette…)'},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'notes',label:'Notes'}]}/>}>
             {health.antiparasitaires.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('antiparasitaires',r.id)}
                 onSave={d=>updateHealthRecord('antiparasitaires',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
-                fields={[{key:'produit',label:'Produit',required:true},{key:'type',label:'Type'},{key:'date',label:'Date',type:'date'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'frequence',label:'Fréquence'},{key:'notes',label:'Notes'}]}/>
+                fields={[{key:'produit',label:'Produit',required:true},{key:'type',label:'Type'},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'notes',label:'Notes'}]}/>
             ))}
             {health.antiparasitaires.length===0 && <p className="p-4 text-sm text-gray-400">Aucun antiparasitaire</p>}
           </HealthSection>
