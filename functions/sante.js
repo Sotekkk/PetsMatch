@@ -260,21 +260,35 @@ async function sendOverdueSanteReminders() {
     const todayStr = dateStr(0);
 
     for (const {table, label, nomField} of TABLES) {
+        // Pas de filtre date_rappel=lt ici : un vaccin fraîchement refait a un
+        // date_rappel dans le FUTUR, donc invisible à ce filtre — sans
+        // récupérer aussi les lignes non en retard, on ne peut jamais détecter
+        // qu'un enregistrement plus récent a déjà pris le relais de l'ancien.
         const rows = await supabaseGet(
-            `${table}?date_rappel=lt.${todayStr}` +
+            `${table}?date_rappel=not.is.null` +
             `&select=*,animaux!inner(nom,espece,uid_eleveur,uid_proprietaire)`,
         );
         if (!Array.isArray(rows) || rows.length === 0) continue;
 
-        // Un traitement plus récent déjà loggé pour le même animal annule
-        // le retard de l'ancien enregistrement.
-        const latestByAnimal = new Map();
+        // Un traitement plus récent déjà loggé pour le même animal annule le
+        // retard de l'ancien enregistrement — groupé par (animal, catégorie)
+        // pour les vaccins : deux types de vaccin différents (ex: Rage vs
+        // CHPPI) ont des échéances indépendantes, un rappel Rage à jour ne
+        // doit pas masquer un rappel CHPPI réellement en retard (et
+        // inversement le forcer sur un autre type de vaccin non pertinent).
+        const latestByGroup = new Map();
         for (const row of rows) {
-            const prev = latestByAnimal.get(row.animal_id);
-            if (!prev || row.date_rappel > prev.date_rappel) latestByAnimal.set(row.animal_id, row);
+            const key = table === "vaccinations" ?
+                `${row.animal_id}|${row.categorie || row[nomField] || ""}` :
+                row.animal_id;
+            const prev = latestByGroup.get(key);
+            if (!prev || row.date_rappel > prev.date_rappel) latestByGroup.set(key, row);
         }
 
-        for (const row of latestByAnimal.values()) {
+        for (const row of latestByGroup.values()) {
+            // Le dernier enregistrement du groupe n'est plus en retard —
+            // rien à signaler pour ce (animal, catégorie).
+            if (!(row.date_rappel < todayStr)) continue;
             const animal = row.animaux;
             const uid = animal?.uid_eleveur || animal?.uid_proprietaire;
             if (!animal || !uid) continue;
