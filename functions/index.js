@@ -13,6 +13,7 @@ const annonceFunctions = require("./annonces");
 const matchFunctions = require("./match");
 const marketplaceBillingFunctions = require("./marketplace_billing");
 const retardFunctions = require("./retard");
+const pensionFunctions = require("./pension");
 
 // Stripe + messagerie
 exports.createStripePaymentIntent = stripeFunctions.createStripePaymentIntent;
@@ -70,3 +71,6 @@ exports.marketplaceBillingManual = marketplaceBillingFunctions.marketplaceBillin
 
 // Agenda — alertes retard pro (VET07)
 exports.sendRetardNotification = retardFunctions.sendRetardNotification;
+
+// Pension — rappels quotidiens de sortie en retard tant que non loggée
+exports.sendPensionSortieReminders = pensionFunctions.sendPensionSortieReminders;
