@@ -6385,18 +6385,57 @@ class _AddAntiparasitaireDialog extends StatefulWidget {
   @override State<_AddAntiparasitaireDialog> createState() => _AddAntiparasitaireDialogState();
 }
 class _AddAntiparasitaireDialogState extends State<_AddAntiparasitaireDialog> {
-  final _produit   = TextEditingController();
-  final _frequence = TextEditingController();
+  final _produit        = TextEditingController(text: '');
+  final _frequenceValeur = TextEditingController(text: '1');
   final _notes     = TextEditingController();
   String _type = 'pipette';
+  String _frequenceUnite = 'mois';
   DateTime? _date, _dateRappel;
+
+  String get _frequenceLabel {
+    final n = int.tryParse(_frequenceValeur.text.trim()) ?? 1;
+    final unite = _frequenceUnite == 'jour' ? 'jour${n > 1 ? 's' : ''}'
+        : _frequenceUnite == 'semaine' ? 'semaine${n > 1 ? 's' : ''}' : 'mois';
+    return '$n $unite';
+  }
+
+  void _recomputeRappel() {
+    if (_date == null) return;
+    final n = int.tryParse(_frequenceValeur.text.trim()) ?? 1;
+    if (n <= 0) return;
+    final days = _frequenceUnite == 'jour' ? n : _frequenceUnite == 'semaine' ? n * 7 : n * 30;
+    setState(() => _dateRappel = _date!.add(Duration(days: days)));
+  }
+
   @override
   Widget build(BuildContext context) => _BaseDialog(title: 'Ajouter un antiparasitaire', fields: [
     _DDrop('Type', _type, ['pipette', 'collier', 'comprimé', 'spray', 'autre'], (v) => setState(() => _type = v!)),
     _DF('Produit *', _produit),
-    _DD('Date application *', _date, (d) => setState(() => _date = d)),
+    _DD('Date application *', _date, (d) { setState(() => _date = d); _recomputeRappel(); }),
+    _DCustom(Row(children: [
+      Expanded(flex: 2, child: TextFormField(
+        controller: _frequenceValeur, keyboardType: TextInputType.number,
+        onChanged: (_) => _recomputeRappel(),
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+        decoration: InputDecoration(labelText: 'Fréquence',
+          labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true))),
+      const SizedBox(width: 8),
+      Expanded(flex: 3, child: DropdownButtonFormField<String>(
+        initialValue: _frequenceUnite,
+        items: const [
+          DropdownMenuItem(value: 'jour', child: Text('Jour(s)')),
+          DropdownMenuItem(value: 'semaine', child: Text('Semaine(s)')),
+          DropdownMenuItem(value: 'mois', child: Text('Mois')),
+        ],
+        onChanged: (v) { setState(() => _frequenceUnite = v!); _recomputeRappel(); },
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
+        decoration: InputDecoration(
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true))),
+    ])),
     _DD('Prochain rappel', _dateRappel, (d) => setState(() => _dateRappel = d)),
-    _DF('Fréquence (ex : 1 mois)', _frequence),
     _DF('Notes', _notes, maxLines: 2),
   ], onSave: () async {
     if (_produit.text.isEmpty || _date == null) return false;
@@ -6406,7 +6445,7 @@ class _AddAntiparasitaireDialogState extends State<_AddAntiparasitaireDialog> {
       'type': _type, 'produit': _produit.text.trim(),
       'date': _date!.toIso8601String(),
       'date_rappel': _dateRappel?.toIso8601String(),
-      'frequence': _frequence.text.trim(), 'notes': _notes.text.trim(),
+      'frequence': _frequenceLabel, 'notes': _notes.text.trim(),
       'source': widget.source,
       if (widget.vetId != null) 'vet_id': widget.vetId,
     });
