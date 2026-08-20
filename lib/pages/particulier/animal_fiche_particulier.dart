@@ -1347,6 +1347,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
               subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
               trailing: r['date_rappel'] != null ? 'Rappel: ${_fmtDate(r['date_rappel'])}' : null,
               onDelete: () => _deleteRecord('vermifuges', r['id'], _vermifuges),
+              onRappel: () => _showVermifugeSheet(prefill: r),
               onTap: () => _showRecordDetail('Vermifuge', r, [
                 ('Produit', 'produit'), ('Dosage', 'dosage'), ('Date', 'date'),
                 ('Rappel', 'date_rappel'), ('Notes', 'notes'),
@@ -1364,6 +1365,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
               subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
               trailing: r['date_rappel'] != null ? 'Rappel: ${_fmtDate(r['date_rappel'])}' : null,
               onDelete: () => _deleteRecord('antiparasitaires', r['id'], _antiparasitaires),
+              onRappel: () => _showAntiparasitaireSheet(prefill: r),
               onTap: () => _showRecordDetail('Antiparasitaire', r, [
                 ('Produit', 'produit'), ('Type', 'type'), ('Fréquence', 'frequence'),
                 ('Date', 'date'), ('Rappel', 'date_rappel'), ('Notes', 'notes'),
@@ -1554,17 +1556,44 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     });
   }
 
-  void _showVermifugeSheet() {
-    final produit = TextEditingController(), dosage = TextEditingController(),
-        notes = TextEditingController();
+  // "1 mois" / "2 semaines" / "10 jours" -> (valeur, unité), best-effort.
+  (String, String)? _parseFrequence(String? text) {
+    final m = RegExp(r'^(\d+)\s*(jour|semaine|mois)', caseSensitive: false).firstMatch(text ?? '');
+    if (m == null) return null;
+    return (m.group(1)!, m.group(2)!.toLowerCase());
+  }
+
+  void _showVermifugeSheet({Map<String, dynamic>? prefill}) {
+    final produit = TextEditingController(text: prefill?['produit'] ?? '');
+    final dosage = TextEditingController(text: prefill?['dosage'] ?? '');
+    final notes = TextEditingController();
+    final parsedFreq = _parseFrequence(prefill?['frequence'] as String?);
+    final frequenceValeur = TextEditingController(text: parsedFreq?.$1 ?? '');
     DateTime? date, dateRappel;
+    String frequenceUnite = parsedFreq?.$2 ?? 'mois';
+
+    void recomputeRappel(StateSetter ss) {
+      if (date == null) return;
+      final n = int.tryParse(frequenceValeur.text.trim());
+      if (n == null || n <= 0) return;
+      final days = frequenceUnite == 'jour' ? n : frequenceUnite == 'semaine' ? n * 7 : n * 30;
+      ss(() => dateRappel = date!.add(Duration(days: days)));
+    }
+
     _openSheet('Ajouter un vermifuge', (ss) => [
       _SFld(ctrl: produit, label: 'Produit', hint: 'Ex: Milbemax, Drontal...'),
       _SFld(ctrl: dosage, label: 'Dosage', hint: 'Ex: 1 comprimé'),
-      _SDate(label: 'Date', date: date, onPicked: (d) => ss(() => date = d)),
+      _SDate(label: 'Date', date: date, onPicked: (d) { ss(() => date = d); recomputeRappel(ss); }),
+      _SFreq(valeurCtrl: frequenceValeur, unite: frequenceUnite,
+        onValeurChanged: () => recomputeRappel(ss),
+        onUniteChanged: (v) { ss(() => frequenceUnite = v); recomputeRappel(ss); }),
       _SDate(label: 'Date de rappel', date: dateRappel, onPicked: (d) => ss(() => dateRappel = d)),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes'),
     ], () async {
+      final n = int.tryParse(frequenceValeur.text.trim());
+      final freqLabel = (n != null && n > 0)
+          ? '$n ${frequenceUnite == 'jour' ? 'jour${n > 1 ? 's' : ''}' : frequenceUnite == 'semaine' ? 'semaine${n > 1 ? 's' : ''}' : 'mois'}'
+          : null;
       await _supa.from('vermifuges').insert({
         'id': '${DateTime.now().millisecondsSinceEpoch}',
         'animal_id': _animalId!,
@@ -1572,6 +1601,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'dosage': dosage.text.trim().isEmpty ? null : dosage.text.trim(),
         'date': date?.toIso8601String().substring(0, 10),
         'date_rappel': dateRappel?.toIso8601String().substring(0, 10),
+        if (freqLabel != null) 'frequence': freqLabel,
         'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
         'created_at': DateTime.now().toIso8601String(),
       });
@@ -1585,24 +1615,43 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     });
   }
 
-  void _showAntiparasitaireSheet() {
-    final produit = TextEditingController(), type = TextEditingController(),
-        frequence = TextEditingController(), notes = TextEditingController();
+  void _showAntiparasitaireSheet({Map<String, dynamic>? prefill}) {
+    final produit = TextEditingController(text: prefill?['produit'] ?? '');
+    final type = TextEditingController(text: prefill?['type'] ?? '');
+    final notes = TextEditingController();
+    final parsedFreq = _parseFrequence(prefill?['frequence'] as String?);
+    final frequenceValeur = TextEditingController(text: parsedFreq?.$1 ?? '1');
     DateTime? date, dateRappel;
+    String frequenceUnite = parsedFreq?.$2 ?? 'mois';
+
+    void recomputeRappel(StateSetter ss) {
+      if (date == null) return;
+      final n = int.tryParse(frequenceValeur.text.trim());
+      if (n == null || n <= 0) return;
+      final days = frequenceUnite == 'jour' ? n : frequenceUnite == 'semaine' ? n * 7 : n * 30;
+      ss(() => dateRappel = date!.add(Duration(days: days)));
+    }
+
     _openSheet('Ajouter un antiparasitaire', (ss) => [
       _SFld(ctrl: produit, label: 'Produit', hint: 'Ex: Frontline, Advantix...'),
       _SFld(ctrl: type, label: 'Type', hint: 'Ex: Pipette, Collier, Spray...'),
-      _SFld(ctrl: frequence, label: 'Fréquence', hint: 'Ex: Tous les mois'),
-      _SDate(label: 'Date', date: date, onPicked: (d) => ss(() => date = d)),
+      _SDate(label: 'Date', date: date, onPicked: (d) { ss(() => date = d); recomputeRappel(ss); }),
+      _SFreq(valeurCtrl: frequenceValeur, unite: frequenceUnite,
+        onValeurChanged: () => recomputeRappel(ss),
+        onUniteChanged: (v) { ss(() => frequenceUnite = v); recomputeRappel(ss); }),
       _SDate(label: 'Date de rappel', date: dateRappel, onPicked: (d) => ss(() => dateRappel = d)),
       _SFld(ctrl: notes, label: 'Notes', hint: 'Notes'),
     ], () async {
+      final n = int.tryParse(frequenceValeur.text.trim());
+      final freqLabel = (n != null && n > 0)
+          ? '$n ${frequenceUnite == 'jour' ? 'jour${n > 1 ? 's' : ''}' : frequenceUnite == 'semaine' ? 'semaine${n > 1 ? 's' : ''}' : 'mois'}'
+          : null;
       await _supa.from('antiparasitaires').insert({
         'id': '${DateTime.now().millisecondsSinceEpoch}',
         'animal_id': _animalId!,
         'produit': produit.text.trim(),
         'type': type.text.trim().isEmpty ? null : type.text.trim(),
-        'frequence': frequence.text.trim().isEmpty ? null : frequence.text.trim(),
+        'frequence': freqLabel,
         'date': date?.toIso8601String().substring(0, 10),
         'date_rappel': dateRappel?.toIso8601String().substring(0, 10),
         'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
@@ -1967,6 +2016,7 @@ class _RecordTile extends StatelessWidget {
   final String? trailing;
   final VoidCallback onDelete;
   final VoidCallback? onTap;
+  final VoidCallback? onRappel;
 
   const _RecordTile({
     required this.title,
@@ -1974,6 +2024,7 @@ class _RecordTile extends StatelessWidget {
     this.trailing,
     required this.onDelete,
     this.onTap,
+    this.onRappel,
   });
 
   @override
@@ -1998,6 +2049,14 @@ class _RecordTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (onRappel != null)
+            IconButton(
+              icon: const Icon(Icons.add_alarm_outlined, color: Color(0xFF6E9E57), size: 18),
+              tooltip: 'Renouvellement',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: onRappel,
+            ),
           if (onTap != null)
             Icon(Icons.chevron_right, color: Colors.grey.shade300, size: 18),
           IconButton(
@@ -2077,6 +2136,55 @@ class _SDrop extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
           ),
         ),
+        const SizedBox(height: 14),
+      ],
+    );
+  }
+}
+
+class _SFreq extends StatelessWidget {
+  final TextEditingController valeurCtrl;
+  final String unite;
+  final VoidCallback onValeurChanged;
+  final ValueChanged<String> onUniteChanged;
+  const _SFreq({required this.valeurCtrl, required this.unite, required this.onValeurChanged, required this.onUniteChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Fréquence',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+        const SizedBox(height: 6),
+        Row(children: [
+          Expanded(flex: 2, child: TextField(
+            controller: valeurCtrl,
+            keyboardType: TextInputType.number,
+            onChanged: (_) => onValeurChanged(),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              filled: true, fillColor: const Color(0xFFF5F5F5),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+            ),
+          )),
+          const SizedBox(width: 8),
+          Expanded(flex: 3, child: DropdownButtonFormField<String>(
+            initialValue: unite,
+            items: const [
+              DropdownMenuItem(value: 'jour', child: Text('Jour(s)', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+              DropdownMenuItem(value: 'semaine', child: Text('Semaine(s)', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+              DropdownMenuItem(value: 'mois', child: Text('Mois', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+            ],
+            onChanged: (v) { if (v != null) onUniteChanged(v); },
+            decoration: InputDecoration(
+              filled: true, fillColor: const Color(0xFFF5F5F5),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+            ),
+          )),
+        ]),
         const SizedBox(height: 14),
       ],
     );

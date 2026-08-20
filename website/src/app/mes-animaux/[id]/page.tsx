@@ -2984,15 +2984,20 @@ export default function AnimalFichePage() {
           {/* Vermifuges */}
           <HealthSection id="health-vermifuges" defaultOpen={catParam==='vermifuges'}
             title="Vermifuges" icon="🧪" color="#6E9E57" count={health.vermifuges.length}
-            onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='vermifuges'?null:'vermifuges') : undefined}
+            onAdd={canWriteSante ? ()=>{ setRappelPrefill(null); setAddOpen(addOpen==='vermifuges'?null:'vermifuges'); } : undefined}
             addFormOpen={addOpen==='vermifuges'}
-            addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
-              onSave={d=>saveHealthRecord('vermifuges',d)}
-              fields={[{key:'produit',label:'Produit',required:true},{key:'date',label:'Date',type:'date'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'dosage',label:'Dosage'},{key:'notes',label:'Notes'}]}/>}>
+            addForm={<AddHealthForm key={JSON.stringify(rappelPrefill)} saving={savingHealth} onCancel={()=>{ setAddOpen(null); setRappelPrefill(null); }}
+              onSave={async d=>{ await saveHealthRecord('vermifuges',d); setRappelPrefill(null); }}
+              initial={rappelPrefill ?? undefined}
+              fields={[{key:'produit',label:'Produit',required:true},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'dosage',label:'Dosage'},{key:'notes',label:'Notes'}]}/>}>
             {health.vermifuges.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('vermifuges',r.id)}
                 onSave={d=>updateHealthRecord('vermifuges',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
-                fields={[{key:'produit',label:'Produit',required:true},{key:'date',label:'Date',type:'date'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'dosage',label:'Dosage'},{key:'notes',label:'Notes'}]}/>
+                onRappel={canWriteSante ? ()=>{
+                  setRappelPrefill({ produit: String(r.produit??''), dosage: String(r.dosage??''), frequence: String(r.frequence??'') });
+                  setAddOpen('vermifuges');
+                } : undefined}
+                fields={[{key:'produit',label:'Produit',required:true},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'dosage',label:'Dosage'},{key:'notes',label:'Notes'}]}/>
             ))}
             {health.vermifuges.length===0 && <p className="p-4 text-sm text-gray-400">Aucun vermifuge</p>}
           </HealthSection>
@@ -3000,14 +3005,19 @@ export default function AnimalFichePage() {
           {/* Antiparasitaires */}
           <HealthSection id="health-antiparasitaires" defaultOpen={catParam==='antiparasitaires'}
             title="Antiparasitaires" icon="🛡️" color="#5B8648" count={health.antiparasitaires.length}
-            onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='antiparasitaires'?null:'antiparasitaires') : undefined}
+            onAdd={canWriteSante ? ()=>{ setRappelPrefill(null); setAddOpen(addOpen==='antiparasitaires'?null:'antiparasitaires'); } : undefined}
             addFormOpen={addOpen==='antiparasitaires'}
-            addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
-              onSave={d=>saveHealthRecord('antiparasitaires',d)}
+            addForm={<AddHealthForm key={JSON.stringify(rappelPrefill)} saving={savingHealth} onCancel={()=>{ setAddOpen(null); setRappelPrefill(null); }}
+              onSave={async d=>{ await saveHealthRecord('antiparasitaires',d); setRappelPrefill(null); }}
+              initial={rappelPrefill ?? undefined}
               fields={[{key:'produit',label:'Produit',required:true},{key:'type',label:'Type (collier, pipette…)'},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Date de rappel',type:'date'},{key:'notes',label:'Notes'}]}/>}>
             {health.antiparasitaires.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('antiparasitaires',r.id)}
                 onSave={d=>updateHealthRecord('antiparasitaires',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
+                onRappel={canWriteSante ? ()=>{
+                  setRappelPrefill({ produit: String(r.produit??''), type: String(r.type??''), frequence: String(r.frequence??'') });
+                  setAddOpen('antiparasitaires');
+                } : undefined}
                 fields={[{key:'produit',label:'Produit',required:true},{key:'type',label:'Type'},{key:'date',label:'Date',type:'date'},{key:'frequence',label:'Fréquence',type:'frequence'},{key:'date_rappel',label:'Rappel',type:'date'},{key:'notes',label:'Notes'}]}/>
             ))}
             {health.antiparasitaires.length===0 && <p className="p-4 text-sm text-gray-400">Aucun antiparasitaire</p>}

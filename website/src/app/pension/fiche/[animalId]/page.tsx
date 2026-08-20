@@ -373,6 +373,20 @@ function SanteTab({ animalId, allergies, vaccinations, vermifuges, antipara, tra
   const [saving, setSaving]               = useState(false);
   const [err, setErr]                     = useState('');
 
+  // Vermifuges/antiparasitaires — ajout + renouvellement (même logique que
+  // "poids" ci-dessous : formulaire inline, rechargé via onPoidsAdded).
+  const [openTraitementForm, setOpenTraitementForm] = useState<'vermifuges' | 'antiparasitaires' | null>(null);
+  const [renouvellementDe, setRenouvellementDe] = useState<Record<string, unknown> | undefined>(undefined);
+
+  async function saveTraitement(table: 'vermifuges' | 'antiparasitaires', data: Record<string, string | null>) {
+    const { error } = await supabase.from(table).insert({ ...data, animal_id: animalId });
+    if (!error) {
+      setOpenTraitementForm(null);
+      setRenouvellementDe(undefined);
+      onPoidsAdded();
+    }
+  }
+
   async function addPoids() {
     const val = parseFloat(newPoids.replace(',', '.'));
     if (isNaN(val) || val <= 0) { setErr('Valeur invalide'); return; }
@@ -399,12 +413,45 @@ function SanteTab({ animalId, allergies, vaccinations, vermifuges, antipara, tra
       <HealthSection title="Vaccinations" color={TEAL} icon="💉" items={vaccinations}
         renderRow={v => <MedRow label={String(v.nom_vaccin ?? '')} date={fmtDate(v.date as string)}
           extra={v.date_rappel ? `Rappel : ${fmtDate(v.date_rappel as string)}` : undefined} />} />
-      <HealthSection title="Vermifugations" color={GREEN} icon="💊" items={vermifuges}
-        renderRow={v => <MedRow label={String(v.produit ?? '')} date={fmtDate(v.date as string)}
-          extra={v.date_rappel ? `Rappel : ${fmtDate(v.date_rappel as string)}` : undefined} />} />
-      <HealthSection title="Antiparasitaires" color="#f57c00" icon="🐛" items={antipara}
-        renderRow={a => <MedRow label={String(a.produit ?? '')} sub={String(a.type ?? '')} date={fmtDate(a.date as string)}
-          extra={a.date_rappel ? `Rappel : ${fmtDate(a.date_rappel as string)}` : undefined} />} />
+      <div style={{ background: 'white', borderRadius: 14, border: '1px solid #e5e7eb',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
+        <HealthSectionHeader title="Vermifugations" color={GREEN} icon="💊" count={vermifuges.length}
+          onAdd={() => { setRenouvellementDe(undefined); setOpenTraitementForm(openTraitementForm === 'vermifuges' ? null : 'vermifuges'); }} />
+        {openTraitementForm === 'vermifuges' && (
+          <TraitementAddForm type="vermifuges" initial={renouvellementDe}
+            onCancel={() => { setOpenTraitementForm(null); setRenouvellementDe(undefined); }}
+            onSave={d => saveTraitement('vermifuges', d)} />
+        )}
+        {vermifuges.length === 0 ? (
+          <div style={{ padding: '12px 16px', fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#d1d5db' }}>Aucun enregistrement</div>
+        ) : vermifuges.map((v, i) => (
+          <div key={v.id ?? i} style={{ borderBottom: i < vermifuges.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
+            <MedRow label={String(v.produit ?? '')} date={fmtDate(v.date as string)}
+              extra={v.date_rappel ? `Rappel : ${fmtDate(v.date_rappel as string)}` : undefined}
+              onRappel={() => { setRenouvellementDe(v); setOpenTraitementForm('vermifuges'); }} />
+          </div>
+        ))}
+      </div>
+
+      <div style={{ background: 'white', borderRadius: 14, border: '1px solid #e5e7eb',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
+        <HealthSectionHeader title="Antiparasitaires" color="#f57c00" icon="🐛" count={antipara.length}
+          onAdd={() => { setRenouvellementDe(undefined); setOpenTraitementForm(openTraitementForm === 'antiparasitaires' ? null : 'antiparasitaires'); }} />
+        {openTraitementForm === 'antiparasitaires' && (
+          <TraitementAddForm type="antiparasitaires" initial={renouvellementDe}
+            onCancel={() => { setOpenTraitementForm(null); setRenouvellementDe(undefined); }}
+            onSave={d => saveTraitement('antiparasitaires', d)} />
+        )}
+        {antipara.length === 0 ? (
+          <div style={{ padding: '12px 16px', fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#d1d5db' }}>Aucun enregistrement</div>
+        ) : antipara.map((a, i) => (
+          <div key={a.id ?? i} style={{ borderBottom: i < antipara.length - 1 ? '1px solid #f3f4f6' : 'none' }}>
+            <MedRow label={String(a.produit ?? '')} sub={String(a.type ?? '')} date={fmtDate(a.date as string)}
+              extra={a.date_rappel ? `Rappel : ${fmtDate(a.date_rappel as string)}` : undefined}
+              onRappel={() => { setRenouvellementDe(a); setOpenTraitementForm('antiparasitaires'); }} />
+          </div>
+        ))}
+      </div>
       {traitements.length > 0 && (
         <HealthSection title="Traitements" color={PURPLE} icon="🏥" items={traitements}
           renderRow={t => <MedRow label={String(t.nom ?? '')} sub={String(t.posologie ?? '')} date={fmtDate(t.date as string)} />} />
@@ -624,10 +671,36 @@ function Row({ label, value, capitalize, last }: {
   );
 }
 
-function HealthSection({ title, color, icon, items, renderRow }: {
+function HealthSectionHeader({ title, color, icon, count, onAdd }: {
+  title: string; color: string; icon: string; count: number; onAdd?: () => void;
+}) {
+  return (
+    <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 8,
+      borderBottom: '1px solid #f3f4f6' }}>
+      <span style={{ fontSize: 16 }}>{icon}</span>
+      <span style={{ fontFamily: 'Galey, sans-serif', fontSize: 14, fontWeight: 700, color, flex: 1 }}>
+        {title}
+      </span>
+      <span style={{ padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+        fontFamily: 'Galey, sans-serif', background: `${color}18`, color }}>
+        {count}
+      </span>
+      {onAdd && (
+        <button onClick={onAdd}
+          style={{ padding: '4px 12px', background: color, color: 'white', border: 'none', borderRadius: 20,
+            fontFamily: 'Galey, sans-serif', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+          + Ajouter
+        </button>
+      )}
+    </div>
+  );
+}
+
+function HealthSection({ title, color, icon, items, renderRow, onAdd }: {
   title: string; color: string; icon: string;
   items: MedRecord[];
   renderRow: (item: MedRecord) => React.ReactNode;
+  onAdd?: () => void;
 }) {
   return (
     <div style={{ background: 'white', borderRadius: 14, border: '1px solid #e5e7eb',
@@ -642,6 +715,13 @@ function HealthSection({ title, color, icon, items, renderRow }: {
           fontFamily: 'Galey, sans-serif', background: `${color}18`, color }}>
           {items.length}
         </span>
+        {onAdd && (
+          <button onClick={onAdd}
+            style={{ padding: '4px 12px', background: color, color: 'white', border: 'none', borderRadius: 20,
+              fontFamily: 'Galey, sans-serif', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            + Ajouter
+          </button>
+        )}
       </div>
       {items.length === 0 ? (
         <div style={{ padding: '12px 16px', fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#d1d5db' }}>
@@ -656,8 +736,8 @@ function HealthSection({ title, color, icon, items, renderRow }: {
   );
 }
 
-function MedRow({ label, sub, date, extra }: {
-  label: string; sub?: string; date: string; extra?: string;
+function MedRow({ label, sub, date, extra, onRappel }: {
+  label: string; sub?: string; date: string; extra?: string; onRappel?: () => void;
 }) {
   return (
     <div style={{ padding: '10px 16px' }}>
@@ -665,12 +745,120 @@ function MedRow({ label, sub, date, extra }: {
         <span style={{ fontFamily: 'Galey, sans-serif', fontSize: 14, fontWeight: 600, color: '#1f2a2e' }}>
           {label}
         </span>
-        <span style={{ fontFamily: 'Galey, sans-serif', fontSize: 12, color: '#9ca3af', whiteSpace: 'nowrap' }}>
-          {date}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontFamily: 'Galey, sans-serif', fontSize: 12, color: '#9ca3af', whiteSpace: 'nowrap' }}>
+            {date}
+          </span>
+          {onRappel && (
+            <button onClick={onRappel} title="Renouvellement"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 14, color: GREEN }}>
+              ⏰
+            </button>
+          )}
+        </div>
       </div>
       {sub && <div style={{ fontFamily: 'Galey, sans-serif', fontSize: 12, color: '#6b7280', marginTop: 2 }}>{sub}</div>}
       {extra && <div style={{ fontFamily: 'Galey, sans-serif', fontSize: 11, color: GREEN, fontWeight: 600, marginTop: 2 }}>{extra}</div>}
+    </div>
+  );
+}
+
+// Formulaire vermifuge/antiparasitaire — même logique fréquence + calcul
+// auto du rappel que mes-animaux/[id] et l'appli (jour/semaine/mois).
+function TraitementAddForm({ type, initial, onCancel, onSave }: {
+  type: 'vermifuges' | 'antiparasitaires';
+  initial?: Record<string, unknown>;
+  onCancel: () => void;
+  onSave: (data: Record<string, string | null>) => Promise<void>;
+}) {
+  const parsedFreq = /^(\d+)\s*(jour|semaine|mois)/i.exec(String(initial?.frequence ?? ''));
+  const [produit, setProduit] = useState(String(initial?.produit ?? ''));
+  const [subInfo, setSubInfo] = useState(String((type === 'vermifuges' ? initial?.dosage : initial?.type) ?? ''));
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [freqValeur, setFreqValeur] = useState(parsedFreq?.[1] ?? '1');
+  const [freqUnite, setFreqUnite] = useState<'jour' | 'semaine' | 'mois'>(
+    (parsedFreq?.[2]?.toLowerCase() as 'jour' | 'semaine' | 'mois') ?? 'mois');
+  const [dateRappel, setDateRappel] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  function recomputeRappel(d: string, valeur: string, unite: 'jour' | 'semaine' | 'mois') {
+    const n = parseInt(valeur, 10);
+    if (!d || !(n > 0)) return;
+    const days = unite === 'jour' ? n : unite === 'semaine' ? n * 7 : n * 30;
+    const dt = new Date(d);
+    dt.setDate(dt.getDate() + days);
+    setDateRappel(dt.toISOString().split('T')[0]);
+  }
+
+  async function save() {
+    if (!produit.trim()) { setErr('Produit requis'); return; }
+    setSaving(true); setErr('');
+    const n = parseInt(freqValeur, 10);
+    const freqLabel = n > 0
+      ? `${n} ${freqUnite === 'jour' ? `jour${n > 1 ? 's' : ''}` : freqUnite === 'semaine' ? `semaine${n > 1 ? 's' : ''}` : 'mois'}`
+      : null;
+    await onSave({
+      produit: produit.trim(),
+      [type === 'vermifuges' ? 'dosage' : 'type']: subInfo.trim() || null,
+      date,
+      date_rappel: dateRappel || null,
+      frequence: freqLabel,
+    });
+    setSaving(false);
+  }
+
+  const inputStyle = { padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8,
+    fontFamily: 'Galey, sans-serif', fontSize: 14 };
+  const labelStyle = { fontFamily: 'Galey, sans-serif', fontSize: 11, color: '#9ca3af', marginBottom: 4 };
+
+  return (
+    <div style={{ padding: '12px 16px', background: '#f8fbfa', borderBottom: '1px solid #f3f4f6',
+      display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+      <div>
+        <div style={labelStyle}>Produit</div>
+        <input value={produit} onChange={e => setProduit(e.target.value)} style={{ ...inputStyle, width: 160 }} />
+      </div>
+      <div>
+        <div style={labelStyle}>{type === 'vermifuges' ? 'Dosage' : 'Type'}</div>
+        <input value={subInfo} onChange={e => setSubInfo(e.target.value)} style={{ ...inputStyle, width: 130 }} />
+      </div>
+      <div>
+        <div style={labelStyle}>Date</div>
+        <input type="date" value={date}
+          onChange={e => { setDate(e.target.value); recomputeRappel(e.target.value, freqValeur, freqUnite); }}
+          style={inputStyle} />
+      </div>
+      <div>
+        <div style={labelStyle}>Fréquence</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <input type="number" min={1} value={freqValeur}
+            onChange={e => { setFreqValeur(e.target.value); recomputeRappel(date, e.target.value, freqUnite); }}
+            style={{ ...inputStyle, width: 55 }} />
+          <select value={freqUnite}
+            onChange={e => { const u = e.target.value as 'jour' | 'semaine' | 'mois'; setFreqUnite(u); recomputeRappel(date, freqValeur, u); }}
+            style={inputStyle}>
+            <option value="jour">Jour(s)</option>
+            <option value="semaine">Semaine(s)</option>
+            <option value="mois">Mois</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <div style={labelStyle}>Rappel</div>
+        <input type="date" value={dateRappel} onChange={e => setDateRappel(e.target.value)} style={inputStyle} />
+      </div>
+      <button onClick={save} disabled={saving}
+        style={{ padding: '8px 18px', background: GREEN, color: 'white', border: 'none', borderRadius: 8,
+          fontFamily: 'Galey, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+        {saving ? '…' : 'Enregistrer'}
+      </button>
+      <button onClick={onCancel}
+        style={{ padding: '8px 14px', background: 'none', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: 8,
+          fontFamily: 'Galey, sans-serif', fontSize: 14, cursor: 'pointer' }}>
+        Annuler
+      </button>
+      {err && <span style={{ fontFamily: 'Galey, sans-serif', fontSize: 12, color: '#dc2626' }}>{err}</span>}
     </div>
   );
 }

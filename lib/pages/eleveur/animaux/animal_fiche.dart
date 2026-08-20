@@ -4361,8 +4361,8 @@ class SanteDetailPage extends StatelessWidget {
     final vname = vetMode ? '${User_Info.firstname} ${User_Info.lastname}'.trim() : null;
     switch (collection) {
       case 'vaccinations':     return _AddVaccinDialog(animalId: animalId, espece: espece, source: src, vetId: vid, vetName: vname);
-      case 'vermifuges':       return _AddVermifugeDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
-      case 'antiparasitaires': return _AddAntiparasitaireDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
+      case 'vermifuges':       return AddVermifugeDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
+      case 'antiparasitaires': return AddAntiparasitaireDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'traitements':      return _AddTraitementDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'allergies':        return _AddAllergieDialog(animalId: animalId);
       case 'visites':          return _AddVisiteDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
@@ -4457,18 +4457,46 @@ class _SanteListState extends State<_SanteList> {
     );
   }
 
-  // Pré-remplit "Ajouter un vaccin" avec le même vaccin/vétérinaire — pour
-  // saisir un rappel il ne reste alors qu'à changer date et lot.
+  // Pré-remplit le dialog d'ajout avec les mêmes infos que l'enregistrement
+  // existant (vaccin/produit/type/fréquence...) — pour saisir un
+  // renouvellement il ne reste alors qu'à changer la date.
   void _addRappel(Map<String, dynamic> data) async {
+    // "1 mois" / "2 semaines" / "10 jours" -> (valeur, unité), best-effort.
+    final freqMatch = RegExp(r'^(\d+)\s*(jour|semaine|mois)', caseSensitive: false)
+        .firstMatch((data['frequence'] as String?) ?? '');
+    final freqValeur = freqMatch?.group(1);
+    final freqUnite = freqMatch?.group(2)?.toLowerCase();
+
     await showDialog(
       context: context,
-      builder: (_) => _AddVaccinDialog(
-        animalId: widget.animalId,
-        espece: widget.espece,
-        prefillVaccin: data['vaccin'] as String?,
-        prefillVeto: data['veterinaire'] as String?,
-        prefillCategorie: data['categorie'] as String?,
-      ),
+      builder: (_) {
+        switch (widget.collection) {
+          case 'vermifuges':
+            return AddVermifugeDialog(
+              animalId: widget.animalId,
+              prefillProduit: data['produit'] as String?,
+              prefillDosage: data['dosage'] as String?,
+              prefillFrequenceValeur: freqValeur,
+              prefillFrequenceUnite: freqUnite,
+            );
+          case 'antiparasitaires':
+            return AddAntiparasitaireDialog(
+              animalId: widget.animalId,
+              prefillProduit: data['produit'] as String?,
+              prefillType: data['type'] as String?,
+              prefillFrequenceValeur: freqValeur,
+              prefillFrequenceUnite: freqUnite,
+            );
+          default:
+            return _AddVaccinDialog(
+              animalId: widget.animalId,
+              espece: widget.espece,
+              prefillVaccin: data['vaccin'] as String?,
+              prefillVeto: data['veterinaire'] as String?,
+              prefillCategorie: data['categorie'] as String?,
+            );
+        }
+      },
     );
     _refresh();
   }
@@ -4505,7 +4533,8 @@ class _SanteListState extends State<_SanteList> {
                       title: _title(d), data: d, icon: widget.icon,
                       onDelete: () => _delete(d['id']?.toString() ?? ''),
                       onEdit: canEdit ? () => _edit(d) : null,
-                      onRappel: (!widget.vetMode && widget.collection == 'vaccinations') ? () => _addRappel(d) : null,
+                      onRappel: (!widget.vetMode && ['vaccinations', 'vermifuges', 'antiparasitaires'].contains(widget.collection))
+                          ? () => _addRappel(d) : null,
                       collection: widget.collection,
                       canDelete: canDelete,
                     );
@@ -6320,24 +6349,73 @@ class _AddVisiteDialogState extends State<_AddVisiteDialog> {
   });
 }
 
-class _AddVermifugeDialog extends StatefulWidget {
+class AddVermifugeDialog extends StatefulWidget {
   final String animalId;
   final String source;
   final String? vetId;
   final String? vetName;
-  const _AddVermifugeDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName});
-  @override State<_AddVermifugeDialog> createState() => _AddVermifugeDialogState();
+  // Pré-remplissage pour "+ Renouvellement" depuis un traitement existant :
+  // même produit/dosage/fréquence, seule la date change.
+  final String? prefillProduit;
+  final String? prefillDosage;
+  final String? prefillFrequenceValeur;
+  final String? prefillFrequenceUnite;
+  const AddVermifugeDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName,
+      this.prefillProduit, this.prefillDosage, this.prefillFrequenceValeur, this.prefillFrequenceUnite});
+  @override State<AddVermifugeDialog> createState() => AddVermifugeDialogState();
 }
-class _AddVermifugeDialogState extends State<_AddVermifugeDialog> {
-  final _produit = TextEditingController();
-  final _dosage  = TextEditingController();
+class AddVermifugeDialogState extends State<AddVermifugeDialog> {
+  late final _produit         = TextEditingController(text: widget.prefillProduit ?? '');
+  late final _dosage          = TextEditingController(text: widget.prefillDosage ?? '');
+  late final _frequenceValeur = TextEditingController(text: widget.prefillFrequenceValeur ?? '');
   final _notes   = TextEditingController();
+  late String _frequenceUnite = widget.prefillFrequenceUnite ?? 'mois';
   DateTime? _date, _dateRappel;
+
+  String? get _frequenceLabel {
+    final n = int.tryParse(_frequenceValeur.text.trim());
+    if (n == null || n <= 0) return null;
+    final unite = _frequenceUnite == 'jour' ? 'jour${n > 1 ? 's' : ''}'
+        : _frequenceUnite == 'semaine' ? 'semaine${n > 1 ? 's' : ''}' : 'mois';
+    return '$n $unite';
+  }
+
+  void _recomputeRappel() {
+    if (_date == null) return;
+    final n = int.tryParse(_frequenceValeur.text.trim());
+    if (n == null || n <= 0) return;
+    final days = _frequenceUnite == 'jour' ? n : _frequenceUnite == 'semaine' ? n * 7 : n * 30;
+    setState(() => _dateRappel = _date!.add(Duration(days: days)));
+  }
+
   @override
   Widget build(BuildContext context) => _BaseDialog(title: 'Ajouter un vermifuge', fields: [
     _DF('Produit *', _produit),
     _DF('Dosage', _dosage),
-    _DD('Date *', _date, (d) => setState(() => _date = d)),
+    _DD('Date *', _date, (d) { setState(() => _date = d); _recomputeRappel(); }),
+    _DCustom(Row(children: [
+      Expanded(flex: 2, child: TextFormField(
+        controller: _frequenceValeur, keyboardType: TextInputType.number,
+        onChanged: (_) => _recomputeRappel(),
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+        decoration: InputDecoration(labelText: 'Fréquence',
+          labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true))),
+      const SizedBox(width: 8),
+      Expanded(flex: 3, child: DropdownButtonFormField<String>(
+        initialValue: _frequenceUnite,
+        items: const [
+          DropdownMenuItem(value: 'jour', child: Text('Jour(s)')),
+          DropdownMenuItem(value: 'semaine', child: Text('Semaine(s)')),
+          DropdownMenuItem(value: 'mois', child: Text('Mois')),
+        ],
+        onChanged: (v) { setState(() => _frequenceUnite = v!); _recomputeRappel(); },
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
+        decoration: InputDecoration(
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true))),
+    ])),
     _DD('Prochain rappel', _dateRappel, (d) => setState(() => _dateRappel = d)),
     _DF('Notes', _notes, maxLines: 2),
   ], onSave: () async {
@@ -6348,6 +6426,7 @@ class _AddVermifugeDialogState extends State<_AddVermifugeDialog> {
       'produit': _produit.text.trim(), 'dosage': _dosage.text.trim(),
       'date': _date!.toIso8601String(),
       'date_rappel': _dateRappel?.toIso8601String(),
+      if (_frequenceLabel != null) 'frequence': _frequenceLabel,
       'notes': _notes.text.trim(),
       'source': widget.source,
       if (widget.vetId != null) 'vet_id': widget.vetId,
@@ -6376,20 +6455,27 @@ class _AddVermifugeDialogState extends State<_AddVermifugeDialog> {
   });
 }
 
-class _AddAntiparasitaireDialog extends StatefulWidget {
+class AddAntiparasitaireDialog extends StatefulWidget {
   final String animalId;
   final String source;
   final String? vetId;
   final String? vetName;
-  const _AddAntiparasitaireDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName});
-  @override State<_AddAntiparasitaireDialog> createState() => _AddAntiparasitaireDialogState();
+  // Pré-remplissage pour "+ Renouvellement" depuis un traitement existant :
+  // même produit/type/fréquence, seule la date change.
+  final String? prefillProduit;
+  final String? prefillType;
+  final String? prefillFrequenceValeur;
+  final String? prefillFrequenceUnite;
+  const AddAntiparasitaireDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName,
+      this.prefillProduit, this.prefillType, this.prefillFrequenceValeur, this.prefillFrequenceUnite});
+  @override State<AddAntiparasitaireDialog> createState() => AddAntiparasitaireDialogState();
 }
-class _AddAntiparasitaireDialogState extends State<_AddAntiparasitaireDialog> {
-  final _produit        = TextEditingController(text: '');
-  final _frequenceValeur = TextEditingController(text: '1');
+class AddAntiparasitaireDialogState extends State<AddAntiparasitaireDialog> {
+  late final _produit         = TextEditingController(text: widget.prefillProduit ?? '');
+  late final _frequenceValeur = TextEditingController(text: widget.prefillFrequenceValeur ?? '1');
   final _notes     = TextEditingController();
-  String _type = 'pipette';
-  String _frequenceUnite = 'mois';
+  late String _type = widget.prefillType ?? 'pipette';
+  late String _frequenceUnite = widget.prefillFrequenceUnite ?? 'mois';
   DateTime? _date, _dateRappel;
 
   String get _frequenceLabel {

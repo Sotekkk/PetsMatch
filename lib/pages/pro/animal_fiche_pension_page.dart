@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AddVermifugeDialog, AddAntiparasitaireDialog;
 
 class AnimalFichePensionPage extends StatefulWidget {
   final String animalId;
@@ -139,6 +140,46 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
     } catch (_) {}
   }
 
+  // Recharge uniquement vermifuges/antiparasitaires après un ajout, sans
+  // repasser par _load() (évite de réinitialiser tout le reste de la fiche).
+  Future<void> _reloadTraitements() async {
+    try {
+      final results = await Future.wait([
+        _supa.from('vermifuges').select().eq('animal_id', widget.animalId).order('date', ascending: false),
+        _supa.from('antiparasitaires').select().eq('animal_id', widget.animalId).order('date', ascending: false),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _vermifuges       = _toList(results[0]);
+        _antiparasitaires = _toList(results[1]);
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _addVermifuge({Map<String, dynamic>? renouvellementDe}) async {
+    await showDialog(
+      context: context,
+      builder: (_) => AddVermifugeDialog(
+        animalId: widget.animalId,
+        prefillProduit: renouvellementDe?['produit'] as String?,
+        prefillDosage: renouvellementDe?['dosage'] as String?,
+      ),
+    );
+    _reloadTraitements();
+  }
+
+  Future<void> _addAntiparasitaire({Map<String, dynamic>? renouvellementDe}) async {
+    await showDialog(
+      context: context,
+      builder: (_) => AddAntiparasitaireDialog(
+        animalId: widget.animalId,
+        prefillProduit: renouvellementDe?['produit'] as String?,
+        prefillType: renouvellementDe?['type'] as String?,
+      ),
+    );
+    _reloadTraitements();
+  }
+
   List<Map<String, dynamic>> _toList(dynamic raw) =>
       raw is List ? List<Map<String, dynamic>>.from(raw) : [];
 
@@ -212,6 +253,8 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
                     visites: _visites,
                     poids: _poids,
                     fmtDate: _fmtDate,
+                    onAddVermifuge: ({renouvellementDe}) => _addVermifuge(renouvellementDe: renouvellementDe),
+                    onAddAntiparasitaire: ({renouvellementDe}) => _addAntiparasitaire(renouvellementDe: renouvellementDe),
                   ),
                   _AlimentationTab(alimentation: _alimentation),
                 ]),
@@ -255,12 +298,12 @@ class _ReadOnlyBanner extends StatelessWidget {
           _speciesIcon(emoji),
         const SizedBox(width: 12),
         const Expanded(
-          child: Text('Accès lecture seule · Accordé par le propriétaire',
+          child: Text('Accès accordé par le propriétaire · vermifuges/antiparasitaires modifiables',
               style: TextStyle(
                   fontFamily: 'Galey', fontSize: 12,
                   color: _purple, fontWeight: FontWeight.w600)),
         ),
-        const Icon(Icons.lock_outline_rounded, size: 16, color: _purple),
+        const Icon(Icons.visibility_outlined, size: 16, color: _purple),
       ]),
     );
   }
@@ -423,6 +466,8 @@ class _SanteTab extends StatelessWidget {
   final List<Map<String, dynamic>> visites;
   final List<Map<String, dynamic>> poids;
   final String Function(String?) fmtDate;
+  final void Function({Map<String, dynamic>? renouvellementDe}) onAddVermifuge;
+  final void Function({Map<String, dynamic>? renouvellementDe}) onAddAntiparasitaire;
 
   const _SanteTab({
     required this.vaccinations,
@@ -433,6 +478,8 @@ class _SanteTab extends StatelessWidget {
     required this.visites,
     required this.poids,
     required this.fmtDate,
+    required this.onAddVermifuge,
+    required this.onAddAntiparasitaire,
   });
 
   @override
@@ -504,11 +551,13 @@ class _SanteTab extends StatelessWidget {
         color: const Color(0xFF795548),
         icon: Icons.pest_control_outlined,
         items: vermifuges,
+        onAdd: () => onAddVermifuge(),
         buildRow: (v) => _MedRow(
           label: v['produit']?.toString() ?? '',
           sub: v['dosage']?.toString() ?? v['remarques']?.toString(),
           date: fmtDate(v['date'] as String?),
           extra: v['date_rappel'] != null ? 'Rappel : ${fmtDate(v['date_rappel'] as String?)}' : null,
+          onRappel: () => onAddVermifuge(renouvellementDe: v),
         ),
       ),
       const SizedBox(height: 16),
@@ -519,11 +568,13 @@ class _SanteTab extends StatelessWidget {
         color: const Color(0xFF4CAF50),
         icon: Icons.bug_report_outlined,
         items: antiparasitaires,
+        onAdd: () => onAddAntiparasitaire(),
         buildRow: (a) => _MedRow(
           label: a['produit']?.toString() ?? '',
           sub: a['type']?.toString(),
           date: fmtDate(a['date'] as String?),
           extra: a['date_rappel'] != null ? 'Rappel : ${fmtDate(a['date_rappel'] as String?)}' : null,
+          onRappel: () => onAddAntiparasitaire(renouvellementDe: a),
         ),
       ),
       const SizedBox(height: 16),
@@ -1001,6 +1052,7 @@ class _HealthSection extends StatelessWidget {
   final IconData icon;
   final List<Map<String, dynamic>> items;
   final Widget Function(Map<String, dynamic>) buildRow;
+  final VoidCallback? onAdd;
 
   const _HealthSection({
     required this.title,
@@ -1008,6 +1060,7 @@ class _HealthSection extends StatelessWidget {
     required this.icon,
     required this.items,
     required this.buildRow,
+    this.onAdd,
   });
 
   @override
@@ -1038,6 +1091,14 @@ class _HealthSection extends StatelessWidget {
                 style: TextStyle(fontFamily: 'Galey', fontSize: 12,
                     fontWeight: FontWeight.w700, color: color)),
           ),
+          if (onAdd != null)
+            IconButton(
+              icon: Icon(Icons.add_circle_outline, size: 20, color: color),
+              tooltip: 'Ajouter',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: onAdd,
+            ),
         ]),
       ),
       if (items.isEmpty)
@@ -1059,12 +1120,14 @@ class _MedRow extends StatelessWidget {
   final String? sub;
   final String date;
   final String? extra;
+  final VoidCallback? onRappel;
 
   const _MedRow({
     required this.label,
     required this.date,
     this.sub,
     this.extra,
+    this.onRappel,
   });
 
   @override
@@ -1077,6 +1140,14 @@ class _MedRow extends StatelessWidget {
                 fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E)))),
         Text(date,
             style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF9CA3AF))),
+        if (onRappel != null)
+          IconButton(
+            icon: const Icon(Icons.add_alarm_outlined, size: 16, color: Color(0xFF6E9E57)),
+            tooltip: 'Renouvellement',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: onRappel,
+          ),
       ]),
       if (sub != null && sub!.isNotEmpty)
         Text(sub!, style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
