@@ -969,8 +969,38 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
       };
       if (existing) {
         await supabase.from('plan_templates').update(templatePayload).eq('id', existing.id);
-        await supabase.from('plan_template_etapes').delete().eq('template_id', existing.id);
-        if (ep.length > 0) await supabase.from('plan_template_etapes').insert(ep.map(e => ({ ...e, template_id: existing.id })));
+
+        // Ne jamais supprimer/réinsérer en bloc : une étape déjà appliquée
+        // à un animal a des plan_taches qui la référencent (etape_id), et
+        // la contrainte de clé étrangère bloque alors le DELETE ("update or
+        // delete... still referenced from table plan_taches"). On met à
+        // jour en place les étapes existantes (même id -> tâches déjà
+        // générées restent liées), on insère les nouvelles, et on ne
+        // supprime que les étapes retirées du formulaire qui n'ont jamais
+        // généré de tâche.
+        const existingIds = new Set((existing.plan_template_etapes ?? []).map(e => e.id).filter(Boolean) as string[]);
+        const keptIds = new Set(ep.filter(e => e.id).map(e => e.id as string));
+        const removedIds = [...existingIds].filter(id => !keptIds.has(id));
+
+        if (removedIds.length > 0) {
+          const { data: referenced } = await supabase.from('plan_taches')
+            .select('etape_id').in('etape_id', removedIds);
+          const referencedIds = new Set((referenced ?? []).map(r => r.etape_id));
+          const safeToDelete = removedIds.filter(id => !referencedIds.has(id));
+          if (safeToDelete.length > 0) {
+            await supabase.from('plan_template_etapes').delete().in('id', safeToDelete);
+          }
+        }
+
+        for (const e of ep) {
+          if (e.id && existingIds.has(e.id)) {
+            const { id, ...patch } = e;
+            await supabase.from('plan_template_etapes').update(patch).eq('id', id);
+          }
+        }
+        const toInsert = ep.filter(e => !e.id || !existingIds.has(e.id))
+          .map(({ id: _id, ...rest }) => ({ ...rest, template_id: existing.id }));
+        if (toInsert.length > 0) await supabase.from('plan_template_etapes').insert(toInsert);
       } else {
         const { data: row } = await supabase.from('plan_templates')
           .insert({ uid_eleveur: uid, ...(profileId ? { eleveur_profile_id: profileId } : {}), type, profil_source: profilSource, ...templatePayload }).select('id').single();

@@ -82,30 +82,67 @@ class PlanningService {
       'default_animal_ids': (defaultAnimalIds != null && defaultAnimalIds.isNotEmpty) ? defaultAnimalIds : null,
     }).eq('id', templateId);
 
-    await _supa.from('plan_template_etapes').delete().eq('template_id', templateId);
-    await _insertEtapes(templateId, etapes);
+    // Ne jamais supprimer/réinsérer en bloc : une étape déjà appliquée à un
+    // animal a des plan_taches qui la référencent (etape_id), et la
+    // contrainte de clé étrangère bloque alors le DELETE ("update or
+    // delete... still referenced from table plan_taches"). On met à jour en
+    // place les étapes existantes (même id -> tâches déjà générées restent
+    // liées), on insère les nouvelles, et on ne supprime que les étapes
+    // retirées du formulaire qui n'ont jamais généré de tâche.
+    final existingRows = await _supa.from('plan_template_etapes').select('id').eq('template_id', templateId);
+    final existingIds = (existingRows as List).map((r) => r['id'] as String).toSet();
+    final keptIds = etapes.map((e) => e['id'] as String?).whereType<String>().toSet();
+    final removedIds = existingIds.difference(keptIds).toList();
+
+    if (removedIds.isNotEmpty) {
+      final referencedRows = await _supa.from('plan_taches').select('etape_id').inFilter('etape_id', removedIds);
+      final referencedIds = (referencedRows as List).map((r) => r['etape_id'] as String).toSet();
+      final safeToDelete = removedIds.where((id) => !referencedIds.contains(id)).toList();
+      if (safeToDelete.isNotEmpty) {
+        await _supa.from('plan_template_etapes').delete().inFilter('id', safeToDelete);
+      }
+    }
+
+    // L'ordre (position dans la liste) doit être préservé même pour les
+    // étapes mises à jour en place, sinon un simple réordonnancement ne
+    // serait jamais sauvegardé pour les étapes déjà existantes.
+    final ordered = etapes.asMap().entries.map((e) => {...e.value, 'ordre': e.key}).toList();
+    final toUpdate = ordered.where((e) => existingIds.contains(e['id'])).toList();
+    final toInsert = ordered.where((e) => !existingIds.contains(e['id'])).toList();
+
+    for (final e in toUpdate) {
+      await _supa.from('plan_template_etapes').update({..._etapeFields(e), 'ordre': e['ordre']}).eq('id', e['id'] as String);
+    }
+    await _insertEtapes(templateId, toInsert);
   }
+
+  static Map<String, dynamic> _etapeFields(Map<String, dynamic> e) => {
+    'offset_direction': e['offset_direction'] ?? 'apres',
+    'jour_offset':      e['jour_offset'] ?? 0,
+    'age_min_semaines': e['age_min_semaines'],
+    'type_acte':        e['type_acte'],
+    'produit':          e['produit'],
+    'dosage':           e['dosage'],
+    'frequence':        e['frequence'] ?? 'ponctuel',
+    'nb_fois_semaine':  e['nb_fois_semaine'] ?? 1,
+    'duree_semaines':   (e['is_recurrent'] == true) ? 52 : (e['duree_semaines'] ?? 1),
+    'duree_jours':      e['duree_jours'] ?? 1,
+    'is_recurrent':     e['is_recurrent'] ?? false,
+    'lieu':             e['lieu'],
+    'description':      e['description'],
+    'tranche_horaire':  e['tranche_horaire'],
+  };
 
   static Future<void> _insertEtapes(String templateId, List<Map<String, dynamic>> etapes) async {
     if (etapes.isEmpty) return;
     await _supa.from('plan_template_etapes').insert(
       etapes.asMap().entries.map((e) => {
-        'template_id':      templateId,
-        'offset_direction': e.value['offset_direction'] ?? 'apres',
-        'jour_offset':      e.value['jour_offset'] ?? 0,
-        'age_min_semaines': e.value['age_min_semaines'],
-        'type_acte':        e.value['type_acte'],
-        'produit':          e.value['produit'],
-        'dosage':           e.value['dosage'],
-        'frequence':        e.value['frequence'] ?? 'ponctuel',
-        'nb_fois_semaine':  e.value['nb_fois_semaine'] ?? 1,
-        'duree_semaines':   (e.value['is_recurrent'] == true) ? 52 : (e.value['duree_semaines'] ?? 1),
-        'duree_jours':      e.value['duree_jours'] ?? 1,
-        'is_recurrent':     e.value['is_recurrent'] ?? false,
-        'lieu':             e.value['lieu'],
-        'description':      e.value['description'],
-        'tranche_horaire':  e.value['tranche_horaire'],
-        'ordre':            e.key,
+        'template_id': templateId,
+        ..._etapeFields(e.value),
+        // Respecte un ordre déjà calculé (ex: position dans la liste
+        // complète lors d'une mise à jour partielle) si présent, sinon
+        // retombe sur la position dans CETTE liste (création initiale).
+        'ordre': e.value['ordre'] ?? e.key,
       }).toList(),
     );
   }
