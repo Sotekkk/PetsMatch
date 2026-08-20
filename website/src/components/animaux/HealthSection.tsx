@@ -37,7 +37,7 @@ export default function HealthSection({ title, icon, color, count, children, onA
         <div className="flex items-center gap-2">
           {onAdd && (
             <button
-              onClick={(e) => { e.stopPropagation(); onAdd(); }}
+              onClick={(e) => { e.stopPropagation(); setOpen(true); onAdd(); }}
               className="w-7 h-7 rounded-full flex items-center justify-center text-white text-sm transition-colors hover:opacity-80"
               style={{ backgroundColor: color }}>
               +
