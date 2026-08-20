@@ -785,10 +785,12 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
         </section>
       )}
 
-      {/* Paramètres croquettes */}
-      {type === 'croquettes' && (
+      {/* Paramètres croquettes (aussi utilisé par le composant croquettes d'une ration mixte) */}
+      {(type === 'croquettes' || type === 'mixte') && (
         <section>
-          <p className="text-xs font-bold text-[#1F2A2E] mb-2 uppercase tracking-wide">Produit</p>
+          <p className="text-xs font-bold text-[#1F2A2E] mb-2 uppercase tracking-wide">
+            {type === 'mixte' ? 'Croquettes (marque)' : 'Produit'}
+          </p>
           <button onClick={() => setShowBrand(true)}
             className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-left flex items-center justify-between hover:border-[#0C5C6C]/40 transition-colors">
             <span className={alim.marque ? 'text-[#1F2A2E] font-medium' : 'text-gray-400'}>
@@ -806,7 +808,11 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
             </div>
             <div className="text-center pt-4">
               <p className="text-xs text-gray-400">Dose jour</p>
-              <p className="text-base font-bold text-[#0C5C6C]">{doseCroquettes ? `${doseCroquettes.toFixed(0)} g` : '—'}</p>
+              <p className="text-base font-bold text-[#0C5C6C]">
+                {doseCroquettes
+                  ? `${(type === 'mixte' ? doseCroquettes * (alim.mixte_ratio_croq ?? 50) / 100 : doseCroquettes).toFixed(0)} g`
+                  : '—'}
+              </p>
             </div>
           </div>
         </section>
