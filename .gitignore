@@ -50,7 +50,6 @@ app.*.map.json
 
 # Node
 node_modules/
-package-lock.json
 
 # Old project copy
 PetsMatch-main/
