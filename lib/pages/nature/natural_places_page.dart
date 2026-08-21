@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/nature/natural_place_detail_page.dart';
+import 'package:PetsMatch/pages/nature/add_natural_place_page.dart';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -104,7 +106,12 @@ class _NaturalPlacesPageState extends State<NaturalPlacesPage> {
   Future<void> _loadPlaces() async {
     setState(() => _loading = true);
     try {
-      final data = await _supa.from('natural_places').select().order('nom');
+      final uid = User_Info.uid;
+      final query = _supa.from('natural_places').select();
+      final data = await (uid.isNotEmpty
+              ? query.or('statut.eq.valide,submitted_by_uid.eq.$uid')
+              : query.eq('statut', 'valide'))
+          .order('nom');
       if (mounted) {
         setState(() {
           _places = List<Map<String, dynamic>>.from(data as List);
@@ -219,6 +226,19 @@ class _NaturalPlacesPageState extends State<NaturalPlacesPage> {
               : _buildListView(),
         ),
       ]),
+      floatingActionButton: User_Info.uid.isEmpty ? null : FloatingActionButton.extended(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.add_location_alt_outlined),
+        label: const Text('Proposer un lieu', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+        onPressed: () async {
+          final added = await Navigator.push<bool>(
+            context,
+            MaterialPageRoute(builder: (_) => const AddNaturalPlacePage()),
+          );
+          if (added == true) _loadPlaces();
+        },
+      ),
     );
   }
 
@@ -452,6 +472,8 @@ class _PlaceCard extends StatelessWidget {
     final cat   = place['categorie'] as String? ?? '';
     final color = _catColor[cat] ?? _teal;
     final cyano = place['alerte_cyano'] == true;
+    final enAttente = place['statut'] == 'en_attente';
+    final refuse    = place['statut'] == 'refuse';
     final nbAvis  = place['nb_avis'] as int? ?? 0;
     final noteMoy = (place['note_moyenne'] as num? ?? 0).toStringAsFixed(1);
     final gradColors = _catGradient[cat] ?? [_teal, const Color(0xFF4CAF50)];
@@ -540,6 +562,22 @@ class _PlaceCard extends StatelessWidget {
                       ),
                       child: const Text('⚠️ Cyano',
                           style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                              fontWeight: FontWeight.w700, color: Colors.white)),
+                    ),
+                  ),
+
+                // Statut modération (mes propositions) — haut droit
+                if (enAttente || refuse)
+                  Positioned(
+                    top: 12, right: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: enAttente ? Colors.orange.shade700 : Colors.grey.shade700,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(enAttente ? '⏳ En attente' : '✕ Refusé',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
                               fontWeight: FontWeight.w700, color: Colors.white)),
                     ),
                   ),

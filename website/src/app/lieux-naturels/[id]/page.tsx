@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState, useRef, use } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useAuth } from '@/lib/auth-context';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -15,6 +16,7 @@ interface NaturalPlace {
   lat: number | null;
   lng: number | null;
   photo_url?: string | null;
+  photos?: string[] | null;
   alerte_cyano: boolean | null;
   nb_avis: number | null;
   note_moyenne: number | null;
@@ -74,6 +76,7 @@ const DIFFICULTY = [
 export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const profileId = useActiveProfile();
+  const { user } = useAuth();
 
   const [place, setPlace] = useState<NaturalPlace | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -82,6 +85,9 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
   const [myNote, setMyNote] = useState(0);
   const [myComment, setMyComment] = useState('');
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [pendingAmenityFields, setPendingAmenityFields] = useState<Set<string>>(new Set());
+  const [amenityUploading, setAmenityUploading] = useState<string | null>(null);
 
   async function loadPlace() {
     setLoading(true);
@@ -110,7 +116,16 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
     }
   }
 
-  useEffect(() => { loadPlace(); loadReviews(); }, [id, profileId]);
+  async function loadPendingAmenities() {
+    const { data } = await supabase
+      .from('natural_place_amenity_suggestions')
+      .select('field')
+      .eq('place_id', id)
+      .eq('statut', 'en_attente');
+    setPendingAmenityFields(new Set((data ?? []).map((r: { field: string }) => r.field)));
+  }
+
+  useEffect(() => { loadPlace(); loadReviews(); loadPendingAmenities(); }, [id, profileId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function recalcStats() {
     const { data } = await supabase.from('natural_place_reviews').select('note').eq('place_id', id);
@@ -154,14 +169,75 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
     loadPlace();
   }
 
-  async function updateAmenity(field: keyof NaturalPlace, value: boolean) {
-    await supabase.from('natural_places').update({ [field]: value }).eq('id', id);
-    setPlace(p => p ? { ...p, [field]: value } : p);
+  const amenityFileInput = useRef<HTMLInputElement>(null);
+  const [amenityFieldPending, setAmenityFieldPending] = useState<{ field: string; value: boolean } | null>(null);
+
+  function suggestAmenity(field: string, value: boolean) {
+    if (!user) return;
+    setAmenityFieldPending({ field, value });
+    amenityFileInput.current?.click();
+  }
+
+  async function onAmenityPhotoSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    const pending = amenityFieldPending;
+    setAmenityFieldPending(null);
+    if (!file || !pending || !user) return;
+
+    setAmenityUploading(pending.field);
+    try {
+      const path = `natural_places/amenity_${Date.now()}_${user.uid}.jpg`;
+      const { error: upErr } = await supabase.storage.from('media').upload(path, file, {
+        contentType: file.type || 'image/jpeg', upsert: true,
+      });
+      if (upErr) throw upErr;
+      const url = supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
+      await supabase.from('natural_place_amenity_suggestions').insert({
+        place_id: id,
+        field: pending.field,
+        value: pending.value,
+        photo_url: url,
+        submitted_by_uid: user.uid,
+        submitted_by_profile_id: profileId || null,
+      });
+      setPendingAmenityFields(prev => new Set(prev).add(pending.field));
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setAmenityUploading(null);
+    }
   }
 
   async function updateDifficulty(value: string) {
     await supabase.from('natural_places').update({ niveau_difficulte: value }).eq('id', id);
     setPlace(p => p ? { ...p, niveau_difficulte: value } : p);
+  }
+
+  async function addPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !user) return;
+    setUploadingPhoto(true);
+    try {
+      const path = `natural_places/${Date.now()}_${user.uid}.jpg`;
+      const { error: upErr } = await supabase.storage.from('media').upload(path, file, {
+        contentType: file.type || 'image/jpeg', upsert: true,
+      });
+      if (upErr) throw upErr;
+      const url = supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
+      await supabase.from('natural_place_photo_suggestions').insert({
+        place_id: id,
+        photo_url: url,
+        submitted_by_uid: user.uid,
+        submitted_by_profile_id: profileId || null,
+      });
+      alert('Merci ! Ta photo sera visible après validation par un admin.');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setUploadingPhoto(false);
+    }
   }
 
   if (loading) {
@@ -272,32 +348,46 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
         <h2 className="font-bold text-base text-[#1F2A2E] mb-2.5" style={{ fontFamily: 'Galey, sans-serif' }}>
           Équipements & caractéristiques
         </h2>
+        <input ref={amenityFileInput} type="file" accept="image/*" className="hidden" onChange={onAmenityPhotoSelected} />
         <div className="grid grid-cols-2 gap-2 mb-6">
           {AMENITIES.map(({ field, icon, label }) => {
             const active = place[field] === true;
+            const pending = pendingAmenityFields.has(field);
+            const uploading = amenityUploading === field;
             return (
               <button
                 key={field}
-                onClick={profileId ? () => updateAmenity(field, !active) : undefined}
-                disabled={!profileId}
+                onClick={(user && !pending && !uploading) ? () => suggestAmenity(field, !active) : undefined}
+                disabled={!user || pending || uploading}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg border text-left transition-colors disabled:cursor-default"
                 style={{
-                  backgroundColor: active ? '#6E9E571F' : '#F9FAFB',
-                  borderColor: active ? '#6E9E5780' : '#E5E7EB',
+                  backgroundColor: pending ? '#EA580C1A' : active ? '#6E9E571F' : '#F9FAFB',
+                  borderColor: pending ? '#EA580C80' : active ? '#6E9E5780' : '#E5E7EB',
                 }}
               >
                 <span className="text-sm">{icon}</span>
                 <span
                   className="text-xs flex-1"
-                  style={{ fontFamily: 'Galey, sans-serif', color: active ? '#1E2025' : '#9CA3AF', fontWeight: active ? 600 : 400 }}
+                  style={{ fontFamily: 'Galey, sans-serif', color: pending ? '#9A3412' : active ? '#1E2025' : '#9CA3AF', fontWeight: (active || pending) ? 600 : 400 }}
                 >
                   {label}
                 </span>
-                {profileId && <span className="text-xs">{active ? '✅' : '⚪'}</span>}
+                {uploading ? (
+                  <span className="text-xs">⏳</span>
+                ) : pending ? (
+                  <span className="text-xs" title="En attente de validation">⏳</span>
+                ) : user ? (
+                  <span className="text-xs">{active ? '✅' : '⚪'}</span>
+                ) : null}
               </button>
             );
           })}
         </div>
+        {user && (
+          <p className="text-xs text-gray-400 -mt-4 mb-6" style={{ fontFamily: 'Galey, sans-serif' }}>
+            📷 Une photo est demandée pour confirmer un équipement — validé par un admin avant d&apos;apparaître pour tous.
+          </p>
+        )}
 
         {/* Difficulté */}
         <h2 className="font-bold text-base text-[#1F2A2E] mb-2.5" style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -324,6 +414,33 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
             );
           })}
         </div>
+
+        {/* Photos */}
+        <div className="flex items-center justify-between mb-2.5">
+          <h2 className="font-bold text-base text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Photos
+          </h2>
+          {user && (
+            <label className="text-xs font-semibold text-[#0C5C6C] cursor-pointer hover:underline" style={{ fontFamily: 'Galey, sans-serif' }}>
+              {uploadingPhoto ? 'Envoi…' : '📷 Ajouter'}
+              <input type="file" accept="image/*" className="hidden" disabled={uploadingPhoto} onChange={addPhoto} />
+            </label>
+          )}
+        </div>
+        {(place.photos?.length ?? 0) === 0 ? (
+          <div className="h-16 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center mb-6">
+            <p className="text-xs text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>Aucune photo pour le moment</p>
+          </div>
+        ) : (
+          <div className="flex gap-2 overflow-x-auto mb-6 pb-1">
+            {place.photos!.map((url, i) => (
+              <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="" className="w-32 h-24 object-cover rounded-xl" />
+              </a>
+            ))}
+          </div>
+        )}
 
         {/* Avis */}
         <h2 className="font-bold text-base text-[#1F2A2E] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>

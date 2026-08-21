@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-context';
 import type { NaturalPlaceMapItem } from '@/components/NaturalPlacesMap';
 
 const NaturalPlacesMap = dynamic(() => import('@/components/NaturalPlacesMap'), {
@@ -27,6 +28,7 @@ interface NaturalPlace {
   nb_avis: number | null;
   note_moyenne: number | null;
   photo_url?: string | null;
+  statut?: string | null;
 }
 
 // ── Constantes (identiques à l'app) ─────────────────────────────────────────────
@@ -70,6 +72,7 @@ function distLabel(km: number): string {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function LieuxNaturelsPage() {
+  const { user } = useAuth();
   const [places, setPlaces] = useState<NaturalPlace[]>([]);
   const [loading, setLoading] = useState(true);
   const [catFilter, setCatFilter] = useState('tous');
@@ -80,10 +83,12 @@ export default function LieuxNaturelsPage() {
   async function loadPlaces() {
     setLoading(true);
     try {
-      const { data } = await supabase
-        .from('natural_places')
-        .select('id, nom, categorie, lat, lng, alerte_cyano, nb_avis, note_moyenne, photo_url')
-        .order('nom');
+      const cols = 'id, nom, categorie, lat, lng, alerte_cyano, nb_avis, note_moyenne, photo_url, statut';
+      const query = supabase.from('natural_places').select(cols);
+      const { data } = await (user
+        ? query.or(`statut.eq.valide,submitted_by_uid.eq.${user.uid}`)
+        : query.eq('statut', 'valide')
+      ).order('nom');
       setPlaces((data ?? []) as NaturalPlace[]);
     } finally {
       setLoading(false);
@@ -92,6 +97,10 @@ export default function LieuxNaturelsPage() {
 
   useEffect(() => {
     loadPlaces();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setUserPos({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
@@ -122,9 +131,20 @@ export default function LieuxNaturelsPage() {
       {/* Hero */}
       <div className="bg-[#0C5C6C] text-white px-4 py-8">
         <div className="max-w-3xl mx-auto">
-          <h1 className="text-2xl font-bold mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>
-            🌲 Lieux Naturels
-          </h1>
+          <div className="flex items-start justify-between gap-3 mb-1">
+            <h1 className="text-2xl font-bold" style={{ fontFamily: 'Galey, sans-serif' }}>
+              🌲 Lieux Naturels
+            </h1>
+            {user && (
+              <Link
+                href="/lieux-naturels/proposer"
+                className="flex-shrink-0 bg-white text-[#0C5C6C] text-xs font-bold px-3.5 py-2 rounded-full hover:bg-white/90 transition-colors"
+                style={{ fontFamily: 'Galey, sans-serif' }}
+              >
+                📍 Proposer un lieu
+              </Link>
+            )}
+          </div>
           <p className="text-white/70 text-sm mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>
             Plages, lacs, parcs & forêts accessibles avec vos animaux
           </p>
@@ -242,6 +262,8 @@ function PlaceCard({ place, distLabel }: { place: NaturalPlace; distLabel: strin
   const color = CAT_COLOR[cat] ?? '#0C5C6C';
   const gradient = CAT_GRADIENT[cat] ?? 'linear-gradient(135deg, #0C5C6C, #4CAF50)';
   const cyano = place.alerte_cyano === true;
+  const enAttente = place.statut === 'en_attente';
+  const refuse = place.statut === 'refuse';
   const nbAvis = place.nb_avis ?? 0;
   const noteMoy = (place.note_moyenne ?? 0).toFixed(1);
 
@@ -275,6 +297,14 @@ function PlaceCard({ place, distLabel }: { place: NaturalPlace; distLabel: strin
             style={{ fontFamily: 'Galey, sans-serif' }}
           >
             ⚠️ Cyano
+          </span>
+        )}
+        {(enAttente || refuse) && (
+          <span
+            className="absolute top-3 right-3 text-xs font-bold text-white px-2.5 py-1 rounded-full"
+            style={{ fontFamily: 'Galey, sans-serif', backgroundColor: enAttente ? '#C2740B' : '#4B5563' }}
+          >
+            {enAttente ? '⏳ En attente' : '✕ Refusé'}
           </span>
         )}
         <div className="absolute bottom-3 left-3.5 right-3.5 flex items-end justify-between gap-2">

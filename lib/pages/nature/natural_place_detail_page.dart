@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/utils/image_pick.dart';
+import 'package:PetsMatch/utils/storage_helper.dart';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -59,6 +61,7 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
   List<Map<String, dynamic>> _reviews = [];
   bool _loadingReviews = true;
   bool _savingReview   = false;
+  Set<String> _pendingAmenityFields = {};
 
   // Pour le formulaire d'avis
   int    _myNote    = 0;
@@ -70,6 +73,23 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
     super.initState();
     _place = Map<String, dynamic>.from(widget.place);
     _loadReviews();
+    _loadPendingAmenitySuggestions();
+  }
+
+  Future<void> _loadPendingAmenitySuggestions() async {
+    try {
+      final id = _place['id']?.toString();
+      if (id == null) return;
+      final data = await _supa
+          .from('natural_place_amenity_suggestions')
+          .select('field')
+          .eq('place_id', id)
+          .eq('statut', 'en_attente');
+      if (mounted) {
+        setState(() => _pendingAmenityFields =
+            (data as List).map((r) => r['field'] as String).toSet());
+      }
+    } catch (_) {}
   }
 
   @override
@@ -229,13 +249,69 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
     } catch (_) {}
   }
 
-  Future<void> _updateAmenity(String field, bool value) async {
+  bool _uploadingPhoto = false;
+
+  Future<void> _addPhoto() async {
+    final file = await pickAndCropBanner();
+    if (file == null) return;
+    setState(() => _uploadingPhoto = true);
     try {
       final id = _place['id']?.toString();
       if (id == null) return;
-      await _supa.from('natural_places').update({field: value}).eq('id', id);
-      setState(() => _place[field] = value);
-    } catch (_) {}
+      final path = 'natural_places/${DateTime.now().millisecondsSinceEpoch}_${User_Info.uid}.jpg';
+      final url = await uploadPhoto(file, path);
+      await _supa.from('natural_place_photo_suggestions').insert({
+        'place_id':                 id,
+        'photo_url':                url,
+        'submitted_by_uid':         User_Info.uid,
+        'submitted_by_profile_id':  _uid.isNotEmpty ? _uid : null,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Merci ! Ta photo sera visible après validation par un admin.',
+              style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: _green,
+        ));
+      }
+    } catch (e) {
+      debugPrint('[NaturalDetail] add photo error: $e');
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
+    }
+  }
+
+  Future<void> _suggestAmenity(String field, bool value) async {
+    final id = _place['id']?.toString();
+    if (id == null) return;
+
+    final file = await pickAndCropBanner();
+    if (file == null) return;
+
+    setState(() => _pendingAmenityFields = {..._pendingAmenityFields, field});
+    try {
+      final path = 'natural_places/amenity_${DateTime.now().millisecondsSinceEpoch}_${User_Info.uid}.jpg';
+      final url = await uploadPhoto(file, path);
+      await _supa.from('natural_place_amenity_suggestions').insert({
+        'place_id':                 id,
+        'field':                    field,
+        'value':                    value,
+        'photo_url':                url,
+        'submitted_by_uid':         User_Info.uid,
+        'submitted_by_profile_id':  _uid.isNotEmpty ? _uid : null,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Merci ! Signalement envoyé pour validation avec ta photo.',
+              style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: _green,
+        ));
+      }
+    } catch (e) {
+      debugPrint('[NaturalDetail] suggest amenity error: $e');
+      if (mounted) {
+        setState(() => _pendingAmenityFields = {..._pendingAmenityFields}..remove(field));
+      }
+    }
   }
 
   Future<void> _openNavigation() async {
@@ -394,7 +470,8 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
                   const SizedBox(height: 10),
                   _AmenitiesGrid(
                     place: _place,
-                    onChanged: _uid.isNotEmpty ? _updateAmenity : null,
+                    pendingFields: _pendingAmenityFields,
+                    onChanged: _uid.isNotEmpty ? _suggestAmenity : null,
                   ),
 
                   const SizedBox(height: 20),
@@ -414,6 +491,25 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
                       } catch (_) {}
                     },
                   ),
+
+                  const SizedBox(height: 20),
+
+                  // ── Photos ──────────────────────────────────────────────
+                  Row(children: [
+                    _SectionTitle(title: 'Photos'),
+                    const Spacer(),
+                    if (_uid.isNotEmpty)
+                      TextButton.icon(
+                        onPressed: _uploadingPhoto ? null : _addPhoto,
+                        icon: _uploadingPhoto
+                            ? const SizedBox(width: 14, height: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
+                            : const Icon(Icons.add_a_photo_outlined, size: 16, color: _teal),
+                        label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal)),
+                      ),
+                  ]),
+                  const SizedBox(height: 8),
+                  _PhotosGallery(photos: List<String>.from((_place['photos'] as List?) ?? const [])),
 
                   const SizedBox(height: 20),
 
@@ -451,13 +547,65 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
   }
 }
 
+// ─── Galerie photos ───────────────────────────────────────────────────────────
+
+class _PhotosGallery extends StatelessWidget {
+  final List<String> photos;
+  const _PhotosGallery({required this.photos});
+
+  @override
+  Widget build(BuildContext context) {
+    if (photos.isEmpty) {
+      return Container(
+        height: 70,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Text('Aucune photo pour le moment',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+      );
+    }
+    return SizedBox(
+      height: 100,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: photos.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) => ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: GestureDetector(
+            onTap: () => showDialog(
+              context: context,
+              builder: (_) => Dialog(
+                backgroundColor: Colors.transparent,
+                child: CachedNetworkImage(imageUrl: photos[i], fit: BoxFit.contain),
+              ),
+            ),
+            child: CachedNetworkImage(
+              imageUrl: photos[i],
+              width: 130, height: 100, fit: BoxFit.cover,
+              placeholder: (_, __) => Container(color: Colors.grey.shade100),
+              errorWidget: (_, __, ___) => Container(color: Colors.grey.shade100,
+                  child: const Icon(Icons.broken_image_outlined, color: Colors.grey)),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Grille équipements ───────────────────────────────────────────────────────
 
 class _AmenitiesGrid extends StatelessWidget {
   final Map<String, dynamic> place;
+  final Set<String> pendingFields;
   final void Function(String field, bool value)? onChanged;
 
-  const _AmenitiesGrid({required this.place, this.onChanged});
+  const _AmenitiesGrid({required this.place, this.pendingFields = const {}, this.onChanged});
 
   static const _items = [
     ('has_eau',          Icons.water_drop_outlined,    'Eau potable'),
@@ -479,31 +627,38 @@ class _AmenitiesGrid extends StatelessWidget {
       mainAxisSpacing: 8,
       children: _items.map((item) {
         final (field, icon, label) = item;
-        final active = place[field] == true;
+        final active  = place[field] == true;
+        final pending = pendingFields.contains(field);
         return GestureDetector(
-          onTap: onChanged != null
+          onTap: (onChanged != null && !pending)
               ? () => onChanged!(field, !active)
               : null,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
             decoration: BoxDecoration(
-              color: active ? _green.withValues(alpha: 0.12) : Colors.grey.shade50,
+              color: pending
+                  ? Colors.orange.withValues(alpha: 0.10)
+                  : active ? _green.withValues(alpha: 0.12) : Colors.grey.shade50,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: active ? _green.withValues(alpha: 0.5) : Colors.grey.shade200,
+                color: pending
+                    ? Colors.orange.withValues(alpha: 0.5)
+                    : active ? _green.withValues(alpha: 0.5) : Colors.grey.shade200,
               ),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Row(children: [
               Icon(icon, size: 16,
-                  color: active ? _green : Colors.grey.shade400),
+                  color: pending ? Colors.orange.shade700 : active ? _green : Colors.grey.shade400),
               const SizedBox(width: 6),
               Expanded(child: Text(label,
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                      color: active ? Colors.black87 : Colors.grey.shade500,
-                      fontWeight: active ? FontWeight.w600 : FontWeight.normal),
+                      color: pending ? Colors.orange.shade900 : active ? Colors.black87 : Colors.grey.shade500,
+                      fontWeight: (active || pending) ? FontWeight.w600 : FontWeight.normal),
                   overflow: TextOverflow.ellipsis)),
-              if (onChanged != null)
+              if (pending)
+                Icon(Icons.hourglass_top_rounded, size: 13, color: Colors.orange.shade700)
+              else if (onChanged != null)
                 Icon(
                   active ? Icons.check_circle : Icons.radio_button_unchecked,
                   size: 14,

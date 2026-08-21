@@ -59,7 +59,7 @@ interface DossierEntry {
   isSecondary?: boolean; profileTableId?: string;
 }
 
-type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs' | 'annonces' | 'tarification';
+type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs' | 'annonces' | 'lieux_naturels' | 'tarification';
 type FilterType = 'tous' | 'eleveur' | 'particulier' | 'pro' | 'secondaire' | 'admin' | 'en_attente';
 type SigFilter = 'en_attente' | 'traite' | 'rejete';
 
@@ -139,6 +139,35 @@ export default function AdminPage() {
   const [annoncesSuspendues, setAnnoncesSuspendues] = useState<AnnonceAdmin[]>([]);
   const [annoncesLoading, setAnnoncesLoading] = useState(false);
   const [annoncesTab, setAnnoncesTab] = useState<'attente' | 'suspectes' | 'suspendues'>('attente');
+
+  // Lieux naturels en attente de validation
+  interface NaturalPlaceAdmin {
+    id: string; nom: string; categorie: string; adresse?: string | null; description?: string | null;
+    lat: number | null; lng: number | null; photo_url?: string | null;
+    submitted_by_uid?: string | null; created_at?: string | null; nom_soumetteur?: string;
+  }
+  const [naturalPlacesEnAttente, setNaturalPlacesEnAttente] = useState<NaturalPlaceAdmin[]>([]);
+  const [naturalPlacesLoading, setNaturalPlacesLoading] = useState(false);
+  const [naturalPlaceSaving, setNaturalPlaceSaving] = useState<string | null>(null);
+  const [naturalPlacesSubTab, setNaturalPlacesSubTab] = useState<'lieux' | 'equipements' | 'photos'>('lieux');
+
+  interface PhotoSuggestionAdmin {
+    id: string; place_id: string; photo_url: string;
+    submitted_by_uid?: string | null; created_at?: string | null;
+    nom_lieu?: string; nom_soumetteur?: string;
+  }
+  const [photoSuggestions, setPhotoSuggestions] = useState<PhotoSuggestionAdmin[]>([]);
+  const [photoSuggestionsLoading, setPhotoSuggestionsLoading] = useState(false);
+  const [photoSaving, setPhotoSaving] = useState<string | null>(null);
+
+  interface AmenitySuggestionAdmin {
+    id: string; place_id: string; field: string; value: boolean; photo_url: string;
+    submitted_by_uid?: string | null; created_at?: string | null;
+    nom_lieu?: string; nom_soumetteur?: string;
+  }
+  const [amenitySuggestions, setAmenitySuggestions] = useState<AmenitySuggestionAdmin[]>([]);
+  const [amenitySuggestionsLoading, setAmenitySuggestionsLoading] = useState(false);
+  const [amenitySaving, setAmenitySaving] = useState<string | null>(null);
 
   // Tarification
   interface PlanAdmin { id: string; profil_type: string; plan_code: string; label: string; prix_mensuel: number; prix_annuel: number; max_annonces: number; duree_annonce_jours: number; auto_publish: boolean; stripe_price_id_mensuel?: string; stripe_price_id_annuel?: string; actif: boolean; }
@@ -644,6 +673,238 @@ export default function AdminPage() {
     } finally { setAnnonceSaving(null); }
   }
 
+  // ── Lieux naturels ────────────────────────────────────────────────────────────
+  const loadNaturalPlacesEnAttente = useCallback(async () => {
+    setNaturalPlacesLoading(true);
+    try {
+      const { data } = await supabase
+        .from('natural_places')
+        .select('id, nom, categorie, adresse, description, lat, lng, photo_url, submitted_by_uid, created_at')
+        .eq('statut', 'en_attente')
+        .order('created_at', { ascending: true });
+      const rows = (data ?? []) as NaturalPlaceAdmin[];
+      const uids = [...new Set(rows.map(r => r.submitted_by_uid).filter(Boolean))] as string[];
+      const nameMap: Record<string, string> = {};
+      if (uids.length > 0) {
+        const snap = await getDocs(collection(db, 'users'));
+        snap.docs.forEach(d => {
+          const fd = d.data() as Record<string, unknown>;
+          const rawName = `${fd['firstname'] ?? ''} ${fd['lastname'] ?? ''}`.trim();
+          nameMap[d.id] = rawName || d.id;
+        });
+      }
+      setNaturalPlacesEnAttente(rows.map(r => ({
+        ...r,
+        nom_soumetteur: r.submitted_by_uid ? (nameMap[r.submitted_by_uid] ?? r.submitted_by_uid) : '—',
+      })));
+    } finally {
+      setNaturalPlacesLoading(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function approveNaturalPlace(place: NaturalPlaceAdmin) {
+    setNaturalPlaceSaving(place.id);
+    try {
+      const { error } = await supabase.from('natural_places').update({ statut: 'valide' }).eq('id', place.id);
+      if (!error) {
+        setNaturalPlacesEnAttente(prev => prev.filter(p => p.id !== place.id));
+        if (place.submitted_by_uid) {
+          await sendNotification({
+            uid: place.submitted_by_uid,
+            type: 'lieu_naturel_valide',
+            title: 'Lieu validé !',
+            body: `Ton lieu "${place.nom}" a été validé et est maintenant visible par tous.`,
+          });
+        }
+      }
+    } finally { setNaturalPlaceSaving(null); }
+  }
+
+  async function rejectNaturalPlace(place: NaturalPlaceAdmin) {
+    const motif = window.prompt('Raison du refus (optionnel) :', '') ?? '';
+    setNaturalPlaceSaving(place.id);
+    try {
+      const { error } = await supabase.from('natural_places')
+        .update({ statut: 'refuse', rejection_reason: motif || null }).eq('id', place.id);
+      if (!error) {
+        setNaturalPlacesEnAttente(prev => prev.filter(p => p.id !== place.id));
+        if (place.submitted_by_uid) {
+          await sendNotification({
+            uid: place.submitted_by_uid,
+            type: 'lieu_naturel_refuse',
+            title: 'Lieu non validé',
+            body: `Ton lieu "${place.nom}" n'a pas été validé.${motif ? ` Raison : ${motif}` : ''}`,
+          });
+        }
+      }
+    } finally { setNaturalPlaceSaving(null); }
+  }
+
+  const AMENITY_LABELS: Record<string, string> = {
+    has_eau: '💧 Eau potable', has_parking: '🅿️ Parking', has_fontaine: '⛲ Fontaine',
+    has_poubelle: '🗑️ Poubelles', parcours_ombre: '🌳 Parcours ombragé', baignade_possible: '🏊 Baignade',
+  };
+
+  const loadAmenitySuggestions = useCallback(async () => {
+    setAmenitySuggestionsLoading(true);
+    try {
+      const { data } = await supabase
+        .from('natural_place_amenity_suggestions')
+        .select('id, place_id, field, value, photo_url, submitted_by_uid, created_at')
+        .eq('statut', 'en_attente')
+        .order('created_at', { ascending: true });
+      const rows = (data ?? []) as AmenitySuggestionAdmin[];
+
+      const placeIds = [...new Set(rows.map(r => r.place_id))];
+      const placeNames: Record<string, string> = {};
+      if (placeIds.length > 0) {
+        const { data: places } = await supabase.from('natural_places').select('id, nom').in('id', placeIds);
+        (places ?? []).forEach((p: { id: string; nom: string }) => { placeNames[p.id] = p.nom; });
+      }
+
+      const uids = [...new Set(rows.map(r => r.submitted_by_uid).filter(Boolean))] as string[];
+      const nameMap: Record<string, string> = {};
+      if (uids.length > 0) {
+        const snap = await getDocs(collection(db, 'users'));
+        snap.docs.forEach(d => {
+          const fd = d.data() as Record<string, unknown>;
+          const rawName = `${fd['firstname'] ?? ''} ${fd['lastname'] ?? ''}`.trim();
+          nameMap[d.id] = rawName || d.id;
+        });
+      }
+
+      setAmenitySuggestions(rows.map(r => ({
+        ...r,
+        nom_lieu: placeNames[r.place_id] ?? '—',
+        nom_soumetteur: r.submitted_by_uid ? (nameMap[r.submitted_by_uid] ?? r.submitted_by_uid) : '—',
+      })));
+    } finally {
+      setAmenitySuggestionsLoading(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function approveAmenitySuggestion(s: AmenitySuggestionAdmin) {
+    setAmenitySaving(s.id);
+    try {
+      const { error: e1 } = await supabase.from('natural_places').update({ [s.field]: s.value }).eq('id', s.place_id);
+      const { error: e2 } = await supabase.from('natural_place_amenity_suggestions').update({ statut: 'valide' }).eq('id', s.id);
+      if (!e1 && !e2) {
+        setAmenitySuggestions(prev => prev.filter(x => x.id !== s.id));
+        if (s.submitted_by_uid) {
+          await sendNotification({
+            uid: s.submitted_by_uid,
+            type: 'amenity_valide',
+            title: 'Signalement validé !',
+            body: `Ton signalement "${AMENITY_LABELS[s.field] ?? s.field}" pour "${s.nom_lieu}" a été validé.`,
+          });
+        }
+      }
+    } finally { setAmenitySaving(null); }
+  }
+
+  async function rejectAmenitySuggestion(s: AmenitySuggestionAdmin) {
+    const motif = window.prompt('Raison du refus (optionnel) :', '') ?? '';
+    setAmenitySaving(s.id);
+    try {
+      const { error } = await supabase.from('natural_place_amenity_suggestions')
+        .update({ statut: 'refuse', rejection_reason: motif || null }).eq('id', s.id);
+      if (!error) {
+        setAmenitySuggestions(prev => prev.filter(x => x.id !== s.id));
+        if (s.submitted_by_uid) {
+          await sendNotification({
+            uid: s.submitted_by_uid,
+            type: 'amenity_refuse',
+            title: 'Signalement non validé',
+            body: `Ton signalement "${AMENITY_LABELS[s.field] ?? s.field}" pour "${s.nom_lieu}" n'a pas été validé.${motif ? ` Raison : ${motif}` : ''}`,
+          });
+        }
+      }
+    } finally { setAmenitySaving(null); }
+  }
+
+  const loadPhotoSuggestions = useCallback(async () => {
+    setPhotoSuggestionsLoading(true);
+    try {
+      const { data } = await supabase
+        .from('natural_place_photo_suggestions')
+        .select('id, place_id, photo_url, submitted_by_uid, created_at')
+        .eq('statut', 'en_attente')
+        .order('created_at', { ascending: true });
+      const rows = (data ?? []) as PhotoSuggestionAdmin[];
+
+      const placeIds = [...new Set(rows.map(r => r.place_id))];
+      const placeNames: Record<string, string> = {};
+      if (placeIds.length > 0) {
+        const { data: places } = await supabase.from('natural_places').select('id, nom').in('id', placeIds);
+        (places ?? []).forEach((p: { id: string; nom: string }) => { placeNames[p.id] = p.nom; });
+      }
+
+      const uids = [...new Set(rows.map(r => r.submitted_by_uid).filter(Boolean))] as string[];
+      const nameMap: Record<string, string> = {};
+      if (uids.length > 0) {
+        const snap = await getDocs(collection(db, 'users'));
+        snap.docs.forEach(d => {
+          const fd = d.data() as Record<string, unknown>;
+          const rawName = `${fd['firstname'] ?? ''} ${fd['lastname'] ?? ''}`.trim();
+          nameMap[d.id] = rawName || d.id;
+        });
+      }
+
+      setPhotoSuggestions(rows.map(r => ({
+        ...r,
+        nom_lieu: placeNames[r.place_id] ?? '—',
+        nom_soumetteur: r.submitted_by_uid ? (nameMap[r.submitted_by_uid] ?? r.submitted_by_uid) : '—',
+      })));
+    } finally {
+      setPhotoSuggestionsLoading(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function approvePhotoSuggestion(s: PhotoSuggestionAdmin) {
+    setPhotoSaving(s.id);
+    try {
+      const { data: place } = await supabase.from('natural_places')
+        .select('photos, photo_url').eq('id', s.place_id).single();
+      const nextPhotos = [...((place?.photos as string[] | null) ?? []), s.photo_url];
+      const { error: e1 } = await supabase.from('natural_places').update({
+        photos: nextPhotos,
+        ...(place?.photo_url ? {} : { photo_url: s.photo_url }),
+      }).eq('id', s.place_id);
+      const { error: e2 } = await supabase.from('natural_place_photo_suggestions').update({ statut: 'valide' }).eq('id', s.id);
+      if (!e1 && !e2) {
+        setPhotoSuggestions(prev => prev.filter(x => x.id !== s.id));
+        if (s.submitted_by_uid) {
+          await sendNotification({
+            uid: s.submitted_by_uid,
+            type: 'photo_lieu_validee',
+            title: 'Photo validée !',
+            body: `Ta photo de "${s.nom_lieu}" a été validée et est maintenant visible par tous.`,
+          });
+        }
+      }
+    } finally { setPhotoSaving(null); }
+  }
+
+  async function rejectPhotoSuggestion(s: PhotoSuggestionAdmin) {
+    const motif = window.prompt('Raison du refus (optionnel) :', '') ?? '';
+    setPhotoSaving(s.id);
+    try {
+      const { error } = await supabase.from('natural_place_photo_suggestions')
+        .update({ statut: 'refuse', rejection_reason: motif || null }).eq('id', s.id);
+      if (!error) {
+        setPhotoSuggestions(prev => prev.filter(x => x.id !== s.id));
+        if (s.submitted_by_uid) {
+          await sendNotification({
+            uid: s.submitted_by_uid,
+            type: 'photo_lieu_refusee',
+            title: 'Photo non validée',
+            body: `Ta photo de "${s.nom_lieu}" n'a pas été validée.${motif ? ` Raison : ${motif}` : ''}`,
+          });
+        }
+      }
+    } finally { setPhotoSaving(null); }
+  }
+
   // ── Tarification ─────────────────────────────────────────────────────────────
   const loadTarification = useCallback(async () => {
     setTarifLoading(true);
@@ -724,6 +985,7 @@ export default function AdminPage() {
     if (tab === 'dossiers' && dossiers.length === 0 && refusedDossiers.length === 0) loadDossiers();
     if (tab === 'utilisateurs' && entries.length === 0) loadUsers();
     if (tab === 'annonces') { loadAnnoncesEnAttente(); loadAnnoncesSuspectes(); loadAnnoncesSuspendues(); }
+    if (tab === 'lieux_naturels') { loadNaturalPlacesEnAttente(); loadAmenitySuggestions(); loadPhotoSuggestions(); }
     if (tab === 'tarification') loadTarification();
   }, [isAdmin, tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -778,6 +1040,7 @@ export default function AdminPage() {
           { key: 'dossiers',      label: 'Dossiers',      icon: '📂', badge: stats?.profilsEnAttente },
           { key: 'utilisateurs',  label: 'Utilisateurs',  icon: '👥' },
           { key: 'annonces',      label: 'Annonces',      icon: '📋', badge: annoncesEnAttente.length || undefined },
+          { key: 'lieux_naturels',label: 'Lieux naturels',icon: '🌲', badge: (naturalPlacesEnAttente.length + amenitySuggestions.length + photoSuggestions.length) || undefined },
           { key: 'tarification',  label: 'Tarification',  icon: '💰' },
         ] as { key: AdminTab; label: string; icon: string; badge?: number }[]).map(t => (
           <button
@@ -1460,6 +1723,177 @@ export default function AdminPage() {
                   )
                 )}
               </>
+            )}
+          </div>
+        )}
+
+        {/* ─── Lieux naturels ─────────────────────────────────────────────────── */}
+        {tab === 'lieux_naturels' && (
+          <div className="max-w-4xl mx-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-[#1F2A2E] text-lg" style={{ fontFamily: 'Galey, sans-serif' }}>
+                Lieux naturels
+              </h2>
+              <button
+                onClick={() => {
+                  if (naturalPlacesSubTab === 'lieux') loadNaturalPlacesEnAttente();
+                  else if (naturalPlacesSubTab === 'equipements') loadAmenitySuggestions();
+                  else loadPhotoSuggestions();
+                }}
+                className="text-xs text-gray-400 hover:text-[#0C5C6C]"
+              >↺ Rafraîchir</button>
+            </div>
+
+            <div className="flex gap-2 mb-5">
+              {([
+                { key: 'lieux',       label: '📍 Nouveaux lieux',       count: naturalPlacesEnAttente.length },
+                { key: 'equipements', label: '🧰 Équipements signalés', count: amenitySuggestions.length },
+                { key: 'photos',      label: '🖼️ Photos signalées',    count: photoSuggestions.length },
+              ] as const).map(t => (
+                <button key={t.key} onClick={() => setNaturalPlacesSubTab(t.key)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border ${
+                    naturalPlacesSubTab === t.key
+                      ? 'bg-amber-500 text-white border-amber-500'
+                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                  }`}>
+                  {t.label}
+                  {t.count > 0 && (
+                    <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${naturalPlacesSubTab === t.key ? 'bg-white/30' : 'bg-gray-100 text-gray-600'}`}>
+                      {t.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {naturalPlacesSubTab === 'photos' ? (
+              photoSuggestionsLoading ? (
+                <div className="flex justify-center py-16">
+                  <div className="w-8 h-8 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : photoSuggestions.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+                  <p className="text-4xl mb-2">✅</p>
+                  <p className="text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>Aucune photo en attente.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {photoSuggestions.map(s => {
+                    const date = s.created_at ? new Date(s.created_at).toLocaleDateString('fr-FR') : '—';
+                    return (
+                      <div key={s.id} className="bg-white rounded-2xl border border-amber-100 overflow-hidden shadow-sm">
+                        <a href={s.photo_url} target="_blank" rel="noopener noreferrer" className="block h-32 bg-gray-100">
+                          <img src={s.photo_url} alt="" className="w-full h-full object-cover" />
+                        </a>
+                        <div className="p-3">
+                          <p className="font-semibold text-sm text-[#1F2A2E] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{s.nom_lieu}</p>
+                          <p className="text-xs text-gray-400 mb-2">Par {s.nom_soumetteur} · {date}</p>
+                          <div className="flex gap-2">
+                            <button onClick={() => approvePhotoSuggestion(s)} disabled={photoSaving === s.id}
+                              className="flex-1 px-2 py-1.5 bg-[#6E9E57] hover:bg-[#5A8A45] disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors">
+                              {photoSaving === s.id ? '…' : '✅'}
+                            </button>
+                            <button onClick={() => rejectPhotoSuggestion(s)} disabled={photoSaving === s.id}
+                              className="flex-1 px-2 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 text-xs font-semibold rounded-lg transition-colors">
+                              ❌
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            ) : naturalPlacesSubTab === 'equipements' ? (
+              amenitySuggestionsLoading ? (
+                <div className="flex justify-center py-16">
+                  <div className="w-8 h-8 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : amenitySuggestions.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+                  <p className="text-4xl mb-2">✅</p>
+                  <p className="text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>Aucun signalement en attente.</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {amenitySuggestions.map(s => {
+                    const date = s.created_at ? new Date(s.created_at).toLocaleDateString('fr-FR') : '—';
+                    return (
+                      <div key={s.id} className="bg-white rounded-2xl border border-amber-100 p-4 flex items-start gap-4 shadow-sm">
+                        <a href={s.photo_url} target="_blank" rel="noopener noreferrer" className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
+                          <img src={s.photo_url} alt="" className="w-full h-full object-cover" />
+                        </a>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                            {AMENITY_LABELS[s.field] ?? s.field} {s.value ? '→ présent' : '→ absent'}
+                          </p>
+                          <p className="text-sm text-gray-500">{s.nom_lieu}</p>
+                          <p className="text-xs text-gray-400 mt-1">Signalé par {s.nom_soumetteur} · {date}</p>
+                        </div>
+                        <div className="flex gap-2 flex-shrink-0">
+                          <button onClick={() => approveAmenitySuggestion(s)} disabled={amenitySaving === s.id}
+                            className="px-3 py-1.5 bg-[#6E9E57] hover:bg-[#5A8A45] disabled:opacity-50 text-white text-xs font-semibold rounded-xl transition-colors">
+                            {amenitySaving === s.id ? '…' : '✅ Valider'}
+                          </button>
+                          <button onClick={() => rejectAmenitySuggestion(s)} disabled={amenitySaving === s.id}
+                            className="px-3 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 text-xs font-semibold rounded-xl transition-colors">
+                            ❌ Refuser
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            ) : naturalPlacesLoading ? (
+              <div className="flex justify-center py-16">
+                <div className="w-8 h-8 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : naturalPlacesEnAttente.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+                <p className="text-4xl mb-2">✅</p>
+                <p className="text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>Aucun lieu en attente de validation.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {naturalPlacesEnAttente.map(p => {
+                  const catEmoji: Record<string, string> = { foret: '🌲', plage: '🏖️', parc: '🌿', lac: '💧', riviere: '🏞️' };
+                  const date = p.created_at ? new Date(p.created_at).toLocaleDateString('fr-FR') : '—';
+                  const mapsUrl = p.lat != null && p.lng != null ? `https://www.google.com/maps?q=${p.lat},${p.lng}` : null;
+                  return (
+                    <div key={p.id} className="bg-white rounded-2xl border border-amber-100 p-4 flex items-start gap-4 shadow-sm">
+                      <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
+                        {p.photo_url
+                          ? <img src={p.photo_url} alt="" className="w-full h-full object-cover" />
+                          : <div className="w-full h-full flex items-center justify-center text-2xl">{catEmoji[p.categorie] ?? '🌿'}</div>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          {catEmoji[p.categorie] ?? '🌿'} {p.nom}
+                        </p>
+                        <p className="text-sm text-gray-500">{p.adresse || '—'}</p>
+                        {p.description && (
+                          <p className="text-xs text-gray-500 mt-1 line-clamp-2">{p.description}</p>
+                        )}
+                        <p className="text-xs text-gray-400 mt-1">
+                          Proposé par {p.nom_soumetteur} · {date}
+                          {mapsUrl && <> · <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="text-[#0C5C6C] hover:underline">voir sur la carte</a></>}
+                        </p>
+                      </div>
+                      <div className="flex gap-2 flex-shrink-0">
+                        <button onClick={() => approveNaturalPlace(p)} disabled={naturalPlaceSaving === p.id}
+                          className="px-3 py-1.5 bg-[#6E9E57] hover:bg-[#5A8A45] disabled:opacity-50 text-white text-xs font-semibold rounded-xl transition-colors">
+                          {naturalPlaceSaving === p.id ? '…' : '✅ Valider'}
+                        </button>
+                        <button onClick={() => rejectNaturalPlace(p)} disabled={naturalPlaceSaving === p.id}
+                          className="px-3 py-1.5 border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50 text-xs font-semibold rounded-xl transition-colors">
+                          ❌ Refuser
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         )}
