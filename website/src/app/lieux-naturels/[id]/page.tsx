@@ -189,7 +189,7 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
     try {
       const path = `natural_places/amenity_${Date.now()}_${user.uid}.jpg`;
       const { error: upErr } = await supabase.storage.from('media').upload(path, file, {
-        contentType: file.type || 'image/jpeg', upsert: true,
+        contentType: file.type || 'application/octet-stream', upsert: true,
       });
       if (upErr) throw upErr;
       const url = supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
@@ -222,7 +222,7 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
     try {
       const path = `natural_places/${Date.now()}_${user.uid}.jpg`;
       const { error: upErr } = await supabase.storage.from('media').upload(path, file, {
-        contentType: file.type || 'image/jpeg', upsert: true,
+        contentType: file.type || 'application/octet-stream', upsert: true,
       });
       if (upErr) throw upErr;
       const url = supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
@@ -432,13 +432,8 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
             <p className="text-xs text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>Aucune photo pour le moment</p>
           </div>
         ) : (
-          <div className="flex gap-2 overflow-x-auto mb-6 pb-1">
-            {place.photos!.map((url, i) => (
-              <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt="" className="w-32 h-24 object-cover rounded-xl" />
-              </a>
-            ))}
+          <div className="mb-6">
+            <PhotoCarousel photos={place.photos!} alt={place.nom} />
           </div>
         )}
 
@@ -507,5 +502,63 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
         )}
       </div>
     </div>
+  );
+}
+
+// ── Carrousel photos (fiche détail) ─────────────────────────────────────────────
+
+function PhotoCarousel({ photos, alt }: { photos: string[]; alt: string }) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [index, setIndex] = useState(0);
+  const [lightbox, setLightbox] = useState<number | null>(null);
+
+  function onScroll() {
+    const el = scrollerRef.current;
+    if (!el || el.clientWidth === 0) return;
+    setIndex(Math.round(el.scrollLeft / el.clientWidth));
+  }
+
+  return (
+    <>
+      <div className="relative rounded-2xl overflow-hidden" style={{ height: 220 }}>
+        <div
+          ref={scrollerRef}
+          onScroll={onScroll}
+          className="h-full w-full flex overflow-x-auto snap-x snap-mandatory scrollbar-hide"
+        >
+          {photos.map((url, i) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={i}
+              src={url}
+              alt={alt}
+              onClick={() => setLightbox(i)}
+              className="h-full w-full flex-shrink-0 object-cover snap-center cursor-pointer"
+            />
+          ))}
+        </div>
+        {photos.length > 1 && (
+          <div className="absolute bottom-2.5 left-0 right-0 flex justify-center gap-1.5 pointer-events-none">
+            {photos.map((_, i) => (
+              <span
+                key={i}
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ backgroundColor: i === index ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.5)' }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {lightbox !== null && (
+        <div
+          className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4"
+          onClick={() => setLightbox(null)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={photos[lightbox]} alt={alt} className="max-w-full max-h-full object-contain" />
+        </div>
+      )}
+    </>
   );
 }

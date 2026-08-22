@@ -1,0 +1,3720 @@
+{
+  "type": "FeatureCollection",
+  "generator": "overpass-turbo",
+  "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL.",
+  "timestamp": "2026-08-21T16:27:35Z",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/18637471",
+        "name": "Plage de Nouelles",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.7213911,
+          48.5433283
+        ]
+      },
+      "id": "way/18637471"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/24594653",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.349542,
+          49.7553372
+        ]
+      },
+      "id": "way/24594653"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/28570285",
+        "name": "Plage de Lanruen",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.4447316,
+          48.6520638
+        ]
+      },
+      "id": "way/28570285"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/46505869",
+        "alt_name": "Plage des Sables d'Or",
+        "name": "Grève de Minieu",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.4072946,
+          48.6444355
+        ]
+      },
+      "id": "way/46505869"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/73861567",
+        "name": "Dunes du Trez Goarem",
+        "name:br": "Tevennoù Traezh Gwaremm",
+        "name:fr": "Dunes du Trez Goarem",
+        "natural": "beach",
+        "source:name:br": "ofis publik ar brezhoneg",
+        "wikidata": "Q26257939",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.5958122,
+          48.0125708
+        ]
+      },
+      "id": "way/73861567"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/73861574",
+        "name": "Plage du Loc'h",
+        "name:br": "Aod al Loc'h",
+        "name:fr": "Plage du Loc'h",
+        "natural": "beach",
+        "source:name:br": "ofis publik ar brezhoneg",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6332633,
+          48.02886
+        ]
+      },
+      "id": "way/73861574"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/100288453",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.825126,
+          49.4222155
+        ]
+      },
+      "id": "way/100288453"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/107488650",
+        "name": "Grève de Tréompan",
+        "name:br": "Aod Vras Treompas",
+        "name:fr": "Grève de Tréompan",
+        "natural": "beach",
+        "note": "P. Pondaven, Etre an Aberig hag Aod Vras Lambaol",
+        "source:name:br": "P. Pondaven",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6780728,
+          48.5708069
+        ]
+      },
+      "id": "way/107488650"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/107488657",
+        "name": "Pors ar Vilin Vraz",
+        "name:br": "Porzh ar Vilin Vras",
+        "name:fr": "Pors ar Vilin Vraz",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.7023075,
+          48.5656388
+        ]
+      },
+      "id": "way/107488657"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/107488664",
+        "name": "Pors Gaillion",
+        "natural": "beach",
+        "official_name": "Plage de Carn",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6908496,
+          48.5712397
+        ]
+      },
+      "id": "way/107488664"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/108275394",
+        "name": "Plage de Gwisselier",
+        "name:br": "Traezhenn Wiseier",
+        "name:fr": "Plage de Gwisselier",
+        "natural": "beach",
+        "source": "joli",
+        "source:name:br": "proper translation",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.7070185,
+          48.5534502
+        ]
+      },
+      "id": "way/108275394"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/110336833",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.7053071,
+          48.5518962
+        ]
+      },
+      "id": "way/110336833"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/116645821",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.8512864,
+          49.56303
+        ]
+      },
+      "id": "way/116645821"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/130013814",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.5708361,
+          48.7816872
+        ]
+      },
+      "id": "way/130013814"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/135595467",
+        "name": "Plage de la Mare",
+        "natural": "beach",
+        "source": "survey;BDOrtho IGN",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.2570856,
+          48.6444116
+        ]
+      },
+      "id": "way/135595467"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/136634344",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.573555,
+          48.814849
+        ]
+      },
+      "id": "way/136634344"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/136634346",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.5926585,
+          48.833652
+        ]
+      },
+      "id": "way/136634346"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/136634347",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.5832751,
+          48.8276631
+        ]
+      },
+      "id": "way/136634347"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/137256966",
+        "natural": "beach",
+        "source": "cadastre-dgi-fr source : Direction Générale des Impôts - Cadastre. Mise à jour : 2011",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.3655191,
+          49.7656133
+        ]
+      },
+      "id": "way/137256966"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/145430665",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1.1961367,
+          49.9687806
+        ]
+      },
+      "id": "way/145430665"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/155188182",
+        "name": "Le Plat Gousset",
+        "natural": "beach",
+        "surface": "sand",
+        "wikidata": "Q113631893",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.5973955,
+          48.8405289
+        ]
+      },
+      "id": "way/155188182"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/156942309",
+        "access": "yes",
+        "name": "Plage du Port",
+        "name:br": "Traezhenn ar Porzh",
+        "name:fr": "Plage du Port",
+        "natural": "beach",
+        "source:name:br": "proper translation",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.6462459,
+          48.6908945
+        ]
+      },
+      "id": "way/156942309"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/171415609",
+        "access": "yes",
+        "name": "Plage de la Pissotte",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.2681293,
+          48.6414671
+        ]
+      },
+      "id": "way/171415609"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/175997176",
+        "natural": "beach",
+        "source": "Bing",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3540966,
+          48.6746871
+        ]
+      },
+      "id": "way/175997176"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/176011641",
+        "name": "Plage du Phare",
+        "name:br": "Merc'helenn",
+        "name:fr": "Plage du Phare",
+        "natural": "beach",
+        "source": "Bing",
+        "source:name:br": "ofis publik ar brezhoneg",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3484127,
+          48.676936
+        ]
+      },
+      "id": "way/176011641"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/176011648",
+        "name": "Plage de Meneham",
+        "name:fr": "Plage de Meneham",
+        "natural": "beach",
+        "source": "Bing",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3641512,
+          48.6707037
+        ]
+      },
+      "id": "way/176011648"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/176017469",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3715029,
+          48.6688736
+        ]
+      },
+      "id": "way/176017469"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/176438492",
+        "dog": "no",
+        "layer": "1",
+        "name": "Plage de Dieppe",
+        "natural": "beach",
+        "opening_hours": "Mo-Su 07:00-19:00",
+        "surface": "pebblestone",
+        "tourism": "attraction",
+        "wikidata": "Q30061303",
+        "wikimedia_commons": "Category:Beach of Dieppe",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1.0724885,
+          49.9292246
+        ]
+      },
+      "id": "way/176438492"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/178390287",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1.0314347,
+          49.9178748
+        ]
+      },
+      "id": "way/178390287"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/178653088",
+        "name": "Plage de la Fosse",
+        "natural": "beach",
+        "source": "E-mégalis Bretagne et collectivités territoriales bretonnes - 2012",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.2874312,
+          48.6298521
+        ]
+      },
+      "id": "way/178653088"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/179097366",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3731525,
+          48.6685106
+        ]
+      },
+      "id": "way/179097366"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/179097374",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3747256,
+          48.667258
+        ]
+      },
+      "id": "way/179097374"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/179097385",
+        "name": "Plage de Nodeven Roduloc",
+        "name:fr": "Plage de Nodeven Roduloc",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3789211,
+          48.6637264
+        ]
+      },
+      "id": "way/179097385"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/182462655",
+        "name": "Plage de Donville",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.580267,
+          48.8668893
+        ]
+      },
+      "id": "way/182462655"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/185549273",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.7005874,
+          49.3098693
+        ]
+      },
+      "id": "way/185549273"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/191978711",
+        "lifeguard": "no",
+        "name": "Plage d'Hacqueville",
+        "natural": "beach",
+        "supervised": "no",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.5841281,
+          48.8292251
+        ]
+      },
+      "id": "way/191978711"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/199050879",
+        "natural": "beach",
+        "source": "Bing ; cadastre-dgi-fr source : Direction Générale des Impôts - Cadastre. Mise à jour : 2013",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.4868645,
+          49.8088226
+        ]
+      },
+      "id": "way/199050879"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/199055851",
+        "natural": "beach",
+        "source": "Bing ; cadastre-dgi-fr source : Direction Générale des Impôts - Cadastre. Mise à jour : 2013",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.5112277,
+          49.8194225
+        ]
+      },
+      "id": "way/199055851"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/199084804",
+        "natural": "beach",
+        "source": "Bing;cadastre-dgi-fr source : Direction Générale des Impôts - Cadastre. Mise à jour : 2013",
+        "surface": "shingle",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.5238727,
+          49.8254175
+        ]
+      },
+      "id": "way/199084804"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/210570710",
+        "name": "Plage du platé",
+        "natural": "beach",
+        "source": "cadastre-dgi-fr source : Direction Générale des Impôts - Cadastre. Mise à jour : 2011",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.8550085,
+          49.5578586
+        ]
+      },
+      "id": "way/210570710"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/211201945",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.8629198,
+          49.5508454
+        ]
+      },
+      "id": "way/211201945"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/219863717",
+        "name": "Plage de Querqueville",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.702844,
+          49.6716702
+        ]
+      },
+      "id": "way/219863717"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/219863748",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.732448,
+          49.6783307
+        ]
+      },
+      "id": "way/219863748"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/220203518",
+        "name": "Plage des Trois Moutons",
+        "name:br": "Aod Vras Lambaol",
+        "name:fr": "Plage des Trois Moutons",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6593223,
+          48.572189
+        ]
+      },
+      "id": "way/220203518"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/224160623",
+        "natural": "beach",
+        "surface": "sand",
+        "water": "tidal",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.7018555,
+          49.3317785
+        ]
+      },
+      "id": "way/224160623"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/228737077",
+        "access": "yes",
+        "name": "Plage de Tossen Arc Choz",
+        "natural": "beach",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.631795,
+          48.6816474
+        ]
+      },
+      "id": "way/228737077"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/228737713",
+        "access": "yes",
+        "dog:conditional": "no @ Jun-Sep",
+        "horse:conditional": "no @ Jun-Sep",
+        "name": "Plage de Porz ar Villiec",
+        "natural": "beach",
+        "smoking": "no",
+        "sport": "surfing",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.6478614,
+          48.6941394
+        ]
+      },
+      "id": "way/228737713"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/228738744",
+        "access": "yes",
+        "name": "Plage de Porz Mellec",
+        "name:br": "Traezhenn Porzh Maeleg",
+        "name:fr": "Plage de Porz Mellec",
+        "natural": "beach",
+        "source:name:br": "ofis publik ar brezhoneg",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.6224568,
+          48.6845192
+        ]
+      },
+      "id": "way/228738744"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/229238382",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.5879975,
+          48.5944767
+        ]
+      },
+      "id": "way/229238382"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/229238384",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.5936059,
+          48.5975005
+        ]
+      },
+      "id": "way/229238384"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/229238389",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.5944417,
+          48.5940677
+        ]
+      },
+      "id": "way/229238389"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/230551977",
+        "name": "Plage Corn ar Gazel",
+        "name:br": "Aod Korn ar Gazel",
+        "name:fr": "Plage Corn ar Gazel",
+        "natural": "beach",
+        "source:name:br": "Ofis publik ar brezhoneg",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6229419,
+          48.575499
+        ]
+      },
+      "id": "way/230551977"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/230551980",
+        "name": "Plage de Benniget",
+        "name:br": "Aod Benniged",
+        "name:fr": "Plage de Benniget",
+        "natural": "beach",
+        "source:name:br": "Ofis publik ar brezhoneg",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6125177,
+          48.5734856
+        ]
+      },
+      "id": "way/230551980"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/230558104",
+        "name": "Plage Ganaoc'h",
+        "name:br": "Aod ar Ganaog",
+        "name:fr": "Plage Ganaoc'h",
+        "natural": "beach",
+        "source:name:br": "Ofis publik ar brezhoneg",
+        "surface": "asphalt",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.60674,
+          48.572754
+        ]
+      },
+      "id": "way/230558104"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/232799446",
+        "name": "Plage de Pors Hir",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.2173397,
+          48.8638967
+        ]
+      },
+      "id": "way/232799446"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/232904084",
+        "name": "Plage des Crapauds",
+        "natural": "beach",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3263987,
+          48.6725066
+        ]
+      },
+      "id": "way/232904084"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/233870060",
+        "access": "yes",
+        "alt_name": "Grève des Rosaires",
+        "name": "Plage des Rosaires",
+        "name:br": "Aod ar Rozaer",
+        "natural": "beach",
+        "source:name:br": "ofis publik ar brezhoneg",
+        "surface": "sand",
+        "wikidata": "Q49322737",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.7518966,
+          48.5641655
+        ]
+      },
+      "id": "way/233870060"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/243592671",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.2551469,
+          48.8443999
+        ]
+      },
+      "id": "way/243592671"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/243592673",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.2569549,
+          48.8464034
+        ]
+      },
+      "id": "way/243592673"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/252779740",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6497978,
+          48.0234748
+        ]
+      },
+      "id": "way/252779740"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/252779745",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6489391,
+          48.0236689
+        ]
+      },
+      "id": "way/252779745"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/252779749",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6483631,
+          48.023607
+        ]
+      },
+      "id": "way/252779749"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/252779752",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6408243,
+          48.0263979
+        ]
+      },
+      "id": "way/252779752"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/252779757",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6400662,
+          48.0268038
+        ]
+      },
+      "id": "way/252779757"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/252779759",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6395893,
+          48.0270952
+        ]
+      },
+      "id": "way/252779759"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/252779782",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6645023,
+          48.0264815
+        ]
+      },
+      "id": "way/252779782"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/252922695",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6365206,
+          48.0285516
+        ]
+      },
+      "id": "way/252922695"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/260899637",
+        "name": "Plage du Petit Nice",
+        "natural": "beach",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3281288,
+          48.6703138
+        ]
+      },
+      "id": "way/260899637"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/260899642",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.312178,
+          48.6722154
+        ]
+      },
+      "id": "way/260899642"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/260899643",
+        "name": "Plage du Garo",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3224545,
+          48.6670213
+        ]
+      },
+      "id": "way/260899643"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/260899644",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.314464,
+          48.6717156
+        ]
+      },
+      "id": "way/260899644"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/260899645",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3125482,
+          48.6714404
+        ]
+      },
+      "id": "way/260899645"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/260899647",
+        "name": "Plage de Kervillo",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3056824,
+          48.6676594
+        ]
+      },
+      "id": "way/260899647"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/260899648",
+        "name": "Plage de la Tour Blanche",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3185587,
+          48.6703247
+        ]
+      },
+      "id": "way/260899648"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/264563617",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.7198499,
+          49.6799708
+        ]
+      },
+      "id": "way/264563617"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/264564174",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.7177733,
+          49.6797792
+        ]
+      },
+      "id": "way/264564174"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/264915497",
+        "name": "Plage des Trois Curés",
+        "natural": "beach",
+        "source": "Bing",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.7096876,
+          48.555308
+        ]
+      },
+      "id": "way/264915497"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/276954331",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.8666966,
+          49.5499006
+        ]
+      },
+      "id": "way/276954331"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/291792437",
+        "access": "yes",
+        "name": "Plage de la Fresnaye",
+        "name:br": "Traezhenn an Onnod",
+        "name:fr": "Plage de la Fresnaye",
+        "natural": "beach",
+        "source": "Bing",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.2739797,
+          48.637088
+        ]
+      },
+      "id": "way/291792437"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/291792465",
+        "access": "yes",
+        "natural": "beach",
+        "source": "Bing",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.2722144,
+          48.6388413
+        ]
+      },
+      "id": "way/291792465"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/322504165",
+        "name": "Porzh ar Skaf",
+        "name:br": "Porzh ar Skaf",
+        "name:fr": "Porzh ar Skaf",
+        "natural": "beach",
+        "source": "Mapbox",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.7036233,
+          48.563141
+        ]
+      },
+      "id": "way/322504165"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/340205259",
+        "name": "Anse à la Vierge",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.7187215,
+          48.5373819
+        ]
+      },
+      "id": "way/340205259"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/340205260",
+        "name": "Anse aux Moines",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.7182606,
+          48.5391735
+        ]
+      },
+      "id": "way/340205260"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/361686504",
+        "name": "Plage de Beg Douar",
+        "name:br": "Traezhenn Beg Douar",
+        "name:fr": "Plage de Beg Douar",
+        "natural": "beach",
+        "source:name:br": "ofis publik ar brezhoneg",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.6162458,
+          48.6840687
+        ]
+      },
+      "id": "way/361686504"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/362758975",
+        "natural": "beach",
+        "surface": "cobblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9463101,
+          48.7224559
+        ]
+      },
+      "id": "way/362758975"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/414866069",
+        "name": "Porz ar Marc'h",
+        "name:br": "Porzh ar Marc'h",
+        "name:fr": "Porz ar Marc'h",
+        "natural": "beach",
+        "source": "Bing",
+        "source:name:br": "proper translation",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.7621206,
+          48.4678735
+        ]
+      },
+      "id": "way/414866069"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/414866084",
+        "access": "yes",
+        "name": "Porz ar Marc'h",
+        "natural": "beach",
+        "source": "Bing",
+        "sport": "swimming",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.7619225,
+          48.467787
+        ]
+      },
+      "id": "way/414866084"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/425862918",
+        "name": "Plage de Tournemine",
+        "name:br": "Traezhenn Tornamin",
+        "name:fr": "Plage de Tournemine",
+        "natural": "beach",
+        "source:name:br": "ofis publik ar brezhoneg",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.7699877,
+          48.5700159
+        ]
+      },
+      "id": "way/425862918"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/425935256",
+        "name": "Plage du Valais",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.7168581,
+          48.5267744
+        ]
+      },
+      "id": "way/425935256"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/441358469",
+        "natural": "beach",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.7420912,
+          49.3442858
+        ]
+      },
+      "id": "way/441358469"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/451766760",
+        "name": "Plage Bonaparte",
+        "name:br": "Traezhenn Lañskochad",
+        "name:fr": "Plage Bonaparte",
+        "natural": "beach",
+        "source:name:br": "ofis publik ar brezhoneg",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9211326,
+          48.7090056
+        ]
+      },
+      "id": "way/451766760"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/495477881",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.218709,
+          48.656302
+        ]
+      },
+      "id": "way/495477881"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/513689377",
+        "name": "Pors ar Groas",
+        "natural": "beach",
+        "official_name": "Plage de Pors Geffroy",
+        "source": "Site web mairie Ploudalmézeau",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6964243,
+          48.5705057
+        ]
+      },
+      "id": "way/513689377"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/513689378",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6939834,
+          48.569645
+        ]
+      },
+      "id": "way/513689378"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/514149743",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9416844,
+          48.740395
+        ]
+      },
+      "id": "way/514149743"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/516133611",
+        "name": "Grande Plage",
+        "name:br": "Traezhenn Vras",
+        "name:fr": "Grande Plage",
+        "natural": "beach",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.247579,
+          48.6315413
+        ]
+      },
+      "id": "way/516133611"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/516823506",
+        "name": "Aod Lingoun",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.7032857,
+          48.5679037
+        ]
+      },
+      "id": "way/516823506"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/547493870",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9324948,
+          48.7560886
+        ]
+      },
+      "id": "way/547493870"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/547602852",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9911679,
+          48.7634139
+        ]
+      },
+      "id": "way/547602852"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/604051090",
+        "name": "Grève du Prat Ledan",
+        "natural": "beach",
+        "surface": "gravel",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.2400603,
+          48.8602094
+        ]
+      },
+      "id": "way/604051090"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/619516120",
+        "name": "Grève de Brestan",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.1531838,
+          48.8535105
+        ]
+      },
+      "id": "way/619516120"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/677454711",
+        "name": "Plage des Quatre Vaux",
+        "natural": "beach",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.2229144,
+          48.5945278
+        ]
+      },
+      "id": "way/677454711"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/689482621",
+        "alt_name": "Plage du Vieux Bourg",
+        "name": "Plage de l'Anse du Croc",
+        "natural": "beach",
+        "source": "E-mégalis Bretagne et collectivités territoriales bretonnes - 2012",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.3612687,
+          48.6568314
+        ]
+      },
+      "id": "way/689482621"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/692956591",
+        "name": "Le Tilleul - Antifer",
+        "natural": "beach",
+        "nudism": "yes",
+        "source": "cadastre-dgi-fr source : Direction Générale des Impôts - Cadastre. Mise à jour : 2012",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.1785368,
+          49.6958414
+        ]
+      },
+      "id": "way/692956591"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/692956592",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.1851408,
+          49.7005179
+        ]
+      },
+      "id": "way/692956592"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/692956593",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.1887564,
+          49.7031883
+        ]
+      },
+      "id": "way/692956593"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/692956597",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.1921598,
+          49.7055321
+        ]
+      },
+      "id": "way/692956597"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/692956598",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.1916415,
+          49.7056873
+        ]
+      },
+      "id": "way/692956598"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/692995832",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.3225946,
+          49.7422437
+        ]
+      },
+      "id": "way/692995832"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/693000325",
+        "name": "Plage du Fourquet",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.166808,
+          49.6886291
+        ]
+      },
+      "id": "way/693000325"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/704083679",
+        "natural": "beach",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9102197,
+          48.7039518
+        ]
+      },
+      "id": "way/704083679"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/704083686",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9432427,
+          48.7281337
+        ]
+      },
+      "id": "way/704083686"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/704083692",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9268846,
+          48.7120528
+        ]
+      },
+      "id": "way/704083692"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/704092018",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9508316,
+          48.7664791
+        ]
+      },
+      "id": "way/704092018"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/704092020",
+        "natural": "beach",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9483834,
+          48.7642599
+        ]
+      },
+      "id": "way/704092020"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/704092022",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9488188,
+          48.762476
+        ]
+      },
+      "id": "way/704092022"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/704092024",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9433286,
+          48.7591682
+        ]
+      },
+      "id": "way/704092024"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/704092025",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9435833,
+          48.7586297
+        ]
+      },
+      "id": "way/704092025"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/704092026",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9432276,
+          48.757938
+        ]
+      },
+      "id": "way/704092026"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/704092028",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9411033,
+          48.7579556
+        ]
+      },
+      "id": "way/704092028"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/704092029",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9402761,
+          48.7575427
+        ]
+      },
+      "id": "way/704092029"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/704092031",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9375815,
+          48.7571325
+        ]
+      },
+      "id": "way/704092031"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/706234959",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.1876541,
+          49.7021955
+        ]
+      },
+      "id": "way/706234959"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/718145485",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.7249384,
+          48.556703
+        ]
+      },
+      "id": "way/718145485"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/719896923",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3848669,
+          48.6608467
+        ]
+      },
+      "id": "way/719896923"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/744908334",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.3769992,
+          48.6539505
+        ]
+      },
+      "id": "way/744908334"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/757037721",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.5758396,
+          48.723525
+        ]
+      },
+      "id": "way/757037721"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/762970542",
+        "name": "Plage du Puys",
+        "name:en": "Puys Beach",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1.1077794,
+          49.937512
+        ]
+      },
+      "id": "way/762970542"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/793313561",
+        "name": "Plage du Fond de la Baie",
+        "natural": "beach",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.6506204,
+          48.6801706
+        ]
+      },
+      "id": "way/793313561"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/793354438",
+        "access": "yes",
+        "name": "Plage des Curés",
+        "name:br": "Traezhenn ar Beleg",
+        "name:fr": "Plage des Curés",
+        "natural": "beach",
+        "source:name:br": "ofis publik ar brezhoneg",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.634657,
+          48.6819421
+        ]
+      },
+      "id": "way/793354438"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/793357240",
+        "access": "yes",
+        "name": "Plage du Dos Port",
+        "natural": "beach",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.6449518,
+          48.6910911
+        ]
+      },
+      "id": "way/793357240"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/797844032",
+        "access": "yes",
+        "name": "Plage de la Roche Tombée",
+        "natural": "beach",
+        "surface": "rock",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.6436166,
+          48.693403
+        ]
+      },
+      "id": "way/797844032"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/797844033",
+        "access": "yes",
+        "name": "Plage de la Palud",
+        "natural": "beach",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.643314,
+          48.6951419
+        ]
+      },
+      "id": "way/797844033"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/797844034",
+        "access": "yes",
+        "name": "Plage du Bilou",
+        "natural": "beach",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.6432816,
+          48.6946568
+        ]
+      },
+      "id": "way/797844034"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/837616142",
+        "name": "Plage surveillée de l'Ermitage",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.5855083,
+          48.84886
+        ]
+      },
+      "id": "way/837616142"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/837616143",
+        "lifeguard": "no",
+        "name": "Grève du Nord",
+        "natural": "beach",
+        "supervised": "no",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.6049198,
+          48.8377876
+        ]
+      },
+      "id": "way/837616143"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/844345924",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6066814,
+          48.580303
+        ]
+      },
+      "id": "way/844345924"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/844345925",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6042317,
+          48.5849962
+        ]
+      },
+      "id": "way/844345925"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/844345927",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6067461,
+          48.5955118
+        ]
+      },
+      "id": "way/844345927"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/846432561",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6189607,
+          48.5989137
+        ]
+      },
+      "id": "way/846432561"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/955287276",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.3737429,
+          48.6557702
+        ]
+      },
+      "id": "way/955287276"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/956147880",
+        "natural": "beach",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.2254623,
+          48.6043487
+        ]
+      },
+      "id": "way/956147880"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/956149919",
+        "natural": "beach",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.2164729,
+          48.593176
+        ]
+      },
+      "id": "way/956149919"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/956409019",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.4255786,
+          48.6562938
+        ]
+      },
+      "id": "way/956409019"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/956537498",
+        "name": "Plage du Crapaud",
+        "name:br": "Traezh an Tousog",
+        "name:fr": "Plage du Crapaud",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.7583479,
+          48.4703104
+        ]
+      },
+      "id": "way/956537498"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/956541054",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.7034837,
+          48.5609013
+        ]
+      },
+      "id": "way/956541054"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/957050446",
+        "name": "Plage de Porsguen",
+        "name:br": "Traezhenn Porzh Gwenn",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6998077,
+          48.5701824
+        ]
+      },
+      "id": "way/957050446"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/957078997",
+        "name": "Plage de Bar Al Lan",
+        "natural": "beach",
+        "source": "Sit eweb mairie Ploudalmézeau",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.706034,
+          48.5581947
+        ]
+      },
+      "id": "way/957078997"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/961254850",
+        "name": "Plage de Pors an Eis Vinis",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.7654816,
+          48.4753448
+        ]
+      },
+      "id": "way/961254850"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/964408505",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.1629825,
+          48.8534017
+        ]
+      },
+      "id": "way/964408505"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1016216773",
+        "natural": "beach",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3279722,
+          48.6750088
+        ]
+      },
+      "id": "way/1016216773"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1037489747",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.2358735,
+          48.8636035
+        ]
+      },
+      "id": "way/1037489747"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1039496988",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3431932,
+          48.6776315
+        ]
+      },
+      "id": "way/1039496988"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1039496989",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3392074,
+          48.6769223
+        ]
+      },
+      "id": "way/1039496989"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104155670",
+        "access": "yes",
+        "name": "Plage des Roches d'Argent",
+        "name:br": "Traezhenn Roc'h Arc'hant",
+        "name:fr": "Plage des Roches d'Argent",
+        "natural": "beach",
+        "source:name:br": "ofis publik ar brezhoneg",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.6373977,
+          48.6798662
+        ]
+      },
+      "id": "way/1104155670"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104155671",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.6373973,
+          48.6785732
+        ]
+      },
+      "id": "way/1104155671"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104155678",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.6373704,
+          48.6758909
+        ]
+      },
+      "id": "way/1104155678"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104155680",
+        "access": "yes",
+        "name": "Plage du Hogolo",
+        "name:br": "Traezhenn an Hogolo",
+        "name:fr": "Plage du Hogolo",
+        "natural": "beach",
+        "source:name:br": "proper translation",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.637703,
+          48.67666
+        ]
+      },
+      "id": "way/1104155680"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104407578",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.6195459,
+          48.6840689
+        ]
+      },
+      "id": "way/1104407578"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104407585",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.6231684,
+          48.6850476
+        ]
+      },
+      "id": "way/1104407585"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104426513",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.5687553,
+          48.6861063
+        ]
+      },
+      "id": "way/1104426513"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104426517",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.5815182,
+          48.6708124
+        ]
+      },
+      "id": "way/1104426517"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104426520",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.5937427,
+          48.6695885
+        ]
+      },
+      "id": "way/1104426520"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104426523",
+        "natural": "beach",
+        "surface": "sand",
+        "wikidata": "Q138547560",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.570391,
+          48.680113
+        ]
+      },
+      "id": "way/1104426523"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104426526",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.6031589,
+          48.6697873
+        ]
+      },
+      "id": "way/1104426526"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104426528",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.612157,
+          48.6712216
+        ]
+      },
+      "id": "way/1104426528"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104426545",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.6155983,
+          48.681478
+        ]
+      },
+      "id": "way/1104426545"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104426546",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.615852,
+          48.6817947
+        ]
+      },
+      "id": "way/1104426546"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104434559",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.576423,
+          48.6731809
+        ]
+      },
+      "id": "way/1104434559"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104444598",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.581308,
+          48.7222182
+        ]
+      },
+      "id": "way/1104444598"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104444601",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.5812264,
+          48.7130638
+        ]
+      },
+      "id": "way/1104444601"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104444603",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.581677,
+          48.7104941
+        ]
+      },
+      "id": "way/1104444603"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104444605",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.5813123,
+          48.7099356
+        ]
+      },
+      "id": "way/1104444605"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104444608",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.5814194,
+          48.7091525
+        ]
+      },
+      "id": "way/1104444608"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104444618",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.5808757,
+          48.7038347
+        ]
+      },
+      "id": "way/1104444618"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104444621",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.5811139,
+          48.7050416
+        ]
+      },
+      "id": "way/1104444621"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1104444624",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.5832201,
+          48.7065229
+        ]
+      },
+      "id": "way/1104444624"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1193331068",
+        "name": "Plage de Bréhec",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9480607,
+          48.7265694
+        ]
+      },
+      "id": "way/1193331068"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1195558139",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9365995,
+          48.7187901
+        ]
+      },
+      "id": "way/1195558139"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1195558144",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.9414812,
+          48.7193448
+        ]
+      },
+      "id": "way/1195558144"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1196098598",
+        "dog": "no",
+        "name": "Plage du Cruckin",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.0205066,
+          48.7707606
+        ]
+      },
+      "id": "way/1196098598"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1239671459",
+        "name": "Plage de Kerloc'h",
+        "name:br": "Traezhenn Gerloc'h",
+        "name:fr": "Plage de Kerloc'h",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6295405,
+          48.0258975
+        ]
+      },
+      "id": "way/1239671459"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1304431144",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1.1805367,
+          49.9646278
+        ]
+      },
+      "id": "way/1304431144"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1304431149",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1.2029117,
+          49.9736333
+        ]
+      },
+      "id": "way/1304431149"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1304431150",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1.2002912,
+          49.9712863
+        ]
+      },
+      "id": "way/1304431150"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1304431151",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1.1957811,
+          49.9694491
+        ]
+      },
+      "id": "way/1304431151"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1304431152",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1.1822024,
+          49.9648365
+        ]
+      },
+      "id": "way/1304431152"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1304431160",
+        "natural": "beach",
+        "surface": "pebblestone",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1.1971383,
+          49.9692745
+        ]
+      },
+      "id": "way/1304431160"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1308578532",
+        "natural": "beach",
+        "surface": "sand",
+        "tidal": "yes",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.8873498,
+          49.6183335
+        ]
+      },
+      "id": "way/1308578532"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "node/1377153485",
+        "name": "Plage du Lividic",
+        "natural": "beach"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3062579,
+          48.6667687
+        ]
+      },
+      "id": "node/1377153485"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1419931583",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.8484166,
+          49.6045183
+        ]
+      },
+      "id": "way/1419931583"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "node/1483981399",
+        "name": "Plage de Tréompan",
+        "natural": "beach",
+        "surface": "sand"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6749925,
+          48.5700466
+        ]
+      },
+      "id": "node/1483981399"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "node/1484008457",
+        "name": "Le Cremiou",
+        "natural": "beach"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3549406,
+          48.6739421
+        ]
+      },
+      "id": "node/1484008457"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1529565113",
+        "name": "Plage du Scluz",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3274375,
+          48.6680438
+        ]
+      },
+      "id": "way/1529565113"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1529565114",
+        "name": "Plage de Kerurus",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.2978131,
+          48.6572842
+        ]
+      },
+      "id": "way/1529565114"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1529565115",
+        "name": "Plage du Menhir",
+        "natural": "beach",
+        "surface": "sand",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.3054565,
+          48.6494148
+        ]
+      },
+      "id": "way/1529565115"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1540719681",
+        "alt_name": "Plage de Coulouarn",
+        "name": "Plage de Koulouarn",
+        "name:br": "Aod Koulouarn",
+        "name:fr": "Plage de Koulouarn",
+        "natural": "beach",
+        "source:name:br": "Ofis publik ar brezhoneg",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6489746,
+          48.5715135
+        ]
+      },
+      "id": "way/1540719681"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "way/1550113307",
+        "natural": "beach",
+        "@geometry": "center"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.2368325,
+          48.8617007
+        ]
+      },
+      "id": "way/1550113307"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "node/1723311345",
+        "name": "Dieppe - plage de la piscine",
+        "natural": "beach",
+        "nudism": "yes"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          1.0624234,
+          49.9249655
+        ]
+      },
+      "id": "node/1723311345"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "node/1723311861",
+        "name": "Plage de Keremma",
+        "name:br": "Aod Vras Trelez",
+        "name:fr": "Plage de Keremma",
+        "natural": "beach",
+        "nudism": "yes",
+        "source:name:br": "ofis publik ar brezhoneg"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.2418695,
+          48.6500285
+        ]
+      },
+      "id": "node/1723311861"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "node/2238125747",
+        "name": "Plage du Blockhaus",
+        "natural": "beach",
+        "nudism": "yes"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -1.842138,
+          49.581513
+        ]
+      },
+      "id": "node/2238125747"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "node/5040113643",
+        "name": "Plage de Kerdéniel",
+        "name:br": "Aod Kerzeniel",
+        "name:fr": "Plage de Kerdéniel",
+        "natural": "beach",
+        "source:name:br": "pondaven/Madeg"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.7031038,
+          48.5606746
+        ]
+      },
+      "id": "node/5040113643"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "node/5041558052",
+        "name": "Porzhig ar Rouanez",
+        "name:br": "Porzhig ar Rouanez",
+        "name:fr": "Porzhig ar Rouanez",
+        "natural": "beach"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.6907128,
+          48.5727997
+        ]
+      },
+      "id": "node/5041558052"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "node/5044686201",
+        "name": "Porzh ar Vraoù",
+        "name:br": "Porzh ar Vraou",
+        "natural": "beach",
+        "surface": "pebblestone"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -4.7015905,
+          48.5704071
+        ]
+      },
+      "id": "node/5044686201"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "node/5460321621",
+        "natural": "beach"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -3.2068652,
+          48.8468923
+        ]
+      },
+      "id": "node/5460321621"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "node/11280286806",
+        "lifeguard": "no",
+        "name": "Plage de la Fosse",
+        "natural": "beach",
+        "supervised": "no",
+        "surface": "sand"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.2872429,
+          48.6297342
+        ]
+      },
+      "id": "node/11280286806"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "node/11280286807",
+        "lifeguard": "no",
+        "name": "Port Saint Jean",
+        "natural": "beach",
+        "supervised": "no",
+        "surface": "sand"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -2.2897697,
+          48.6269482
+        ]
+      },
+      "id": "node/11280286807"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "@id": "node/13095246543",
+        "name": "plage des Petites Dalles",
+        "natural": "beach",
+        "surface": "gravel"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          0.5238776,
+          49.8253729
+        ]
+      },
+      "id": "node/13095246543"
+    }
+  ]
+}

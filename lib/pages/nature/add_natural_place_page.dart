@@ -1,7 +1,12 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show Factory;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/image_pick.dart';
@@ -36,19 +41,57 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
   File? _photo;
   bool _saving       = false;
   bool _locating     = true;
+  bool _geocoding    = false;
+  Timer? _addressDebounce;
 
   @override
   void initState() {
     super.initState();
     _fetchInitialPosition();
+    _adresseCtrl.addListener(_onAddressChanged);
   }
 
   @override
   void dispose() {
+    _addressDebounce?.cancel();
+    _adresseCtrl.removeListener(_onAddressChanged);
     _nomCtrl.dispose();
     _adresseCtrl.dispose();
     _descCtrl.dispose();
     super.dispose();
+  }
+
+  void _onAddressChanged() {
+    _addressDebounce?.cancel();
+    final val = _adresseCtrl.text.trim();
+    if (val.length < 4) return;
+    _addressDebounce = Timer(const Duration(milliseconds: 700), () => _geocodeAddress(val));
+  }
+
+  Future<void> _geocodeAddress(String address) async {
+    setState(() => _geocoding = true);
+    try {
+      final uri = Uri.https('api-adresse.data.gouv.fr', '/search/', {'q': address, 'limit': '1'});
+      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final feats = data['features'] as List?;
+        if (feats != null && feats.isNotEmpty) {
+          final coords = (feats.first['geometry']['coordinates'] as List);
+          final lng = (coords[0] as num).toDouble();
+          final lat = (coords[1] as num).toDouble();
+          if (mounted) {
+            setState(() {
+              _position    = LatLng(lat, lng);
+              _positionSet = true;
+            });
+          }
+        }
+      }
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _geocoding = false);
+    }
   }
 
   Future<void> _fetchInitialPosition() async {
@@ -198,9 +241,21 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
           }).toList()),
           const SizedBox(height: 16),
 
-          _Label('Adresse / ville'),
+          Row(children: [
+            _Label('Adresse / ville'),
+            if (_geocoding) ...[
+              const SizedBox(width: 8),
+              const SizedBox(width: 12, height: 12,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: _teal)),
+            ],
+          ]),
           const SizedBox(height: 6),
           _TextInput(controller: _adresseCtrl, hint: 'Ex: Carnon, Hérault'),
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Text('La carte se positionne automatiquement sur l\'adresse tapée',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+          ),
           const SizedBox(height: 16),
 
           _Label('Description'),
@@ -263,6 +318,9 @@ class _MapPicker extends StatelessWidget {
         child: GoogleMap(
           initialCameraPosition: CameraPosition(target: position, zoom: 13),
           onTap: onChanged,
+          gestureRecognizers: {
+            Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+          },
           markers: {
             Marker(
               markerId: const MarkerId('picked'),

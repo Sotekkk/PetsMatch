@@ -18,6 +18,7 @@ import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
+import 'package:PetsMatch/pages/nature/natural_place_detail_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
@@ -412,6 +413,21 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
     // Profil validé / en attente → rester sur BottomNav (pas de page profil dédiée)
     if (type == 'profil_en_attente' || type == 'profil_valide') return;
+    if (type == 'lieu_naturel_valide' || type == 'lieu_naturel_refuse' ||
+        type == 'amenity_valide' || type == 'amenity_refuse' ||
+        type == 'photo_lieu_validee' || type == 'photo_lieu_refusee') {
+      final lieuId = data is Map ? data['lieuId'] as String? : null;
+      if (lieuId != null) {
+        final supa = Supabase.instance.client;
+        final res = await supa.from('natural_places').select().eq('id', lieuId).maybeSingle();
+        if (mounted && res != null) {
+          await Navigator.push(context, MaterialPageRoute(
+            builder: (_) => NaturalPlaceDetailPage(place: Map<String, dynamic>.from(res)),
+          ));
+        }
+      }
+      return;
+    }
     if (type == 'annonce_expiration' && annonceId != null) {
       final supa = Supabase.instance.client;
       final res = await supa.from('annonces').select().eq('id', annonceId).maybeSingle();
@@ -712,6 +728,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'cession_revoquee':       return Icons.cancel_outlined;
       case 'profil_en_attente':      return Icons.hourglass_empty_outlined;
       case 'profil_valide':          return Icons.verified_outlined;
+      case 'lieu_naturel_valide':
+      case 'amenity_valide':
+      case 'photo_lieu_validee':     return Icons.forest_outlined;
+      case 'lieu_naturel_refuse':
+      case 'amenity_refuse':
+      case 'photo_lieu_refusee':     return Icons.forest_outlined;
       default:                       return Icons.notifications_outlined;
     }
   }
@@ -761,6 +783,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'cession_revoquee':       return Colors.redAccent;
       case 'profil_en_attente':      return Colors.orange;
       case 'profil_valide':          return const Color(0xFF6E9E57);
+      case 'lieu_naturel_valide':
+      case 'amenity_valide':
+      case 'photo_lieu_validee':     return const Color(0xFF6E9E57);
+      case 'lieu_naturel_refuse':
+      case 'amenity_refuse':
+      case 'photo_lieu_refusee':     return Colors.grey;
       default:                       return Colors.grey;
     }
   }

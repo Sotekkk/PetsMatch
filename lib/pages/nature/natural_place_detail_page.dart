@@ -549,12 +549,45 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
 
 // ─── Galerie photos ───────────────────────────────────────────────────────────
 
-class _PhotosGallery extends StatelessWidget {
+class _PhotosGallery extends StatefulWidget {
   final List<String> photos;
   const _PhotosGallery({required this.photos});
 
   @override
+  State<_PhotosGallery> createState() => _PhotosGalleryState();
+}
+
+class _PhotosGalleryState extends State<_PhotosGallery> {
+  final _controller = PageController();
+  int _index = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _openFullscreen(int startIndex) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(12),
+        child: SizedBox(
+          height: 400,
+          child: PageView.builder(
+            controller: PageController(initialPage: startIndex),
+            itemCount: widget.photos.length,
+            itemBuilder: (_, i) => CachedNetworkImage(imageUrl: widget.photos[i], fit: BoxFit.contain),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final photos = widget.photos;
     if (photos.isEmpty) {
       return Container(
         height: 70,
@@ -569,30 +602,42 @@ class _PhotosGallery extends StatelessWidget {
       );
     }
     return SizedBox(
-      height: 100,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: photos.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, i) => ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: GestureDetector(
-            onTap: () => showDialog(
-              context: context,
-              builder: (_) => Dialog(
-                backgroundColor: Colors.transparent,
-                child: CachedNetworkImage(imageUrl: photos[i], fit: BoxFit.contain),
+      height: 200,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Stack(children: [
+          PageView.builder(
+            controller: _controller,
+            itemCount: photos.length,
+            onPageChanged: (i) => setState(() => _index = i),
+            itemBuilder: (_, i) => GestureDetector(
+              onTap: () => _openFullscreen(i),
+              child: CachedNetworkImage(
+                imageUrl: photos[i],
+                fit: BoxFit.cover,
+                width: double.infinity,
+                placeholder: (_, __) => Container(color: Colors.grey.shade100),
+                errorWidget: (_, __, ___) => Container(color: Colors.grey.shade100,
+                    child: const Icon(Icons.broken_image_outlined, color: Colors.grey)),
               ),
             ),
-            child: CachedNetworkImage(
-              imageUrl: photos[i],
-              width: 130, height: 100, fit: BoxFit.cover,
-              placeholder: (_, __) => Container(color: Colors.grey.shade100),
-              errorWidget: (_, __, ___) => Container(color: Colors.grey.shade100,
-                  child: const Icon(Icons.broken_image_outlined, color: Colors.grey)),
-            ),
           ),
-        ),
+          if (photos.length > 1)
+            Positioned(
+              bottom: 10, left: 0, right: 0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(photos.length, (i) => Container(
+                  width: 6, height: 6,
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: i == _index ? 0.95 : 0.5),
+                  ),
+                )),
+              ),
+            ),
+        ]),
       ),
     );
   }

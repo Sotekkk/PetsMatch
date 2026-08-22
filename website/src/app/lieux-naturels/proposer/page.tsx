@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
@@ -39,6 +39,31 @@ export default function ProposerLieuPage() {
   const [posSet, setPosSet] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [geocoding, setGeocoding] = useState(false);
+  const geocodeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
+    const val = adresse.trim();
+    if (val.length < 4) return;
+    geocodeTimer.current = setTimeout(async () => {
+      setGeocoding(true);
+      try {
+        const res = await fetch(`https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(val)}&limit=1`);
+        const json = await res.json();
+        const coords = json?.features?.[0]?.geometry?.coordinates;
+        if (coords) {
+          setPos({ lat: coords[1], lng: coords[0] });
+          setPosSet(true);
+        }
+      } catch {
+        /* ignore */
+      } finally {
+        setGeocoding(false);
+      }
+    }, 700);
+    return () => { if (geocodeTimer.current) clearTimeout(geocodeTimer.current); };
+  }, [adresse]);
 
   function selectPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -68,7 +93,7 @@ export default function ProposerLieuPage() {
       if (photo) {
         const path = `natural_places/${Date.now()}_${user.uid}.jpg`;
         const { error: upErr } = await supabase.storage.from('media').upload(path, photo, {
-          contentType: photo.type || 'image/jpeg', upsert: true,
+          contentType: photo.type || 'application/octet-stream', upsert: true,
         });
         if (upErr) throw upErr;
         const url = supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
@@ -158,8 +183,11 @@ export default function ProposerLieuPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-bold mb-1.5" style={{ fontFamily: 'Galey, sans-serif' }}>
+            <label className="flex items-center gap-2 text-sm font-bold mb-1.5" style={{ fontFamily: 'Galey, sans-serif' }}>
               Adresse / ville
+              {geocoding && (
+                <span className="w-3 h-3 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" />
+              )}
             </label>
             <input
               value={adresse}
@@ -168,6 +196,9 @@ export default function ProposerLieuPage() {
               className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]"
               style={{ fontFamily: 'Galey, sans-serif' }}
             />
+            <p className="text-xs text-gray-400 mt-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+              La carte se positionne automatiquement sur l&apos;adresse tapée
+            </p>
           </div>
 
           <div>

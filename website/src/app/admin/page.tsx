@@ -714,6 +714,7 @@ export default function AdminPage() {
             type: 'lieu_naturel_valide',
             title: 'Lieu validé !',
             body: `Ton lieu "${place.nom}" a été validé et est maintenant visible par tous.`,
+            data: { lieuId: place.id },
           });
         }
       }
@@ -734,6 +735,7 @@ export default function AdminPage() {
             type: 'lieu_naturel_refuse',
             title: 'Lieu non validé',
             body: `Ton lieu "${place.nom}" n'a pas été validé.${motif ? ` Raison : ${motif}` : ''}`,
+            data: { lieuId: place.id },
           });
         }
       }
@@ -796,6 +798,7 @@ export default function AdminPage() {
             type: 'amenity_valide',
             title: 'Signalement validé !',
             body: `Ton signalement "${AMENITY_LABELS[s.field] ?? s.field}" pour "${s.nom_lieu}" a été validé.`,
+            data: { lieuId: s.place_id },
           });
         }
       }
@@ -816,6 +819,7 @@ export default function AdminPage() {
             type: 'amenity_refuse',
             title: 'Signalement non validé',
             body: `Ton signalement "${AMENITY_LABELS[s.field] ?? s.field}" pour "${s.nom_lieu}" n'a pas été validé.${motif ? ` Raison : ${motif}` : ''}`,
+            data: { lieuId: s.place_id },
           });
         }
       }
@@ -879,6 +883,7 @@ export default function AdminPage() {
             type: 'photo_lieu_validee',
             title: 'Photo validée !',
             body: `Ta photo de "${s.nom_lieu}" a été validée et est maintenant visible par tous.`,
+            data: { lieuId: s.place_id },
           });
         }
       }
@@ -899,6 +904,7 @@ export default function AdminPage() {
             type: 'photo_lieu_refusee',
             title: 'Photo non validée',
             body: `Ta photo de "${s.nom_lieu}" n'a pas été validée.${motif ? ` Raison : ${motif}` : ''}`,
+            data: { lieuId: s.place_id },
           });
         }
       }

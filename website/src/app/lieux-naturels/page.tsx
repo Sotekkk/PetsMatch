@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { supabase } from '@/lib/supabase';
@@ -28,6 +28,7 @@ interface NaturalPlace {
   nb_avis: number | null;
   note_moyenne: number | null;
   photo_url?: string | null;
+  photos?: string[] | null;
   statut?: string | null;
 }
 
@@ -83,13 +84,22 @@ export default function LieuxNaturelsPage() {
   async function loadPlaces() {
     setLoading(true);
     try {
-      const cols = 'id, nom, categorie, lat, lng, alerte_cyano, nb_avis, note_moyenne, photo_url, statut';
-      const query = supabase.from('natural_places').select(cols);
-      const { data } = await (user
-        ? query.or(`statut.eq.valide,submitted_by_uid.eq.${user.uid}`)
-        : query.eq('statut', 'valide')
-      ).order('nom');
-      setPlaces((data ?? []) as NaturalPlace[]);
+      const cols = 'id, nom, categorie, lat, lng, alerte_cyano, nb_avis, note_moyenne, photo_url, photos, statut';
+      const pageSize = 1000;
+      const all: NaturalPlace[] = [];
+      let from = 0;
+      while (true) {
+        const query = supabase.from('natural_places').select(cols);
+        const filtered = user
+          ? query.or(`statut.eq.valide,submitted_by_uid.eq.${user.uid}`)
+          : query.eq('statut', 'valide');
+        const { data } = await filtered.order('nom').range(from, from + pageSize - 1);
+        const page = (data ?? []) as NaturalPlace[];
+        all.push(...page);
+        if (page.length < pageSize) break;
+        from += pageSize;
+      }
+      setPlaces(all);
     } finally {
       setLoading(false);
     }
@@ -255,6 +265,58 @@ export default function LieuxNaturelsPage() {
   );
 }
 
+// ── Carrousel photos (carte liste) ──────────────────────────────────────────────
+
+function PhotoCarousel({ photos, alt, fallback }: { photos: string[]; alt: string; fallback: string }) {
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [index, setIndex] = useState(0);
+
+  if (photos.length === 0) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center text-5xl">
+        {fallback}
+      </div>
+    );
+  }
+
+  function onScroll() {
+    const el = scrollerRef.current;
+    if (!el || el.clientWidth === 0) return;
+    setIndex(Math.round(el.scrollLeft / el.clientWidth));
+  }
+
+  return (
+    <div className="absolute inset-0">
+      <div
+        ref={scrollerRef}
+        onScroll={onScroll}
+        className="h-full w-full flex overflow-x-auto snap-x snap-mandatory scrollbar-hide"
+      >
+        {photos.map((url, i) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={i}
+            src={url}
+            alt={alt}
+            className="h-full w-full flex-shrink-0 object-cover snap-center"
+          />
+        ))}
+      </div>
+      {photos.length > 1 && (
+        <div className="absolute bottom-1.5 left-0 right-0 flex justify-center gap-1 pointer-events-none">
+          {photos.map((_, i) => (
+            <span
+              key={i}
+              className="w-1.5 h-1.5 rounded-full"
+              style={{ backgroundColor: i === index ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.45)' }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Card lieu ──────────────────────────────────────────────────────────────────
 
 function PlaceCard({ place, distLabel }: { place: NaturalPlace; distLabel: string | null }) {
@@ -273,14 +335,11 @@ function PlaceCard({ place, distLabel }: { place: NaturalPlace; distLabel: strin
       className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 hover:shadow-md transition-shadow block"
     >
       <div className="relative h-40" style={{ background: gradient }}>
-        {place.photo_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={place.photo_url} alt={place.nom} className="absolute inset-0 w-full h-full object-cover" />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-5xl">
-            {CAT_EMOJI[cat] ?? '🌿'}
-          </div>
-        )}
+        <PhotoCarousel
+          photos={[...new Set([place.photo_url, ...(place.photos ?? [])].filter((u): u is string => !!u))]}
+          alt={place.nom}
+          fallback={CAT_EMOJI[cat] ?? '🌿'}
+        />
         <div
           className="absolute inset-0"
           style={{ background: 'linear-gradient(to bottom, transparent 45%, rgba(0,0,0,0.65) 100%)' }}

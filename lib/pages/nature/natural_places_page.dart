@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -107,14 +108,23 @@ class _NaturalPlacesPageState extends State<NaturalPlacesPage> {
     setState(() => _loading = true);
     try {
       final uid = User_Info.uid;
-      final query = _supa.from('natural_places').select();
-      final data = await (uid.isNotEmpty
-              ? query.or('statut.eq.valide,submitted_by_uid.eq.$uid')
-              : query.eq('statut', 'valide'))
-          .order('nom');
+      const pageSize = 1000;
+      final all = <Map<String, dynamic>>[];
+      int from = 0;
+      while (true) {
+        final query = _supa.from('natural_places').select();
+        final filtered = uid.isNotEmpty
+            ? query.or('statut.eq.valide,submitted_by_uid.eq.$uid')
+            : query.eq('statut', 'valide');
+        final page = await filtered.order('nom').range(from, from + pageSize - 1);
+        final pageList = List<Map<String, dynamic>>.from(page as List);
+        all.addAll(pageList);
+        if (pageList.length < pageSize) break;
+        from += pageSize;
+      }
       if (mounted) {
         setState(() {
-          _places = List<Map<String, dynamic>>.from(data as List);
+          _places = all;
           _loading = false;
         });
       }
@@ -457,6 +467,67 @@ class _NaturalMapViewState extends State<_NaturalMapView> {
   }
 }
 
+// ─── Carrousel photos (carte liste) ──────────────────────────────────────────
+
+class _CardPhotoCarousel extends StatefulWidget {
+  final List<String> photos;
+  final String fallbackEmoji;
+  const _CardPhotoCarousel({required this.photos, required this.fallbackEmoji});
+
+  @override
+  State<_CardPhotoCarousel> createState() => _CardPhotoCarouselState();
+}
+
+class _CardPhotoCarouselState extends State<_CardPhotoCarousel> {
+  final _controller = PageController();
+  int _index = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.photos.length == 1) {
+      return CachedNetworkImage(
+        imageUrl: widget.photos.first,
+        fit: BoxFit.cover,
+        placeholder: (_, __) => Center(child: Text(widget.fallbackEmoji, style: const TextStyle(fontSize: 56))),
+        errorWidget: (_, __, ___) => Center(child: Text(widget.fallbackEmoji, style: const TextStyle(fontSize: 56))),
+      );
+    }
+    return Stack(children: [
+      PageView.builder(
+        controller: _controller,
+        itemCount: widget.photos.length,
+        onPageChanged: (i) => setState(() => _index = i),
+        itemBuilder: (_, i) => CachedNetworkImage(
+          imageUrl: widget.photos[i],
+          fit: BoxFit.cover,
+          placeholder: (_, __) => Center(child: Text(widget.fallbackEmoji, style: const TextStyle(fontSize: 56))),
+          errorWidget: (_, __, ___) => Center(child: Text(widget.fallbackEmoji, style: const TextStyle(fontSize: 56))),
+        ),
+      ),
+      Positioned(
+        bottom: 8, left: 0, right: 0,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(widget.photos.length, (i) => Container(
+            width: 5, height: 5,
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: i == _index ? 0.95 : 0.45),
+            ),
+          )),
+        ),
+      ),
+    ]);
+  }
+}
+
 // ─── Card lieu ────────────────────────────────────────────────────────────────
 
 class _PlaceCard extends StatelessWidget {
@@ -511,13 +582,22 @@ class _PlaceCard extends StatelessWidget {
                   ),
                 ),
 
-                // Emoji centré
-                Center(
-                  child: Text(
-                    _catEmoji[cat] ?? '🌿',
-                    style: const TextStyle(fontSize: 56),
-                  ),
-                ),
+                // Photos (carrousel si plusieurs), sinon emoji centré
+                Builder(builder: (_) {
+                  final photos = <String>[
+                    ...List<String>.from((place['photos'] as List?) ?? const []),
+                  ];
+                  final photoUrl = place['photo_url'] as String?;
+                  if (photoUrl != null && photoUrl.isNotEmpty && !photos.contains(photoUrl)) {
+                    photos.insert(0, photoUrl);
+                  }
+                  if (photos.isEmpty) {
+                    return Center(
+                      child: Text(_catEmoji[cat] ?? '🌿', style: const TextStyle(fontSize: 56)),
+                    );
+                  }
+                  return _CardPhotoCarousel(photos: photos, fallbackEmoji: _catEmoji[cat] ?? '🌿');
+                }),
 
                 // Gradient bas → nom
                 Positioned.fill(

@@ -554,6 +554,13 @@ function getNotifUrl(n: Notif): string | null {
     case 'profil_en_attente':
     case 'profil_valide':
       return '/profil';
+    case 'lieu_naturel_valide':
+    case 'lieu_naturel_refuse':
+    case 'amenity_valide':
+    case 'amenity_refuse':
+    case 'photo_lieu_validee':
+    case 'photo_lieu_refusee':
+      return d.lieuId ? `/lieux-naturels/${d.lieuId}` : '/lieux-naturels';
     default:
       return null;
   }
