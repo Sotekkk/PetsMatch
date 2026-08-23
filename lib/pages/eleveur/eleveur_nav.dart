@@ -544,16 +544,6 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                  if (User_Info.catPro == 'pension') _DrawerItem(
-                    icon: Icons.home_work_outlined,
-                    label: 'Nos pensionnaires',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const RegistrePensionPage(),
-                      ));
-                    },
-                  ),
                   if (User_Info.catPro == 'veterinaire') _DrawerItem(
                     icon: Icons.medical_information_outlined,
                     label: 'Mes patients',
@@ -633,27 +623,18 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                  if (User_Info.catPro == 'pension') _DrawerItem(
-                    icon: Icons.folder_shared_outlined,
-                    label: 'Fiches accessibles',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const FichesPensionPage(),
-                      ));
-                    },
-                  ),
-                  if (User_Info.catPro == 'pension') _DrawerItem(
-                    icon: Icons.folder_outlined,
-                    label: 'Documents',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const PensionDocumentsPage(),
-                      ));
-                    },
-                  ),
+                  // Meme organisation/ordre que le menu pension du site web.
                   if (User_Info.catPro == 'pension') ...[
+                    _DrawerItem(
+                      icon: Icons.home_work_outlined,
+                      label: 'Nos pensionnaires',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const RegistrePensionPage(),
+                        ));
+                      },
+                    ),
                     _DrawerItem(
                       icon: Icons.home_work_outlined,
                       label: 'Logements / Chenil',
@@ -678,6 +659,26 @@ class _EleveurNavState extends State<EleveurNav> {
                       },
                     ),
                     _DrawerItem(
+                      icon: Icons.calendar_month_outlined,
+                      label: 'Gestion des RDV',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const ProAgendaPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.event_outlined,
+                      label: 'Mon agenda',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (ctx) => AgendaPage(onBack: () => Navigator.pop(ctx)),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
                       icon: Icons.inventory_2_outlined,
                       label: 'Inventaire',
                       locked: _pensionPlanCode == 'free',
@@ -687,6 +688,60 @@ class _EleveurNavState extends State<EleveurNav> {
                           builder: (_) => _pensionPlanCode == 'free'
                               ? const PensionAbonnementPage()
                               : const InventairePage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.groups_outlined,
+                      label: 'Mes Employés',
+                      locked: _pensionPlanCode == 'free',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => _pensionPlanCode == 'free'
+                              ? const PensionAbonnementPage()
+                              : const EmployesPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Mes Factures',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PensionFacturesPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.workspace_premium_outlined,
+                      label: 'Mon abonnement',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PensionAbonnementPage(),
+                        ));
+                      },
+                    ),
+                    // Fonctionnalites app sans equivalent direct sur le site.
+                    _DrawerItem(
+                      icon: Icons.folder_shared_outlined,
+                      label: 'Fiches accessibles',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const FichesPensionPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.folder_outlined,
+                      label: 'Documents',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PensionDocumentsPage(),
                         ));
                       },
                     ),
@@ -710,39 +765,6 @@ class _EleveurNavState extends State<EleveurNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const PensionTarifsPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.receipt_long_outlined,
-                      label: 'Mes Factures',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PensionFacturesPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.groups_outlined,
-                      label: 'Mes Employés',
-                      locked: _pensionPlanCode == 'free',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => _pensionPlanCode == 'free'
-                              ? const PensionAbonnementPage()
-                              : const EmployesPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.workspace_premium_outlined,
-                      label: 'Mon abonnement',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PensionAbonnementPage(),
                         ));
                       },
                     ),
