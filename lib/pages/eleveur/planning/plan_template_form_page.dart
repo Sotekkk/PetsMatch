@@ -12,7 +12,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class PlanTemplateFormPage extends StatefulWidget {
   final Map<String, dynamic>? existing;
-  const PlanTemplateFormPage({super.key, this.existing});
+  final String? profilSource;
+  // Contexte "employé agissant pour un employeur" : quand renseigné, le
+  // protocole créé appartient à cet employeur (uid_eleveur/eleveur_profile_id)
+  // mais garde la trace du créateur réel (created_by_uid/profile_id).
+  final String? employerUid;
+  final String? employerProfileId;
+  const PlanTemplateFormPage({
+    super.key, this.existing, this.profilSource,
+    this.employerUid, this.employerProfileId,
+  });
   @override
   State<PlanTemplateFormPage> createState() => _PlanTemplateFormPageState();
 }
@@ -63,9 +72,12 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     ('bebes',       '🍼', 'Bébés / Jeunes',         'Selon l\'âge en semaines'),
   ];
 
-  // Une association ne pratique pas d'élevage contrôlé (saillie, mise bas) —
-  // ces cibles/événements n'ont pas de sens hors contexte éleveur.
-  bool get _isAssociation => User_Info.activeType == 'association';
+  String get _profilSource => widget.profilSource ?? User_Info.activeType;
+
+  // Une association ou une pension ne pratique pas d'élevage contrôlé
+  // (saillie, mise bas) — ces cibles/événements n'ont pas de sens hors
+  // contexte éleveur.
+  bool get _isAssociation => _profilSource != 'eleveur';
 
   List<(String, String, String, String)> get _cibles => _isAssociation
       ? _ciblesBase.where((c) => c.$1 != 'gestantes').toList()
@@ -117,8 +129,8 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   }
 
   Future<void> _pickAnimaux() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    final pid = User_Info.activeProfileId;
+    final uid = widget.employerUid ?? FirebaseAuth.instance.currentUser?.uid;
+    final pid = widget.employerProfileId ?? User_Info.activeProfileId;
     final result = await AnimalPickerSheet.pickMany(
       context,
       uid: uid,
@@ -131,7 +143,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   }
 
   Future<void> _loadBoxes() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = widget.employerUid ?? FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
       final supa = Supabase.instance.client;
@@ -176,7 +188,8 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     }
     setState(() => _saving = true);
     try {
-      final uid = FirebaseAuth.instance.currentUser!.uid;
+      final currentUid = FirebaseAuth.instance.currentUser!.uid;
+      final uid = widget.employerUid ?? currentUid;
       final etapesData = _etapes.map((e) => e.toMap(isBebes: _cibleType == 'bebes')).toList();
       final lieuNett = _lieuNettCtrl.text.trim().isEmpty ? null : _lieuNettCtrl.text.trim();
       final auto = _type == 'nettoyage' ? null : (_declencheurAuto.isEmpty ? null : _declencheurAuto);
@@ -209,6 +222,10 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           declencheurAuto: auto,
           defaultAnimalIds: defaultAnimalIds,
           etapes:          etapesData,
+          profilSourceOverride: widget.profilSource,
+          eleveurProfileIdOverride: widget.employerProfileId,
+          createdByUid: currentUid,
+          createdByProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
         );
       }
       if (mounted) Navigator.pop(context, true);

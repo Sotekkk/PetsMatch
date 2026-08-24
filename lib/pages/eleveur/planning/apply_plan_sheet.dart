@@ -8,8 +8,13 @@ import 'package:PetsMatch/services/planning_service.dart';
 class ApplyPlanSheet extends StatefulWidget {
   final Map<String, dynamic> template;
   final String uid;
+  final String? profilSourceOverride;
+  final String? eleveurProfileIdOverride;
 
-  const ApplyPlanSheet({super.key, required this.template, required this.uid});
+  const ApplyPlanSheet({
+    super.key, required this.template, required this.uid,
+    this.profilSourceOverride, this.eleveurProfileIdOverride,
+  });
 
   @override
   State<ApplyPlanSheet> createState() => _ApplyPlanSheetState();
@@ -75,7 +80,7 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
     try {
       final supa = Supabase.instance.client;
       final espece = widget.template['espece'] as String?;
-      final pid = User_Info.activeProfileId;
+      final pid = widget.eleveurProfileIdOverride ?? User_Info.activeProfileId;
       var q = supa.from('animaux').select('id, nom, espece, sexe, photo_url').eq('uid_eleveur', widget.uid);
       if (espece != null && espece.isNotEmpty) q = q.eq('espece', espece);
       if (pid.isNotEmpty) q = q.eq('profile_id', pid);
@@ -119,6 +124,8 @@ class _ApplyPlanSheetState extends State<ApplyPlanSheet> {
         template: widget.template,
         dateReference: _dateRef,
         forcedAnimalIds: _cibleType == 'individuel' ? _selectedIds.toList() : null,
+        profilSourceOverride: widget.profilSourceOverride,
+        eleveurProfileIdOverride: widget.eleveurProfileIdOverride,
       );
       if (mounted) {
         Navigator.pop(context);

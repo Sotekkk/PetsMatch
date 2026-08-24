@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
@@ -40,6 +40,8 @@ interface Template {
   declencheur_auto?: string | null;
   default_animal_ids?: string[] | null;
   plan_template_etapes?: Etape[];
+  created_by_uid?: string | null;
+  created_by_profile_id?: string | null;
 }
 
 interface Tache {
@@ -266,8 +268,28 @@ export default function PlanningPage() {
   const { id: profileId, loaded: profileLoaded } = useActiveProfileState();
   const router = useRouter();
   const pathname = usePathname();
-  const profilSource = pathname.startsWith('/association') ? 'association' : 'eleveur';
+  const searchParams = useSearchParams();
+  // Contexte "employé agissant pour un employeur" (venu de /mes-employeurs) :
+  // le protocole appartient à l'employeur (employerUid/employerProfileId),
+  // pas au profil actif de l'utilisateur connecté.
+  const employerUid = searchParams.get('employerUid');
+  const employerProfileId = searchParams.get('employerProfileId');
+  const employerNom = searchParams.get('employerNom');
+  const profilSource = searchParams.get('profilSource')
+    ?? (pathname.startsWith('/association') ? 'association' : 'eleveur');
+  const targetUid = employerUid || user?.uid || '';
+  const targetProfileId = employerProfileId || profileId;
   const { config: planConfig, loading: planLoading } = usePlan();
+
+  const [employePerms, setEmployePerms] = useState<Set<string>>(new Set());
+  const canWrite = !employerUid || employePerms.has('write_protocoles');
+
+  useEffect(() => {
+    if (!employerUid || !employerProfileId || !profileId) { setEmployePerms(new Set()); return; }
+    supabase.from('employe_permissions').select('permission')
+      .eq('employe_profile_id', profileId).eq('eleveur_profile_id', employerProfileId)
+      .then(({ data }) => setEmployePerms(new Set((data ?? []).map(r => r.permission as string))));
+  }, [employerUid, employerProfileId, profileId]);
 
   // 'protocoles' par défaut : la page est ouverte depuis le lien nav
   // "Protocoles" — le planning (jour/mois) reste accessible via les onglets,
@@ -301,33 +323,37 @@ export default function PlanningPage() {
       .select('*, plans_actifs(reference_label)')
       .eq('date_prevue', selectedDate)
       .not('statut', 'eq', 'fait').order('date_prevue');
-    if (profileId) {
-      q = q.eq('eleveur_profile_id', profileId) as typeof q;
+    if (targetProfileId) {
+      q = q.eq('eleveur_profile_id', targetProfileId) as typeof q;
     } else {
-      q = q.eq('uid_eleveur', user.uid) as typeof q;
+      q = q.eq('uid_eleveur', targetUid) as typeof q;
     }
-    const { data, error } = await (profilSource === 'association'
-      ? q.eq('profil_source', 'association')
-      : q.or('profil_source.is.null,profil_source.eq.eleveur'));
+    const { data, error } = await (profilSource === 'pension'
+      ? q.eq('profil_source', 'pension')
+      : profilSource === 'association'
+        ? q.eq('profil_source', 'association')
+        : q.or('profil_source.is.null,profil_source.eq.eleveur'));
     if (error) console.error('[plan_taches]', error.message, error.details);
     setTaches((data ?? []) as Tache[]);
     setLoadingData(false);
-  }, [user, selectedDate, profilSource, profileId, profileLoaded]);
+  }, [user, selectedDate, profilSource, targetProfileId, targetUid, profileLoaded]);
 
   const loadTemplates = useCallback(async () => {
     if (!user || !profileLoaded) return;
     let q = supabase.from('plan_templates').select('*, plan_template_etapes(*)')
       .order('created_at', { ascending: false });
-    if (profileId) {
-      q = q.eq('eleveur_profile_id', profileId) as typeof q;
+    if (targetProfileId) {
+      q = q.eq('eleveur_profile_id', targetProfileId) as typeof q;
     } else {
-      q = q.eq('uid_eleveur', user.uid) as typeof q;
+      q = q.eq('uid_eleveur', targetUid) as typeof q;
     }
-    const { data } = await (profilSource === 'association'
-      ? q.eq('profil_source', 'association')
-      : q.or('profil_source.is.null,profil_source.eq.eleveur'));
+    const { data } = await (profilSource === 'pension'
+      ? q.eq('profil_source', 'pension')
+      : profilSource === 'association'
+        ? q.eq('profil_source', 'association')
+        : q.or('profil_source.is.null,profil_source.eq.eleveur'));
     setTemplates((data ?? []) as Template[]);
-  }, [user, profilSource, profileId, profileLoaded]);
+  }, [user, profilSource, targetProfileId, targetUid, profileLoaded]);
 
   const loadMonth = useCallback(async () => {
     if (!user || !profileLoaded) return;
@@ -340,14 +366,16 @@ export default function PlanningPage() {
       .gte('date_prevue', fmt(first))
       .lte('date_prevue', fmt(last))
       .not('statut', 'eq', 'fait');
-    if (profileId) {
-      qMonth = qMonth.eq('eleveur_profile_id', profileId) as typeof qMonth;
+    if (targetProfileId) {
+      qMonth = qMonth.eq('eleveur_profile_id', targetProfileId) as typeof qMonth;
     } else {
-      qMonth = qMonth.eq('uid_eleveur', user.uid) as typeof qMonth;
+      qMonth = qMonth.eq('uid_eleveur', targetUid) as typeof qMonth;
     }
-    const { data } = await (profilSource === 'association'
-      ? qMonth.eq('profil_source', 'association')
-      : qMonth.or('profil_source.is.null,profil_source.eq.eleveur'));
+    const { data } = await (profilSource === 'pension'
+      ? qMonth.eq('profil_source', 'pension')
+      : profilSource === 'association'
+        ? qMonth.eq('profil_source', 'association')
+        : qMonth.or('profil_source.is.null,profil_source.eq.eleveur'));
     const byDate: Record<string, string[]> = {};
     const overdue = new Set<string>();
     const todayStr = fmt(new Date());
@@ -361,7 +389,7 @@ export default function PlanningPage() {
     setTasksByDate(byDate);
     setOverdueSet(overdue);
     setMonthLoading(false);
-  }, [user, focusedMonth, profileId, profileLoaded]);
+  }, [user, focusedMonth, profilSource, targetProfileId, targetUid, profileLoaded]);
 
   useEffect(() => { if (user) { loadTaches(); loadTemplates(); } }, [user, loadTaches, loadTemplates]);
   useEffect(() => { if (user && view === 'mois') loadMonth(); }, [user, view, loadMonth]);
@@ -372,7 +400,10 @@ export default function PlanningPage() {
     </div>
   );
 
-  if (!planLoading && !planConfig.hasPlanning) {
+  {/* En mode employé, l'accès Premium a déjà été vérifié côté employeur
+      (impossible de créer un protocole sinon) — on ne re-teste pas le plan
+      du compte de l'employé, qui n'a pas de rapport. */}
+  if (!employerUid && !planLoading && !planConfig.hasPlanning) {
     return (
       <div className="min-h-screen bg-[#F8F8F6] flex items-center justify-center p-6">
         <div className="bg-white rounded-2xl shadow-sm border border-[#E5E7EB] max-w-md w-full p-8 text-center">
@@ -408,7 +439,7 @@ export default function PlanningPage() {
             </svg>
           </button>
           <h1 className="text-2xl font-bold text-gray-800">
-            {view === 'protocoles' ? 'Protocoles' : 'Planning'}
+            {(view === 'protocoles' ? 'Protocoles' : 'Planning') + (employerNom ? ` · ${employerNom}` : '')}
           </h1>
         </div>
         <div className="flex gap-2">
@@ -460,6 +491,8 @@ export default function PlanningPage() {
       {view === 'protocoles' && (
         <ProtocolesView
           templates={templates}
+          canWrite={canWrite}
+          ownerProfileId={targetProfileId}
           onNew={() => { setEditingTemplate(null); setShowTemplateForm(true); }}
           onEdit={(t) => { setEditingTemplate(t); setShowTemplateForm(true); }}
           onApply={setApplyingTemplate}
@@ -485,12 +518,13 @@ export default function PlanningPage() {
       )}
 
       {showTemplateForm && (
-        <TemplateFormModal existing={editingTemplate} uid={user.uid} profileId={profileId || null} profilSource={profilSource}
+        <TemplateFormModal existing={editingTemplate} uid={targetUid} profileId={targetProfileId || null} profilSource={profilSource}
+          createdByUid={user.uid} createdByProfileId={profileId || null}
           onClose={() => { setShowTemplateForm(false); setEditingTemplate(null); }}
           onSaved={() => { setShowTemplateForm(false); setEditingTemplate(null); loadTemplates(); }} />
       )}
       {applyingTemplate && (
-        <ApplyModal template={applyingTemplate} uid={user.uid} profileId={profileId || null} profilSource={profilSource}
+        <ApplyModal template={applyingTemplate} uid={targetUid} profileId={targetProfileId || null} profilSource={profilSource}
           onClose={() => setApplyingTemplate(null)}
           onApplied={() => { setApplyingTemplate(null); loadTaches(); setView('jour'); }} />
       )}
@@ -820,25 +854,50 @@ function GroupedTacheCard({ groupe, onValider, onReporter, onDelete }: {
 
 // ── Vue Protocoles ────────────────────────────────────────────────────────────
 
-function ProtocolesView({ templates, onNew, onEdit, onApply, onPrint, onDelete }: {
-  templates: Template[]; onNew: () => void; onEdit: (t: Template) => void;
+function ProtocolesView({ templates, canWrite = true, ownerProfileId, onNew, onEdit, onApply, onPrint, onDelete }: {
+  templates: Template[]; canWrite?: boolean; ownerProfileId?: string | null;
+  onNew: () => void; onEdit: (t: Template) => void;
   onApply: (t: Template) => void; onPrint: (t: Template) => void; onDelete: (id: string) => void;
 }) {
+  const [creatorNames, setCreatorNames] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const ids = [...new Set(templates
+      .map(t => t.created_by_profile_id)
+      .filter((id): id is string => !!id && id !== ownerProfileId))];
+    if (ids.length === 0) { setCreatorNames({}); return; }
+    supabase.from('user_profiles').select('id, nom, prenom').in('id', ids).then(({ data }) => {
+      const map: Record<string, string> = {};
+      for (const p of data ?? []) {
+        map[p.id] = [p.prenom, p.nom].filter(Boolean).join(' ');
+      }
+      setCreatorNames(map);
+    });
+  }, [templates, ownerProfileId]);
+
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-bold text-gray-800">Mes protocoles</h2>
-        <button onClick={onNew} className="px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">+ Nouvelle</button>
+        {canWrite && (
+          <button onClick={onNew} className="px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">+ Nouvelle</button>
+        )}
       </div>
       {templates.length === 0 ? (
         <div className="text-center py-16">
           <div className="text-5xl mb-4">📋</div>
           <p className="text-gray-500 mb-4">Aucun protocole créé</p>
-          <button onClick={onNew} className="px-5 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">Créer mon premier protocole</button>
+          {canWrite && (
+            <button onClick={onNew} className="px-5 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">Créer mon premier protocole</button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
-          {templates.map(t => (
+          {templates.map(t => {
+            const creatorName = t.created_by_profile_id && t.created_by_profile_id !== ownerProfileId
+              ? creatorNames[t.created_by_profile_id]
+              : null;
+            return (
             <div key={t.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
               <div className="flex items-start gap-3">
                 <div className="text-2xl">{ACTE_EMOJIS[t.type] ?? '📋'}</div>
@@ -849,21 +908,29 @@ function ProtocolesView({ templates, onNew, onEdit, onApply, onPrint, onDelete }
                     {t.espece && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">{t.espece}</span>}
                     <span className="text-xs text-gray-400">{CIBLE_OPTIONS.find(c => c.value === t.cible_type)?.label ?? t.cible_type}</span>
                     <span className="text-xs text-gray-400">{t.plan_template_etapes?.length ?? 0} étape{(t.plan_template_etapes?.length ?? 0) > 1 ? 's' : ''}</span>
+                    {creatorName && (
+                      <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">👤 {creatorName}</span>
+                    )}
                   </div>
                   {t.description && <p className="text-xs text-gray-400 mt-1">{t.description}</p>}
                   <p className="text-xs text-gray-400 mt-1">{cibleDescription(t.cible_type, t.espece)}</p>
                 </div>
                 <div className="flex gap-1">
                   <button onClick={() => onPrint(t)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Imprimer ce protocole">🖨️</button>
-                  <button onClick={() => onEdit(t)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">✏️</button>
-                  <button onClick={() => onDelete(t.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg">🗑️</button>
+                  {canWrite && (
+                    <>
+                      <button onClick={() => onEdit(t)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">✏️</button>
+                      <button onClick={() => onDelete(t.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg">🗑️</button>
+                    </>
+                  )}
                 </div>
               </div>
               <button onClick={() => onApply(t)} className="mt-4 w-full py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">
                 ▶ Appliquer ce protocole
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -881,8 +948,9 @@ function newEtape(): Etape {
   };
 }
 
-function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur', onClose, onSaved }: {
-  existing: Template | null; uid: string; profileId: string | null; profilSource?: string; onClose: () => void; onSaved: () => void;
+function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur', createdByUid, createdByProfileId, onClose, onSaved }: {
+  existing: Template | null; uid: string; profileId: string | null; profilSource?: string;
+  createdByUid?: string; createdByProfileId?: string | null; onClose: () => void; onSaved: () => void;
 }) {
   const [nom, setNom] = useState(existing?.nom ?? '');
   const [type, setType] = useState(existing?.type ?? 'sanitaire');
@@ -1003,7 +1071,13 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
         if (toInsert.length > 0) await supabase.from('plan_template_etapes').insert(toInsert);
       } else {
         const { data: row } = await supabase.from('plan_templates')
-          .insert({ uid_eleveur: uid, ...(profileId ? { eleveur_profile_id: profileId } : {}), type, profil_source: profilSource, ...templatePayload }).select('id').single();
+          .insert({
+            uid_eleveur: uid, ...(profileId ? { eleveur_profile_id: profileId } : {}),
+            type, profil_source: profilSource,
+            ...(createdByUid ? { created_by_uid: createdByUid } : {}),
+            ...(createdByProfileId ? { created_by_profile_id: createdByProfileId } : {}),
+            ...templatePayload,
+          }).select('id').single();
         if (row && ep.length > 0) await supabase.from('plan_template_etapes').insert(ep.map(e => ({ ...e, template_id: row.id })));
       }
       onSaved();
@@ -1418,6 +1492,12 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
       .then(({ data }) => setAnimaux((data ?? []) as { id: string; nom: string; espece?: string; photo_url?: string | null }[]));
   }, [uid, needsAnimal, profilSource, profileId]);
 
+  // Un protocole créé par un employé (autorisé) s'auto-attribue à ce
+  // dernier sur les tâches générées, visible par l'employeur.
+  const autoAssignUid = (template.created_by_uid && template.created_by_profile_id
+    && template.created_by_profile_id !== profileId) ? template.created_by_uid : null;
+  const autoAssignProfileId = autoAssignUid ? template.created_by_profile_id : null;
+
   const apply = async () => {
     if (needsAnimal && animalIds.length === 0) { alert('Sélectionnez au moins un animal'); return; }
     setSaving(true);
@@ -1493,6 +1573,8 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
             lieu: etape.lieu || null,
             tranche_horaire: etape.tranche_horaire ?? null,
             profil_source: profilSource,
+            ...(autoAssignUid ? { assigned_to: autoAssignUid } : {}),
+            ...(autoAssignProfileId ? { assigned_profile_id: autoAssignProfileId } : {}),
           };
 
           if (etape.frequence === 'ponctuel') {

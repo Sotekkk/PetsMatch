@@ -9,13 +9,25 @@ class PlanningService {
       User_Info.activeType == 'association' ? 'association' : 'eleveur';
 
   // ── Charger les templates ────────────────────────────────────────────────────
-  static Future<List<Map<String, dynamic>>> loadTemplates(String uid, {String? type}) async {
-    final profileId = User_Info.activeProfileId;
-    final filterCol = profileId != null ? 'eleveur_profile_id' : 'uid_eleveur';
-    final filterVal = profileId ?? uid;
+  // [profilSourceOverride]/[eleveurProfileIdOverride] : permettent à un
+  // employé autorisé (write_protocoles) d'agir pour le compte d'un employeur
+  // dont le profil actif n'est pas le sien (ex: employeur pension alors que
+  // l'employé navigue depuis son profil particulier).
+  static Future<List<Map<String, dynamic>>> loadTemplates(
+    String uid, {
+    String? type,
+    String? profilSourceOverride,
+    String? eleveurProfileIdOverride,
+  }) async {
+    final profileId = eleveurProfileIdOverride ?? User_Info.activeProfileId;
+    final filterCol = profileId.isNotEmpty ? 'eleveur_profile_id' : 'uid_eleveur';
+    final filterVal = profileId.isNotEmpty ? profileId : uid;
+    final profilSource = profilSourceOverride ?? _profilSource;
     var q = _supa.from('plan_templates').select('*, plan_template_etapes(*)').eq(filterCol, filterVal);
     if (type != null) q = q.eq('type', type);
-    if (_profilSource == 'association') {
+    if (profilSource == 'pension') {
+      q = q.eq('profil_source', 'pension');
+    } else if (profilSource == 'association') {
       q = q.eq('profil_source', 'association');
     } else {
       q = q.or('profil_source.is.null,profil_source.eq.eleveur');
@@ -25,6 +37,10 @@ class PlanningService {
   }
 
   // ── Créer un template + ses étapes ──────────────────────────────────────────
+  // [createdByUid]/[createdByProfileId] : identité réelle du créateur quand
+  // ce n'est pas l'employeur lui-même (employé autorisé). [uid] reste le uid
+  // de l'employeur (propriétaire du protocole, ce sur quoi les écrans de
+  // l'employeur filtrent déjà).
   static Future<String> createTemplate({
     required String uid,
     required String nom,
@@ -37,20 +53,27 @@ class PlanningService {
     String? declencheurAuto,
     List<String>? defaultAnimalIds,
     required List<Map<String, dynamic>> etapes,
+    String? profilSourceOverride,
+    String? eleveurProfileIdOverride,
+    String? createdByUid,
+    String? createdByProfileId,
   }) async {
+    final ownerProfileId = eleveurProfileIdOverride ?? User_Info.activeProfileId;
     final row = await _supa.from('plan_templates').insert({
       'uid_eleveur':     uid,
-      if (User_Info.activeProfileId != null) 'eleveur_profile_id': User_Info.activeProfileId,
+      if (ownerProfileId.isNotEmpty) 'eleveur_profile_id': ownerProfileId,
       'nom':             nom,
       'type':            type,
       'cible_type':      cibleType,
       'reference_event': referenceEvent,
-      'profil_source':   _profilSource,
+      'profil_source':   profilSourceOverride ?? _profilSource,
       if (declencheurAuto != null && declencheurAuto.isNotEmpty) 'declencheur_auto': declencheurAuto,
       if (espece != null && espece.isNotEmpty) 'espece': espece,
       if (description != null && description.isNotEmpty) 'description': description,
       if (lieu != null && lieu.isNotEmpty) 'lieu': lieu,
       if (defaultAnimalIds != null && defaultAnimalIds.isNotEmpty) 'default_animal_ids': defaultAnimalIds,
+      if (createdByUid != null) 'created_by_uid': createdByUid,
+      if (createdByProfileId != null) 'created_by_profile_id': createdByProfileId,
     }).select('id').single();
 
     final templateId = row['id'] as String;
@@ -177,11 +200,24 @@ class PlanningService {
     String? referenceLabel,
     // Pour cible individuel : liste d'animal_id sélectionnés
     List<String>? forcedAnimalIds,
+    String? profilSourceOverride,
+    String? eleveurProfileIdOverride,
   }) async {
     final cibleType    = template['cible_type']  as String? ?? 'individuel';
     final refEvent     = template['reference_event'] as String? ?? 'manuel';
     final etapes       = await _loadEtapes(template['id'] as String);
     final espece       = template['espece'] as String?;
+
+    // Un protocole créé par un employé (autorisé) s'auto-attribue à ce
+    // dernier sur les tâches générées, visible par l'employeur.
+    final ownerProfileId = eleveurProfileIdOverride ?? User_Info.activeProfileId;
+    final creatorUid        = template['created_by_uid'] as String?;
+    final creatorProfileId  = template['created_by_profile_id'] as String?;
+    final autoAssignUid     = (creatorUid != null && creatorUid.isNotEmpty &&
+            creatorProfileId != null && creatorProfileId != ownerProfileId)
+        ? creatorUid
+        : null;
+    final autoAssignProfileId = autoAssignUid != null ? creatorProfileId : null;
 
     // Résoudre la liste des animaux cibles
     final List<Map<String, dynamic>> cibles = await _resolveCibles(
@@ -201,7 +237,11 @@ class PlanningService {
 
     if (cibleType == 'cheptel' || cibleType == 'males' || cibleType == 'femelles') {
       // Un seul plan pour le groupe
-      final planId = await _createPlan(uid: uid, template: template, dateReference: dateReference, referenceId: referenceId, referenceLabel: referenceLabel ?? _cibleLabel(cibleType, espece));
+      final planId = await _createPlan(
+        uid: uid, template: template, dateReference: dateReference,
+        referenceId: referenceId, referenceLabel: referenceLabel ?? _cibleLabel(cibleType, espece),
+        profilSourceOverride: profilSourceOverride, eleveurProfileIdOverride: eleveurProfileIdOverride,
+      );
       for (final cible in cibles) {
         tachesCount += await _generateTaches(
           planId: planId, uid: uid, etapes: etapes,
@@ -209,6 +249,8 @@ class PlanningService {
           isBebes: isBebes,
           animalId: cible['animal_id'] as String?,
           animalNom: cible['animal_nom'] as String?,
+          profilSourceOverride: profilSourceOverride, eleveurProfileIdOverride: eleveurProfileIdOverride,
+          assignedTo: autoAssignUid, assignedProfileId: autoAssignProfileId,
         );
       }
     } else {
@@ -220,6 +262,7 @@ class PlanningService {
           dateReference: dateBase,
           referenceId: cible['animal_id'] as String?,
           referenceLabel: cible['animal_nom'] as String?,
+          profilSourceOverride: profilSourceOverride, eleveurProfileIdOverride: eleveurProfileIdOverride,
         );
         tachesCount += await _generateTaches(
           planId: planId, uid: uid, etapes: etapes,
@@ -227,6 +270,8 @@ class PlanningService {
           isBebes: isBebes,
           animalId: cible['animal_id'] as String?,
           animalNom: cible['animal_nom'] as String?,
+          profilSourceOverride: profilSourceOverride, eleveurProfileIdOverride: eleveurProfileIdOverride,
+          assignedTo: autoAssignUid, assignedProfileId: autoAssignProfileId,
         );
       }
     }
@@ -346,14 +391,17 @@ class PlanningService {
     required DateTime dateReference,
     String? referenceId,
     String? referenceLabel,
+    String? profilSourceOverride,
+    String? eleveurProfileIdOverride,
   }) async {
+    final ownerProfileId = eleveurProfileIdOverride ?? User_Info.activeProfileId;
     final row = await _supa.from('plans_actifs').insert({
       'template_id':      template['id'],
       'uid_eleveur':      uid,
-      if (User_Info.activeProfileId.isNotEmpty) 'eleveur_profile_id': User_Info.activeProfileId,
+      if (ownerProfileId.isNotEmpty) 'eleveur_profile_id': ownerProfileId,
       'type_declencheur': template['reference_event'] ?? 'manuel',
       'date_reference':   dateReference.toIso8601String().split('T').first,
-      'profil_source':    _profilSource,
+      'profil_source':    profilSourceOverride ?? _profilSource,
       if (referenceId != null)    'reference_id':    referenceId,
       if (referenceLabel != null) 'reference_label': referenceLabel,
     }).select('id').single();
@@ -369,6 +417,10 @@ class PlanningService {
     required bool isBebes,
     String? animalId,
     String? animalNom,
+    String? profilSourceOverride,
+    String? eleveurProfileIdOverride,
+    String? assignedTo,
+    String? assignedProfileId,
   }) async {
     final taches = <Map<String, dynamic>>[];
 
@@ -403,7 +455,7 @@ class PlanningService {
         case 'ponctuel':
           for (int jour = 1; jour <= dureeJours; jour++) {
             final date = startDate.add(Duration(days: jour - 1));
-            taches.add(_tache(planId: planId, etape: etape, uid: uid, animalId: animalId, animalNom: animalNom,
+            taches.add(_tache(planId: planId, etape: etape, uid: uid, animalId: animalId, animalNom: animalNom, profilSourceOverride: profilSourceOverride, eleveurProfileIdOverride: eleveurProfileIdOverride, assignedTo: assignedTo, assignedProfileId: assignedProfileId,
               label: dureeJours > 1 ? '$labelBase — Jour $jour/$dureeJours' : labelBase,
               date: date, jour: jour, total: dureeJours, typeActe: typeActe, lieu: lieu,
               trancheHoraire: trancheHoraire));
@@ -413,7 +465,7 @@ class PlanningService {
           final totalJours = dureeSemanines * 7;
           for (int jour = 1; jour <= totalJours; jour++) {
             final date = startDate.add(Duration(days: jour - 1));
-            taches.add(_tache(planId: planId, etape: etape, uid: uid, animalId: animalId, animalNom: animalNom,
+            taches.add(_tache(planId: planId, etape: etape, uid: uid, animalId: animalId, animalNom: animalNom, profilSourceOverride: profilSourceOverride, eleveurProfileIdOverride: eleveurProfileIdOverride, assignedTo: assignedTo, assignedProfileId: assignedProfileId,
               label: '$labelBase — Jour $jour/$totalJours',
               date: date, jour: jour, total: totalJours, typeActe: typeActe, lieu: lieu,
               trancheHoraire: trancheHoraire));
@@ -426,7 +478,7 @@ class PlanningService {
           for (int semaine = 0; semaine < dureeSemanines; semaine++) {
             for (final dayOff in offsets) {
               final date = startDate.add(Duration(days: semaine * 7 + dayOff));
-              taches.add(_tache(planId: planId, etape: etape, uid: uid, animalId: animalId, animalNom: animalNom,
+              taches.add(_tache(planId: planId, etape: etape, uid: uid, animalId: animalId, animalNom: animalNom, profilSourceOverride: profilSourceOverride, eleveurProfileIdOverride: eleveurProfileIdOverride, assignedTo: assignedTo, assignedProfileId: assignedProfileId,
                 label: '$labelBase (${occurrence}e/${totalOccurrences}e)',
                 date: date, jour: occurrence, total: totalOccurrences, typeActe: typeActe, lieu: lieu,
                 trancheHoraire: trancheHoraire));
@@ -437,7 +489,7 @@ class PlanningService {
         case 'mensuel':
           for (int mois = 0; mois < dureeSemanines; mois++) {
             final date = DateTime(startDate.year, startDate.month + mois, startDate.day);
-            taches.add(_tache(planId: planId, etape: etape, uid: uid, animalId: animalId, animalNom: animalNom,
+            taches.add(_tache(planId: planId, etape: etape, uid: uid, animalId: animalId, animalNom: animalNom, profilSourceOverride: profilSourceOverride, eleveurProfileIdOverride: eleveurProfileIdOverride, assignedTo: assignedTo, assignedProfileId: assignedProfileId,
               label: '$labelBase (mois ${mois + 1}/$dureeSemanines)',
               date: date, jour: mois + 1, total: dureeSemanines, typeActe: typeActe, lieu: lieu,
               trancheHoraire: trancheHoraire));
@@ -478,23 +530,30 @@ class PlanningService {
     String? animalId, String? animalNom, required String label, required DateTime date,
     required int jour, required int total, required String typeActe, String? lieu,
     String? trancheHoraire,
-  }) => {
-    'plan_id':         planId,
-    'etape_id':        etape['id'],
-    'uid_eleveur':     uid,
-    'profile_id': User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
-    if (User_Info.activeProfileId.isNotEmpty) 'eleveur_profile_id': User_Info.activeProfileId,
-    'profil_source':   _profilSource,
-    if (animalId != null) 'animal_id': animalId,
-    if (animalNom != null && animalNom.isNotEmpty) 'animal_nom': animalNom,
-    'label':           label,
-    'type_acte':       typeActe.isEmpty ? null : typeActe,
-    'date_prevue':     date.toIso8601String().split('T').first,
-    'jour_traitement': jour,
-    'total_jours':     total,
-    if (lieu != null && lieu.isNotEmpty) 'lieu': lieu,
-    if (trancheHoraire != null) 'tranche_horaire': trancheHoraire,
-  };
+    String? profilSourceOverride, String? eleveurProfileIdOverride,
+    String? assignedTo, String? assignedProfileId,
+  }) {
+    final ownerProfileId = eleveurProfileIdOverride ?? User_Info.activeProfileId;
+    return {
+      'plan_id':         planId,
+      'etape_id':        etape['id'],
+      'uid_eleveur':     uid,
+      'profile_id': ownerProfileId.isNotEmpty ? ownerProfileId : null,
+      if (ownerProfileId.isNotEmpty) 'eleveur_profile_id': ownerProfileId,
+      'profil_source':   profilSourceOverride ?? _profilSource,
+      if (animalId != null) 'animal_id': animalId,
+      if (animalNom != null && animalNom.isNotEmpty) 'animal_nom': animalNom,
+      'label':           label,
+      'type_acte':       typeActe.isEmpty ? null : typeActe,
+      'date_prevue':     date.toIso8601String().split('T').first,
+      'jour_traitement': jour,
+      'total_jours':     total,
+      if (lieu != null && lieu.isNotEmpty) 'lieu': lieu,
+      if (trancheHoraire != null) 'tranche_horaire': trancheHoraire,
+      if (assignedTo != null) 'assigned_to': assignedTo,
+      if (assignedProfileId != null) 'assigned_profile_id': assignedProfileId,
+    };
+  }
 
   // ── Déclencher automatiquement les protocoles sur un événement ──────────────
   // Cherche tous les templates avec declencheur_auto == declencheur,
@@ -551,18 +610,26 @@ class PlanningService {
   }
 
   // ── Tâches du jour ───────────────────────────────────────────────────────────
-  static Future<List<Map<String, dynamic>>> getTachesJour(String uid, DateTime date, {bool? isAssociation}) async {
+  static Future<List<Map<String, dynamic>>> getTachesJour(
+    String uid,
+    DateTime date, {
+    bool? isAssociation,
+    String? profilSourceOverride,
+  }) async {
     final dateStr = date.toIso8601String().split('T').first;
-    final profil  = (isAssociation ?? (_profilSource == 'association')) ? 'association' : 'eleveur';
+    final profil  = profilSourceOverride ??
+        ((isAssociation ?? (_profilSource == 'association')) ? 'association' : 'eleveur');
     final q = _supa
         .from('plan_taches')
         .select('*, plans_actifs(reference_label, type_declencheur)')
         .eq('uid_eleveur', uid)
         .eq('date_prevue', dateStr)
         .neq('statut', 'fait');
-    final rows = profil == 'association'
-        ? await q.eq('profil_source', 'association').order('date_prevue')
-        : await q.or('profil_source.is.null,profil_source.eq.eleveur').order('date_prevue');
+    final rows = profil == 'pension'
+        ? await q.eq('profil_source', 'pension').order('date_prevue')
+        : profil == 'association'
+            ? await q.eq('profil_source', 'association').order('date_prevue')
+            : await q.or('profil_source.is.null,profil_source.eq.eleveur').order('date_prevue');
     return List<Map<String, dynamic>>.from(rows);
   }
 

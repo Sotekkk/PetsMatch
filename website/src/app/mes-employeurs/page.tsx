@@ -50,6 +50,7 @@ interface Employer {
   name_elevage: string | null;
   is_elevage: boolean;
   cat_pro: string | null;
+  profile_type_relation: string | null;
   profile_picture_url: string | null;
   profile_picture_url_elevage: string | null;
   perms: string[];
@@ -296,11 +297,11 @@ export default function MesEmployeursPage() {
 
     // Profils user_profiles précis utilisés à l'invitation (peut différer du
     // compte principal — ex : invité depuis un profil pension secondaire).
-    type InvitingProfile = { id: string; nom: string | null; avatar_url: string | null };
+    type InvitingProfile = { id: string; nom: string | null; avatar_url: string | null; profile_type: string | null };
     let invitingProfileById: Record<string, InvitingProfile> = {};
     if (allProfileIds.length > 0) {
       const { data: invitingProfiles } = await supabase.from('user_profiles')
-        .select('id, nom, avatar_url')
+        .select('id, nom, avatar_url, profile_type')
         .in('id', allProfileIds) as unknown as { data: InvitingProfile[] | null };
       invitingProfileById = Object.fromEntries((invitingProfiles ?? []).map(p => [p.id, p]));
     }
@@ -412,6 +413,7 @@ export default function MesEmployeursPage() {
         ...u,
         ...nameOverride,
         eleveur_profile_id: eleveurProfileId,
+        profile_type_relation: invitingProfile?.profile_type ?? null,
         perms,
         animaux: allAnimaux,
         taches,
@@ -524,6 +526,12 @@ export default function MesEmployeursPage() {
                     <Link href={`/pension/planning?employerUid=${emp.uid}`}
                       className="flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C] hover:bg-[#0C5C6C]/20 transition-colors">
                       📅 Planning
+                    </Link>
+                  )}
+                  {emp.perms.includes('write_protocoles') && emp.eleveur_profile_id && (
+                    <Link href={`/elevage/planning?employerUid=${emp.uid}&employerProfileId=${emp.eleveur_profile_id}&profilSource=${emp.cat_pro === 'pension' ? 'pension' : emp.profile_type_relation === 'association' ? 'association' : 'eleveur'}&employerNom=${encodeURIComponent(emp.name_elevage || '')}`}
+                      className="flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C] hover:bg-[#0C5C6C]/20 transition-colors">
+                      📋 Protocoles
                     </Link>
                   )}
                 </div>

@@ -518,6 +518,12 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
               label: 'Nos pensionnaires',
               onTap: () => _push(const RegistrePensionPage()),
             ),
+          if (User_Info.catPro == 'pension')
+            _DrawerItem(
+              icon: Icons.event_note_outlined,
+              label: 'Protocoles',
+              onTap: () => _push(const PlanTemplateListPage(profilSource: 'pension')),
+            ),
           if (User_Info.catPro == 'veterinaire')
             _DrawerItem(
               icon: Icons.medical_information_outlined,

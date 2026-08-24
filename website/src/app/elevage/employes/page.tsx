@@ -53,6 +53,7 @@ const PERMS_LIST = [
   { key: 'write_sante',      label: 'Carnet de santé',       desc: 'Vaccins, traitements, poids' },
   { key: 'write_repro',      label: 'Suivi reproducteur',    desc: 'Saillies, gestations, portées' },
   { key: 'write_planning',   label: 'Planning & tâches',     desc: 'Créer et modifier les tâches' },
+  { key: 'write_protocoles', label: 'Créer des protocoles',  desc: 'Créer ses propres protocoles, auto-attribués et visibles par l\'employeur' },
   { key: 'write_inventaire', label: 'Inventaire',            desc: 'Gérer les stocks et alertes' },
   { key: 'write_notes',      label: 'Notes',                 desc: 'Ajouter des notes internes' },
   { key: 'read_planning_pension', label: 'Planning pension', desc: 'Voir le planning d\'occupation et les fiches des animaux en pension' },

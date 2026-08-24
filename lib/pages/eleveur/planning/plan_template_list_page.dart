@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/services/planning_pdf_service.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_form_page.dart';
@@ -7,7 +8,25 @@ import 'package:PetsMatch/pages/eleveur/planning/apply_plan_sheet.dart';
 
 class PlanTemplateListPage extends StatefulWidget {
   final bool isAssociation;
-  const PlanTemplateListPage({super.key, this.isAssociation = false});
+  final String profilSource;
+  // Contexte "employé agissant pour un employeur" : quand renseigné, les
+  // protocoles sont ceux de cet employeur (pas de l'utilisateur connecté),
+  // et la création/édition est soumise à employePerms.
+  final String? employerUid;
+  final String? employerProfileId;
+  final String? employerNom;
+  final Set<String> employePerms;
+
+  const PlanTemplateListPage({
+    super.key,
+    this.isAssociation = false,
+    String? profilSource,
+    this.employerUid,
+    this.employerProfileId,
+    this.employerNom,
+    this.employePerms = const {},
+  }) : profilSource = profilSource ?? (isAssociation ? 'association' : 'eleveur');
+
   @override
   State<PlanTemplateListPage> createState() => _PlanTemplateListPageState();
 }
@@ -16,13 +35,17 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
   static const _green = Color(0xFF0C5C6C);
 
   List<Map<String, dynamic>> _templates = [];
+  Map<String, String> _creatorNames = {};
   bool _loading = true;
   String? _uid;
+
+  bool get _isEmployeeMode => widget.employerUid != null;
+  bool get _canWrite => !_isEmployeeMode || widget.employePerms.contains('write_protocoles');
 
   @override
   void initState() {
     super.initState();
-    _uid = FirebaseAuth.instance.currentUser?.uid;
+    _uid = widget.employerUid ?? FirebaseAuth.instance.currentUser?.uid;
     _load();
   }
 
@@ -30,10 +53,45 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
     if (_uid == null) return;
     setState(() => _loading = true);
     try {
-      final rows = await PlanningService.loadTemplates(_uid!);
+      final rows = await PlanningService.loadTemplates(
+        _uid!,
+        profilSourceOverride: widget.profilSource,
+        eleveurProfileIdOverride: widget.employerProfileId,
+      );
+      await _loadCreatorNames(rows);
       if (mounted) setState(() { _templates = rows; _loading = false; });
     } catch (_) {
       if (mounted) setState(() { _templates = []; _loading = false; });
+    }
+  }
+
+  // Résout le nom des employés créateurs (créé par quelqu'un d'autre que le
+  // propriétaire du protocole) pour l'afficher à l'employeur.
+  Future<void> _loadCreatorNames(List<Map<String, dynamic>> rows) async {
+    final ownerProfileId = widget.employerProfileId;
+    final ids = rows
+        .map((r) => r['created_by_profile_id'] as String?)
+        .whereType<String>()
+        .where((id) => id != ownerProfileId)
+        .toSet()
+        .toList();
+    if (ids.isEmpty) {
+      _creatorNames = {};
+      return;
+    }
+    try {
+      final profRows = await Supabase.instance.client
+          .from('user_profiles')
+          .select('id, nom, prenom')
+          .inFilter('id', ids);
+      _creatorNames = {
+        for (final p in (profRows as List))
+          p['id'] as String: [p['prenom'], p['nom']]
+              .where((s) => s != null && (s as String).isNotEmpty)
+              .join(' ')
+      };
+    } catch (_) {
+      _creatorNames = {};
     }
   }
 
@@ -66,14 +124,21 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF0C5C6C),
         foregroundColor: Colors.white,
-        title: const Text('Mes protocoles', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        title: Text(
+          widget.employerNom != null ? 'Protocoles · ${widget.employerNom}' : 'Mes protocoles',
+          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700),
+        ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: !_canWrite ? null : FloatingActionButton.extended(
         backgroundColor: _green,
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text('Nouveau', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
         onPressed: () => Navigator.push(context, MaterialPageRoute(
-          builder: (_) => const PlanTemplateFormPage(),
+          builder: (_) => PlanTemplateFormPage(
+            profilSource: widget.profilSource,
+            employerUid: widget.employerUid,
+            employerProfileId: widget.employerProfileId,
+          ),
         )).then((_) => _load()),
       ),
       body: _loading
@@ -83,25 +148,42 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
               : ListView.builder(
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
                   itemCount: _templates.length,
-                  itemBuilder: (_, i) => _TemplateCard(
-                    template: _templates[i],
-                    onEdit: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => PlanTemplateFormPage(existing: _templates[i]),
-                    )).then((_) => _load()),
-                    onDelete: () => _delete(_templates[i]['id'] as String, _templates[i]['nom'] as String),
-                    onPrint: () => PlanningPdfService.printProtocole(_templates[i]),
-                    onApply: () => showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.white,
-                      shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-                      builder: (_) => ApplyPlanSheet(
-                        template: _templates[i],
-                        uid: _uid!,
+                  itemBuilder: (_, i) {
+                    final t = _templates[i];
+                    final creatorProfileId = t['created_by_profile_id'] as String?;
+                    final creatorName = (creatorProfileId != null && creatorProfileId != widget.employerProfileId)
+                        ? _creatorNames[creatorProfileId]
+                        : null;
+                    final canEditThis = _canWrite;
+                    return _TemplateCard(
+                      template: t,
+                      creatorName: creatorName,
+                      canWrite: canEditThis,
+                      onEdit: !canEditThis ? null : () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => PlanTemplateFormPage(
+                          existing: t,
+                          profilSource: widget.profilSource,
+                          employerUid: widget.employerUid,
+                          employerProfileId: widget.employerProfileId,
+                        ),
+                      )).then((_) => _load()),
+                      onDelete: !canEditThis ? null : () => _delete(t['id'] as String, t['nom'] as String),
+                      onPrint: () => PlanningPdfService.printProtocole(t),
+                      onApply: () => showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.white,
+                        shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                        builder: (_) => ApplyPlanSheet(
+                          template: t,
+                          uid: _uid!,
+                          profilSourceOverride: widget.profilSource,
+                          eleveurProfileIdOverride: widget.employerProfileId,
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
     );
   }
@@ -129,12 +211,17 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
 
 class _TemplateCard extends StatelessWidget {
   final Map<String, dynamic> template;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final String? creatorName;
+  final bool canWrite;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
   final VoidCallback onApply;
   final VoidCallback onPrint;
 
-  const _TemplateCard({required this.template, required this.onEdit, required this.onDelete, required this.onApply, required this.onPrint});
+  const _TemplateCard({
+    required this.template, this.creatorName, required this.canWrite,
+    required this.onEdit, required this.onDelete, required this.onApply, required this.onPrint,
+  });
 
   static const _green = Color(0xFF0C5C6C);
 
@@ -207,6 +294,10 @@ class _TemplateCard extends StatelessWidget {
                           ],
                           const SizedBox(width: 6),
                           _Badge(label: '$_etapeCount étape${_etapeCount > 1 ? 's' : ''}', color: Colors.grey.shade300),
+                          if (creatorName != null && creatorName!.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            _Badge(label: '👤 $creatorName', color: const Color(0xFFC2740B)),
+                          ],
                         ],
                       ),
                     ],
@@ -214,8 +305,8 @@ class _TemplateCard extends StatelessWidget {
                 ),
                 PopupMenuButton<String>(
                   onSelected: (v) {
-                    if (v == 'edit')   onEdit();
-                    if (v == 'delete') onDelete();
+                    if (v == 'edit' && onEdit != null)   onEdit!();
+                    if (v == 'delete' && onDelete != null) onDelete!();
                     if (v == 'print')  onPrint();
                   },
                   itemBuilder: (_) => [
@@ -224,8 +315,10 @@ class _TemplateCard extends StatelessWidget {
                       SizedBox(width: 8),
                       Text('Imprimer', style: TextStyle(fontFamily: 'Galey')),
                     ])),
-                    const PopupMenuItem(value: 'edit',   child: Text('Modifier',  style: TextStyle(fontFamily: 'Galey'))),
-                    const PopupMenuItem(value: 'delete', child: Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red))),
+                    if (canWrite) ...[
+                      const PopupMenuItem(value: 'edit',   child: Text('Modifier',  style: TextStyle(fontFamily: 'Galey'))),
+                      const PopupMenuItem(value: 'delete', child: Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red))),
+                    ],
                   ],
                   child: const Icon(Icons.more_vert, color: Color(0xFF9CA3AF)),
                 ),

@@ -47,6 +47,7 @@ import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
+import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 
 // ─── Libellé de structure pour les notifications d'invitation ────────────────
 
@@ -458,6 +459,7 @@ const _kPerms = [
   ('write_sante',     Icons.medical_services_outlined, 'Carnet de santé',    'Vaccins, traitements, poids'),
   ('write_repro',     Icons.favorite_border,       'Suivi reproducteur',      'Saillies, gestations, portées'),
   ('write_planning',  Icons.calendar_month_outlined,'Planning & tâches',      'Créer et modifier les tâches'),
+  ('write_protocoles',Icons.event_note_outlined,   'Créer des protocoles',    'Créer ses propres protocoles, auto-attribués et visibles par l\'employeur'),
   ('write_inventaire',Icons.inventory_2_outlined,  'Inventaire',              'Gérer les stocks et alertes'),
   ('write_notes',     Icons.notes_outlined,         'Notes',                   'Ajouter des notes internes'),
   ('read_planning_pension', Icons.calendar_view_week_outlined, 'Planning pension', 'Voir le planning d\'occupation et les fiches des animaux en pension'),
@@ -3041,6 +3043,10 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
         // (éleveur, association...) — jamais celui du compte principal, sinon
         // deux relations du même employeur affichent le même nom.
         final invitingProfile = eleveurProfileId != null ? invitingProfileById[eleveurProfileId] : null;
+        // Type précis du profil employeur pour CETTE relation (eleveur,
+        // association, ou pro avec cat_pro=pension) — sert à ouvrir les
+        // protocoles dans le bon contexte (write_protocoles).
+        u['profile_type_relation'] = (invitingProfile?['profile_type'] as String?) ?? primaryUser['profile_type'];
         if (invitingProfile != null) {
           final nom = (invitingProfile['nom'] as String?) ?? '';
           if (nom.isNotEmpty) {
@@ -3169,6 +3175,21 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                           onPlanningTap: () => Navigator.push(context, MaterialPageRoute(
                             builder: (_) => PensionPlanningPage(employerUid: uid, employerNom: nom),
                           )),
+                          onProtocolesTap: () {
+                            final relType = u['profile_type_relation'] as String?;
+                            final profilSource = catPro == 'pension'
+                                ? 'pension'
+                                : (relType == 'association' ? 'association' : 'eleveur');
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => PlanTemplateListPage(
+                                profilSource: profilSource,
+                                employerUid: uid,
+                                employerProfileId: eleveurProfileId,
+                                employerNom: nom,
+                                employePerms: perms,
+                              ),
+                            ));
+                          },
                         );
                       },
                     ),
@@ -3191,6 +3212,7 @@ class _EmployeurExpandedCard extends StatelessWidget {
   final Future<void> Function(Map<String, dynamic>) onMarquerFait;
   final void Function(Map<String, dynamic>) onAnimalTap;
   final VoidCallback onPlanningTap;
+  final VoidCallback onProtocolesTap;
 
   const _EmployeurExpandedCard({
     required this.uid, required this.nom, required this.photo,
@@ -3198,7 +3220,7 @@ class _EmployeurExpandedCard extends StatelessWidget {
     required this.eleveurProfileId, required this.perms, required this.catPro,
     required this.animaux, required this.taches,
     required this.onTabChange, required this.onVoirProfil, required this.onMarquerFait,
-    required this.onAnimalTap, required this.onPlanningTap,
+    required this.onAnimalTap, required this.onPlanningTap, required this.onProtocolesTap,
   });
 
   @override
@@ -3234,6 +3256,20 @@ class _EmployeurExpandedCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text('📅 Planning', style: TextStyle(color: teal, fontSize: 12, fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ],
+            if (perms.contains('write_protocoles')) ...[
+              GestureDetector(
+                onTap: onProtocolesTap,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    color: teal.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text('📋 Protocoles', style: TextStyle(color: teal, fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
               ),
             ],

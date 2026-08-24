@@ -217,6 +217,7 @@ const MENU_PENSION = [
       { href: '/pension/demandes',  label: 'Demandes d\'accès',    icon: '🔑' },
       { href: '/pension/chenil',    label: 'Logements / Chenil',   icon: '🏘️' },
       { href: '/pension/planning',  label: 'Planning occupation',  icon: '📆', pro: true },
+      { href: '/elevage/planning?profilSource=pension', label: 'Protocoles', icon: '📋', pro: true },
       { href: '/pension/contrat',   label: 'Contrats',             icon: '✍️', pro: true },
       { href: '/mes-rdv',           label: 'Gestion des RDV',      icon: '🗓️' },
       { href: '/pro/creneaux',      label: 'Mes créneaux',         icon: '⏰' },
