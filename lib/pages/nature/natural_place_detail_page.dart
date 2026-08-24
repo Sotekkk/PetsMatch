@@ -433,6 +433,33 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
                       ]),
                   ]),
 
+                  if ((_place['distance'] as String?)?.isNotEmpty == true ||
+                      (_place['duree'] as String?)?.isNotEmpty == true) ...[
+                    const SizedBox(height: 10),
+                    Row(children: [
+                      if ((_place['distance'] as String?)?.isNotEmpty == true) ...[
+                        const Icon(Icons.route_outlined, size: 15, color: Colors.black54),
+                        const SizedBox(width: 4),
+                        Text(_place['distance'] as String,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
+                                fontWeight: FontWeight.w600, color: Colors.black87)),
+                      ],
+                      if ((_place['distance'] as String?)?.isNotEmpty == true &&
+                          (_place['duree'] as String?)?.isNotEmpty == true)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 8),
+                          child: Text('·', style: TextStyle(color: Colors.black38)),
+                        ),
+                      if ((_place['duree'] as String?)?.isNotEmpty == true) ...[
+                        const Icon(Icons.schedule_outlined, size: 15, color: Colors.black54),
+                        const SizedBox(width: 4),
+                        Text(_place['duree'] as String,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
+                                fontWeight: FontWeight.w600, color: Colors.black87)),
+                      ],
+                    ]),
+                  ],
+
                   if (desc.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Text(desc, style: const TextStyle(fontFamily: 'Galey', fontSize: 14,

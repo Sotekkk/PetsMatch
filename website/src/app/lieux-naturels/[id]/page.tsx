@@ -27,6 +27,8 @@ interface NaturalPlace {
   has_poubelle?: boolean | null;
   parcours_ombre?: boolean | null;
   baignade_possible?: boolean | null;
+  distance?: string | null;
+  duree?: string | null;
 }
 
 interface Review {
@@ -312,6 +314,22 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
             </span>
           )}
         </div>
+
+        {(place.distance || place.duree) && (
+          <div className="flex items-center gap-2 mb-4 text-sm text-gray-800" style={{ fontFamily: 'Galey, sans-serif' }}>
+            {place.distance && (
+              <span className="flex items-center gap-1 font-semibold">
+                🥾 {place.distance}
+              </span>
+            )}
+            {place.distance && place.duree && <span className="text-gray-300">·</span>}
+            {place.duree && (
+              <span className="flex items-center gap-1 font-semibold">
+                ⏱️ {place.duree}
+              </span>
+            )}
+          </div>
+        )}
 
         {place.description && (
           <p className="text-sm text-gray-700 leading-relaxed mb-5" style={{ fontFamily: 'Galey, sans-serif' }}>

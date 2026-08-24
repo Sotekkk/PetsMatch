@@ -89,3 +89,8 @@ create policy "photo_suggestions_insert_all" on natural_place_photo_suggestions
 drop policy if exists "photo_suggestions_update_all" on natural_place_photo_suggestions;
 create policy "photo_suggestions_update_all" on natural_place_photo_suggestions
   for update using (true) with check (true);
+
+-- Badge distance/duree pour les balades/parcours (forets, lacs, rivieres).
+alter table natural_places
+  add column if not exists distance text,
+  add column if not exists duree text;
