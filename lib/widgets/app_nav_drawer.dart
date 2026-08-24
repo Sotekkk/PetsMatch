@@ -492,17 +492,21 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
           onTap: () => _push(const MarketplacePage()),
         ),
         if (User_Info.isPro) ...[
-          const Divider(height: 24),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
-            child: Text('Espace pro',
-                style: TextStyle(
-                    fontFamily: 'Galey',
-                    fontWeight: FontWeight.w700,
-                    fontSize: 11,
-                    color: Colors.grey.shade500,
-                    letterSpacing: 0.8)),
-          ),
+          // Pension : compte forcément pro, le separateur "Espace pro" n'a
+          // pas de sens (pas de mode "non-pro" a distinguer).
+          if (User_Info.catPro != 'pension') ...[
+            const Divider(height: 24),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
+              child: Text('Espace pro',
+                  style: TextStyle(
+                      fontFamily: 'Galey',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                      color: Colors.grey.shade500,
+                      letterSpacing: 0.8)),
+            ),
+          ],
           _DrawerItem(
             icon: Icons.calendar_month_outlined,
             label: 'Mon agenda RDV',
