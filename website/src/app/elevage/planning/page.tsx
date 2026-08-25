@@ -1002,13 +1002,18 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
     else if (c === 'individuel') setRefEvent('manuel');
   };
 
-  // Une association ne pratique pas d'élevage contrôlé (saillie, mise bas) —
-  // ces événements de référence n'ont pas de sens hors contexte éleveur.
+  // Une association ne pratique pas d'élevage contrôlé (saillie, mise bas), et
+  // une pension n'héberge pas de reproduction (gestation, naissances) — ces
+  // cibles et événements de référence n'ont pas de sens hors contexte éleveur.
   const cibleOptions = profilSource === 'association'
     ? CIBLE_OPTIONS.filter(c => c.value !== 'gestantes')
-    : CIBLE_OPTIONS;
+    : profilSource === 'pension'
+      ? CIBLE_OPTIONS.filter(c => c.value !== 'gestantes' && c.value !== 'bebes')
+      : CIBLE_OPTIONS;
   const refEventsForCible = REF_EVENT_OPTIONS.filter(r => {
-    if (profilSource === 'association' && (r.value === 'saillie' || r.value === 'mise_bas')) return false;
+    if ((profilSource === 'association' || profilSource === 'pension')
+      && (r.value === 'saillie' || r.value === 'mise_bas')) return false;
+    if (profilSource === 'pension' && r.value === 'naissance') return false;
     return cibleType === 'gestantes' ? ['mise_bas', 'saillie', 'manuel'].includes(r.value)
       : cibleType === 'bebes'   ? ['naissance', 'age_semaines'].includes(r.value)
       : r.value !== 'age_semaines';
@@ -1281,8 +1286,10 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
               <div className="flex flex-wrap gap-2">
                 {[
                   { value: '',          emoji: '—',   label: 'Manuel uniquement' },
-                  { value: 'naissance', emoji: '🐣',  label: 'Naissance' },
-                  ...(profilSource === 'association' ? [] : [
+                  ...(profilSource === 'pension' ? [] : [
+                    { value: 'naissance', emoji: '🐣',  label: 'Naissance' },
+                  ]),
+                  ...(profilSource === 'association' || profilSource === 'pension' ? [] : [
                     { value: 'chaleurs',  emoji: '🌡️', label: 'Chaleurs' },
                     { value: 'gestation', emoji: '🤰',  label: 'Gestation confirmée' },
                   ]),
