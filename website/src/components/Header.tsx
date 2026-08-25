@@ -216,6 +216,7 @@ const MENU_PENSION = [
       { href: '/pension/registre',  label: 'Nos pensionnaires',    icon: '📋' },
       { href: '/pension/demandes',  label: 'Accès fiche pensionnaire', icon: '🔑' },
       { href: '/elevage/planning?profilSource=pension', label: 'Protocoles', icon: '📋', pro: true },
+      { href: '/elevage/registre-sanitaire?profilSource=pension', label: 'Suivi sanitaire', icon: '🏥', pro: true },
       { href: '/pension/chenil',    label: 'Logements / Chenil',   icon: '🏘️' },
       { href: '/pension/planning',  label: 'Planning occupation',  icon: '📆', pro: true },
       { href: '/pension/contrat',   label: 'Contrats',             icon: '✍️', pro: true },
