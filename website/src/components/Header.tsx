@@ -225,9 +225,15 @@ const MENU_PENSION = [
       { href: '/mes-taches',        label: 'Mes tâches',           icon: '✅', pro: true },
       { href: '/employes',          label: 'Mes employés',         icon: '👥', pro: true },
       { href: '/elevage/inventaire',label: 'Inventaire',           icon: '📦', pro: true },
-      { href: '/pension/contrat',   label: 'Contrats',             icon: '✍️', pro: true },
-      { href: '/elevage/facturation',label: 'Facturation',          icon: '🧾' },
-      { href: '/pension/abonnement', label: 'Mon abonnement',       icon: '💳' },
+    ],
+  },
+  {
+    section: 'Administratif',
+    icon: '📁',
+    items: [
+      { href: '/pension/contrat',    label: 'Contrats',      icon: '✍️', pro: true },
+      { href: '/elevage/facturation',label: 'Facturation',   icon: '🧾' },
+      { href: '/pension/tarifs',     label: 'Tarification',  icon: '💶' },
     ],
   },
   {
@@ -236,6 +242,14 @@ const MENU_PENSION = [
     items: [
       { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute', label: 'Communauté',                  icon: '👥' },
+    ],
+  },
+  {
+    section: 'Mon Profil',
+    icon: '👤',
+    items: [
+      { href: '/profil',             label: 'Modifier mon profil', icon: '✏️' },
+      { href: '/pension/abonnement', label: 'Mon abonnement',      icon: '💳' },
     ],
   },
 ];
@@ -1162,10 +1176,12 @@ export default function Header() {
                     ))}
 
                     <div className="border-t border-gray-100 mt-1">
-                      <Link href="/profil" onClick={() => setDropdownOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                        <span>⚙️</span> Mon Profil
-                      </Link>
+                      {!menuSections.some((sec) => sec.section === 'Mon Profil') && (
+                        <Link href="/profil" onClick={() => setDropdownOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                          <span>⚙️</span> Mon Profil
+                        </Link>
+                      )}
                       {!effectiveIsEleveur && (
                         <Link href="/mes-alertes" onClick={() => setDropdownOpen(false)}
                           className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
@@ -1312,10 +1328,12 @@ export default function Header() {
               ))}
 
               <div className="border-t border-white/10 mt-2 pt-2 space-y-0.5">
-                <Link href="/profil" onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-2 py-2 text-white/70 hover:text-white text-sm">
-                  ⚙️ Mon Profil
-                </Link>
+                {!menuSections.some((sec) => sec.section === 'Mon Profil') && (
+                  <Link href="/profil" onClick={() => setMenuOpen(false)}
+                    className="flex items-center gap-2 py-2 text-white/70 hover:text-white text-sm">
+                    ⚙️ Mon Profil
+                  </Link>
+                )}
                 <Link href="/favoris" onClick={() => setMenuOpen(false)}
                   className="flex items-center gap-2 py-2 text-white/70 hover:text-white text-sm">
                   ❤️ Mes interactions
