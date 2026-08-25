@@ -222,6 +222,7 @@ const MENU_PENSION = [
       { href: '/pension/planning',  label: 'Planning occupation',  icon: '📆', pro: true },
       { href: '/mes-rdv',           label: 'Gestion des RDV',      icon: '🗓️' },
       { href: '/pro/creneaux',      label: 'Mes créneaux',         icon: '⏰' },
+      { href: '/pension/entree-sortie', label: 'Entrée - Sortie',  icon: '📂' },
       { href: '/mes-taches',        label: 'Mes tâches',           icon: '✅', pro: true },
       { href: '/employes',          label: 'Mes employés',         icon: '👥', pro: true },
       { href: '/elevage/inventaire',label: 'Inventaire',           icon: '📦', pro: true },
