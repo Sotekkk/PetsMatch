@@ -238,6 +238,14 @@ const MENU_PENSION = [
     ],
   },
   {
+    section: 'Animaux perdus / trouvés',
+    icon: '🔍',
+    items: [
+      { href: '/mes-alertes',    label: 'Gérer mes alertes',       icon: '🔔' },
+      { href: '/animaux-perdus', label: 'Voir les animaux perdus', icon: '🔍' },
+    ],
+  },
+  {
     section: 'Annuaire & Communauté',
     icon: '🔎',
     items: [
