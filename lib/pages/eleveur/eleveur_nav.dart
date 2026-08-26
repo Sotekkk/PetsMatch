@@ -36,6 +36,7 @@ import 'package:PetsMatch/pages/pro/pension_chenil_page.dart';
 import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
+import 'package:PetsMatch/pages/pro/pension_entree_sortie_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart';
 import 'package:PetsMatch/pages/pro/pension_factures_page.dart';
@@ -332,6 +333,16 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => const ProAgendaPage(initialTabIndex: 3),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Entrée - Sortie',
+                        icon: Icons.swap_horiz_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const PensionEntreeSortiePage(),
                           ));
                         },
                       ),
