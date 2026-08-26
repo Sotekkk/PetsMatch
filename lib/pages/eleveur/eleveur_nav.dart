@@ -326,6 +326,16 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
+                        label: 'Mes créneaux',
+                        icon: Icons.schedule_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const ProAgendaPage(initialTabIndex: 3),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
                         label: 'Mes Employés',
                         icon: Icons.groups_outlined,
                         locked: _pensionPlanCode == 'free',

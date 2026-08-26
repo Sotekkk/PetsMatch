@@ -14,7 +14,11 @@ import 'package:PetsMatch/config.dart';
 import 'package:intl/intl.dart';
 
 class ProAgendaPage extends StatefulWidget {
-  const ProAgendaPage({super.key});
+  // Index de l'onglet initial (0=Demandes, 1=À venir, 2=Historique,
+  // 3=Créneaux) — permet d'ouvrir directement sur "Mes créneaux" depuis
+  // le menu, sans dupliquer la logique déjà présente dans cette page.
+  final int initialTabIndex;
+  const ProAgendaPage({super.key, this.initialTabIndex = 0});
 
   @override
   State<ProAgendaPage> createState() => _ProAgendaPageState();
@@ -60,7 +64,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 4, vsync: this);
+    _tabCtrl = TabController(length: 4, vsync: this, initialIndex: widget.initialTabIndex);
     final now = DateTime.now();
     _weekStart = now.subtract(Duration(days: now.weekday - 1));
     _selectedDayIdx = now.weekday - 1;
@@ -272,10 +276,15 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           _rdvs = rows.map((r) {
             final cUid = r['client_uid'] as String?;
             final aId = r['animal_id']?.toString();
+            final clientNomManuel = r['client_nom_manuel'] as String?;
             return {
               ...r,
-              '_client_name': cUid != null ? (clientNames[cUid] ?? 'Client') : 'Client',
-              '_animal_nom': aId != null ? (animalNames[aId] ?? '') : '',
+              '_client_name': cUid != null
+                  ? (clientNames[cUid] ?? 'Client')
+                  : (clientNomManuel?.isNotEmpty == true ? clientNomManuel! : 'Client'),
+              '_animal_nom': aId != null
+                  ? (animalNames[aId] ?? '')
+                  : ((r['animal_nom_manuel'] as String?) ?? ''),
               '_visit_count': cUid != null ? (visitCounts[cUid] ?? 0) : 0,
             };
           }).toList();
@@ -1522,6 +1531,283 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     }
   }
 
+  // ── RDV créé manuellement par le pro (walk-in, téléphone…) ──────────────────
+
+  Future<void> _showNouveauRdvDialog() async {
+    final clientNomCtrl = TextEditingController();
+    final clientTelCtrl = TextEditingController();
+    final animalNomCtrl = TextEditingController();
+    final motifCtrl     = TextEditingController();
+    final notesCtrl     = TextEditingController();
+    DateTime date = DateTime.now();
+    TimeOfDay heure = TimeOfDay.now();
+    int duree = 30;
+    bool saving = false;
+    String? error;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => Padding(
+          padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Center(child: Container(
+                  width: 36, height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+              Row(children: [
+                const Icon(Icons.event_available_outlined, color: _teal, size: 22),
+                const SizedBox(width: 8),
+                const Text('Nouveau RDV',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+              ]),
+              const SizedBox(height: 4),
+              const Text('Pour un client sans compte PetsMatch (walk-in, téléphone…). Le RDV est ajouté directement confirmé.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 18),
+              TextField(
+                controller: clientNomCtrl,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                decoration: InputDecoration(
+                  labelText: 'Nom du client *',
+                  labelStyle: const TextStyle(fontFamily: 'Galey'),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: clientTelCtrl,
+                keyboardType: TextInputType.phone,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                decoration: InputDecoration(
+                  labelText: 'Téléphone',
+                  labelStyle: const TextStyle(fontFamily: 'Galey'),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: animalNomCtrl,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                decoration: InputDecoration(
+                  labelText: 'Nom de l\'animal',
+                  labelStyle: const TextStyle(fontFamily: 'Galey'),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: motifCtrl,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                onChanged: (v) {
+                  final key = _motifToDuree[v];
+                  if (key != null && _dureesMotifs.containsKey(key)) {
+                    setModal(() => duree = _dureesMotifs[key]!);
+                  }
+                },
+                decoration: InputDecoration(
+                  labelText: 'Motif',
+                  labelStyle: const TextStyle(fontFamily: 'Galey'),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final picked = await showDatePicker(
+                        context: ctx,
+                        initialDate: date,
+                        firstDate: DateTime.now().subtract(const Duration(days: 1)),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                        builder: (c, child) => Theme(
+                          data: ThemeData.light().copyWith(colorScheme: const ColorScheme.light(primary: _teal)),
+                          child: child!,
+                        ),
+                      );
+                      if (picked != null) setModal(() => date = picked);
+                    },
+                    icon: const Icon(Icons.calendar_today_outlined, size: 16),
+                    label: Text(
+                      '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _teal, side: const BorderSide(color: _teal),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final picked = await showTimePicker(
+                        context: ctx,
+                        initialTime: heure,
+                        builder: (c, child) => Theme(
+                          data: ThemeData.light().copyWith(colorScheme: const ColorScheme.light(primary: _teal)),
+                          child: child!,
+                        ),
+                      );
+                      if (picked != null) setModal(() => heure = picked);
+                    },
+                    icon: const Icon(Icons.access_time_outlined, size: 16),
+                    label: Text(
+                      '${heure.hour.toString().padLeft(2, '0')}:${heure.minute.toString().padLeft(2, '0')}',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _teal, side: const BorderSide(color: _teal),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 10),
+              Row(children: [
+                const Text('Durée',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Wrap(
+                    spacing: 8, runSpacing: 8,
+                    children: [15, 30, 45, 60, 90].map((d) {
+                      final sel = duree == d;
+                      return GestureDetector(
+                        onTap: () => setModal(() => duree = d),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 120),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: sel ? _teal : Colors.white,
+                            border: Border.all(color: sel ? _teal : const Color(0xFFE4E7E2)),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            d < 60 ? '$d min' : '${d ~/ 60} h',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                fontWeight: sel ? FontWeight.w700 : FontWeight.normal,
+                                color: sel ? Colors.white : const Color(0xFF1E2025)),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 10),
+              TextField(
+                controller: notesCtrl,
+                maxLines: 2,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                decoration: InputDecoration(
+                  labelText: 'Notes (optionnel)',
+                  labelStyle: const TextStyle(fontFamily: 'Galey'),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+              if (error != null) ...[
+                const SizedBox(height: 10),
+                Text(error!, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.red)),
+              ],
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: saving ? null : () async {
+                    if (clientNomCtrl.text.trim().isEmpty) {
+                      setModal(() => error = 'Le nom du client est requis.');
+                      return;
+                    }
+                    setModal(() { saving = true; error = null; });
+                    final ok = await _creerRdvManuel(
+                      clientNom: clientNomCtrl.text.trim(),
+                      clientTel: clientTelCtrl.text.trim(),
+                      animalNom: animalNomCtrl.text.trim(),
+                      motif: motifCtrl.text.trim(),
+                      notes: notesCtrl.text.trim(),
+                      date: date,
+                      heure: heure,
+                      dureeMinutes: duree,
+                    );
+                    if (ok && ctx.mounted) Navigator.pop(ctx);
+                    else setModal(() { saving = false; error = 'Erreur lors de la création du RDV.'; });
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _teal, foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    elevation: 0,
+                  ),
+                  child: saving
+                      ? const SizedBox(height: 20, width: 20,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text('Créer le RDV',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                ),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _creerRdvManuel({
+    required String clientNom,
+    required String clientTel,
+    required String animalNom,
+    required String motif,
+    required String notes,
+    required DateTime date,
+    required TimeOfDay heure,
+    required int dureeMinutes,
+  }) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return false;
+    String pid = User_Info.activeProfileId;
+    if (pid.isEmpty && User_Info.availableProfiles.isNotEmpty) {
+      final proProfile = User_Info.availableProfiles.firstWhere(
+        (p) => p['profile_type'] != 'particulier',
+        orElse: () => User_Info.availableProfiles.first,
+      );
+      pid = proProfile['id']?.toString() ?? '';
+    }
+    try {
+      final dh = DateTime(date.year, date.month, date.day, heure.hour, heure.minute).toUtc();
+      await Supabase.instance.client.from('rdv').insert({
+        'pro_uid':                  uid,
+        if (pid.isNotEmpty) 'pro_profile_id': pid,
+        'client_nom_manuel':        clientNom,
+        if (clientTel.isNotEmpty) 'client_telephone_manuel': clientTel,
+        if (animalNom.isNotEmpty) 'animal_nom_manuel': animalNom,
+        'cree_par_pro':             true,
+        'date_heure':               dh.toIso8601String(),
+        'motif':                    motif.isNotEmpty ? motif : 'RDV',
+        'duree_minutes':            dureeMinutes,
+        if (notes.isNotEmpty) 'notes_client': notes,
+        'statut':                   'confirme',
+      });
+      if (mounted) await Future.wait([_loadRdvs(), _loadAujourdhui()]);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ── A60 — Auto-accès carnet santé à la confirmation du RDV ───────────────────
 
   Future<void> _autoGrantAccess(Map<String, dynamic> rdv) async {
@@ -1626,6 +1912,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                 ),
               ),
             ]),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: _teal,
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: const Text('Nouveau RDV',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Colors.white)),
+        onPressed: _showNouveauRdvDialog,
+      ),
     );
   }
 
