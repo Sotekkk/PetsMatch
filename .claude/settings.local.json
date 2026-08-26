@@ -17,10 +17,28 @@
       "Bash(mkdir -p /Users/nabilksouri/Documents/Application/PetsMatch/lib/pages/lieux)",
       "Bash(grep -n 'complet ? '\\\\''Complet'\\\\'' : '\\\\''\\\\$inscrits / \\\\$capacite' lib/pages/services/service_detail_page.dart)",
       "Bash(grep -n \"complet ? 'Complet' : \\\\`\\\\${inscrits}\" \"website/src/app/services/pro/[uid]/page.tsx\")",
-      "Bash(node \"C:\\\\Users\\\\ANGLIQ~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--dev-PetsMatch\\\\da18caeb-58a6-49fe-b0b7-a5838523a36c\\\\scratchpad\\\\backfill_agenda_pro_profile.mjs\")"
+      "Bash(node \"C:\\\\Users\\\\ANGLIQ~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--dev-PetsMatch\\\\da18caeb-58a6-49fe-b0b7-a5838523a36c\\\\scratchpad\\\\backfill_agenda_pro_profile.mjs\")",
+      "Bash(flutter clean *)",
+      "Bash(flutter pub *)",
+      "Bash(pod install *)",
+      "Bash(rm -rf ~/Library/Developer/Xcode/DerivedData && echo \"✓ DerivedData supprimé\")",
+      "Bash(git push *)",
+      "Bash(find /Users/nabilksouri/Documents/Application/PetsMatch/ios/.symlinks/plugins/permission_handler_apple -name \"*.h\" 2>/dev/null)",
+      "Read(//Users/nabilksouri/.pub-cache/hosted/pub.dev/permission_handler_apple-9.5.0/**)",
+      "Bash(ls /Users/nabilksouri/Documents/Application/PetsMatch/ios/.symlinks/plugins/permission_handler_apple/ios/)",
+      "Read(//Users/nabilksouri/.pub-cache/hosted/pub.dev/permission_handler_apple-9.5.0/ios/**)",
+      "Bash(find /Users/nabilksouri/Documents/Application/PetsMatch/ios/.symlinks/plugins/permission_handler_apple/ios/permission_handler_apple -type f | head -20)",
+      "Read(//Users/nabilksouri/.pub-cache/hosted/pub.dev/permission_handler_apple-9.5.0/ios/permission_handler_apple/**)",
+      "Bash(cat /Users/nabilksouri/Documents/Application/PetsMatch/ios/.symlinks/plugins/permission_handler_apple/ios/permission_handler_apple.podspec)",
+      "Bash(ls /Users/nabilksouri/Documents/Application/PetsMatch/ios/.symlinks/plugins/permission_handler_apple/ios/permission_handler_apple/Sources/permission_handler_apple/include/)",
+      "Read(//Users/nabilksouri/.pub-cache/hosted/pub.dev/permission_handler_apple-9.5.0/ios/permission_handler_apple/Sources/permission_handler_apple/include/**)",
+      "Bash(awk -F: '$2+0 >= 3050 && $2+0 <= 3400')",
+      "Bash(awk 'NR>=3050 && NR<=3400 && /class _|@override|Widget build/' /Users/nabilksouri/Documents/Application/PetsMatch/lib/pages/agenda/agenda_page.dart)",
+      "Bash(git -C /Users/nabilksouri/Documents/Application/PetsMatch diff lib/pages/agenda/agenda_page.dart)"
     ],
     "additionalDirectories": [
-      "/Users/nabilksouri/Documents/Application/PetsMatch/lib/pages"
+      "/Users/nabilksouri/Documents/Application/PetsMatch/lib/pages",
+      "/Users/nabilksouri/Library/Developer/Xcode/DerivedData"
     ]
   }
 }

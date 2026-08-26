@@ -6,7 +6,9 @@
       "Bash(find /Users/nabilksouri -name \"*.env*\" -maxdepth 6 2>/dev/null | grep -v node_modules | head -15)",
       "Read(//Users/nabilksouri/**)",
       "WebFetch(domain:wiki.openstreetmap.org)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(rm ios/Podfile.lock)",
+      "Bash(pod install *)"
     ]
   }
 }
