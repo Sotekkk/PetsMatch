@@ -37,6 +37,7 @@ import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_entree_sortie_page.dart';
+import 'package:PetsMatch/pages/pro/pension_mes_taches_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart';
 import 'package:PetsMatch/pages/pro/pension_factures_page.dart';
@@ -343,6 +344,16 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => const PensionEntreeSortiePage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes tâches',
+                        icon: Icons.check_circle_outline,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const PensionMesTachesPage(),
                           ));
                         },
                       ),
