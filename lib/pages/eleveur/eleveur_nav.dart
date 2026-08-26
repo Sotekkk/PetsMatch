@@ -649,12 +649,45 @@ class _EleveurNavState extends State<EleveurNav> {
                       },
                     ),
                     _DrawerItem(
+                      icon: Icons.folder_shared_outlined,
+                      label: 'Accès fiche pensionnaire',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const FichesPensionPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.event_note_outlined,
+                      label: 'Protocoles',
+                      locked: _pensionPlanCode == 'free',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => _pensionPlanCode == 'free'
+                              ? const PensionAbonnementPage()
+                              : const PlanTemplateListPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
                       icon: Icons.home_work_outlined,
-                      label: 'Logements / Chenil',
+                      label: 'Logements',
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const PensionChenilPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.event_outlined,
+                      label: 'Mon agenda',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (ctx) => AgendaPage(onBack: () => Navigator.pop(ctx)),
                         ));
                       },
                     ),
@@ -682,12 +715,15 @@ class _EleveurNavState extends State<EleveurNav> {
                       },
                     ),
                     _DrawerItem(
-                      icon: Icons.event_outlined,
-                      label: 'Mon agenda',
+                      icon: Icons.groups_outlined,
+                      label: 'Mes Employés',
+                      locked: _pensionPlanCode == 'free',
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (ctx) => AgendaPage(onBack: () => Navigator.pop(ctx)),
+                          builder: (_) => _pensionPlanCode == 'free'
+                              ? const PensionAbonnementPage()
+                              : const EmployesPage(),
                         ));
                       },
                     ),
@@ -704,50 +740,7 @@ class _EleveurNavState extends State<EleveurNav> {
                         ));
                       },
                     ),
-                    _DrawerItem(
-                      icon: Icons.groups_outlined,
-                      label: 'Mes Employés',
-                      locked: _pensionPlanCode == 'free',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => _pensionPlanCode == 'free'
-                              ? const PensionAbonnementPage()
-                              : const EmployesPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.receipt_long_outlined,
-                      label: 'Mes Factures',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PensionFacturesPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.workspace_premium_outlined,
-                      label: 'Mon abonnement',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PensionAbonnementPage(),
-                        ));
-                      },
-                    ),
-                    // Fonctionnalites app sans equivalent direct sur le site.
-                    _DrawerItem(
-                      icon: Icons.folder_shared_outlined,
-                      label: 'Fiches accessibles',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const FichesPensionPage(),
-                        ));
-                      },
-                    ),
+                    // Fonctionnalite app sans equivalent direct sur le site.
                     _DrawerItem(
                       icon: Icons.folder_outlined,
                       label: 'Documents',
@@ -758,26 +751,57 @@ class _EleveurNavState extends State<EleveurNav> {
                         ));
                       },
                     ),
+                    const Divider(height: 24),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
+                      child: Text('Administratif',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                              fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
+                    ),
                     _DrawerItem(
-                      icon: Icons.event_note_outlined,
-                      label: 'Protocoles / Tâches',
-                      locked: _pensionPlanCode == 'free',
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Facturation',
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => _pensionPlanCode == 'free'
-                              ? const PensionAbonnementPage()
-                              : const PlanTemplateListPage(),
+                          builder: (_) => const PensionFacturesPage(),
                         ));
                       },
                     ),
                     _DrawerItem(
                       icon: Icons.euro_outlined,
-                      label: 'Tarifs',
+                      label: 'Tarification',
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const PensionTarifsPage(),
+                        ));
+                      },
+                    ),
+                    const Divider(height: 24),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
+                      child: Text('Animaux perdus / trouvés',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                              fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.manage_search_outlined,
+                      label: 'Gérer mes alertes',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const MesAlertesPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.location_searching,
+                      label: 'Voir les animaux perdus',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const AnimauxPerdusPage(),
                         ));
                       },
                     ),
@@ -805,6 +829,34 @@ class _EleveurNavState extends State<EleveurNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const CommunauteHubPage(),
+                        ));
+                      },
+                    ),
+                    const Divider(height: 24),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
+                      child: Text('Mon Profil',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                              fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.person_outline,
+                      label: 'Modifier mon profil',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => ProProfileEditPage(
+                              secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.workspace_premium_outlined,
+                      label: 'Mon abonnement',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PensionAbonnementPage(),
                         ));
                       },
                     ),
@@ -1047,19 +1099,23 @@ class _EleveurNavState extends State<EleveurNav> {
                     ),
                   ],
                 ],
-                const Divider(height: 24),
-                _DrawerItem(
-                  icon: Icons.person_outline,
-                  label: 'Mon Profil',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => User_Info.isPro
-                          ? ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null)
-                          : const ProfilEleveurEditPage(),
-                    ));
-                  },
-                ),
+                // La pension a deja sa propre section "Mon Profil" ci-dessus —
+                // eviter le doublon (meme logique que sur le site).
+                if (User_Info.catPro != 'pension') ...[
+                  const Divider(height: 24),
+                  _DrawerItem(
+                    icon: Icons.person_outline,
+                    label: 'Mon Profil',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => User_Info.isPro
+                            ? ProProfileEditPage(secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null)
+                            : const ProfilEleveurEditPage(),
+                      ));
+                    },
+                  ),
+                ],
                 if (User_Info.catPro == 'restauration') ...[
                   const Divider(height: 8),
                   _DrawerItem(
