@@ -235,7 +235,27 @@ exports.sendChaleursNotifications = functions
                 body = `${em} ${nom} (${subtitle}) sera en chaleurs dans ${diff} jours.`;
             }
 
-            // Send FCM push
+            // Une tâche "chaleurs" est recréée chaque jour tant que c'est en
+            // retard (voir plus bas) — hériter l'attribution de la tâche de
+            // la veille pour ce même animal, sinon l'éleveur devrait
+            // ré-attribuer l'employé chaque jour.
+            let assigneA = null;
+            let assigneProfileId = null;
+            if (diff <= 0) {
+                try {
+                    const prevTasks = await supabaseSelect("taches_elevage",
+                        `uid_eleveur=eq.${animal.uid_eleveur}&animal_nom=eq.${encodeURIComponent(animal.nom || "")}` +
+                        `&titre=ilike.${encodeURIComponent("🌸%")}&assigne_a=not.is.null` +
+                        `&order=date.desc&limit=1`);
+                    if (Array.isArray(prevTasks) && prevTasks[0]) {
+                        assigneA = prevTasks[0].assigne_a || null;
+                        assigneProfileId = prevTasks[0].assigne_profile_id || null;
+                    }
+                } catch (_) {/* pas bloquant */}
+            }
+
+            // Send FCM push — au propriétaire, et à l'employé assigné si la
+            // tâche a été déléguée.
             const pushed = await sendPush(
                 animal.uid_eleveur,
                 title,
@@ -243,8 +263,11 @@ exports.sendChaleursNotifications = functions
                 {animalId: String(animal.id)},
             );
             if (pushed) sent++;
+            if (assigneA) {
+                await sendPush(assigneA, title, body, {animalId: String(animal.id)});
+            }
 
-            // Insert in-app notification into Supabase
+            // Insert in-app notification into Supabase — idem, propriétaire + employé assigné.
             try {
                 await supabaseInsert("notifications", [{
                     uid: animal.uid_eleveur,
@@ -259,6 +282,21 @@ exports.sendChaleursNotifications = functions
             } catch (e) {
                 console.error(`notifications insert error for animal ${animal.id}:`, e.message);
             }
+            if (assigneA) {
+                try {
+                    await supabaseInsert("notifications", [{
+                        uid: assigneA,
+                        type: "chaleur",
+                        title,
+                        body,
+                        data: {animalId: String(animal.id)},
+                        read: false,
+                        ...(assigneProfileId ? {profile_id: assigneProfileId} : {}),
+                    }]);
+                } catch (e) {
+                    console.error(`notifications insert error (assignee) for animal ${animal.id}:`, e.message);
+                }
+            }
 
             // Tâche agenda à 8h quand chaleurs aujourd'hui ou en retard
             if (diff <= 0) {
@@ -272,6 +310,8 @@ exports.sendChaleursNotifications = functions
                         statut: "a_faire",
                         profil_source: "eleveur",
                         animal_nom: animal.nom || null,
+                        ...(assigneA ? {assigne_a: assigneA} : {}),
+                        ...(assigneProfileId ? {assigne_profile_id: assigneProfileId} : {}),
                         ...(profileIdByAnimal[animal.id] ? {
                             profile_id: profileIdByAnimal[animal.id],
                             eleveur_profile_id: profileIdByAnimal[animal.id],

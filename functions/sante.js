@@ -318,10 +318,29 @@ async function sendOverdueSanteReminders() {
             const body = `${produit} pour ${nomAnimal} devait être fait il y a ${joursRetard} ` +
                 `jour${joursRetard > 1 ? "s" : ""}.`;
 
+            // Si la tâche d'origine (créée au palier j0) a depuis été
+            // attribuée à un employé, le relancer aussi tant qu'elle est en retard.
+            let assigneA = null;
+            let assigneProfileId = null;
+            try {
+                const linkedTasks = await supabaseGet(
+                    `taches_elevage?uid_eleveur=eq.${uid}&animal_nom=eq.${encodeURIComponent(nomAnimal)}` +
+                    `&titre=ilike.${encodeURIComponent(`${label}%`)}&assigne_a=not.is.null` +
+                    "&order=date.desc&limit=1&select=assigne_a,assigne_profile_id",
+                );
+                if (Array.isArray(linkedTasks) && linkedTasks[0]) {
+                    assigneA = linkedTasks[0].assigne_a || null;
+                    assigneProfileId = linkedTasks[0].assigne_profile_id || null;
+                }
+            } catch (_) {/* pas bloquant */}
+
             const pushed = await sendPush(uid, title, body, {
                 animalId: String(row.animal_id), table, overdue: true,
             });
             if (pushed) sent++;
+            if (assigneA) {
+                await sendPush(assigneA, title, body, {animalId: String(row.animal_id), table, overdue: true});
+            }
 
             try {
                 await supabaseInsert("notifications", [{
@@ -335,6 +354,21 @@ async function sendOverdueSanteReminders() {
                 }]);
             } catch (e) {
                 console.error(`notifications insert error overdue (${table} ${row.id}):`, e.message);
+            }
+            if (assigneA) {
+                try {
+                    await supabaseInsert("notifications", [{
+                        uid: assigneA,
+                        type: "sante",
+                        title,
+                        body,
+                        data: {animalId: String(row.animal_id), table, overdue: true, recordId: row.id},
+                        read: false,
+                        ...(assigneProfileId ? {profile_id: assigneProfileId} : {}),
+                    }]);
+                } catch (e) {
+                    console.error(`notifications insert error overdue assignee (${table} ${row.id}):`, e.message);
+                }
             }
 
             try {
