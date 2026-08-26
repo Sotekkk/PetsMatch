@@ -30,6 +30,10 @@ export interface PensionEntree {
 const TEAL  = '#0C5C6C';
 const GREEN = '#6E9E57';
 
+const TYPE_LABEL: Record<string, string> = {
+  box: 'Box', enclos: 'Enclos', parc: 'Parc', chatterie: 'Chatterie', cage: 'Cage',
+};
+
 export interface PensionEntreePrefill {
   animal_id?: string;
   animal_nom?: string;
@@ -72,6 +76,9 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
     seul_dans_logement:    entree?.seul_dans_logement ?? false,
   });
   const [animalId, setAnimalId] = useState<string | null | undefined>(entree?.animal_id ?? prefill?.animal_id);
+  const [logementId, setLogementId] = useState<string | null>(entree?.logement_id ?? initialLogementId ?? null);
+  const [logements, setLogements] = useState<{ id: string; nom: string; type: string; capacite: number; especes?: string[] | null }[]>([]);
+  const [occupancy, setOccupancy] = useState<Record<string, number>>({});
   const [linkingFiche, setLinkingFiche] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
@@ -80,6 +87,26 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
   const [topChip, setTopChip] = useState('');
   const [topSearching, setTopSearching] = useState(false);
   const [topNotFound, setTopNotFound] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [{ data: log }, { data: occ }] = await Promise.all([
+        supabase.from('enclos_chenil').select('id, nom, type, capacite, especes').eq('uid_eleveur', proUid).order('nom'),
+        supabase.from('pension_entrees').select('id, logement_id').eq('pro_uid', proUid).eq('statut', 'en_pension').not('logement_id', 'is', null),
+      ]);
+      if (cancelled) return;
+      setLogements(log ?? []);
+      const counts: Record<string, number> = {};
+      for (const o of occ ?? []) {
+        if (isEdit && entree && o.id === entree.id) continue; // pas soi-même
+        if (o.logement_id) counts[o.logement_id] = (counts[o.logement_id] ?? 0) + 1;
+      }
+      setOccupancy(counts);
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proUid]);
 
   async function searchTopChip() {
     if (!topChip.trim()) return;
@@ -251,7 +278,7 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
       notes:                form.notes.trim() || null,
       statut:               form.statut,
       seul_dans_logement:   form.seul_dans_logement,
-      ...(!isEdit && initialLogementId ? { logement_id: initialLogementId } : {}),
+      logement_id:          logementId,
       ...(!isEdit && animalId ? { animal_id: animalId } : {}),
     };
     const { error: err } = isEdit
@@ -442,6 +469,29 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
               Animal doit être seul dans le logement
             </span>
           </label>
+
+          {/* Logement */}
+          <p style={sec}>EMPLACEMENT</p>
+          <div style={{ marginBottom: 16 }}>
+            <label style={lbl}>Logement</label>
+            <select style={inp} value={logementId ?? ''} onChange={e => setLogementId(e.target.value || null)}>
+              <option value="">Non assigné</option>
+              {logements.map(l => {
+                const occ = occupancy[l.id] ?? 0;
+                const full = occ >= l.capacite;
+                return (
+                  <option key={l.id} value={l.id} disabled={full && l.id !== (entree?.logement_id ?? '')}>
+                    {l.nom} ({TYPE_LABEL[l.type] ?? l.type}) — {occ}/{l.capacite} place{l.capacite > 1 ? 's' : ''}{full ? ' complet' : ''}
+                  </option>
+                );
+              })}
+            </select>
+            {logements.length === 0 && (
+              <p style={{ margin: '6px 0 0', fontFamily: 'Galey, sans-serif', fontSize: 12, color: '#9ca3af' }}>
+                Aucun logement créé — <Link href="/pension/chenil" style={{ color: TEAL }}>en créer un</Link>.
+              </p>
+            )}
+          </div>
 
           {/* Propriétaire */}
           <p style={sec}>PROPRIÉTAIRE</p>

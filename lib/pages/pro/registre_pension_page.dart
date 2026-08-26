@@ -2386,6 +2386,10 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
   DateTime _dateEntree = DateTime.now();
   DateTime? _dateSortiePrevue;
   bool _seul = false;
+  String? _logementId;
+  List<Map<String, dynamic>> _logements = [];
+  Map<String, int> _occupancy = {};
+  bool _loadingLogements = true;
 
   @override
   void initState() {
@@ -2399,8 +2403,31 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
     _emailCtrl   = TextEditingController(text: widget.initialProprietaireEmail ?? '');
     _adresseCtrl = TextEditingController(text: widget.initialProprietaireAdresse ?? '');
     if (widget.initialDateEntree != null) _dateEntree = widget.initialDateEntree!;
+    _logementId = widget.initialLogementId;
+    _loadLogements();
   }
   bool _saving = false;
+
+  Future<void> _loadLogements() async {
+    try {
+      final results = await Future.wait([
+        _supa.from('enclos_chenil').select('id, nom, type, capacite, especes').eq('uid_eleveur', _uid).order('nom'),
+        _supa.from('pension_entrees').select('logement_id').eq('pro_uid', _uid).eq('statut', 'en_pension').not('logement_id', 'is', null),
+      ]);
+      final occ = <String, int>{};
+      for (final r in (results[1] as List)) {
+        final lid = (r as Map)['logement_id'] as String?;
+        if (lid != null) occ[lid] = (occ[lid] ?? 0) + 1;
+      }
+      if (mounted) setState(() {
+        _logements = List<Map<String, dynamic>>.from(results[0] as List);
+        _occupancy = occ;
+        _loadingLogements = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingLogements = false);
+    }
+  }
 
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -2471,7 +2498,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
         'proprietaire_email':   _emailCtrl.text.trim(),
         'proprietaire_adresse': _adresseCtrl.text.trim(),
         if (widget.initialPhotoUrl != null) 'photo_url': widget.initialPhotoUrl,
-        if (widget.initialLogementId != null) 'logement_id': widget.initialLogementId,
+        'logement_id': _logementId,
         'seul_dans_logement':   _seul,
         'date_entree':          DateFormat('yyyy-MM-dd').format(_dateEntree),
         if (_dateSortiePrevue != null)
@@ -2663,6 +2690,34 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
             title: const Text('Animal doit être seul dans le logement',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
           ),
+          const SizedBox(height: 8),
+
+          _lbl('Logement'),
+          _loadingLogements
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: SizedBox(width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: _teal)),
+                )
+              : DropdownButtonFormField<String?>(
+                  initialValue: _logementId,
+                  decoration: _dec('Non assigné'),
+                  items: [
+                    const DropdownMenuItem<String?>(value: null, child: Text('Non assigné', style: TextStyle(fontFamily: 'Galey'))),
+                    ..._logements.map((l) {
+                      final occ = _occupancy[l['id'] as String] ?? 0;
+                      final cap = l['capacite'] as int? ?? 1;
+                      final full = occ >= cap && l['id'] != widget.initialLogementId;
+                      return DropdownMenuItem<String?>(
+                        value: l['id'] as String,
+                        enabled: !full,
+                        child: Text('${l['nom']} ($occ/$cap places)${full ? ' — complet' : ''}',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: full ? Colors.grey : null)),
+                      );
+                    }),
+                  ],
+                  onChanged: (v) => setState(() => _logementId = v),
+                ),
           const SizedBox(height: 12),
 
           Row(children: [
