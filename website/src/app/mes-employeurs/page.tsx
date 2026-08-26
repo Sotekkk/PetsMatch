@@ -204,6 +204,7 @@ export default function MesEmployeursPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Record<string, 'animaux' | 'taches' | 'inventaire'>>({});
   const [selectedTache, setSelectedTache] = useState<Tache | null>(null);
+  const [createTacheFor, setCreateTacheFor] = useState<Employer | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/connexion');
@@ -599,6 +600,12 @@ export default function MesEmployeursPage() {
                 {/* Onglet Tâches */}
                 {activeTab === 'taches' && (
                   <div className="p-4">
+                    {emp.perms.includes('write_planning') && emp.eleveur_profile_id && (
+                      <button onClick={() => setCreateTacheFor(emp)}
+                        className="w-full mb-3 px-4 py-2.5 rounded-xl text-sm font-semibold border border-[#0C5C6C] text-[#0C5C6C] hover:bg-[#0C5C6C]/5 transition-colors">
+                        + Créer une tâche
+                      </button>
+                    )}
                     {tachesEnCours.length === 0 ? (
                       <p className="text-center text-sm text-gray-400 py-4">Aucune tâche assignée</p>
                     ) : (
@@ -683,6 +690,88 @@ export default function MesEmployeursPage() {
           onClose={() => setSelectedTache(null)}
         />
       )}
+
+      {createTacheFor && (
+        <CreateTacheModal
+          employer={createTacheFor}
+          myUid={user!.uid}
+          myProfileId={activeProfileId}
+          onClose={() => setCreateTacheFor(null)}
+          onCreated={() => { setCreateTacheFor(null); load(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Modal : l'employé se crée une tâche simple, visible par l'employeur ────────
+
+function CreateTacheModal({ employer, myUid, myProfileId, onClose, onCreated }: {
+  employer: Employer; myUid: string; myProfileId: string | null;
+  onClose: () => void; onCreated: () => void;
+}) {
+  const [titre, setTitre] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!titre.trim()) return;
+    setSaving(true);
+    try {
+      const profilSource = employer.profile_type_relation === 'association' ? 'association' : 'eleveur';
+      await supabase.from('taches_elevage').insert({
+        titre: titre.trim(),
+        date,
+        notes: notes.trim() || null,
+        statut: 'a_faire',
+        uid_eleveur: employer.uid,
+        eleveur_profile_id: employer.eleveur_profile_id,
+        profil_source: profilSource,
+        assigne_a: myUid,
+        ...(myProfileId ? { assigne_profile_id: myProfileId } : {}),
+      });
+      onCreated();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-[#1F2A2E]">Nouvelle tâche</h3>
+          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-gray-100 transition-colors">
+            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-xs text-gray-400">Visible par {employer.name_elevage || 'votre employeur'}, attribuée à vous.</p>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1.5">Titre de la tâche *</label>
+            <input value={titre} onChange={e => setTitre(e.target.value)} autoFocus
+              placeholder="Ex : Nettoyer les box"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] focus:ring-1 focus:ring-[#0C5C6C] bg-white" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1.5">Date</label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] focus:ring-1 focus:ring-[#0C5C6C] bg-white" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1.5">Notes (optionnel)</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] focus:ring-1 focus:ring-[#0C5C6C] bg-white resize-none" />
+          </div>
+          <button onClick={save} disabled={saving || !titre.trim()}
+            className="w-full bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors text-sm mt-2">
+            {saving ? 'Création…' : 'Créer la tâche'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

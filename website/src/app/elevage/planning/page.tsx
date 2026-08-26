@@ -300,6 +300,16 @@ export default function PlanningPage() {
   const [selectedDate, setSelectedDate] = useState<string>(toISODate(new Date()));
   const [loadingData, setLoadingData] = useState(true);
 
+  // Protocoles de l'élevage que CET employé est spécifiquement autorisé à
+  // appliquer (par défaut, un employé ne peut appliquer que ses propres protocoles).
+  const [authorizedTemplateIds, setAuthorizedTemplateIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!employerUid || !profileId) { setAuthorizedTemplateIds(new Set()); return; }
+    supabase.from('plan_template_autorisations').select('template_id')
+      .eq('employe_profile_id', profileId)
+      .then(({ data }) => setAuthorizedTemplateIds(new Set((data ?? []).map(r => r.template_id as string))));
+  }, [employerUid, profileId, templates]);
+
   // ── Calendrier mensuel ───────────────────────────────────────────────────────
   const [focusedMonth, setFocusedMonth] = useState<Date>(() => {
     const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d;
@@ -493,6 +503,9 @@ export default function PlanningPage() {
           templates={templates}
           canWrite={canWrite}
           ownerProfileId={targetProfileId}
+          myProfileId={profileId}
+          isEmployeeMode={!!employerUid}
+          authorizedTemplateIds={authorizedTemplateIds}
           onNew={() => { setEditingTemplate(null); setShowTemplateForm(true); }}
           onEdit={(t) => { setEditingTemplate(t); setShowTemplateForm(true); }}
           onApply={setApplyingTemplate}
@@ -854,12 +867,14 @@ function GroupedTacheCard({ groupe, onValider, onReporter, onDelete }: {
 
 // ── Vue Protocoles ────────────────────────────────────────────────────────────
 
-function ProtocolesView({ templates, canWrite = true, ownerProfileId, onNew, onEdit, onApply, onPrint, onDelete }: {
+function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileId, isEmployeeMode = false, authorizedTemplateIds, onNew, onEdit, onApply, onPrint, onDelete }: {
   templates: Template[]; canWrite?: boolean; ownerProfileId?: string | null;
+  myProfileId?: string | null; isEmployeeMode?: boolean; authorizedTemplateIds?: Set<string>;
   onNew: () => void; onEdit: (t: Template) => void;
   onApply: (t: Template) => void; onPrint: (t: Template) => void; onDelete: (id: string) => void;
 }) {
   const [creatorNames, setCreatorNames] = useState<Record<string, string>>({});
+  const [authModalTemplate, setAuthModalTemplate] = useState<Template | null>(null);
 
   useEffect(() => {
     const ids = [...new Set(templates
@@ -894,9 +909,11 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, onNew, onE
       ) : (
         <div className="space-y-4">
           {templates.map(t => {
-            const creatorName = t.created_by_profile_id && t.created_by_profile_id !== ownerProfileId
-              ? creatorNames[t.created_by_profile_id]
-              : null;
+            const isOwnerProtocol = !t.created_by_profile_id || t.created_by_profile_id === ownerProfileId;
+            const isMine = isEmployeeMode && !!myProfileId && t.created_by_profile_id === myProfileId;
+            const creatorLabel = isOwnerProtocol ? null : (isMine ? 'Vous' : creatorNames[t.created_by_profile_id!]);
+            const canEditThis = isEmployeeMode ? (canWrite && isMine) : canWrite;
+            const canApplyThis = !isEmployeeMode || isMine || !!authorizedTemplateIds?.has(t.id);
             return (
             <div key={t.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
               <div className="flex items-start gap-3">
@@ -908,8 +925,11 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, onNew, onE
                     {t.espece && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">{t.espece}</span>}
                     <span className="text-xs text-gray-400">{CIBLE_OPTIONS.find(c => c.value === t.cible_type)?.label ?? t.cible_type}</span>
                     <span className="text-xs text-gray-400">{t.plan_template_etapes?.length ?? 0} étape{(t.plan_template_etapes?.length ?? 0) > 1 ? 's' : ''}</span>
-                    {creatorName && (
-                      <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">👤 {creatorName}</span>
+                    {isEmployeeMode && isOwnerProtocol && (
+                      <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-gray-100 text-gray-500">🏠 Élevage</span>
+                    )}
+                    {creatorLabel && (
+                      <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">👤 {creatorLabel}</span>
                     )}
                   </div>
                   {t.description && <p className="text-xs text-gray-400 mt-1">{t.description}</p>}
@@ -917,22 +937,127 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, onNew, onE
                 </div>
                 <div className="flex gap-1">
                   <button onClick={() => onPrint(t)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Imprimer ce protocole">🖨️</button>
-                  {canWrite && (
+                  {!isEmployeeMode && (
+                    <button onClick={() => setAuthModalTemplate(t)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg" title="Qui peut appliquer ce protocole">🔓</button>
+                  )}
+                  {canEditThis ? (
                     <>
                       <button onClick={() => onEdit(t)} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">✏️</button>
                       <button onClick={() => onDelete(t.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg">🗑️</button>
                     </>
+                  ) : isEmployeeMode && (
+                    <span className="p-1.5 text-gray-300" title="Protocole de l'élevage — non modifiable">🔒</span>
                   )}
                 </div>
               </div>
-              <button onClick={() => onApply(t)} className="mt-4 w-full py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">
-                ▶ Appliquer ce protocole
-              </button>
+              {canApplyThis ? (
+                <button onClick={() => onApply(t)} className="mt-4 w-full py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">
+                  ▶ Appliquer ce protocole
+                </button>
+              ) : (
+                <button disabled title="Non autorisé par l'élevage à appliquer ce protocole"
+                  className="mt-4 w-full py-2 bg-gray-100 text-gray-400 rounded-xl text-sm font-semibold cursor-not-allowed flex items-center justify-center gap-1.5">
+                  🔒 Non autorisé
+                </button>
+              )}
             </div>
             );
           })}
         </div>
       )}
+
+      {authModalTemplate && ownerProfileId && (
+        <ProtocolAuthModal
+          templateId={authModalTemplate.id}
+          templateNom={authModalTemplate.nom}
+          eleveurProfileId={ownerProfileId}
+          onClose={() => setAuthModalTemplate(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Modale : qui peut APPLIQUER ce protocole ────────────────────────────────────
+
+function ProtocolAuthModal({ templateId, templateNom, eleveurProfileId, onClose }: {
+  templateId: string; templateNom: string; eleveurProfileId: string; onClose: () => void;
+}) {
+  const [employes, setEmployes] = useState<{ employe_profile_id: string; nom: string }[]>([]);
+  const [authorized, setAuthorized] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const { data: empRows } = await supabase.from('employes').select('employe_profile_id')
+        .eq('eleveur_profile_id', eleveurProfileId).eq('actif', true);
+      const ids = (empRows ?? []).map(e => e.employe_profile_id).filter((id): id is string => !!id);
+      let result: { employe_profile_id: string; nom: string }[] = [];
+      if (ids.length > 0) {
+        const { data: profs } = await supabase.from('user_profiles').select('id, firstname, lastname').in('id', ids);
+        result = ids.map(id => {
+          const p = (profs ?? []).find(pr => pr.id === id);
+          const nom = p ? `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim() : '';
+          return { employe_profile_id: id, nom: nom || 'Employé' };
+        });
+      }
+      const { data: authRows } = await supabase.from('plan_template_autorisations').select('employe_profile_id')
+        .eq('template_id', templateId);
+      setEmployes(result);
+      setAuthorized(new Set((authRows ?? []).map(r => r.employe_profile_id as string)));
+      setLoading(false);
+    })();
+  }, [templateId, eleveurProfileId]);
+
+  async function toggle(employeProfileId: string, value: boolean) {
+    setAuthorized(prev => {
+      const next = new Set(prev);
+      value ? next.add(employeProfileId) : next.delete(employeProfileId);
+      return next;
+    });
+    if (value) {
+      await supabase.from('plan_template_autorisations').insert({ template_id: templateId, employe_profile_id: employeProfileId });
+    } else {
+      await supabase.from('plan_template_autorisations').delete()
+        .eq('template_id', templateId).eq('employe_profile_id', employeProfileId);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-[#1F2A2E]">Qui peut appliquer &quot;{templateNom}&quot; ?</h3>
+          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-gray-100 transition-colors">
+            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-5 overflow-y-auto">
+          <p className="text-xs text-gray-400 mb-3">Par défaut, un employé ne peut appliquer que ses propres protocoles.</p>
+          {loading ? (
+            <p className="text-sm text-gray-400 text-center py-6">Chargement…</p>
+          ) : employes.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6">Aucun employé actif.</p>
+          ) : (
+            <div className="space-y-1">
+              {employes.map(e => {
+                const checked = authorized.has(e.employe_profile_id);
+                return (
+                  <div key={e.employe_profile_id} className="flex items-center justify-between py-2.5 border-b border-gray-50 last:border-0">
+                    <span className="text-sm text-gray-800">{e.nom}</span>
+                    <button onClick={() => toggle(e.employe_profile_id, !checked)}
+                      className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${checked ? 'bg-[#0C5C6C]' : 'bg-gray-200'}`}>
+                      <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-sm ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

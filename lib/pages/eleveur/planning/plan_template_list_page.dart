@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/services/planning_pdf_service.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_form_page.dart';
@@ -36,11 +37,16 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
 
   List<Map<String, dynamic>> _templates = [];
   Map<String, String> _creatorNames = {};
+  Set<String> _authorizedTemplateIds = {};
   bool _loading = true;
   String? _uid;
 
   bool get _isEmployeeMode => widget.employerUid != null;
   bool get _canWrite => !_isEmployeeMode || widget.employePerms.contains('write_protocoles');
+  // Profil de l'utilisateur CONNECTÉ (pas widget.employerProfileId, qui est
+  // celui de l'employeur) — sert à distinguer "mes protocoles" de ceux de
+  // l'élevage quand on agit pour un employeur.
+  String get _myProfileId => User_Info.activeProfileId;
 
   @override
   void initState() {
@@ -59,6 +65,7 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
         eleveurProfileIdOverride: widget.employerProfileId,
       );
       await _loadCreatorNames(rows);
+      await _loadAuthorizations();
       if (mounted) setState(() { _templates = rows; _loading = false; });
     } catch (_) {
       if (mounted) setState(() { _templates = []; _loading = false; });
@@ -93,6 +100,39 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
     } catch (_) {
       _creatorNames = {};
     }
+  }
+
+  // Protocoles de l'élevage que CET employé est spécifiquement autorisé à
+  // appliquer (par défaut, un employé ne peut appliquer que ses propres
+  // protocoles — voir migration_plan_template_autorisations.sql).
+  Future<void> _loadAuthorizations() async {
+    if (!_isEmployeeMode || _myProfileId.isEmpty) { _authorizedTemplateIds = {}; return; }
+    try {
+      final rows = await Supabase.instance.client
+          .from('plan_template_autorisations')
+          .select('template_id')
+          .eq('employe_profile_id', _myProfileId);
+      _authorizedTemplateIds = (rows as List).map((r) => r['template_id'] as String).toSet();
+    } catch (_) {
+      _authorizedTemplateIds = {};
+    }
+  }
+
+  Future<void> _manageAuthorizations(Map<String, dynamic> template) async {
+    final ownerProfileId = widget.employerProfileId ??
+        (User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null);
+    if (ownerProfileId == null) return;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _ProtocolAuthSheet(
+        templateId: template['id'] as String,
+        templateNom: template['nom'] as String? ?? '',
+        eleveurProfileId: ownerProfileId,
+      ),
+    );
   }
 
   Future<void> _delete(String id, String nom) async {
@@ -151,14 +191,20 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
                   itemBuilder: (_, i) {
                     final t = _templates[i];
                     final creatorProfileId = t['created_by_profile_id'] as String?;
-                    final creatorName = (creatorProfileId != null && creatorProfileId != widget.employerProfileId)
-                        ? _creatorNames[creatorProfileId]
-                        : null;
-                    final canEditThis = _canWrite;
+                    final isOwnerProtocol = creatorProfileId == null || creatorProfileId == widget.employerProfileId;
+                    final isMine = _isEmployeeMode && _myProfileId.isNotEmpty && creatorProfileId == _myProfileId;
+                    final creatorName = isOwnerProtocol
+                        ? null
+                        : (isMine ? 'Vous' : _creatorNames[creatorProfileId]);
+                    final canEditThis = _isEmployeeMode ? (_canWrite && isMine) : _canWrite;
+                    final canApply = !_isEmployeeMode || isMine || _authorizedTemplateIds.contains(t['id']);
                     return _TemplateCard(
                       template: t,
                       creatorName: creatorName,
+                      isOwnerProtocol: isOwnerProtocol,
+                      isEmployeeMode: _isEmployeeMode,
                       canWrite: canEditThis,
+                      canApply: canApply,
                       onEdit: !canEditThis ? null : () => Navigator.push(context, MaterialPageRoute(
                         builder: (_) => PlanTemplateFormPage(
                           existing: t,
@@ -169,7 +215,8 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
                       )).then((_) => _load()),
                       onDelete: !canEditThis ? null : () => _delete(t['id'] as String, t['nom'] as String),
                       onPrint: () => PlanningPdfService.printProtocole(t),
-                      onApply: () => showModalBottomSheet(
+                      onManageAuth: _isEmployeeMode ? null : () => _manageAuthorizations(t),
+                      onApply: !canApply ? null : () => showModalBottomSheet(
                         context: context,
                         isScrollControlled: true,
                         backgroundColor: Colors.white,
@@ -212,15 +259,21 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
 class _TemplateCard extends StatelessWidget {
   final Map<String, dynamic> template;
   final String? creatorName;
+  final bool isOwnerProtocol;
+  final bool isEmployeeMode;
   final bool canWrite;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
-  final VoidCallback onApply;
+  final bool canApply;
+  final VoidCallback? onApply;
   final VoidCallback onPrint;
+  final VoidCallback? onManageAuth;
 
   const _TemplateCard({
-    required this.template, this.creatorName, required this.canWrite,
+    required this.template, this.creatorName, this.isOwnerProtocol = false, this.isEmployeeMode = false,
+    required this.canWrite, this.canApply = true,
     required this.onEdit, required this.onDelete, required this.onApply, required this.onPrint,
+    this.onManageAuth,
   });
 
   static const _green = Color(0xFF0C5C6C);
@@ -294,6 +347,10 @@ class _TemplateCard extends StatelessWidget {
                           ],
                           const SizedBox(width: 6),
                           _Badge(label: '$_etapeCount étape${_etapeCount > 1 ? 's' : ''}', color: Colors.grey.shade300),
+                          if (isEmployeeMode && isOwnerProtocol) ...[
+                            const SizedBox(width: 6),
+                            _Badge(label: '🏠 Élevage', color: Colors.grey.shade500),
+                          ],
                           if (creatorName != null && creatorName!.isNotEmpty) ...[
                             const SizedBox(width: 6),
                             _Badge(label: '👤 $creatorName', color: const Color(0xFFC2740B)),
@@ -303,11 +360,20 @@ class _TemplateCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (isEmployeeMode && !canWrite)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 2),
+                    child: Tooltip(
+                      message: 'Protocole de l\'élevage — non modifiable',
+                      child: Icon(Icons.lock_outline, size: 16, color: Color(0xFFBFC5C9)),
+                    ),
+                  ),
                 PopupMenuButton<String>(
                   onSelected: (v) {
                     if (v == 'edit' && onEdit != null)   onEdit!();
                     if (v == 'delete' && onDelete != null) onDelete!();
                     if (v == 'print')  onPrint();
+                    if (v == 'auth' && onManageAuth != null) onManageAuth!();
                   },
                   itemBuilder: (_) => [
                     const PopupMenuItem(value: 'print', child: Row(children: [
@@ -315,6 +381,12 @@ class _TemplateCard extends StatelessWidget {
                       SizedBox(width: 8),
                       Text('Imprimer', style: TextStyle(fontFamily: 'Galey')),
                     ])),
+                    if (onManageAuth != null)
+                      const PopupMenuItem(value: 'auth', child: Row(children: [
+                        Icon(Icons.lock_open_outlined, size: 16, color: Color(0xFF0C5C6C)),
+                        SizedBox(width: 8),
+                        Text('Autorisations', style: TextStyle(fontFamily: 'Galey')),
+                      ])),
                     if (canWrite) ...[
                       const PopupMenuItem(value: 'edit',   child: Text('Modifier',  style: TextStyle(fontFamily: 'Galey'))),
                       const PopupMenuItem(value: 'delete', child: Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red))),
@@ -331,16 +403,30 @@ class _TemplateCard extends StatelessWidget {
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: onApply,
-                icon: const Icon(Icons.play_arrow_rounded, size: 18, color: Colors.white),
-                label: const Text('Appliquer ce protocole', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _green,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                ),
-              ),
+              child: canApply
+                  ? ElevatedButton.icon(
+                      onPressed: onApply,
+                      icon: const Icon(Icons.play_arrow_rounded, size: 18, color: Colors.white),
+                      label: const Text('Appliquer ce protocole', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _green,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                    )
+                  : Tooltip(
+                      message: 'Non autorisé par l\'élevage à appliquer ce protocole',
+                      child: ElevatedButton.icon(
+                        onPressed: null,
+                        icon: Icon(Icons.lock_outline, size: 18, color: Colors.grey.shade500),
+                        label: Text('Non autorisé', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500, fontWeight: FontWeight.w600)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey.shade200,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                      ),
+                    ),
             ),
           ],
         ),
@@ -363,6 +449,116 @@ class _Badge extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
+// ─── Sheet : gérer quels employés peuvent APPLIQUER ce protocole ──────────────
+
+class _ProtocolAuthSheet extends StatefulWidget {
+  final String templateId;
+  final String templateNom;
+  final String eleveurProfileId;
+  const _ProtocolAuthSheet({required this.templateId, required this.templateNom, required this.eleveurProfileId});
+
+  @override
+  State<_ProtocolAuthSheet> createState() => _ProtocolAuthSheetState();
+}
+
+class _ProtocolAuthSheetState extends State<_ProtocolAuthSheet> {
+  static const _green = Color(0xFF0C5C6C);
+  final _supa = Supabase.instance.client;
+  List<Map<String, dynamic>> _employes = [];
+  Set<String> _authorized = {};
+  bool _loading = true;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    try {
+      final empRows = await _supa.from('employes').select()
+          .eq('eleveur_profile_id', widget.eleveurProfileId).eq('actif', true);
+      final result = <Map<String, dynamic>>[];
+      for (final e in (empRows as List)) {
+        final employeProfileId = e['employe_profile_id'] as String?;
+        if (employeProfileId == null) continue;
+        final u = await _supa.from('user_profiles')
+            .select('firstname, lastname').eq('id', employeProfileId).maybeSingle();
+        final nom = u != null ? '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim() : 'Employé';
+        result.add({'employe_profile_id': employeProfileId, 'nom': nom.isEmpty ? 'Employé' : nom});
+      }
+      final authRows = await _supa.from('plan_template_autorisations')
+          .select('employe_profile_id').eq('template_id', widget.templateId);
+      if (mounted) setState(() {
+        _employes = result;
+        _authorized = (authRows as List).map((r) => r['employe_profile_id'] as String).toSet();
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _toggle(String employeProfileId, bool value) async {
+    setState(() => value ? _authorized.add(employeProfileId) : _authorized.remove(employeProfileId));
+    if (value) {
+      await _supa.from('plan_template_autorisations').insert({
+        'template_id': widget.templateId,
+        'employe_profile_id': employeProfileId,
+      });
+    } else {
+      await _supa.from('plan_template_autorisations').delete()
+          .eq('template_id', widget.templateId).eq('employe_profile_id', employeProfileId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Center(child: Container(width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+        const SizedBox(height: 16),
+        Text('Qui peut appliquer "${widget.templateNom}" ?',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+        const SizedBox(height: 4),
+        Text('Par défaut, un employé ne peut appliquer que ses propres protocoles.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+        const SizedBox(height: 12),
+        if (_loading)
+          const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(color: _green)))
+        else if (_employes.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text('Aucun employé actif.', style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade400)),
+          )
+        else
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: _employes.length,
+              itemBuilder: (_, i) {
+                final e = _employes[i];
+                final id = e['employe_profile_id'] as String;
+                final checked = _authorized.contains(id);
+                return SwitchListTile(
+                  value: checked,
+                  onChanged: (v) => _toggle(id, v),
+                  activeThumbColor: _green,
+                  title: Text(e['nom'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                  contentPadding: EdgeInsets.zero,
+                );
+              },
+            ),
+          ),
+      ]),
     );
   }
 }
