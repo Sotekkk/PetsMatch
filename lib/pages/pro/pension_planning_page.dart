@@ -61,8 +61,10 @@ bool _rangesOverlap(Map<String, dynamic> a, Map<String, dynamic> b) {
   final aStart = _parseDate(a['date_entree']);
   final bStart = _parseDate(b['date_entree']);
   if (aStart == null || bStart == null) return false;
-  final aEnd = _parseDate(a['date_sortie_effective']) ?? _parseDate(a['date_sortie_prevue']) ?? DateTime(2100);
-  final bEnd = _parseDate(b['date_sortie_effective']) ?? _parseDate(b['date_sortie_prevue']) ?? DateTime(2100);
+  // Seule une sortie EFFECTIVE ferme réellement l'occupation — une date
+  // prévue dépassée sans sortie effective ne libère pas la place.
+  final aEnd = _parseDate(a['date_sortie_effective']) ?? DateTime(2100);
+  final bEnd = _parseDate(b['date_sortie_effective']) ?? DateTime(2100);
   return !aStart.isAfter(bEnd) && !bStart.isAfter(aEnd);
 }
 
@@ -445,7 +447,10 @@ class _LogementRow extends StatelessWidget {
   Map<String, dynamic>? _matchFor(List<Map<String, dynamic>> list, DateTime d) {
     for (final e in list) {
       final entree = _parseDate(e['date_entree']);
-      final sortie = _parseDate(e['date_sortie_effective']) ?? _parseDate(e['date_sortie_prevue']);
+      // Seule une sortie EFFECTIVE arrête l'occupation visuelle — une date
+      // prévue dépassée sans sortie effective doit continuer à s'afficher
+      // (en "sortie en retard") plutôt que disparaître silencieusement.
+      final sortie = _parseDate(e['date_sortie_effective']);
       if (entree == null) continue;
       final startOk = !d.isBefore(DateTime(entree.year, entree.month, entree.day));
       final endOk = sortie == null || !d.isAfter(DateTime(sortie.year, sortie.month, sortie.day));
@@ -482,9 +487,23 @@ class _LogementRow extends StatelessWidget {
             borderRadius: BorderRadius.circular(4),
             border: solo != null ? Border.all(color: Colors.redAccent, width: 1.5) : null,
           ),
-          child: solo != null
-              ? const Center(child: Icon(Icons.lock_outline, size: 12, color: Colors.white))
-              : null,
+          clipBehavior: Clip.hardEdge,
+          child: Stack(children: [
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Text(
+                  match['animal_nom']?.toString() ?? '',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 8, color: Colors.white, height: 1),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+            if (solo != null)
+              const Positioned(top: 0, right: 1, child: Icon(Icons.lock_outline, size: 8, color: Colors.white)),
+          ]),
         ),
       ),
     );

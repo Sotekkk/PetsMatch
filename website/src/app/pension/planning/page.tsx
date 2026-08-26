@@ -41,8 +41,11 @@ interface Entree {
 function rangesOverlap(a: Entree, b: Entree): boolean {
   const aStart = new Date(a.date_entree);
   const bStart = new Date(b.date_entree);
-  const aEnd = a.date_sortie_effective ? new Date(a.date_sortie_effective) : (a.date_sortie_prevue ? new Date(a.date_sortie_prevue) : new Date(2100, 0, 1));
-  const bEnd = b.date_sortie_effective ? new Date(b.date_sortie_effective) : (b.date_sortie_prevue ? new Date(b.date_sortie_prevue) : new Date(2100, 0, 1));
+  // Seule une sortie EFFECTIVE ferme réellement l'occupation — une date
+  // prévue dépassée sans sortie effective ne libère pas la place (doit
+  // rester "sortie en retard", pas se faire remplacer silencieusement).
+  const aEnd = a.date_sortie_effective ? new Date(a.date_sortie_effective) : new Date(2100, 0, 1);
+  const bEnd = b.date_sortie_effective ? new Date(b.date_sortie_effective) : new Date(2100, 0, 1);
   return aStart <= bEnd && bStart <= aEnd;
 }
 
@@ -214,8 +217,13 @@ function PensionPlanningPageInner() {
       const start = new Date(e.date_entree);
       const startOnly = new Date(start.getFullYear(), start.getMonth(), start.getDate());
       if (dayOnly < startOnly) continue;
-      const end = e.date_sortie_effective ? new Date(e.date_sortie_effective) : (e.date_sortie_prevue ? new Date(e.date_sortie_prevue) : null);
-      if (end) {
+      // Seule une sortie EFFECTIVE arrête l'occupation visuelle — une date
+      // prévue dépassée sans sortie effective doit continuer à s'afficher
+      // (en "sortie en retard", cf. computeStatut) plutôt que disparaître
+      // silencieusement du planning en laissant le logement compté occupé
+      // sans qu'aucun occupant n'y soit visible.
+      if (e.date_sortie_effective) {
+        const end = new Date(e.date_sortie_effective);
         const endOnly = new Date(end.getFullYear(), end.getMonth(), end.getDate());
         if (dayOnly > endOnly) continue;
       }
@@ -317,10 +325,13 @@ function PensionPlanningPageInner() {
                                   <button
                                     onClick={() => readOnly ? setReadOnlyEntree(e) : setEditingEntree(e)}
                                     title={e.animal_nom}
-                                    className="w-full h-6 rounded relative"
+                                    className="w-full h-6 rounded relative flex items-center justify-center overflow-hidden px-0.5"
                                     style={{ backgroundColor: STATUT_COLOR[st], border: solo ? '1.5px solid #ef4444' : undefined }}
                                   >
-                                    {solo && <span className="absolute inset-0 flex items-center justify-center text-[9px] text-white">🔒</span>}
+                                    <span className="text-[9px] leading-none text-white font-galey font-semibold truncate">
+                                      {e.animal_nom}
+                                    </span>
+                                    {solo && <span className="absolute top-0 right-0.5 text-[8px] leading-none">🔒</span>}
                                   </button>
                                 ) : readOnly ? (
                                   <div className="w-full h-6" />
