@@ -270,6 +270,19 @@ class _EleveurNavState extends State<EleveurNav> {
                         },
                       ),
                       _DrawerSubItem(
+                        label: 'Suivi sanitaire',
+                        icon: Icons.health_and_safety_outlined,
+                        locked: _pensionPlanCode == 'free',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => _pensionPlanCode == 'free'
+                                ? const PensionAbonnementPage()
+                                : const RegistreSanitairePage(isPension: true),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
                         label: 'Logements',
                         icon: Icons.home_work_outlined,
                         onTap: () {
