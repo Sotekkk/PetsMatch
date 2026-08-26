@@ -429,7 +429,7 @@ function AttributionModal({ tache, employes, currentUid, onClose, onSaved }: {
         {employes.length === 0 ? (
           <div className="px-5 py-8 text-center text-sm text-gray-400">
             Aucun employé actif.<br />
-            <a href="/employes" className="text-teal-600 underline mt-1 inline-block">Gérer les employés →</a>
+            <a href="/elevage/employes" className="text-teal-600 underline mt-1 inline-block">Gérer les employés →</a>
           </div>
         ) : (
           <div className="overflow-y-auto max-h-64 py-2">

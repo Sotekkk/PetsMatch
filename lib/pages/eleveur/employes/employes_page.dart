@@ -66,6 +66,24 @@ const _structureLabels = <String, String>{
 
 String _structureLabelFor(String catPro) => _structureLabels[catPro] ?? 'un élevage';
 
+/// Résout le profile_id du profil propriétaire (éleveur, association, pension…)
+/// de façon déterministe à partir du contexte de la page, plutôt que de faire
+/// confiance à `User_Info.activeProfileId` qui peut être périmé (bug constaté :
+/// un employé ajouté depuis le profil association se retrouvait rattaché au
+/// profil éleveur du même compte car activeProfileId n'avait pas encore été
+/// mis à jour après le dernier switch de profil).
+Future<String?> _resolveOwnerProfileId(SupabaseClient supa, String uid, bool isAssociation) =>
+    _resolveProfileIdByType(supa, uid, isAssociation ? 'association' : 'eleveur');
+
+Future<String?> _resolveProfileIdByType(SupabaseClient supa, String uid, String profileType) async {
+  final data = await supa.from('user_profiles')
+      .select('id')
+      .eq('uid', uid)
+      .eq('profile_type', profileType)
+      .maybeSingle();
+  return data?['id'] as String?;
+}
+
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 class EmployesPage extends StatefulWidget {
@@ -174,16 +192,10 @@ class _EmployesTabState extends State<_EmployesTab> {
           ? profile!['nom'] as String
           : '${profile?['firstname'] ?? ''} ${profile?['lastname'] ?? ''}'.trim();
 
-      // Résoudre le profile_id de l'employeur — le profil ACTIF, pas le
-      // profil "is_main" du compte (sinon la liste affiche les employés
-      // d'un AUTRE profil non-association du même compte, ex. éleveur
-      // vu depuis le profil éducateur).
-      String? eleveurProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
-      if (eleveurProfileId == null) {
-        final eleveurProfileData = await _supa.from('user_profiles')
-            .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
-        eleveurProfileId = eleveurProfileData?['id'] as String?;
-      }
+      // Résoudre le profile_id de l'employeur à partir du contexte de la page
+      // (widget.isAssociation), pas de User_Info.activeProfileId qui peut être
+      // périmé — voir _resolveOwnerProfileId.
+      final eleveurProfileId = await _resolveOwnerProfileId(_supa, _uid, widget.isAssociation);
 
       dynamic rows;
       if (eleveurProfileId != null) {
@@ -370,12 +382,21 @@ class _EmployesTabState extends State<_EmployesTab> {
                         ? '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim()
                         : (manuelNom.isNotEmpty ? manuelNom : 'Utilisateur inconnu');
                     final photoUrl = u?['avatar_url'] as String?;
+                    final employeUid = (e['user'] as Map<String, dynamic>?)?['uid'] as String? ?? e['uid_employe'] as String?;
+                    final employeProfileId = e['employe_profile_id'] as String?;
                     return _EmployeCard(
                       nom: nom, photoUrl: photoUrl,
                       teal: widget.teal, dark: widget.dark,
                       employeId: e['id'].toString(),
                       onRevoquer: () => _revoquer(e['id'].toString(), nom, (e['user'] as Map<String, dynamic>?)?['uid'] as String?, e['employe_profile_id'] as String?),
                       onPermissionsChanged: _load,
+                      onTap: (employeUid == null && employeProfileId == null) ? null : () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => _EmployeAgendaPage(
+                          nom: nom, teal: widget.teal, dark: widget.dark, bg: widget.bg,
+                          isAssociation: widget.isAssociation,
+                          employeUid: employeUid, employeProfileId: employeProfileId,
+                        ),
+                      )),
                     );
                   },
                 ),
@@ -386,16 +407,20 @@ class _EmployesTabState extends State<_EmployesTab> {
 class _EmployeCard extends StatelessWidget {
   const _EmployeCard({required this.nom, required this.photoUrl,
       required this.teal, required this.dark, required this.onRevoquer,
-      required this.employeId, required this.onPermissionsChanged});
+      required this.employeId, required this.onPermissionsChanged,
+      this.onTap});
   final String nom, employeId;
   final String? photoUrl;
   final Color teal, dark;
   final VoidCallback onRevoquer;
   final VoidCallback onPermissionsChanged;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
@@ -439,6 +464,41 @@ class _EmployeCard extends StatelessWidget {
               color: Colors.red, fontWeight: FontWeight.w600)),
         ),
       ]),
+      ),
+    );
+  }
+}
+
+// ─── Agenda d'un employé (côté employeur) ────────────────────────────────────
+// Tâches données à cet employé (manuelles) + tâches qu'il a lui-même créées
+// via ses protocoles (auto-attribuées), le tout scopé à cette activité.
+
+class _EmployeAgendaPage extends StatelessWidget {
+  final String nom;
+  final Color teal, dark, bg;
+  final bool isAssociation;
+  final String? employeUid;
+  final String? employeProfileId;
+  const _EmployeAgendaPage({
+    required this.nom, required this.teal, required this.dark, required this.bg,
+    required this.isAssociation, this.employeUid, this.employeProfileId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: bg,
+      appBar: AppBar(
+        backgroundColor: teal,
+        foregroundColor: Colors.white,
+        title: Text('Agenda · $nom', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      ),
+      body: _TachesTab(
+        green: teal, teal: teal, dark: dark, bg: bg,
+        isAssociation: isAssociation,
+        filterEmployeUid: employeUid,
+        filterEmployeProfileId: employeProfileId,
+      ),
     );
   }
 }
@@ -673,17 +733,10 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
     final employeProfileId = user['_profile_id'] as String?;
     final profilSource = widget.isAssociation ? 'association' : 'eleveur';
 
-    // Résoudre le profile_id de l'employeur — le profil ACTIF, pas le profil
-    // "is_main" du compte : sinon un employé ajouté depuis le profil
-    // éducateur/pension se retrouve rattaché au profil éleveur du même
-    // compte (bug constaté : un employé de l'éleveur comptait dans la
-    // limite du forfait éducateur).
-    var eleveurProfileId = User_Info.activeProfileId;
-    if (eleveurProfileId.isEmpty) {
-      final eleveurProfileData = await _supa.from('user_profiles')
-          .select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
-      eleveurProfileId = eleveurProfileData?['id'] as String? ?? '';
-    }
+    // Résoudre le profile_id de l'employeur à partir du contexte de la page
+    // (widget.isAssociation), pas de User_Info.activeProfileId qui peut être
+    // périmé — voir _resolveOwnerProfileId.
+    final eleveurProfileId = await _resolveOwnerProfileId(_supa, widget.uid, widget.isAssociation) ?? '';
 
     // Cherche uniquement dans le profil courant (élevage OU association, pas les deux)
     var q = _supa.from('employes').select()
@@ -898,12 +951,7 @@ class _AddEmployeManuelSheetState extends State<AddEmployeManuelSheet> {
     if (_prenomCtrl.text.trim().isEmpty || _nomCtrl.text.trim().isEmpty) return;
     setState(() => _saving = true);
     try {
-      var eleveurProfileId = User_Info.activeProfileId;
-      if (eleveurProfileId.isEmpty) {
-        final data = await _supa.from('user_profiles')
-            .select('id').eq('uid', widget.uid).eq('is_main', true).maybeSingle();
-        eleveurProfileId = data?['id'] as String? ?? '';
-      }
+      final eleveurProfileId = await _resolveProfileIdByType(_supa, widget.uid, widget.profilSource) ?? '';
       await _supa.from('employes').insert({
         'uid_eleveur': widget.uid,
         if (eleveurProfileId.isNotEmpty) 'eleveur_profile_id': eleveurProfileId,
@@ -988,8 +1036,12 @@ class _AddEmployeManuelSheetState extends State<AddEmployeManuelSheet> {
 class _TachesTab extends StatefulWidget {
   final Color green, teal, dark, bg;
   final bool isAssociation;
+  // Filtre optionnel : n'affiche que les tâches attribuées à cet employé
+  // précis (vue "planning de l'employé" depuis la fiche employeur).
+  final String? filterEmployeUid;
+  final String? filterEmployeProfileId;
   const _TachesTab({required this.green, required this.teal, required this.dark, required this.bg,
-      this.isAssociation = false});
+      this.isAssociation = false, this.filterEmployeUid, this.filterEmployeProfileId});
   @override
   State<_TachesTab> createState() => _TachesTabState();
 }
@@ -1060,15 +1112,13 @@ class _TachesTabState extends State<_TachesTab> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      // Résoudre le profile_id de l'employeur — le profil ACTIF, pas le
-      // profil "is_main" du compte (voir _EmployesTabState._load pour le
-      // même correctif et son explication).
-      String? eleveurProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
-      if (eleveurProfileId == null) {
-        final eleveurProfileData = await _supa.from('user_profiles')
-            .select('id').eq('uid', _uid).eq('is_main', true).maybeSingle();
-        eleveurProfileId = eleveurProfileData?['id'] as String?;
-      }
+      // Résoudre le profile_id de l'employeur à partir du contexte de la page
+      // (widget.isAssociation), pas de User_Info.activeProfileId qui peut être
+      // périmé — voir _resolveOwnerProfileId.
+      final eleveurProfileId = await _resolveOwnerProfileId(_supa, _uid, widget.isAssociation);
+      debugPrint('DEBUG_TACHES uid=$_uid isAssociation=${widget.isAssociation} '
+          'filterEmployeUid=${widget.filterEmployeUid} filterEmployeProfileId=${widget.filterEmployeProfileId} '
+          'eleveurProfileId=$eleveurProfileId');
 
       dynamic tachesQ = _supa.from('taches_elevage').select();
       tachesQ = eleveurProfileId != null
@@ -1079,7 +1129,13 @@ class _TachesTabState extends State<_TachesTab> {
       } else {
         tachesQ = tachesQ.or('profil_source.is.null,profil_source.eq.eleveur');
       }
-      final tachesRaw = await tachesQ.order('date');
+      if (widget.filterEmployeProfileId != null) {
+        tachesQ = tachesQ.eq('assigne_profile_id', widget.filterEmployeProfileId!);
+      } else if (widget.filterEmployeUid != null) {
+        tachesQ = tachesQ.eq('assigne_a', widget.filterEmployeUid!);
+      }
+      final tachesRaw = (await tachesQ.order('date')) as List<dynamic>;
+      debugPrint('DEBUG_TACHES tachesRaw.length=${tachesRaw.length}');
 
       dynamic empsQ = _supa.from('employes').select().eq('actif', true);
       empsQ = eleveurProfileId != null
@@ -1090,7 +1146,7 @@ class _TachesTabState extends State<_TachesTab> {
       } else {
         empsQ = empsQ.or('profil_source.is.null,profil_source.eq.eleveur');
       }
-      final empsRaw = await empsQ;
+      final empsRaw = (await empsQ) as List<dynamic>;
 
       final animauxRaw = await _supa
           .from('animaux')
@@ -1134,7 +1190,8 @@ class _TachesTabState extends State<_TachesTab> {
 
       final taches = tachesRaw.map<Map<String, dynamic>>((t) {
         final assigneNom = t['assigne_a'] != null ? (uidToNom[t['assigne_a']] ?? 'Employé') : null;
-        final animalNom = t['animal_id'] != null ? animalNoms[t['animal_id'].toString()] : null;
+        final animalNom = (t['animal_nom'] as String?) ??
+            (t['animal_id'] != null ? animalNoms[t['animal_id'].toString()] : null);
         final animauxIds = (t['animaux_ids'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
         final resolvedAnimalNoms = animauxIds.map((id) => animalNoms[id] ?? id).toList();
         return {...t, 'assigne_nom': assigneNom, 'animal_nom': animalNom, 'animal_noms': resolvedAnimalNoms};
@@ -1153,28 +1210,35 @@ class _TachesTabState extends State<_TachesTab> {
             .substring(0, 10);
 
         final profilFilter = widget.isAssociation ? 'association' : 'eleveur';
-        final results = await Future.wait([
+
+        dynamic aFaireQ = _supa
+            .from('plan_taches')
+            .select('id, label, date_prevue, statut, assigned_to, assigned_profile_id, uid_eleveur, type_acte, animal_id, etape_id, portee_id, plan_id')
+            .eq('uid_eleveur', _uid)
+            .eq('profil_source', profilFilter)
+            .not('statut', 'eq', 'fait')
+            .gte('date_prevue', pastStr)
+            .lte('date_prevue', futureStr);
+        dynamic faitesQ = _supa
+            .from('plan_taches')
+            .select('id, label, date_prevue, statut, assigned_to, assigned_profile_id, uid_eleveur, type_acte, animal_id, etape_id, portee_id, plan_id')
+            .eq('uid_eleveur', _uid)
+            .eq('profil_source', profilFilter)
+            .eq('statut', 'fait')
+            .gte('date_prevue', pastStr);
+        if (widget.filterEmployeProfileId != null) {
+          aFaireQ = aFaireQ.eq('assigned_profile_id', widget.filterEmployeProfileId!);
+          faitesQ = faitesQ.eq('assigned_profile_id', widget.filterEmployeProfileId!);
+        } else if (widget.filterEmployeUid != null) {
+          aFaireQ = aFaireQ.eq('assigned_to', widget.filterEmployeUid!);
+          faitesQ = faitesQ.eq('assigned_to', widget.filterEmployeUid!);
+        }
+
+        final results = await Future.wait<dynamic>([
           // À faire : fenêtre [J-7 ; J+90], non-faites — évite le plafond 1000 lignes
-          _supa
-              .from('plan_taches')
-              .select('id, label, date_prevue, statut, assigned_to, uid_eleveur, type_acte, animal_id, etape_id, portee_id, plan_id')
-              .eq('uid_eleveur', _uid)
-              .eq('profil_source', profilFilter)
-              .not('statut', 'eq', 'fait')
-              .gte('date_prevue', pastStr)
-              .lte('date_prevue', futureStr)
-              .order('date_prevue')
-              .limit(5000),
+          aFaireQ.order('date_prevue').limit(5000) as Future<dynamic>,
           // Terminées : 30 derniers jours
-          _supa
-              .from('plan_taches')
-              .select('id, label, date_prevue, statut, assigned_to, uid_eleveur, type_acte, animal_id, etape_id, portee_id, plan_id')
-              .eq('uid_eleveur', _uid)
-              .eq('profil_source', profilFilter)
-              .eq('statut', 'fait')
-              .gte('date_prevue', pastStr)
-              .order('date_prevue', ascending: false)
-              .limit(500),
+          faitesQ.order('date_prevue', ascending: false).limit(500) as Future<dynamic>,
         ]);
 
         final seen = <String>{};
@@ -1212,7 +1276,9 @@ class _TachesTabState extends State<_TachesTab> {
         _animaux    = List<Map<String, dynamic>>.from(animauxRaw);
         _loading    = false;
       });
-    } catch (e) {
+      debugPrint('DEBUG_TACHES OK _taches.length=${_taches.length} _planTaches.length=${_planTaches.length}');
+    } catch (e, st) {
+      debugPrint('DEBUG_TACHES EXCEPTION $e\n$st');
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -3190,6 +3256,21 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                               ),
                             ));
                           },
+                          onCreateTacheTap: () {
+                            final relType = u['profile_type_relation'] as String?;
+                            final profilSource = relType == 'association' ? 'association' : 'eleveur';
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (_) => _CreateTacheEmployeSheet(
+                                employerUid: uid,
+                                employerProfileId: eleveurProfileId,
+                                profilSource: profilSource,
+                                teal: _teal, dark: _dark,
+                              ),
+                            ).then((created) { if (created == true) _load(); });
+                          },
                         );
                       },
                     ),
@@ -3213,6 +3294,7 @@ class _EmployeurExpandedCard extends StatelessWidget {
   final void Function(Map<String, dynamic>) onAnimalTap;
   final VoidCallback onPlanningTap;
   final VoidCallback onProtocolesTap;
+  final VoidCallback onCreateTacheTap;
 
   const _EmployeurExpandedCard({
     required this.uid, required this.nom, required this.photo,
@@ -3221,6 +3303,7 @@ class _EmployeurExpandedCard extends StatelessWidget {
     required this.animaux, required this.taches,
     required this.onTabChange, required this.onVoirProfil, required this.onMarquerFait,
     required this.onAnimalTap, required this.onPlanningTap, required this.onProtocolesTap,
+    required this.onCreateTacheTap,
   });
 
   @override
@@ -3356,14 +3439,44 @@ class _EmployeurExpandedCard extends StatelessWidget {
   }
 
   Widget _buildTaches(BuildContext context) {
+    final canCreateProtocole = perms.contains('write_protocoles');
+    final canCreateTache = perms.contains('write_planning');
+    final actionButtons = (!canCreateProtocole && !canCreateTache) ? null : Padding(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+      child: Row(children: [
+        if (canCreateTache) Expanded(
+          child: OutlinedButton.icon(
+            onPressed: onCreateTacheTap,
+            icon: Icon(Icons.add_task, size: 16, color: teal),
+            label: Text('Créer une tâche', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: teal)),
+            style: OutlinedButton.styleFrom(side: BorderSide(color: teal), padding: const EdgeInsets.symmetric(vertical: 10)),
+          ),
+        ),
+        if (canCreateTache && canCreateProtocole) const SizedBox(width: 8),
+        if (canCreateProtocole) Expanded(
+          child: OutlinedButton.icon(
+            onPressed: onProtocolesTap,
+            icon: Icon(Icons.event_note_outlined, size: 16, color: teal),
+            label: Text('Protocole', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: teal)),
+            style: OutlinedButton.styleFrom(side: BorderSide(color: teal), padding: const EdgeInsets.symmetric(vertical: 10)),
+          ),
+        ),
+      ]),
+    );
+
     if (taches.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.all(16),
-        child: Center(child: Text('Aucune tâche assignée',
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade400))),
-      );
+      return Column(children: [
+        if (actionButtons != null) actionButtons,
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Center(child: Text('Aucune tâche assignée',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade400))),
+        ),
+      ]);
     }
-    return ListView.builder(
+    return Column(children: [
+      if (actionButtons != null) actionButtons,
+      ListView.builder(
       shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.all(10),
       itemCount: taches.length,
@@ -3421,7 +3534,8 @@ class _EmployeurExpandedCard extends StatelessWidget {
           ),
         );
       },
-    );
+      ),
+    ]);
   }
 
   Widget _buildInventaire(BuildContext context) {
@@ -3454,6 +3568,147 @@ class _EmployeurExpandedCard extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Icon(Icons.arrow_forward_ios, size: 14, color: teal),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Sheet : l'employé se crée une tâche simple, visible par l'employeur ───────
+
+class _CreateTacheEmployeSheet extends StatefulWidget {
+  final String employerUid;
+  final String employerProfileId;
+  final String profilSource;
+  final Color teal, dark;
+  const _CreateTacheEmployeSheet({
+    required this.employerUid, required this.employerProfileId, required this.profilSource,
+    required this.teal, required this.dark,
+  });
+  @override
+  State<_CreateTacheEmployeSheet> createState() => _CreateTacheEmployeSheetState();
+}
+
+class _CreateTacheEmployeSheetState extends State<_CreateTacheEmployeSheet> {
+  final _supa = Supabase.instance.client;
+  final _titreCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
+  DateTime _date = DateTime.now();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _titreCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_titreCtrl.text.trim().isEmpty) return;
+    setState(() => _saving = true);
+    try {
+      final myUid = FirebaseAuth.instance.currentUser!.uid;
+      final myProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+      await _supa.from('taches_elevage').insert({
+        'titre': _titreCtrl.text.trim(),
+        'date': _date.toIso8601String().split('T').first,
+        'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+        'statut': 'a_faire',
+        'uid_eleveur': widget.employerUid,
+        'eleveur_profile_id': widget.employerProfileId,
+        'profil_source': widget.profilSource,
+        'assigne_a': myUid,
+        if (myProfileId != null) 'assigne_profile_id': myProfileId,
+      });
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 16),
+            Text('Nouvelle tâche',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: widget.dark)),
+            const SizedBox(height: 4),
+            Text('Visible par votre employeur, attribuée à vous.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _titreCtrl,
+              decoration: InputDecoration(
+                labelText: 'Titre de la tâche *',
+                labelStyle: const TextStyle(fontFamily: 'Galey'),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              style: const TextStyle(fontFamily: 'Galey'),
+            ),
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: () async {
+                final p = await showDatePicker(
+                  context: context, initialDate: _date,
+                  firstDate: DateTime.now().subtract(const Duration(days: 30)),
+                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                  builder: (ctx, child) => Theme(
+                    data: Theme.of(ctx).copyWith(colorScheme: ColorScheme.light(primary: widget.teal)),
+                    child: child!,
+                  ),
+                );
+                if (p != null) setState(() => _date = p);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(12)),
+                child: Row(children: [
+                  Icon(Icons.calendar_today_outlined, size: 16, color: widget.teal),
+                  const SizedBox(width: 10),
+                  Text('${_date.day.toString().padLeft(2, '0')}/${_date.month.toString().padLeft(2, '0')}/${_date.year}',
+                      style: const TextStyle(fontFamily: 'Galey')),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _notesCtrl,
+              maxLines: 2,
+              decoration: InputDecoration(
+                labelText: 'Notes (optionnel)',
+                labelStyle: const TextStyle(fontFamily: 'Galey'),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              style: const TextStyle(fontFamily: 'Galey'),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _saving ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: widget.teal,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Text(_saving ? 'Création…' : 'Créer la tâche',
+                    style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w600)),
+              ),
+            ),
           ]),
         ),
       ),

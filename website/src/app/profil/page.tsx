@@ -2324,7 +2324,7 @@ export default function ProfilPage() {
 
       {/* Employés — visible pour éleveurs, pros et associations */}
       {(isEleveur || userData?.isPro || userData?.isAssociation) && (
-        <Link href="/employes"
+        <Link href="/elevage/employes"
           className="flex items-center gap-4 bg-white border border-gray-100 shadow-sm rounded-2xl px-5 py-4 hover:shadow-md transition-shadow mb-5">
           <div className="w-10 h-10 rounded-xl bg-[#E8F4F6] flex items-center justify-center flex-shrink-0">
             <svg className="w-5 h-5 text-[#0C5C6C]" fill="none" stroke="currentColor" viewBox="0 0 24 24">

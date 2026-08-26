@@ -15,6 +15,7 @@ interface TacheManuelle {
   statut: string;
   assigne_a?: string | null;
   notes?: string | null;
+  animal_nom?: string | null;
   assigne_nom?: string;
 }
 
@@ -114,6 +115,10 @@ export default function EmployesPage() {
   const [permsData, setPermsData] = useState<Set<string>>(new Set());
   const [permsLoading, setPermsLoading] = useState(false);
   const [permsSaving, setPermsSaving] = useState(false);
+  const [filterEmployeeUid, setFilterEmployeeUid] = useState<string | null>(null);
+  const [filterEmployeeNom, setFilterEmployeeNom] = useState<string>('');
+  const [showAdd, setShowAdd] = useState(false);
+  const [tacheModal, setTacheModal] = useState<{ mode: 'create' } | { mode: 'edit'; tache: TacheManuelle } | null>(null);
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
 
@@ -152,7 +157,7 @@ export default function EmployesPage() {
       setEmployes(empsData);
 
       // Tâches manuelles
-      let tmQ = supabase.from('taches_elevage').select('id,titre,date,statut,assigne_a,notes').order('date');
+      let tmQ = supabase.from('taches_elevage').select('id,titre,date,statut,assigne_a,notes,animal_nom').order('date');
       if (profileId) {
         tmQ = tmQ.eq('eleveur_profile_id', profileId) as typeof tmQ;
       } else {
@@ -189,6 +194,19 @@ export default function EmployesPage() {
   }, [user, profileId, profileLoaded]);
 
   useEffect(() => { if (user) load(); }, [user, load]);
+
+  const revoquer = useCallback(async (e: Employe) => {
+    await supabase.from('employes').update({ actif: false }).eq('id', e.id);
+    await supabase.from('notifications').insert({
+      uid: e.uid_employe, type: 'employee_revoked',
+      title: 'Accès retiré',
+      body: 'Vous avez été retiré de l\'équipe',
+      ...(e.employeProfileId ? { profile_id: e.employeProfileId } : {}),
+      data: { eleveurUid: user?.uid },
+      read: false,
+    });
+    load();
+  }, [user, load]);
 
   const openPerms = useCallback(async (e: Employe) => {
     setPermsModal(e);
@@ -272,12 +290,19 @@ export default function EmployesPage() {
 
   // ── Grouper et filtrer ─────────────────────────────────────────────────────
   const groupes = groupProtos(planTaches);
-  const groupesAffichees = showDone
+  let groupesAffichees = showDone
     ? groupes.filter(g => g.items.every(t => t.statut === 'fait'))
     : groupes.filter(g => g.items.some(t => t.statut !== 'fait'));
-  const tachesMFiltrees = showDone
+  let tachesMFiltrees = showDone
     ? tachesM.filter(t => t.statut === 'fait')
     : tachesM.filter(t => t.statut !== 'fait');
+  // Filtre "agenda d'un employé précis" (clic depuis l'onglet Employés) :
+  // les tâches qu'on lui a données (manuelles) + celles qu'il a via ses
+  // propres protocoles (auto-attribuées).
+  if (filterEmployeeUid) {
+    groupesAffichees = groupesAffichees.filter(g => g.items.some(t => t.assigned_to === filterEmployeeUid));
+    tachesMFiltrees = tachesMFiltrees.filter(t => t.assigne_a === filterEmployeeUid);
+  }
 
   // Regrouper par date pour les sections
   const allByDate = new Map<string, { protos: ProtoGroupe[]; manuelles: TacheManuelle[] }>();
@@ -325,7 +350,9 @@ export default function EmployesPage() {
               <p>Aucun employé dans votre élevage</p>
             </div>
           ) : employes.map(e => (
-            <div key={e.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-3">
+            <div key={e.id}
+              onClick={() => { setFilterEmployeeUid(e.uid_employe); setFilterEmployeeNom(e.nom); setTab('taches'); }}
+              className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex items-center gap-3 cursor-pointer hover:border-teal-200 transition-colors">
               <div className="w-10 h-10 rounded-full bg-teal-50 flex items-center justify-center flex-shrink-0 overflow-hidden">
                 {e.photo
                   ? <img src={e.photo} alt={e.nom} className="w-full h-full object-cover" />
@@ -333,8 +360,9 @@ export default function EmployesPage() {
                 }
               </div>
               <span className="flex-1 font-semibold text-gray-800 text-sm">{e.nom}</span>
+              <span className="text-xs text-teal-600 font-semibold hidden sm:inline">📅 Voir l&apos;agenda</span>
               <button
-                onClick={() => openPerms(e)}
+                onClick={(ev) => { ev.stopPropagation(); openPerms(e); }}
                 title="Gérer les accès"
                 className="p-2 rounded-xl hover:bg-teal-50 text-gray-400 hover:text-teal-600 transition-colors"
               >
@@ -344,14 +372,39 @@ export default function EmployesPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </button>
+              <button
+                onClick={(ev) => { ev.stopPropagation(); setConfirmDelete({ label: `Retirer ${e.nom} de votre équipe ?`, onConfirm: () => revoquer(e) }); }}
+                title="Révoquer"
+                className="text-xs text-red-500 hover:text-red-700 font-semibold px-2 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
+              >
+                Révoquer
+              </button>
             </div>
           ))}
+          <button onClick={() => setShowAdd(true)}
+            className="w-full flex items-center justify-center gap-2 bg-teal-600 text-white font-semibold py-3 rounded-xl hover:bg-teal-700 transition-colors text-sm">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Ajouter un employé
+          </button>
         </div>
 
       ) : (
 
         // ── Onglet Tâches ───────────────────────────────────────────────────
         <div>
+          {filterEmployeeUid && (
+            <div className="flex items-center gap-2 mb-4 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2">
+              <span className="text-sm text-teal-700 font-semibold">📅 Agenda de {filterEmployeeNom}</span>
+              <button
+                onClick={() => { setFilterEmployeeUid(null); setFilterEmployeeNom(''); }}
+                className="ml-auto text-xs font-semibold text-teal-700 hover:underline"
+              >
+                ✕ Voir toutes les tâches
+              </button>
+            </div>
+          )}
           {/* Filtres */}
           <div className="flex gap-2 mb-5">
             {[{ label: 'À faire', done: false }, { label: 'Terminées', done: true }].map(f => (
@@ -364,6 +417,10 @@ export default function EmployesPage() {
                 {f.label}
               </button>
             ))}
+            <button onClick={() => setTacheModal({ mode: 'create' })}
+              className="ml-auto px-4 py-1.5 rounded-full text-xs font-semibold bg-teal-600 text-white hover:bg-teal-700 transition-colors">
+              + Nouvelle tâche
+            </button>
           </div>
 
           {sortedDates.length === 0 ? (
@@ -454,14 +511,20 @@ export default function EmployesPage() {
                         >
                           {isDone && <span className="text-white text-xs font-bold leading-none">✓</span>}
                         </button>
-                        <div className="flex-1 min-w-0">
+                        <button
+                          onClick={() => setTacheModal({ mode: 'edit', tache: t })}
+                          className="flex-1 min-w-0 text-left"
+                        >
                           <p className={`text-sm font-medium ${isDone ? 'line-through text-gray-400' : 'text-gray-800'}`}>
                             {t.titre}
                           </p>
-                          {t.assigne_nom && (
-                            <p className="text-xs text-gray-400 mt-0.5">👤 {t.assigne_nom}</p>
-                          )}
-                        </div>
+                          <p className="text-xs mt-0.5 flex flex-wrap items-center gap-x-1.5">
+                            {t.animal_nom && <span className="text-gray-400">🐾 {t.animal_nom}</span>}
+                            {t.assigne_nom
+                              ? <span className="text-gray-400">👤 {t.assigne_nom}</span>
+                              : <span className="text-teal-600 font-medium">+ Attribuer à un employé</span>}
+                          </p>
+                        </button>
                         <button
                           onClick={() => setConfirmDelete({
                             label: `Supprimer la tâche "${t.titre}" ?`,
@@ -636,6 +699,20 @@ export default function EmployesPage() {
         </div>
       )}
 
+      {showAdd && user && (
+        <AddEmployeModal uid={user.uid} profileId={profileId || null} onClose={() => { setShowAdd(false); load(); }} />
+      )}
+
+      {tacheModal && user && (
+        <TacheManuelleModal
+          uid={user.uid}
+          profileId={profileId || null}
+          employes={employes}
+          tache={tacheModal.mode === 'edit' ? tacheModal.tache : undefined}
+          onClose={() => { setTacheModal(null); load(); }}
+        />
+      )}
+
       {/* Dialog confirmation suppression */}
       {confirmDelete && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -654,6 +731,278 @@ export default function EmployesPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Modal créer / modifier une tâche manuelle ────────────────────────────────
+
+function TacheManuelleModal({
+  uid, profileId, employes, tache, onClose,
+}: {
+  uid: string;
+  profileId: string | null;
+  employes: Employe[];
+  tache?: TacheManuelle;
+  onClose: () => void;
+}) {
+  const [titre, setTitre] = useState(tache?.titre ?? '');
+  const [date, setDate] = useState(tache?.date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10));
+  const [assigneA, setAssigneA] = useState(tache?.assigne_a ?? '');
+  const [notes, setNotes] = useState(tache?.notes ?? '');
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (!titre.trim()) return;
+    setSaving(true);
+    try {
+      if (tache) {
+        await supabase.from('taches_elevage').update({
+          titre: titre.trim(),
+          date,
+          assigne_a: assigneA || null,
+          notes: notes.trim() || null,
+        }).eq('id', tache.id);
+      } else {
+        await supabase.from('taches_elevage').insert({
+          titre: titre.trim(),
+          date,
+          uid_eleveur: uid,
+          ...(profileId ? { eleveur_profile_id: profileId } : {}),
+          assigne_a: assigneA || null,
+          notes: notes.trim() || null,
+          statut: 'a_faire',
+        });
+      }
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-[#1F2A2E]">{tache ? 'Modifier la tâche' : 'Nouvelle tâche'}</h3>
+          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-gray-100 transition-colors">
+            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1.5">Titre de la tâche *</label>
+            <input value={titre} onChange={e => setTitre(e.target.value)} autoFocus
+              placeholder="Ex : Nettoyer les box"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 bg-white" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1.5">Date</label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 bg-white" />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1.5">Attribuer à</label>
+            <select value={assigneA} onChange={e => setAssigneA(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 bg-white">
+              <option value="">Non attribuée</option>
+              {employes.map(e => (
+                <option key={e.uid_employe} value={e.uid_employe}>{e.nom}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-gray-500 block mb-1.5">Notes</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 bg-white resize-none" />
+          </div>
+          <button onClick={save} disabled={saving || !titre.trim()}
+            className="w-full bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors text-sm mt-2">
+            {saving ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Modal ajouter un employé ─────────────────────────────────────────────────
+
+interface CandidateUser {
+  uid: string;
+  firstname: string | null;
+  lastname: string | null;
+  name_elevage: string | null;
+  is_elevage: boolean;
+  is_pro: boolean;
+  cat_pro: string | null;
+}
+
+const CAT_SANTE = new Set(['sante', 'veterinaire', 'vétérinaire', 'vet']);
+
+function candidateNom(u: CandidateUser): string {
+  if (u.is_elevage) return u.name_elevage?.trim() || 'Élevage';
+  return `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim() || u.uid;
+}
+
+function AddEmployeModal({ uid, profileId, onClose }: { uid: string; profileId: string | null; onClose: () => void }) {
+  const [query, setQuery] = useState('');
+  const [allUsers, setAllUsers] = useState<CandidateUser[]>([]);
+  const [results, setResults] = useState<CandidateUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState<string | null>(null);
+  const [nomElevage, setNomElevage] = useState('');
+
+  useEffect(() => {
+    async function load() {
+      const { data: profile } = profileId
+        ? await supabase.from('user_profiles').select('nom, firstname, lastname').eq('id', profileId).maybeSingle()
+        : await supabase.from('user_profiles').select('nom, firstname, lastname').eq('uid', uid).eq('is_main', true).maybeSingle();
+      setNomElevage(
+        (profile?.nom as string)?.trim() ||
+        `${profile?.firstname ?? ''} ${profile?.lastname ?? ''}`.trim()
+      );
+      const { data } = await supabase.from('user_profiles')
+        .select('uid, firstname, lastname, nom, profile_type, cat_pro')
+        .neq('uid', uid).eq('is_main', true).limit(500);
+      const filtered = (data ?? []).map(u => ({
+        uid: u.uid as string,
+        firstname: u.firstname as string | null,
+        lastname: u.lastname as string | null,
+        name_elevage: u.nom as string | null,
+        is_elevage: u.profile_type === 'eleveur',
+        is_pro: !!u.profile_type && u.profile_type !== 'eleveur' && u.profile_type !== 'particulier',
+        cat_pro: u.cat_pro as string | null,
+      })).filter(u => !(u.is_pro && CAT_SANTE.has((u.cat_pro ?? '').toLowerCase().trim())));
+      setAllUsers(filtered);
+      setLoading(false);
+    }
+    load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid, profileId]);
+
+  function search(q: string) {
+    setQuery(q);
+    if (q.trim().length < 2) { setResults([]); return; }
+    const lq = q.toLowerCase();
+    setResults(
+      allUsers.filter(u =>
+        `${u.firstname ?? ''} ${u.lastname ?? ''} ${u.name_elevage ?? ''}`.toLowerCase().includes(lq)
+      ).slice(0, 15)
+    );
+  }
+
+  async function ajouter(u: CandidateUser) {
+    setAdding(u.uid);
+    try {
+      let existingQ = supabase.from('employes').select().eq('uid_eleveur', uid).eq('uid_employe', u.uid);
+      if (profileId) existingQ = existingQ.eq('eleveur_profile_id', profileId);
+      const { data: existing } = await existingQ.maybeSingle();
+
+      // Limite d'employés par forfait (éducateur/pension) — la page
+      // d'abonnement annonce ces limites mais rien ne les appliquait jusqu'ici.
+      if (!existing || !existing.actif) {
+        const catPro = profileId
+          ? (await supabase.from('user_profiles').select('profile_type,cat_pro').eq('id', profileId).maybeSingle()).data
+          : (await supabase.from('user_profiles').select('cat_pro').eq('uid', uid).eq('is_main', true).maybeSingle()).data;
+        const catProVal = (catPro as { cat_pro?: string } | null)?.cat_pro;
+        if (catProVal === 'education' || catProVal === 'pension') {
+          const { data: abo } = await supabase.from('abonnements')
+            .select('plan_code').eq('uid', uid).eq('profil_type', catProVal).eq('statut', 'actif')
+            .order('created_at', { ascending: false }).limit(1).maybeSingle();
+          const planCode = abo?.plan_code ?? 'free';
+          const { data: planRow } = await supabase.from('plans_tarifaires')
+            .select('features').eq('profil_type', catProVal).eq('plan_code', planCode).maybeSingle();
+          const fallbackMax: Record<string, number> = { free: 0, pro: 3, premium: -1 };
+          const features = (planRow?.features ?? {}) as Record<string, unknown>;
+          const maxEmployes = typeof features.maxEmployes === 'number' ? features.maxEmployes : (fallbackMax[planCode] ?? 0);
+          if (maxEmployes !== -1) {
+            let countQ = supabase.from('employes').select('id', { count: 'exact', head: true })
+              .eq('uid_eleveur', uid).eq('actif', true);
+            if (profileId) countQ = countQ.eq('eleveur_profile_id', profileId);
+            const { count } = await countQ;
+            if ((count ?? 0) >= maxEmployes) {
+              alert(maxEmployes === 0
+                ? 'Votre formule actuelle ne permet pas d\'ajouter d\'employé. Passez à une formule supérieure.'
+                : `Limite de ${maxEmployes} employé(s) atteinte pour votre formule. Passez à une formule supérieure pour en ajouter plus.`);
+              return;
+            }
+          }
+        }
+      }
+
+      if (existing) {
+        if (existing.actif) { alert('Cette personne est déjà dans votre équipe.'); return; }
+        await supabase.from('employes').update({ actif: true }).eq('id', existing.id);
+      } else {
+        await supabase.from('employes').insert({
+          uid_employe: u.uid,
+          uid_eleveur: uid,
+          ...(profileId ? { eleveur_profile_id: profileId } : {}),
+          actif: true,
+        });
+      }
+      const { data: targetParticulier } = await supabase.from('user_profiles')
+        .select('id').eq('uid', u.uid).eq('profile_type', 'particulier').maybeSingle();
+      await supabase.from('notifications').insert({
+        uid: u.uid, type: 'employee_invite',
+        title: 'Invitation à rejoindre une équipe',
+        body: `Vous avez été ajouté à l'équipe de ${nomElevage}`,
+        ...(targetParticulier?.id ? { profile_id: targetParticulier.id } : {}),
+        data: { eleveurUid: uid, eleveurNom: nomElevage },
+        read: false,
+      });
+      onClose();
+    } finally {
+      setAdding(null);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-[#1F2A2E]">Ajouter un employé</h3>
+          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-gray-100 transition-colors">
+            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-4">
+          <input value={query} onChange={e => search(e.target.value)} autoFocus
+            placeholder="Rechercher par prénom ou nom…"
+            className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 bg-white" />
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 pb-4">
+          {loading && <div className="flex justify-center py-8"><div className="w-5 h-5 border-2 border-teal-600 border-t-transparent rounded-full animate-spin" /></div>}
+          {!loading && query.length < 2 && (
+            <p className="text-xs text-gray-400 text-center py-6">Tapez au moins 2 lettres pour rechercher.</p>
+          )}
+          {!loading && query.length >= 2 && results.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-6">Aucun utilisateur trouvé</p>
+          )}
+          <div className="space-y-2">
+            {results.map(u => {
+              const nom = candidateNom(u);
+              return (
+                <div key={u.uid} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 transition-colors">
+                  <div className="w-10 h-10 rounded-full bg-teal-50 flex items-center justify-center flex-shrink-0 font-bold text-teal-600">
+                    {nom[0]?.toUpperCase() ?? '?'}
+                  </div>
+                  <span className="flex-1 text-sm font-medium text-[#1F2A2E]">{nom}</span>
+                  <button onClick={() => ajouter(u)} disabled={adding === u.uid}
+                    className="text-sm font-semibold text-teal-700 border border-teal-700 hover:bg-teal-50 px-3 py-1.5 rounded-xl transition-colors disabled:opacity-50">
+                    {adding === u.uid ? '…' : 'Ajouter'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

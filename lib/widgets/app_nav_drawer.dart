@@ -5,7 +5,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/widgets/profile_switcher_header.dart';
-import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/marketplace/marketplace_page.dart';
@@ -183,13 +182,11 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
                     fontSize: 15,
                     color: Colors.redAccent)),
             onTap: () async {
+              // Ne pas naviguer manuellement : AuthWrapper (racine de l'app) écoute
+              // authStateChanges() et bascule seul sur WelcomePage. Un pushAndRemoveUntil
+              // ici détruirait cet AuthWrapper racine et casserait la reconnexion suivante
+              // (retour en boucle sur l'écran de bienvenue après un nouveau login).
               await FirebaseAuth.instance.signOut();
-              if (context.mounted) {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => WelcomePage()),
-                  (route) => false,
-                );
-              }
             },
             dense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
