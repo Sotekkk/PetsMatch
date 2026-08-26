@@ -78,7 +78,8 @@ class RegistreHelper {
         'intervenant':    intervenant,
         'description':    description,
         'ordonnance_num': ordonnanceNum,
-        'profil_source':  (User_Info.activeType == 'association' || User_Info.isAssociation) ? 'association' : 'eleveur',
+        'profil_source':  User_Info.activeType == 'pension' ? 'pension'
+            : (User_Info.activeType == 'association' || User_Info.isAssociation) ? 'association' : 'eleveur',
       };
       if (sourceTable != null && sourceId != null) {
         await supa.from('registre_sanitaire').upsert({
@@ -106,7 +107,8 @@ class RegistreHelper {
 
 class RegistreSanitairePage extends StatefulWidget {
   final bool isAssociation;
-  const RegistreSanitairePage({super.key, this.isAssociation = false});
+  final bool isPension;
+  const RegistreSanitairePage({super.key, this.isAssociation = false, this.isPension = false});
 
   @override
   State<RegistreSanitairePage> createState() => _RegistreSanitairePageState();
@@ -153,6 +155,13 @@ class _RegistreSanitairePageState extends State<RegistreSanitairePage> {
   Future<void> _checkPlan() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) { setState(() => _planLoading = false); return; }
+    // La pension a son propre systeme d'abonnement, distinct du plan eleveur.
+    if (widget.isPension) {
+      final code = await PlanService.getPensionPlanCode(uid);
+      if (!mounted) return;
+      setState(() { _hasRegistres = code != 'free'; _planLoading = false; });
+      return;
+    }
     final code   = await PlanService.getPlanCode(uid);
     final config = PlanService.getConfig(code);
     if (!mounted) return;
@@ -552,6 +561,7 @@ class _RegistreSanitairePageState extends State<RegistreSanitairePage> {
         filterEspece: _filterEspece,
         filterType: _filterType,
         isAssociation: widget.isAssociation,
+        isPension: widget.isPension,
         assoAnimalIds: _assoAnimalIds,
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -573,8 +583,9 @@ class _RegistreList extends StatelessWidget {
   final String? filterEspece;
   final String? filterType;
   final bool isAssociation;
+  final bool isPension;
   final Set<String> assoAnimalIds;
-  const _RegistreList({this.filterEspece, this.filterType, this.isAssociation = false, this.assoAnimalIds = const {}});
+  const _RegistreList({this.filterEspece, this.filterType, this.isAssociation = false, this.isPension = false, this.assoAnimalIds = const {}});
 
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -589,7 +600,9 @@ class _RegistreList extends StatelessWidget {
       builder: (ctx, snap) {
         if (!snap.hasData) return const Center(child: CircularProgressIndicator());
         var docs = snap.data ?? [];
-        if (isAssociation) {
+        if (isPension) {
+          docs = docs.where((d) => d['profil_source'] == 'pension').toList();
+        } else if (isAssociation) {
           docs = docs.where((d) => d['profil_source'] == 'association').toList();
         } else {
           docs = docs.where((d) {
@@ -992,7 +1005,8 @@ class _NouvelActePageState extends State<_NouvelActePage> {
         'intervenant':    _intervenantCtrl.text.trim(),
         'description':    _effectiveDescription,
         'ordonnance_num': _ordonnanceCtrl.text.trim(),
-        'profil_source':  (User_Info.activeType == 'association' || User_Info.isAssociation) ? 'association' : 'eleveur',
+        'profil_source':  User_Info.activeType == 'pension' ? 'pension'
+            : (User_Info.activeType == 'association' || User_Info.isAssociation) ? 'association' : 'eleveur',
       });
       if (mounted) Navigator.pop(context);
     } catch (e) {

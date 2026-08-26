@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { PensionEntreeModal, type PensionEntree } from '@/components/PensionEntreeModal';
 import { PensionJournal } from '@/components/PensionJournal';
+import { thumbUrl } from '@/lib/upload-media';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -45,6 +46,7 @@ export default function RegistrePensionPage() {
   const [tab, setTab]                   = useState<'en_pension' | 'sorti' | 'tous'>('en_pension');
   const [entrees, setEntrees]           = useState<PensionEntree[]>([]);
   const [puceToAnimalId, setPuceToAnimalId] = useState<Record<string, string>>({});
+  const [photoByAnimalId, setPhotoByAnimalId] = useState<Record<string, string>>({});
   const [loading, setLoading]           = useState(true);
   const [showForm, setShowForm]         = useState(false);
   const [editEntree, setEditEntree]     = useState<PensionEntree | null>(null);
@@ -79,17 +81,23 @@ export default function RegistrePensionPage() {
     ]);
     setEntrees((ent ?? []) as PensionEntree[]);
 
-    const ids = (acc ?? []).map((a: { animal_id: string }) => a.animal_id);
+    const ids = [...new Set([
+      ...(acc ?? []).map((a: { animal_id: string }) => a.animal_id),
+      ...(ent ?? []).map((e) => e.animal_id).filter((id): id is string => !!id),
+    ])];
 
     if (ids.length > 0) {
       const { data: animaux } = await supabase
-        .from('animaux').select('id,identification').in('id', ids);
+        .from('animaux').select('id,identification,photo_url').in('id', ids);
       const map: Record<string, string> = {};
+      const photos: Record<string, string> = {};
       for (const a of animaux ?? []) {
         const puce = normalizeChip(a.identification);
         if (puce) map[puce] = a.id;
+        if (a.photo_url) photos[a.id] = a.photo_url;
       }
       setPuceToAnimalId(map);
+      setPhotoByAnimalId(photos);
     }
     setLoading(false);
   }, [user, activeProfileId]);
@@ -231,6 +239,7 @@ export default function RegistrePensionPage() {
                   key={e.id}
                   entree={e}
                   animalId={animalId}
+                  photoUrl={animalId ? photoByAnimalId[animalId] : undefined}
                   proUid={user.uid}
                   proNom={userData?.nameElevage || userData?.firstname || 'Votre pension'}
                   onEdit={() => setEditEntree(e)}
@@ -276,9 +285,10 @@ export default function RegistrePensionPage() {
 
 // ── Carte entrée ──────────────────────────────────────────────────────────────
 
-function EntreeCard({ entree, animalId, proUid, proNom, onEdit, onSorti, onJournal }: {
+function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, onEdit, onSorti, onJournal }: {
   entree: PensionEntree;
   animalId?: string;
+  photoUrl?: string;
   proUid: string;
   proNom: string;
   onEdit: () => void;
@@ -330,13 +340,15 @@ function EntreeCard({ entree, animalId, proUid, proNom, onEdit, onSorti, onJourn
       cursor: 'pointer',
     }} onClick={onEdit}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-        {/* Icône espèce */}
+        {/* Photo animal (fiche propriétaire) ou icône espèce à défaut */}
         <div style={{
           width: 46, height: 46, borderRadius: 10, background: bgColor,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 22, flexShrink: 0,
+          fontSize: 22, flexShrink: 0, overflow: 'hidden',
         }}>
-          {espEmoji(entree.espece)}
+          {photoUrl
+            ? <img src={thumbUrl(photoUrl, 92, 75, 'cover')} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : espEmoji(entree.espece)}
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
