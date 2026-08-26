@@ -231,6 +231,206 @@ class _EleveurNavState extends State<EleveurNav> {
                     setState(() => _selectedIndex = 0);
                   },
                 ),
+                if (User_Info.catPro == 'pension') ...[
+                  _DrawerSection(
+                    icon: Icons.cottage_outlined,
+                    label: 'Ma Pension',
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Nos pensionnaires',
+                        icon: Icons.home_work_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const RegistrePensionPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Accès fiche pensionnaire',
+                        icon: Icons.folder_shared_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const FichesPensionPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Protocoles',
+                        icon: Icons.event_note_outlined,
+                        locked: _pensionPlanCode == 'free',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => _pensionPlanCode == 'free'
+                                ? const PensionAbonnementPage()
+                                : const PlanTemplateListPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Logements',
+                        icon: Icons.home_work_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const PensionChenilPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mon agenda',
+                        icon: Icons.event_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (ctx) => AgendaPage(onBack: () => Navigator.pop(ctx)),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Planning occupation',
+                        icon: Icons.calendar_view_week_outlined,
+                        locked: _pensionPlanCode == 'free',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => _pensionPlanCode == 'free'
+                                ? const PensionAbonnementPage()
+                                : const PensionPlanningPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Gestion des RDV',
+                        icon: Icons.calendar_month_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const ProAgendaPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes Employés',
+                        icon: Icons.groups_outlined,
+                        locked: _pensionPlanCode == 'free',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => _pensionPlanCode == 'free'
+                                ? const PensionAbonnementPage()
+                                : const EmployesPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Inventaire',
+                        icon: Icons.inventory_2_outlined,
+                        locked: _pensionPlanCode == 'free',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => _pensionPlanCode == 'free'
+                                ? const PensionAbonnementPage()
+                                : const InventairePage(),
+                          ));
+                        },
+                      ),
+                      // Fonctionnalite app sans equivalent direct sur le site.
+                      _DrawerSubItem(
+                        label: 'Documents',
+                        icon: Icons.folder_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const PensionDocumentsPage(),
+                          ));
+                        },
+                      ),
+                    ],
+                  ),
+                  _DrawerSection(
+                    icon: Icons.folder_outlined,
+                    label: 'Administratif',
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Facturation',
+                        icon: Icons.receipt_long_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const PensionFacturesPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Tarification',
+                        icon: Icons.euro_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const PensionTarifsPage(),
+                          ));
+                        },
+                      ),
+                    ],
+                  ),
+                  _DrawerSection(
+                    icon: Icons.storefront_outlined,
+                    label: 'Annuaire & Communauté',
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Annuaire des professionnels',
+                        icon: Icons.storefront_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const ServicesPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Communauté',
+                        icon: Icons.groups_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const CommunauteHubPage(),
+                          ));
+                        },
+                      ),
+                    ],
+                  ),
+                  _DrawerSection(
+                    icon: Icons.person_outline,
+                    label: 'Mon Profil',
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Modifier mon profil',
+                        icon: Icons.edit_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => ProProfileEditPage(
+                                secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mon abonnement',
+                        icon: Icons.workspace_premium_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const PensionAbonnementPage(),
+                          ));
+                        },
+                      ),
+                    ],
+                  ),
+                ],
                 if (!User_Info.isPro) ...[
                   _DrawerSection(
                     icon: Icons.pets,
@@ -630,237 +830,6 @@ class _EleveurNavState extends State<EleveurNav> {
                   ),
                   // Meme organisation/ordre que le menu pension du site web :
                   // sections "Ma Pension" puis "Annuaire & Communauté".
-                  if (User_Info.catPro == 'pension') ...[
-                    const Divider(height: 24),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
-                      child: Text('Ma Pension',
-                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                              fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
-                    ),
-                    _DrawerItem(
-                      icon: Icons.home_work_outlined,
-                      label: 'Nos pensionnaires',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const RegistrePensionPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.folder_shared_outlined,
-                      label: 'Accès fiche pensionnaire',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const FichesPensionPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.event_note_outlined,
-                      label: 'Protocoles',
-                      locked: _pensionPlanCode == 'free',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => _pensionPlanCode == 'free'
-                              ? const PensionAbonnementPage()
-                              : const PlanTemplateListPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.home_work_outlined,
-                      label: 'Logements',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PensionChenilPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.event_outlined,
-                      label: 'Mon agenda',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (ctx) => AgendaPage(onBack: () => Navigator.pop(ctx)),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.calendar_view_week_outlined,
-                      label: 'Planning occupation',
-                      locked: _pensionPlanCode == 'free',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => _pensionPlanCode == 'free'
-                              ? const PensionAbonnementPage()
-                              : const PensionPlanningPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.calendar_month_outlined,
-                      label: 'Gestion des RDV',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const ProAgendaPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.groups_outlined,
-                      label: 'Mes Employés',
-                      locked: _pensionPlanCode == 'free',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => _pensionPlanCode == 'free'
-                              ? const PensionAbonnementPage()
-                              : const EmployesPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.inventory_2_outlined,
-                      label: 'Inventaire',
-                      locked: _pensionPlanCode == 'free',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => _pensionPlanCode == 'free'
-                              ? const PensionAbonnementPage()
-                              : const InventairePage(),
-                        ));
-                      },
-                    ),
-                    // Fonctionnalite app sans equivalent direct sur le site.
-                    _DrawerItem(
-                      icon: Icons.folder_outlined,
-                      label: 'Documents',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PensionDocumentsPage(),
-                        ));
-                      },
-                    ),
-                    const Divider(height: 24),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
-                      child: Text('Administratif',
-                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                              fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
-                    ),
-                    _DrawerItem(
-                      icon: Icons.receipt_long_outlined,
-                      label: 'Facturation',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PensionFacturesPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.euro_outlined,
-                      label: 'Tarification',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PensionTarifsPage(),
-                        ));
-                      },
-                    ),
-                    const Divider(height: 24),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
-                      child: Text('Animaux perdus / trouvés',
-                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                              fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
-                    ),
-                    _DrawerItem(
-                      icon: Icons.manage_search_outlined,
-                      label: 'Gérer mes alertes',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const MesAlertesPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.location_searching,
-                      label: 'Voir les animaux perdus',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnimauxPerdusPage(),
-                        ));
-                      },
-                    ),
-                    const Divider(height: 24),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
-                      child: Text('Annuaire & Communauté',
-                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                              fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
-                    ),
-                    _DrawerItem(
-                      icon: Icons.storefront_outlined,
-                      label: 'Annuaire des professionnels',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const ServicesPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.groups_outlined,
-                      label: 'Communauté',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const CommunauteHubPage(),
-                        ));
-                      },
-                    ),
-                    const Divider(height: 24),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
-                      child: Text('Mon Profil',
-                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
-                              fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
-                    ),
-                    _DrawerItem(
-                      icon: Icons.person_outline,
-                      label: 'Modifier mon profil',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => ProProfileEditPage(
-                              secondaryProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.workspace_premium_outlined,
-                      label: 'Mon abonnement',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PensionAbonnementPage(),
-                        ));
-                      },
-                    ),
-                  ],
                   if (User_Info.catPro == 'garde') ...[
                     _DrawerItem(
                       icon: Icons.checklist_outlined,
