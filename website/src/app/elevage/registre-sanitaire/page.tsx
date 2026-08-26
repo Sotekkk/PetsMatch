@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -41,7 +41,9 @@ export default function RegistreSanitairePage() {
   const { config: planConfig, loading: planLoading } = usePlan();
   const router = useRouter();
   const pathname = usePathname();
-  const profilSource = pathname.startsWith('/association') ? 'association' : 'eleveur';
+  const searchParams = useSearchParams();
+  const profilSource = searchParams.get('profilSource')
+    ?? (pathname.startsWith('/association') ? 'association' : 'eleveur');
   const [actes, setActes] = useState<Acte[]>([]);
   const [fetching, setFetching] = useState(true);
   const [filtreType, setFiltreType] = useState('tous');
@@ -80,15 +82,17 @@ export default function RegistreSanitairePage() {
       try {
         const q = supabase.from('registre_sanitaire').select('*').eq('uid_eleveur', user.uid)
           .order('date_acte', { ascending: false });
-        const { data } = await (profilSource === 'association'
-          ? q.eq('profil_source', 'association')
-          : q.or('profil_source.is.null,profil_source.eq.eleveur'));
+        const { data } = await (profilSource === 'pension'
+          ? q.eq('profil_source', 'pension')
+          : profilSource === 'association'
+            ? q.eq('profil_source', 'association')
+            : q.or('profil_source.is.null,profil_source.eq.eleveur'));
         setActes((data as Acte[]) ?? []);
       } catch { /* ignore */ } finally {
         setFetching(false);
       }
     })();
-  }, [user]);
+  }, [user, profilSource]);
 
   async function handleDelete(id: string) {
     if (!confirm('Supprimer cet acte ?')) return;

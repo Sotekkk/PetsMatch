@@ -214,19 +214,36 @@ const MENU_PENSION = [
     icon: '🏡',
     items: [
       { href: '/pension/registre',  label: 'Nos pensionnaires',    icon: '📋' },
-      { href: '/pension/demandes',  label: 'Demandes d\'accès',    icon: '🔑' },
-      { href: '/pension/chenil',    label: 'Logements / Chenil',   icon: '🏘️' },
-      { href: '/pension/planning',  label: 'Planning occupation',  icon: '📆', pro: true },
+      { href: '/pension/demandes',  label: 'Accès fiche pensionnaire', icon: '🔑' },
       { href: '/elevage/planning?profilSource=pension', label: 'Protocoles', icon: '📋', pro: true },
-      { href: '/pension/contrat',   label: 'Contrats',             icon: '✍️', pro: true },
+      { href: '/elevage/registre-sanitaire?profilSource=pension', label: 'Suivi sanitaire', icon: '🏥', pro: true },
+      { href: '/pension/chenil',    label: 'Logements',            icon: '🏘️' },
+      { href: '/agenda',            label: 'Mon agenda',           icon: '📅' },
+      { href: '/pension/planning',  label: 'Planning occupation',  icon: '📆', pro: true },
       { href: '/mes-rdv',           label: 'Gestion des RDV',      icon: '🗓️' },
       { href: '/pro/creneaux',      label: 'Mes créneaux',         icon: '⏰' },
-      { href: '/agenda',            label: 'Mon agenda',           icon: '📅' },
-      { href: '/elevage/inventaire',label: 'Inventaire',           icon: '📦', pro: true },
+      { href: '/pension/entree-sortie', label: 'Entrée - Sortie',  icon: '📂' },
       { href: '/mes-taches',        label: 'Mes tâches',           icon: '✅', pro: true },
-      { href: '/elevage/employes',          label: 'Mes employés',         icon: '👥', pro: true },
-      { href: '/elevage/facturation',label: 'Facturation',          icon: '🧾' },
-      { href: '/pension/abonnement', label: 'Mon abonnement',       icon: '💳' },
+      { href: '/elevage/employes',   label: 'Mes employés',         icon: '👥', pro: true },
+      { href: '/elevage/inventaire',label: 'Inventaire',           icon: '📦', pro: true },
+    ],
+  },
+  {
+    section: 'Administratif',
+    icon: '📁',
+    items: [
+      { href: '/pension/contrat',    label: 'Contrats',      icon: '✍️', pro: true },
+      { href: '/elevage/facturation',label: 'Facturation',   icon: '🧾' },
+      { href: '/pension/tarifs',     label: 'Tarification',  icon: '💶' },
+      { href: '/pension/abonnement', label: 'Mon abonnement', icon: '💳' },
+    ],
+  },
+  {
+    section: 'Animaux perdus / trouvés',
+    icon: '🔍',
+    items: [
+      { href: '/mes-alertes',    label: 'Gérer mes alertes',       icon: '🔔' },
+      { href: '/animaux-perdus', label: 'Voir les animaux perdus', icon: '🔍' },
     ],
   },
   {
@@ -235,6 +252,14 @@ const MENU_PENSION = [
     items: [
       { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute', label: 'Communauté',                  icon: '👥' },
+    ],
+  },
+  {
+    section: 'Mon Profil',
+    icon: '👤',
+    items: [
+      { href: '/profil',             label: 'Modifier mon profil', icon: '✏️' },
+      { href: '/pension/abonnement', label: 'Mon abonnement',      icon: '💳' },
     ],
   },
 ];
@@ -1161,10 +1186,12 @@ export default function Header() {
                     ))}
 
                     <div className="border-t border-gray-100 mt-1">
-                      <Link href="/profil" onClick={() => setDropdownOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
-                        <span>⚙️</span> Mon Profil
-                      </Link>
+                      {!menuSections.some((sec) => sec.section === 'Mon Profil') && (
+                        <Link href="/profil" onClick={() => setDropdownOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                          <span>⚙️</span> Mon Profil
+                        </Link>
+                      )}
                       {!effectiveIsEleveur && (
                         <Link href="/mes-alertes" onClick={() => setDropdownOpen(false)}
                           className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
@@ -1311,10 +1338,12 @@ export default function Header() {
               ))}
 
               <div className="border-t border-white/10 mt-2 pt-2 space-y-0.5">
-                <Link href="/profil" onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-2 py-2 text-white/70 hover:text-white text-sm">
-                  ⚙️ Mon Profil
-                </Link>
+                {!menuSections.some((sec) => sec.section === 'Mon Profil') && (
+                  <Link href="/profil" onClick={() => setMenuOpen(false)}
+                    className="flex items-center gap-2 py-2 text-white/70 hover:text-white text-sm">
+                    ⚙️ Mon Profil
+                  </Link>
+                )}
                 <Link href="/favoris" onClick={() => setMenuOpen(false)}
                   className="flex items-center gap-2 py-2 text-white/70 hover:text-white text-sm">
                   ❤️ Mes interactions

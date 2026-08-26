@@ -453,26 +453,31 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                _DrawerItem(
-                  icon: Icons.storefront_outlined,
-                  label: 'Annuaire professionnel',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const ServicesPage(),
-                    ));
-                  },
-                ),
-                _DrawerItem(
-                  icon: Icons.groups_outlined,
-                  label: 'Communauté',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const CommunauteHubPage(),
-                    ));
-                  },
-                ),
+                // Pension : "Annuaire professionnel" et "Communauté" sont
+                // regroupes plus bas sous "Annuaire & Communauté", comme sur
+                // le site, apres le bloc "Ma Pension".
+                if (User_Info.catPro != 'pension') ...[
+                  _DrawerItem(
+                    icon: Icons.storefront_outlined,
+                    label: 'Annuaire professionnel',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const ServicesPage(),
+                      ));
+                    },
+                  ),
+                  _DrawerItem(
+                    icon: Icons.groups_outlined,
+                    label: 'Communauté',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const CommunauteHubPage(),
+                      ));
+                    },
+                  ),
+                ],
                 _DrawerItem(
                   icon: Icons.local_offer_outlined,
                   label: 'Marketplace',
@@ -623,8 +628,16 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                  // Meme organisation/ordre que le menu pension du site web.
+                  // Meme organisation/ordre que le menu pension du site web :
+                  // sections "Ma Pension" puis "Annuaire & Communauté".
                   if (User_Info.catPro == 'pension') ...[
+                    const Divider(height: 24),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
+                      child: Text('Ma Pension',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                              fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
+                    ),
                     _DrawerItem(
                       icon: Icons.home_work_outlined,
                       label: 'Nos pensionnaires',
@@ -765,6 +778,33 @@ class _EleveurNavState extends State<EleveurNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const PensionTarifsPage(),
+                        ));
+                      },
+                    ),
+                    const Divider(height: 24),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 6),
+                      child: Text('Annuaire & Communauté',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                              fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.storefront_outlined,
+                      label: 'Annuaire des professionnels',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const ServicesPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.groups_outlined,
+                      label: 'Communauté',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const CommunauteHubPage(),
                         ));
                       },
                     ),
