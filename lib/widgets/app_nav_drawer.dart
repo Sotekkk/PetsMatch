@@ -680,11 +680,12 @@ class _DrawerSubItem extends StatelessWidget {
           children: [
             Icon(icon, color: locked ? Colors.grey.shade400 : const Color(0xFF6E9E57), size: 18),
             const SizedBox(width: 10),
-            Text(label,
+            Expanded(child: Text(label,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                     fontFamily: 'Galey',
                     fontSize: 14,
-                    color: locked ? Colors.grey.shade400 : const Color(0xFF1F2A2E))),
+                    color: locked ? Colors.grey.shade400 : const Color(0xFF1F2A2E)))),
             if (locked) ...[
               const SizedBox(width: 6),
               Container(

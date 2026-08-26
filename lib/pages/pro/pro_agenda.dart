@@ -1880,6 +1880,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         ],
         bottom: TabBar(
           controller: _tabCtrl,
+          isScrollable: true,
+          tabAlignment: TabAlignment.fill,
           indicatorColor: Colors.white,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white60,
