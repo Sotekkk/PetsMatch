@@ -77,9 +77,16 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
         final dEnvoi = DateTime.tryParse(f['date_envoi']?.toString() ?? '');
         return dEnvoi != null && dEnvoi.isBefore(seuil15j);
       }).toList();
-      final animalIds = approved.map((a) => a['animal_id'] as String).toList();
+      // Photo/puce affichées pour tout animal déjà lié (via son animal_id sur
+      // l'entrée) — indépendamment de l'accès santé/alimentation, pas encore
+      // forcément validé par le propriétaire (voir animal_access ci-dessus,
+      // qui reste lui réservé à l'onglet "Voir fiche").
+      final animalIds = {
+        ...approved.map((a) => a['animal_id'] as String),
+        ...entrees.map((e) => e['animal_id']).whereType<String>(),
+      }.toList();
 
-      // Charge les puces + photos des animaux approuvés pour le lien "Voir fiche"
+      // Charge les puces + photos des animaux liés pour le lien "Voir fiche"
       final Map<String, String> puceToId    = {};
       final Map<String, String> puceToPhoto = {};
       if (animalIds.isNotEmpty) {

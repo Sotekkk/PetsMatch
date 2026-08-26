@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AddVermifugeDialog, AddAntiparasitaireDialog;
+import 'package:PetsMatch/main.dart' show User_Info;
 
 class AnimalFichePensionPage extends StatefulWidget {
   final String animalId;
@@ -28,6 +30,7 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
   late TabController _tabs;
 
   bool _loading = true;
+  bool _hasAccess = false;
 
   // Identity
   Map<String, dynamic>? _animal;
@@ -65,6 +68,25 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
+      // Vérifier l'accès avant de charger quoi que ce soit — animal_access
+      // doit être 'active' (validé par le propriétaire), sinon la fiche
+      // santé/alimentation reste inaccessible même en lecture.
+      var proProfileId = User_Info.activeProfileId;
+      if (proProfileId.isEmpty) {
+        final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+        final mainProfile = myUid.isEmpty ? null : await _supa.from('user_profiles')
+            .select('id').eq('uid', myUid).eq('is_main', true).maybeSingle();
+        proProfileId = mainProfile?['id'] as String? ?? '';
+      }
+      final acc = proProfileId.isEmpty ? null : await _supa.from('animal_access')
+          .select('statut').eq('animal_id', widget.animalId).eq('pro_profile_id', proProfileId)
+          .eq('statut', 'active').maybeSingle();
+      if (acc == null) {
+        if (mounted) setState(() { _hasAccess = false; _loading = false; });
+        return;
+      }
+      _hasAccess = true;
+
       final results = await Future.wait([
         _supa.from('animaux').select('*').eq('id', widget.animalId).single(),
         _supa.from('vaccinations').select().eq('animal_id', widget.animalId).order('date', ascending: false),
@@ -223,7 +245,7 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        bottom: TabBar(
+        bottom: (!_loading && !_hasAccess) ? null : TabBar(
           controller: _tabs,
           indicatorColor: Colors.white,
           labelColor: Colors.white,
@@ -239,27 +261,45 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _purple))
-          : Column(children: [
-              _ReadOnlyBanner(espece: espece, photoUrl: photoUrl),
-              Expanded(
-                child: TabBarView(controller: _tabs, children: [
-                  _IdentiteTab(animal: _animal, proprietaire: _proprietaire, sejourActuel: _sejourActuel),
-                  _SanteTab(
-                    vaccinations: _vaccinations,
-                    vermifuges: _vermifuges,
-                    antiparasitaires: _antiparasitaires,
-                    traitements: _traitements,
-                    allergies: _allergies,
-                    visites: _visites,
-                    poids: _poids,
-                    fmtDate: _fmtDate,
-                    onAddVermifuge: ({renouvellementDe}) => _addVermifuge(renouvellementDe: renouvellementDe),
-                    onAddAntiparasitaire: ({renouvellementDe}) => _addAntiparasitaire(renouvellementDe: renouvellementDe),
+          : !_hasAccess
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.lock_clock_outlined, size: 56, color: Color(0xFFBFC5C9)),
+                      const SizedBox(height: 16),
+                      const Text('Accès non validé',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17, color: Color(0xFF1F2A2E))),
+                      const SizedBox(height: 8),
+                      Text(
+                        'La demande d\'accès à la fiche de ${widget.animalNom ?? "cet animal"} est en attente de validation par le propriétaire.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500, height: 1.4),
+                      ),
+                    ]),
                   ),
-                  _AlimentationTab(alimentation: _alimentation),
+                )
+              : Column(children: [
+                  _ReadOnlyBanner(espece: espece, photoUrl: photoUrl),
+                  Expanded(
+                    child: TabBarView(controller: _tabs, children: [
+                      _IdentiteTab(animal: _animal, proprietaire: _proprietaire, sejourActuel: _sejourActuel),
+                      _SanteTab(
+                        vaccinations: _vaccinations,
+                        vermifuges: _vermifuges,
+                        antiparasitaires: _antiparasitaires,
+                        traitements: _traitements,
+                        allergies: _allergies,
+                        visites: _visites,
+                        poids: _poids,
+                        fmtDate: _fmtDate,
+                        onAddVermifuge: ({renouvellementDe}) => _addVermifuge(renouvellementDe: renouvellementDe),
+                        onAddAntiparasitaire: ({renouvellementDe}) => _addAntiparasitaire(renouvellementDe: renouvellementDe),
+                      ),
+                      _AlimentationTab(alimentation: _alimentation),
+                    ]),
+                  ),
                 ]),
-              ),
-            ]),
     );
   }
 }
