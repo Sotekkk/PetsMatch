@@ -41,11 +41,8 @@ interface Entree {
 function rangesOverlap(a: Entree, b: Entree): boolean {
   const aStart = new Date(a.date_entree);
   const bStart = new Date(b.date_entree);
-  // Seule une sortie EFFECTIVE ferme réellement l'occupation — une date
-  // prévue dépassée sans sortie effective ne libère pas la place (doit
-  // rester "sortie en retard", pas se faire remplacer silencieusement).
-  const aEnd = a.date_sortie_effective ? new Date(a.date_sortie_effective) : new Date(2100, 0, 1);
-  const bEnd = b.date_sortie_effective ? new Date(b.date_sortie_effective) : new Date(2100, 0, 1);
+  const aEnd = a.date_sortie_effective ? new Date(a.date_sortie_effective) : (a.date_sortie_prevue ? new Date(a.date_sortie_prevue) : new Date(2100, 0, 1));
+  const bEnd = b.date_sortie_effective ? new Date(b.date_sortie_effective) : (b.date_sortie_prevue ? new Date(b.date_sortie_prevue) : new Date(2100, 0, 1));
   return aStart <= bEnd && bStart <= aEnd;
 }
 
@@ -217,13 +214,8 @@ function PensionPlanningPageInner() {
       const start = new Date(e.date_entree);
       const startOnly = new Date(start.getFullYear(), start.getMonth(), start.getDate());
       if (dayOnly < startOnly) continue;
-      // Seule une sortie EFFECTIVE arrête l'occupation visuelle — une date
-      // prévue dépassée sans sortie effective doit continuer à s'afficher
-      // (en "sortie en retard", cf. computeStatut) plutôt que disparaître
-      // silencieusement du planning en laissant le logement compté occupé
-      // sans qu'aucun occupant n'y soit visible.
-      if (e.date_sortie_effective) {
-        const end = new Date(e.date_sortie_effective);
+      const end = e.date_sortie_effective ? new Date(e.date_sortie_effective) : (e.date_sortie_prevue ? new Date(e.date_sortie_prevue) : null);
+      if (end) {
         const endOnly = new Date(end.getFullYear(), end.getMonth(), end.getDate());
         if (dayOnly > endOnly) continue;
       }
