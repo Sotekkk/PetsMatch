@@ -18,6 +18,9 @@ interface Task {
   notes: string | null;
   animal_nom?: string;
   eleveur_nom?: string;
+  origine_tache_id?: number | null;
+  notify_owner_uid?: string | null;
+  notify_owner_profile_id?: string | null;
 }
 
 export default function MesTachesPage() {
@@ -141,26 +144,47 @@ function MesTachesPageInner() {
 
     await supabase.from('taches_elevage').update({ statut: newStatut }).eq('id', t.id);
 
-    // Notification à l'employeur quand l'employé valide
     if (newStatut === 'fait') {
-      try {
-        const { data: moi } = await supabase.from('user_profiles')
-          .select('firstname, lastname, nom, profile_type')
-          .eq('uid', user!.uid).eq('is_main', true).maybeSingle();
-        const nomEmploye = moi
-          ? (moi.profile_type === 'eleveur' ? (moi.nom ?? 'Votre employé') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
-          : 'Votre employé';
+      if (t.origine_tache_id) {
+        // Copie ("miroir") d'une tâche santé chez une pension avec accès à
+        // la fiche — valider ici clôt aussi la tâche d'origine chez le
+        // propriétaire et le notifie (uid_eleveur de cette copie est la
+        // pension elle-même, pas le propriétaire réel — voir notify_owner_*).
+        await supabase.from('taches_elevage').update({ statut: 'fait' }).eq('id', t.origine_tache_id);
+        if (t.notify_owner_uid) {
+          try {
+            await supabase.from('notifications').insert({
+              uid:   t.notify_owner_uid,
+              type:  'tache_validee',
+              title: `${t.titre.replace(/^[^\s]+\s/, '')} fait ✓`,
+              body:  `Votre pension a réalisé : ${t.titre}`,
+              data:  { tacheId: t.origine_tache_id },
+              read:  false,
+              ...(t.notify_owner_profile_id ? { profile_id: t.notify_owner_profile_id } : {}),
+            });
+          } catch (_) {}
+        }
+      } else {
+        // Notification à l'employeur quand l'employé valide
+        try {
+          const { data: moi } = await supabase.from('user_profiles')
+            .select('firstname, lastname, nom, profile_type')
+            .eq('uid', user!.uid).eq('is_main', true).maybeSingle();
+          const nomEmploye = moi
+            ? (moi.profile_type === 'eleveur' ? (moi.nom ?? 'Votre employé') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim())
+            : 'Votre employé';
 
-        await supabase.from('notifications').insert({
-          uid:   t.uid_eleveur,
-          type:  'tache_validee',
-          title: 'Tâche validée ✓',
-          body:  `${nomEmploye} a terminé : ${t.titre}`,
-          data:  { tacheId: t.id, eleveurUid: t.uid_eleveur },
-          read:  false,
-          ...(t.eleveur_profile_id ? { profile_id: t.eleveur_profile_id } : {}),
-        });
-      } catch (_) {}
+          await supabase.from('notifications').insert({
+            uid:   t.uid_eleveur,
+            type:  'tache_validee',
+            title: 'Tâche validée ✓',
+            body:  `${nomEmploye} a terminé : ${t.titre}`,
+            data:  { tacheId: t.id, eleveurUid: t.uid_eleveur },
+            read:  false,
+            ...(t.eleveur_profile_id ? { profile_id: t.eleveur_profile_id } : {}),
+          });
+        } catch (_) {}
+      }
     }
 
     setToggling(null);

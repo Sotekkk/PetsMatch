@@ -97,6 +97,26 @@ class _PensionMesTachesPageState extends State<PensionMesTachesPage> {
     setState(() { _toggling = id; t['statut'] = newStatut; });
     try {
       await _supa.from('taches_elevage').update({'statut': newStatut}).eq('id', id);
+      // Copie ("miroir") d'une tâche santé chez le propriétaire — valider ici
+      // clôt aussi la tâche d'origine et notifie le vrai propriétaire (t est
+      // rattachée à la pension elle-même, pas lui — voir notify_owner_*).
+      if (newStatut == 'fait' && t['origine_tache_id'] != null) {
+        final origineId = t['origine_tache_id'];
+        await _supa.from('taches_elevage').update({'statut': 'fait'}).eq('id', origineId);
+        final ownerUid = t['notify_owner_uid'] as String?;
+        if (ownerUid != null && ownerUid.isNotEmpty) {
+          final titre = (t['titre'] as String? ?? '').replaceFirst(RegExp(r'^\S+\s'), '');
+          await _supa.from('notifications').insert({
+            'uid': ownerUid,
+            'type': 'tache_validee',
+            'title': '$titre fait ✓',
+            'body': 'Votre pension a réalisé : ${t['titre']}',
+            'data': {'tacheId': origineId},
+            'read': false,
+            if (t['notify_owner_profile_id'] != null) 'profile_id': t['notify_owner_profile_id'],
+          });
+        }
+      }
     } catch (_) {}
     if (mounted) setState(() => _toggling = null);
   }

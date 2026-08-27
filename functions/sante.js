@@ -80,6 +80,109 @@ async function supabaseInsert(table, rows) {
     });
 }
 
+// Comme supabaseInsert, mais renvoie la ligne créée (Prefer: return=representation) —
+// nécessaire pour lier une tâche miroir pension à la tâche propriétaire d'origine.
+async function supabaseInsertReturning(table, rows) {
+    return new Promise((resolve, reject) => {
+        const bodyStr = JSON.stringify(rows);
+        const options = {
+            hostname: new URL(SUPABASE_URL).hostname,
+            path: `/rest/v1/${table}`,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "apikey": SUPABASE_SERVICE_KEY,
+                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                "Prefer": "return=representation",
+                "Content-Length": Buffer.byteLength(bodyStr),
+            },
+        };
+        const req = https.request(options, (res) => {
+            let d = "";
+            res.on("data", (c) => d += c);
+            res.on("end", () => {
+                try {
+                    resolve(JSON.parse(d));
+                } catch (_) {
+                    resolve([]);
+                }
+            });
+        });
+        req.on("error", reject);
+        req.write(bodyStr);
+        req.end();
+    });
+}
+
+/**
+ * Notifie toute pension ayant un accès actif à la fiche de cet animal
+ * (push + notification), et lui crée une copie ("miroir") de la tâche dans
+ * son propre calendrier — la tâche d'origine reste chez le propriétaire.
+ * Quand la pension valide sa copie (voir mes-taches / pension_mes_taches),
+ * l'originale est marquée faite et le propriétaire est notifié.
+ */
+async function notifyAndMirrorPension({
+    animalId, ownerUid, ownerProfileId, title, body,
+    tacheOriginaleId, tacheDate, tacheHeure, tacheNotes, animalNom,
+}) {
+    try {
+        const accesRows = await supabaseGet(
+            `animal_access?animal_id=eq.${animalId}&statut=eq.active&select=pro_profile_id`,
+        );
+        if (!Array.isArray(accesRows) || accesRows.length === 0) return;
+        for (const acces of accesRows) {
+            const proProfileId = acces.pro_profile_id;
+            if (!proProfileId) continue;
+            const proProfile = await supabaseGet(
+                `user_profiles?id=eq.${proProfileId}&select=uid`,
+            );
+            const proUid = Array.isArray(proProfile) && proProfile[0] ? proProfile[0].uid : null;
+            if (!proUid) continue;
+
+            await sendPush(proUid, title, body, {animalId: String(animalId)});
+            try {
+                await supabaseInsert("notifications", [{
+                    uid: proUid,
+                    type: "sante",
+                    title,
+                    body,
+                    data: {animalId: String(animalId), pensionMirror: true},
+                    read: false,
+                    profile_id: proProfileId,
+                }]);
+            } catch (e) {
+                console.error(`notifications insert error (pension mirror) animal=${animalId}:`, e.message);
+            }
+
+            if (tacheOriginaleId) {
+                try {
+                    await supabaseInsert("taches_elevage", [{
+                        uid_eleveur: proUid,
+                        eleveur_profile_id: proProfileId,
+                        titre: title,
+                        date: tacheDate,
+                        heure: tacheHeure,
+                        notes: tacheNotes,
+                        statut: "a_faire",
+                        profil_source: "pension",
+                        animal_id: animalId,
+                        animal_nom: animalNom,
+                        assigne_a: proUid,
+                        assigne_profile_id: proProfileId,
+                        origine_tache_id: tacheOriginaleId,
+                        notify_owner_uid: ownerUid,
+                        ...(ownerProfileId ? {notify_owner_profile_id: ownerProfileId} : {}),
+                    }]);
+                } catch (e) {
+                    console.error(`taches_elevage insert error (pension mirror) animal=${animalId}:`, e.message);
+                }
+            }
+        }
+    } catch (e) {
+        console.error(`notifyAndMirrorPension error animal=${animalId}:`, e.message);
+    }
+}
+
 // ─── FCM helper ───────────────────────────────────────────────────────────────
 
 async function sendPush(uid, title, body, data = {}) {
@@ -207,17 +310,27 @@ exports.sendSanteReminders = functions
                     // Tâche agenda à 8h le jour J uniquement
                     if (palierKey === "j0") {
                         try {
-                            await supabaseInsert("taches_elevage", [{
+                            const notes = produit !== label ? produit : null;
+                            const inserted = await supabaseInsertReturning("taches_elevage", [{
                                 uid_eleveur: uid,
-                                titre: `${emoji} ${label} — ${nomAnimal}`,
+                                titre: title,
                                 date: targetDate,
                                 heure: "08:00",
-                                notes: produit !== label ? produit : null,
+                                notes,
                                 statut: "a_faire",
                                 profil_source: animal.uid_eleveur ? "eleveur" : "particulier",
+                                animal_id: row.animal_id,
                                 animal_nom: nomAnimal,
                                 ...(profileId ? {profile_id: profileId, eleveur_profile_id: profileId} : {}),
                             }]);
+                            const tacheId = Array.isArray(inserted) && inserted[0] ? inserted[0].id : null;
+                            if (tacheId) {
+                                await notifyAndMirrorPension({
+                                    animalId: row.animal_id, ownerUid: uid, ownerProfileId: profileId,
+                                    title, body, tacheOriginaleId: tacheId,
+                                    tacheDate: targetDate, tacheHeure: "08:00", tacheNotes: notes, animalNom: nomAnimal,
+                                });
+                            }
                         } catch (e) {
                             console.error(`taches_elevage insert error (${table} ${row.id}):`, e.message);
                         }
@@ -371,6 +484,13 @@ async function sendOverdueSanteReminders() {
                 }
             }
 
+            // Relance aussi toute pension ayant un accès actif à la fiche —
+            // la tâche miroir créée au palier j0 reste ouverte tant que non validée.
+            await notifyAndMirrorPension({
+                animalId: row.animal_id, ownerUid: uid, ownerProfileId: profileId,
+                title, body, tacheOriginaleId: null,
+            });
+
             try {
                 await supabaseInsert("notifs_sent", [{key: dedupKey, sent_at: new Date().toISOString()}]);
             } catch (e) {
@@ -475,17 +595,28 @@ exports.sendTraitementReminders = functions
             // Tâche agenda cochable — sans elle, le rappel n'était qu'un push
             // qui disparaissait sans laisser de trace validable/visible.
             try {
-                await supabaseInsert("taches_elevage", [{
+                const traitementTitre = `💊 ${row.nom || "Traitement"} — ${nomAnimal}`;
+                const inserted = await supabaseInsertReturning("taches_elevage", [{
                     uid_eleveur: uid,
-                    titre: `💊 ${row.nom || "Traitement"} — ${nomAnimal}`,
+                    titre: traitementTitre,
                     date: todayStr,
                     heure: heureDue,
                     notes: row.posologie || null,
                     statut: "a_faire",
                     profil_source: animal.uid_eleveur ? "eleveur" : "particulier",
+                    animal_id: row.animal_id,
                     animal_nom: nomAnimal,
                     ...(profileId ? {profile_id: profileId, eleveur_profile_id: profileId} : {}),
                 }]);
+                const tacheId = Array.isArray(inserted) && inserted[0] ? inserted[0].id : null;
+                if (tacheId) {
+                    await notifyAndMirrorPension({
+                        animalId: row.animal_id, ownerUid: uid, ownerProfileId: profileId,
+                        title: traitementTitre, body, tacheOriginaleId: tacheId,
+                        tacheDate: todayStr, tacheHeure: heureDue,
+                        tacheNotes: row.posologie || null, animalNom: nomAnimal,
+                    });
+                }
             } catch (e) {
                 console.error(`taches_elevage insert error (traitement ${row.id}):`, e.message);
             }
