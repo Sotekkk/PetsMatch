@@ -261,6 +261,24 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
     if (!form.animal_nom.trim()) { setError('Le nom est obligatoire.'); return; }
     setSaving(true);
     setError('');
+
+    // Un animal identifié (fiche rattachée) ne peut pas être admis dans deux
+    // pensions à la fois — vérifie qu'aucune AUTRE pension ne le déclare
+    // encore en_pension avant d'enregistrer une admission chez nous.
+    if (animalId && form.statut === 'en_pension') {
+      const { data: ailleurs } = await supabase.from('pension_entrees')
+        .select('id, pro_profile_id, pro_uid')
+        .eq('animal_id', animalId).eq('statut', 'en_pension')
+        .neq('id', entree?.id ?? '00000000-0000-0000-0000-000000000000');
+      const conflit = (ailleurs ?? []).find(a =>
+        proProfileId ? a.pro_profile_id !== proProfileId : a.pro_uid !== proUid);
+      if (conflit) {
+        setError(`${form.animal_nom.trim()} est déjà déclaré en pension ailleurs. Renseignez d'abord sa sortie chez l'autre pension.`);
+        setSaving(false);
+        return;
+      }
+    }
+
     const payload = {
       pro_uid:              proUid,
       ...(proProfileId ? { pro_profile_id: proProfileId } : {}),

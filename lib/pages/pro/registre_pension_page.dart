@@ -1776,6 +1776,32 @@ class PensionEditSheetState extends State<PensionEditSheet> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
+      // Un animal identifié (fiche rattachée) ne peut pas être admis dans
+      // deux pensions à la fois.
+      final animalId = widget.entree['animal_id'] as String?;
+      if (_statut == 'en_pension' && animalId != null) {
+        final ownProfileId = widget.entree['pro_profile_id'] as String?;
+        final ownUid = widget.entree['pro_uid'] as String?;
+        final ailleurs = await widget.supa.from('pension_entrees')
+            .select('id, pro_profile_id, pro_uid')
+            .eq('animal_id', animalId).eq('statut', 'en_pension')
+            .neq('id', widget.entree['id']);
+        final conflit = (ailleurs as List).any((a) => (ownProfileId != null && ownProfileId.isNotEmpty)
+            ? (a as Map)['pro_profile_id'] != ownProfileId
+            : (a as Map)['pro_uid'] != ownUid);
+        if (conflit) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('${widget.entree['animal_nom'] ?? 'Cet animal'} est déjà déclaré en pension ailleurs. Renseignez d\'abord sa sortie chez l\'autre pension.',
+                  style: const TextStyle(fontFamily: 'Galey')),
+              backgroundColor: Colors.red,
+            ));
+            setState(() => _saving = false);
+          }
+          return;
+        }
+      }
+
       await widget.supa.from('pension_entrees').update({
         'statut':                _statut,
         'espece':                _especeCtrl.text.trim().toLowerCase(),
@@ -2483,6 +2509,29 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
           if (widget.initialPhotoUrl != null) 'photo_url': widget.initialPhotoUrl,
           'statut': 'present',
         });
+      }
+
+      // Un animal identifié (fiche rattachée) ne peut pas être admis dans
+      // deux pensions à la fois.
+      if (!justCreatedFiche && animalId != null) {
+        final ownProfileId = User_Info.activeProfileId;
+        final ailleurs = await _supa.from('pension_entrees')
+            .select('id, pro_profile_id, pro_uid')
+            .eq('animal_id', animalId).eq('statut', 'en_pension');
+        final conflit = (ailleurs as List).any((a) => ownProfileId.isNotEmpty
+            ? (a as Map)['pro_profile_id'] != ownProfileId
+            : (a as Map)['pro_uid'] != _uid);
+        if (conflit) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('${_nomCtrl.text.trim()} est déjà déclaré en pension ailleurs. Renseignez d\'abord sa sortie chez l\'autre pension.',
+                  style: const TextStyle(fontFamily: 'Galey')),
+              backgroundColor: Colors.red,
+            ));
+            setState(() => _saving = false);
+          }
+          return;
+        }
       }
 
       await _supa.from('pension_entrees').insert({
