@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { usePlan } from '@/lib/use-plan';
+import { usePlan, usePensionPlan } from '@/lib/use-plan';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -280,6 +280,11 @@ export default function PlanningPage() {
   const targetUid = employerUid || user?.uid || '';
   const targetProfileId = employerProfileId || profileId;
   const { config: planConfig, loading: planLoading } = usePlan();
+  const { plan: pensionPlan, loading: pensionPlanLoading } = usePensionPlan();
+  // La pension a son propre abonnement — les protocoles sont inclus dès le plan payant.
+  const isPensionSource = profilSource === 'pension';
+  const planGateLoading = isPensionSource ? pensionPlanLoading : planLoading;
+  const hasProtocolesAccess = isPensionSource ? pensionPlan !== 'free' : planConfig.hasPlanning;
 
   const [employePerms, setEmployePerms] = useState<Set<string>>(new Set());
   const canWrite = !employerUid || employePerms.has('write_protocoles');
@@ -413,7 +418,7 @@ export default function PlanningPage() {
   {/* En mode employé, l'accès Premium a déjà été vérifié côté employeur
       (impossible de créer un protocole sinon) — on ne re-teste pas le plan
       du compte de l'employé, qui n'a pas de rapport. */}
-  if (!employerUid && !planLoading && !planConfig.hasPlanning) {
+  if (!employerUid && !planGateLoading && !hasProtocolesAccess) {
     return (
       <div className="min-h-screen bg-[#F8F8F6] flex items-center justify-center p-6">
         <div className="bg-white rounded-2xl shadow-sm border border-[#E5E7EB] max-w-md w-full p-8 text-center">
@@ -426,7 +431,7 @@ export default function PlanningPage() {
             Créez des modèles de protocoles et planifiez-les pour toute votre portée.
           </p>
           <button
-            onClick={() => router.push('/abonnement')}
+            onClick={() => router.push(isPensionSource ? '/pension/abonnement' : '/abonnement')}
             className="w-full py-3 rounded-xl text-white font-semibold text-sm"
             style={{ backgroundColor: '#D97706', fontFamily: 'Galey, sans-serif' }}
           >

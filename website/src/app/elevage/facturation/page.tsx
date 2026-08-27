@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
-import { usePlan } from '@/lib/use-plan';
+import { usePensionAccess } from '@/hooks/usePensionAccess';
+import { usePlan, usePensionPlan } from '@/lib/use-plan';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,12 @@ export default function FacturationPage() {
   const profilSource = pathname?.startsWith('/association') ? 'association' : 'eleveur';
   const activeProfileId = useActiveProfile();
   const { config: planConfig, loading: planLoading } = usePlan();
+  const { isPension: isPensionSource } = usePensionAccess();
+  const { plan: pensionPlan, loading: pensionPlanLoading } = usePensionPlan();
+  // La pension a son propre abonnement — la facturation est incluse dès le plan payant.
+  // On ne touche pas au filtrage des données (profilSource), seulement au verrou de plan.
+  const planGateLoading = isPensionSource ? pensionPlanLoading : planLoading;
+  const hasFacturationAccess = isPensionSource ? pensionPlan !== 'free' : planConfig.hasPremiumFeatures;
 
   const [factures, setFactures] = useState<Facture[]>([]);
   const [fetching, setFetching] = useState(true);
@@ -135,9 +142,9 @@ export default function FacturationPage() {
     }
   }
 
-  if (loading || planLoading || !user) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
+  if (loading || planGateLoading || !user) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
 
-  if (!planConfig.hasPremiumFeatures) {
+  if (!hasFacturationAccess) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4 px-4 text-center">
         <span className="text-5xl">🔒</span>
@@ -145,9 +152,9 @@ export default function FacturationPage() {
           Facturation — Plan Premium requis
         </h2>
         <p className="text-gray-500 text-sm max-w-sm">
-          La facturation est disponible avec le plan Premium. Gérez vos factures directement depuis votre espace éleveur.
+          La facturation est disponible avec un abonnement payant. Gérez vos factures directement depuis votre espace pro.
         </p>
-        <a href="/abonnement"
+        <a href={isPensionSource ? '/pension/abonnement' : '/abonnement'}
           className="bg-[#D97706] hover:bg-[#B45309] text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm">
           👑 Voir les plans
         </a>

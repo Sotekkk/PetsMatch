@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
-import { usePlan } from '@/lib/use-plan';
+import { usePlan, usePensionPlan } from '@/lib/use-plan';
 
 interface Acte {
   id: string;
@@ -39,11 +39,16 @@ export default function RegistreSanitairePage() {
   const { user, loading } = useAuth();
   const activeProfileId = useActiveProfile();
   const { config: planConfig, loading: planLoading } = usePlan();
+  const { plan: pensionPlan, loading: pensionPlanLoading } = usePensionPlan();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const profilSource = searchParams.get('profilSource')
     ?? (pathname.startsWith('/association') ? 'association' : 'eleveur');
+  // La pension a son propre abonnement : ne pas la juger sur le plan éleveur.
+  const isPensionSource = profilSource === 'pension';
+  const planGateLoading = isPensionSource ? pensionPlanLoading : planLoading;
+  const hasRegistreAccess = isPensionSource ? pensionPlan !== 'free' : planConfig.hasRegistres;
   const [actes, setActes] = useState<Acte[]>([]);
   const [fetching, setFetching] = useState(true);
   const [filtreType, setFiltreType] = useState('tous');
@@ -57,7 +62,7 @@ export default function RegistreSanitairePage() {
     if (!loading && !user) router.push('/connexion');
   }, [loading, user, router]);
 
-  if (!planLoading && !planConfig.hasRegistres) {
+  if (!planGateLoading && !hasRegistreAccess) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4 px-4 text-center">
         <span className="text-5xl">🔒</span>
@@ -67,7 +72,7 @@ export default function RegistreSanitairePage() {
         <p className="text-gray-500 text-sm max-w-sm">
           Le registre sanitaire est disponible à partir du plan Pro. Passez à un plan supérieur pour gérer les actes vétérinaires de vos animaux.
         </p>
-        <a href="/abonnement"
+        <a href={isPensionSource ? '/pension/abonnement' : '/abonnement'}
           className="bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm">
           ⚡ Voir les plans
         </a>

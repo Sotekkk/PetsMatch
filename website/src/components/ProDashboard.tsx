@@ -89,6 +89,8 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
   const [savingRdv, setSavingRdv] = useState<string | null>(null);
   const [logementsDispo, setLogementsDispo] = useState(0);
   const [logementsTotal, setLogementsTotal] = useState(0);
+  const [pensionnairesCount, setPensionnairesCount] = useState(0);
+  const [rdvTodayCount, setRdvTodayCount] = useState(0);
 
   const catPro = profile.profile_type ?? profile.cat_pro ?? '';
   const isVet  = catPro === 'veterinaire' || catPro === 'sante';
@@ -100,6 +102,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
   const clientsLabel = isVet ? 'Mes patients'
     : catPro === 'marechal_ferrant' ? 'Mes équidés suivis'
     : catPro === 'education' ? 'Mes élèves'
+    : isPension ? 'Pensionnaires'
     : 'Animaux suivis';
 
   useEffect(() => {
@@ -173,11 +176,18 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
     if (!uid || !isPension) return;
     async function loadDispo() {
       const todayStr = new Date().toISOString().slice(0, 10);
-      const [{ data: logements }, { data: actives }] = await Promise.all([
+      const todayStart = `${todayStr}T00:00:00`;
+      const todayEnd = `${todayStr}T23:59:59`;
+      const [{ data: logements }, { data: actives }, { data: rdvToday }] = await Promise.all([
         supabase.from('enclos_chenil').select('id, capacite').eq('uid_eleveur', uid),
         // Séjours réellement en cours aujourd'hui : statut actif + déjà arrivé
         supabase.from('pension_entrees').select('logement_id').eq('pro_uid', uid).eq('statut', 'en_pension').lte('date_entree', todayStr),
+        supabase.from('rdv').select('id').eq('pro_uid', uid)
+          .in('statut', ['demande', 'confirme', 'contre_proposition'])
+          .gte('date_heure', todayStart).lte('date_heure', todayEnd),
       ]);
+      setPensionnairesCount((actives ?? []).length);
+      setRdvTodayCount((rdvToday ?? []).length);
       const occupePerLogement: Record<string, number> = {};
       for (const e of (actives ?? [])) {
         if (e.logement_id) occupePerLogement[e.logement_id] = (occupePerLogement[e.logement_id] ?? 0) + 1;
@@ -258,22 +268,39 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
           </div>
 
           {/* Stats rapides */}
-          <div className="grid grid-cols-3 gap-3 mt-4">
-            <div className="bg-white/10 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold">{pendingRdvs.length}</p>
-              <p className="text-xs text-white/70 mt-0.5">En attente</p>
+          {isPension ? (
+            <div className="grid grid-cols-3 gap-3 mt-4">
+              <Link href="/pension/registre" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold">{pensionnairesCount}</p>
+                <p className="text-xs text-white/70 mt-0.5">Pensionnaires</p>
+              </Link>
+              <Link href="/agenda" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold">{rdvTodayCount}</p>
+                <p className="text-xs text-white/70 mt-0.5">RDV aujourd&apos;hui</p>
+              </Link>
+              <Link href="/pension/abonnement" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center flex flex-col justify-center">
+                <p className="text-base font-bold">Pension</p>
+                <p className="text-xs text-white/70 mt-0.5">Mon abonnement</p>
+              </Link>
             </div>
-            <div className="bg-white/10 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold">{upcomingRdvs.length}</p>
-              <p className="text-xs text-white/70 mt-0.5">RDV à venir</p>
+          ) : (
+            <div className="grid grid-cols-3 gap-3 mt-4">
+              <div className="bg-white/10 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold">{pendingRdvs.length}</p>
+                <p className="text-xs text-white/70 mt-0.5">En attente</p>
+              </div>
+              <div className="bg-white/10 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold">{upcomingRdvs.length}</p>
+                <p className="text-xs text-white/70 mt-0.5">RDV à venir</p>
+              </div>
+              <div className="bg-white/10 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold">{patients.length}</p>
+                <p className="text-xs text-white/70 mt-0.5">
+                  {isVet ? 'Patients' : 'Animaux suivis'}
+                </p>
+              </div>
             </div>
-            <div className="bg-white/10 rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold">{patients.length}</p>
-              <p className="text-xs text-white/70 mt-0.5">
-                {isVet ? 'Patients' : 'Animaux suivis'}
-              </p>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 

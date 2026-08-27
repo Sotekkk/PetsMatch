@@ -8,7 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
-import { usePlan, usePensionPlan } from '@/lib/use-plan';
+import { usePlan, usePensionPlan, usePlanGarde } from '@/lib/use-plan';
 import { useRouter } from 'next/navigation';
 import { ACTIVE_PROFILE_KEY, ACTIVE_PROFILE_TYPE_KEY, PROFILE_CHANGE_EVENT } from '@/hooks/useActiveProfile';
 
@@ -618,6 +618,7 @@ export default function Header() {
   const pathname = usePathname();
   const { plan: eleveurPlan } = usePlan();
   const { plan: pensionPlan } = usePensionPlan();
+  const { plan: gardePlan } = usePlanGarde();
 
   // ── Effective profile data (primary or secondary) ─────────────────────────
   const activeProfile = profiles.find(p => p.id === activeProfileId) ?? null;
@@ -1154,9 +1155,13 @@ export default function Header() {
                           <div className="bg-gray-50">
                             {sec.items.map((item) => {
                               const it = item as { pro?: boolean; premium?: boolean; href: string; icon: string; label: string };
-                              const isProLocked = (effectiveIsEleveur && it.pro && eleveurPlan === 'free')
-                                || (effectiveIsPension && it.pro && pensionPlan === 'free');
-                              const isPremiumLocked = effectiveIsEleveur && it.premium && eleveurPlan !== 'premium';
+                              const isProLocked = !!it.pro && (
+                                effectiveIsPension ? pensionPlan === 'free'
+                                : effectiveIsGarde ? gardePlan === 'free'
+                                : effectiveType === 'eleveur' ? eleveurPlan === 'free'
+                                : false
+                              );
+                              const isPremiumLocked = effectiveType === 'eleveur' && !!it.premium && eleveurPlan !== 'premium';
                               const isLocked = isProLocked || isPremiumLocked;
                               const badge = isPremiumLocked ? 'Premium' : 'Pro';
                               const badgeCls = isPremiumLocked
@@ -1312,9 +1317,13 @@ export default function Header() {
                     <div className="pl-6 space-y-0.5 mb-1">
                       {sec.items.map((item) => {
                         const it = item as { pro?: boolean; premium?: boolean; href: string; icon: string; label: string };
-                        const isProLocked = (effectiveIsEleveur && it.pro && eleveurPlan === 'free')
-                          || (effectiveIsPension && it.pro && pensionPlan === 'free');
-                        const isPremiumLocked = effectiveIsEleveur && it.premium && eleveurPlan !== 'premium';
+                        const isProLocked = !!it.pro && (
+                          effectiveIsPension ? pensionPlan === 'free'
+                          : effectiveIsGarde ? gardePlan === 'free'
+                          : effectiveType === 'eleveur' ? eleveurPlan === 'free'
+                          : false
+                        );
+                        const isPremiumLocked = effectiveType === 'eleveur' && !!it.premium && eleveurPlan !== 'premium';
                         const isLocked = isProLocked || isPremiumLocked;
                         const badge = isPremiumLocked ? 'Premium' : 'Pro';
                         return isLocked ? (
