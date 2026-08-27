@@ -33,6 +33,7 @@ const SUB_PROFESSIONS: Record<string, string[]> = {
 };
 
 const ESPECES = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'NAC'];
+const ESPECES_PENSION = ['Chien', 'Chat', 'Cheval', 'Animaux de la ferme', 'Lapin', 'Âne', 'NAC', 'Oiseaux'];
 
 const PRO_TYPES = new Set(['veterinaire', 'sante', 'education', 'garde', 'pension', 'toilettage', 'photographe', 'marechal_ferrant', 'taxi_animalier']);
 const HAS_SIRET  = new Set(['veterinaire', 'sante', 'education', 'pension', 'toilettage', 'photographe', 'marechal_ferrant', 'taxi_animalier']);
@@ -611,7 +612,8 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
               )}
               <div>
                 <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-2">Espèces acceptées</p>
-                <EspecesChips selected={especesSet} onToggle={e => toggleEspece(e, especesSet, setEspecesSet)} />
+                <EspecesChips selected={especesSet} onToggle={e => toggleEspece(e, especesSet, setEspecesSet)}
+                  options={typeInfo.type === 'pension' ? ESPECES_PENSION : undefined} />
               </div>
             </>
           )}
@@ -937,10 +939,10 @@ function Field({ label, required, children }: { label: string; required?: boolea
   );
 }
 
-function EspecesChips({ selected, onToggle }: { selected: Set<string>; onToggle: (e: string) => void }) {
+function EspecesChips({ selected, onToggle, options }: { selected: Set<string>; onToggle: (e: string) => void; options?: string[] }) {
   return (
     <div className="flex flex-wrap gap-2">
-      {ESPECES.map(e => (
+      {(options ?? ESPECES).map(e => (
         <button key={e} onClick={() => onToggle(e)}
           className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
             selected.has(e)

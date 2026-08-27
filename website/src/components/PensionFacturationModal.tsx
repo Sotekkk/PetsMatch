@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { PensionEntree } from '@/components/PensionEntreeModal';
+import { pensionTarifKeyForEspece, type TarifsPension } from '@/lib/pension-especes';
 
 const TEAL = '#0C5C6C';
 
@@ -47,32 +48,42 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
   const [error, setError] = useState('');
 
   // Tarification automatisée — pré-remplit le tarif/nuit suggéré à partir de
-  // la config du pro (tranches de poids + réduction séjour long), reste
+  // la config du pro (prix par espèce + réduction séjour long), reste
   // librement modifiable ensuite. N'écrase jamais une saisie déjà en cours.
   useEffect(() => {
     (async () => {
       if (!proProfileId) return;
       const { data: profil } = await supabase.from('user_profiles')
         .select('tarifs_pension').eq('id', proProfileId).maybeSingle();
-      const config = profil?.tarifs_pension;
+      const config = profil?.tarifs_pension as TarifsPension | null;
       if (!config || typeof config !== 'object') return;
-      const tranches: Array<{ poids_max?: number; prix_seul?: number; prix_partage?: number }> = config.tranches_poids ?? [];
-      if (tranches.length === 0) return;
-
-      let poids: number | undefined;
-      if (entree.animal_id) {
-        const { data: animal } = await supabase.from('animaux').select('poids').eq('id', entree.animal_id).maybeSingle();
-        poids = animal?.poids ?? undefined;
-      }
       const seul = entree.seul_dans_logement !== false;
 
-      let tranche = tranches.find(t => poids == null || t.poids_max == null || poids <= t.poids_max);
-      if (!tranche) tranche = tranches[tranches.length - 1];
-      const prixNuit = (seul ? tranche.prix_seul : tranche.prix_partage) ?? 0;
+      let prixNuit = 0;
+      if (Array.isArray(config.especes) && config.especes.length > 0) {
+        // Nouveau modèle : prix fixe par espèce.
+        const key = pensionTarifKeyForEspece(entree.espece);
+        if (!key) return;
+        const match = config.especes.find(e => e.espece === key);
+        if (!match) return;
+        prixNuit = (seul ? match.prix_seul : (match.prix_partage ?? match.prix_seul)) ?? 0;
+      } else if (Array.isArray(config.tranches_poids) && config.tranches_poids.length > 0) {
+        // Rétro-compat : ancien modèle tranches de poids.
+        const tranches = config.tranches_poids;
+        let poids: number | undefined;
+        if (entree.animal_id) {
+          const { data: animal } = await supabase.from('animaux').select('poids').eq('id', entree.animal_id).maybeSingle();
+          poids = animal?.poids ?? undefined;
+        }
+        let tranche = tranches.find(t => poids == null || t.poids_max == null || poids <= t.poids_max);
+        if (!tranche) tranche = tranches[tranches.length - 1];
+        prixNuit = (seul ? tranche.prix_seul : tranche.prix_partage) ?? 0;
+      } else {
+        return;
+      }
 
       let reductionPct = 0;
-      const reductions: Array<{ min_nuits?: number; pourcentage?: number }> = config.reductions_long_sejour ?? [];
-      for (const r of reductions) {
+      for (const r of (config.reductions_long_sejour ?? [])) {
         if (nuitsInitiales >= (r.min_nuits ?? 0)) reductionPct = r.pourcentage ?? 0;
       }
       const prixFinal = prixNuit * (1 - reductionPct / 100);

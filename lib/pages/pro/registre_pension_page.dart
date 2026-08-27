@@ -17,6 +17,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show pensionTarifKeyForEspece;
 
 class RegistrePensionPage extends StatefulWidget {
   const RegistrePensionPage({super.key});
@@ -1206,6 +1207,63 @@ class _PensionCard extends StatelessWidget {
     this.onJournal,
   });
 
+  bool get _hasActions =>
+      onSorti != null || onContrat != null || onSignature != null ||
+      onFacture != null || onEnvoyerLien != null || onJournal != null;
+
+  void _showActionsSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        Widget tile(IconData icon, String label, VoidCallback? cb, {Color? color}) {
+          if (cb == null) return const SizedBox.shrink();
+          return ListTile(
+            leading: Icon(icon, color: color ?? _teal, size: 22),
+            title: Text(label,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+            onTap: () { Navigator.pop(ctx); cb(); },
+          );
+        }
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const SizedBox(height: 10),
+              Container(width: 40, height: 4,
+                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(entree['animal_nom']?.toString() ?? 'Actions',
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+                ),
+              ),
+              const Divider(height: 1),
+              tile(Icons.photo_camera_back_outlined, 'Journal', onJournal, color: _green),
+              tile(Icons.description_outlined, 'Contrat', onContrat, color: _purple),
+              tile(Icons.draw_outlined, 'Signature en ligne', onSignature),
+              tile(Icons.link_rounded, 'Lien de réclamation', onEnvoyerLien, color: _purple),
+              tile(
+                factureFaite ? Icons.check_circle_outline : Icons.receipt_long_outlined,
+                factureFaite ? 'Facturé — voir / refaire' : 'Facturer',
+                onFacture,
+                color: factureFaite ? _green : _teal,
+              ),
+              tile(Icons.logout_rounded, 'Marquer sorti', onSorti),
+              const SizedBox(height: 8),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final nom          = entree['animal_nom']?.toString() ?? '—';
@@ -1333,95 +1391,26 @@ class _PensionCard extends StatelessWidget {
                         fmtIso(entree['date_sortie_effective'] as String?)),
                   ],
                 ]),
-                // Boutons d'action
-                if (onSorti != null || onContrat != null || onSignature != null || onFacture != null || onEnvoyerLien != null || onJournal != null) ...[
+                // Menu Actions — regroupe journal / contrat / signature /
+                // lien de réclamation / facturation / sortie sur un seul bouton.
+                if (_hasActions) ...[
                   const SizedBox(height: 8),
-                  Wrap(alignment: WrapAlignment.end, spacing: 8, runSpacing: 8, children: [
-                    if (onJournal != null)
-                      OutlinedButton.icon(
-                        onPressed: onJournal,
-                        icon: const Icon(Icons.photo_camera_back_outlined, size: 14),
-                        label: const Text('Journal',
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _green,
-                          side: const BorderSide(color: _green),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                          minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _showActionsSheet(context),
+                      icon: const Icon(Icons.more_horiz, size: 16),
+                      label: const Text('Actions',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _teal,
+                        side: const BorderSide(color: _teal),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                    if (onContrat != null)
-                      OutlinedButton.icon(
-                        onPressed: onContrat,
-                        icon: const Icon(Icons.description_outlined, size: 14),
-                        label: const Text('Contrat',
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF7B5EA7),
-                          side: const BorderSide(color: Color(0xFF7B5EA7)),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                          minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
-                    if (onSignature != null)
-                      OutlinedButton.icon(
-                        onPressed: onSignature,
-                        icon: const Icon(Icons.draw_outlined, size: 14),
-                        label: const Text('Signature en ligne',
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF0C5C6C),
-                          side: const BorderSide(color: Color(0xFF0C5C6C)),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                          minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
-                    if (onEnvoyerLien != null)
-                      OutlinedButton.icon(
-                        onPressed: onEnvoyerLien,
-                        icon: const Icon(Icons.link_rounded, size: 14),
-                        label: const Text('Lien de réclamation',
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _purple,
-                          side: const BorderSide(color: _purple),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                          minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
-                    if (onFacture != null)
-                      OutlinedButton.icon(
-                        onPressed: onFacture,
-                        icon: Icon(factureFaite ? Icons.check_circle_outline : Icons.receipt_long_outlined, size: 14),
-                        label: Text(factureFaite ? 'Facturé' : 'Facturer',
-                            style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: factureFaite ? _green : _teal,
-                          side: BorderSide(color: factureFaite ? _green : _teal),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                          minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
-                    if (onSorti != null)
-                      OutlinedButton.icon(
-                        onPressed: onSorti,
-                        icon: const Icon(Icons.logout_rounded, size: 14),
-                        label: const Text('Marquer sorti',
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _teal,
-                          side: const BorderSide(color: _teal),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                          minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
-                  ]),
+                    ),
+                  ),
                 ],
               ])),
               // Bouton voir fiche (si accès approuvé)
@@ -3126,29 +3115,45 @@ class _FacturationSheetState extends State<_FacturationSheet> {
           .select('tarifs_pension').eq('id', pid).maybeSingle();
       final config = profil?['tarifs_pension'];
       if (config is! Map) return;
-      final tranches = (config['tranches_poids'] as List?) ?? [];
-      if (tranches.isEmpty) return;
-
-      final animalId = widget.entree['animal_id']?.toString();
-      double? poids;
-      if (animalId != null && animalId.isNotEmpty) {
-        final animal = await Supabase.instance.client.from('animaux')
-            .select('poids').eq('id', animalId).maybeSingle();
-        poids = (animal?['poids'] as num?)?.toDouble();
-      }
       final seul = widget.entree['seul_dans_logement'] != false; // défaut: seul
 
-      Map? tranche;
-      for (final t in tranches) {
-        final m = t as Map;
-        final poidsMax = (m['poids_max'] as num?)?.toDouble();
-        if (poids == null || poidsMax == null || poids <= poidsMax) { tranche = m; break; }
+      double prixNuit = 0;
+      final especesTarifs = config['especes'];
+      if (especesTarifs is List && especesTarifs.isNotEmpty) {
+        // Nouveau modèle : prix fixe par espèce.
+        final key = pensionTarifKeyForEspece(widget.entree['espece']?.toString());
+        if (key == null) return;
+        Map? match;
+        for (final e in especesTarifs) {
+          if (e is Map && e['espece']?.toString() == key) { match = e; break; }
+        }
+        if (match == null) return;
+        prixNuit = seul
+            ? (match['prix_seul'] as num?)?.toDouble() ?? 0
+            : (match['prix_partage'] as num?)?.toDouble() ??
+              (match['prix_seul'] as num?)?.toDouble() ?? 0;
+      } else {
+        // Rétro-compat : ancien modèle tranches de poids.
+        final tranches = (config['tranches_poids'] as List?) ?? [];
+        if (tranches.isEmpty) return;
+        final animalId = widget.entree['animal_id']?.toString();
+        double? poids;
+        if (animalId != null && animalId.isNotEmpty) {
+          final animal = await Supabase.instance.client.from('animaux')
+              .select('poids').eq('id', animalId).maybeSingle();
+          poids = (animal?['poids'] as num?)?.toDouble();
+        }
+        Map? tranche;
+        for (final t in tranches) {
+          final m = t as Map;
+          final poidsMax = (m['poids_max'] as num?)?.toDouble();
+          if (poids == null || poidsMax == null || poids <= poidsMax) { tranche = m; break; }
+        }
+        tranche ??= tranches.last as Map;
+        prixNuit = seul
+            ? (tranche['prix_seul'] as num?)?.toDouble() ?? 0
+            : (tranche['prix_partage'] as num?)?.toDouble() ?? 0;
       }
-      tranche ??= tranches.last as Map;
-
-      final prixNuit = seul
-          ? (tranche['prix_seul'] as num?)?.toDouble() ?? 0
-          : (tranche['prix_partage'] as num?)?.toDouble() ?? 0;
 
       double reductionPct = 0;
       final reductions = (config['reductions_long_sejour'] as List?) ?? [];

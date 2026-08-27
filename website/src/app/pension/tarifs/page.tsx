@@ -5,9 +5,13 @@ import { useRouter } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
+import { PENSION_ESPECES, type TarifsPension } from '@/lib/pension-especes';
 
-interface Tranche {
-  poidsMax: string;
+interface EspeceRow {
+  key: string;
+  label: string;
+  emoji: string;
+  accepte: boolean;
   prixSeul: string;
   prixPartage: string;
 }
@@ -28,8 +32,9 @@ export default function PensionTarifsPage() {
   const router = useRouter();
 
   const [profileId, setProfileId] = useState<string | null>(null);
-  const [tranches, setTranches] = useState<Tranche[]>([]);
+  const [especes, setEspeces] = useState<EspeceRow[]>([]);
   const [reductions, setReductions] = useState<Reduction[]>([]);
+  const [afficherPublic, setAfficherPublic] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -51,27 +56,46 @@ export default function PensionTarifsPage() {
     setProfileId(pid);
     if (!pid) { setLoading(false); return; }
 
-    const { data } = await supabase.from('user_profiles').select('tarifs_pension').eq('id', pid).maybeSingle();
-    const t = (data?.tarifs_pension ?? null) as { tranches_poids?: unknown[]; reductions_long_sejour?: unknown[] } | null;
+    const { data } = await supabase.from('user_profiles')
+      .select('tarifs_pension, especes_acceptees').eq('id', pid).maybeSingle();
+    const t = (data?.tarifs_pension ?? null) as (TarifsPension & { afficher_public?: boolean }) | null;
+    const acceptees = new Set((data?.especes_acceptees as string[] | undefined) ?? []);
+    setAfficherPublic(t?.afficher_public === true);
 
-    const loadedTranches = (t?.tranches_poids ?? []).map((raw) => {
-      const m = raw as { poids_max?: number | null; prix_seul?: number; prix_partage?: number };
-      return {
-        poidsMax: m.poids_max != null ? String(m.poids_max) : '',
-        prixSeul: m.prix_seul != null ? String(m.prix_seul) : '',
-        prixPartage: m.prix_partage != null ? String(m.prix_partage) : '',
-      };
-    });
-    const loadedReductions = (t?.reductions_long_sejour ?? []).map((raw) => {
-      const m = raw as { min_nuits?: number; pourcentage?: number };
-      return {
-        minNuits: m.min_nuits != null ? String(m.min_nuits) : '',
-        pourcentage: m.pourcentage != null ? String(m.pourcentage) : '',
-      };
-    });
+    // Prix déjà saisis, par key.
+    const prixByKey: Record<string, { seul: string; partage: string }> = {};
+    if (Array.isArray(t?.especes)) {
+      for (const e of t.especes) {
+        prixByKey[e.espece] = {
+          seul: e.prix_seul != null ? String(e.prix_seul) : '',
+          partage: e.prix_partage != null ? String(e.prix_partage) : '',
+        };
+      }
+    } else if (Array.isArray(t?.tranches_poids) && t.tranches_poids.length > 0) {
+      // Rétro-compat : reprend le prix de la 1re tranche comme défaut pour
+      // les espèces acceptées.
+      const first = t.tranches_poids[0];
+      const seul = first.prix_seul != null ? String(first.prix_seul) : '';
+      const partage = first.prix_partage != null ? String(first.prix_partage) : '';
+      for (const sp of PENSION_ESPECES) {
+        if (acceptees.has(sp.label)) prixByKey[sp.key] = { seul, partage };
+      }
+    }
 
-    setTranches(loadedTranches.length > 0 ? loadedTranches : [{ poidsMax: '', prixSeul: '', prixPartage: '' }]);
-    setReductions(loadedReductions);
+    const rows: EspeceRow[] = PENSION_ESPECES.map(sp => ({
+      key: sp.key,
+      label: sp.label,
+      emoji: sp.emoji,
+      accepte: acceptees.has(sp.label),
+      prixSeul: prixByKey[sp.key]?.seul ?? '',
+      prixPartage: prixByKey[sp.key]?.partage ?? '',
+    })).sort((a, b) => (a.accepte === b.accepte ? 0 : a.accepte ? -1 : 1));
+
+    setEspeces(rows);
+    setReductions(((t?.reductions_long_sejour ?? []) as { min_nuits?: number; pourcentage?: number }[]).map(m => ({
+      minNuits: m.min_nuits != null ? String(m.min_nuits) : '',
+      pourcentage: m.pourcentage != null ? String(m.pourcentage) : '',
+    })));
     setLoading(false);
   }, [user, activeProfileId]);
 
@@ -82,17 +106,11 @@ export default function PensionTarifsPage() {
     setSaving(true);
     setSaved(false);
 
-    const tranches_poids = tranches
-      .filter(t => t.prixSeul.trim() !== '')
-      .map(t => ({
-        poids_max: num(t.poidsMax),
-        prix_seul: num(t.prixSeul) ?? 0,
-        prix_partage: num(t.prixPartage) ?? num(t.prixSeul) ?? 0,
-      }))
-      .sort((a, b) => {
-        if (a.poids_max == null) return 1;
-        if (b.poids_max == null) return -1;
-        return a.poids_max - b.poids_max;
+    const especesOut = especes
+      .filter(e => e.prixSeul.trim() !== '')
+      .map(e => {
+        const seul = num(e.prixSeul) ?? 0;
+        return { espece: e.key, prix_seul: seul, prix_partage: num(e.prixPartage) ?? seul };
       });
 
     const reductions_long_sejour = reductions
@@ -104,7 +122,7 @@ export default function PensionTarifsPage() {
       .sort((a, b) => a.min_nuits - b.min_nuits);
 
     await supabase.from('user_profiles')
-      .update({ tarifs_pension: { tranches_poids, reductions_long_sejour } })
+      .update({ tarifs_pension: { especes: especesOut, reductions_long_sejour, afficher_public: afficherPublic } })
       .eq('id', profileId);
 
     setSaving(false);
@@ -129,42 +147,56 @@ export default function PensionTarifsPage() {
       </div>
       {saved && <p className="text-sm font-galey text-[#6E9E57]">✓ Tarifs enregistrés.</p>}
 
+      <label className={`flex items-start gap-3 bg-white rounded-2xl shadow-sm p-4 border cursor-pointer ${afficherPublic ? 'border-[#6E9E57]/40' : 'border-gray-100'}`}>
+        <input type="checkbox" className="mt-1" checked={afficherPublic}
+          onChange={e => setAfficherPublic(e.target.checked)} />
+        <span>
+          <span className="block font-galey font-semibold text-sm text-[#1E2025]">Afficher mes tarifs sur ma fiche publique</span>
+          <span className="block font-galey text-xs text-gray-500 mt-0.5">
+            Les clients verront le prix par nuit et par espèce dans l&apos;annuaire des pros.
+          </span>
+        </span>
+      </label>
+
       <div className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-teal-100">
         <div>
-          <h2 className="font-bold font-galey text-teal-800">Tranches de poids</h2>
+          <h2 className="font-bold font-galey text-teal-800">Prix par espèce</h2>
           <p className="text-xs font-galey text-gray-500 mt-1">
-            Le tarif suggéré à la facturation dépend du poids de l&apos;animal et de s&apos;il est seul ou partage
-            son logement. Laisser le dernier poids max vide = « et plus ».
+            Tarif par nuit selon l&apos;espèce et selon que l&apos;animal est seul ou partage son logement.
+            Le tarif est ensuite suggéré automatiquement à la facturation. Les espèces acceptées par votre
+            pension apparaissent en premier.
           </p>
         </div>
         <div className="space-y-3">
-          {tranches.map((t, i) => (
-            <div key={i} className="flex flex-wrap items-center gap-2">
-              <input placeholder="Poids max (kg)" value={t.poidsMax} inputMode="decimal"
-                onChange={e => setTranches(ts => ts.map((x, j) => j === i ? { ...x, poidsMax: e.target.value } : x))}
-                className={`${inputCls} flex-1 min-w-[120px]`} />
-              <input placeholder="Prix seul (€/nuit)" value={t.prixSeul} inputMode="decimal"
-                onChange={e => setTranches(ts => ts.map((x, j) => j === i ? { ...x, prixSeul: e.target.value } : x))}
-                className={`${inputCls} flex-1 min-w-[140px]`} />
-              <input placeholder="Prix partagé (€/nuit)" value={t.prixPartage} inputMode="decimal"
-                onChange={e => setTranches(ts => ts.map((x, j) => j === i ? { ...x, prixPartage: e.target.value } : x))}
-                className={`${inputCls} flex-1 min-w-[140px]`} />
-              <button onClick={() => setTranches(ts => ts.filter((_, j) => j !== i))}
-                className="text-red-500 hover:text-red-600 text-sm font-galey px-2">✕</button>
+          {especes.map((e, i) => (
+            <div key={e.key} className="border border-gray-100 rounded-xl p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-lg">{e.emoji}</span>
+                <span className="font-galey font-bold text-sm text-[#1E2025]">{e.label}</span>
+                {e.accepte && (
+                  <span className="text-[10px] font-galey font-bold px-2 py-0.5 rounded-full bg-[#6E9E57]/12 text-[#6E9E57]">
+                    Accepté
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input placeholder="Prix seul (€/nuit)" value={e.prixSeul} inputMode="decimal"
+                  onChange={ev => setEspeces(rows => rows.map((x, j) => j === i ? { ...x, prixSeul: ev.target.value } : x))}
+                  className={`${inputCls} flex-1 min-w-[140px]`} />
+                <input placeholder="Prix partagé (€/nuit)" value={e.prixPartage} inputMode="decimal"
+                  onChange={ev => setEspeces(rows => rows.map((x, j) => j === i ? { ...x, prixPartage: ev.target.value } : x))}
+                  className={`${inputCls} flex-1 min-w-[140px]`} />
+              </div>
             </div>
           ))}
         </div>
-        <button onClick={() => setTranches(ts => [...ts, { poidsMax: '', prixSeul: '', prixPartage: '' }])}
-          className="text-sm font-galey font-semibold text-teal-700 border border-teal-200 rounded-full px-4 py-1.5 hover:bg-teal-50 transition-colors">
-          + Ajouter une tranche
-        </button>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-teal-100">
         <div>
           <h2 className="font-bold font-galey text-teal-800">Réductions séjour long</h2>
           <p className="text-xs font-galey text-gray-500 mt-1">
-            Réduction appliquée sur le tarif total à partir d&apos;un nombre de nuits.
+            Réduction appliquée sur le tarif total à partir d&apos;un nombre de nuits (toutes espèces).
           </p>
         </div>
         <div className="space-y-3">

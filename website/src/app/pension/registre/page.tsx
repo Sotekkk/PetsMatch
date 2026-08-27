@@ -323,6 +323,7 @@ export default function RegistrePensionPage() {
                   onSorti={() => marquerSorti(e.id)}
                   onJournal={() => setJournalFor(e)}
                   onFacturer={() => setFacturationFor(e)}
+                  onContrat={() => router.push('/pension/contrat')}
                 />
               );
             })}
@@ -451,7 +452,7 @@ export default function RegistrePensionPage() {
 
 // ── Carte entrée ──────────────────────────────────────────────────────────────
 
-function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, onEdit, onSorti, onJournal, onFacturer }: {
+function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, onEdit, onSorti, onJournal, onFacturer, onContrat }: {
   entree: PensionEntree;
   animalId?: string;
   photoUrl?: string;
@@ -462,15 +463,18 @@ function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, onE
   onSorti: () => void;
   onJournal: () => void;
   onFacturer: () => void;
+  onContrat: () => void;
 }) {
   const inPension = entree.statut === 'en_pension';
   const bgColor   = inPension ? '#E0F2F1' : '#f3f4f6';
   const txtColor  = inPension ? TEAL : '#6b7280';
   const [sendingClaim, setSendingClaim] = useState(false);
   const [claimSent, setClaimSent] = useState(false);
+  const [showActions, setShowActions] = useState(false);
+  const canReclamation = !!animalId && !!entree.proprietaire_email;
 
-  async function envoyerLienReclamation(e: React.MouseEvent) {
-    e.stopPropagation();
+  async function envoyerLienReclamation(e?: React.MouseEvent) {
+    e?.stopPropagation();
     if (!animalId || !entree.proprietaire_email) return;
     setSendingClaim(true);
     try {
@@ -565,17 +569,6 @@ function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, onE
                   ✉ {entree.proprietaire_email}
                 </p>
               )}
-              {animalId && entree.proprietaire_email && (
-                <button onClick={envoyerLienReclamation} disabled={sendingClaim || claimSent}
-                  style={{
-                    marginTop: 6, padding: '4px 10px', borderRadius: 20, border: `1px solid ${claimSent ? GREEN : PURPLE}`,
-                    background: 'transparent', color: claimSent ? GREEN : PURPLE,
-                    cursor: sendingClaim || claimSent ? 'default' : 'pointer',
-                    fontFamily: 'Galey, sans-serif', fontSize: 11, fontWeight: 700,
-                  }}>
-                  {claimSent ? '✓ Lien envoyé' : sendingClaim ? 'Envoi…' : '🔗 Envoyer le lien de réclamation'}
-                </button>
-              )}
             </div>
           )}
 
@@ -605,37 +598,66 @@ function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, onE
           )}
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
-          <button onClick={e => { e.stopPropagation(); onJournal(); }} style={{
-            padding: '6px 14px', borderRadius: 20, border: `1px solid ${GREEN}`,
-            background: 'transparent', color: GREEN, cursor: 'pointer',
+        <div style={{ flexShrink: 0 }}>
+          <button onClick={e => { e.stopPropagation(); setShowActions(true); }} style={{
+            padding: '6px 14px', borderRadius: 20, border: `1px solid ${TEAL}`,
+            background: 'transparent', color: TEAL, cursor: 'pointer',
             fontFamily: 'Galey, sans-serif', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
           }}>
-            📸 Journal
+            ⋯ Actions
           </button>
-          {/* Bouton facturer — dispo dès l'entrée (nuits estimées d'après la sortie prévue) */}
-          <button onClick={e => { e.stopPropagation(); onFacturer(); }} style={{
-            padding: '6px 14px', borderRadius: 20,
-            border: `1px solid ${isFacture ? '#9ca3af' : PURPLE}`,
-            background: isFacture ? '#f3f4f6' : 'transparent',
-            color: isFacture ? '#6b7280' : PURPLE, cursor: 'pointer',
-            fontFamily: 'Galey, sans-serif', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
-          }}>
-            {isFacture ? '🧾 Facturé' : '🧾 Facturer'}
-          </button>
-          {/* Bouton marquer sorti */}
-          {inPension && (
-            <button onClick={e => { e.stopPropagation(); onSorti(); }} style={{
-              padding: '6px 14px', borderRadius: 20, border: `1px solid ${TEAL}`,
-              background: 'transparent', color: TEAL, cursor: 'pointer',
-              fontFamily: 'Galey, sans-serif', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
-            }}>
-              Sorti →
-            </button>
-          )}
         </div>
       </div>
+
+      {showActions && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000,
+        }} onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) setShowActions(false); }}>
+          <div style={{ background: 'white', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 480, padding: '12px 8px 24px' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '4px 16px 8px', display: 'flex', alignItems: 'center' }}>
+              <span style={{ flex: 1, fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 15, color: '#1E2025' }}>
+                {entree.animal_nom}
+              </span>
+              <button onClick={() => setShowActions(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af' }}>×</button>
+            </div>
+            <ActionRow icon="📸" label="Journal" color={GREEN}
+              onClick={() => { setShowActions(false); onJournal(); }} />
+            <ActionRow icon="📄" label="Contrat à signer" color={PURPLE}
+              onClick={() => { setShowActions(false); onContrat(); }} />
+            {canReclamation && (
+              <ActionRow icon="🔗" label={claimSent ? 'Lien de réclamation envoyé' : 'Envoyer le lien de réclamation'}
+                color={claimSent ? GREEN : PURPLE} disabled={sendingClaim || claimSent}
+                onClick={() => { void envoyerLienReclamation(); }} />
+            )}
+            <ActionRow icon="🧾" label={isFacture ? 'Facturé — voir / refaire' : 'Facturer'}
+              color={isFacture ? GREEN : TEAL}
+              onClick={() => { setShowActions(false); onFacturer(); }} />
+            {inPension && (
+              <ActionRow icon="🚪" label="Marquer sorti" color={TEAL}
+                onClick={() => { setShowActions(false); onSorti(); }} />
+            )}
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function ActionRow({ icon, label, color, onClick, disabled }: {
+  icon: string; label: string; color: string; onClick: () => void; disabled?: boolean;
+}) {
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
+      background: 'transparent', border: 'none', padding: '13px 16px',
+      cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.55 : 1,
+      fontFamily: 'Galey, sans-serif', fontSize: 14, fontWeight: 600, color: '#1E2025',
+    }}>
+      <span style={{ fontSize: 18, width: 24, textAlign: 'center' }}>{icon}</span>
+      <span style={{ flex: 1, color }}>{label}</span>
+    </button>
   );
 }
 

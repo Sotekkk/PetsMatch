@@ -9,6 +9,7 @@ import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/widgets/avis_pro_widget.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show kPensionEspeces;
 import 'package:intl/intl.dart';
 
 class ServiceDetailPage extends StatefulWidget {
@@ -304,6 +305,32 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   }
 
   String get _tarifs => _proData?['tarifs'] ?? '';
+
+  /// Tarifs pension par espèce, uniquement si la pension a activé l'affichage
+  /// public. Retourne (emoji, label, prix formaté).
+  List<(String, String, String)> get _pensionTarifsPublics {
+    if (_proData?['cat_pro'] != 'pension') return [];
+    final tp = _proData?['tarifs_pension'];
+    if (tp is! Map || tp['afficher_public'] != true) return [];
+    final especes = tp['especes'];
+    if (especes is! List) return [];
+    final out = <(String, String, String)>[];
+    for (final sp in kPensionEspeces) {
+      Map? match;
+      for (final e in especes) {
+        if (e is Map && e['espece'] == sp['key']) { match = e; break; }
+      }
+      if (match == null) continue;
+      final seul = (match['prix_seul'] as num?)?.toDouble() ?? 0;
+      if (seul <= 0) continue;
+      final partage = (match['prix_partage'] as num?)?.toDouble();
+      final prix = (partage != null && partage > 0 && partage != seul)
+          ? '${seul.toStringAsFixed(0)} € · ${partage.toStringAsFixed(0)} € partagé'
+          : '${seul.toStringAsFixed(0)} €';
+      out.add((sp['emoji']!, sp['label']!, prix));
+    }
+    return out;
+  }
   String get _siteWeb => _proData?['site_web'] ?? '';
   String get _instagram => _proData?['instagram'] ?? '';
   String get _facebook => _proData?['facebook'] ?? '';
@@ -677,6 +704,30 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                 ],
               );
             })),
+          ],
+
+          // Tarifs pension par espèce (si la pension a choisi de les afficher)
+          if (_pensionTarifsPublics.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _card(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionTitle('Tarifs — prix par nuit'),
+                const SizedBox(height: 8),
+                ..._pensionTarifsPublics.map((t) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(children: [
+                    Text(t.$1, style: const TextStyle(fontSize: 15)),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(t.$2,
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                            fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
+                    Text(t.$3, style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                        fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
+                  ]),
+                )),
+              ],
+            )),
           ],
 
           // Tarifs

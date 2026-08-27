@@ -718,14 +718,8 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
 // ── Secondary pro profile edit ─────────────────────────────────────────────────
 
 const ESPECES_PRO = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'NAC', 'Autre'];
+const ESPECES_PENSION = ['Chien', 'Chat', 'Cheval', 'Animaux de la ferme', 'Lapin', 'Âne', 'NAC', 'Oiseaux'];
 
-const LOGEMENT_TYPES = [
-  { value: 'box', label: 'Box' },
-  { value: 'enclos', label: 'Enclos' },
-  { value: 'parc', label: 'Parc' },
-  { value: 'chatterie', label: 'Chatterie' },
-  { value: 'cage', label: 'Cage' },
-];
 
 const PRESTATIONS_EDUCATION = [
   { value: 'cours_individuel', label: 'Cours individuel' },
@@ -1073,7 +1067,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       }
     }
 
-    if (catPro === 'photographe') {
+    if (catPro === 'photographe' || catPro === 'pension') {
       const urls = [...galeriePhotos];
       for (let i = 0; i < newGaleriePhotos.length; i++) {
         const path = `profiles/${uid}/pro_${profileId}_galerie_${i}_${Date.now()}.jpg`;
@@ -1279,7 +1273,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         {/* Espèces */}
         <Card title="Espèces acceptées">
           <div className="flex flex-wrap gap-2">
-            {ESPECES_PRO.map(e => {
+            {(catPro === 'pension' ? ESPECES_PENSION : ESPECES_PRO).map(e => {
               const active = especes.has(e);
               return (
                 <button key={e} type="button"
@@ -1332,25 +1326,22 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
 
         {/* Tarifs pension */}
         {catPro === 'pension' && (
-          <Card title="Tarifs par type de logement (€/nuit)">
-            <p className="text-xs text-gray-400 mb-3">Laissez à 0 les types de logement que vous n&apos;utilisez pas.</p>
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              {LOGEMENT_TYPES.map(({ value, label }) => (
-                <div key={value}>
-                  <label className="text-xs font-medium text-gray-500 block mb-1">{label}</label>
-                  <input type="number" min={0} step={1}
-                    value={tarifsLogements[value] ?? 0}
-                    onChange={e => setTarifsLogements(t => ({ ...t, [value]: Number(e.target.value) }))}
-                    className={inputCls} />
-                </div>
-              ))}
+          <Card title="Tarification">
+            <p className="text-xs text-gray-400 mb-3">
+              Prix par nuit et par espèce + réductions séjour long, utilisés pour la facturation.
+            </p>
+            <a href="/pension/tarifs"
+              className="inline-flex items-center gap-2 border border-[#0C5C6C] text-[#0C5C6C] rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-[#0C5C6C]/5 transition-colors">
+              💶 Modifier mes tarifs par espèce →
+            </a>
+            <div className="mt-4">
+              <Field label="Pourcentage d'arrhes demandé à la réservation">
+                <input type="number" min={0} max={100}
+                  value={arrhesPourcentage}
+                  onChange={e => setArrhesPourcentage(Math.min(100, Math.max(0, Number(e.target.value))))}
+                  className={inputCls} />
+              </Field>
             </div>
-            <Field label="Pourcentage d'arrhes demandé à la réservation">
-              <input type="number" min={0} max={100}
-                value={arrhesPourcentage}
-                onChange={e => setArrhesPourcentage(Math.min(100, Math.max(0, Number(e.target.value))))}
-                className={inputCls} />
-            </Field>
           </Card>
         )}
 
@@ -1504,10 +1495,14 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           </button>
         </Card>
 
-        {/* Galerie / portfolio — photographe uniquement */}
-        {catPro === 'photographe' && (
-          <Card title="Galerie / portfolio">
-            <p className="text-xs text-gray-400 mb-3">Ces photos sont visibles par les clients sur votre fiche publique.</p>
+        {/* Galerie — photographe (portfolio) et pension (photos des logements) */}
+        {(catPro === 'photographe' || catPro === 'pension') && (
+          <Card title={catPro === 'pension' ? 'Photos de la pension et des logements' : 'Galerie / portfolio'}>
+            <p className="text-xs text-gray-400 mb-3">
+              {catPro === 'pension'
+                ? 'Montrez vos logements (box, parc, enclos…) et vos installations. Visibles par les clients sur votre fiche publique.'
+                : 'Ces photos sont visibles par les clients sur votre fiche publique.'}
+            </p>
             <input ref={galerieRef} type="file" accept="image/*" multiple className="hidden"
               onChange={e => {
                 const files = Array.from(e.target.files ?? []);

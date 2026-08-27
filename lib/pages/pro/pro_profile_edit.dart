@@ -12,6 +12,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/pro/pro_zone_page.dart';
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 
@@ -68,7 +69,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   File?   _acacedDocFile;
   String? _acacedDocUrl;
 
-  static const _especesList = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
+  static const _especesListDefaut = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
+  static const _especesListPension = ['Chien', 'Chat', 'Cheval', 'Animaux de la ferme', 'Lapin', 'Âne', 'NAC', 'Oiseaux'];
+  List<String> get _especesList =>
+      _catPro == 'pension' ? _especesListPension : _especesListDefaut;
   List<String> _especesAcceptees = [];
 
   // Galerie / portfolio public (photographe) — distinct de albums_photo
@@ -82,9 +86,6 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   // Pension : tarifs par type de logement (€/nuit) + % d'arrhes
   Map<String, int> _tarifsLogements = {};
   int _arrhesPourcentage = 0;
-  static const _logementTypes = [
-    ('box', 'Box'), ('enclos', 'Enclos'), ('parc', 'Parc'), ('chatterie', 'Chatterie'), ('cage', 'Cage'),
-  ];
 
   // Taxi animalier : prise en charge + prix au km + minimum (€)
   Map<String, double> _tarifsTaxi = {};
@@ -539,7 +540,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
           if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
             'acaced_doc_url': acacedDocUrl,
-          if (_catPro == 'photographe') 'photos_galerie': galerieUrls,
+          if (_catPro == 'photographe' || _catPro == 'pension') 'photos_galerie': galerieUrls,
           'rue':                _rueCtrl.text.trim(),
           'ville':              _villeCtrl.text.trim(),
           'code_postal':        _cpCtrl.text.trim(),
@@ -665,7 +666,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       }
       if (bannerUrl != null) setState(() { _bannerUrl = bannerUrl; _bannerFile = null; });
       if (photoUrl  != null) setState(() { _photoUrl  = photoUrl;  _photoFile  = null; });
-      if (_catPro == 'photographe') {
+      if (_catPro == 'photographe' || _catPro == 'pension') {
         setState(() { _photosGalerie = galerieUrls; _newGaleriePhotos.clear(); });
       }
 
@@ -855,50 +856,27 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   // ── Tarifs pension ────────────────────────────────────────
                   if (_catPro == 'pension') ...[
                     const SizedBox(height: 24),
-                    _sectionTitle('Tarifs par type de logement (€/nuit)'),
+                    _sectionTitle('Tarification'),
                     const SizedBox(height: 4),
                     Text(
-                      'Laissez à 0 les types de logement que vous n\'utilisez pas.',
+                      'Prix par nuit et par espèce + réductions séjour long, utilisés pour la facturation.',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
                     ),
                     const SizedBox(height: 12),
-                    ..._logementTypes.map((t) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(children: [
-                        Expanded(child: Text(t.$2,
-                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
-                                fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
-                        const SizedBox(width: 12),
-                        SizedBox(
-                          width: 90,
-                          child: TextFormField(
-                            initialValue: (_tarifsLogements[t.$1] ?? 0).toString(),
-                            keyboardType: TextInputType.number,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                            decoration: InputDecoration(
-                              suffixText: '€',
-                              suffixStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
-                              filled: true, fillColor: Colors.white,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
-                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
-                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                                  borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
-                            ),
-                            onChanged: (val) {
-                              final v = int.tryParse(val);
-                              if (v != null && v >= 0) {
-                                setState(() => _tarifsLogements = {..._tarifsLogements, t.$1: v});
-                              }
-                            },
-                          ),
-                        ),
-                      ]),
-                    )),
-                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: () => Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const PensionTarifsPage())),
+                      icon: const Icon(Icons.euro_outlined, size: 18),
+                      label: const Text('Modifier mes tarifs par espèce',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF0C5C6C),
+                        side: const BorderSide(color: Color(0xFF0C5C6C)),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     Row(children: [
                       const Expanded(child: Text('Pourcentage d\'arrhes demandé à la réservation',
                           style: TextStyle(fontFamily: 'Galey', fontSize: 14,
@@ -1222,13 +1200,17 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   const SizedBox(height: 12),
                   _certificationsEditor(),
 
-                  // ── Galerie / portfolio public (photographe) ──────────────
-                  if (_catPro == 'photographe') ...[
+                  // ── Galerie / portfolio public (photographe, pension) ─────
+                  if (_catPro == 'photographe' || _catPro == 'pension') ...[
                     const SizedBox(height: 24),
-                    _sectionTitle('Galerie / portfolio'),
+                    _sectionTitle(_catPro == 'pension'
+                        ? 'Photos de la pension et des logements'
+                        : 'Galerie / portfolio'),
                     const SizedBox(height: 4),
                     Text(
-                      'Ces photos sont visibles par les clients sur votre fiche publique.',
+                      _catPro == 'pension'
+                          ? 'Montrez vos logements (box, parc, enclos…) et vos installations. Visibles par les clients sur votre fiche publique.'
+                          : 'Ces photos sont visibles par les clients sur votre fiche publique.',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
                     ),
                     const SizedBox(height: 12),

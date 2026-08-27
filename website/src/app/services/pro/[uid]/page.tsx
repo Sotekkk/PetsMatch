@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
+import { PENSION_ESPECES } from '@/lib/pension-especes';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -24,6 +25,10 @@ interface ProData {
   tarifs_education?: Record<string, number>;
   education_bilan_requis?: boolean;
   tarifs_taxi?: { prise_en_charge?: number; prix_km?: number; minimum?: number };
+  tarifs_pension?: {
+    especes?: { espece: string; prix_seul: number; prix_partage?: number }[];
+    afficher_public?: boolean;
+  };
 }
 interface Prestation {
   id: string; nom: string; description?: string; duree_minutes?: number;
@@ -246,6 +251,7 @@ function ProDetailContent() {
           tarifs_education: (data.tarifs_education as Record<string, number>) ?? {},
           education_bilan_requis: (data.education_bilan_requis as boolean) ?? true,
           tarifs_taxi: (data.tarifs_taxi as ProData['tarifs_taxi']) ?? {},
+          tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
         };
       } else {
@@ -267,6 +273,7 @@ function ProDetailContent() {
           tarifs: data.tarifs || '', site_web: data.site_web || '',
           instagram: data.instagram || '', facebook: data.facebook || '',
           rayon: data.rayon_intervention || 0, cat_pro: data.cat_pro || '',
+          tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
         };
       }
@@ -723,6 +730,28 @@ function ProDetailContent() {
                   {(pro.tarifs_taxi.prise_en_charge ?? 0).toFixed(2)} € de prise en charge + {(pro.tarifs_taxi.prix_km ?? 0).toFixed(2)} €/km
                   {(pro.tarifs_taxi.minimum ?? 0) > 0 ? ` (minimum ${(pro.tarifs_taxi.minimum ?? 0).toFixed(2)} €)` : ''}
                 </p>
+              </div>
+            )}
+            {pro.cat_pro === 'pension' && pro.tarifs_pension?.afficher_public && (pro.tarifs_pension.especes ?? []).length > 0 && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <p className="font-bold text-[#1E2025] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Tarifs — prix par nuit</p>
+                <div className="space-y-1.5">
+                  {PENSION_ESPECES.map(sp => {
+                    const t = (pro.tarifs_pension!.especes ?? []).find(e => e.espece === sp.key);
+                    if (!t || !(t.prix_seul > 0)) return null;
+                    const partage = t.prix_partage;
+                    return (
+                      <div key={sp.key} className="flex items-center gap-2 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
+                        <span>{sp.emoji}</span>
+                        <span className="flex-1 text-[#1E2025] font-medium">{sp.label}</span>
+                        <span className="font-bold text-[#0C5C6C]">
+                          {t.prix_seul.toFixed(0)} €
+                          {partage != null && partage > 0 && partage !== t.prix_seul ? ` · ${partage.toFixed(0)} € partagé` : ''}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
             {pro.tarifs && (
