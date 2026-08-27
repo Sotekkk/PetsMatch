@@ -6,59 +6,24 @@
 -- Ce script est idempotent (IF NOT EXISTS partout), on peut le relancer
 -- sans risque s'il a déjà tourné partiellement.
 --
--- La migration "fait_par_profile_id / valide_par_profile_id" a déjà été
--- appliquée (2026-08-10) — ce fichier ne contient plus que la suivante.
+-- Migrations précédentes (reservations_animaux, taches_elevage mirror…)
+-- déjà appliquées — ce fichier ne contient plus que la suivante.
 -- ============================================================
 
 
 -- ────────────────────────────────────────────────────────────
--- 1. Statut "Réservé" pour un animal, avant cession
---    Table reservations_animaux : stocke les infos du futur propriétaire
---    (saisie manuelle ou utilisateur PetsMatch) pour préremplir le
---    formulaire de cession existant. Sans cette migration, la
---    fonctionnalité "Réserver" ne peut pas écrire en base.
+-- 1. Pension — factures d'acompte / solde
+--    Ajoute un type à pension_factures :
+--      'complete' : facture du séjour complet (défaut, comportement actuel)
+--      'acompte'  : acompte demandé à la réservation / l'entrée
+--      'solde'    : facture du solde après un acompte
+--    acompte_pct : pourcentage retenu quand type = 'acompte' (ex. 30)
+--    Sans cette migration, l'option "Facture d'acompte" du modal de
+--    facturation pension échoue (colonne inconnue).
 -- ────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS reservations_animaux (
-  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  animal_id             TEXT NOT NULL REFERENCES animaux(id) ON DELETE CASCADE,
-  uid_eleveur           TEXT NOT NULL,
-  eleveur_profile_id    UUID REFERENCES user_profiles(id) ON DELETE SET NULL,
-  -- active : réservation en cours, transformee : cédée, annulee : annulée par l'éleveur
-  statut                TEXT NOT NULL DEFAULT 'active',
-  qualite               TEXT,
-  nom                   TEXT,
-  email                 TEXT,
-  tel                   TEXT,
-  adresse               TEXT,
-  uid_acquereur         TEXT,
-  acquereur_profile_id  UUID REFERENCES user_profiles(id) ON DELETE SET NULL,
-  date_reservation       DATE,
-  notes                 TEXT,
-  created_at            TIMESTAMPTZ DEFAULT now(),
-  updated_at            TIMESTAMPTZ DEFAULT now()
-);
+ALTER TABLE pension_factures
+  ADD COLUMN IF NOT EXISTS type        TEXT NOT NULL DEFAULT 'complete',
+  ADD COLUMN IF NOT EXISTS acompte_pct NUMERIC;
 
-CREATE INDEX IF NOT EXISTS idx_reservations_animal   ON reservations_animaux(animal_id);
-CREATE INDEX IF NOT EXISTS idx_reservations_eleveur   ON reservations_animaux(uid_eleveur);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_reservations_animal_active
-  ON reservations_animaux(animal_id) WHERE statut = 'active';
-
-ALTER TABLE reservations_animaux ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Select reservations" ON reservations_animaux;
-DROP POLICY IF EXISTS "Insert reservations" ON reservations_animaux;
-DROP POLICY IF EXISTS "Update reservations" ON reservations_animaux;
-DROP POLICY IF EXISTS "Delete reservations" ON reservations_animaux;
-
-CREATE POLICY "Select reservations" ON reservations_animaux
-  FOR SELECT USING (true);
-
-CREATE POLICY "Insert reservations" ON reservations_animaux
-  FOR INSERT WITH CHECK (uid_eleveur IS NOT NULL AND length(uid_eleveur) > 0);
-
-CREATE POLICY "Update reservations" ON reservations_animaux
-  FOR UPDATE USING (true) WITH CHECK (uid_eleveur IS NOT NULL AND length(uid_eleveur) > 0);
-
-CREATE POLICY "Delete reservations" ON reservations_animaux
-  FOR DELETE USING (true);
+CREATE INDEX IF NOT EXISTS idx_pension_factures_type ON pension_factures(type);

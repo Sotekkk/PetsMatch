@@ -984,9 +984,11 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
                         onSorti: e['statut'] == 'en_pension'
                             ? () => _marquerSorti(e)
                             : null,
-                        onFacture: e['statut'] != 'en_pension'
-                            ? () => _genererFacture(e)
-                            : null,
+                        // Facturation dispo dès l'entrée (acompte / réservation) :
+                        // nuits estimées d'après la sortie prévue tant que le
+                        // séjour n'est pas terminé.
+                        onFacture: () => _genererFacture(e),
+                        factureFaite: _entreesFacturees.contains(e['id'].toString()),
                       );
                     },
                   ),
@@ -1180,6 +1182,7 @@ class _PensionCard extends StatelessWidget {
   final VoidCallback? onContrat;
   final VoidCallback? onSignature;
   final VoidCallback? onFacture;
+  final bool factureFaite;
   final VoidCallback? onEnvoyerLien;
   final VoidCallback? onJournal;
 
@@ -1198,6 +1201,7 @@ class _PensionCard extends StatelessWidget {
     this.onContrat,
     this.onSignature,
     this.onFacture,
+    this.factureFaite = false,
     this.onEnvoyerLien,
     this.onJournal,
   });
@@ -1392,12 +1396,12 @@ class _PensionCard extends StatelessWidget {
                     if (onFacture != null)
                       OutlinedButton.icon(
                         onPressed: onFacture,
-                        icon: const Icon(Icons.receipt_long_outlined, size: 14),
-                        label: const Text('Facturer',
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                        icon: Icon(factureFaite ? Icons.check_circle_outline : Icons.receipt_long_outlined, size: 14),
+                        label: Text(factureFaite ? 'Facturé' : 'Facturer',
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: _teal,
-                          side: const BorderSide(color: _teal),
+                          foregroundColor: factureFaite ? _green : _teal,
+                          side: BorderSide(color: factureFaite ? _green : _teal),
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                           minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -3081,7 +3085,9 @@ class _FacturationSheetState extends State<_FacturationSheet> {
   late final TextEditingController _nbNuitsCtrl;
   late final TextEditingController _suppDescCtrl;
   late final TextEditingController _suppMontantCtrl;
+  late final TextEditingController _acomptePctCtrl;
   bool _avecTVA    = false;
+  bool _isAcompte  = false;
   bool _generating = false;
   bool _sending    = false;
   bool _marking    = false;
@@ -3105,6 +3111,7 @@ class _FacturationSheetState extends State<_FacturationSheet> {
     _nbNuitsCtrl     = TextEditingController(text: '$nbNuits');
     _suppDescCtrl    = TextEditingController();
     _suppMontantCtrl = TextEditingController();
+    _acomptePctCtrl  = TextEditingController(text: '30');
     _suggererTarif();
   }
 
@@ -3164,6 +3171,7 @@ class _FacturationSheetState extends State<_FacturationSheet> {
     _nbNuitsCtrl.dispose();
     _suppDescCtrl.dispose();
     _suppMontantCtrl.dispose();
+    _acomptePctCtrl.dispose();
     super.dispose();
   }
 
@@ -3173,6 +3181,10 @@ class _FacturationSheetState extends State<_FacturationSheet> {
   double get _sousTotal => (_tarif * _nbNuits) + _supp;
   double get _tva       => _avecTVA ? _sousTotal * 0.20 : 0;
   double get _total     => _sousTotal + _tva;
+  int    get _acomptePct     => (int.tryParse(_acomptePctCtrl.text) ?? 30).clamp(1, 100);
+  // Montant réellement facturé : total du séjour, ou une fraction si acompte.
+  double get _montantFacture => _isAcompte ? _total * _acomptePct / 100 : _total;
+  double get _solde          => _total - _montantFacture;
 
   String _fmt(double v) => '${v.toStringAsFixed(2).replaceAll('.', ',')} €';
 
@@ -3204,11 +3216,12 @@ class _FacturationSheetState extends State<_FacturationSheet> {
                 child: const Icon(Icons.receipt_long_outlined, color: _teal, size: 20),
               ),
               const SizedBox(width: 12),
-              const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Facturation pension', style: TextStyle(fontFamily: 'Galey',
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Facturation pension', style: TextStyle(fontFamily: 'Galey',
                     fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1F2A2E))),
-                Text('Générer une facture PDF', style: TextStyle(fontFamily: 'Galey',
-                    fontSize: 12, color: Color(0xFF6B7280))),
+                Text(_isAcompte ? "Acompte à la réservation" : 'Générer une facture PDF',
+                    style: const TextStyle(fontFamily: 'Galey',
+                        fontSize: 12, color: Color(0xFF6B7280))),
               ])),
               IconButton(
                 icon: const Icon(Icons.close, size: 20, color: Color(0xFF6B7280)),
@@ -3288,6 +3301,44 @@ class _FacturationSheetState extends State<_FacturationSheet> {
                     ]),
                   ),
                 ),
+                const SizedBox(height: 10),
+
+                // Acompte toggle (réservation)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: _isAcompte ? _teal.withValues(alpha: 0.05) : Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: _isAcompte ? _teal.withValues(alpha: 0.3) : Colors.grey.shade200),
+                  ),
+                  child: Column(children: [
+                    Row(children: [
+                      Icon(Icons.savings_outlined, size: 16,
+                          color: _isAcompte ? _teal : Colors.grey.shade400),
+                      const SizedBox(width: 8),
+                      const Expanded(child: Text("Facture d'acompte (réservation)",
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                              color: Color(0xFF374151)))),
+                      Switch.adaptive(
+                        value: _isAcompte,
+                        onChanged: (v) => setState(() => _isAcompte = v),
+                        activeColor: _teal,
+                      ),
+                    ]),
+                    if (_isAcompte) ...[
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        SizedBox(width: 110, child: _field(_acomptePctCtrl, 'Acompte %', '30',
+                            type: TextInputType.number, suffix: '%')),
+                        const SizedBox(width: 10),
+                        Expanded(child: Text('Solde ${_fmt(_solde)} facturé à la sortie',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                color: Colors.grey.shade600))),
+                      ]),
+                    ],
+                  ]),
+                ),
                 const SizedBox(height: 16),
 
                 // Récap
@@ -3314,7 +3365,17 @@ class _FacturationSheetState extends State<_FacturationSheet> {
                       _totalRow('TVA 20%', _fmt(_tva)),
                       const Divider(height: 12, color: Color(0xFFE5E7EB)),
                     ],
-                    _totalRow(_avecTVA ? 'TOTAL TTC' : 'TOTAL', _fmt(_total), bold: true),
+                    _totalRow(
+                      _avecTVA
+                          ? (_isAcompte ? 'Total TTC séjour' : 'TOTAL TTC')
+                          : (_isAcompte ? 'Total séjour' : 'TOTAL'),
+                      _fmt(_total), bold: !_isAcompte),
+                    if (_isAcompte) ...[
+                      const SizedBox(height: 4),
+                      _totalRow('Solde restant à la sortie', _fmt(_solde)),
+                      const Divider(height: 12, color: Color(0xFFE5E7EB)),
+                      _totalRow('Acompte $_acomptePct% à facturer', _fmt(_montantFacture), bold: true),
+                    ],
                   ]),
                 ),
                 const SizedBox(height: 20),
@@ -3370,7 +3431,9 @@ class _FacturationSheetState extends State<_FacturationSheet> {
                         ? const SizedBox(width: 18, height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.grey))
                         : const Icon(Icons.fact_check_outlined, size: 18),
-                    label: Text(_marking ? '...' : 'Marquer facturé (sans envoi)',
+                    label: Text(_marking
+                        ? '...'
+                        : _isAcompte ? 'Marquer acompte facturé (sans envoi)' : 'Marquer facturé (sans envoi)',
                         style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.grey.shade700,
@@ -3439,7 +3502,7 @@ class _FacturationSheetState extends State<_FacturationSheet> {
             .buffer.asUint8List());
 
     final now        = DateTime.now();
-    final invoiceNum = 'FACT-${DateFormat('yyyyMMdd-HHmm').format(now)}';
+    final invoiceNum = '${_isAcompte ? 'ACPT' : 'FACT'}-${DateFormat('yyyyMMdd-HHmm').format(now)}';
 
     final pensionNom = User_Info.nameElevage.isNotEmpty
         ? User_Info.nameElevage
@@ -3515,8 +3578,9 @@ class _FacturationSheetState extends State<_FacturationSheet> {
         pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
           pw.Image(logo, width: 40, height: 40),
           pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
-            pw.Text('FACTURE', style: pw.TextStyle(font: fontBold, fontSize: 18,
-                color: const PdfColor.fromInt(0xFF0C5C6C))),
+            pw.Text(_isAcompte ? "FACTURE D'ACOMPTE" : 'FACTURE',
+                style: pw.TextStyle(font: fontBold, fontSize: 18,
+                    color: const PdfColor.fromInt(0xFF0C5C6C))),
             pw.Text(invoiceNum, style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)),
             pw.Text('Date : ${fmt.format(now)}', style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)),
           ]),
@@ -3600,7 +3664,14 @@ class _FacturationSheetState extends State<_FacturationSheet> {
             totalLine('TVA 20%', fmtM(tvaAmt)),
             pw.SizedBox(height: 4),
           ],
-          totalLine(avecTVA ? 'TOTAL TTC' : 'TOTAL', fmtM(total), isBold: true, isHighlight: true),
+          if (_isAcompte) ...[
+            totalLine(avecTVA ? 'Total TTC séjour' : 'Total séjour', fmtM(total), isBold: true),
+            pw.SizedBox(height: 2),
+            totalLine('Solde à la sortie', fmtM(_solde)),
+            pw.SizedBox(height: 4),
+            totalLine('ACOMPTE $_acomptePct% À RÉGLER', fmtM(_montantFacture), isBold: true, isHighlight: true),
+          ] else
+            totalLine(avecTVA ? 'TOTAL TTC' : 'TOTAL', fmtM(total), isBold: true, isHighlight: true),
         ]),
         pw.SizedBox(height: 20),
         pw.Container(
@@ -3610,9 +3681,13 @@ class _FacturationSheetState extends State<_FacturationSheet> {
             pw.Text('CONDITIONS DE RÈGLEMENT',
                 style: pw.TextStyle(font: fontBold, fontSize: 7, color: PdfColors.grey600, letterSpacing: 0.5)),
             pw.SizedBox(height: 4),
-            pw.Text('Paiement à réception de facture. '
-                'Tout retard de paiement entraîne des pénalités au taux légal en vigueur. '
-                'Document généré via PetsMatch.',
+            pw.Text(
+                _isAcompte
+                    ? "Acompte à régler pour confirmer la réservation. Le solde de ${fmtM(_solde)} sera facturé à la fin du séjour. "
+                      'Document généré via PetsMatch.'
+                    : 'Paiement à réception de facture. '
+                      'Tout retard de paiement entraîne des pénalités au taux légal en vigueur. '
+                      'Document généré via PetsMatch.',
                 style: pw.TextStyle(font: font, fontSize: 7, color: PdfColors.grey600)),
           ]),
         ),
@@ -3628,7 +3703,7 @@ class _FacturationSheetState extends State<_FacturationSheet> {
     setState(() => _marking = true);
     try {
       final now    = DateTime.now();
-      final invNum = 'FACT-${DateFormat('yyyyMMdd-HHmm').format(now)}';
+      final invNum = '${_isAcompte ? 'ACPT' : 'FACT'}-${DateFormat('yyyyMMdd-HHmm').format(now)}';
       final uid    = FirebaseAuth.instance.currentUser?.uid ?? '';
       await Supabase.instance.client.from('pension_factures').insert({
         'pro_uid':          uid,
@@ -3637,8 +3712,10 @@ class _FacturationSheetState extends State<_FacturationSheet> {
         'numero':           invNum,
         'animal_nom':       widget.entree['animal_nom'],
         'proprietaire_nom': widget.entree['proprietaire_nom'],
-        'montant':          _total,
+        'montant':          _montantFacture,
         'statut':           'envoyee',
+        if (_isAcompte) 'type': 'acompte',
+        if (_isAcompte) 'acompte_pct': _acomptePct,
       });
       if (mounted) {
         Navigator.pop(context);
@@ -3691,7 +3768,7 @@ class _FacturationSheetState extends State<_FacturationSheet> {
       // 1 — Générer les bytes PDF
       final bytes   = await _buildPdfBytes();
       final now     = DateTime.now();
-      final invNum  = 'FACT-${DateFormat('yyyyMMdd-HHmm').format(now)}';
+      final invNum  = '${_isAcompte ? 'ACPT' : 'FACT'}-${DateFormat('yyyyMMdd-HHmm').format(now)}';
       final uid     = FirebaseAuth.instance.currentUser?.uid ?? '';
       final animalNom = widget.entree['animal_nom']?.toString() ?? '';
 
@@ -3735,8 +3812,12 @@ class _FacturationSheetState extends State<_FacturationSheet> {
       await supa.from('notifications').insert({
         'uid':   ownerUid,
         'type':  'facture_pension',
-        'title': 'Votre facture de pension est disponible',
-        'body':  '$pensionNom vous a envoyé la facture pour le séjour de $animalNom.',
+        'title': _isAcompte
+            ? 'Votre acompte de pension est disponible'
+            : 'Votre facture de pension est disponible',
+        'body':  _isAcompte
+            ? '$pensionNom vous demande un acompte de $_acomptePct% pour le séjour de $animalNom.'
+            : '$pensionNom vous a envoyé la facture pour le séjour de $animalNom.',
         if (ownerProfileId != null) 'profile_id': ownerProfileId,
         'data':  {
           'url':        dlUrl,
@@ -3757,9 +3838,11 @@ class _FacturationSheetState extends State<_FacturationSheet> {
         'animal_nom':       animalNom,
         'proprietaire_nom': widget.entree['proprietaire_nom'],
         'proprietaire_uid': ownerUid,
-        'montant':          _total,
+        'montant':          _montantFacture,
         'pdf_url':          dlUrl,
         'statut':           'envoyee',
+        if (_isAcompte) 'type': 'acompte',
+        if (_isAcompte) 'acompte_pct': _acomptePct,
       });
 
       if (mounted) {

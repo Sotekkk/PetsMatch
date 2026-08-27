@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { PensionEntreeModal, type PensionEntree } from '@/components/PensionEntreeModal';
 import { PensionJournal } from '@/components/PensionJournal';
+import { PensionFacturationModal } from '@/components/PensionFacturationModal';
 import { thumbUrl } from '@/lib/upload-media';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -36,6 +37,18 @@ const ESP_LABEL: Record<string, string> = {
 function espEmoji(e?: string | null) { return ESP_EMOJI[e ?? ''] ?? '🐾'; }
 function espLabel(e?: string | null) { return ESP_LABEL[e ?? ''] ?? (e ?? ''); }
 
+interface PensionFacture {
+  id: string;
+  entree_id: string;
+  numero: string;
+  animal_nom: string | null;
+  proprietaire_nom: string | null;
+  montant: number | null;
+  statut: string;
+  type?: string | null;
+  date_envoi: string | null;
+}
+
 // ── Page principale ───────────────────────────────────────────────────────────
 
 export default function RegistrePensionPage() {
@@ -47,12 +60,17 @@ export default function RegistrePensionPage() {
   const [entrees, setEntrees]           = useState<PensionEntree[]>([]);
   const [puceToAnimalId, setPuceToAnimalId] = useState<Record<string, string>>({});
   const [photoByAnimalId, setPhotoByAnimalId] = useState<Record<string, string>>({});
+  const [factures, setFactures]         = useState<PensionFacture[]>([]);
+  const [showImpayees, setShowImpayees] = useState(false);
+  const [payingId, setPayingId]         = useState<string | null>(null);
   const [loading, setLoading]           = useState(true);
   const [showForm, setShowForm]         = useState(false);
   const [editEntree, setEditEntree]     = useState<PensionEntree | null>(null);
   const [filterEspece, setFilterEspece] = useState('');
   const [showFilter, setShowFilter]     = useState(false);
   const [journalFor, setJournalFor]     = useState<PensionEntree | null>(null);
+  const [facturationFor, setFacturationFor] = useState<PensionEntree | null>(null);
+  const [showNonFacturees, setShowNonFacturees] = useState(false);
 
 
   useEffect(() => {
@@ -73,13 +91,20 @@ export default function RegistrePensionPage() {
         .select('id').eq('uid', user.uid).eq('is_main', true).maybeSingle();
       proProfileId = mainProfile?.id ?? null;
     }
-    const [{ data: ent }, { data: acc }] = await Promise.all([
+    let qFact = supabase.from('pension_factures')
+      .select('id, entree_id, numero, animal_nom, proprietaire_nom, montant, statut, date_envoi')
+      .eq('pro_uid', user.uid).order('date_envoi', { ascending: false });
+    if (proProfileId) qFact = qFact.eq('pro_profile_id', proProfileId) as typeof qFact;
+
+    const [{ data: ent }, { data: acc }, { data: fact }] = await Promise.all([
       qEnt,
       proProfileId
         ? supabase.from('animal_access').select('animal_id').eq('pro_profile_id', proProfileId).eq('statut', 'active')
         : Promise.resolve({ data: [] as { animal_id: string }[] }),
+      qFact,
     ]);
     setEntrees((ent ?? []) as PensionEntree[]);
+    setFactures((fact ?? []) as PensionFacture[]);
 
     const ids = [...new Set([
       ...(acc ?? []).map((a: { animal_id: string }) => a.animal_id),
@@ -137,6 +162,29 @@ export default function RegistrePensionPage() {
     const a    = document.createElement('a');
     a.href = url; a.download = `registre-pension-${new Date().toISOString().split('T')[0]}.csv`;
     a.click(); URL.revokeObjectURL(url);
+  }
+
+  const entreesFacturees = new Set(factures.map(f => f.entree_id));
+
+  // Séjours terminés (sortie effective enregistrée) sans aucune facture liée.
+  const sejoursNonFactures = entrees.filter(e =>
+    !!e.date_sortie_effective && !entreesFacturees.has(e.id));
+
+  // Suivi des impayés : factures envoyées jamais marquées payées.
+  const impayees = factures.filter(f => f.statut === 'envoyee');
+  const seuil15j = Date.now() - 15 * 86400000;
+  const debiteurs = impayees.filter(f => {
+    const d = f.date_envoi ? new Date(f.date_envoi).getTime() : Date.now();
+    return d < seuil15j;
+  });
+
+  async function marquerPayee(id: string) {
+    setPayingId(id);
+    await supabase.from('pension_factures').update({
+      statut: 'payee', date_paiement: new Date().toISOString(),
+    }).eq('id', id);
+    setFactures(prev => prev.map(f => f.id === id ? { ...f, statut: 'payee' } : f));
+    setPayingId(null);
   }
 
   const allEspeces = [...new Set(entrees.map(e => e.espece).filter(Boolean))] as string[];
@@ -219,6 +267,34 @@ export default function RegistrePensionPage() {
 
       {/* Contenu */}
       <div style={{ maxWidth: 900, margin: '24px auto', padding: '0 16px' }}>
+        {sejoursNonFactures.length > 0 && (
+          <button onClick={() => setShowNonFacturees(true)} style={{
+            display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+            background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 12,
+            padding: '10px 14px', marginBottom: 16, cursor: 'pointer',
+          }}>
+            <span style={{ fontSize: 16 }}>🧾</span>
+            <span style={{ flex: 1, fontFamily: 'Galey, sans-serif', fontSize: 12.5, fontWeight: 600, color: '#9A3412' }}>
+              {sejoursNonFactures.length} séjour{sejoursNonFactures.length > 1 ? 's' : ''} terminé{sejoursNonFactures.length > 1 ? 's' : ''} non facturé{sejoursNonFactures.length > 1 ? 's' : ''}
+            </span>
+            <span style={{ color: '#9A3412', fontSize: 16 }}>›</span>
+          </button>
+        )}
+        {impayees.length > 0 && (
+          <button onClick={() => setShowImpayees(true)} style={{
+            display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+            background: debiteurs.length > 0 ? '#FEF2F2' : '#F8F8F6',
+            border: `1px solid ${debiteurs.length > 0 ? '#FECACA' : '#e5e7eb'}`, borderRadius: 12,
+            padding: '10px 14px', marginBottom: 16, cursor: 'pointer',
+          }}>
+            <span style={{ fontSize: 16 }}>💳</span>
+            <span style={{ flex: 1, fontFamily: 'Galey, sans-serif', fontSize: 12.5, fontWeight: 600, color: debiteurs.length > 0 ? '#991B1B' : '#6b7280' }}>
+              {impayees.length} facture{impayees.length > 1 ? 's' : ''} en attente de paiement
+              {debiteurs.length > 0 ? ` · ${debiteurs.length} depuis +15 j` : ''}
+            </span>
+            <span style={{ color: debiteurs.length > 0 ? '#991B1B' : '#9ca3af', fontSize: 16 }}>›</span>
+          </button>
+        )}
         {loading ? (
           <div style={{ textAlign: 'center', padding: 60, color: '#999' }}>Chargement…</div>
         ) : filtered.length === 0 ? (
@@ -242,9 +318,11 @@ export default function RegistrePensionPage() {
                   photoUrl={animalId ? photoByAnimalId[animalId] : undefined}
                   proUid={user.uid}
                   proNom={userData?.nameElevage || userData?.firstname || 'Votre pension'}
+                  isFacture={entreesFacturees.has(e.id)}
                   onEdit={() => setEditEntree(e)}
                   onSorti={() => marquerSorti(e.id)}
                   onJournal={() => setJournalFor(e)}
+                  onFacturer={() => setFacturationFor(e)}
                 />
               );
             })}
@@ -279,21 +357,111 @@ export default function RegistrePensionPage() {
           onClose={() => setJournalFor(null)}
         />
       )}
+      {showNonFacturees && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000,
+        }} onClick={e => e.target === e.currentTarget && setShowNonFacturees(false)}>
+          <div style={{ background: 'white', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 500, maxHeight: '80vh', overflowY: 'auto', padding: '20px 24px 32px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+              <h2 style={{ margin: 0, fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 17, flex: 1 }}>Séjours non facturés</h2>
+              <button onClick={() => setShowNonFacturees(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af' }}>×</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {sejoursNonFactures.map(e => (
+                <button key={e.id} onClick={() => { setShowNonFacturees(false); setFacturationFor(e); }} style={{
+                  display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+                  background: '#F8F8F6', border: '1px solid #eee', borderRadius: 12, padding: '10px 12px', cursor: 'pointer',
+                }}>
+                  <span style={{ fontSize: 18 }}>{espEmoji(e.espece)}</span>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ margin: 0, fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 13, color: '#1E2025' }}>{e.animal_nom}</p>
+                    <p style={{ margin: 0, fontFamily: 'Galey, sans-serif', fontSize: 11, color: '#9ca3af' }}>
+                      {fmtDate(e.date_entree)} → {fmtDate(e.date_sortie_effective)} · {e.proprietaire_nom ?? '—'}
+                    </p>
+                  </div>
+                  <span style={{ color: TEAL, fontSize: 16 }}>›</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {facturationFor && (
+        <PensionFacturationModal
+          entree={facturationFor}
+          proUid={user.uid}
+          proProfileId={activeProfileId || null}
+          pensionNom={userData?.nameElevage || userData?.firstname || 'Votre pension'}
+          onClose={() => setFacturationFor(null)}
+          onSaved={() => { setFacturationFor(null); load(); }}
+        />
+      )}
+      {showImpayees && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000,
+        }} onClick={e => e.target === e.currentTarget && setShowImpayees(false)}>
+          <div style={{ background: 'white', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 500, maxHeight: '80vh', overflowY: 'auto', padding: '20px 24px 32px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+              <h2 style={{ margin: 0, fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 17, flex: 1 }}>
+                Factures impayées ({impayees.length})
+              </h2>
+              <button onClick={() => setShowImpayees(false)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9ca3af' }}>×</button>
+            </div>
+            {impayees.length === 0 ? (
+              <p style={{ fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#9ca3af', padding: '12px 0' }}>Aucune facture impayée.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {impayees.map(f => {
+                  const enRetard = f.date_envoi ? new Date(f.date_envoi).getTime() < seuil15j : false;
+                  return (
+                    <div key={f.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      background: enRetard ? '#FEF2F2' : '#F8F8F6',
+                      border: `1px solid ${enRetard ? '#FECACA' : '#eee'}`, borderRadius: 12, padding: '10px 12px',
+                    }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 13, color: '#1E2025' }}>
+                          {f.animal_nom ?? '—'} — {f.proprietaire_nom ?? '—'}
+                        </p>
+                        <p style={{ margin: 0, fontFamily: 'Galey, sans-serif', fontSize: 11, color: '#9ca3af' }}>
+                          {(f.montant ?? 0).toFixed(2).replace('.', ',')} € · envoyée le {fmtDate(f.date_envoi)}
+                          {enRetard ? ' · en retard' : ''}
+                        </p>
+                      </div>
+                      <button onClick={() => marquerPayee(f.id)} disabled={payingId === f.id} style={{
+                        padding: '6px 12px', borderRadius: 20, border: `1px solid ${GREEN}`,
+                        background: 'transparent', color: GREEN, cursor: 'pointer', whiteSpace: 'nowrap',
+                        fontFamily: 'Galey, sans-serif', fontSize: 11, fontWeight: 700,
+                      }}>
+                        {payingId === f.id ? '…' : '✓ Marquer payée'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ── Carte entrée ──────────────────────────────────────────────────────────────
 
-function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, onEdit, onSorti, onJournal }: {
+function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, onEdit, onSorti, onJournal, onFacturer }: {
   entree: PensionEntree;
   animalId?: string;
   photoUrl?: string;
   proUid: string;
   proNom: string;
+  isFacture: boolean;
   onEdit: () => void;
   onSorti: () => void;
   onJournal: () => void;
+  onFacturer: () => void;
 }) {
   const inPension = entree.statut === 'en_pension';
   const bgColor   = inPension ? '#E0F2F1' : '#f3f4f6';
@@ -444,6 +612,16 @@ function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, onEdit, onSort
             fontFamily: 'Galey, sans-serif', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
           }}>
             📸 Journal
+          </button>
+          {/* Bouton facturer — dispo dès l'entrée (nuits estimées d'après la sortie prévue) */}
+          <button onClick={e => { e.stopPropagation(); onFacturer(); }} style={{
+            padding: '6px 14px', borderRadius: 20,
+            border: `1px solid ${isFacture ? '#9ca3af' : PURPLE}`,
+            background: isFacture ? '#f3f4f6' : 'transparent',
+            color: isFacture ? '#6b7280' : PURPLE, cursor: 'pointer',
+            fontFamily: 'Galey, sans-serif', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+          }}>
+            {isFacture ? '🧾 Facturé' : '🧾 Facturer'}
           </button>
           {/* Bouton marquer sorti */}
           {inPension && (
