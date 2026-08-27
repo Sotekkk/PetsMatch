@@ -262,18 +262,24 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
     setSaving(true);
     setError('');
 
-    // Un animal identifié (fiche rattachée) ne peut pas être admis dans deux
-    // pensions à la fois — vérifie qu'aucune AUTRE pension ne le déclare
-    // encore en_pension avant d'enregistrer une admission chez nous.
+    // Un animal identifié (fiche rattachée) ne peut pas avoir deux séjours
+    // en_pension aux dates qui se chevauchent — même pension (double
+    // réservation) ou une autre (déjà constaté avec Clémentine).
     if (animalId && form.statut === 'en_pension') {
-      const { data: ailleurs } = await supabase.from('pension_entrees')
-        .select('id, pro_profile_id, pro_uid')
+      const { data: autres } = await supabase.from('pension_entrees')
+        .select('id, date_entree, date_sortie_prevue, date_sortie_effective')
         .eq('animal_id', animalId).eq('statut', 'en_pension')
         .neq('id', entree?.id ?? '00000000-0000-0000-0000-000000000000');
-      const conflit = (ailleurs ?? []).find(a =>
-        proProfileId ? a.pro_profile_id !== proProfileId : a.pro_uid !== proUid);
+      const newStart = new Date(form.date_entree);
+      const newEnd = form.date_sortie_prevue ? new Date(form.date_sortie_prevue) : new Date(2100, 0, 1);
+      const conflit = (autres ?? []).find(a => {
+        const aStart = new Date(a.date_entree);
+        const aEnd = a.date_sortie_effective ? new Date(a.date_sortie_effective)
+          : (a.date_sortie_prevue ? new Date(a.date_sortie_prevue) : new Date(2100, 0, 1));
+        return newStart <= aEnd && aStart <= newEnd;
+      });
       if (conflit) {
-        setError(`${form.animal_nom.trim()} est déjà déclaré en pension ailleurs. Renseignez d'abord sa sortie chez l'autre pension.`);
+        setError(`${form.animal_nom.trim()} a déjà un séjour en pension sur ces dates. Vérifiez son autre réservation avant d'enregistrer celle-ci.`);
         setSaving(false);
         return;
       }

@@ -1776,23 +1776,31 @@ class PensionEditSheetState extends State<PensionEditSheet> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      // Un animal identifié (fiche rattachée) ne peut pas être admis dans
-      // deux pensions à la fois.
+      // Un animal identifié (fiche rattachée) ne peut pas avoir deux séjours
+      // en_pension aux dates qui se chevauchent — même pension (double
+      // réservation) ou une autre.
       final animalId = widget.entree['animal_id'] as String?;
-      if (_statut == 'en_pension' && animalId != null) {
-        final ownProfileId = widget.entree['pro_profile_id'] as String?;
-        final ownUid = widget.entree['pro_uid'] as String?;
-        final ailleurs = await widget.supa.from('pension_entrees')
-            .select('id, pro_profile_id, pro_uid')
+      if (_statut == 'en_pension' && animalId != null && _dateEntree != null) {
+        final autres = await widget.supa.from('pension_entrees')
+            .select('id, date_entree, date_sortie_prevue, date_sortie_effective')
             .eq('animal_id', animalId).eq('statut', 'en_pension')
             .neq('id', widget.entree['id']);
-        final conflit = (ailleurs as List).any((a) => (ownProfileId != null && ownProfileId.isNotEmpty)
-            ? (a as Map)['pro_profile_id'] != ownProfileId
-            : (a as Map)['pro_uid'] != ownUid);
+        final newStart = DateTime(_dateEntree!.year, _dateEntree!.month, _dateEntree!.day);
+        final newEnd = _dateSortiePrevue != null
+            ? DateTime(_dateSortiePrevue!.year, _dateSortiePrevue!.month, _dateSortiePrevue!.day)
+            : DateTime(2100);
+        final conflit = (autres as List).any((raw) {
+          final a = raw as Map;
+          final aStart = DateTime.tryParse(a['date_entree']?.toString() ?? '');
+          if (aStart == null) return false;
+          final aEndRaw = a['date_sortie_effective'] ?? a['date_sortie_prevue'];
+          final aEnd = aEndRaw != null ? (DateTime.tryParse(aEndRaw.toString()) ?? DateTime(2100)) : DateTime(2100);
+          return !newStart.isAfter(aEnd) && !aStart.isAfter(newEnd);
+        });
         if (conflit) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('${widget.entree['animal_nom'] ?? 'Cet animal'} est déjà déclaré en pension ailleurs. Renseignez d\'abord sa sortie chez l\'autre pension.',
+              content: Text('${widget.entree['animal_nom'] ?? 'Cet animal'} a déjà un séjour en pension sur ces dates. Vérifiez son autre réservation avant d\'enregistrer celle-ci.',
                   style: const TextStyle(fontFamily: 'Galey')),
               backgroundColor: Colors.red,
             ));
@@ -2511,20 +2519,29 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
         });
       }
 
-      // Un animal identifié (fiche rattachée) ne peut pas être admis dans
-      // deux pensions à la fois.
+      // Un animal identifié (fiche rattachée) ne peut pas avoir deux séjours
+      // en_pension aux dates qui se chevauchent — même pension (double
+      // réservation) ou une autre.
       if (!justCreatedFiche && animalId != null) {
-        final ownProfileId = User_Info.activeProfileId;
-        final ailleurs = await _supa.from('pension_entrees')
-            .select('id, pro_profile_id, pro_uid')
+        final autres = await _supa.from('pension_entrees')
+            .select('id, date_entree, date_sortie_prevue, date_sortie_effective')
             .eq('animal_id', animalId).eq('statut', 'en_pension');
-        final conflit = (ailleurs as List).any((a) => ownProfileId.isNotEmpty
-            ? (a as Map)['pro_profile_id'] != ownProfileId
-            : (a as Map)['pro_uid'] != _uid);
+        final newStart = DateTime(_dateEntree.year, _dateEntree.month, _dateEntree.day);
+        final newEnd = _dateSortiePrevue != null
+            ? DateTime(_dateSortiePrevue!.year, _dateSortiePrevue!.month, _dateSortiePrevue!.day)
+            : DateTime(2100);
+        final conflit = (autres as List).any((raw) {
+          final a = raw as Map;
+          final aStart = DateTime.tryParse(a['date_entree']?.toString() ?? '');
+          if (aStart == null) return false;
+          final aEndRaw = a['date_sortie_effective'] ?? a['date_sortie_prevue'];
+          final aEnd = aEndRaw != null ? (DateTime.tryParse(aEndRaw.toString()) ?? DateTime(2100)) : DateTime(2100);
+          return !newStart.isAfter(aEnd) && !aStart.isAfter(newEnd);
+        });
         if (conflit) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('${_nomCtrl.text.trim()} est déjà déclaré en pension ailleurs. Renseignez d\'abord sa sortie chez l\'autre pension.',
+              content: Text('${_nomCtrl.text.trim()} a déjà un séjour en pension sur ces dates. Vérifiez son autre réservation avant d\'enregistrer celle-ci.',
                   style: const TextStyle(fontFamily: 'Galey')),
               backgroundColor: Colors.red,
             ));
