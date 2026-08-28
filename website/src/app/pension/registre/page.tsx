@@ -528,7 +528,7 @@ function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, log
           fontSize: 22, flexShrink: 0, overflow: 'hidden',
         }}>
           {photoUrl
-            ? <img src={thumbUrl(photoUrl, 92, 75, 'cover')} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ? <img src={thumbUrl(photoUrl, 96, 75, 'contain')} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             : espEmoji(entree.espece)}
         </div>
 
