@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
+import { PENSION_ESPECES } from '@/lib/pension-especes';
 
 interface Logement {
   id: string;
@@ -29,7 +30,7 @@ const TYPES = [
   { value: 'cage', label: 'Cage' },
 ];
 const TYPE_LABEL = Object.fromEntries(TYPES.map(t => [t.value, t.label]));
-const ESPECES = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
+const ESPECES_FALLBACK = PENSION_ESPECES.map(e => e.label);
 
 const EMPTY_FORM = { nom: '', type: 'box', capacite: 1, notes: '', especes: [] as string[] };
 
@@ -45,6 +46,9 @@ export default function PensionChenilPage() {
   const [assigningTo, setAssigningTo] = useState<Logement | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [filterEspece, setFilterEspece] = useState<string | null>(null);
+  const [especesAcceptees, setEspecesAcceptees] = useState<string[]>([]);
+  // Espèces proposées pour un logement = espèces acceptées par la pension.
+  const ESPECES = especesAcceptees.length > 0 ? especesAcceptees : ESPECES_FALLBACK;
 
   useEffect(() => {
     if (authLoading) return;
@@ -54,13 +58,16 @@ export default function PensionChenilPage() {
 
   const load = useCallback(async () => {
     if (!user) return;
-    const [{ data: log }, { data: ent }] = await Promise.all([
+    const [{ data: log }, { data: ent }, { data: prof }] = await Promise.all([
       supabase.from('enclos_chenil').select('*').eq('uid_eleveur', user.uid).order('nom'),
       supabase.from('pension_entrees').select('id, animal_nom, espece, logement_id')
         .eq('pro_uid', user.uid).eq('statut', 'en_pension').order('date_entree'),
+      supabase.from('user_profiles').select('especes_acceptees')
+        .eq('uid', user.uid).eq('profile_type', 'pension').maybeSingle(),
     ]);
     setLogements(log ?? []);
     setEntrees(ent ?? []);
+    setEspecesAcceptees(Array.isArray(prof?.especes_acceptees) ? prof.especes_acceptees as string[] : []);
     setLoading(false);
   }, [user]);
 

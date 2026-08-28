@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show kPensionEspeces;
 
 class PensionChenilPage extends StatefulWidget {
   const PensionChenilPage({super.key});
@@ -29,7 +31,11 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
     ('cage', 'Cage'),
   ];
   static const _typeLabels = {'box': 'Box', 'enclos': 'Enclos', 'parc': 'Parc', 'chatterie': 'Chatterie', 'cage': 'Cage'};
-  static const _especesList = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Reptile', 'Rongeur', 'Cheval', 'Autre'];
+  // Espèces proposées pour un logement = espèces acceptées par la pension
+  // (repli sur la liste canonique si le profil n'en a pas encore défini).
+  List<String> get _especesList => User_Info.especesAcceptees.isNotEmpty
+      ? User_Info.especesAcceptees
+      : kPensionEspeces.map((e) => e['label']!).toList();
   String? _filterEspece;
 
   @override

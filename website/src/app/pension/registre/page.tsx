@@ -468,6 +468,9 @@ function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, onE
   const inPension = entree.statut === 'en_pension';
   const bgColor   = inPension ? '#E0F2F1' : '#f3f4f6';
   const txtColor  = inPension ? TEAL : '#6b7280';
+  // Séjour en cours dont la sortie prévue est passée : à sortir.
+  const enRetard = inPension && !!entree.date_sortie_prevue
+    && new Date(entree.date_sortie_prevue) < new Date(new Date().toDateString());
   const [sendingClaim, setSendingClaim] = useState(false);
   const [claimSent, setClaimSent] = useState(false);
   const [showActions, setShowActions] = useState(false);
@@ -535,6 +538,14 @@ function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, onE
             }}>
               {inPension ? 'En pension' : 'Sorti'}
             </span>
+            {enRetard && (
+              <span style={{
+                padding: '2px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700,
+                fontFamily: 'Galey, sans-serif', background: '#FDECEA', color: '#C62828', whiteSpace: 'nowrap',
+              }}>
+                Sortie prévue dépassée
+              </span>
+            )}
             {animalId && (
               <a href={`/pension/fiche/${animalId}`}
                 onClick={e => e.stopPropagation()}

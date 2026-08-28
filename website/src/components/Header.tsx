@@ -233,7 +233,7 @@ const MENU_PENSION = [
     icon: '📁',
     items: [
       { href: '/pension/contrat',    label: 'Contrats',      icon: '✍️', pro: true },
-      { href: '/elevage/facturation',label: 'Facturation',   icon: '🧾' },
+      { href: '/pension/factures',   label: 'Facturation',   icon: '🧾' },
       { href: '/pension/tarifs',     label: 'Tarification',  icon: '💶' },
     ],
   },

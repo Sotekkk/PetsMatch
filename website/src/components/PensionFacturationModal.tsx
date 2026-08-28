@@ -4,19 +4,9 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { PensionEntree } from '@/components/PensionEntreeModal';
 import { pensionTarifKeyForEspece, type TarifsPension } from '@/lib/pension-especes';
+import { openPensionInvoice, type PensionFactureData } from '@/lib/pension-facture-html';
 
 const TEAL = '#0C5C6C';
-
-const ESP_LABEL: Record<string, string> = {
-  chien: 'Chien', chat: 'Chat', lapin: 'Lapin', oiseau: 'Oiseau',
-  cheval: 'Cheval', nac: 'NAC', ovin: 'Ovin', caprin: 'Caprin', porcin: 'Porc',
-};
-function espLabel(e?: string | null) { return ESP_LABEL[e ?? ''] ?? (e ?? ''); }
-
-function fmtDateIso(iso?: string | null) {
-  if (!iso) return '—';
-  try { return new Date(iso).toLocaleDateString('fr-FR'); } catch { return iso; }
-}
 
 function fmt(v: number) { return `${v.toFixed(2).replace('.', ',')} €`; }
 
@@ -105,56 +95,54 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
   function genNumero() {
     return `${isAcompte ? 'ACPT' : 'FACT'}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString().slice(-4)}`;
   }
-  function facturePayload() {
+  function factureData(numero: string): PensionFactureData {
+    return {
+      numero,
+      pensionNom,
+      emiseLe: new Date().toISOString(),
+      animal: { nom: entree.animal_nom, espece: entree.espece, race: entree.race, puce: entree.puce },
+      proprietaire: { nom: entree.proprietaire_nom, email: entree.proprietaire_email, contact: entree.proprietaire_contact },
+      sejour: { dateEntree: entree.date_entree, dateSortie: entree.date_sortie_effective ?? entree.date_sortie_prevue },
+      nuits: nuitsNum,
+      tarifNuit: tarifNum,
+      suppDesc,
+      suppMontant: suppNum,
+      avecTVA,
+      isAcompte,
+      acomptePct: pctNum,
+    };
+  }
+  function facturePayload(numero: string) {
     return {
       pro_uid: proUid,
       ...(proProfileId ? { pro_profile_id: proProfileId } : {}),
       entree_id: entree.id,
+      numero,
       animal_nom: entree.animal_nom,
       proprietaire_nom: entree.proprietaire_nom,
       montant: montantFacture,
       statut: 'envoyee',
+      details: factureData(numero),
       ...(isAcompte ? { type: 'acompte', acompte_pct: pctNum } : {}),
     };
   }
 
-  function invoiceHtml(numero: string) {
-    return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Facture ${numero}</title>
-<style>body{font-family:Arial,sans-serif;font-size:12px;margin:24px;color:#222}h1{font-size:18px;margin-bottom:2px}.meta{color:#666;font-size:11px;margin-bottom:20px}
-.grid{display:flex;gap:24px;margin-bottom:16px}.box{flex:1;background:#f8f8f6;border-radius:6px;padding:10px 12px}.box b{display:block;font-size:9px;letter-spacing:.5px;color:#888;margin-bottom:4px}
-table{width:100%;border-collapse:collapse;margin-bottom:12px}th{background:#f0f0f0;font-weight:bold;text-align:left;padding:6px 8px;border:1px solid #ccc}td{padding:6px 8px;border:1px solid #ddd}
-.totals{margin-left:auto;width:260px}.totals div{display:flex;justify-content:space-between;padding:3px 0}.totals .grand{font-weight:bold;font-size:14px;border-top:1px solid #ccc;padding-top:6px;color:${TEAL}}
-.foot{margin-top:28px;font-size:10px;color:#999}@media print{body{margin:10px}}</style>
-</head><body>
-<h1>🧾 ${isAcompte ? `Facture d'acompte ${numero}` : `Facture ${numero}`}</h1>
-<p class="meta">${pensionNom} — émise le ${new Date().toLocaleDateString('fr-FR')}${isAcompte ? ` · acompte de ${pctNum}% du séjour` : ''}</p>
-<div class="grid">
-  <div class="box"><b>ANIMAL</b>${entree.animal_nom} · ${espLabel(entree.espece)}${entree.race ? `<br>${entree.race}` : ''}${entree.puce ? `<br>Puce : ${entree.puce}` : ''}</div>
-  <div class="box"><b>PROPRIÉTAIRE</b>${entree.proprietaire_nom ?? '—'}${entree.proprietaire_email ? `<br>${entree.proprietaire_email}` : ''}${entree.proprietaire_contact ? `<br>${entree.proprietaire_contact}` : ''}</div>
-  <div class="box"><b>SÉJOUR</b>Entrée : ${fmtDateIso(entree.date_entree)}<br>Sortie : ${fmtDateIso(entree.date_sortie_effective ?? entree.date_sortie_prevue)}<br><b style="color:${TEAL}">${nuitsNum} nuit${nuitsNum > 1 ? 's' : ''}</b></div>
-</div>
-<table><thead><tr><th>Description</th><th>Qté</th><th>P.U. HT</th><th>Total HT</th></tr></thead><tbody>
-<tr><td>Pension du ${fmtDateIso(entree.date_entree)} au ${fmtDateIso(entree.date_sortie_effective ?? entree.date_sortie_prevue)}</td><td>${nuitsNum}</td><td>${fmt(tarifNum)}</td><td>${fmt(tarifNum * nuitsNum)}</td></tr>
-${suppNum > 0 ? `<tr><td>${suppDesc || 'Suppléments'}</td><td>1</td><td>${fmt(suppNum)}</td><td>${fmt(suppNum)}</td></tr>` : ''}
-</tbody></table>
-<div class="totals">
-${avecTVA ? `<div><span>Sous-total HT</span><span>${fmt(sousTotal)}</span></div><div><span>TVA 20%</span><span>${fmt(tvaAmt)}</span></div>` : ''}
-<div${isAcompte ? '' : ' class="grand"'}><span>${avecTVA ? 'TOTAL TTC séjour' : 'TOTAL séjour'}</span><span>${fmt(total)}</span></div>
-${isAcompte ? `<div><span>Acompte ${pctNum}%</span><span>${fmt(montantFacture)}</span></div>
-<div class="grand"><span>À RÉGLER MAINTENANT</span><span>${fmt(montantFacture)}</span></div>
-<div><span>Solde à la sortie</span><span>${fmt(total - montantFacture)}</span></div>` : ''}
-</div>
-<p class="foot">${isAcompte ? `Acompte à régler pour confirmer la réservation. Le solde de ${fmt(total - montantFacture)} sera facturé à la fin du séjour. ` : 'Paiement à réception de facture. '}Document généré via PetsMatch.</p>
-</body></html>`;
+  // Insert résilient : si la colonne `details` n'existe pas encore (migration
+  // pas passée), on réessaie sans elle.
+  async function insertFacture(payload: Record<string, unknown>) {
+    const first = await supabase.from('pension_factures').insert(payload);
+    if (first.error && /details/i.test(first.error.message)) {
+      const { details: _omit, ...rest } = payload;
+      void _omit;
+      return supabase.from('pension_factures').insert(rest);
+    }
+    return first;
   }
 
   function apercu() {
-    const numero = genNumero();
-    const win = window.open('', '_blank');
-    if (!win) { setError('Autorisez les popups pour imprimer'); return; }
-    win.document.write(invoiceHtml(numero));
-    win.document.close();
-    setTimeout(() => win.print(), 300);
+    if (!openPensionInvoice(factureData(genNumero()))) {
+      setError('Autorisez les popups pour ouvrir la facture');
+    }
   }
 
   async function marquerFacture() {
@@ -162,8 +150,7 @@ ${isAcompte ? `<div><span>Acompte ${pctNum}%</span><span>${fmt(montantFacture)}<
     setMarking(true);
     setError('');
     try {
-      const numero = genNumero();
-      const { error: err } = await supabase.from('pension_factures').insert({ ...facturePayload(), numero });
+      const { error: err } = await insertFacture(facturePayload(genNumero()));
       if (err) { setError(err.message); setMarking(false); return; }
       onSaved();
     } finally {
@@ -203,7 +190,7 @@ ${isAcompte ? `<div><span>Acompte ${pctNum}%</span><span>${fmt(montantFacture)}<
         read: false,
       });
 
-      const { error: err } = await supabase.from('pension_factures').insert({ ...facturePayload(), numero, proprietaire_uid: ownerUid });
+      const { error: err } = await insertFacture({ ...facturePayload(numero), proprietaire_uid: ownerUid });
       if (err) { setError(err.message); setSending(false); return; }
       onSaved();
     } finally {

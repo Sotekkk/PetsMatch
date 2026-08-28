@@ -1289,6 +1289,11 @@ class _PensionCard extends StatelessWidget {
     final statusLabel = inPension ? 'En pension' : 'Sorti';
     final statusIcon  = inPension ? Icons.home_outlined : Icons.logout_outlined;
 
+    // Séjour en cours dont la date de sortie prévue est passée : à sortir.
+    final sortiePrevue = DateTime.tryParse(entree['date_sortie_prevue']?.toString() ?? '');
+    final enRetard = inPension && sortiePrevue != null &&
+        sortiePrevue.isBefore(DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day));
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -1341,6 +1346,15 @@ class _PensionCard extends StatelessWidget {
                       style: const TextStyle(fontFamily: 'Galey',
                           fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2A2E)),
                       maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  if (enRetard)
+                    Container(
+                      margin: const EdgeInsets.only(right: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(color: const Color(0xFFFDECEA), borderRadius: BorderRadius.circular(8)),
+                      child: const Text('Sortie prévue dépassée',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                              fontWeight: FontWeight.w700, color: Color(0xFFC62828))),
+                    ),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                     decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(8)),
