@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { lookupAnimalByChip, requestAnimalAccess } from '@/lib/pension-chip-lookup';
+import { especeMatchesLogement } from '@/lib/pension-especes';
 
 export interface PensionEntree {
   id: string;
@@ -78,7 +79,10 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
   const [animalId, setAnimalId] = useState<string | null | undefined>(entree?.animal_id ?? prefill?.animal_id);
   const [logementId, setLogementId] = useState<string | null>(entree?.logement_id ?? initialLogementId ?? null);
   const [logements, setLogements] = useState<{ id: string; nom: string; type: string; capacite: number; especes?: string[] | null }[]>([]);
-  const [occupancy, setOccupancy] = useState<Record<string, number>>({});
+  const [occupants, setOccupants] = useState<{
+    id: string; logement_id: string | null; date_entree: string | null;
+    date_sortie_prevue: string | null; date_sortie_effective: string | null;
+  }[]>([]);
   const [linkingFiche, setLinkingFiche] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
@@ -93,20 +97,35 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
     (async () => {
       const [{ data: log }, { data: occ }] = await Promise.all([
         supabase.from('enclos_chenil').select('id, nom, type, capacite, especes').eq('uid_eleveur', proUid).order('nom'),
-        supabase.from('pension_entrees').select('id, logement_id').eq('pro_uid', proUid).eq('statut', 'en_pension').not('logement_id', 'is', null),
+        // tous les séjours pas encore sortis + assignés à un logement, avec
+        // leurs dates → on calcule la dispo sur la période demandée.
+        supabase.from('pension_entrees')
+          .select('id, logement_id, date_entree, date_sortie_prevue, date_sortie_effective')
+          .eq('pro_uid', proUid).neq('statut', 'sorti').not('logement_id', 'is', null),
       ]);
       if (cancelled) return;
       setLogements(log ?? []);
-      const counts: Record<string, number> = {};
-      for (const o of occ ?? []) {
-        if (isEdit && entree && o.id === entree.id) continue; // pas soi-même
-        if (o.logement_id) counts[o.logement_id] = (counts[o.logement_id] ?? 0) + 1;
-      }
-      setOccupancy(counts);
+      setOccupants((occ ?? []) as typeof occupants);
     })();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proUid]);
+
+  // Occupation de chaque logement SUR LA PÉRIODE demandée (chevauchement de dates).
+  const periodOccupancy = useMemo(() => {
+    const reqStart = form.date_entree ? new Date(form.date_entree).getTime() : -8.64e15;
+    const reqEnd = form.date_sortie_prevue ? new Date(form.date_sortie_prevue).getTime() : 8.64e15;
+    const counts: Record<string, number> = {};
+    for (const o of occupants) {
+      if (!o.logement_id) continue;
+      if (isEdit && entree && o.id === entree.id) continue;
+      const oStart = o.date_entree ? new Date(o.date_entree).getTime() : -8.64e15;
+      const oEnd = o.date_sortie_effective ? new Date(o.date_sortie_effective).getTime()
+        : o.date_sortie_prevue ? new Date(o.date_sortie_prevue).getTime() : 8.64e15;
+      if (oStart < reqEnd && oEnd > reqStart) counts[o.logement_id] = (counts[o.logement_id] ?? 0) + 1;
+    }
+    return counts;
+  }, [occupants, form.date_entree, form.date_sortie_prevue, isEdit, entree]);
 
   async function searchTopChip() {
     if (!topChip.trim()) return;
@@ -500,21 +519,33 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
             <label style={lbl}>Logement</label>
             <select style={inp} value={logementId ?? ''} onChange={e => setLogementId(e.target.value || null)}>
               <option value="">Non assigné</option>
-              {logements.map(l => {
-                const occ = occupancy[l.id] ?? 0;
-                const full = occ >= l.capacite;
-                return (
-                  <option key={l.id} value={l.id} disabled={full && l.id !== (entree?.logement_id ?? '')}>
-                    {l.nom} ({TYPE_LABEL[l.type] ?? l.type}) — {occ}/{l.capacite} place{l.capacite > 1 ? 's' : ''}{full ? ' complet' : ''}
-                  </option>
-                );
-              })}
+              {[...logements]
+                .map(l => {
+                  const occ = periodOccupancy[l.id] ?? 0;
+                  const libre = occ < l.capacite;
+                  const compatible = especeMatchesLogement(form.espece, l.especes);
+                  return { l, occ, libre, compatible };
+                })
+                .sort((a, b) => {
+                  const rank = (x: typeof a) => (x.compatible ? 0 : 2) + (x.libre ? 0 : 1);
+                  return rank(a) - rank(b) || a.l.nom.localeCompare(b.l.nom);
+                })
+                .map(({ l, occ, libre, compatible }) => {
+                  const isCurrent = l.id === (entree?.logement_id ?? '');
+                  const raison = !compatible ? ' · espèce non acceptée'
+                    : !libre ? ' · complet sur la période' : '';
+                  return (
+                    <option key={l.id} value={l.id} disabled={(!compatible || !libre) && !isCurrent}>
+                      {l.nom} ({TYPE_LABEL[l.type] ?? l.type}) — {occ}/{l.capacite} place{l.capacite > 1 ? 's' : ''}{raison}
+                    </option>
+                  );
+                })}
             </select>
-            {logements.length === 0 && (
-              <p style={{ margin: '6px 0 0', fontFamily: 'Galey, sans-serif', fontSize: 12, color: '#9ca3af' }}>
-                Aucun logement créé — <Link href="/pension/chenil" style={{ color: TEAL }}>en créer un</Link>.
-              </p>
-            )}
+            <p style={{ margin: '6px 0 0', fontFamily: 'Galey, sans-serif', fontSize: 11.5, color: '#9ca3af' }}>
+              {logements.length === 0
+                ? <>Aucun logement créé — <Link href="/pension/chenil" style={{ color: TEAL }}>en créer un</Link>.</>
+                : 'Seuls les logements de la bonne espèce et libres sur les dates du séjour sont sélectionnables.'}
+            </p>
           </div>
 
           {/* Propriétaire */}

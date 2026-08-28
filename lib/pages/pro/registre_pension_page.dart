@@ -17,7 +17,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
-import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show pensionTarifKeyForEspece;
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show pensionTarifKeyForEspece, especeMatchesLogement;
 
 class RegistrePensionPage extends StatefulWidget {
   const RegistrePensionPage({super.key});
@@ -2429,7 +2429,8 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
   bool _seul = false;
   String? _logementId;
   List<Map<String, dynamic>> _logements = [];
-  Map<String, int> _occupancy = {};
+  // Séjours non sortis assignés à un logement, avec leurs dates.
+  List<Map<String, dynamic>> _occupants = [];
   bool _loadingLogements = true;
 
   @override
@@ -2453,21 +2454,36 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
     try {
       final results = await Future.wait([
         _supa.from('enclos_chenil').select('id, nom, type, capacite, especes').eq('uid_eleveur', _uid).order('nom'),
-        _supa.from('pension_entrees').select('logement_id').eq('pro_uid', _uid).eq('statut', 'en_pension').not('logement_id', 'is', null),
+        _supa.from('pension_entrees')
+            .select('id, logement_id, date_entree, date_sortie_prevue, date_sortie_effective')
+            .eq('pro_uid', _uid).neq('statut', 'sorti').not('logement_id', 'is', null),
       ]);
-      final occ = <String, int>{};
-      for (final r in (results[1] as List)) {
-        final lid = (r as Map)['logement_id'] as String?;
-        if (lid != null) occ[lid] = (occ[lid] ?? 0) + 1;
-      }
       if (mounted) setState(() {
-        _logements = List<Map<String, dynamic>>.from(results[0] as List);
-        _occupancy = occ;
+        _logements  = List<Map<String, dynamic>>.from(results[0] as List);
+        _occupants  = List<Map<String, dynamic>>.from(results[1] as List);
         _loadingLogements = false;
       });
     } catch (_) {
       if (mounted) setState(() => _loadingLogements = false);
     }
+  }
+
+  /// Occupation du logement sur la période demandée (chevauchement de dates).
+  int _occupationPeriode(String logementId) {
+    final reqStart = DateTime(_dateEntree.year, _dateEntree.month, _dateEntree.day);
+    final reqEnd = _dateSortiePrevue != null
+        ? DateTime(_dateSortiePrevue!.year, _dateSortiePrevue!.month, _dateSortiePrevue!.day)
+        : DateTime(2100);
+    var n = 0;
+    for (final o in _occupants) {
+      if (o['logement_id'] != logementId) continue;
+      final oStart = DateTime.tryParse(o['date_entree']?.toString() ?? '') ?? DateTime(1900);
+      final oEnd = DateTime.tryParse(o['date_sortie_effective']?.toString() ?? '')
+          ?? DateTime.tryParse(o['date_sortie_prevue']?.toString() ?? '')
+          ?? DateTime(2100);
+      if (oStart.isBefore(reqEnd) && oEnd.isAfter(reqStart)) n++;
+    }
+    return n;
   }
 
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -2727,7 +2743,8 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               _lbl('Espèce'),
-              TextFormField(controller: _especeCtrl, decoration: _dec('Chien')),
+              TextFormField(controller: _especeCtrl, decoration: _dec('Chien'),
+                  onChanged: (_) => setState(() {})),
             ])),
             const SizedBox(width: 10),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -2775,22 +2792,48 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
               : DropdownButtonFormField<String?>(
                   initialValue: _logementId,
                   decoration: _dec('Non assigné'),
+                  isExpanded: true,
                   items: [
                     const DropdownMenuItem<String?>(value: null, child: Text('Non assigné', style: TextStyle(fontFamily: 'Galey'))),
-                    ..._logements.map((l) {
-                      final occ = _occupancy[l['id'] as String] ?? 0;
-                      final cap = l['capacite'] as int? ?? 1;
-                      final full = occ >= cap && l['id'] != widget.initialLogementId;
-                      return DropdownMenuItem<String?>(
-                        value: l['id'] as String,
-                        enabled: !full,
-                        child: Text('${l['nom']} ($occ/$cap places)${full ? ' — complet' : ''}',
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: full ? Colors.grey : null)),
-                      );
-                    }),
+                    ...(() {
+                      final rows = _logements.map((l) {
+                        final cap = l['capacite'] as int? ?? 1;
+                        final occ = _occupationPeriode(l['id'] as String);
+                        final compatible = especeMatchesLogement(_especeCtrl.text, l['especes'] as List?);
+                        final libre = occ < cap;
+                        return {'l': l, 'cap': cap, 'occ': occ, 'compatible': compatible, 'libre': libre};
+                      }).toList()
+                        ..sort((a, b) {
+                          int rank(Map m) => ((m['compatible'] as bool) ? 0 : 2) + ((m['libre'] as bool) ? 0 : 1);
+                          return rank(a).compareTo(rank(b));
+                        });
+                      return rows.map((m) {
+                        final l = m['l'] as Map;
+                        final compatible = m['compatible'] as bool;
+                        final libre = m['libre'] as bool;
+                        final isCurrent = l['id'] == widget.initialLogementId;
+                        final raison = !compatible ? ' · espèce non acceptée'
+                            : !libre ? ' · complet sur la période' : '';
+                        final grise = (!compatible || !libre) && !isCurrent;
+                        return DropdownMenuItem<String?>(
+                          value: l['id'] as String,
+                          enabled: !grise,
+                          child: Text('${l['nom']} (${m['occ']}/${m['cap']} places)$raison',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: grise ? Colors.grey : null)),
+                        );
+                      });
+                    })(),
                   ],
                   onChanged: (v) => setState(() => _logementId = v),
                 ),
+          const SizedBox(height: 4),
+          Text(
+            _logements.isEmpty
+                ? 'Aucun logement — créez-en dans Logements / Chenil.'
+                : 'Seuls les logements de la bonne espèce et libres sur les dates du séjour sont sélectionnables.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade500),
+          ),
           const SizedBox(height: 12),
 
           Row(children: [

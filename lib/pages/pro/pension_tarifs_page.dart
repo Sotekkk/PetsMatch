@@ -21,9 +21,10 @@ const List<Map<String, String>> kPensionEspeces = [
   {'key': 'oiseau',        'label': 'Oiseaux',             'emoji': '🦜'},
 ];
 
-/// entree.espece (minuscule, stockée en base) -> key de tarif pension.
+/// entree.espece (minuscule) OU label d'espèce acceptée -> key canonique.
 String? pensionTarifKeyForEspece(String? espece) {
-  switch ((espece ?? '').toLowerCase().trim()) {
+  final s = (espece ?? '').toLowerCase().trim();
+  switch (s) {
     case 'chien':   return 'chien';
     case 'chat':    return 'chat';
     case 'cheval':  return 'cheval';
@@ -33,6 +34,7 @@ String? pensionTarifKeyForEspece(String? espece) {
     case 'oiseau':
     case 'oiseaux': return 'oiseau';
     case 'nac':     return 'nac';
+    case 'animaux de la ferme': return 'animaux_ferme';
     case 'ovin':
     case 'caprin':
     case 'porcin':
@@ -41,7 +43,23 @@ String? pensionTarifKeyForEspece(String? espece) {
     case 'chèvre':
     case 'cochon':  return 'animaux_ferme';
   }
+  for (final e in kPensionEspeces) {
+    if (e['label']!.toLowerCase() == s) return e['key'];
+  }
   return null;
+}
+
+/// Un logement (enclos_chenil.especes) accepte-t-il cette espèce d'animal ?
+/// Logement sans espèce configurée = accepte tout.
+bool especeMatchesLogement(String? animalEspece, List? logementEspeces) {
+  if (logementEspeces == null || logementEspeces.isEmpty) return true;
+  final animalKey = pensionTarifKeyForEspece(animalEspece)
+      ?? (animalEspece ?? '').toLowerCase().trim();
+  if (animalKey.isEmpty) return true;
+  return logementEspeces.any((e) {
+    final k = pensionTarifKeyForEspece(e?.toString()) ?? (e?.toString() ?? '').toLowerCase().trim();
+    return k == animalKey;
+  });
 }
 
 class PensionTarifsPage extends StatefulWidget {
