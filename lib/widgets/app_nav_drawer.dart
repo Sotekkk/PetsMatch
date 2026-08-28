@@ -22,7 +22,6 @@ import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_en_accueil_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_associations_benevole.dart';
 import 'package:PetsMatch/pages/nature/natural_places_page.dart';
-import 'package:PetsMatch/pages/petfriends/petfriends_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
 import 'package:PetsMatch/pages/association/post/annonces_asso_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
@@ -292,11 +291,7 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
           label: 'Lieux Naturels',
           onTap: () => _push(const NaturalPlacesPage()),
         ),
-        _DrawerItem(
-          icon: Icons.people_outline,
-          label: 'Mes PetFriends',
-          onTap: () => _push(const PetFriendsPage()),
-        ),
+        // « Mes PetFriends » retiré du menu : accessible depuis Communauté.
         _DrawerItem(
           icon: Icons.favorite_border,
           label: 'Favoris',

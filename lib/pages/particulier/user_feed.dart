@@ -117,13 +117,30 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
           .doc(User_Info.uid)
           .get();
       final d = doc.data() ?? {};
+
+      // « À propos de moi » est propre à CE profil : on lit user_profiles.description.
+      // En multi-profil, le champ Firestore users.desc (legacy, partagé) n'est
+      // plus fiable — il peut contenir la description d'un autre profil.
+      String? profileBio;
+      final pid = User_Info.activeProfileId;
+      final multiProfil = pid.isNotEmpty;
+      try {
+        final row = multiProfil
+            ? await _supa.from('user_profiles').select('description').eq('id', pid).maybeSingle()
+            : await _supa.from('user_profiles').select('description')
+                .eq('uid', User_Info.uid).eq('is_main', true).maybeSingle();
+        profileBio = (row?['description'] as String?)?.trim();
+      } catch (_) {}
+
       // Remove address listeners to avoid _adresseModified = true during load
       _rueCtrl.removeListener(_onAdresseChanged);
       _cpCtrl.removeListener(_onAdresseChanged);
       _villeCtrl.removeListener(_onAdresseChanged);
       setState(() {
         _profilePicUrl = d['profilePictureUrl'] ?? _profilePicUrl;
-        _initBio = d['desc'] ?? '';
+        _initBio = (profileBio != null && profileBio.isNotEmpty)
+            ? profileBio
+            : (multiProfil ? '' : (d['desc'] ?? ''));
         _initAdopt = d['adoptProject'] ?? '';
         _bioCtrl.text = _initBio;
         _adoptCtrl.text = _initAdopt;
@@ -324,11 +341,17 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
     if (uid.isEmpty) return;
     setState(() => _loadingAlertes = true);
     try {
-      final data = await _supa
+      final activeProfileId = User_Info.activeProfileId;
+      var query = _supa
           .from('alertes_perdus')
           .select()
-          .eq('uid_proprietaire', uid)
-          .order('created_at', ascending: false);
+          .eq('uid_proprietaire', uid);
+      // Multi-profil : n'afficher que les alertes de CE profil (ex. une alerte
+      // créée depuis le profil élevage ne doit pas apparaître ici).
+      if (activeProfileId.isNotEmpty) {
+        query = query.eq('profile_id', activeProfileId);
+      }
+      final data = await query.order('created_at', ascending: false);
       setState(() {
         _alertes = List<Map<String, dynamic>>.from(data);
         _loadingAlertes = false;
@@ -365,10 +388,22 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
   }
 
   Future<void> _saveBio() async {
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(User_Info.uid)
-        .update({'desc': _bioCtrl.text});
+    final txt = _bioCtrl.text.trim();
+    // Source de vérité multi-profil : user_profiles.description de CE profil.
+    try {
+      final pid = User_Info.activeProfileId;
+      if (pid.isNotEmpty) {
+        await _supa.from('user_profiles').update({'description': txt}).eq('id', pid);
+      } else {
+        await _supa.from('user_profiles').update({'description': txt})
+            .eq('uid', User_Info.uid).eq('is_main', true);
+      }
+    } catch (_) {}
+    // Miroir legacy (mono-profil / anciens lecteurs Firestore).
+    try {
+      await FirebaseFirestore.instance
+          .collection('users').doc(User_Info.uid).update({'desc': _bioCtrl.text});
+    } catch (_) {}
     setState(() { _bioModified = false; _initBio = _bioCtrl.text; });
   }
 
