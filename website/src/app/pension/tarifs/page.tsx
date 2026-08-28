@@ -35,6 +35,7 @@ export default function PensionTarifsPage() {
   const [especes, setEspeces] = useState<EspeceRow[]>([]);
   const [reductions, setReductions] = useState<Reduction[]>([]);
   const [afficherPublic, setAfficherPublic] = useState(false);
+  const [showAutres, setShowAutres] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -163,33 +164,48 @@ export default function PensionTarifsPage() {
           <h2 className="font-bold font-galey text-teal-800">Prix par espèce</h2>
           <p className="text-xs font-galey text-gray-500 mt-1">
             Tarif par nuit selon l&apos;espèce et selon que l&apos;animal est seul ou partage son logement.
-            Le tarif est ensuite suggéré automatiquement à la facturation. Les espèces acceptées par votre
-            pension apparaissent en premier.
+            Le tarif est ensuite suggéré automatiquement à la facturation.
           </p>
         </div>
+        {especes.filter(e => e.accepte).length === 0 && (
+          <p className="text-xs font-galey text-orange-800 bg-orange-50 border border-orange-200 rounded-lg p-2.5">
+            Aucune espèce acceptée définie. Ajoutez vos espèces dans votre profil pour ne remplir que celles-ci.
+          </p>
+        )}
         <div className="space-y-3">
-          {especes.map((e, i) => (
-            <div key={e.key} className="border border-gray-100 rounded-xl p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-lg">{e.emoji}</span>
-                <span className="font-galey font-bold text-sm text-[#1E2025]">{e.label}</span>
-                {e.accepte && (
-                  <span className="text-[10px] font-galey font-bold px-2 py-0.5 rounded-full bg-[#6E9E57]/12 text-[#6E9E57]">
-                    Accepté
-                  </span>
-                )}
+          {especes.map((e, i) => {
+            const anyAccepted = especes.some(x => x.accepte);
+            const visible = anyAccepted ? (e.accepte || showAutres) : true;
+            if (!visible) return null;
+            return (
+              <div key={e.key} className="border border-gray-100 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-lg">{e.emoji}</span>
+                  <span className="font-galey font-bold text-sm text-[#1E2025]">{e.label}</span>
+                  {e.accepte && (
+                    <span className="text-[10px] font-galey font-bold px-2 py-0.5 rounded-full bg-[#6E9E57]/12 text-[#6E9E57]">
+                      Accepté
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input placeholder="Prix seul (€/nuit)" value={e.prixSeul} inputMode="decimal"
+                    onChange={ev => setEspeces(rows => rows.map((x, j) => j === i ? { ...x, prixSeul: ev.target.value } : x))}
+                    className={`${inputCls} flex-1 min-w-[140px]`} />
+                  <input placeholder="Prix partagé (€/nuit)" value={e.prixPartage} inputMode="decimal"
+                    onChange={ev => setEspeces(rows => rows.map((x, j) => j === i ? { ...x, prixPartage: ev.target.value } : x))}
+                    className={`${inputCls} flex-1 min-w-[140px]`} />
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <input placeholder="Prix seul (€/nuit)" value={e.prixSeul} inputMode="decimal"
-                  onChange={ev => setEspeces(rows => rows.map((x, j) => j === i ? { ...x, prixSeul: ev.target.value } : x))}
-                  className={`${inputCls} flex-1 min-w-[140px]`} />
-                <input placeholder="Prix partagé (€/nuit)" value={e.prixPartage} inputMode="decimal"
-                  onChange={ev => setEspeces(rows => rows.map((x, j) => j === i ? { ...x, prixPartage: ev.target.value } : x))}
-                  className={`${inputCls} flex-1 min-w-[140px]`} />
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
+        {especes.some(e => e.accepte) && especes.some(e => !e.accepte) && (
+          <button onClick={() => setShowAutres(v => !v)}
+            className="text-sm font-galey font-semibold text-teal-700">
+            {showAutres ? '− Masquer les autres espèces' : '+ Tarif pour une autre espèce'}
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm p-5 space-y-4 border border-teal-100">

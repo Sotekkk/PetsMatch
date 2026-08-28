@@ -742,7 +742,6 @@ function ProDetailContent() {
                     const partage = t.prix_partage;
                     return (
                       <div key={sp.key} className="flex items-center gap-2 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
-                        <span>{sp.emoji}</span>
                         <span className="flex-1 text-[#1E2025] font-medium">{sp.label}</span>
                         <span className="font-bold text-[#0C5C6C]">
                           {t.prix_seul.toFixed(0)} €

@@ -307,14 +307,14 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   String get _tarifs => _proData?['tarifs'] ?? '';
 
   /// Tarifs pension par espèce, uniquement si la pension a activé l'affichage
-  /// public. Retourne (emoji, label, prix formaté).
-  List<(String, String, String)> get _pensionTarifsPublics {
+  /// public. Retourne (label, prix formaté).
+  List<(String, String)> get _pensionTarifsPublics {
     if (_proData?['cat_pro'] != 'pension') return [];
     final tp = _proData?['tarifs_pension'];
     if (tp is! Map || tp['afficher_public'] != true) return [];
     final especes = tp['especes'];
     if (especes is! List) return [];
-    final out = <(String, String, String)>[];
+    final out = <(String, String)>[];
     for (final sp in kPensionEspeces) {
       Map? match;
       for (final e in especes) {
@@ -327,7 +327,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
       final prix = (partage != null && partage > 0 && partage != seul)
           ? '${seul.toStringAsFixed(0)} € · ${partage.toStringAsFixed(0)} € partagé'
           : '${seul.toStringAsFixed(0)} €';
-      out.add((sp['emoji']!, sp['label']!, prix));
+      out.add((sp['label']!, prix));
     }
     return out;
   }
@@ -717,12 +717,10 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                 ..._pensionTarifsPublics.map((t) => Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: Row(children: [
-                    Text(t.$1, style: const TextStyle(fontSize: 15)),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(t.$2,
+                    Expanded(child: Text(t.$1,
                         style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
                             fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
-                    Text(t.$3, style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                    Text(t.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
                         fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
                   ]),
                 )),

@@ -87,6 +87,7 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
   bool _loading = true;
   bool _saving = false;
   bool _afficherPublic = false;
+  bool _showAutresEspeces = false;
   final List<_EspeceTarifCtrl> _especes = [];
   final List<_ReductionCtrl> _reductions = [];
 
@@ -190,9 +191,10 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
     setState(() => _saving = true);
     try {
       final especes = _especes
-          .where((e) => e.prixSeul.text.trim().isNotEmpty)
+          .where((e) => e.prixSeul.text.trim().isNotEmpty || e.prixPartage.text.trim().isNotEmpty)
           .map((e) {
-        final seul = double.tryParse(e.prixSeul.text.replaceAll(',', '.')) ?? 0;
+        final seul = double.tryParse(e.prixSeul.text.replaceAll(',', '.'))
+            ?? double.tryParse(e.prixPartage.text.replaceAll(',', '.')) ?? 0;
         final partage = double.tryParse(e.prixPartage.text.replaceAll(',', '.')) ?? seul;
         return {'espece': e.key, 'prix_seul': seul, 'prix_partage': partage};
       }).toList();
@@ -219,7 +221,6 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
           content: Text('Tarifs enregistrés.', style: TextStyle(fontFamily: 'Galey')),
           backgroundColor: _green,
         ));
-        Navigator.pop(context);
       }
     } catch (e) {
       if (mounted) {
@@ -270,10 +271,10 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
                 const SizedBox(height: 4),
                 Text('Tarif par nuit selon l\'espèce et selon que l\'animal est seul '
                     'ou partage son logement. Le tarif est ensuite suggéré automatiquement '
-                    'à la facturation. Les espèces acceptées par votre pension sont en haut.',
+                    'à la facturation.',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                 const SizedBox(height: 12),
-                for (final e in _especes) _especeCard(e),
+                ..._buildEspeceCards(),
                 const SizedBox(height: 24),
                 const Text('Réductions séjour long',
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
@@ -323,6 +324,43 @@ class _PensionTarifsPageState extends State<PensionTarifsPage> {
               ],
             ),
     );
+  }
+
+  List<Widget> _buildEspeceCards() {
+    final acceptees = _especes.where((e) => e.accepte).toList();
+    final autres = _especes.where((e) => !e.accepte).toList();
+    final w = <Widget>[];
+
+    if (acceptees.isEmpty) {
+      w.add(Container(
+        padding: const EdgeInsets.all(12),
+        margin: const EdgeInsets.only(bottom: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7ED),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFFED7AA)),
+        ),
+        child: Text(
+          "Aucune espèce acceptée définie. Ajoutez vos espèces dans votre profil pour ne remplir que celles-ci.",
+          style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.orange.shade900),
+        ),
+      ));
+      w.addAll(_especes.map(_especeCard));
+      return w;
+    }
+
+    w.addAll(acceptees.map(_especeCard));
+
+    if (autres.isNotEmpty) {
+      w.add(TextButton.icon(
+        onPressed: () => setState(() => _showAutresEspeces = !_showAutresEspeces),
+        icon: Icon(_showAutresEspeces ? Icons.expand_less : Icons.add, size: 18),
+        label: Text(_showAutresEspeces ? 'Masquer les autres espèces' : 'Tarif pour une autre espèce',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+      ));
+      if (_showAutresEspeces) w.addAll(autres.map(_especeCard));
+    }
+    return w;
   }
 
   Widget _especeCard(_EspeceTarifCtrl e) => Container(
