@@ -34,7 +34,21 @@
       "Read(//Users/nabilksouri/.pub-cache/hosted/pub.dev/permission_handler_apple-9.5.0/ios/permission_handler_apple/Sources/permission_handler_apple/include/**)",
       "Bash(awk -F: '$2+0 >= 3050 && $2+0 <= 3400')",
       "Bash(awk 'NR>=3050 && NR<=3400 && /class _|@override|Widget build/' /Users/nabilksouri/Documents/Application/PetsMatch/lib/pages/agenda/agenda_page.dart)",
-      "Bash(git -C /Users/nabilksouri/Documents/Application/PetsMatch diff lib/pages/agenda/agenda_page.dart)"
+      "Bash(git -C /Users/nabilksouri/Documents/Application/PetsMatch diff lib/pages/agenda/agenda_page.dart)",
+      "Bash(/c/Users/Angélique Bégrand/AppData/Local/Android/Sdk/platform-tools/adb.exe devices *)",
+      "Bash(echo DONE)",
+      "Bash(nohup npm run dev)",
+      "Bash(echo \"pid $!\")",
+      "Bash(npx tsc *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(git -C /c/dev/PetsMatch diff --stat)",
+      "Bash(awk NR>=1330 && NR<=1420 *)",
+      "Bash(awk NR>=395 && NR<=420 *)",
+      "Bash(awk -F: '$1>3060 && $1<3900')",
+      "Bash(timeout 200 dart analyze lib/pages/pro/pension_tarifs_page.dart)",
+      "Bash(timeout 200 dart analyze lib/pages/pro/registre_pension_page.dart)",
+      "Bash(flutter build *)",
+      "Bash(echo \"EXIT=$?\")"
     ],
     "additionalDirectories": [
       "/Users/nabilksouri/Documents/Application/PetsMatch/lib/pages",
