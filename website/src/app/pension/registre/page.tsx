@@ -60,6 +60,7 @@ export default function RegistrePensionPage() {
   const [entrees, setEntrees]           = useState<PensionEntree[]>([]);
   const [puceToAnimalId, setPuceToAnimalId] = useState<Record<string, string>>({});
   const [photoByAnimalId, setPhotoByAnimalId] = useState<Record<string, string>>({});
+  const [logementNoms, setLogementNoms] = useState<Record<string, string>>({});
   const [factures, setFactures]         = useState<PensionFacture[]>([]);
   const [showImpayees, setShowImpayees] = useState(false);
   const [payingId, setPayingId]         = useState<string | null>(null);
@@ -96,15 +97,18 @@ export default function RegistrePensionPage() {
       .eq('pro_uid', user.uid).order('date_envoi', { ascending: false });
     if (proProfileId) qFact = qFact.eq('pro_profile_id', proProfileId) as typeof qFact;
 
-    const [{ data: ent }, { data: acc }, { data: fact }] = await Promise.all([
+    const [{ data: ent }, { data: acc }, { data: fact }, { data: enclos }] = await Promise.all([
       qEnt,
       proProfileId
         ? supabase.from('animal_access').select('animal_id').eq('pro_profile_id', proProfileId).eq('statut', 'active')
         : Promise.resolve({ data: [] as { animal_id: string }[] }),
       qFact,
+      supabase.from('enclos_chenil').select('id, nom').eq('uid_eleveur', user.uid),
     ]);
     setEntrees((ent ?? []) as PensionEntree[]);
     setFactures((fact ?? []) as PensionFacture[]);
+    setLogementNoms(Object.fromEntries(
+      ((enclos ?? []) as { id: string; nom: string | null }[]).map(l => [l.id, l.nom ?? ''])));
 
     const ids = [...new Set([
       ...(acc ?? []).map((a: { animal_id: string }) => a.animal_id),
@@ -319,6 +323,7 @@ export default function RegistrePensionPage() {
                   proUid={user.uid}
                   proNom={userData?.nameElevage || userData?.firstname || 'Votre pension'}
                   isFacture={entreesFacturees.has(e.id)}
+                  logementNom={e.logement_id ? logementNoms[e.logement_id] : undefined}
                   onEdit={() => setEditEntree(e)}
                   onSorti={() => marquerSorti(e.id)}
                   onJournal={() => setJournalFor(e)}
@@ -452,13 +457,14 @@ export default function RegistrePensionPage() {
 
 // ── Carte entrée ──────────────────────────────────────────────────────────────
 
-function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, onEdit, onSorti, onJournal, onFacturer, onContrat }: {
+function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, logementNom, onEdit, onSorti, onJournal, onFacturer, onContrat }: {
   entree: PensionEntree;
   animalId?: string;
   photoUrl?: string;
   proUid: string;
   proNom: string;
   isFacture: boolean;
+  logementNom?: string;
   onEdit: () => void;
   onSorti: () => void;
   onJournal: () => void;
@@ -599,6 +605,19 @@ function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, onE
               </span>
             )}
           </div>
+
+          {/* Logement affecté */}
+          {logementNom && (
+            <div style={{ marginTop: 6 }}>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+                fontFamily: 'Galey, sans-serif', background: '#EFF5F6', color: TEAL,
+              }}>
+                🏠 Logement · {logementNom}
+              </span>
+            </div>
+          )}
 
           {/* Notes */}
           {entree.notes && (

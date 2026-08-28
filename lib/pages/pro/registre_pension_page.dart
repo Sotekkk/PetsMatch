@@ -37,6 +37,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
   List<Map<String, dynamic>> _entrees      = [];
   Map<String, String> _puceToAnimalId      = {}; // puce normalisée → animal_id
   Map<String, String> _puceToPhotoUrl      = {}; // puce normalisée → photo_url
+  Map<String, String> _logementNoms        = {}; // logement_id → nom
   bool _loading                            = true;
   String? _filterEspece;
   String? _filterStatut;
@@ -66,11 +67,16 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
         qEntrees.order('date_entree', ascending: false),
         qAcces,
         qFactures,
+        _supa.from('enclos_chenil').select('id, nom').eq('uid_eleveur', _uid),
       ]);
 
       final entrees  = List<Map<String, dynamic>>.from(results[0] as List);
       final approved = List<Map<String, dynamic>>.from(results[1] as List);
       final factures = List<Map<String, dynamic>>.from(results[2] as List);
+      final logementNoms = <String, String>{
+        for (final l in (results[3] as List))
+          (l as Map)['id'].toString(): (l['nom'] ?? '').toString(),
+      };
       final entreesFacturees = factures.map((f) => f['entree_id'].toString()).toSet();
       final seuil15j = DateTime.now().subtract(const Duration(days: 15));
       final debiteurs = factures.where((f) {
@@ -113,6 +119,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
         _debiteurs        = debiteurs;
         _puceToAnimalId = puceToId;
         _puceToPhotoUrl = puceToPhoto;
+        _logementNoms   = logementNoms;
         _loading        = false;
       });
     } catch (e) {
@@ -990,6 +997,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
                         // séjour n'est pas terminé.
                         onFacture: () => _genererFacture(e),
                         factureFaite: _entreesFacturees.contains(e['id'].toString()),
+                        logementNom: _logementNoms[e['logement_id']?.toString()],
                       );
                     },
                   ),
@@ -1186,6 +1194,7 @@ class _PensionCard extends StatelessWidget {
   final bool factureFaite;
   final VoidCallback? onEnvoyerLien;
   final VoidCallback? onJournal;
+  final String? logementNom;
 
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
@@ -1205,6 +1214,7 @@ class _PensionCard extends StatelessWidget {
     this.factureFaite = false,
     this.onEnvoyerLien,
     this.onJournal,
+    this.logementNom,
   });
 
   bool get _hasActions =>
@@ -1405,6 +1415,23 @@ class _PensionCard extends StatelessWidget {
                         fmtIso(entree['date_sortie_effective'] as String?)),
                   ],
                 ]),
+                if ((logementNom ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 5),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF5F6),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.meeting_room_outlined, size: 11, color: _teal),
+                      const SizedBox(width: 4),
+                      Text('Logement · ${logementNom!}',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 10,
+                              fontWeight: FontWeight.w600, color: _teal)),
+                    ]),
+                  ),
+                ],
                 // Menu Actions — regroupe journal / contrat / signature /
                 // lien de réclamation / facturation / sortie sur un seul bouton.
                 if (_hasActions) ...[
