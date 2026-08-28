@@ -1,11 +1,14 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
 import 'package:PetsMatch/main.dart' show User_Info;
 
 /// Pension — historique des factures (Phase 2 item 2/4, complément).
@@ -127,6 +130,99 @@ class _PensionFacturesPageState extends State<PensionFacturesPage> {
     ));
 
     await Printing.layoutPdf(onLayout: (_) async => pdf.save());
+  }
+
+  Future<void> _supprimer(Map<String, dynamic> f) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Supprimer la facture ${f['numero'] ?? ''} ?',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+        content: const Text('Cette facture sera définitivement supprimée.',
+            style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _supa.from('pension_factures').delete().eq('id', f['id']);
+      if (mounted) {
+        setState(() => _factures.removeWhere((x) => x['id'] == f['id']));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Facture supprimée.', style: TextStyle(fontFamily: 'Galey'))));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+    }
+  }
+
+  Future<void> _renvoyer(Map<String, dynamic> f) async {
+    final entreeId  = f['entree_id']?.toString();
+    final token     = f['token']?.toString();
+    final ownerUid  = f['proprietaire_uid']?.toString();
+    final numero    = f['numero']?.toString() ?? '';
+    final animalNom = f['animal_nom']?.toString() ?? 'votre animal';
+    final pdfUrl    = f['pdf_url']?.toString();
+    final montant   = (f['montant'] as num?)?.toDouble() ?? 0;
+    final acompte   = f['type'] == 'acompte';
+    final pensionNom = User_Info.nameElevage.isNotEmpty
+        ? User_Info.nameElevage
+        : '${User_Info.firstname} ${User_Info.lastname}'.trim();
+
+    String? email;
+    if (entreeId != null) {
+      final ent = await _supa.from('pension_entrees')
+          .select('proprietaire_email').eq('id', entreeId).maybeSingle();
+      email = (ent?['proprietaire_email'] as String?)?.trim();
+    }
+    final lien = (pdfUrl != null && pdfUrl.isNotEmpty)
+        ? pdfUrl
+        : (token != null ? '$kSiteBaseUrl/facture-pension/$token' : null);
+
+    try {
+      if (ownerUid != null && ownerUid.isNotEmpty && lien != null) {
+        await _supa.from('notifications').insert({
+          'uid': ownerUid,
+          'type': 'facture_pension',
+          'title': acompte ? 'Votre acompte de pension est disponible' : 'Votre facture de pension est disponible',
+          'body': '$pensionNom vous renvoie ${acompte ? "l'acompte" : "la facture"} pour le séjour de $animalNom.',
+          'data': {'invoice': numero, 'url': lien},
+          'read': false,
+        });
+      }
+      if (email != null && email.isNotEmpty && lien != null) {
+        await http.post(
+          Uri.parse('$kSiteBaseUrl/api/facture/notify-email'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'email': email,
+            'client_nom': f['proprietaire_nom'] ?? 'Client',
+            'pro_nom': pensionNom,
+            'numero_facture': numero,
+            'total_ttc': montant,
+            'facture_url': lien,
+            if (pdfUrl != null && pdfUrl.isNotEmpty) 'pdf_url': pdfUrl,
+          }),
+        );
+      }
+      if (mounted) {
+        final quoi = (email != null && email.isNotEmpty)
+            ? 'Facture renvoyée à $email${ownerUid != null && ownerUid.isNotEmpty ? " + notification" : ""}.'
+            : (ownerUid != null && ownerUid.isNotEmpty
+                ? 'Notification renvoyée (aucun email propriétaire).'
+                : 'Impossible de renvoyer : ni email ni compte propriétaire.');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(quoi, style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: const Color(0xFF0C5C6C)));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+    }
   }
 
   Future<void> _marquerPayee(String id) async {
@@ -267,23 +363,41 @@ class _PensionFacturesPageState extends State<PensionFacturesPage> {
                                 : 'Envoyée le ${_fmtDate(f['date_envoi']?.toString())}',
                             style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                         const SizedBox(height: 10),
-                        Row(children: [
+                        Wrap(spacing: 8, runSpacing: 8, children: [
                           if ((f['pdf_url'] as String?)?.isNotEmpty == true)
-                            Expanded(child: OutlinedButton.icon(
+                            OutlinedButton.icon(
                               onPressed: () => launchUrl(Uri.parse(f['pdf_url'] as String), mode: LaunchMode.externalApplication),
-                              icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+                              icon: const Icon(Icons.picture_as_pdf_outlined, size: 15),
                               label: const Text('PDF', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                              style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal)),
-                            )),
-                          if ((f['pdf_url'] as String?)?.isNotEmpty == true && f['statut'] != 'payee')
-                            const SizedBox(width: 8),
+                              style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                            ),
+                          OutlinedButton.icon(
+                            onPressed: () => _renvoyer(f),
+                            icon: const Icon(Icons.send_outlined, size: 15),
+                            label: const Text('Renvoyer', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                            style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                          ),
                           if (f['statut'] != 'payee')
-                            Expanded(child: ElevatedButton.icon(
+                            ElevatedButton.icon(
                               onPressed: () => _marquerPayee(f['id'].toString()),
-                              icon: const Icon(Icons.check_circle_outline, size: 16),
-                              label: const Text('Marquer payée', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6E9E57), foregroundColor: Colors.white),
-                            )),
+                              icon: const Icon(Icons.check_circle_outline, size: 15),
+                              label: const Text('Payée', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6E9E57), foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                            ),
+                          OutlinedButton.icon(
+                            onPressed: () => _supprimer(f),
+                            icon: const Icon(Icons.delete_outline, size: 15),
+                            label: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                            style: OutlinedButton.styleFrom(foregroundColor: Colors.red, side: BorderSide(color: Colors.red.shade200),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                          ),
                         ]),
                       ]),
                     ),

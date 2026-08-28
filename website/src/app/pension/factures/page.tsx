@@ -13,6 +13,9 @@ const GREEN = '#6E9E57';
 interface PensionFacture {
   id: string;
   numero: string;
+  entree_id: string | null;
+  proprietaire_uid: string | null;
+  token: string | null;
   animal_nom: string | null;
   proprietaire_nom: string | null;
   montant: number | null;
@@ -41,6 +44,9 @@ export default function PensionFacturesPage() {
   const [loading, setLoading] = useState(true);
   const [filtre, setFiltre] = useState<'tous' | 'envoyee' | 'payee'>('tous');
   const [payingId, setPayingId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const pensionNom = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre pension';
 
   useEffect(() => {
     if (authLoading) return;
@@ -69,7 +75,6 @@ export default function PensionFacturesPage() {
   useEffect(() => { load(); }, [load]);
 
   function openInvoice(f: PensionFacture) {
-    const pensionNom = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre pension';
     const d: PensionFactureData = f.details
       ? { ...f.details, numero: f.numero, pensionNom: f.details.pensionNom || pensionNom }
       : {
@@ -88,6 +93,63 @@ export default function PensionFacturesPage() {
     }).eq('id', id);
     setFactures(prev => prev.map(f => f.id === id ? { ...f, statut: 'payee' } : f));
     setPayingId(null);
+  }
+
+  async function supprimer(f: PensionFacture) {
+    if (!confirm(`Supprimer définitivement la facture ${f.numero} ?`)) return;
+    setBusyId(f.id);
+    const { error } = await supabase.from('pension_factures').delete().eq('id', f.id);
+    if (error) { alert(`Suppression impossible : ${error.message}`); setBusyId(null); return; }
+    setFactures(prev => prev.filter(x => x.id !== f.id));
+    setBusyId(null);
+  }
+
+  async function renvoyer(f: PensionFacture) {
+    setBusyId(f.id);
+    try {
+      let email: string | null = null;
+      if (f.entree_id) {
+        const { data: ent } = await supabase.from('pension_entrees')
+          .select('proprietaire_email').eq('id', f.entree_id).maybeSingle();
+        email = (ent?.proprietaire_email as string | null)?.trim() || null;
+      }
+      const url = f.token ? `/facture-pension/${f.token}` : null;
+      const acompte = f.type === 'acompte';
+
+      if (f.proprietaire_uid && url) {
+        await supabase.from('notifications').insert({
+          uid: f.proprietaire_uid,
+          type: 'facture_pension',
+          title: acompte ? 'Votre acompte de pension est disponible' : 'Votre facture de pension est disponible',
+          body: `${pensionNom} vous renvoie ${acompte ? "l'acompte" : 'la facture'} pour le séjour de ${f.animal_nom ?? 'votre animal'}.`,
+          data: { invoice: f.numero, animal_nom: f.animal_nom, pension_nom: pensionNom, ...(url ? { url } : {}) },
+          read: false,
+        });
+      }
+
+      if (email && url) {
+        await fetch('/api/facture/notify-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email,
+            client_nom: f.proprietaire_nom || 'Client',
+            pro_nom: pensionNom,
+            numero_facture: f.numero,
+            total_ttc: f.montant ?? 0,
+            facture_url: `${window.location.origin}${url}`,
+            ...(f.pdf_url ? { pdf_url: f.pdf_url } : {}),
+          }),
+        });
+        alert(`Facture renvoyée à ${email}${f.proprietaire_uid ? ' + notification' : ''}.`);
+      } else if (f.proprietaire_uid) {
+        alert('Notification renvoyée (aucun email propriétaire enregistré).');
+      } else {
+        alert('Impossible de renvoyer : ni email ni compte propriétaire.');
+      }
+    } finally {
+      setBusyId(null);
+    }
   }
 
   function exportCsv() {
@@ -206,21 +268,38 @@ export default function PensionFacturesPage() {
                       {paye && f.date_paiement ? ` · payée le ${fmtDate(f.date_paiement)}` : ''}
                     </p>
                   </div>
-                  {f.pdf_url && (
-                    <a href={f.pdf_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
-                      style={{ fontFamily: 'Galey, sans-serif', fontSize: 11, fontWeight: 700, color: TEAL, whiteSpace: 'nowrap' }}>
-                      PDF ↗
-                    </a>
-                  )}
-                  {!paye && (
-                    <button onClick={e => { e.stopPropagation(); marquerPayee(f.id); }} disabled={payingId === f.id} style={{
-                      padding: '6px 12px', borderRadius: 20, border: `1px solid ${GREEN}`,
-                      background: 'transparent', color: GREEN, cursor: 'pointer', whiteSpace: 'nowrap',
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}
+                    onClick={e => e.stopPropagation()}>
+                    {f.pdf_url && (
+                      <a href={f.pdf_url} target="_blank" rel="noopener noreferrer"
+                        style={{ fontFamily: 'Galey, sans-serif', fontSize: 11, fontWeight: 700, color: TEAL, whiteSpace: 'nowrap' }}>
+                        PDF ↗
+                      </a>
+                    )}
+                    <button onClick={() => renvoyer(f)} disabled={busyId === f.id} title="Renvoyer au propriétaire" style={{
+                      padding: '6px 12px', borderRadius: 20, border: `1px solid ${TEAL}`,
+                      background: 'transparent', color: TEAL, cursor: 'pointer', whiteSpace: 'nowrap',
                       fontFamily: 'Galey, sans-serif', fontSize: 11, fontWeight: 700,
                     }}>
-                      {payingId === f.id ? '…' : '✓ Marquer payée'}
+                      {busyId === f.id ? '…' : '↻ Renvoyer'}
                     </button>
-                  )}
+                    {!paye && (
+                      <button onClick={() => marquerPayee(f.id)} disabled={payingId === f.id} style={{
+                        padding: '6px 12px', borderRadius: 20, border: `1px solid ${GREEN}`,
+                        background: 'transparent', color: GREEN, cursor: 'pointer', whiteSpace: 'nowrap',
+                        fontFamily: 'Galey, sans-serif', fontSize: 11, fontWeight: 700,
+                      }}>
+                        {payingId === f.id ? '…' : '✓ Payée'}
+                      </button>
+                    )}
+                    <button onClick={() => supprimer(f)} disabled={busyId === f.id} title="Supprimer la facture" style={{
+                      padding: '6px 10px', borderRadius: 20, border: '1px solid #FECACA',
+                      background: 'transparent', color: '#C62828', cursor: 'pointer',
+                      fontFamily: 'Galey, sans-serif', fontSize: 12, fontWeight: 700,
+                    }}>
+                      🗑
+                    </button>
+                  </div>
                 </div>
               );
             })}
