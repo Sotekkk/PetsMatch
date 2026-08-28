@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import Link from 'next/link';
@@ -43,17 +43,38 @@ function makeIcon(categorie: string, cyano: boolean) {
 }
 
 // Recentre la carte quand les données changent
-function FitBounds({ places }: { places: NaturalPlaceMapItem[] }) {
+function FitBounds({ places, userPos, radiusKm }: {
+  places: NaturalPlaceMapItem[];
+  userPos?: { lat: number; lng: number } | null;
+  radiusKm?: number | null;
+}) {
   const map = useMap();
   useEffect(() => {
+    // Rayon actif : on cadre sur le cercle autour de la position.
+    if (userPos && radiusKm) {
+      const circle = L.circle([userPos.lat, userPos.lng], { radius: radiusKm * 1000 });
+      map.fitBounds(circle.getBounds(), { padding: [30, 30] });
+      return;
+    }
     if (places.length === 0) return;
     const bounds = L.latLngBounds(places.map(p => [p.lat, p.lng]));
     map.fitBounds(bounds, { padding: [40, 40], maxZoom: 11 });
-  }, [places, map]);
+  }, [places, map, userPos, radiusKm]);
   return null;
 }
 
-export default function NaturalPlacesMap({ places }: { places: NaturalPlaceMapItem[] }) {
+const USER_ICON = L.divIcon({
+  className: '',
+  html: `<div style="width:16px;height:16px;border-radius:50%;background:#1E88E5;border:3px solid white;box-shadow:0 0 0 2px rgba(30,136,229,.4)"></div>`,
+  iconSize: [16, 16],
+  iconAnchor: [8, 8],
+});
+
+export default function NaturalPlacesMap({ places, userPos, radiusKm }: {
+  places: NaturalPlaceMapItem[];
+  userPos?: { lat: number; lng: number } | null;
+  radiusKm?: number | null;
+}) {
   return (
     <MapContainer
       center={[46.6, 1.9]}
@@ -64,7 +85,17 @@ export default function NaturalPlacesMap({ places }: { places: NaturalPlaceMapIt
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
-      <FitBounds places={places} />
+      <FitBounds places={places} userPos={userPos} radiusKm={radiusKm} />
+      {userPos && (
+        <Marker position={[userPos.lat, userPos.lng]} icon={USER_ICON} />
+      )}
+      {userPos && radiusKm && (
+        <Circle
+          center={[userPos.lat, userPos.lng]}
+          radius={radiusKm * 1000}
+          pathOptions={{ color: '#0C5C6C', weight: 2, fillColor: '#0C5C6C', fillOpacity: 0.07 }}
+        />
+      )}
       {places.map(p => {
         const cyano = p.alerte_cyano === true;
         return (

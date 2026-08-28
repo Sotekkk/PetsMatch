@@ -80,6 +80,35 @@ export default function LieuxNaturelsPage() {
   const [search, setSearch] = useState('');
   const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
   const [view, setView] = useState<'liste' | 'carte'>('liste');
+  const [nearMe, setNearMe] = useState(false);
+  const [rayonKm, setRayonKm] = useState(20);
+  const [locating, setLocating] = useState(false);
+
+  // Récupère la position GPS courante (utile en vacances : on ne se base pas
+  // sur l'adresse du profil).
+  function locateMe(): Promise<{ lat: number; lng: number } | null> {
+    return new Promise(resolve => {
+      if (!navigator.geolocation) { resolve(null); return; }
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setUserPos(p);
+          resolve(p);
+        },
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 10000 },
+      );
+    });
+  }
+
+  async function toggleNearMe() {
+    if (nearMe) { setNearMe(false); return; }
+    setLocating(true);
+    const p = await locateMe();
+    setLocating(false);
+    if (!p) { alert('Localisation indisponible — autorisez l\'accès à votre position.'); return; }
+    setNearMe(true);
+  }
 
   async function loadPlaces() {
     setLoading(true);
@@ -124,6 +153,11 @@ export default function LieuxNaturelsPage() {
   if (search.trim()) {
     const q = search.trim().toLowerCase();
     filtered = filtered.filter(p => p.nom.toLowerCase().includes(q));
+  }
+  if (userPos && nearMe) {
+    filtered = filtered.filter(p =>
+      p.lat != null && p.lng != null &&
+      distKm(p.lat, p.lng, userPos.lat, userPos.lng) <= rayonKm);
   }
   if (userPos) {
     filtered = [...filtered].sort((a, b) => {
@@ -200,6 +234,40 @@ export default function LieuxNaturelsPage() {
           ))}
         </div>
 
+        {/* Autour de moi (géoloc GPS + rayon modifiable) */}
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <button
+            onClick={toggleNearMe}
+            disabled={locating}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold transition-all disabled:opacity-60"
+            style={{
+              fontFamily: 'Galey, sans-serif',
+              backgroundColor: nearMe ? '#0C5C6C' : 'transparent',
+              color: nearMe ? '#FFFFFF' : '#1E2025',
+              border: `1.5px solid ${nearMe ? '#0C5C6C' : '#D1D5DB'}`,
+            }}
+          >
+            {locating ? (
+              <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v3M12 19v3M2 12h3M19 12h3" />
+              </svg>
+            )}
+            Autour de moi
+          </button>
+          <div className="flex items-center gap-2">
+            <input
+              type="range" min={2} max={100} step={1} value={rayonKm}
+              onChange={e => { setRayonKm(Number(e.target.value)); if (userPos && !nearMe) setNearMe(true); }}
+              className="w-32 accent-[#0C5C6C]"
+            />
+            <span className="text-xs font-semibold text-[#0C5C6C] w-12" style={{ fontFamily: 'Galey, sans-serif' }}>
+              {rayonKm} km
+            </span>
+          </div>
+        </div>
+
         {/* Compteur + toggle vue */}
         <div className="flex items-center justify-between mb-4">
           <p className="text-sm text-gray-500" style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -235,7 +303,11 @@ export default function LieuxNaturelsPage() {
           </div>
         ) : view === 'carte' ? (
           <div className="rounded-2xl overflow-hidden border border-gray-200 shadow-sm" style={{ height: '65vh' }}>
-            <NaturalPlacesMap places={withCoords} />
+            <NaturalPlacesMap
+              places={withCoords}
+              userPos={userPos}
+              radiusKm={nearMe ? rayonKm : null}
+            />
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-20 flex flex-col items-center gap-3">

@@ -70,6 +70,9 @@ class _NaturalPlacesPageState extends State<NaturalPlacesPage> {
   String _catFilter = 'tous';
   String _search    = '';
   Position? _userPos;
+  bool _nearMe      = false;   // filtre « autour de moi »
+  double _rayonKm   = 20;      // rayon modifiable (km)
+  bool _locatingNearMe = false;
 
   final _searchCtrl  = TextEditingController();
 
@@ -145,6 +148,14 @@ class _NaturalPlacesPageState extends State<NaturalPlacesPage> {
     }
     if (_userPos != null) {
       list = List.from(list);
+      if (_nearMe) {
+        list = list.where((p) {
+          final lat = (p['lat'] as num?)?.toDouble();
+          final lng = (p['lng'] as num?)?.toDouble();
+          if (lat == null || lng == null) return false;
+          return _distKm(p) <= _rayonKm;
+        }).toList();
+      }
       list.sort((a, b) {
         final da = _distKm(a);
         final db = _distKm(b);
@@ -152,6 +163,72 @@ class _NaturalPlacesPageState extends State<NaturalPlacesPage> {
       });
     }
     return list;
+  }
+
+  Future<void> _toggleNearMe() async {
+    if (_nearMe) { setState(() => _nearMe = false); return; }
+    // On (re)prend la position GPS courante à chaque activation — utile si on
+    // s'est déplacé depuis l'ouverture (vacances, etc.).
+    setState(() => _locatingNearMe = true);
+    await _fetchUserPosition();
+    if (mounted) setState(() => _locatingNearMe = false);
+    if (_userPos == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Localisation indisponible — autorisez l\'accès à votre position.'),
+        ));
+      }
+      return;
+    }
+    setState(() => _nearMe = true);
+  }
+
+  void _openRayonSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 16),
+            Row(children: [
+              const Icon(Icons.my_location, size: 18, color: _teal),
+              const SizedBox(width: 8),
+              const Text('Rayon autour de moi',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w700)),
+              const Spacer(),
+              Text('${_rayonKm.toInt()} km',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 15,
+                      fontWeight: FontWeight.w700, color: _teal)),
+            ]),
+            const SizedBox(height: 4),
+            Slider(
+              value: _rayonKm.clamp(2, 100),
+              min: 2, max: 100, divisions: 49,
+              activeColor: _teal,
+              label: '${_rayonKm.toInt()} km',
+              onChanged: (v) {
+                setSheet(() => _rayonKm = v);
+                setState(() {
+                  _rayonKm = v;
+                  if (!_nearMe && _userPos != null) _nearMe = true;
+                });
+              },
+            ),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: const [
+              Text('2 km', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+              Text('100 km', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+            ]),
+          ]),
+        ),
+      ),
+    );
   }
 
   double _distKm(Map<String, dynamic> p) {
@@ -225,12 +302,66 @@ class _NaturalPlacesPageState extends State<NaturalPlacesPage> {
           ),
         ),
 
+        // ── Barre « autour de moi » (géoloc GPS + rayon modifiable) ───────
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          child: Row(children: [
+            GestureDetector(
+              onTap: _locatingNearMe ? null : _toggleNearMe,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                decoration: BoxDecoration(
+                  color: _nearMe ? _teal : Colors.transparent,
+                  border: Border.all(color: _nearMe ? _teal : Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (_locatingNearMe)
+                    const SizedBox(width: 13, height: 13,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
+                  else
+                    Icon(Icons.my_location, size: 14,
+                        color: _nearMe ? Colors.white : _teal),
+                  const SizedBox(width: 5),
+                  Text('Autour de moi', style: TextStyle(
+                      fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                      color: _nearMe ? Colors.white : Colors.black87)),
+                ]),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: _openRayonSheet,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text('${_rayonKm.toInt()} km', style: const TextStyle(
+                      fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                      color: _teal)),
+                  const Icon(Icons.expand_more, size: 15, color: _teal),
+                ]),
+              ),
+            ),
+            const Spacer(),
+            if (_nearMe && _userPos != null)
+              Text('${_filtered.length} lieu(x)', style: const TextStyle(
+                  fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+          ]),
+        ),
+
         // ── Contenu ──────────────────────────────────────────────────────
         Expanded(
           child: _mapView
               ? _NaturalMapView(
                   places: _filtered,
                   userPos: _userPos,
+                  nearMe: _nearMe,
+                  rayonKm: _rayonKm,
                   onTapPlace: _openDetail,
                 )
               : _buildListView(),
@@ -291,12 +422,16 @@ class _NaturalPlacesPageState extends State<NaturalPlacesPage> {
 class _NaturalMapView extends StatefulWidget {
   final List<Map<String, dynamic>> places;
   final Position? userPos;
+  final bool nearMe;
+  final double rayonKm;
   final void Function(Map<String, dynamic>) onTapPlace;
 
   const _NaturalMapView({
     required this.places,
     required this.userPos,
     required this.onTapPlace,
+    this.nearMe = false,
+    this.rayonKm = 20,
   });
 
   @override
@@ -319,6 +454,25 @@ class _NaturalMapViewState extends State<_NaturalMapView> {
   void didUpdateWidget(_NaturalMapView old) {
     super.didUpdateWidget(old);
     if (old.places.length != widget.places.length) _buildMarkers();
+    // Recentre sur la zone quand on active « autour de moi » ou change le rayon.
+    final u = widget.userPos;
+    if (u != null && widget.nearMe &&
+        (!old.nearMe || old.rayonKm != widget.rayonKm)) {
+      final zoom = _zoomForRadiusKm(widget.rayonKm);
+      _mapController?.animateCamera(CameraUpdate.newCameraPosition(
+        CameraPosition(target: LatLng(u.latitude, u.longitude), zoom: zoom),
+      ));
+    }
+  }
+
+  // Zoom approximatif pour qu'un cercle de r km tienne à l'écran.
+  double _zoomForRadiusKm(double r) {
+    if (r <= 5) return 12;
+    if (r <= 10) return 11;
+    if (r <= 20) return 10;
+    if (r <= 40) return 9;
+    if (r <= 70) return 8.2;
+    return 7.5;
   }
 
   void _buildMarkers() {
@@ -377,7 +531,20 @@ class _NaturalMapViewState extends State<_NaturalMapView> {
           zoom: widget.userPos != null ? 10.5 : 5.5,
         ),
         markers: Set<Marker>.of(_markers.values),
+        circles: (widget.nearMe && widget.userPos != null)
+            ? {
+                Circle(
+                  circleId: const CircleId('rayon'),
+                  center: LatLng(widget.userPos!.latitude, widget.userPos!.longitude),
+                  radius: widget.rayonKm * 1000,
+                  fillColor: _teal.withValues(alpha: 0.08),
+                  strokeColor: _teal.withValues(alpha: 0.5),
+                  strokeWidth: 2,
+                ),
+              }
+            : const <Circle>{},
         onMapCreated: (c) => _mapController = c,
+        myLocationEnabled: widget.userPos != null,
         myLocationButtonEnabled: false,
         zoomControlsEnabled: true,
       ),
