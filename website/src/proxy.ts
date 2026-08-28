@@ -4,6 +4,9 @@ const WHITELISTED_PATHS = [
   '/beta-login',
   '/api/beta-login',
   '/api/stripe/webhook',
+  // Lien de facture pension envoyé au propriétaire (token UUID) — doit rester
+  // consultable même si le destinataire n'a pas l'accès bêta.
+  '/facture-pension/',
 ];
 
 const STATIC_EXTENSIONS = /\.(ico|png|jpg|jpeg|svg|webp|woff|woff2|ttf|otf)$/;

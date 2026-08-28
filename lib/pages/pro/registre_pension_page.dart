@@ -3864,6 +3864,22 @@ class _FacturationSheetState extends State<_FacturationSheet> {
         if (_isAcompte) 'acompte_pct': _acomptePct,
       });
 
+      // Email au propriétaire avec le lien du PDF (en plus de la notif in-app).
+      try {
+        await http.post(
+          Uri.parse('$kSiteBaseUrl/api/facture/notify-email'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'email': ownerEmail,
+            'client_nom': widget.entree['proprietaire_nom'] ?? 'Client',
+            'pro_nom': pensionNom,
+            'numero_facture': invNum,
+            'total_ttc': _montantFacture,
+            'facture_url': dlUrl,
+          }),
+        );
+      } catch (_) {/* l'email est un bonus */}
+
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(

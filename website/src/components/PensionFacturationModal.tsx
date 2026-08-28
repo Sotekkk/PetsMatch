@@ -112,12 +112,13 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
       acomptePct: pctNum,
     };
   }
-  function facturePayload(numero: string) {
+  function facturePayload(numero: string, token: string) {
     return {
       pro_uid: proUid,
       ...(proProfileId ? { pro_profile_id: proProfileId } : {}),
       entree_id: entree.id,
       numero,
+      token,
       animal_nom: entree.animal_nom,
       proprietaire_nom: entree.proprietaire_nom,
       montant: montantFacture,
@@ -127,16 +128,24 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
     };
   }
 
-  // Insert résilient : si la colonne `details` n'existe pas encore (migration
-  // pas passée), on réessaie sans elle.
+  // Insert résilient : si `details` / `token` n'existent pas encore (migration
+  // pas passée), on réessaie sans les colonnes manquantes.
   async function insertFacture(payload: Record<string, unknown>) {
-    const first = await supabase.from('pension_factures').insert(payload);
-    if (first.error && /details/i.test(first.error.message)) {
-      const { details: _omit, ...rest } = payload;
-      void _omit;
-      return supabase.from('pension_factures').insert(rest);
+    let p = payload;
+    for (let i = 0; i < 3; i++) {
+      const res = await supabase.from('pension_factures').insert(p);
+      if (!res.error) return res;
+      const m = /'?(\w+)'? column|column "?(\w+)"?|(\bdetails\b|\btoken\b)/i.exec(res.error.message);
+      const col = m?.[1] || m?.[2] || m?.[3];
+      if (col && col in p) {
+        const { [col]: _omit, ...rest } = p;
+        void _omit;
+        p = rest;
+        continue;
+      }
+      return res;
     }
-    return first;
+    return supabase.from('pension_factures').insert(p);
   }
 
   function apercu() {
@@ -150,7 +159,7 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
     setMarking(true);
     setError('');
     try {
-      const { error: err } = await insertFacture(facturePayload(genNumero()));
+      const { error: err } = await insertFacture(facturePayload(genNumero(), crypto.randomUUID()));
       if (err) { setError(err.message); setMarking(false); return; }
       onSaved();
     } finally {
@@ -166,10 +175,9 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
     try {
       const { data: ownerRow } = await supabase.from('users').select('uid').eq('email', ownerEmail).maybeSingle();
       const ownerUid = ownerRow?.uid as string | undefined;
-      if (!ownerUid) { setError(`Propriétaire introuvable dans PetsMatch (email : ${ownerEmail})`); setSending(false); return; }
 
       let ownerProfileId: string | null = null;
-      if (entree.animal_id) {
+      if (ownerUid && entree.animal_id) {
         const { data: propRow } = await supabase.from('animaux_proprietes')
           .select('profile_id_proprio').eq('animal_id', entree.animal_id).is('date_fin', null)
           .order('date_debut', { ascending: false }).limit(1).maybeSingle();
@@ -177,21 +185,45 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
       }
 
       const numero = genNumero();
+      const token = crypto.randomUUID();
 
-      await supabase.from('notifications').insert({
-        uid: ownerUid,
-        type: 'facture_pension',
-        title: isAcompte ? "Votre acompte de pension est disponible" : 'Votre facture de pension est disponible',
-        body: isAcompte
-          ? `${pensionNom} vous demande un acompte de ${pctNum}% pour le séjour de ${entree.animal_nom}.`
-          : `${pensionNom} vous a envoyé la facture pour le séjour de ${entree.animal_nom}.`,
-        ...(ownerProfileId ? { profile_id: ownerProfileId } : {}),
-        data: { invoice: numero, animal_nom: entree.animal_nom, pension_nom: pensionNom },
-        read: false,
+      // Notification in-app uniquement si le propriétaire a un compte PetsMatch.
+      if (ownerUid) {
+        await supabase.from('notifications').insert({
+          uid: ownerUid,
+          type: 'facture_pension',
+          title: isAcompte ? "Votre acompte de pension est disponible" : 'Votre facture de pension est disponible',
+          body: isAcompte
+            ? `${pensionNom} vous demande un acompte de ${pctNum}% pour le séjour de ${entree.animal_nom}.`
+            : `${pensionNom} vous a envoyé la facture pour le séjour de ${entree.animal_nom}.`,
+          ...(ownerProfileId ? { profile_id: ownerProfileId } : {}),
+          data: { invoice: numero, animal_nom: entree.animal_nom, pension_nom: pensionNom, url: `/facture-pension/${token}` },
+          read: false,
+        });
+      }
+
+      const { error: err } = await insertFacture({
+        ...facturePayload(numero, token),
+        ...(ownerUid ? { proprietaire_uid: ownerUid } : {}),
       });
-
-      const { error: err } = await insertFacture({ ...facturePayload(numero), proprietaire_uid: ownerUid });
       if (err) { setError(err.message); setSending(false); return; }
+
+      // Email avec le lien de consultation (en plus de la notification in-app).
+      try {
+        await fetch('/api/facture/notify-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: ownerEmail,
+            client_nom: entree.proprietaire_nom || 'Client',
+            pro_nom: pensionNom,
+            numero_facture: numero,
+            total_ttc: montantFacture,
+            facture_url: `${window.location.origin}/facture-pension/${token}`,
+          }),
+        });
+      } catch { /* l'email est un bonus, on n'échoue pas la facturation dessus */ }
+
       onSaved();
     } finally {
       setSending(false);
@@ -307,7 +339,7 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
           fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 14, cursor: tarifNum <= 0 ? 'not-allowed' : 'pointer',
           opacity: tarifNum <= 0 ? 0.6 : 1, marginBottom: 10,
         }}>
-          {sending ? 'Envoi en cours…' : '✉️ Envoyer au propriétaire'}
+          {sending ? 'Envoi en cours…' : '✉️ Envoyer au propriétaire (email + notif)'}
         </button>
         <button onClick={marquerFacture} disabled={tarifNum <= 0 || sending || marking} style={{
           width: '100%', padding: '11px 0', background: 'transparent', color: '#6b7280', border: 'none',

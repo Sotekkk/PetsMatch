@@ -537,6 +537,8 @@ function getNotifUrl(n: Notif): string | null {
       return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
     case 'pension_journal_reply':
       return d.animalId ? `/pension/fiche/${d.animalId}` : '/pension/registre';
+    case 'facture_pension':
+      return d.url ?? null;
     case 'education_rapport':
       return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
     case 'cours_collectif_inscription':

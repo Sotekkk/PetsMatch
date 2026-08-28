@@ -295,6 +295,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
       }
       return;
     }
+    // Facture de pension reçue par le propriétaire — ouvre la facture
+    // (PDF Firebase ou page /facture-pension/<token> du site).
+    if (type == 'facture_pension') {
+      var url = data is Map ? data['url'] as String? : null;
+      if (url != null && url.startsWith('/')) url = '$kSiteBaseUrl$url';
+      if (url != null) {
+        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      }
+      return;
+    }
     // Rapport de séance éducateur/comportementaliste reçu par le propriétaire
     if (type == 'education_rapport') {
       final animalId  = data is Map ? data['animalId']  as String? : null;

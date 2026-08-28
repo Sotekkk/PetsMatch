@@ -86,6 +86,11 @@ export default function FacturationPage() {
     if (!loading && !user) router.push('/connexion');
   }, [loading, user, router]);
 
+  // La pension a sa propre facturation (table pension_factures).
+  useEffect(() => {
+    if (isPensionSource) router.replace('/pension/factures');
+  }, [isPensionSource, router]);
+
   const load = useCallback(async () => {
     if (!user) return;
     setFetching(true);

@@ -23,7 +23,9 @@ const ESP: Record<string, string> = {
   chien: 'Chien', chat: 'Chat', lapin: 'Lapin', oiseau: 'Oiseau', cheval: 'Cheval',
   nac: 'NAC', ovin: 'Ovin', caprin: 'Caprin', porcin: 'Porc', ane: 'Âne',
 };
-const espLabel = (e?: string | null) => ESP[e ?? ''] ?? (e ?? '');
+const esc = (s?: string | null) => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+const espLabel = (e?: string | null) => ESP[e ?? ''] ?? esc(e ?? '');
 const fmtD = (iso?: string | null) => {
   if (!iso) return '—';
   try { return new Date(iso).toLocaleDateString('fr-FR'); } catch { return iso; }
@@ -48,16 +50,16 @@ table{width:100%;border-collapse:collapse;margin-bottom:12px}th{background:#f0f0
 .totals{margin-left:auto;width:260px}.totals div{display:flex;justify-content:space-between;padding:3px 0}.totals .grand{font-weight:bold;font-size:14px;border-top:1px solid #ccc;padding-top:6px;color:${TEAL}}
 .foot{margin-top:28px;font-size:10px;color:#999}@media print{body{margin:10px}}</style>
 </head><body>
-<h1>🧾 ${d.isAcompte ? `Facture d'acompte ${d.numero}` : `Facture ${d.numero}`}</h1>
-<p class="meta">${d.pensionNom} — émise le ${emise}${d.isAcompte ? ` · acompte de ${pct}% du séjour` : ''}</p>
+<h1>🧾 ${d.isAcompte ? `Facture d'acompte ${esc(d.numero)}` : `Facture ${esc(d.numero)}`}</h1>
+<p class="meta">${esc(d.pensionNom)} — émise le ${emise}${d.isAcompte ? ` · acompte de ${pct}% du séjour` : ''}</p>
 <div class="grid">
-  <div class="box"><b>ANIMAL</b>${d.animal.nom ?? '—'}${d.animal.espece ? ` · ${espLabel(d.animal.espece)}` : ''}${d.animal.race ? `<br>${d.animal.race}` : ''}${d.animal.puce ? `<br>Puce : ${d.animal.puce}` : ''}</div>
-  <div class="box"><b>PROPRIÉTAIRE</b>${d.proprietaire.nom ?? '—'}${d.proprietaire.email ? `<br>${d.proprietaire.email}` : ''}${d.proprietaire.contact ? `<br>${d.proprietaire.contact}` : ''}</div>
+  <div class="box"><b>ANIMAL</b>${esc(d.animal.nom) || '—'}${d.animal.espece ? ` · ${espLabel(d.animal.espece)}` : ''}${d.animal.race ? `<br>${esc(d.animal.race)}` : ''}${d.animal.puce ? `<br>Puce : ${esc(d.animal.puce)}` : ''}</div>
+  <div class="box"><b>PROPRIÉTAIRE</b>${esc(d.proprietaire.nom) || '—'}${d.proprietaire.email ? `<br>${esc(d.proprietaire.email)}` : ''}${d.proprietaire.contact ? `<br>${esc(d.proprietaire.contact)}` : ''}</div>
   <div class="box"><b>SÉJOUR</b>Entrée : ${fmtD(d.sejour.dateEntree)}<br>Sortie : ${fmtD(d.sejour.dateSortie)}<br><b style="color:${TEAL}">${nuits} nuit${nuits > 1 ? 's' : ''}</b></div>
 </div>
 <table><thead><tr><th>Description</th><th>Qté</th><th>P.U. HT</th><th>Total HT</th></tr></thead><tbody>
 <tr><td>Pension du ${fmtD(d.sejour.dateEntree)} au ${fmtD(d.sejour.dateSortie)}</td><td>${nuits}</td><td>${eur(tarif)}</td><td>${eur(tarif * nuits)}</td></tr>
-${supp > 0 ? `<tr><td>${d.suppDesc || 'Suppléments'}</td><td>1</td><td>${eur(supp)}</td><td>${eur(supp)}</td></tr>` : ''}
+${supp > 0 ? `<tr><td>${esc(d.suppDesc) || 'Suppléments'}</td><td>1</td><td>${eur(supp)}</td><td>${eur(supp)}</td></tr>` : ''}
 </tbody></table>
 <div class="totals">
 ${d.avecTVA ? `<div><span>Sous-total HT</span><span>${eur(sousTotal)}</span></div><div><span>TVA 20%</span><span>${eur(tva)}</span></div>` : ''}
