@@ -2782,6 +2782,16 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
           ),
           const SizedBox(height: 8),
 
+          Row(children: [
+            Expanded(child: _DateTile(label: 'Entrée *', date: _dateEntree,
+                onTap: () => _pickDate(true))),
+            const SizedBox(width: 10),
+            Expanded(child: _DateTile(label: 'Sortie prévue', date: _dateSortiePrevue,
+                onTap: () => _pickDate(false))),
+          ]),
+          const SizedBox(height: 14),
+
+          // Logement — après les dates : la dispo dépend de la période choisie.
           _lbl('Logement'),
           _loadingLogements
               ? const Padding(
@@ -2831,18 +2841,9 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
           Text(
             _logements.isEmpty
                 ? 'Aucun logement — créez-en dans Logements / Chenil.'
-                : 'Seuls les logements de la bonne espèce et libres sur les dates du séjour sont sélectionnables.',
+                : 'Logements de la bonne espèce et libres sur la période (les autres grisés).',
             style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade500),
           ),
-          const SizedBox(height: 12),
-
-          Row(children: [
-            Expanded(child: _DateTile(label: 'Entrée *', date: _dateEntree,
-                onTap: () => _pickDate(true))),
-            const SizedBox(width: 10),
-            Expanded(child: _DateTile(label: 'Sortie prévue', date: _dateSortiePrevue,
-                onTap: () => _pickDate(false))),
-          ]),
           const SizedBox(height: 14),
 
           _lbl('Notes'),

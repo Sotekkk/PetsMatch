@@ -513,41 +513,6 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
             </span>
           </label>
 
-          {/* Logement */}
-          <p style={sec}>EMPLACEMENT</p>
-          <div style={{ marginBottom: 16 }}>
-            <label style={lbl}>Logement</label>
-            <select style={inp} value={logementId ?? ''} onChange={e => setLogementId(e.target.value || null)}>
-              <option value="">Non assigné</option>
-              {[...logements]
-                .map(l => {
-                  const occ = periodOccupancy[l.id] ?? 0;
-                  const libre = occ < l.capacite;
-                  const compatible = especeMatchesLogement(form.espece, l.especes);
-                  return { l, occ, libre, compatible };
-                })
-                .sort((a, b) => {
-                  const rank = (x: typeof a) => (x.compatible ? 0 : 2) + (x.libre ? 0 : 1);
-                  return rank(a) - rank(b) || a.l.nom.localeCompare(b.l.nom);
-                })
-                .map(({ l, occ, libre, compatible }) => {
-                  const isCurrent = l.id === (entree?.logement_id ?? '');
-                  const raison = !compatible ? ' · espèce non acceptée'
-                    : !libre ? ' · complet sur la période' : '';
-                  return (
-                    <option key={l.id} value={l.id} disabled={(!compatible || !libre) && !isCurrent}>
-                      {l.nom} ({TYPE_LABEL[l.type] ?? l.type}) — {occ}/{l.capacite} place{l.capacite > 1 ? 's' : ''}{raison}
-                    </option>
-                  );
-                })}
-            </select>
-            <p style={{ margin: '6px 0 0', fontFamily: 'Galey, sans-serif', fontSize: 11.5, color: '#9ca3af' }}>
-              {logements.length === 0
-                ? <>Aucun logement créé — <Link href="/pension/chenil" style={{ color: TEAL }}>en créer un</Link>.</>
-                : 'Seuls les logements de la bonne espèce et libres sur les dates du séjour sont sélectionnables.'}
-            </p>
-          </div>
-
           {/* Propriétaire */}
           <p style={sec}>PROPRIÉTAIRE</p>
           <div style={{ marginBottom: 12 }}>
@@ -596,6 +561,41 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
                 onChange={e => set('date_sortie_effective', e.target.value)} />
             </div>
           )}
+
+          {/* Logement — après les dates : la dispo dépend de la période */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={lbl}>Logement</label>
+            <select style={inp} value={logementId ?? ''} onChange={e => setLogementId(e.target.value || null)}>
+              <option value="">Non assigné</option>
+              {[...logements]
+                .map(l => {
+                  const occ = periodOccupancy[l.id] ?? 0;
+                  const libre = occ < l.capacite;
+                  const compatible = especeMatchesLogement(form.espece, l.especes);
+                  return { l, occ, libre, compatible };
+                })
+                .sort((a, b) => {
+                  const rank = (x: typeof a) => (x.compatible ? 0 : 2) + (x.libre ? 0 : 1);
+                  return rank(a) - rank(b) || a.l.nom.localeCompare(b.l.nom);
+                })
+                .map(({ l, occ, libre, compatible }) => {
+                  const isCurrent = l.id === (entree?.logement_id ?? '');
+                  const raison = !compatible ? ' · espèce non acceptée'
+                    : !libre ? ' · complet sur la période' : '';
+                  return (
+                    <option key={l.id} value={l.id} disabled={(!compatible || !libre) && !isCurrent}>
+                      {l.nom} ({TYPE_LABEL[l.type] ?? l.type}) — {occ}/{l.capacite} place{l.capacite > 1 ? 's' : ''}{raison}
+                    </option>
+                  );
+                })}
+            </select>
+            <p style={{ margin: '6px 0 0', fontFamily: 'Galey, sans-serif', fontSize: 11.5, color: '#9ca3af' }}>
+              {logements.length === 0
+                ? <>Aucun logement créé — <Link href="/pension/chenil" style={{ color: TEAL }}>en créer un</Link>.</>
+                : 'Logements de la bonne espèce et libres sur la période sélectionnés (les autres grisés).'}
+            </p>
+          </div>
+
           <div style={{ marginBottom: 24 }}>
             <label style={lbl}>Notes</label>
             <textarea style={{ ...inp, resize: 'vertical', minHeight: 80 }}
