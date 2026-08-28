@@ -537,22 +537,81 @@ function DocCard({ record, onDelete }:
 
 // ─── Formulaire saillie (avec sélecteur de partenaire) ───────────────────────
 
-function SaillieForm({ partners, isMale, initial, saving, onSave, onCancel }: {
+// Parse une valeur `dates` (jsonb array, ou chaîne "d1,d2", ou date simple)
+// en liste de dates ISO (yyyy-mm-dd) triée.
+function parseSaillieDates(raw?: string, fallback?: string): string[] {
+  const out: string[] = [];
+  if (raw) {
+    let arr: unknown = raw;
+    try { arr = JSON.parse(raw); } catch { arr = raw.split(','); }
+    if (Array.isArray(arr)) {
+      for (const v of arr) {
+        const s = String(v).trim().substring(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) out.push(s);
+      }
+    }
+  }
+  if (out.length === 0 && fallback) {
+    const s = fallback.substring(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) out.push(s);
+  }
+  return [...new Set(out)].sort();
+}
+
+// Fenêtre de mise-bas : [1re saillie + N, dernière saillie + N] + date probable (milieu).
+function fenetreMiseBas(dates: string[], espece: string): { debut: string; fin: string; probable: string } | null {
+  const n = GESTATION_DUREE[espece] ?? 0;
+  if (n <= 0 || dates.length === 0) return null;
+  const sorted = [...dates].sort();
+  const add = (d: string) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  const debut = add(sorted[0]);
+  const fin = add(sorted[sorted.length - 1]);
+  const probable = new Date((debut.getTime() + fin.getTime()) / 2);
+  const iso = (x: Date) => x.toISOString().substring(0, 10);
+  return { debut: iso(debut), fin: iso(fin), probable: iso(probable) };
+}
+
+function SaillieForm({ partners, isMale, initial, saving, espece, onSave, onCancel }: {
   partners: { id: string; nom: string; identification: string }[];
   isMale: boolean;
   initial?: Record<string, string>;
   saving: boolean;
+  espece?: string;
   onSave: (data: Record<string, string>) => Promise<void>;
   onCancel: () => void;
 }) {
   const [form, setForm] = useState<Record<string, string>>(initial ?? {});
+  const [dates, setDates] = useState<string[]>(
+    parseSaillieDates(initial?.dates, initial?.date));
   const cls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30';
   const setF = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
+  const setDateAt = (i: number, v: string) => setDates(p => { const c = [...p]; c[i] = v; return c.filter(Boolean).sort(); });
+  const fen = !isMale && espece ? fenetreMiseBas(dates.filter(Boolean), espece) : null;
   return (
     <div className="space-y-3">
       <div>
-        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Date <span className="text-red-400 ml-0.5">*</span></label>
-        <input type="date" value={form.date ?? ''} onChange={e => setF('date', e.target.value)} className={cls} />
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Dates de saillie <span className="text-red-400 ml-0.5">*</span></label>
+        <div className="space-y-2">
+          {(dates.length ? dates : ['']).map((d, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input type="date" value={d ?? ''} onChange={e => setDateAt(i, e.target.value)} className={cls} />
+              <span className="text-xs text-gray-400 whitespace-nowrap">Saillie {i + 1}</span>
+              {dates.length > 1 && (
+                <button type="button" onClick={() => setDates(p => p.filter((_, j) => j !== i))}
+                  className="text-red-300 hover:text-red-500 text-lg leading-none">×</button>
+              )}
+            </div>
+          ))}
+        </div>
+        <button type="button" onClick={() => setDates(p => [...p, ''])}
+          className="mt-1.5 text-xs font-semibold text-[#6E9E57] hover:underline">+ Ajouter une date de saillie</button>
+        {fen && (
+          <div className="mt-2 bg-green-50 border border-green-200 rounded-xl p-2.5 text-xs text-green-800 leading-relaxed">
+            {fen.debut === fen.fin
+              ? <>Mise-bas estimée : <b>{fmtDate(fen.probable)}</b></>
+              : <>Fenêtre mise-bas : <b>{fmtDate(fen.debut)} → {fmtDate(fen.fin)}</b><br />Date la plus probable : <b>{fmtDate(fen.probable)}</b></>}
+          </div>
+        )}
       </div>
       {partners.length > 0 && (
         <div>
@@ -594,8 +653,12 @@ function SaillieForm({ partners, isMale, initial, saving, onSave, onCancel }: {
       <div className="flex gap-2 pt-1">
         <button type="button" onClick={onCancel}
           className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
-        <button type="button" onClick={() => onSave(form)}
-          disabled={saving || !form.date || !form.nom_partenaire}
+        <button type="button"
+          onClick={() => {
+            const clean = [...new Set(dates.filter(Boolean))].sort();
+            onSave({ ...form, date: clean[0], dates: JSON.stringify(clean) });
+          }}
+          disabled={saving || dates.filter(Boolean).length === 0 || !form.nom_partenaire}
           className="flex-1 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold hover:bg-[#094F5D] disabled:opacity-50">
           {saving ? '…' : 'Enregistrer'}
         </button>
@@ -614,7 +677,8 @@ function GestationForm({ espece, initial, saving, onSave, onCancel }: {
   onCancel: () => void;
 }) {
   const [date, setDate] = useState(initial?.date ?? '');
-  const [datePrevue, setDatePrevue] = useState(initial?.date_prevue ?? '');
+  const [datePrevue, setDatePrevue] = useState(initial?.date_prevue?.substring(0, 10) ?? '');
+  const [datePrevueFin, setDatePrevueFin] = useState(initial?.date_prevue_fin?.substring(0, 10) ?? '');
   const [dateOverride, setDateOverride] = useState(!!initial?.date_prevue);
   const [dateNaissance, setDateNaissance] = useState(initial?.date_naissance ?? '');
   const [nbAttendu, setNbAttendu] = useState(initial?.nb_attendu ?? '');
@@ -630,8 +694,13 @@ function GestationForm({ espece, initial, saving, onSave, onCancel }: {
       const prevue = new Date(d);
       prevue.setDate(prevue.getDate() + jours);
       setDatePrevue(prevue.toISOString().substring(0, 10));
+      setDatePrevueFin('');
     }
   }
+
+  const probable = datePrevue && datePrevueFin
+    ? new Date((new Date(datePrevue).getTime() + new Date(datePrevueFin).getTime()) / 2).toISOString().substring(0, 10)
+    : datePrevue;
 
   return (
     <div className="space-y-3">
@@ -641,12 +710,25 @@ function GestationForm({ espece, initial, saving, onSave, onCancel }: {
       </div>
       <div>
         <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">
-          Mise-bas estimée{jours > 0 ? ` (auto: ${jours} j)` : ''}
+          {datePrevueFin ? 'Mise-bas — début de fenêtre' : 'Mise-bas estimée'}{jours > 0 ? ` (auto: ${jours} j)` : ''}
         </label>
         <input type="date" value={datePrevue}
           onChange={e => { setDatePrevue(e.target.value); setDateOverride(true); }}
           className={`${cls} ${!dateOverride && datePrevue ? 'bg-green-50 border-green-200' : ''}`} />
       </div>
+      <div>
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">
+          Mise-bas — fin de fenêtre <span className="text-gray-300 normal-case">(si plusieurs saillies)</span>
+        </label>
+        <input type="date" value={datePrevueFin}
+          onChange={e => setDatePrevueFin(e.target.value)} className={cls} />
+      </div>
+      {datePrevue && datePrevueFin && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-2.5 text-xs text-green-800 leading-relaxed">
+          Fenêtre : <b>{fmtDate(datePrevue)} → {fmtDate(datePrevueFin)}</b><br />
+          Date la plus probable : <b>{fmtDate(probable)}</b>
+        </div>
+      )}
       <div>
         <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Nb attendus</label>
         <input type="number" value={nbAttendu} onChange={e => setNbAttendu(e.target.value)} className={cls} />
@@ -682,7 +764,7 @@ function GestationForm({ espece, initial, saving, onSave, onCancel }: {
         <button type="button" onClick={onCancel}
           className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
         <button type="button" disabled={saving || !date}
-          onClick={() => onSave({ date, date_prevue: datePrevue, date_naissance: dateNaissance, nb_attendu: nbAttendu, nb_nes: nbNes, notes, gestation_confirmee: confirmed ? 'true' : 'false' })}
+          onClick={() => onSave({ date, date_prevue: datePrevue, date_prevue_fin: datePrevueFin, date_naissance: dateNaissance, nb_attendu: nbAttendu, nb_nes: nbNes, notes, gestation_confirmee: confirmed ? 'true' : 'false' })}
           className="flex-1 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold hover:bg-[#094F5D] disabled:opacity-50">
           {saving ? '…' : 'Enregistrer'}
         </button>
@@ -879,8 +961,8 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
   function startEdit(record: HealthRecord) {
     const data: Record<string, string> = {};
     for (const [k, v] of Object.entries(record)) {
-      if (k !== 'id' && k !== 'animal_id' && k !== 'created_at' && v != null)
-        data[k] = String(v);
+      if (k === 'id' || k === 'animal_id' || k === 'created_at' || v == null) continue;
+      data[k] = Array.isArray(v) ? JSON.stringify(v) : String(v);
     }
     setEditId(record.id);
     setEditData(data);
@@ -1012,22 +1094,38 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
           </div>
           {reproAdd === 'saillies' && (
             <div className="bg-white rounded-2xl p-4 shadow-sm">
-              <SaillieForm partners={partners} isMale={isMale} saving={savingRepro}
+              <SaillieForm partners={partners} isMale={isMale} saving={savingRepro} espece={espece}
                 onSave={saveSaillie} onCancel={() => setReproAdd(null)} />
             </div>
           )}
           {saillies.length === 0 && !reproAdd && <p className="text-sm text-gray-400 text-center py-8">Aucune saillie enregistrée</p>}
-          {saillies.map(r => (
+          {saillies.map(r => {
+            const sd = parseSaillieDates(r.dates != null ? JSON.stringify(r.dates) : undefined, String(r.date ?? ''));
+            const fen = !isMale ? fenetreMiseBas(sd, espece) : null;
+            return (
             <div key={r.id} className="bg-white rounded-2xl p-4 shadow-sm">
               {editId === r.id ? (
-                <SaillieForm partners={partners} isMale={isMale} saving={savingRepro} initial={editData}
+                <SaillieForm partners={partners} isMale={isMale} saving={savingRepro} initial={editData} espece={espece}
                   onSave={async d => { await updateRepro('saillies', r.id, d); setEditId(null); }}
                   onCancel={() => setEditId(null)} />
               ) : (
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center text-xl flex-shrink-0">💕</div>
                   <div className="flex-1 cursor-pointer" onClick={() => startEdit(r)}>
-                    <p className="font-semibold text-sm">{fmtDate(String(r.date ?? ''))}</p>
+                    {sd.length > 1 ? (
+                      <div className="text-sm font-semibold leading-snug">
+                        {sd.map((d, i) => <div key={i}>Saillie {i + 1} : {fmtDate(d)}</div>)}
+                      </div>
+                    ) : (
+                      <p className="font-semibold text-sm">{fmtDate(String(r.date ?? ''))}</p>
+                    )}
+                    {fen && (
+                      <p className="text-xs text-green-700 mt-0.5">
+                        {fen.debut === fen.fin
+                          ? `Mise-bas estimée : ${fmtDate(fen.probable)}`
+                          : `Fenêtre mise-bas : ${fmtDate(fen.debut)} → ${fmtDate(fen.fin)} · probable ${fmtDate(fen.probable)}`}
+                      </p>
+                    )}
                     {!!r.nom_partenaire && <p className="text-xs text-gray-600">Partenaire : {String(r.nom_partenaire)}</p>}
                     {!!r.methode && <p className="text-xs text-gray-400">{String(r.methode)}</p>}
                     {!!r.notes && <p className="text-xs text-gray-400">{String(r.notes)}</p>}
@@ -1037,7 +1135,7 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
                 </div>
               )}
             </div>
-          ))}
+          ); })}
         </div>
       )}
 
@@ -1073,7 +1171,18 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
                         </span>
                       )}
                     </div>
-                    {!!r.date_prevue && <p className="text-xs text-gray-600">Mise-bas prévue : {fmtDate(String(r.date_prevue))}</p>}
+                    {!!r.date_prevue && (() => {
+                      const d0 = String(r.date_prevue).substring(0, 10);
+                      const d1 = r.date_prevue_fin ? String(r.date_prevue_fin).substring(0, 10) : '';
+                      if (!d1 || d1 === d0) return <p className="text-xs text-gray-600">Mise-bas prévue : {fmtDate(d0)}</p>;
+                      const prob = new Date((new Date(d0).getTime() + new Date(d1).getTime()) / 2).toISOString().substring(0, 10);
+                      return (
+                        <p className="text-xs text-green-700">
+                          Fenêtre mise-bas : {fmtDate(d0)} → {fmtDate(d1)}<br />
+                          Date la plus probable : {fmtDate(prob)}
+                        </p>
+                      );
+                    })()}
                     {!!r.date_naissance && <p className="text-xs text-gray-600">Née le : {fmtDate(String(r.date_naissance))}</p>}
                     {!!r.nb_attendu && <p className="text-xs text-gray-400">{String(r.nb_attendu)} attendu(s){r.nb_nes ? ` · ${String(r.nb_nes)} né(s)` : ''}</p>}
                     {!!r.notes && <p className="text-xs text-gray-400">{String(r.notes)}</p>}
@@ -1855,6 +1964,10 @@ export default function AnimalFichePage() {
     if ('gestation_confirmee' in processed) {
       processed.gestation_confirmee = processed.gestation_confirmee === 'true';
     }
+    // Les colonnes DATE n'acceptent pas '' : on convertit en null.
+    for (const k of Object.keys(processed)) {
+      if (processed[k] === '') processed[k] = null;
+    }
     await supabase.from(table).insert({ ...processed, animal_id: id, id: crypto.randomUUID() });
 
     // Protocoles automatiques
@@ -1921,6 +2034,13 @@ export default function AnimalFichePage() {
       if ('gestation_confirmee' in processed) {
         processed.gestation_confirmee = processed.gestation_confirmee === 'true';
       }
+      if (typeof processed.dates === 'string') {
+        try { processed.dates = JSON.parse(processed.dates as string); }
+        catch { processed.dates = parseSaillieDates(processed.dates as string); }
+      }
+      for (const k of Object.keys(processed)) {
+        if (processed[k] === '') processed[k] = null;
+      }
       await supabase.from(table).update(processed).eq('id', recordId);
 
       // Protocoles automatiques gestation lors de la confirmation
@@ -1946,12 +2066,17 @@ export default function AnimalFichePage() {
     if (!id || !user) return;
     setSavingRepro(true);
     try {
-      await supabase.from('saillies').insert({ ...data, animal_id: id, id: crypto.randomUUID() });
+      const dates = parseSaillieDates(data.dates, data.date);
+      const premiere = dates[0] ?? data.date;
+      await supabase.from('saillies').insert({
+        ...data, dates, date: premiere, animal_id: id, id: crypto.randomUUID(),
+      });
       if (data.partenaire_animal_id) {
         await supabase.from('saillies').insert({
           id: crypto.randomUUID(),
           animal_id: data.partenaire_animal_id,
-          date: data.date,
+          date: premiere,
+          dates,
           nom_partenaire: animal.nom ?? '',
           ident_partenaire: animal.identification ?? '',
           methode: data.methode ?? '',
@@ -1959,19 +2084,18 @@ export default function AnimalFichePage() {
           partenaire_animal_id: id,
         });
       }
-      // A07 — Gestation automatique pour la femelle
-      if (animal.sexe === 'femelle' && data.date) {
-        const jours = GESTATION_DUREE[animal.espece ?? ''] ?? 0;
+      // A07 — Gestation automatique pour la femelle (fenêtre de mise-bas)
+      if (animal.sexe === 'femelle' && premiere) {
         const gestData: Record<string, unknown> = {
           id: crypto.randomUUID(),
           animal_id: id,
-          date: data.date,
+          date: premiere,
           gestation_confirmee: false,
         };
-        if (jours > 0) {
-          const prevue = new Date(data.date);
-          prevue.setDate(prevue.getDate() + jours);
-          gestData.date_prevue = prevue.toISOString().substring(0, 10);
+        const fen = fenetreMiseBas(dates, animal.espece ?? '');
+        if (fen) {
+          gestData.date_prevue = fen.debut;
+          gestData.date_prevue_fin = fen.fin;
         }
         await supabase.from('gestations').insert(gestData);
       }

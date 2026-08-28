@@ -4132,7 +4132,17 @@ class _ReproListState extends State<_ReproList> {
       // Sync agenda mise-bas
       final idx   = _data.indexWhere((d) => d['id']?.toString() == id);
       final gest  = idx >= 0 ? _data[idx] : null;
-      final datePrevue = gest?['date_prevue'] as String?;
+      // Événement agenda = date de mise-bas la plus probable : milieu de la
+      // fenêtre [date_prevue → date_prevue_fin] si elle existe, sinon date_prevue.
+      final dp  = DateTime.tryParse(gest?['date_prevue']?.toString() ?? '');
+      final dpf = DateTime.tryParse(gest?['date_prevue_fin']?.toString() ?? '');
+      final datePrevue = dp == null
+          ? null
+          : (dpf != null && !dpf.isAtSameMomentAs(dp)
+                ? DateTime.fromMillisecondsSinceEpoch(
+                    (dp.millisecondsSinceEpoch + dpf.millisecondsSinceEpoch) ~/ 2)
+                  .toIso8601String()
+                : (gest?['date_prevue'] as String?));
       final uid   = FirebaseAuth.instance.currentUser?.uid;
 
       if (datePrevue != null && uid != null) {
@@ -4566,13 +4576,39 @@ class _SimpleCard extends StatelessWidget {
     'nb_nes':           'Petits nés',
     'date_conception':  'Date de conception',
     'date_prevue':      'Mise-bas prévue',
+    'date_prevue_fin':  'Mise-bas — fin de fenêtre',
     'date_naissance':   'Date de mise-bas réelle',
   };
 
   static const _excludedKeys = {
     'date', 'id', 'animal_id', 'created_at', 'partenaire_animal_id', 'gestation_confirmee',
     'reminder_j7_sent', 'reminder_j3_sent', 'reminder_j1_sent',
+    'dates', 'date_prevue', 'date_prevue_fin',
   };
+
+  // Résumé « saillies » : liste des dates numérotées (Saillie 1, 2, 3…).
+  String? _saillieDatesLabel() {
+    if (collection != 'saillies') return null;
+    final ds = _parseSaillieDates(data['dates'], fallbackDate: data['date']?.toString());
+    if (ds.length <= 1) return null;
+    final df = DateFormat('dd/MM/yyyy');
+    return [for (var i = 0; i < ds.length; i++) 'Saillie ${i + 1} : ${df.format(ds[i])}'].join('  ·  ');
+  }
+
+  // Résumé « gestation » : fenêtre de mise-bas + date la plus probable.
+  String? _gestationFenetreLabel() {
+    if (collection != 'gestations') return null;
+    final debut = DateTime.tryParse(data['date_prevue']?.toString() ?? '');
+    final fin   = DateTime.tryParse(data['date_prevue_fin']?.toString() ?? '');
+    if (debut == null) return null;
+    final df = DateFormat('dd/MM/yyyy');
+    if (fin == null || fin.isAtSameMomentAs(debut)) {
+      return 'Mise-bas prévue : ${df.format(debut)}';
+    }
+    final probable = DateTime.fromMillisecondsSinceEpoch(
+        (debut.millisecondsSinceEpoch + fin.millisecondsSinceEpoch) ~/ 2);
+    return 'Fenêtre mise-bas : ${df.format(debut)} → ${df.format(fin)}\nDate la plus probable : ${df.format(probable)}';
+  }
 
   static String _fmt(String key, dynamic val) {
     if (val == null) return '';
@@ -4614,8 +4650,14 @@ class _SimpleCard extends StatelessWidget {
                 : 'Détail chaleurs',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
           const SizedBox(height: 16),
-          if (date.isNotEmpty)
+          if (date.isNotEmpty && collection != 'saillies')
             _DetailRow(label: 'Date', value: date),
+          if (collection == 'saillies' && _saillieDatesLabel() == null && date.isNotEmpty)
+            _DetailRow(label: 'Date', value: date),
+          if (_saillieDatesLabel() != null)
+            _DetailRow(label: 'Saillies', value: _saillieDatesLabel()!.replaceAll('  ·  ', '\n')),
+          if (_gestationFenetreLabel() != null)
+            _DetailRow(label: 'Mise-bas', value: _gestationFenetreLabel()!),
           ...data.entries
               .where((e) => !_excludedKeys.contains(e.key)
                   && e.value != null && e.value.toString().isNotEmpty)
@@ -4719,6 +4761,14 @@ class _SimpleCard extends StatelessWidget {
               ],
             ]),
           ]),
+          if (_saillieDatesLabel() != null)
+            Padding(padding: const EdgeInsets.only(top: 3),
+              child: Text(_saillieDatesLabel()!,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF4A7A3A), fontWeight: FontWeight.w600))),
+          if (_gestationFenetreLabel() != null)
+            Padding(padding: const EdgeInsets.only(top: 3),
+              child: Text(_gestationFenetreLabel()!,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFF4A7A3A), fontWeight: FontWeight.w600))),
           ...data.entries
               .where((e) => !_excludedKeys.contains(e.key)
                   && e.value != null && e.value.toString().isNotEmpty)
@@ -7094,6 +7144,42 @@ String _confirmationInfo(String espece) {
   }
 }
 
+/// Fenêtre de mise-bas estimée à partir des dates de saillie d'un même
+/// épisode (une chaleur). Début = 1re saillie + durée gestation ;
+/// fin = dernière saillie + durée gestation ; probable = milieu des deux.
+/// Retourne null si l'espèce n'a pas de durée connue ou si aucune date.
+({DateTime debut, DateTime fin, DateTime probable})? _fenetreMiseBas(
+    List<DateTime> saillies, String espece) {
+  final n = _gestationJours(espece);
+  if (n <= 0 || saillies.isEmpty) return null;
+  final sorted = [...saillies]..sort();
+  final debut = DateTime(sorted.first.year, sorted.first.month, sorted.first.day)
+      .add(Duration(days: n));
+  final fin = DateTime(sorted.last.year, sorted.last.month, sorted.last.day)
+      .add(Duration(days: n));
+  final probable = DateTime.fromMillisecondsSinceEpoch(
+      (debut.millisecondsSinceEpoch + fin.millisecondsSinceEpoch) ~/ 2);
+  return (debut: debut, fin: fin, probable: probable);
+}
+
+/// Parse une valeur `dates` (jsonb) en liste de DateTime triée.
+/// Accepte une List, ou retombe sur [fallbackDate] si absente/vide.
+List<DateTime> _parseSaillieDates(dynamic raw, {String? fallbackDate}) {
+  final out = <DateTime>[];
+  if (raw is List) {
+    for (final v in raw) {
+      final d = DateTime.tryParse(v.toString());
+      if (d != null) out.add(d);
+    }
+  }
+  if (out.isEmpty && fallbackDate != null && fallbackDate.isNotEmpty) {
+    final d = DateTime.tryParse(fallbackDate);
+    if (d != null) out.add(d);
+  }
+  out.sort();
+  return out;
+}
+
 // ─── Dialog Saillie ───────────────────────────────────────────────────────────
 
 class _AddSaillieDialog extends StatefulWidget {
@@ -7110,7 +7196,8 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
   final _identPartenaire = TextEditingController();
   final _notes           = TextEditingController();
   String _methode = 'naturelle';
-  DateTime? _date;
+  // Dates de saillie de l'épisode (une chaleur) : saillie 1, 2, 3…
+  final List<DateTime> _dates = [];
   String? _selectedPartenaireId;
   List<Map<String, String>> _partenaires = [];
   bool _loadingPartenaires = true;
@@ -7122,7 +7209,8 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
     super.initState();
     final e = widget.existing;
     if (e != null) {
-      _date = e['date'] != null ? DateTime.tryParse(e['date']) : null;
+      _dates.addAll(_parseSaillieDates(e['dates'],
+          fallbackDate: e['date']?.toString()));
       _nomPartenaire.text   = e['nom_partenaire'] ?? '';
       _identPartenaire.text = e['ident_partenaire'] ?? '';
       _methode = e['methode'] ?? 'naturelle';
@@ -7156,6 +7244,102 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
   void dispose() {
     _nomPartenaire.dispose(); _identPartenaire.dispose(); _notes.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickSaillieDate({DateTime? initial, required ValueChanged<DateTime> onPick}) async {
+    final p = await showDatePicker(context: context,
+      initialDate: initial ?? DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2060),
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6E9E57))),
+        child: child!));
+    if (p != null) onPick(DateTime(p.year, p.month, p.day));
+  }
+
+  // Section « dates de saillie » : 1re saillie + saillies suivantes de la
+  // même chaleur, avec fenêtre de mise-bas estimée (1re → dernière + gestation).
+  List<Widget> _datesSection() {
+    final df = DateFormat('dd/MM/yyyy');
+    final rows = <Widget>[
+      const Padding(
+        padding: EdgeInsets.only(bottom: 6),
+        child: Text('Dates de saillie',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+      ),
+    ];
+    for (var i = 0; i < _dates.length; i++) {
+      rows.add(Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _pickSaillieDate(
+                initial: _dates[i],
+                onPick: (d) => setState(() { _dates[i] = d; _dates.sort(); }),
+              ),
+              child: InputDecorator(
+                decoration: InputDecoration(
+                  labelText: 'Saillie ${i + 1}${i == 0 ? ' *' : ''}',
+                  labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), isDense: true,
+                  suffixIcon: const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF6E9E57)),
+                ),
+                child: Text(df.format(_dates[i]),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E))),
+              ),
+            ),
+          ),
+          if (_dates.length > 1)
+            IconButton(
+              icon: const Icon(Icons.close, size: 18, color: Colors.redAccent),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              onPressed: () => setState(() => _dates.removeAt(i)),
+            ),
+        ]),
+      ));
+    }
+    rows.add(Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        onPressed: () => _pickSaillieDate(
+          initial: _dates.isNotEmpty ? _dates.last : null,
+          onPick: (d) => setState(() { _dates.add(d); _dates.sort(); }),
+        ),
+        icon: const Icon(Icons.add, size: 16, color: Color(0xFF6E9E57)),
+        label: Text(_dates.isEmpty ? 'Choisir la date de la 1re saillie *' : 'Ajouter une date de saillie',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6E9E57), fontWeight: FontWeight.w600)),
+        style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+      ),
+    ));
+
+    if (widget.sexeAnimal == 'femelle' && _dates.isNotEmpty) {
+      final f = _fenetreMiseBas(_dates, widget.espece);
+      if (f != null) {
+        rows.add(Container(
+          margin: const EdgeInsets.only(top: 4, bottom: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEEF5EA),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFF6E9E57), width: 0.6),
+          ),
+          child: Row(children: [
+            const Icon(Icons.child_friendly_outlined, size: 15, color: Color(0xFF4A7A3A)),
+            const SizedBox(width: 6),
+            Expanded(child: Text(
+              f.debut == f.fin
+                  ? 'Mise-bas estimée : ${df.format(f.probable)}'
+                  : 'Fenêtre mise-bas : ${df.format(f.debut)} → ${df.format(f.fin)}\nDate la plus probable : ${df.format(f.probable)}',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFF4A7A3A), height: 1.35),
+            )),
+          ]),
+        ));
+      }
+    }
+    rows.add(const SizedBox(height: 4));
+    return rows;
   }
 
   Widget _dateRow(String label, DateTime? value, ValueChanged<DateTime> onPick) {
@@ -7213,7 +7397,7 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
             constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
             child: SingleChildScrollView(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                _dateRow('Date *', _date, (d) => setState(() => _date = d)),
+                ..._datesSection(),
                 if (_loadingPartenaires)
                   const Center(child: Padding(
                     padding: EdgeInsets.symmetric(vertical: 6),
@@ -7279,11 +7463,16 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
             const SizedBox(width: 8),
             ElevatedButton(
               onPressed: () async {
-                if (_date == null) return;
+                if (_dates.isEmpty) return;
                 final supa = Supabase.instance.client;
+                final sorted = [..._dates]..sort();
+                final isoDates = sorted.map((d) => d.toIso8601String()).toList();
+                final premiere = sorted.first;
+                final f = _fenetreMiseBas(sorted, widget.espece);
                 final payload = {
                   'animal_id': widget.animalId,
-                  'date': _date!.toIso8601String(),
+                  'date': premiere.toIso8601String(),
+                  'dates': isoDates,
                   'nom_partenaire': _nomPartenaire.text.trim(),
                   'ident_partenaire': _identPartenaire.text.trim(),
                   'methode': _methode,
@@ -7292,6 +7481,17 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
                 };
                 if (widget.existing != null) {
                   await supa.from('saillies').update(payload).eq('id', widget.existing!['id']);
+                  // Répercute la fenêtre sur la gestation auto liée, si elle
+                  // existe encore et n'a pas de mise-bas réelle.
+                  if (widget.sexeAnimal == 'femelle' && f != null) {
+                    try {
+                      await supa.from('gestations').update({
+                        'date': premiere.toIso8601String(),
+                        'date_prevue': f.debut.toIso8601String(),
+                        'date_prevue_fin': f.fin.toIso8601String(),
+                      }).eq('id', '${widget.existing!['id']}_gest').isFilter('date_naissance', null);
+                    } catch (_) {}
+                  }
                 } else {
                   final id = DateTime.now().microsecondsSinceEpoch.toString();
                   await supa.from('saillies').insert({'id': id, ...payload});
@@ -7303,7 +7503,8 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
                       await supa.from('saillies').insert({
                         'id': '${id}_mirror',
                         'animal_id': _selectedPartenaireId,
-                        'date': _date!.toIso8601String(),
+                        'date': premiere.toIso8601String(),
+                        'dates': isoDates,
                         'nom_partenaire': (animalData['nom'] ?? '') as String,
                         'ident_partenaire': (animalData['identification'] ?? '') as String,
                         'methode': _methode,
@@ -7315,12 +7516,12 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
                   // A07 — Gestation automatique pour la femelle
                   if (widget.sexeAnimal == 'femelle') {
                     try {
-                      final jours = _gestationJours(widget.espece);
                       await supa.from('gestations').insert({
                         'id': '${id}_gest',
                         'animal_id': widget.animalId,
-                        'date': _date!.toIso8601String(),
-                        if (jours > 0) 'date_prevue': _date!.add(Duration(days: jours)).toIso8601String(),
+                        'date': premiere.toIso8601String(),
+                        if (f != null) 'date_prevue': f.debut.toIso8601String(),
+                        if (f != null) 'date_prevue_fin': f.fin.toIso8601String(),
                         'gestation_confirmee': false,
                       });
                     } catch (_) {}
@@ -7353,6 +7554,7 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
   final _notes     = TextEditingController();
   DateTime? _dateConception;
   DateTime? _datePrevue;
+  DateTime? _datePrevueFin;
   DateTime? _dateNaissance;
   bool _dateOverride = false;
   bool _gestationConfirmee = false;
@@ -7362,9 +7564,10 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
     super.initState();
     final e = widget.existing;
     if (e != null) {
-      _dateConception = e['date']           != null ? DateTime.tryParse(e['date'])           : null;
-      _datePrevue     = e['date_prevue']    != null ? DateTime.tryParse(e['date_prevue'])    : null;
-      _dateNaissance  = e['date_naissance'] != null ? DateTime.tryParse(e['date_naissance']) : null;
+      _dateConception = e['date']            != null ? DateTime.tryParse(e['date'])            : null;
+      _datePrevue     = e['date_prevue']     != null ? DateTime.tryParse(e['date_prevue'])     : null;
+      _datePrevueFin  = e['date_prevue_fin'] != null ? DateTime.tryParse(e['date_prevue_fin']) : null;
+      _dateNaissance  = e['date_naissance']  != null ? DateTime.tryParse(e['date_naissance'])  : null;
       _nbAttendu.text = e['nb_attendu']?.toString() ?? '';
       _nbNes.text     = e['nb_nes']?.toString() ?? '';
       _notes.text     = e['notes'] ?? '';
@@ -7385,8 +7588,20 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
       final jours = _gestationJours(widget.espece);
       if (jours > 0 && !_dateOverride) {
         _datePrevue = d.add(Duration(days: jours));
+        // Saisie manuelle d'une date de conception unique : pas de fenêtre.
+        _datePrevueFin = null;
       }
     });
+  }
+
+  // Date de mise-bas la plus probable = milieu de la fenêtre si elle existe,
+  // sinon la date prévue simple.
+  DateTime? get _dateProbable {
+    if (_datePrevue != null && _datePrevueFin != null) {
+      return DateTime.fromMillisecondsSinceEpoch(
+          (_datePrevue!.millisecondsSinceEpoch + _datePrevueFin!.millisecondsSinceEpoch) ~/ 2);
+    }
+    return _datePrevue;
   }
 
   Widget _dateRow(String label, DateTime? value, ValueChanged<DateTime> onPick,
@@ -7454,9 +7669,11 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
             constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
             child: SingleChildScrollView(
               child: Column(children: [
-                _dateRow('Date de conception *', _dateConception, _onConceptionPicked),
+                _dateRow('Date de conception / 1re saillie *', _dateConception, _onConceptionPicked),
                 _dateRow(
-                  hasCalcul ? 'Mise-bas estimée' : 'Mise-bas prévue',
+                  _datePrevueFin != null
+                      ? 'Mise-bas — début de fenêtre'
+                      : (hasCalcul ? 'Mise-bas estimée' : 'Mise-bas prévue'),
                   _datePrevue,
                   (d) => setState(() { _datePrevue = d; _dateOverride = true; }),
                   calculated: hasCalcul && !_dateOverride && _datePrevue != null,
@@ -7466,6 +7683,30 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
                           : (_dateOverride ? 'modifiée manuellement' : 'calculée — $jours j de gestation'))
                       : null,
                 ),
+                _dateRow(
+                  'Mise-bas — fin de fenêtre (optionnel)',
+                  _datePrevueFin,
+                  (d) => setState(() => _datePrevueFin = d),
+                  helper: 'renseignée si plusieurs saillies (dernière saillie + $jours j)',
+                ),
+                if (_datePrevue != null && _datePrevueFin != null && _dateProbable != null)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEEF5EA),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF6E9E57), width: 0.6),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.child_friendly_outlined, size: 15, color: Color(0xFF4A7A3A)),
+                      const SizedBox(width: 6),
+                      Expanded(child: Text(
+                        'Fenêtre : ${DateFormat('dd/MM/yyyy').format(_datePrevue!)} → ${DateFormat('dd/MM/yyyy').format(_datePrevueFin!)}\nDate la plus probable : ${DateFormat('dd/MM/yyyy').format(_dateProbable!)}',
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFF4A7A3A), height: 1.35),
+                      )),
+                    ]),
+                  ),
                 _textField('Nb attendus', _nbAttendu, inputType: TextInputType.number),
                 _dateRow('Mise-bas réelle', _dateNaissance,
                     (d) => setState(() => _dateNaissance = d)),
@@ -7518,6 +7759,7 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
                     'animal_id': widget.animalId,
                     'date': _dateConception!.toIso8601String(),
                     'date_prevue': _datePrevue?.toIso8601String(),
+                    'date_prevue_fin': _datePrevueFin?.toIso8601String(),
                     'date_naissance': _dateNaissance?.toIso8601String(),
                     'nb_attendu': int.tryParse(_nbAttendu.text),
                     'nb_nes': int.tryParse(_nbNes.text),

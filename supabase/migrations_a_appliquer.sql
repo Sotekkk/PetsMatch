@@ -9,22 +9,20 @@
 
 
 -- ────────────────────────────────────────────────────────────
--- 1. Pension — facture réouvrable + lien pour le client
---    `details` (jsonb) : tout ce qu'il faut pour ré-afficher une facture
---       déjà émise (nuits, tarif/nuit, suppléments, TVA, acompte, animal,
---       propriétaire, séjour).
---    `token` (uuid)     : lien public de consultation de la facture,
---       envoyé au propriétaire dans la notification. Route publique
---       /facture-pension/<token>.
---    Sans cette migration : les nouvelles factures s'enregistrent quand
---    même (insert résilient), mais la notification client n'ouvre rien
---    et l'ouverture depuis « Mes factures » n'affiche que le minimum.
+-- 1. Suivi gestation — saillies multiples par chaleur
+--    `saillies.dates` (jsonb) : toutes les dates de saillie d'un même
+--       épisode (une chaleur), ex. ["2026-03-03","2026-03-05"].
+--       `saillies.date` reste = 1re saillie (tri + compatibilité).
+--    `gestations.date_prevue_fin` (date) : fin de la fenêtre de mise-bas.
+--       date_prevue = 1re saillie + durée gestation (début de fenêtre)
+--       date_prevue_fin = dernière saillie + durée gestation (fin)
+--       Date la plus probable = milieu (calculée à l'affichage).
+--    Sans cette migration : les saillies s'enregistrent quand même avec
+--    une seule date et la gestation garde une date de mise-bas unique.
 -- ────────────────────────────────────────────────────────────
 
-ALTER TABLE pension_factures
-  ADD COLUMN IF NOT EXISTS details JSONB,
-  ADD COLUMN IF NOT EXISTS token   UUID DEFAULT gen_random_uuid();
+ALTER TABLE saillies
+  ADD COLUMN IF NOT EXISTS dates JSONB;
 
-CREATE INDEX IF NOT EXISTS idx_pension_factures_token ON pension_factures(token);
-
--- Rappel : type / acompte_pct ont déjà été ajoutés (migration précédente).
+ALTER TABLE gestations
+  ADD COLUMN IF NOT EXISTS date_prevue_fin DATE;
