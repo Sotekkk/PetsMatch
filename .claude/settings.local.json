@@ -48,7 +48,8 @@
       "Bash(timeout 200 dart analyze lib/pages/pro/pension_tarifs_page.dart)",
       "Bash(timeout 200 dart analyze lib/pages/pro/registre_pension_page.dart)",
       "Bash(flutter build *)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(git commit -m 'feat\\(pension\\): champ Logement placé après les dates du séjour *)"
     ],
     "additionalDirectories": [
       "/Users/nabilksouri/Documents/Application/PetsMatch/lib/pages",
