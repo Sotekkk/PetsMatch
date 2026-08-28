@@ -98,12 +98,17 @@ export default function ParticulierDashboard() {
         animalIds = (rows ?? []).map(r => r.animal_id as string);
       }
 
+      // Alertes « perdu » de CE profil (le compteur ne doit pas compter une
+      // alerte créée depuis un autre profil, ex. le profil élevage).
+      let mesAlertesQ = supabase.from('alertes_perdus').select()
+        .eq('uid_proprietaire', uid).eq('statut', 'perdu');
+      if (activeProfileId) mesAlertesQ = mesAlertesQ.eq('profile_id', activeProfileId);
+
       const [animauxRes, alertesMesRes, alertesPubliquesRes, annoncesRes] = await Promise.all([
         animalIds.length > 0
           ? supabase.from('animaux').select('id, nom, espece, race, sexe, photo_url').in('id', animalIds)
           : Promise.resolve({ data: [] }),
-        supabase.from('alertes_perdus').select()
-          .eq('uid_proprietaire', uid).eq('statut', 'perdu'),
+        mesAlertesQ,
         supabase.from('alertes_perdus')
           .select('id, nom_animal, espece, race, derniere_localisation, date_perte, photo_url')
           .eq('statut', 'perdu').order('created_at', { ascending: false }).limit(6),

@@ -29,7 +29,6 @@ import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_en_accueil_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
-import 'package:PetsMatch/pages/petfriends/petfriends_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 class ParticulierNav extends StatefulWidget {
@@ -330,15 +329,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
                       ));
                     },
                   ),
-                _DrawerItem(
-                  icon: Icons.people_outline,
-                  label: 'Mes PetFriends',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const PetFriendsPage()));
-                  },
-                ),
+                // « Mes PetFriends » retiré du menu : accessible depuis Communauté.
                 _DrawerItem(
                   icon: Icons.calendar_month_outlined,
                   label: 'Mon Agenda',

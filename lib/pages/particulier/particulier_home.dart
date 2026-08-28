@@ -85,11 +85,17 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
           .from('animaux')
           .select()
           .inFilter('id', myIds);
-      final alertesMes = await _supa
+      // Alertes « perdu » de CE profil uniquement (une alerte créée depuis le
+      // profil élevage ne doit pas allumer le compteur côté particulier).
+      var qAlertesMes = _supa
           .from('alertes_perdus')
           .select()
           .eq('uid_proprietaire', uid)
           .eq('statut', 'perdu');
+      if (activeProfileId.isNotEmpty) {
+        qAlertesMes = qAlertesMes.eq('profile_id', activeProfileId);
+      }
+      final alertesMes = await qAlertesMes;
       final annonces = await _supa
           .from('annonces')
           .select('id, titre, espece, race, photos, prix, prix_min_portee, prix_max_portee, type, type_vente, ville_eleveur')

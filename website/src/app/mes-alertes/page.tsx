@@ -70,6 +70,8 @@ export default function MesAlertesPage() {
         .select('*')
         .eq('uid_proprietaire', user.uid);
       if (activeProfileId) {
+        // Alertes de CE profil + anciennes alertes sans profile_id (legacy,
+        // pour ne rien perdre dans la page de gestion).
         query = query.or(`profile_id.eq.${activeProfileId},profile_id.is.null`);
       }
       const { data } = await query.order('created_at', { ascending: false });
@@ -221,6 +223,7 @@ export default function MesAlertesPage() {
       {showForm && (
         <AlerteForm
           uid={user.uid}
+          profileId={activeProfileId}
           alerte={editAlerte}
           onClose={() => { setShowForm(false); setEditAlerte(null); }}
           onSaved={() => { setShowForm(false); setEditAlerte(null); fetchAlertes(); }}
@@ -330,8 +333,9 @@ function LocationInput({ value, onChange, placeholder = 'Ville, rue, quartier…
 
 // ── Formulaire création / édition ─────────────────────────────────────────────
 
-function AlerteForm({ uid, alerte, onClose, onSaved }: {
+function AlerteForm({ uid, profileId, alerte, onClose, onSaved }: {
   uid: string;
+  profileId: string | null;
   alerte: Alerte | null;
   onClose: () => void;
   onSaved: () => void;
@@ -369,10 +373,13 @@ function AlerteForm({ uid, alerte, onClose, onSaved }: {
         statut: alerte?.statut ?? 'perdu',
       };
       if (isEdit) {
-        await supabase.from('alertes_perdus').update(payload).eq('id', alerte!.id);
+        await supabase.from('alertes_perdus')
+          .update(profileId ? { ...payload, profile_id: profileId } : payload)
+          .eq('id', alerte!.id);
       } else {
         await supabase.from('alertes_perdus').insert({
           ...payload,
+          ...(profileId ? { profile_id: profileId } : {}),
           numero_alerte: genNumero(),
         });
       }
