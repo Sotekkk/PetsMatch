@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { mailTransporter, MAIL_FROM } from '@/lib/mailer';
 
 export async function POST(req: NextRequest) {
-  const { email, client_nom, pro_nom, numero_facture, total_ttc, facture_url } =
+  const { email, client_nom, pro_nom, numero_facture, total_ttc, facture_url, pdf_url } =
     await req.json().catch(() => ({})) as {
       email: string;
       client_nom: string;
@@ -10,10 +10,26 @@ export async function POST(req: NextRequest) {
       numero_facture?: string;
       total_ttc?: number;
       facture_url: string;
+      pdf_url?: string;
     };
 
   if (!email || !facture_url) {
     return NextResponse.json({ error: 'email et facture_url requis' }, { status: 400 });
+  }
+
+  // Pièce jointe PDF si l'appelant fournit une URL (facture pension : PDF déjà
+  // généré et stocké). On échoue silencieusement si le téléchargement rate.
+  const attachments: { filename: string; content: Buffer }[] = [];
+  if (pdf_url) {
+    try {
+      const res = await fetch(pdf_url);
+      if (res.ok) {
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.length > 0 && buf.length < 15 * 1024 * 1024) {
+          attachments.push({ filename: `facture-${numero_facture ?? 'pension'}.pdf`, content: buf });
+        }
+      }
+    } catch { /* pièce jointe optionnelle */ }
   }
 
   const html = `<!DOCTYPE html>
@@ -28,7 +44,7 @@ export async function POST(req: NextRequest) {
     <div style="padding:32px;">
       <p style="font-size:15px;color:#1F2A2E;margin:0 0 16px;">Bonjour <strong>${client_nom}</strong>,</p>
       <p style="font-size:14px;color:#4B5563;line-height:1.6;margin:0 0 24px;">
-        <strong>${pro_nom}</strong> vous a envoyé ${numero_facture ? `la facture <strong>${numero_facture}</strong>` : 'une facture'}${total_ttc ? ` d'un montant de <strong>${total_ttc.toFixed(2)} €</strong>` : ''}.
+        <strong>${pro_nom}</strong> vous a envoyé ${numero_facture ? `la facture <strong>${numero_facture}</strong>` : 'une facture'}${total_ttc ? ` d'un montant de <strong>${total_ttc.toFixed(2)} €</strong>` : ''}.${attachments.length ? ' Le PDF est en pièce jointe.' : ''}
       </p>
       <div style="text-align:center;margin-bottom:28px;">
         <a href="${facture_url}"
@@ -57,6 +73,7 @@ export async function POST(req: NextRequest) {
       to: email,
       subject: `🧾 Nouvelle facture — ${pro_nom} · PetsMatch`,
       html,
+      ...(attachments.length ? { attachments } : {}),
     });
     return NextResponse.json({ success: true });
   } catch (err) {

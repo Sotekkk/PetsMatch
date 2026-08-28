@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { PensionEntree } from '@/components/PensionEntreeModal';
 import { pensionTarifKeyForEspece, type TarifsPension } from '@/lib/pension-especes';
-import { openPensionInvoice, type PensionFactureData } from '@/lib/pension-facture-html';
+import { type PensionFactureData } from '@/lib/pension-facture-html';
+import { pensionInvoicePdfBlob } from '@/lib/pension-facture-pdf';
 
 const TEAL = '#0C5C6C';
 
@@ -148,9 +149,30 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
     return supabase.from('pension_factures').insert(p);
   }
 
-  function apercu() {
-    if (!openPensionInvoice(factureData(genNumero()))) {
-      setError('Autorisez les popups pour ouvrir la facture');
+  // Génère le PDF, l'upload sur le storage, renvoie l'URL publique (ou null).
+  async function genererEtUploaderPdf(numero: string): Promise<string | null> {
+    try {
+      const blob = await pensionInvoicePdfBlob(factureData(numero));
+      const path = `factures-pension/${proUid}/${numero}.pdf`;
+      const { error: upErr } = await supabase.storage.from('petsmatch')
+        .upload(path, blob, { upsert: true, contentType: 'application/pdf' });
+      if (upErr) return null;
+      return supabase.storage.from('petsmatch').getPublicUrl(path).data.publicUrl;
+    } catch {
+      return null;
+    }
+  }
+
+  async function apercu() {
+    setMarking(true);
+    try {
+      const blob = await pensionInvoicePdfBlob(factureData(genNumero()));
+      const url = URL.createObjectURL(blob);
+      if (!window.open(url, '_blank')) setError('Autorisez les popups pour ouvrir la facture');
+    } catch {
+      setError('Impossible de générer le PDF');
+    } finally {
+      setMarking(false);
     }
   }
 
@@ -159,7 +181,12 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
     setMarking(true);
     setError('');
     try {
-      const { error: err } = await insertFacture(facturePayload(genNumero(), crypto.randomUUID()));
+      const numero = genNumero();
+      const pdf_url = await genererEtUploaderPdf(numero);
+      const { error: err } = await insertFacture({
+        ...facturePayload(numero, crypto.randomUUID()),
+        ...(pdf_url ? { pdf_url } : {}),
+      });
       if (err) { setError(err.message); setMarking(false); return; }
       onSaved();
     } finally {
@@ -186,6 +213,7 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
 
       const numero = genNumero();
       const token = crypto.randomUUID();
+      const pdf_url = await genererEtUploaderPdf(numero);
 
       // Notification in-app uniquement si le propriétaire a un compte PetsMatch.
       if (ownerUid) {
@@ -204,6 +232,7 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
 
       const { error: err } = await insertFacture({
         ...facturePayload(numero, token),
+        ...(pdf_url ? { pdf_url } : {}),
         ...(ownerUid ? { proprietaire_uid: ownerUid } : {}),
       });
       if (err) { setError(err.message); setSending(false); return; }
@@ -220,6 +249,7 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
             numero_facture: numero,
             total_ttc: montantFacture,
             facture_url: `${window.location.origin}/facture-pension/${token}`,
+            ...(pdf_url ? { pdf_url } : {}),
           }),
         });
       } catch { /* l'email est un bonus, on n'échoue pas la facturation dessus */ }
@@ -327,12 +357,13 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
 
         {error && <p style={{ color: '#dc2626', fontFamily: 'Galey, sans-serif', fontSize: 13, marginBottom: 12 }}>{error}</p>}
 
-        <button onClick={apercu} disabled={tarifNum <= 0} style={{
+        <button onClick={apercu} disabled={tarifNum <= 0 || sending || marking} style={{
           width: '100%', padding: '13px 0', background: TEAL, color: 'white', border: 'none', borderRadius: 12,
-          fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 14, cursor: tarifNum <= 0 ? 'not-allowed' : 'pointer',
-          opacity: tarifNum <= 0 ? 0.6 : 1, marginBottom: 10,
+          fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 14,
+          cursor: tarifNum <= 0 || sending || marking ? 'not-allowed' : 'pointer',
+          opacity: tarifNum <= 0 || sending || marking ? 0.6 : 1, marginBottom: 10,
         }}>
-          🖨️ Aperçu / Imprimer
+          {marking && !sending ? 'Génération du PDF…' : '🖨️ Aperçu PDF'}
         </button>
         <button onClick={envoyerAuProprietaire} disabled={tarifNum <= 0 || sending || marking} style={{
           width: '100%', padding: '13px 0', background: 'transparent', color: TEAL, border: `1px solid ${TEAL}`, borderRadius: 12,

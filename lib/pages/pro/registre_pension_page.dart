@@ -3876,6 +3876,7 @@ class _FacturationSheetState extends State<_FacturationSheet> {
             'numero_facture': invNum,
             'total_ttc': _montantFacture,
             'facture_url': dlUrl,
+            'pdf_url': dlUrl,
           }),
         );
       } catch (_) {/* l'email est un bonus */}
