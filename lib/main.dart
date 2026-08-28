@@ -477,7 +477,12 @@ class User_Info {
 
   static List<String> _safeStringList(dynamic raw, List<String> fallback) {
     if (raw is! List) return fallback;
-    return raw.whereType<String>().toList();
+    // Supporte les listes de String et les listes d'objets {url, ...}
+    // (ex : photos_galerie avec légendes).
+    return raw
+        .map((e) => e is String ? e : (e is Map ? e['url']?.toString() : null))
+        .whereType<String>()
+        .toList();
   }
 
   static bool isProfileComplete() {

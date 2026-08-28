@@ -8,6 +8,17 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
 import { PENSION_ESPECES } from '@/lib/pension-especes';
+
+// photos_galerie (jsonb) : liste de string (URL) OU {url, legende}
+function normGalerie(raw: unknown): { url: string; legende: string }[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((it) =>
+      typeof it === 'string'
+        ? { url: it, legende: '' }
+        : { url: String((it as { url?: string })?.url ?? ''), legende: String((it as { legende?: string })?.legende ?? '') })
+    .filter((p) => p.url);
+}
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -18,7 +29,7 @@ interface ProData {
   photo: string; banner: string; accept_new_clients: boolean;
   especes: string[]; horaires: Record<string, string>;
   certifications: { nom: string; numero?: string }[];
-  photos_galerie: string[];
+  photos_galerie: { url: string; legende: string }[];
   tarifs: string; site_web: string; instagram: string; facebook: string;
   rayon: number; cat_pro: string; profileTableId?: string;
   statut_pro?: string; siret?: string; is_premium?: boolean;
@@ -243,7 +254,7 @@ function ProDetailContent() {
           especes: Array.isArray(data.especes_acceptees) ? data.especes_acceptees : [],
           horaires: (data.horaires && typeof data.horaires === 'object') ? data.horaires : {},
           certifications: Array.isArray(data.certifications) ? data.certifications : [],
-          photos_galerie: Array.isArray(data.photos_galerie) ? data.photos_galerie : [],
+          photos_galerie: normGalerie(data.photos_galerie),
           tarifs: data.tarifs || '', site_web: data.site_web || '',
           instagram: data.instagram || '', facebook: data.facebook || '',
           rayon: data.rayon_intervention || 0,
@@ -269,7 +280,7 @@ function ProDetailContent() {
           especes: Array.isArray(data.especes_acceptees) ? data.especes_acceptees : [],
           horaires: (data.horaires && typeof data.horaires === 'object') ? data.horaires : {},
           certifications: Array.isArray(data.certifications) ? data.certifications : [],
-          photos_galerie: Array.isArray(data.photos_galerie) ? data.photos_galerie : [],
+          photos_galerie: normGalerie(data.photos_galerie),
           tarifs: data.tarifs || '', site_web: data.site_web || '',
           instagram: data.instagram || '', facebook: data.facebook || '',
           rayon: data.rayon_intervention || 0, cat_pro: data.cat_pro || '',
@@ -694,14 +705,7 @@ function ProDetailContent() {
             {pro.photos_galerie && pro.photos_galerie.length > 0 && (
               <div className="bg-white rounded-2xl p-4 shadow-sm">
                 <p className="font-bold text-[#1E2025] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>Galerie</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {pro.photos_galerie.map((url, i) => (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block aspect-square overflow-hidden rounded-xl">
-                      <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
-                    </a>
-                  ))}
-                </div>
+                <GaleriePub photos={pro.photos_galerie} />
               </div>
             )}
             {prestations.length > 0 && (
@@ -1219,5 +1223,70 @@ export default function ProDetailPage() {
     <Suspense>
       <ProDetailContent />
     </Suspense>
+  );
+}
+
+// ── Galerie publique : bande défilable + visionneuse plein écran ──────────────
+function GaleriePub({ photos }: { photos: { url: string; legende: string }[] }) {
+  const [open, setOpen] = useState<number | null>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const show = (i: number) => setOpen(((i % photos.length) + photos.length) % photos.length);
+  const scrollStrip = (dir: 1 | -1) => stripRef.current?.scrollBy({ left: dir * 280, behavior: 'smooth' });
+
+  return (
+    <>
+      <div className="relative">
+        <div ref={stripRef} className="flex gap-3 overflow-x-auto snap-x snap-mandatory -mx-1 px-1 pb-1"
+          style={{ scrollbarWidth: 'thin' }}>
+          {photos.map((p, i) => (
+            <button key={i} type="button" onClick={() => setOpen(i)}
+              className="snap-start shrink-0 w-64 max-w-[80%] text-left">
+              <div className="relative w-full h-44 rounded-xl overflow-hidden bg-gray-100">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={p.url} alt={p.legende || `Photo ${i + 1}`} className="w-full h-full object-cover" />
+                {p.legende && (
+                  <span className="absolute inset-x-0 bottom-0 px-3 py-2 text-xs font-semibold text-white"
+                    style={{ fontFamily: 'Galey, sans-serif', background: 'linear-gradient(transparent, rgba(0,0,0,0.6))' }}>
+                    {p.legende}
+                  </span>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+        {photos.length > 1 && (
+          <>
+            <button type="button" onClick={() => scrollStrip(-1)} aria-label="Précédent"
+              className="absolute left-1 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center text-lg text-[#1E2025] hover:bg-gray-50">‹</button>
+            <button type="button" onClick={() => scrollStrip(1)} aria-label="Suivant"
+              className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center text-lg text-[#1E2025] hover:bg-gray-50">›</button>
+          </>
+        )}
+      </div>
+
+      {open !== null && (
+        <div className="fixed inset-0 z-[1000] bg-black/95 flex flex-col" onClick={() => setOpen(null)}>
+          <button type="button" onClick={() => setOpen(null)}
+            className="absolute top-3 right-4 text-white text-3xl leading-none z-10">×</button>
+          <div className="flex-1 flex items-center justify-center relative" onClick={e => e.stopPropagation()}>
+            {photos.length > 1 && (
+              <button type="button" onClick={() => show(open - 1)}
+                className="absolute left-3 text-white text-4xl px-2">‹</button>
+            )}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={photos[open].url} alt={photos[open].legende} className="max-h-[85vh] max-w-[92vw] object-contain" />
+            {photos.length > 1 && (
+              <button type="button" onClick={() => show(open + 1)}
+                className="absolute right-3 text-white text-4xl px-2">›</button>
+            )}
+          </div>
+          {photos[open].legende && (
+            <p className="text-white text-center text-sm pb-8 px-6" style={{ fontFamily: 'Galey, sans-serif' }}>
+              {photos[open].legende}
+            </p>
+          )}
+        </div>
+      )}
+    </>
   );
 }

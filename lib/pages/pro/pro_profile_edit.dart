@@ -75,10 +75,13 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       _catPro == 'pension' ? _especesListPension : _especesListDefaut;
   List<String> _especesAcceptees = [];
 
-  // Galerie / portfolio public (photographe) — distinct de albums_photo
+  // Galerie / portfolio public (photographe, pension) — distinct de albums_photo
   // (livraison privée par RDV) : vitrine visible sur la fiche publique.
+  // photos_galerie (jsonb) : liste de String (URL) OU {url, legende}.
   List<String> _photosGalerie = [];
+  List<String> _photosGalerieLegendes = []; // index-aligné sur _photosGalerie
   final List<File> _newGaleriePhotos = [];
+  final List<String> _newGalerieLegendes = []; // index-aligné sur _newGaleriePhotos
 
   // Durées par type de prestation (en minutes)
   Map<String, int> _dureesMotifs = {};
@@ -236,7 +239,17 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           _especesAcceptees = List<String>.from(row['especes_acceptees']);
         }
         if (row['photos_galerie'] is List) {
-          _photosGalerie = List<String>.from(row['photos_galerie']);
+          _photosGalerie = [];
+          _photosGalerieLegendes = [];
+          for (final it in (row['photos_galerie'] as List)) {
+            if (it is Map) {
+              _photosGalerie.add(it['url']?.toString() ?? '');
+              _photosGalerieLegendes.add(it['legende']?.toString() ?? '');
+            } else {
+              _photosGalerie.add(it.toString());
+              _photosGalerieLegendes.add('');
+            }
+          }
         }
         if (row['durees_motifs'] is Map) {
           _dureesMotifs = Map<String, int>.from(
@@ -494,11 +507,21 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         acacedDocUrl = await uploadPhoto(_acacedDocFile!, 'profiles/$uid/acaced.jpg');
       }
 
-      final galerieUrls = List<String>.from(_photosGalerie);
+      // photos_galerie : liste de {url, legende} (jsonb).
+      final galerieItems = <Map<String, String>>[
+        for (int i = 0; i < _photosGalerie.length; i++)
+          {
+            'url': _photosGalerie[i],
+            'legende': i < _photosGalerieLegendes.length ? _photosGalerieLegendes[i] : '',
+          },
+      ];
       for (int i = 0; i < _newGaleriePhotos.length; i++) {
         final url = await uploadPhoto(_newGaleriePhotos[i],
             'profiles/$uid/galerie_${DateTime.now().microsecondsSinceEpoch}_$i.jpg');
-        galerieUrls.add(url);
+        galerieItems.add({
+          'url': url,
+          'legende': i < _newGalerieLegendes.length ? _newGalerieLegendes[i] : '',
+        });
       }
 
       final horairesMap = {
@@ -540,7 +563,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
           if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
             'acaced_doc_url': acacedDocUrl,
-          if (_catPro == 'photographe' || _catPro == 'pension') 'photos_galerie': galerieUrls,
+          if (_catPro == 'photographe' || _catPro == 'pension') 'photos_galerie': galerieItems,
           'rue':                _rueCtrl.text.trim(),
           'ville':              _villeCtrl.text.trim(),
           'code_postal':        _cpCtrl.text.trim(),
@@ -667,7 +690,12 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       if (bannerUrl != null) setState(() { _bannerUrl = bannerUrl; _bannerFile = null; });
       if (photoUrl  != null) setState(() { _photoUrl  = photoUrl;  _photoFile  = null; });
       if (_catPro == 'photographe' || _catPro == 'pension') {
-        setState(() { _photosGalerie = galerieUrls; _newGaleriePhotos.clear(); });
+        setState(() {
+          _photosGalerie = galerieItems.map((m) => m['url']!).toList();
+          _photosGalerieLegendes = galerieItems.map((m) => m['legende'] ?? '').toList();
+          _newGaleriePhotos.clear();
+          _newGalerieLegendes.clear();
+        });
       }
 
       if (mounted) {
@@ -1384,51 +1412,97 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
 
   Widget _galerieSection() {
     final total = _photosGalerie.length + _newGaleriePhotos.length;
-    return Wrap(spacing: 10, runSpacing: 10, children: [
-      ..._photosGalerie.asMap().entries.map((e) => _galerieTile(
-        child: CachedNetworkImage(imageUrl: e.value, fit: BoxFit.cover),
-        onRemove: () => setState(() => _photosGalerie.removeAt(e.key)),
-      )),
-      ..._newGaleriePhotos.asMap().entries.map((e) => _galerieTile(
-        child: Image.file(e.value, fit: BoxFit.cover),
-        onRemove: () => setState(() => _newGaleriePhotos.removeAt(e.key)),
-      )),
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      for (int i = 0; i < _photosGalerie.length; i++)
+        _galerieRow(
+          key: ValueKey('g_$i'),
+          image: CachedNetworkImage(imageUrl: _photosGalerie[i], fit: BoxFit.cover),
+          legende: i < _photosGalerieLegendes.length ? _photosGalerieLegendes[i] : '',
+          onLegende: (v) {
+            while (_photosGalerieLegendes.length <= i) { _photosGalerieLegendes.add(''); }
+            _photosGalerieLegendes[i] = v;
+          },
+          onRemove: () => setState(() {
+            _photosGalerie.removeAt(i);
+            if (i < _photosGalerieLegendes.length) _photosGalerieLegendes.removeAt(i);
+          }),
+        ),
+      for (int i = 0; i < _newGaleriePhotos.length; i++)
+        _galerieRow(
+          key: ValueKey('gn_$i'),
+          image: Image.file(_newGaleriePhotos[i], fit: BoxFit.cover),
+          legende: i < _newGalerieLegendes.length ? _newGalerieLegendes[i] : '',
+          onLegende: (v) {
+            while (_newGalerieLegendes.length <= i) { _newGalerieLegendes.add(''); }
+            _newGalerieLegendes[i] = v;
+          },
+          onRemove: () => setState(() {
+            _newGaleriePhotos.removeAt(i);
+            if (i < _newGalerieLegendes.length) _newGalerieLegendes.removeAt(i);
+          }),
+        ),
       if (total < 12)
-        GestureDetector(
-          onTap: _pickGaleriePhoto,
-          child: Container(
-            width: 90, height: 90,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFDDDDDD)),
-            ),
-            child: const Icon(Icons.add_photo_alternate_outlined, color: Color(0xFF90A4AE)),
-          ),
+        OutlinedButton.icon(
+          onPressed: _pickGaleriePhoto,
+          icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+          label: const Text('Ajouter une photo', style: TextStyle(fontFamily: 'Galey')),
         ),
     ]);
   }
 
-  Widget _galerieTile({required Widget child, required VoidCallback onRemove}) {
-    return Stack(children: [
-      ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: SizedBox(width: 90, height: 90, child: child),
-      ),
-      Positioned(
-        top: 4, right: 4,
-        child: GestureDetector(
-          onTap: onRemove,
-          child: const CircleAvatar(radius: 11, backgroundColor: Colors.black54,
-              child: Icon(Icons.close, size: 13, color: Colors.white)),
+  Widget _galerieRow({
+    required Key key,
+    required Widget image,
+    required String legende,
+    required ValueChanged<String> onLegende,
+    required VoidCallback onRemove,
+  }) {
+    return Padding(
+      key: key,
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Stack(children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(width: 84, height: 84, child: image),
+          ),
+          Positioned(
+            top: 3, right: 3,
+            child: GestureDetector(
+              onTap: onRemove,
+              child: const CircleAvatar(radius: 11, backgroundColor: Colors.black54,
+                  child: Icon(Icons.close, size: 13, color: Colors.white)),
+            ),
+          ),
+        ]),
+        const SizedBox(width: 10),
+        Expanded(child: TextFormField(
+          initialValue: legende,
+          onChanged: onLegende,
+          maxLength: 80,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+          decoration: InputDecoration(
+            hintText: 'Légende (ex : Le parc, box chauffé…)',
+            hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400),
+            isDense: true,
+            counterText: '',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        )),
+        IconButton(
+          onPressed: onRemove,
+          icon: const Icon(Icons.delete_outline, color: Colors.red),
+          tooltip: 'Retirer la photo',
         ),
-      ),
-    ]);
+      ]),
+    );
   }
 
   Future<void> _pickGaleriePhoto() async {
     final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
-    if (picked != null && mounted) setState(() => _newGaleriePhotos.add(File(picked.path)));
+    if (picked != null && mounted) {
+      setState(() { _newGaleriePhotos.add(File(picked.path)); _newGalerieLegendes.add(''); });
+    }
   }
 
   Future<void> _pickAcacedDoc() async {

@@ -288,10 +288,18 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
     return {};
   }
 
-  List<String> get _photosGalerie {
+  /// photos_galerie : liste de String (URL) OU {url, legende}.
+  List<({String url, String legende})> get _photosGalerie {
     final raw = _proData?['photos_galerie'];
-    if (raw is List) return List<String>.from(raw);
-    return [];
+    if (raw is! List) return [];
+    return raw.map<({String url, String legende})?>((e) {
+      if (e is String) return (url: e, legende: '');
+      if (e is Map) {
+        final u = e['url']?.toString() ?? '';
+        return u.isEmpty ? null : (url: u, legende: e['legende']?.toString() ?? '');
+      }
+      return null;
+    }).whereType<({String url, String legende})>().toList();
   }
 
   List<Map<String, dynamic>> get _certifications {
@@ -636,26 +644,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
               children: [
                 _sectionTitle('Galerie'),
                 const SizedBox(height: 10),
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _photosGalerie.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8),
-                  itemBuilder: (_, i) => ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: GestureDetector(
-                      onTap: () => showDialog(
-                        context: context,
-                        builder: (_) => Dialog(
-                          backgroundColor: Colors.transparent,
-                          child: CachedNetworkImage(imageUrl: _photosGalerie[i], fit: BoxFit.contain),
-                        ),
-                      ),
-                      child: CachedNetworkImage(imageUrl: _photosGalerie[i], fit: BoxFit.cover),
-                    ),
-                  ),
-                ),
+                _GalerieCarrousel(photos: _photosGalerie),
               ],
             )),
           ],
@@ -938,5 +927,144 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
 
   Widget _sectionTitle(String t) {
     return Text(t, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1E2025)));
+  }
+}
+
+// ── Galerie défilable + visionneuse plein écran ───────────────────────────────
+
+class _GalerieCarrousel extends StatefulWidget {
+  final List<({String url, String legende})> photos;
+  const _GalerieCarrousel({required this.photos});
+
+  @override
+  State<_GalerieCarrousel> createState() => _GalerieCarrouselState();
+}
+
+class _GalerieCarrouselState extends State<_GalerieCarrousel> {
+  final _ctrl = PageController();
+  int _page = 0;
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  void _openViewer(int initial) {
+    Navigator.of(context).push(PageRouteBuilder(
+      opaque: false,
+      barrierColor: Colors.black,
+      pageBuilder: (_, __, ___) => _GalerieViewer(photos: widget.photos, initial: initial),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final photos = widget.photos;
+    return Column(children: [
+      SizedBox(
+        height: 210,
+        child: PageView.builder(
+          controller: _ctrl,
+          itemCount: photos.length,
+          onPageChanged: (i) => setState(() => _page = i),
+          itemBuilder: (_, i) => GestureDetector(
+            onTap: () => _openViewer(i),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Stack(fit: StackFit.expand, children: [
+                  CachedNetworkImage(imageUrl: photos[i].url, fit: BoxFit.cover),
+                  if (photos[i].legende.isNotEmpty)
+                    Positioned(
+                      left: 0, right: 0, bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(12, 16, 12, 10),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                            colors: [Colors.transparent, Colors.black54],
+                          ),
+                        ),
+                        child: Text(photos[i].legende,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
+                                fontWeight: FontWeight.w600, color: Colors.white)),
+                      ),
+                    ),
+                ]),
+              ),
+            ),
+          ),
+        ),
+      ),
+      if (photos.length > 1) ...[
+        const SizedBox(height: 8),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          for (int i = 0; i < photos.length; i++)
+            Container(
+              width: i == _page ? 18 : 6, height: 6,
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              decoration: BoxDecoration(
+                color: i == _page ? const Color(0xFF0C5C6C) : const Color(0xFFCBD5D8),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+        ]),
+      ],
+    ]);
+  }
+}
+
+class _GalerieViewer extends StatefulWidget {
+  final List<({String url, String legende})> photos;
+  final int initial;
+  const _GalerieViewer({required this.photos, required this.initial});
+
+  @override
+  State<_GalerieViewer> createState() => _GalerieViewerState();
+}
+
+class _GalerieViewerState extends State<_GalerieViewer> {
+  late final PageController _ctrl = PageController(initialPage: widget.initial);
+  late int _page = widget.initial;
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    final photos = widget.photos;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Stack(children: [
+          PageView.builder(
+            controller: _ctrl,
+            itemCount: photos.length,
+            onPageChanged: (i) => setState(() => _page = i),
+            itemBuilder: (_, i) => InteractiveViewer(
+              minScale: 1, maxScale: 4,
+              child: Center(child: CachedNetworkImage(imageUrl: photos[i].url, fit: BoxFit.contain)),
+            ),
+          ),
+          Positioned(
+            top: 8, right: 8,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 28),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+          if (photos[_page].legende.isNotEmpty)
+            Positioned(
+              left: 0, right: 0, bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                color: Colors.black54,
+                child: Text(photos[_page].legende,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white)),
+              ),
+            ),
+        ]),
+      ),
+    );
   }
 }

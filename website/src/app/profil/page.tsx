@@ -842,8 +842,8 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [acacedDocFile, setAcacedDocFile] = useState<File | null>(null);
   const [acacedDocUrl, setAcacedDocUrl] = useState<string | null>(null);
   const acacedDocRef = useRef<HTMLInputElement>(null);
-  const [galeriePhotos, setGaleriePhotos] = useState<string[]>([]);
-  const [newGaleriePhotos, setNewGaleriePhotos] = useState<File[]>([]);
+  const [galeriePhotos, setGaleriePhotos] = useState<{ url: string; legende: string }[]>([]);
+  const [newGaleriePhotos, setNewGaleriePhotos] = useState<{ file: File; legende: string }[]>([]);
   const galerieRef = useRef<HTMLInputElement>(null);
 
   // Auto-complétion d'adresse (Google Places) — plomberie locale à ce
@@ -881,7 +881,11 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         setAvatarPreview((r.avatar_url as string) ?? null);
         setBannerPreview((r.banner_url as string) ?? null);
         if (Array.isArray(r.photos_galerie)) {
-          setGaleriePhotos(r.photos_galerie as string[]);
+          setGaleriePhotos((r.photos_galerie as unknown[]).map(it =>
+            typeof it === 'string'
+              ? { url: it, legende: '' }
+              : { url: String((it as { url?: string }).url ?? ''), legende: String((it as { legende?: string }).legende ?? '') }
+          ).filter(p => p.url));
         }
         if (Array.isArray(r.especes_acceptees)) {
           setEspeces(new Set(r.especes_acceptees as string[]));
@@ -1068,17 +1072,17 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
     }
 
     if (catPro === 'photographe' || catPro === 'pension') {
-      const urls = [...galeriePhotos];
+      const items = [...galeriePhotos];
       for (let i = 0; i < newGaleriePhotos.length; i++) {
         const path = `profiles/${uid}/pro_${profileId}_galerie_${i}_${Date.now()}.jpg`;
-        const { data: uploaded } = await supabase.storage.from('petsmatch').upload(path, newGaleriePhotos[i], { upsert: true });
+        const { data: uploaded } = await supabase.storage.from('petsmatch').upload(path, newGaleriePhotos[i].file, { upsert: true });
         if (uploaded) {
           const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
-          urls.push(pub.publicUrl);
+          items.push({ url: pub.publicUrl, legende: newGaleriePhotos[i].legende });
         }
       }
-      payload.photos_galerie = urls;
-      setGaleriePhotos(urls);
+      payload.photos_galerie = items;
+      setGaleriePhotos(items);
       setNewGaleriePhotos([]);
     }
 
@@ -1506,29 +1510,41 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             <input ref={galerieRef} type="file" accept="image/*" multiple className="hidden"
               onChange={e => {
                 const files = Array.from(e.target.files ?? []);
-                if (files.length > 0) setNewGaleriePhotos(prev => [...prev, ...files]);
+                if (files.length > 0) setNewGaleriePhotos(prev => [...prev, ...files.map(f => ({ file: f, legende: '' }))]);
                 e.target.value = '';
               }} />
-            <div className="flex flex-wrap gap-2">
-              {galeriePhotos.map((url, i) => (
-                <div key={url} className="relative w-20 h-20 rounded-xl overflow-hidden group">
-                  <Image src={url} alt="" fill className="object-cover" />
-                  <button type="button" onClick={() => setGaleriePhotos(prev => prev.filter((_, j) => j !== i))}
-                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+            <div className="space-y-3">
+              {galeriePhotos.map((p, i) => (
+                <div key={p.url} className="flex items-center gap-3">
+                  <div className="relative w-20 h-20 rounded-xl overflow-hidden shrink-0 bg-gray-100">
+                    <Image src={p.url} alt="" fill sizes="80px" className="object-cover" />
+                  </div>
+                  <input value={p.legende} maxLength={80} placeholder="Légende (ex : Le parc, box chauffé…)"
+                    onChange={e => setGaleriePhotos(prev => prev.map((x, j) => j === i ? { ...x, legende: e.target.value } : x))}
+                    className={inputCls + ' flex-1'} />
+                  <button type="button" aria-label="Retirer la photo"
+                    onClick={() => setGaleriePhotos(prev => prev.filter((_, j) => j !== i))}
+                    className="shrink-0 w-9 h-9 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 flex items-center justify-center text-lg">×</button>
                 </div>
               ))}
-              {newGaleriePhotos.map((file, i) => (
-                <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden group">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={URL.createObjectURL(file)} alt="" className="w-full h-full object-cover" />
-                  <button type="button" onClick={() => setNewGaleriePhotos(prev => prev.filter((_, j) => j !== i))}
-                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+              {newGaleriePhotos.map((np, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <div className="relative w-20 h-20 rounded-xl overflow-hidden shrink-0 bg-gray-100">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={URL.createObjectURL(np.file)} alt="" className="w-full h-full object-cover" />
+                  </div>
+                  <input value={np.legende} maxLength={80} placeholder="Légende (ex : Le parc, box chauffé…)"
+                    onChange={e => setNewGaleriePhotos(prev => prev.map((x, j) => j === i ? { ...x, legende: e.target.value } : x))}
+                    className={inputCls + ' flex-1'} />
+                  <button type="button" aria-label="Retirer la photo"
+                    onClick={() => setNewGaleriePhotos(prev => prev.filter((_, j) => j !== i))}
+                    className="shrink-0 w-9 h-9 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 flex items-center justify-center text-lg">×</button>
                 </div>
               ))}
               {galeriePhotos.length + newGaleriePhotos.length < 12 && (
                 <button type="button" onClick={() => galerieRef.current?.click()}
-                  className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-200 text-gray-300 hover:border-[#90A4AE] hover:text-[#90A4AE] flex items-center justify-center text-2xl transition-colors">
-                  +
+                  className="w-full py-2.5 rounded-xl border-2 border-dashed border-gray-200 text-gray-400 hover:border-[#90A4AE] hover:text-[#90A4AE] text-sm transition-colors">
+                  + Ajouter une photo
                 </button>
               )}
             </div>
