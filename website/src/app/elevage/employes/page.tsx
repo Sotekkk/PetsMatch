@@ -123,6 +123,7 @@ export default function EmployesPage() {
   const [tacheModal, setTacheModal] = useState<{ mode: 'create' } | { mode: 'edit'; tache: TacheManuelle } | null>(null);
   const [isPension, setIsPension] = useState(false);
   const [assignProtoGroup, setAssignProtoGroup] = useState<ProtoGroupe | null>(null);
+  const [chaleursModal, setChaleursModal] = useState<Employe | null>(null);
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
 
@@ -420,6 +421,13 @@ export default function EmployesPage() {
               </div>
               <span className="flex-1 font-semibold text-gray-800 text-sm">{e.nom}</span>
               <span className="text-xs text-teal-600 font-semibold hidden sm:inline">📅 Voir l&apos;agenda</span>
+              <button
+                onClick={(ev) => { ev.stopPropagation(); setChaleursModal(e); }}
+                title="Suivi des chaleurs"
+                className="p-2 rounded-xl hover:bg-pink-50 text-gray-400 hover:text-pink-500 transition-colors text-base leading-none"
+              >
+                🌸
+              </button>
               <button
                 onClick={(ev) => { ev.stopPropagation(); openPerms(e); }}
                 title="Gérer les accès"
@@ -837,6 +845,14 @@ export default function EmployesPage() {
         </div>
       )}
 
+      {chaleursModal && user && (
+        <ChaleursSuiviModal
+          ownerUid={user.uid}
+          employe={chaleursModal}
+          onClose={() => setChaleursModal(null)}
+        />
+      )}
+
       {showAdd && user && (
         <AddEmployeModal uid={user.uid} profileId={profileId || null} onClose={() => { setShowAdd(false); load(); }} />
       )}
@@ -874,6 +890,109 @@ export default function EmployesPage() {
 }
 
 // ── Modal créer / modifier une tâche manuelle ────────────────────────────────
+
+// Confier / retirer le suivi des chaleurs de certaines femelles à un employé.
+function ChaleursSuiviModal({ ownerUid, employe, onClose }: {
+  ownerUid: string;
+  employe: Employe;
+  onClose: () => void;
+}) {
+  type Fem = { id: string; nom: string | null; race: string | null; espece: string | null; chaleurs_responsable_uid: string | null };
+  const [femelles, setFemelles] = useState<Fem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    (async () => {
+      const { data, error: err } = await supabase.from('animaux')
+        .select('id, nom, race, espece, chaleurs_responsable_uid')
+        .eq('uid_eleveur', ownerUid).eq('sexe', 'femelle')
+        .not('statut', 'in', '("sorti","decede")').order('nom');
+      if (err) {
+        setError(err.message.includes('chaleurs_responsable_uid')
+          ? 'Fonctionnalité pas encore activée (migration base à exécuter).'
+          : 'Erreur de chargement');
+      } else {
+        setFemelles((data ?? []) as Fem[]);
+      }
+      setLoading(false);
+    })();
+  }, [ownerUid]);
+
+  async function toggle(f: Fem, on: boolean) {
+    setBusy(prev => new Set(prev).add(f.id));
+    await supabase.from('animaux').update({
+      chaleurs_responsable_uid: on ? employe.uid_employe : null,
+      chaleurs_responsable_profile_id: on ? (employe.employeProfileId ?? null) : null,
+    }).eq('id', f.id);
+    if (on) {
+      await supabase.from('notifications').insert({
+        uid: employe.uid_employe,
+        type: 'tache',
+        title: 'Suivi des chaleurs confié',
+        body: `On vous a confié le suivi des chaleurs de ${f.nom ?? 'un animal'}.`,
+        ...(employe.employeProfileId ? { profile_id: employe.employeProfileId } : {}),
+        data: { animalId: f.id },
+        read: false,
+      });
+    }
+    setFemelles(prev => prev.map(x => x.id === f.id
+      ? { ...x, chaleurs_responsable_uid: on ? employe.uid_employe : null } : x));
+    setBusy(prev => { const n = new Set(prev); n.delete(f.id); return n; });
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center sm:items-center p-4"
+         onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col">
+        <div className="p-5 border-b">
+          <h3 className="font-bold text-gray-800 text-sm">Suivi des chaleurs — {employe.nom}</h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Cochez les femelles dont vous confiez le suivi des chaleurs à cet employé.
+            Il reçoit alors les mêmes rappels que vous tant qu&apos;elles ne sont pas en chaleurs.
+          </p>
+        </div>
+        <div className="overflow-y-auto flex-1 p-2">
+          {loading ? (
+            <div className="flex justify-center py-10">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-teal-600" />
+            </div>
+          ) : error ? (
+            <p className="text-center text-sm text-red-500 py-8 px-4">{error}</p>
+          ) : femelles.length === 0 ? (
+            <p className="text-center text-sm text-gray-400 py-8">Aucune femelle dans l&apos;élevage</p>
+          ) : femelles.map(f => {
+            const mine = f.chaleurs_responsable_uid === employe.uid_employe;
+            const other = !mine && !!f.chaleurs_responsable_uid;
+            return (
+              <div key={f.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800 truncate">{f.nom ?? '—'}</p>
+                  <p className={`text-[11px] truncate ${other ? 'text-amber-600' : 'text-gray-400'}`}>
+                    {other ? 'Déjà confié à un autre employé' : [f.race, f.espece].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+                <button
+                  disabled={busy.has(f.id)}
+                  onClick={() => toggle(f, !mine)}
+                  className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 disabled:opacity-50 ${mine ? 'bg-teal-500' : 'bg-gray-200'}`}>
+                  <span className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform shadow-sm ${mine ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="p-4 border-t">
+          <button onClick={onClose}
+            className="w-full py-2.5 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700">
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function TacheManuelleModal({
   uid, profileId, employes, tache, onClose,

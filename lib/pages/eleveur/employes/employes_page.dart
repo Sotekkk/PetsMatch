@@ -444,6 +444,18 @@ class _EmployeCard extends StatelessWidget {
               fontSize: 14, color: dark)),
         ),
         IconButton(
+          icon: Icon(Icons.favorite_border, color: teal, size: 19),
+          tooltip: 'Suivi des chaleurs',
+          onPressed: () => showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.white,
+            shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+            builder: (_) => _ChaleursSuiviSheet(employeId: employeId, nom: nom, teal: teal),
+          ),
+        ),
+        IconButton(
           icon: Icon(Icons.tune_rounded, color: teal, size: 20),
           tooltip: 'Gérer les accès',
           onPressed: () async {
@@ -501,6 +513,175 @@ class _EmployeAgendaPage extends StatelessWidget {
         isAssociation: isAssociation,
         filterEmployeUid: employeUid,
         filterEmployeProfileId: employeProfileId,
+      ),
+    );
+  }
+}
+
+// ─── Feuille : confier le suivi des chaleurs de certaines femelles ───────────
+
+class _ChaleursSuiviSheet extends StatefulWidget {
+  final String employeId, nom;
+  final Color teal;
+  const _ChaleursSuiviSheet({required this.employeId, required this.nom, required this.teal});
+  @override
+  State<_ChaleursSuiviSheet> createState() => _ChaleursSuiviSheetState();
+}
+
+class _ChaleursSuiviSheetState extends State<_ChaleursSuiviSheet> {
+  final _supa = Supabase.instance.client;
+  bool _loading = true;
+  String? _error;
+  String? _uidEmploye;
+  String? _employeProfileId;
+  String? _uidEleveur;
+  List<Map<String, dynamic>> _femelles = []; // {id, nom, race, chaleurs_responsable_uid}
+  final Set<String> _busy = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final row = await _supa.from('employes')
+          .select('uid_employe, employe_profile_id, uid_eleveur')
+          .eq('id', widget.employeId).maybeSingle();
+      _uidEmploye = row?['uid_employe'] as String?;
+      _employeProfileId = row?['employe_profile_id'] as String?;
+      _uidEleveur = row?['uid_eleveur'] as String?;
+      if (_uidEmploye == null || _uidEleveur == null) {
+        setState(() { _error = 'Employé introuvable'; _loading = false; });
+        return;
+      }
+      final rows = await _supa.from('animaux')
+          .select('id, nom, race, espece, chaleurs_responsable_uid')
+          .eq('uid_eleveur', _uidEleveur!)
+          .eq('sexe', 'femelle')
+          .not('statut', 'in', '("sorti","decede")')
+          .order('nom');
+      if (mounted) {
+        setState(() {
+          _femelles = List<Map<String, dynamic>>.from(rows as List);
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString().contains('chaleurs_responsable_uid')
+              ? 'Fonctionnalité pas encore activée (migration base à exécuter).'
+              : 'Erreur de chargement';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _toggle(Map<String, dynamic> f, bool on) async {
+    final id = f['id'] as String;
+    setState(() => _busy.add(id));
+    try {
+      await _supa.from('animaux').update({
+        'chaleurs_responsable_uid': on ? _uidEmploye : null,
+        'chaleurs_responsable_profile_id': on ? _employeProfileId : null,
+      }).eq('id', id);
+      if (on) {
+        try {
+          await _supa.from('notifications').insert({
+            'uid': _uidEmploye,
+            'type': 'tache',
+            'title': 'Suivi des chaleurs confié',
+            'body': 'On vous a confié le suivi des chaleurs de ${f['nom'] ?? 'un animal'}.',
+            if ((_employeProfileId ?? '').isNotEmpty) 'profile_id': _employeProfileId,
+            'data': {'animalId': id},
+            'read': false,
+          });
+        } catch (_) {}
+      }
+      if (mounted) {
+        setState(() {
+          final idx = _femelles.indexWhere((x) => x['id'] == id);
+          if (idx >= 0) {
+            _femelles[idx] = {..._femelles[idx], 'chaleurs_responsable_uid': on ? _uidEmploye : null};
+          }
+        });
+      }
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Erreur', style: TextStyle(fontFamily: 'Galey'))));
+    } finally {
+      if (mounted) setState(() => _busy.remove(id));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        maxChildSize: 0.92,
+        builder: (_, scrollCtrl) => Column(children: [
+          const SizedBox(height: 10),
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+            child: Align(alignment: Alignment.centerLeft,
+              child: Text('Suivi des chaleurs — ${widget.nom}',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Align(alignment: Alignment.centerLeft,
+              child: Text('Cochez les femelles dont vous confiez le suivi des chaleurs à cet employé. '
+                  'Il reçoit alors les mêmes rappels que vous tant qu\'elles ne sont pas en chaleurs.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFF6F767B)))),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: Color(0xFF0C5C6C)))
+                : _error != null
+                    ? Center(child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(_error!, textAlign: TextAlign.center,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.redAccent))))
+                    : _femelles.isEmpty
+                        ? Center(child: Text('Aucune femelle dans l\'élevage',
+                            style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)))
+                        : ListView.separated(
+                            controller: scrollCtrl,
+                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 24),
+                            itemCount: _femelles.length,
+                            separatorBuilder: (_, __) => const Divider(height: 1, indent: 16),
+                            itemBuilder: (_, i) {
+                              final f = _femelles[i];
+                              final id = f['id'] as String;
+                              final mine = f['chaleurs_responsable_uid'] == _uidEmploye;
+                              final other = !mine && f['chaleurs_responsable_uid'] != null;
+                              return SwitchListTile(
+                                value: mine,
+                                activeThumbColor: widget.teal,
+                                onChanged: _busy.contains(id) ? null : (v) => _toggle(f, v),
+                                title: Text(f['nom'] as String? ?? '—',
+                                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+                                subtitle: Text(
+                                  other
+                                      ? 'Déjà confié à un autre employé'
+                                      : [f['race'], f['espece']].where((s) => (s as String?)?.isNotEmpty == true).join(' · '),
+                                  style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                                      color: other ? const Color(0xFFE29B3B) : Colors.grey),
+                                ),
+                              );
+                            },
+                          ),
+          ),
+        ]),
       ),
     );
   }
