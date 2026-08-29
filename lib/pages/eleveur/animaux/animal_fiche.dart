@@ -6660,8 +6660,18 @@ class _AddPoidsDialog extends StatefulWidget {
 class _AddPoidsDialogState extends State<_AddPoidsDialog> {
   final _valeur = TextEditingController();
   final _notes  = TextEditingController();
+  final _dateCtrl = TextEditingController();
   DateTime? _date;
   String _unite = 'kg'; // 'g' ou 'kg' — stockage toujours en kg
+
+  DateTime? _parseFrDate(String s) {
+    final m = RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{4})$').firstMatch(s.trim());
+    if (m == null) return null;
+    final d = int.parse(m.group(1)!), mo = int.parse(m.group(2)!), y = int.parse(m.group(3)!);
+    final dt = DateTime(y, mo, d);
+    if (dt.day != d || dt.month != mo) return null;
+    return dt;
+  }
 
   @override
   void initState() {
@@ -6678,6 +6688,7 @@ class _AddPoidsDialogState extends State<_AddPoidsDialog> {
     } else {
       _prefillUnite();
     }
+    if (_date != null) _dateCtrl.text = DateFormat('dd/MM/yyyy').format(_date!);
   }
 
   // Nouvelle pesée : on reprend l'unité de la dernière pesée de l'animal
@@ -6715,13 +6726,54 @@ class _AddPoidsDialogState extends State<_AddPoidsDialog> {
   }
 
   @override
-  void dispose() { _valeur.dispose(); _notes.dispose(); super.dispose(); }
+  void dispose() { _valeur.dispose(); _notes.dispose(); _dateCtrl.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) => _BaseDialog(
     title: widget.existing != null ? 'Modifier la pesée' : 'Ajouter une pesée',
     fields: [
-      _DD('Date *', _date, (d) => setState(() => _date = d)),
+      _DCustom(TextField(
+        controller: _dateCtrl,
+        keyboardType: TextInputType.datetime,
+        inputFormatters: [
+          FilteringTextInputFormatter.allow(RegExp(r'[0-9/]')),
+          LengthLimitingTextInputFormatter(10),
+        ],
+        style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
+        onChanged: (s) {
+          final d = _parseFrDate(s);
+          if (d != null) setState(() => _date = d);
+        },
+        decoration: InputDecoration(
+          labelText: 'Date *',
+          hintText: 'jj/mm/aaaa',
+          labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+          hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFBDBDBD)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFF6E9E57))),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          isDense: true,
+          suffixIcon: IconButton(
+            icon: const Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF6E9E57)),
+            onPressed: () async {
+              final p = await showDatePicker(
+                context: context, initialDate: _date ?? DateTime.now(),
+                firstDate: DateTime(2000), lastDate: DateTime(2100),
+                builder: (ctx, child) => Theme(
+                  data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: Color(0xFF6E9E57))),
+                  child: child!),
+              );
+              if (p != null) {
+                setState(() => _date = p);
+                _dateCtrl.text = DateFormat('dd/MM/yyyy').format(p);
+              }
+            },
+          ),
+        ),
+      )),
       _DCustom(Row(children: [
         Expanded(
           child: TextField(
@@ -6748,10 +6800,11 @@ class _AddPoidsDialogState extends State<_AddPoidsDialog> {
     ],
     onSave: () async {
       final kg = _valeurKg;
-      if (kg == null || _date == null) return false;
+      final d = _parseFrDate(_dateCtrl.text) ?? _date;
+      if (kg == null || d == null) return false;
       final payload = {
         'valeur': kg,
-        'date':   _date!.toIso8601String(),
+        'date':   d.toIso8601String(),
         'notes':  _notes.text.trim(),
       };
       if (widget.existing != null) {
