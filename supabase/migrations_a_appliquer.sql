@@ -26,3 +26,18 @@ ALTER TABLE saillies
 
 ALTER TABLE gestations
   ADD COLUMN IF NOT EXISTS date_prevue_fin DATE;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 2. Suivi des chaleurs délégué à un employé
+--    Quand l'éleveur confie le suivi des chaleurs d'une femelle à un
+--    employé (fiche animale → onglet Chaleurs), ces colonnes portent le
+--    destinataire des rappels « chaleurs » (fonction sendChaleursNotifications).
+--    null = seul le propriétaire ; renseigné = propriétaire + employé.
+--    Retirer l'attribution = remettre à null.
+--    ⚠ Nécessite aussi un redéploiement des Cloud Functions.
+-- ────────────────────────────────────────────────────────────
+
+ALTER TABLE animaux
+  ADD COLUMN IF NOT EXISTS chaleurs_responsable_uid        TEXT,
+  ADD COLUMN IF NOT EXISTS chaleurs_responsable_profile_id UUID;

@@ -147,7 +147,8 @@ exports.sendChaleursNotifications = functions
         const animaux = await supabaseSelect("animaux",
             "sexe=eq.femelle" +
             "&statut=not.in.(sorti,decede)" +
-            "&select=id,nom,race,espece,uid_eleveur,intervalle_chaleurs_jours");
+            "&select=id,nom,race,espece,uid_eleveur,intervalle_chaleurs_jours," +
+            "chaleurs_responsable_uid,chaleurs_responsable_profile_id");
 
         if (!animaux.length) {
             console.log("sendChaleursNotifications: aucune femelle active.");
@@ -235,24 +236,12 @@ exports.sendChaleursNotifications = functions
                 body = `${em} ${nom} (${subtitle}) sera en chaleurs dans ${diff} jours.`;
             }
 
-            // Une tâche "chaleurs" est recréée chaque jour tant que c'est en
-            // retard (voir plus bas) — hériter l'attribution de la tâche de
-            // la veille pour ce même animal, sinon l'éleveur devrait
-            // ré-attribuer l'employé chaque jour.
-            let assigneA = null;
-            let assigneProfileId = null;
-            if (diff <= 0) {
-                try {
-                    const prevTasks = await supabaseSelect("taches_elevage",
-                        `uid_eleveur=eq.${animal.uid_eleveur}&animal_nom=eq.${encodeURIComponent(animal.nom || "")}` +
-                        `&titre=ilike.${encodeURIComponent("🌸%")}&assigne_a=not.is.null` +
-                        `&order=date.desc&limit=1`);
-                    if (Array.isArray(prevTasks) && prevTasks[0]) {
-                        assigneA = prevTasks[0].assigne_a || null;
-                        assigneProfileId = prevTasks[0].assigne_profile_id || null;
-                    }
-                } catch (_) {/* pas bloquant */}
-            }
+            // Suivi confié à un employé (fiche animale → onglet Chaleurs) :
+            // il reçoit les mêmes rappels que le propriétaire, tant que
+            // l'attribution est en place. La retirer (colonne remise à null)
+            // le coupe dès le run suivant.
+            const assigneA = animal.chaleurs_responsable_uid || null;
+            const assigneProfileId = animal.chaleurs_responsable_profile_id || null;
 
             // Send FCM push — au propriétaire, et à l'employé assigné si la
             // tâche a été déléguée.

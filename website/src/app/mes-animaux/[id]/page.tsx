@@ -38,6 +38,8 @@ interface Animal {
   cession_contrat_url?: string | null; cession_certificat_url?: string | null;
   cession_prix?: number | null; cession_notes?: string | null;
   intervalle_chaleurs_jours?: number | null;
+  chaleurs_responsable_uid?: string | null;
+  chaleurs_responsable_profile_id?: string | null;
 }
 
 interface HealthRecord { id: string; [key: string]: unknown; }
@@ -996,6 +998,83 @@ function DocumentsAnimalTab({ animalId }: { animalId: string }) {
 
 // ─── Suivi Repro Tab (composant séparé pour respecter les règles des hooks) ───
 
+// Ligne « confier le suivi des chaleurs à un employé » (propriétaire uniquement).
+function ChaleursResponsableRow({ ownerUid, responsableUid, onAssign }: {
+  ownerUid: string;
+  responsableUid: string | null;
+  onAssign: (uid: string | null, profileId: string | null) => Promise<void>;
+}) {
+  const [employes, setEmployes] = useState<{ uid: string; nom: string; profileId: string | null }[]>([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { data: rows } = await supabase.from('employes')
+        .select('uid_employe, employe_profile_id')
+        .eq('uid_eleveur', ownerUid).eq('actif', true);
+      const list: { uid: string; nom: string; profileId: string | null }[] = [];
+      for (const r of rows ?? []) {
+        const { data: p } = await supabase.from('user_profiles')
+          .select('firstname, lastname, nom').eq('uid', r.uid_employe).eq('is_main', true).maybeSingle();
+        const nom = (p?.nom as string | undefined)?.trim()
+          || `${p?.firstname ?? ''} ${p?.lastname ?? ''}`.trim() || 'Employé';
+        list.push({ uid: r.uid_employe as string, nom, profileId: (r.employe_profile_id as string | null) ?? null });
+      }
+      setEmployes(list);
+    })();
+  }, [ownerUid]);
+
+  if (employes.length === 0) return null;
+  const responsableNom = responsableUid
+    ? (employes.find(e => e.uid === responsableUid)?.nom ?? 'Employé')
+    : null;
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(v => !v)}
+        className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm border transition-colors ${
+          responsableNom
+            ? 'bg-[#EEF5EA] border-[#6E9E57] text-[#4A7A3A]'
+            : 'bg-white border-gray-200 text-gray-600 hover:border-[#6E9E57]'
+        }`}>
+        <span>{responsableNom ? '👤' : '➕'}</span>
+        <span className="flex-1 text-left font-medium">
+          {responsableNom
+            ? `Suivi des chaleurs confié à ${responsableNom}`
+            : 'Confier le suivi des chaleurs à un employé'}
+        </span>
+        <span className="text-gray-400">{open ? '▾' : '›'}</span>
+      </button>
+      {open && (
+        <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+          <p className="text-[11px] text-gray-400 px-3 pt-2 pb-1">
+            L&apos;employé reçoit les mêmes rappels que vous tant que l&apos;animal n&apos;est pas en chaleurs.
+          </p>
+          {employes.map(e => (
+            <button key={e.uid}
+              onClick={async () => { await onAssign(e.uid, e.profileId); setOpen(false); }}
+              className={`w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-gray-50 ${
+                responsableUid === e.uid ? 'bg-[#EEF5EA]' : ''
+              }`}>
+              <span className="w-7 h-7 rounded-full bg-[#EEF5EA] text-[#4A7A3A] text-xs font-bold flex items-center justify-center">
+                {(e.nom[0] ?? '?').toUpperCase()}
+              </span>
+              <span className="flex-1 font-medium text-gray-800">{e.nom}</span>
+              {responsableUid === e.uid && <span className="text-[#6E9E57]">✓</span>}
+            </button>
+          ))}
+          {responsableUid && (
+            <button onClick={async () => { await onAssign(null, null); setOpen(false); }}
+              className="w-full text-center px-3 py-2.5 text-sm font-medium text-red-500 hover:bg-red-50 border-t border-gray-100">
+              Retirer l&apos;attribution
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface SuiviReproTabProps {
   isMale: boolean;
   espece: string;
@@ -1016,9 +1095,13 @@ interface SuiviReproTabProps {
   intervalleCustom: number | null;
   onSaveIntervalleCustom: (val: number | null) => Promise<void>;
   readOnly?: boolean;
+  isOwner?: boolean;
+  ownerUid?: string;
+  responsableChaleursUid?: string | null;
+  onAssignChaleurs?: (uid: string | null, profileId: string | null) => Promise<void>;
 }
 
-function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIdent, chaleurs, saillies, gestations, reproAdd, setReproAdd, savingRepro, saveRepro, saveSaillie, updateRepro, deleteRepro, intervalleCustom, onSaveIntervalleCustom, readOnly = false }: SuiviReproTabProps) {
+function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIdent, chaleurs, saillies, gestations, reproAdd, setReproAdd, savingRepro, saveRepro, saveSaillie, updateRepro, deleteRepro, intervalleCustom, onSaveIntervalleCustom, readOnly = false, isOwner = false, ownerUid, responsableChaleursUid = null, onAssignChaleurs }: SuiviReproTabProps) {
   const subtabs = isMale
     ? [{ key: 'saillies', label: 'Saillies' }]
     : [{ key: 'chaleurs', label: 'Chaleurs' }, { key: 'saillies', label: 'Saillies' }, { key: 'gestations', label: 'Gestations' }];
@@ -1137,6 +1220,13 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
             </div>
           )}
           {(() => { const next = nextHeatDate(chaleurs, espece, intervalleCustom); return next ? <NextHeatBanner nextHeat={next} espece={espece} /> : null; })()}
+          {isOwner && ownerUid && onAssignChaleurs && (
+            <ChaleursResponsableRow
+              ownerUid={ownerUid}
+              responsableUid={responsableChaleursUid}
+              onAssign={onAssignChaleurs}
+            />
+          )}
           {reproAdd === 'chaleurs' && (
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <AddHealthForm saving={savingRepro} onCancel={() => setReproAdd(null)}
@@ -3395,6 +3485,27 @@ export default function AnimalFichePage() {
             setAnimal(prev => ({ ...prev, intervalle_chaleurs_jours: val }));
           }}
           readOnly={isEmployeOfOwner && !employePerms.includes('write_repro')}
+          isOwner={isOriginalBreeder}
+          ownerUid={animal.uid_eleveur ?? undefined}
+          responsableChaleursUid={animal.chaleurs_responsable_uid ?? null}
+          onAssignChaleurs={async (uid, profileId) => {
+            await supabase.from('animaux').update({
+              chaleurs_responsable_uid: uid,
+              chaleurs_responsable_profile_id: profileId,
+            }).eq('id', id ?? '');
+            setAnimal(prev => ({ ...prev, chaleurs_responsable_uid: uid, chaleurs_responsable_profile_id: profileId }));
+            if (uid) {
+              await supabase.from('notifications').insert({
+                uid,
+                type: 'tache',
+                title: 'Suivi des chaleurs confié',
+                body: `On vous a confié le suivi des chaleurs de ${animal.nom ?? 'un animal'}.`,
+                ...(profileId ? { profile_id: profileId } : {}),
+                data: { animalId: id },
+                read: false,
+              });
+            }
+          }}
         />
       )}
 

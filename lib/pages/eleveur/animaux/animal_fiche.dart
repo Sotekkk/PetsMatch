@@ -6983,6 +6983,13 @@ class _ChaleursTabState extends State<_ChaleursTab> {
   bool _loading = true;
   int? _intervalleCustom; // local copy, editable
 
+  String? _ownerUid;
+  String? _responsableUid;
+  String? _responsableNom;
+  List<Map<String, String>> _employes = []; // {uid, nom, profileId}
+
+  bool get _isOwner => _ownerUid != null && _ownerUid == User_Info.uid;
+
   @override
   void initState() {
     super.initState();
@@ -6997,9 +7004,125 @@ class _ChaleursTabState extends State<_ChaleursTab> {
           .select()
           .eq('animal_id', widget.animalId)
           .order('date', ascending: false);
+      // Propriétaire + responsable chaleurs délégué
+      final animal = await _supa.from('animaux')
+          .select('uid_eleveur, chaleurs_responsable_uid')
+          .eq('id', widget.animalId).maybeSingle();
+      _ownerUid = animal?['uid_eleveur'] as String?;
+      _responsableUid = animal?['chaleurs_responsable_uid'] as String?;
       if (mounted) setState(() { _data = List<Map<String, dynamic>>.from(rows); _loading = false; });
+      if (_isOwner) _loadEmployes();
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadEmployes() async {
+    try {
+      final pid = User_Info.activeProfileId;
+      var q = _supa.from('employes')
+          .select('uid_employe, employe_profile_id, eleveur_profile_id')
+          .eq('uid_eleveur', _ownerUid!).eq('actif', true);
+      if (pid.isNotEmpty) q = q.eq('eleveur_profile_id', pid);
+      final rows = await q;
+      final list = <Map<String, String>>[];
+      for (final r in rows as List) {
+        final uid = r['uid_employe'] as String?;
+        if (uid == null) continue;
+        final prof = await _supa.from('user_profiles')
+            .select('firstname, lastname, nom')
+            .eq('uid', uid).eq('is_main', true).maybeSingle();
+        final nom = ((prof?['nom'] as String?)?.trim().isNotEmpty == true)
+            ? prof!['nom'] as String
+            : '${prof?['firstname'] ?? ''} ${prof?['lastname'] ?? ''}'.trim();
+        list.add({
+          'uid': uid,
+          'nom': nom.isEmpty ? 'Employé' : nom,
+          'profileId': (r['employe_profile_id'] as String?) ?? '',
+        });
+      }
+      if (mounted) {
+        setState(() {
+          _employes = list;
+          _responsableNom = _responsableUid == null
+              ? null
+              : (list.firstWhere((e) => e['uid'] == _responsableUid,
+                  orElse: () => {'nom': 'Employé'})['nom']);
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _assignerResponsable() async {
+    if (_employes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Aucun employé actif', style: TextStyle(fontFamily: 'Galey'))));
+      return;
+    }
+    final choix = await showModalBottomSheet<Map<String, String>?>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(height: 10),
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 14, 20, 6),
+            child: Align(alignment: Alignment.centerLeft,
+              child: Text('Confier le suivi des chaleurs',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15))),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 0, 20, 10),
+            child: Align(alignment: Alignment.centerLeft,
+              child: Text('L\'employé choisi reçoit les mêmes rappels que vous tant que l\'animal n\'est pas en chaleurs.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B)))),
+          ),
+          ..._employes.map((e) => ListTile(
+            leading: const Icon(Icons.person_outline, color: Color(0xFF6E9E57)),
+            title: Text(e['nom']!, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+            trailing: _responsableUid == e['uid']
+                ? const Icon(Icons.check, color: Color(0xFF6E9E57)) : null,
+            onTap: () => Navigator.pop(context, e),
+          )),
+          if (_responsableUid != null)
+            ListTile(
+              leading: const Icon(Icons.person_off_outlined, color: Colors.red),
+              title: const Text('Retirer l\'attribution',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.red)),
+              onTap: () => Navigator.pop(context, <String, String>{}),
+            ),
+          const SizedBox(height: 12),
+        ]),
+      ),
+    );
+    if (choix == null) return;
+    final newUid = choix['uid'];
+    await _supa.from('animaux').update({
+      'chaleurs_responsable_uid': newUid,
+      'chaleurs_responsable_profile_id': (choix['profileId'] ?? '').isEmpty ? null : choix['profileId'],
+    }).eq('id', widget.animalId);
+    if (newUid != null) {
+      try {
+        await _supa.from('notifications').insert({
+          'uid': newUid,
+          'type': 'tache',
+          'title': 'Suivi des chaleurs confié',
+          'body': 'On vous a confié le suivi des chaleurs d\'un animal.',
+          if ((choix['profileId'] ?? '').isNotEmpty) 'profile_id': choix['profileId'],
+          'data': {'animalId': widget.animalId},
+          'read': false,
+        });
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() {
+        _responsableUid = newUid;
+        _responsableNom = newUid == null ? null : choix['nom'];
+      });
     }
   }
 
@@ -7083,6 +7206,35 @@ class _ChaleursTabState extends State<_ChaleursTab> {
         children: [
           if (nextHeat != null)
             _NextHeatBanner(nextHeat: nextHeat, espece: widget.espece),
+          // Suivi confié à un employé (propriétaire uniquement)
+          if (_isOwner)
+            GestureDetector(
+              onTap: _assignerResponsable,
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _responsableNom != null ? const Color(0xFFEEF5EA) : Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _responsableNom != null
+                      ? const Color(0xFF6E9E57) : Colors.grey.shade200),
+                ),
+                child: Row(children: [
+                  Icon(_responsableNom != null ? Icons.person : Icons.person_add_alt_1_outlined,
+                      size: 16,
+                      color: _responsableNom != null ? const Color(0xFF4A7A3A) : Colors.grey.shade500),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    _responsableNom != null
+                        ? 'Suivi des chaleurs confié à $_responsableNom'
+                        : 'Confier le suivi des chaleurs à un employé',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                        color: _responsableNom != null ? const Color(0xFF4A7A3A) : Colors.grey.shade600),
+                  )),
+                  Icon(Icons.chevron_right, size: 16, color: Colors.grey.shade400),
+                ]),
+              ),
+            ),
           // Intervalle row
           GestureDetector(
             onTap: widget.readOnly ? null : _editIntervalle,
