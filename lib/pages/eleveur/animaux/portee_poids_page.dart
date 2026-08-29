@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -281,6 +282,7 @@ class _BebePoidsSheetState extends State<_BebePoidsSheet> {
   final _supa = Supabase.instance.client;
 
   final _valeur = TextEditingController();
+  final _dateCtrl = TextEditingController();
   DateTime _date = DateTime.now();
   String _unite = 'g';
   bool _saving = false;
@@ -290,11 +292,22 @@ class _BebePoidsSheetState extends State<_BebePoidsSheet> {
   @override
   void initState() {
     super.initState();
+    _dateCtrl.text = DateFormat('dd/MM/yyyy').format(_date);
     _load();
   }
 
   @override
-  void dispose() { _valeur.dispose(); super.dispose(); }
+  void dispose() { _valeur.dispose(); _dateCtrl.dispose(); super.dispose(); }
+
+  // Parse une date "jj/mm/aaaa" saisie à la main.
+  DateTime? _parseFrDate(String s) {
+    final m = RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{4})$').firstMatch(s.trim());
+    if (m == null) return null;
+    final d = int.parse(m.group(1)!), mo = int.parse(m.group(2)!), y = int.parse(m.group(3)!);
+    final dt = DateTime(y, mo, d);
+    if (dt.day != d || dt.month != mo) return null;
+    return dt;
+  }
 
   Future<void> _load() async {
     try {
@@ -338,6 +351,15 @@ class _BebePoidsSheetState extends State<_BebePoidsSheet> {
   Future<void> _add() async {
     final v = double.tryParse(_valeur.text.replaceAll(',', '.'));
     if (v == null) return;
+    // Prend la date tapée à la main si elle est valide, sinon celle sélectionnée.
+    final typed = _parseFrDate(_dateCtrl.text);
+    if (typed != null) {
+      _date = typed;
+    } else if (_dateCtrl.text.trim().isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Date invalide — format attendu : jj/mm/aaaa')));
+      return;
+    }
     final kg = _unite == 'g' ? v / 1000 : v;
     setState(() => _saving = true);
     try {
@@ -398,30 +420,46 @@ class _BebePoidsSheetState extends State<_BebePoidsSheet> {
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
             child: Column(children: [
-              GestureDetector(
-                onTap: () async {
-                  final p = await showDatePicker(
-                    context: context, initialDate: _date,
-                    firstDate: DateTime(2015), lastDate: DateTime(2100),
-                    builder: (ctx, child) => Theme(
-                      data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: _green)),
-                      child: child!),
-                  );
-                  if (p != null) setState(() => _date = p);
+              TextField(
+                controller: _dateCtrl,
+                keyboardType: TextInputType.datetime,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9/]')),
+                  LengthLimitingTextInputFormatter(10),
+                ],
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
+                onChanged: (s) {
+                  final d = _parseFrDate(s);
+                  if (d != null) _date = d;
                 },
-                child: InputDecorator(
-                  decoration: InputDecoration(
-                    labelText: 'Date de la pesée',
-                    labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                    isDense: true,
-                    suffixIcon: const Icon(Icons.calendar_today_outlined, size: 16, color: _green),
+                decoration: InputDecoration(
+                  labelText: 'Date de la pesée',
+                  hintText: 'jj/mm/aaaa',
+                  labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                  hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFBDBDBD)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: _green)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  isDense: true,
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.calendar_today_outlined, size: 18, color: _green),
+                    onPressed: () async {
+                      final p = await showDatePicker(
+                        context: context, initialDate: _date,
+                        firstDate: DateTime(2015), lastDate: DateTime(2100),
+                        builder: (ctx, child) => Theme(
+                          data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: _green)),
+                          child: child!),
+                      );
+                      if (p != null) {
+                        setState(() => _date = p);
+                        _dateCtrl.text = DateFormat('dd/MM/yyyy').format(p);
+                      }
+                    },
                   ),
-                  child: Text(df.format(_date),
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E))),
                 ),
               ),
               const SizedBox(height: 10),
