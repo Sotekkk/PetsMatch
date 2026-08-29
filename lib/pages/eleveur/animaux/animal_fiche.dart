@@ -5693,11 +5693,24 @@ class _ProprietaireVetTabState extends State<_ProprietaireVetTab> {
 
 // ─── Onglet Poids ─────────────────────────────────────────────────────────────
 
-String _fmtPoids(double v) {
-  if (v < 1) return v.toStringAsFixed(3);
-  if (v < 10) return v.toStringAsFixed(1);
-  return v.toStringAsFixed(0);
+// Libellé lisible : sous 1 kg on affiche en grammes (utile pour les bébés
+// de petites espèces), au-dessus en kg. Le stockage reste toujours en kg.
+String _poidsLabel(double kg) {
+  if (kg < 1) return '${(kg * 1000).round()} g';
+  if (kg < 10) {
+    final s = kg.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+    return '${s.replaceAll('.', ',')} kg';
+  }
+  return '${kg.toStringAsFixed(1).replaceAll('.', ',')} kg';
 }
+
+// Version compacte pour les axes de graphe (pas d'espace, k au lieu de kg).
+String _poidsAxis(double kg) {
+  if (kg < 1) return '${(kg * 1000).round()}g';
+  if (kg < 10) return '${kg.toStringAsFixed(1)}k';
+  return '${kg.toStringAsFixed(0)}k';
+}
+
 
 class _PoidsTab extends StatefulWidget {
   final String animalId;
@@ -5787,7 +5800,7 @@ class _PoidsTabState extends State<_PoidsTab> {
                   Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                     Text(date, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
                     Row(children: [
-                      Text('${_fmtPoids(val)} kg',
+                      Text(_poidsLabel(val),
                           style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                               fontSize: 16, color: Color(0xFF1F2A2E))),
                       const SizedBox(width: 8),
@@ -5957,7 +5970,7 @@ class _ChartPainter extends CustomPainter {
       final yVal = baseY + g * rangeY / 4;
       final yPx = _t + h - g * h / 4;
       canvas.drawLine(Offset(_l, yPx), Offset(size.width - _r, yPx), gridPaint);
-      final lbl = _fmtPoids(yVal < 0 ? 0 : yVal);
+      final lbl = _poidsAxis(yVal < 0 ? 0 : yVal);
       final tp = TextPainter(
         text: TextSpan(text: lbl, style: const TextStyle(fontFamily: 'Galey', fontSize: 9, color: Color(0xFFBBBBBB))),
         textDirection: ui.TextDirection.ltr,
@@ -6004,7 +6017,7 @@ class _ChartPainter extends CustomPainter {
       final i = hoverIdx!;
       final p = pt(i);
       const pad = 7.0;
-      final line1 = '${_fmtPoids(vals[i])} kg';
+      final line1 = _poidsLabel(vals[i]);
       final line2 = xLabelFn(i);
       final tp1 = TextPainter(text: TextSpan(text: line1, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700)), textDirection: ui.TextDirection.ltr)..layout();
       final tp2 = TextPainter(text: TextSpan(text: line2, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xCCFFFFFF))), textDirection: ui.TextDirection.ltr)..layout();
@@ -6648,16 +6661,57 @@ class _AddPoidsDialogState extends State<_AddPoidsDialog> {
   final _valeur = TextEditingController();
   final _notes  = TextEditingController();
   DateTime? _date;
+  String _unite = 'kg'; // 'g' ou 'kg' — stockage toujours en kg
 
   @override
   void initState() {
     super.initState();
     final e = widget.existing;
     if (e != null) {
-      _date       = e['date'] != null ? DateTime.tryParse(e['date'] as String) : null;
-      _valeur.text = e['valeur']?.toString() ?? '';
-      _notes.text  = (e['notes'] as String?) ?? '';
+      _date = e['date'] != null ? DateTime.tryParse(e['date'] as String) : null;
+      final kg = double.tryParse(e['valeur']?.toString().replaceAll(',', '.') ?? '');
+      if (kg != null) {
+        if (kg < 1) { _unite = 'g'; _valeur.text = _fmtInput(kg * 1000); }
+        else        { _unite = 'kg'; _valeur.text = _fmtInput(kg); }
+      }
+      _notes.text = (e['notes'] as String?) ?? '';
+    } else {
+      _prefillUnite();
     }
+  }
+
+  // Nouvelle pesée : on reprend l'unité de la dernière pesée de l'animal
+  // (un bébé pesé en g reste en g par défaut).
+  Future<void> _prefillUnite() async {
+    try {
+      final last = await Supabase.instance.client
+          .from('poids').select('valeur').eq('animal_id', widget.animalId)
+          .order('date', ascending: false).limit(1).maybeSingle();
+      final kg = double.tryParse(last?['valeur']?.toString() ?? '');
+      if (kg != null && kg < 1 && mounted) setState(() => _unite = 'g');
+    } catch (_) {}
+  }
+
+  String _fmtInput(double v) {
+    if (v == v.roundToDouble()) return v.toStringAsFixed(0);
+    return v.toStringAsFixed(2)
+        .replaceAll(RegExp(r'0+$'), '')
+        .replaceAll(RegExp(r'\.$'), '');
+  }
+
+  void _switchUnite(String u) {
+    if (u == _unite) return;
+    final v = double.tryParse(_valeur.text.replaceAll(',', '.'));
+    setState(() {
+      _unite = u;
+      if (v != null) _valeur.text = _fmtInput(u == 'g' ? v * 1000 : v / 1000);
+    });
+  }
+
+  double? get _valeurKg {
+    final v = double.tryParse(_valeur.text.replaceAll(',', '.'));
+    if (v == null) return null;
+    return _unite == 'g' ? v / 1000 : v;
   }
 
   @override
@@ -6668,13 +6722,35 @@ class _AddPoidsDialogState extends State<_AddPoidsDialog> {
     title: widget.existing != null ? 'Modifier la pesée' : 'Ajouter une pesée',
     fields: [
       _DD('Date *', _date, (d) => setState(() => _date = d)),
-      _DF('Poids (kg) *', _valeur, inputType: TextInputType.numberWithOptions(decimal: true)),
+      _DCustom(Row(children: [
+        Expanded(
+          child: TextField(
+            controller: _valeur,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+            decoration: InputDecoration(
+              labelText: 'Poids *',
+              labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFF6E9E57))),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              isDense: true,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        _UniteSeg(value: _unite, onChanged: _switchUnite),
+      ])),
       _DF('Notes', _notes),
     ],
     onSave: () async {
-      if (_valeur.text.isEmpty || _date == null) return false;
+      final kg = _valeurKg;
+      if (kg == null || _date == null) return false;
       final payload = {
-        'valeur': double.tryParse(_valeur.text.replaceAll(',', '.')) ?? 0,
+        'valeur': kg,
         'date':   _date!.toIso8601String(),
         'notes':  _notes.text.trim(),
       };
@@ -6690,6 +6766,41 @@ class _AddPoidsDialogState extends State<_AddPoidsDialog> {
       return true;
     },
   );
+}
+
+class _UniteSeg extends StatelessWidget {
+  final String value;
+  final ValueChanged<String> onChanged;
+  const _UniteSeg({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget seg(String u) {
+      final active = value == u;
+      return GestureDetector(
+        onTap: () => onChanged(u),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          color: active ? const Color(0xFF6E9E57) : Colors.transparent,
+          child: Text(u, style: TextStyle(
+              fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700,
+              color: active ? Colors.white : const Color(0xFF6F767B))),
+        ),
+      );
+    }
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE4E7E2)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        seg('g'),
+        Container(width: 1, height: 34, color: const Color(0xFFE4E7E2)),
+        seg('kg'),
+      ]),
+    );
+  }
 }
 
 // ─── Helpers calcul chaleurs ──────────────────────────────────────────────────

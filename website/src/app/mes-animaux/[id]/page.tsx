@@ -144,10 +144,18 @@ function NextHeatBanner({ nextHeat, espece }: { nextHeat: Date; espece: string }
   );
 }
 
+// Axe de graphe : compact, g sous 1 kg.
 function fmtPoids(v: number): string {
-  if (v < 1) return v.toFixed(3);
+  if (v < 1) return `${Math.round(v * 1000)}g`;
   if (v < 10) return v.toFixed(1);
   return v.toFixed(0);
+}
+// Libellé complet : grammes sous 1 kg (bébés de petites espèces), kg au-delà.
+// Le stockage reste toujours en kg.
+function poidsLabel(kg: number): string {
+  if (kg < 1) return `${Math.round(kg * 1000)} g`;
+  if (kg < 10) return `${kg.toFixed(2).replace(/0+$/, '').replace(/\.$/, '').replace('.', ',')} kg`;
+  return `${kg.toFixed(1).replace('.', ',')} kg`;
 }
 function fmtDate(d?: string | null) {
   if (!d) return '';
@@ -773,6 +781,82 @@ function GestationForm({ espece, initial, saving, onSave, onCancel }: {
   );
 }
 
+// ─── Formulaire Pesée (choix g / kg) ─────────────────────────────────────────
+
+function fmtWeightInput(v: number): string {
+  if (Number.isInteger(v)) return String(v);
+  return v.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function WeightForm({ initial, lastKg, saving, onSave, onCancel }: {
+  initial?: { valeur?: string; date?: string; notes?: string };
+  lastKg?: number | null;
+  saving: boolean;
+  onSave: (data: Record<string, string>) => void | Promise<void>;
+  onCancel: () => void;
+}) {
+  const initKg = initial?.valeur ? parseFloat(String(initial.valeur).replace(',', '.')) : NaN;
+  const initUnite: 'g' | 'kg' = Number.isFinite(initKg)
+    ? (initKg < 1 ? 'g' : 'kg')
+    : (lastKg != null && lastKg < 1 ? 'g' : 'kg');
+  const [unite, setUnite] = useState<'g' | 'kg'>(initUnite);
+  const [value, setValue] = useState(
+    Number.isFinite(initKg) ? fmtWeightInput(initUnite === 'g' ? initKg * 1000 : initKg) : '');
+  const [date, setDate] = useState(initial?.date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10));
+  const [notes, setNotes] = useState(initial?.notes ?? '');
+  const cls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30';
+
+  function switchUnite(u: 'g' | 'kg') {
+    if (u === unite) return;
+    const v = parseFloat(value.replace(',', '.'));
+    setUnite(u);
+    if (Number.isFinite(v)) setValue(fmtWeightInput(u === 'g' ? v * 1000 : v / 1000));
+  }
+
+  function submit() {
+    const v = parseFloat(value.replace(',', '.'));
+    if (!Number.isFinite(v) || !date) return;
+    const kg = unite === 'g' ? v / 1000 : v;
+    onSave({ valeur: String(kg), date, notes: notes.trim() });
+  }
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Poids <span className="text-red-400 ml-0.5">*</span></label>
+        <div className="flex gap-2">
+          <input type="number" step="any" inputMode="decimal" value={value}
+            onChange={e => setValue(e.target.value)} className={cls} />
+          <div className="flex rounded-xl border border-gray-200 overflow-hidden shrink-0">
+            {(['g', 'kg'] as const).map(u => (
+              <button key={u} type="button" onClick={() => switchUnite(u)}
+                className={`px-3.5 text-sm font-bold ${unite === u ? 'bg-[#6E9E57] text-white' : 'bg-white text-gray-500'}`}>
+                {u}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div>
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Date</label>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} className={cls} />
+      </div>
+      <div>
+        <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">Notes</label>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={cls} />
+      </div>
+      <div className="flex gap-2 pt-1">
+        <button type="button" onClick={onCancel}
+          className="flex-1 py-2 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">Annuler</button>
+        <button type="button" onClick={submit} disabled={saving || !value || !date}
+          className="flex-1 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold hover:bg-[#094F5D] disabled:opacity-50">
+          {saving ? '…' : 'Enregistrer'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Documents Animal Tab ─────────────────────────────────────────────────────
 
 function DocumentsAnimalTab({ animalId }: { animalId: string }) {
@@ -1282,7 +1366,7 @@ function WeightChartSVG({ data, isJuvenile, dateNaissance }: {
           </text>
         ))}
         {tip && (() => {
-          const l1 = `${fmtPoids(tip.val)} kg`, l2 = xLabel(tip.i);
+          const l1 = poidsLabel(tip.val), l2 = xLabel(tip.i);
           const tw = Math.max(l1.length, l2.length) * 6.5 + 14;
           const th2 = 36;
           let tx = tip.x - tw / 2, ty = tip.y - th2 - 10;
@@ -3185,9 +3269,12 @@ export default function AnimalFichePage() {
           <HealthSection title="Courbe de poids" icon="⚖️" color="#5F9EAA" count={health.poids.length}
             onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='poids'?null:'poids') : undefined}
             addFormOpen={addOpen==='poids'}
-            addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
-              onSave={d=>saveHealthRecord('poids',d)}
-              fields={[{key:'valeur',label:'Poids (kg)',required:true,type:'number'},{key:'date',label:'Date',type:'date'},{key:'notes',label:'Notes'}]}/>}>
+            addForm={<WeightForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
+              lastKg={(() => {
+                const s = [...health.poids].sort((a,b)=>String(a.date??'').localeCompare(String(b.date??'')));
+                return s.length ? (parseFloat(String(s[s.length-1].valeur??'0'))||null) : null;
+              })()}
+              onSave={d=>saveHealthRecord('poids',d)}/>}>
             {(() => {
               const sorted = [...health.poids].sort((a,b) => String(a.date??'').localeCompare(String(b.date??'')));
               const maxPoids = Math.max(...sorted.map(r => parseFloat(String(r.valeur??'0'))||0), 0.1);
@@ -3204,14 +3291,13 @@ export default function AnimalFichePage() {
                     return (
                       <div key={r.id} className="px-4 py-3 border-b border-gray-50 last:border-0">
                         {isEditing ? (
-                          <AddHealthForm saving={savingHealth} onCancel={()=>setEditPoids(null)}
+                          <WeightForm saving={savingHealth} onCancel={()=>setEditPoids(null)}
                             onSave={d=>updateHealthRecord('poids',r.id,d)}
-                            initial={{ valeur: String(r.valeur??''), date: String(r.date??''), notes: String(r.notes??'') }}
-                            fields={[{key:'valeur',label:'Poids (kg)',required:true,type:'number'},{key:'date',label:'Date',type:'date'},{key:'notes',label:'Notes'}]}/>
+                            initial={{ valeur: String(r.valeur??''), date: String(r.date??''), notes: String(r.notes??'') }}/>
                         ) : (
                           <>
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="font-semibold text-sm text-[#5F9EAA]">{fmtPoids(val)} kg</span>
+                              <span className="font-semibold text-sm text-[#5F9EAA]">{poidsLabel(val)}</span>
                               <span className="text-xs text-gray-400 flex-1">{fmtDate(String(r.date??''))}</span>
                               <button onClick={()=>setEditPoids(r.id)} className="text-xs text-[#0C5C6C] hover:text-[#094F5D] font-medium px-1">✏️</button>
                               <button onClick={()=>deleteHealthRecord('poids',r.id)} className="text-xs text-red-400 hover:text-red-600">×</button>
