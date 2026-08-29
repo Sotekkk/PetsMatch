@@ -536,6 +536,11 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
   String? _employeProfileId;
   final Set<String> _perms = {};
 
+  // « Planning pension » n'a de sens que pour un employeur pension.
+  List<(String, IconData, String, String)> get _visiblePerms => _kPerms
+      .where((p) => p.$1 != 'read_planning_pension' || User_Info.catPro == 'pension')
+      .toList();
+
   @override
   void initState() {
     super.initState();
@@ -604,7 +609,38 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
         const SizedBox(height: 4),
         const Text('Choisissez ce que cet employé peut modifier.',
             style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
-        const SizedBox(height: 12),
+        if (!_loading && _eleveurProfileId != null && _employeProfileId != null) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () {
+                final allKeys = _visiblePerms.map((p) => p.$1).toSet();
+                final allOn = _perms.containsAll(allKeys);
+                setState(() {
+                  if (allOn) {
+                    _perms.removeAll(allKeys);
+                  } else {
+                    _perms.addAll(allKeys);
+                  }
+                });
+              },
+              icon: Icon(
+                _perms.containsAll(_visiblePerms.map((p) => p.$1).toSet())
+                    ? Icons.remove_done_rounded
+                    : Icons.done_all_rounded,
+                size: 18, color: widget.teal,
+              ),
+              label: Text(
+                _perms.containsAll(_visiblePerms.map((p) => p.$1).toSet())
+                    ? 'Tout retirer'
+                    : 'Tout autoriser',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: widget.teal),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 4),
         if (_loading)
           const Padding(padding: EdgeInsets.symmetric(vertical: 24), child: CircularProgressIndicator())
         else if (_eleveurProfileId == null || _employeProfileId == null)
@@ -612,15 +648,15 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
               child: Text('Profils non trouvés. Mettez à jour la fiche employé.',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.red)))
         else ...[
-          for (int i = 0; i < _kPerms.length; i++) ...[
+          for (int i = 0; i < _visiblePerms.length; i++) ...[
             if (i > 0) const Divider(height: 1, indent: 56),
             _PermSwitch(
-              icon: _kPerms[i].$2,
-              title: _kPerms[i].$3,
-              subtitle: _kPerms[i].$4,
-              value: _perms.contains(_kPerms[i].$1),
+              icon: _visiblePerms[i].$2,
+              title: _visiblePerms[i].$3,
+              subtitle: _visiblePerms[i].$4,
+              value: _perms.contains(_visiblePerms[i].$1),
               teal: widget.teal,
-              onChanged: (v) => setState(() => v ? _perms.add(_kPerms[i].$1) : _perms.remove(_kPerms[i].$1)),
+              onChanged: (v) => setState(() => v ? _perms.add(_visiblePerms[i].$1) : _perms.remove(_visiblePerms[i].$1)),
             ),
           ],
           const SizedBox(height: 20),

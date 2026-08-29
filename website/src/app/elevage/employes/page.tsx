@@ -119,8 +119,23 @@ export default function EmployesPage() {
   const [filterEmployeeNom, setFilterEmployeeNom] = useState<string>('');
   const [showAdd, setShowAdd] = useState(false);
   const [tacheModal, setTacheModal] = useState<{ mode: 'create' } | { mode: 'edit'; tache: TacheManuelle } | null>(null);
+  const [isPension, setIsPension] = useState(false);
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
+
+  // « Planning pension » n'est proposé que si l'employeur est une pension.
+  useEffect(() => {
+    if (!user || !profileLoaded) return;
+    (async () => {
+      const q = profileId
+        ? supabase.from('user_profiles').select('cat_pro').eq('id', profileId).maybeSingle()
+        : supabase.from('user_profiles').select('cat_pro').eq('uid', user.uid).eq('is_main', true).maybeSingle();
+      const { data } = await q;
+      setIsPension((data as { cat_pro?: string } | null)?.cat_pro === 'pension');
+    })();
+  }, [user, profileId, profileLoaded]);
+
+  const permsList = PERMS_LIST.filter(p => p.key !== 'read_planning_pension' || isPension);
 
   const load = useCallback(async () => {
     if (!user || !profileLoaded) return;
@@ -646,6 +661,20 @@ export default function EmployesPage() {
               <button onClick={() => setPermsModal(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
             </div>
 
+            {!permsLoading && permsModal.employeProfileId && permsModal.eleveurProfileId && (
+              <div className="px-5 pt-3 -mb-1 flex justify-end">
+                <button
+                  onClick={() => {
+                    const keys = permsList.map(p => p.key);
+                    const allOn = keys.every(k => permsData.has(k));
+                    setPermsData(allOn ? new Set() : new Set(keys));
+                  }}
+                  className="text-xs font-semibold text-teal-600 hover:text-teal-700">
+                  {permsList.every(p => permsData.has(p.key)) ? '✕ Tout retirer' : '✓ Tout autoriser'}
+                </button>
+              </div>
+            )}
+
             <div className="p-5">
               {permsLoading ? (
                 <div className="flex justify-center py-8">
@@ -657,7 +686,7 @@ export default function EmployesPage() {
                 </p>
               ) : (
                 <div className="space-y-0 divide-y divide-gray-50">
-                  {PERMS_LIST.map(({ key, label, desc }) => (
+                  {permsList.map(({ key, label, desc }) => (
                     <div key={key} className="flex items-center gap-3 py-3.5">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-gray-800">{label}</p>
