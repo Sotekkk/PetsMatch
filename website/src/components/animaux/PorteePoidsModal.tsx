@@ -5,9 +5,9 @@ import { supabase } from '@/lib/supabase';
 
 interface AnimalLite {
   id: string;
-  nom?: string;
-  sexe?: string;
-  date_naissance?: string;
+  nom?: string | null;
+  sexe?: string | null;
+  date_naissance?: string | null;
 }
 
 interface Pesee { id: string; animal_id: string; date: string | null; valeur: string | number | null; }
@@ -100,9 +100,10 @@ function MultiWeightChart({ series, colors }: {
 
 // ── Panneau pesées d'un bébé ──────────────────────────────────────────────────
 
-function BebePanel({ animal, pesees, onChanged }: {
+function BebePanel({ animal, pesees, canWrite, onChanged }: {
   animal: AnimalLite;
   pesees: Pesee[];
+  canWrite: boolean;
   onChanged: () => void;
 }) {
   const sorted = [...pesees].sort((a, b) => String(b.date ?? '').localeCompare(String(a.date ?? '')));
@@ -143,34 +144,41 @@ function BebePanel({ animal, pesees, onChanged }: {
 
   return (
     <div className="bg-gray-50 rounded-xl p-3 mt-1.5">
-      <div className="flex flex-wrap items-end gap-2">
-        <div>
-          <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-0.5">Date</label>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} className={iCls} />
-        </div>
-        <div>
-          <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-0.5">Poids</label>
-          <div className="flex">
-            <input type="number" step="any" inputMode="decimal" value={value}
-              onChange={e => setValue(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') add(); }}
-              className={`${iCls} w-20 rounded-r-none`} />
-            <div className="flex rounded-r-lg border border-l-0 border-gray-200 overflow-hidden">
-              {(['g', 'kg'] as const).map(u => (
-                <button key={u} type="button" onClick={() => switchUnite(u)}
-                  className={`px-2 text-xs font-bold ${unite === u ? 'bg-[#6E9E57] text-white' : 'bg-white text-gray-400'}`}>
-                  {u}
-                </button>
-              ))}
+      {canWrite && (
+        <>
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-0.5">Date</label>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} className={iCls} />
             </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-400 uppercase mb-0.5">Poids</label>
+              <div className="flex">
+                <input type="number" step="any" inputMode="decimal" value={value}
+                  onChange={e => setValue(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') add(); }}
+                  className={`${iCls} w-20 rounded-r-none`} />
+                <div className="flex rounded-r-lg border border-l-0 border-gray-200 overflow-hidden">
+                  {(['g', 'kg'] as const).map(u => (
+                    <button key={u} type="button" onClick={() => switchUnite(u)}
+                      className={`px-2 text-xs font-bold ${unite === u ? 'bg-[#6E9E57] text-white' : 'bg-white text-gray-400'}`}>
+                      {u}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <button type="button" onClick={add} disabled={busy || !value}
+              className="h-[34px] px-3 rounded-lg bg-[#0C5C6C] text-white text-sm font-semibold disabled:opacity-50">
+              {busy ? '…' : '+ Ajouter'}
+            </button>
           </div>
-        </div>
-        <button type="button" onClick={add} disabled={busy || !value}
-          className="h-[34px] px-3 rounded-lg bg-[#0C5C6C] text-white text-sm font-semibold disabled:opacity-50">
-          {busy ? '…' : '+ Ajouter'}
-        </button>
-      </div>
-      <p className="text-[10px] text-gray-400 mt-1">Ajoutez plusieurs pesées d&apos;affilée — le panneau reste ouvert.</p>
+          <p className="text-[10px] text-gray-400 mt-1">Ajoutez plusieurs pesées d&apos;affilée — le panneau reste ouvert.</p>
+        </>
+      )}
+      {!canWrite && sorted.length === 0 && (
+        <p className="text-[11px] text-gray-400">Aucune pesée.</p>
+      )}
 
       {sorted.length > 0 && (
         <div className="mt-2 divide-y divide-gray-100 border-t border-gray-100">
@@ -180,7 +188,9 @@ function BebePanel({ animal, pesees, onChanged }: {
               <span className="text-sm font-bold text-[#1F2A2E]">
                 {poidsLabel(parseFloat(String(p.valeur ?? '0')) || 0)}
               </span>
-              <button onClick={() => del(p.id)} className="text-red-400 hover:text-red-600 text-sm px-1">×</button>
+              {canWrite && (
+                <button onClick={() => del(p.id)} className="text-red-400 hover:text-red-600 text-sm px-1">×</button>
+              )}
             </div>
           ))}
         </div>
@@ -191,9 +201,10 @@ function BebePanel({ animal, pesees, onChanged }: {
 
 // ── Modal principale ──────────────────────────────────────────────────────────
 
-export default function PorteePoidsModal({ animals, dateNaissance, onClose }: {
+export default function PorteePoidsModal({ animals, dateNaissance, canWrite = true, onClose }: {
   animals: AnimalLite[];
   dateNaissance?: string | null;
+  canWrite?: boolean;
   onClose: () => void;
 }) {
   const [pesees, setPesees] = useState<Pesee[]>([]);
@@ -229,7 +240,8 @@ export default function PorteePoidsModal({ animals, dateNaissance, onClose }: {
     for (const a of animals) {
       const docs = (byAnimal[a.id] ?? []).filter(d => d.date && d.valeur != null);
       if (docs.length === 0) continue;
-      const birth = new Date(dateNaissance ?? a.date_naissance ?? docs[0].date ?? Date.now());
+      // docs[0].date est garanti non-null par le filtre ci-dessus.
+      const birth = new Date(dateNaissance ?? a.date_naissance ?? (docs[0].date as string));
       const pts = docs.map(d => ({
         x: (new Date(d.date as string).getTime() - birth.getTime()) / 86400000,
         y: parseFloat(String(d.valeur)) || 0,
@@ -247,7 +259,9 @@ export default function PorteePoidsModal({ animals, dateNaissance, onClose }: {
             <div className="w-10 h-10 rounded-xl bg-[#0C5C6C12] flex items-center justify-center text-xl">📈</div>
             <div className="flex-1">
               <p className="font-bold text-[#1F2A2E] text-base" style={{ fontFamily: 'Galey, sans-serif' }}>Courbes de poids — Portée</p>
-              <p className="text-xs text-[#6E9E57]">Touchez un bébé pour saisir / corriger ses pesées</p>
+              <p className="text-xs text-[#6E9E57]">
+                {canWrite ? 'Touchez un bébé pour saisir / corriger ses pesées' : 'Touchez un bébé pour voir ses pesées'}
+              </p>
             </div>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
           </div>
@@ -295,10 +309,10 @@ export default function PorteePoidsModal({ animals, dateNaissance, onClose }: {
                             {poidsLabel(parseFloat(String(last.valeur ?? '0')) || 0)}
                           </span>
                         )}
-                        <span className="text-gray-300 text-sm shrink-0">{isOpen ? '▾' : '＋'}</span>
+                        <span className="text-gray-300 text-sm shrink-0">{isOpen ? '▾' : (canWrite ? '＋' : '›')}</span>
                       </button>
                       {isOpen && (
-                        <BebePanel animal={a} pesees={docs} onChanged={load} />
+                        <BebePanel animal={a} pesees={docs} canWrite={canWrite} onChanged={load} />
                       )}
                     </div>
                   );

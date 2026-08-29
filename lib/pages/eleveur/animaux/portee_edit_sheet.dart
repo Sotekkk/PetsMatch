@@ -5,16 +5,20 @@ import 'package:PetsMatch/main.dart' show User_Info;
 
 class PorteeEditSheet extends StatefulWidget {
   final List<Map<String, dynamic>> animals;
+  /// uid de l'élevage propriétaire quand ce n'est pas l'utilisateur courant
+  /// (ex : employé qui édite la portée d'un employeur). null = User_Info.uid.
+  final String? eleveurUidOverride;
 
-  const PorteeEditSheet({super.key, required this.animals});
+  const PorteeEditSheet({super.key, required this.animals, this.eleveurUidOverride});
 
   /// Ouvre le bottom sheet et retourne true si la portée a été mise à jour.
-  static Future<bool> show(BuildContext context, List<Map<String, dynamic>> animals) async {
+  static Future<bool> show(BuildContext context, List<Map<String, dynamic>> animals,
+      {String? eleveurUidOverride}) async {
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => PorteeEditSheet(animals: animals),
+      builder: (_) => PorteeEditSheet(animals: animals, eleveurUidOverride: eleveurUidOverride),
     );
     return result ?? false;
   }
@@ -78,12 +82,15 @@ class _PorteeEditSheetState extends State<PorteeEditSheet> {
     setState(() => _loadingExistants = true);
     try {
       final supa = Supabase.instance.client;
+      final override = widget.eleveurUidOverride;
       final pid = User_Info.activeProfileId;
       var q = supa.from('animaux')
           .select('id, nom, sexe, espece, race, identification, date_naissance, photo_url')
-          .eq('uid_eleveur', User_Info.uid)
+          .eq('uid_eleveur', override ?? User_Info.uid)
           .or('statut.is.null,statut.eq.present');
-      if (pid.isNotEmpty) q = q.eq('profile_id', pid);
+      // Le profil actif de l'employé n'est pas celui de l'employeur : on ne
+      // filtre par profile_id que pour l'utilisateur lui-même.
+      if (override == null && pid.isNotEmpty) q = q.eq('profile_id', pid);
       final rows = await q;
       if (mounted) setState(() {
         _animauxExistants = List<Map<String, dynamic>>.from(rows as List);

@@ -6,11 +6,19 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import PorteePoidsModal from '@/components/animaux/PorteePoidsModal';
+import PorteeSoinModal from '@/components/animaux/PorteeSoinModal';
+import EditPorteeModal from '@/components/animaux/EditPorteeModal';
 
 const SPECIES_EMOJI: Record<string, string> = {
   chien: '🐕', chat: '🐈', cheval: '🐴', lapin: '🐰',
   ovin: '🐑', caprin: '🐐', porcin: '🐷', nac: '🦎', oiseau: '🦜',
 };
+const SPECIES_LABEL: Record<string, string> = {
+  chien: 'Chien', chat: 'Chat', cheval: 'Cheval', lapin: 'Lapin',
+  ovin: 'Ovin', caprin: 'Caprin', porcin: 'Porcin', nac: 'NAC', oiseau: 'Oiseau',
+};
+function speciesLabel(e?: string | null) { return SPECIES_LABEL[e ?? ''] ?? (e ?? ''); }
 
 interface Animal {
   id: string;
@@ -19,6 +27,11 @@ interface Animal {
   race: string | null;
   sexe: string | null;
   photo_url: string | null;
+  portee_id?: string | null;
+  nom_mere?: string | null;
+  date_naissance?: string | null;
+  reproducteur?: boolean | null;
+  identification?: string | null;
 }
 
 interface Tache {
@@ -273,7 +286,7 @@ export default function MesEmployeursPage() {
     const futureStr = future.toISOString().slice(0, 10);
 
     type UserRow = { uid: string; firstname: string | null; lastname: string | null; name_elevage: string | null; is_elevage: boolean; cat_pro: string | null; profile_picture_url: string | null; profile_picture_url_elevage: string | null };
-    type AnimalRow = { id: string; nom: string | null; espece: string | null; race: string | null; sexe: string | null; photo_url: string | null; uid_eleveur: string };
+    type AnimalRow = { id: string; nom: string | null; espece: string | null; race: string | null; sexe: string | null; photo_url: string | null; uid_eleveur: string; portee_id: string | null; nom_mere: string | null; date_naissance: string | null; reproducteur: boolean | null; identification: string | null };
     type TacheRow = { id: string; titre: string; date: string; statut: string; animal_id: string | null; uid_eleveur: string; eleveur_profile_id: string | null };
     type PlanRow  = { id: string; label: string | null; date_prevue: string; statut: string; animal_id: string | null; uid_eleveur: string; eleveur_profile_id: string | null };
     type InvRow   = InventaireItem & { eleveur_profile_id: string };
@@ -330,7 +343,7 @@ export default function MesEmployeursPage() {
       const assocIds = [...new Set((apRows ?? []).map(r => r.animal_id))];
       if (assocIds.length > 0) {
         const { data: assocAnimaux } = await supabase.from('animaux')
-          .select('id, nom, espece, race, sexe, photo_url, uid_eleveur')
+          .select('id, nom, espece, race, sexe, photo_url, uid_eleveur, portee_id, nom_mere, date_naissance, reproducteur, identification')
           .in('id', assocIds)
           .not('statut', 'in', '("sorti","decede")') as unknown as { data: AnimalRow[] | null };
         for (const a of assocAnimaux ?? []) {
@@ -558,43 +571,13 @@ export default function MesEmployeursPage() {
 
                 {/* Onglet Animaux */}
                 {activeTab === 'animaux' && (
-                  <div className="p-4">
-                    {emp.animaux.length === 0 ? (
-                      <p className="text-center text-sm text-gray-400 py-4">Aucun animal présent</p>
-                    ) : (
-                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                        {emp.animaux.map(a => {
-                          const isMale   = a.sexe?.toLowerCase().startsWith('m');
-                          const isFemale = a.sexe?.toLowerCase().startsWith('f');
-                          return (
-                            <Link key={a.id} href={`/mes-animaux/${a.id}`}
-                              className="bg-gray-50 rounded-xl overflow-hidden hover:shadow-md transition-shadow">
-                              <div className="relative aspect-square bg-[#EAF4EC] flex items-center justify-center overflow-hidden">
-                                {a.photo_url ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img src={a.photo_url} alt={a.nom ?? ''} className="w-full h-full object-cover" />
-                                ) : (
-                                  <span className="text-3xl">{SPECIES_EMOJI[a.espece ?? ''] ?? '🐾'}</span>
-                                )}
-                                {(isMale || isFemale) && (
-                                  <span className={`absolute top-1.5 right-1.5 text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-bold
-                                    ${isMale ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
-                                    {isMale ? '♂' : '♀'}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="p-2">
-                                <p className="font-bold text-[#1F2A2E] text-xs truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
-                                  {a.nom ?? 'Sans nom'}
-                                </p>
-                                <p className="text-gray-400 text-[10px] truncate">{a.race || a.espece || ''}</p>
-                              </div>
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                  <EmployeAnimauxTab
+                    animaux={emp.animaux}
+                    perms={emp.perms}
+                    employerUid={emp.uid}
+                    employerProfileId={emp.eleveur_profile_id}
+                    onReload={load}
+                  />
                 )}
 
                 {/* Onglet Tâches */}
@@ -772,6 +755,173 @@ function CreateTacheModal({ employer, myUid, myProfileId, onClose, onCreated }: 
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Onglet Animaux d'un employeur : portées groupées + actions selon perms ────
+
+function AnimalTile({ a }: { a: Animal }) {
+  const isMale = a.sexe?.toLowerCase().startsWith('m');
+  const isFemale = a.sexe?.toLowerCase().startsWith('f');
+  return (
+    <Link href={`/mes-animaux/${a.id}`}
+      className="bg-gray-50 rounded-xl overflow-hidden hover:shadow-md transition-shadow">
+      <div className="relative aspect-square bg-[#EAF4EC] flex items-center justify-center overflow-hidden">
+        {a.photo_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={a.photo_url} alt={a.nom ?? ''} className="w-full h-full object-cover" />
+        ) : (
+          <span className="text-3xl">{SPECIES_EMOJI[a.espece ?? ''] ?? '🐾'}</span>
+        )}
+        {(isMale || isFemale) && (
+          <span className={`absolute top-1.5 right-1.5 text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-bold
+            ${isMale ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
+            {isMale ? '♂' : '♀'}
+          </span>
+        )}
+      </div>
+      <div className="p-2">
+        <p className="font-bold text-[#1F2A2E] text-xs truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
+          {a.nom ?? 'Sans nom'}
+        </p>
+        <p className="text-gray-400 text-[10px] truncate">{a.race || a.espece || ''}</p>
+      </div>
+    </Link>
+  );
+}
+
+function EmployeAnimauxTab({ animaux, perms, employerUid, employerProfileId, onReload }: {
+  animaux: Animal[];
+  perms: string[];
+  employerUid: string;
+  employerProfileId: string | null;
+  onReload: () => void;
+}) {
+  const [selectedPortee, setSelectedPortee] = useState('');
+  const [poidsModal, setPoidsModal] = useState<{ animals: Animal[]; dn: string | null } | null>(null);
+  const [soinModal, setSoinModal] = useState<Animal[] | null>(null);
+  const [editModal, setEditModal] = useState<{ pid: string; members: Animal[] } | null>(null);
+
+  const canSante = perms.includes('write_sante');
+  const canRepro = perms.includes('write_repro');
+
+  if (animaux.length === 0) {
+    return <p className="text-center text-sm text-gray-400 py-6">Aucun animal présent</p>;
+  }
+
+  const bebes = animaux.filter(a => a.portee_id && !a.reproducteur);
+  const autres = animaux.filter(a => !(a.portee_id && !a.reproducteur));
+  const groups = new Map<string, Animal[]>();
+  for (const a of bebes) {
+    const arr = groups.get(a.portee_id!) ?? [];
+    arr.push(a);
+    groups.set(a.portee_id!, arr);
+  }
+  const porteeIds = [...groups.keys()];
+  const visibleIds = selectedPortee && groups.has(selectedPortee) ? [selectedPortee] : porteeIds;
+
+  return (
+    <div className="p-4">
+      {porteeIds.length >= 2 && (
+        <select value={selectedPortee} onChange={e => setSelectedPortee(e.target.value)}
+          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mb-4 bg-white focus:outline-none focus:border-[#0C5C6C]">
+          <option value="">Toutes les portées</option>
+          {porteeIds.map(pid => {
+            const m = groups.get(pid)![0];
+            const nm = (m.nom_mere ?? '').trim();
+            return <option key={pid} value={pid}>{nm ? `Portée de ${nm}` : 'Portée'}</option>;
+          })}
+        </select>
+      )}
+
+      {visibleIds.map(pid => {
+        const members = groups.get(pid)!;
+        const first = members[0];
+        const nm = (first.nom_mere ?? '').trim();
+        const espece = first.espece ?? '';
+        const race = first.race ?? '';
+        const dn = first.date_naissance ?? null;
+        return (
+          <div key={pid} className="mb-5">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl mb-2 flex-wrap"
+              style={{ background: '#0C5C6C0D', border: '1px solid #0C5C6C30' }}>
+              <span className="text-base">🐣</span>
+              <div className="flex-1 min-w-[120px]">
+                <p className="text-sm font-bold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                  {nm ? `Portée de ${nm}` : 'Portée'}
+                  {espece && <span> · {SPECIES_EMOJI[espece] ?? ''} {speciesLabel(espece)}</span>}
+                </p>
+                {(race || dn) && (
+                  <p className="text-xs text-[#5F9EAA]">
+                    {[race, dn ? `Nés le ${new Date(dn).toLocaleDateString('fr-FR')}` : ''].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+              </div>
+              <button onClick={() => setPoidsModal({ animals: members, dn })}
+                className="flex items-center gap-1 text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C40] px-2.5 py-1.5 rounded-lg hover:bg-[#0C5C6C0D] transition-colors"
+                style={{ fontFamily: 'Galey, sans-serif' }}>
+                📈 Poids
+              </button>
+              {canSante && (
+                <button onClick={() => setSoinModal(members)}
+                  className="flex items-center gap-1 text-xs font-semibold text-[#F57F17] border border-[#FFCA28] px-2.5 py-1.5 rounded-lg hover:bg-[#FFF8E1] transition-colors"
+                  style={{ fontFamily: 'Galey, sans-serif' }}>
+                  💊 Soin portée
+                </button>
+              )}
+              {canRepro && (
+                <button onClick={() => setEditModal({ pid, members })}
+                  className="flex items-center gap-1 text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C40] px-2.5 py-1.5 rounded-lg hover:bg-[#0C5C6C0D] transition-colors"
+                  style={{ fontFamily: 'Galey, sans-serif' }}>
+                  ✏️ Modifier
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+              {members.map(a => <AnimalTile key={a.id} a={a} />)}
+            </div>
+          </div>
+        );
+      })}
+
+      {autres.length > 0 && (
+        <>
+          {groups.size > 0 && (
+            <p className="text-xs font-bold text-gray-500 mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Autres animaux</p>
+          )}
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+            {autres.map(a => <AnimalTile key={a.id} a={a} />)}
+          </div>
+        </>
+      )}
+
+      {poidsModal && (
+        <PorteePoidsModal
+          animals={poidsModal.animals}
+          dateNaissance={poidsModal.dn}
+          canWrite={canSante}
+          onClose={() => { setPoidsModal(null); onReload(); }}
+        />
+      )}
+      {soinModal && (
+        <PorteeSoinModal
+          animals={soinModal}
+          uid={employerUid}
+          activeProfileId={employerProfileId}
+          onClose={() => { setSoinModal(null); onReload(); }}
+        />
+      )}
+      {editModal && (
+        <EditPorteeModal
+          pid={editModal.pid}
+          members={editModal.members}
+          uid={employerUid}
+          activeProfileId={employerProfileId}
+          onClose={() => setEditModal(null)}
+          onSaved={() => { setEditModal(null); onReload(); }}
+        />
+      )}
     </div>
   );
 }

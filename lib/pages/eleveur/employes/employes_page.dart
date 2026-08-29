@@ -42,6 +42,9 @@ import 'package:intl/intl.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart'
     show speciesColor, speciesIcon, speciesLabel, kSpeciesData;
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/portee_poids_page.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/portee_soin_sheet.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/portee_edit_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
@@ -3047,7 +3050,9 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
         final assocIds = apRows.map((r) => r['animal_id']?.toString()).whereType<String>().toSet().toList();
         if (assocIds.isNotEmpty) {
           final assocAnimaux = await _supa.from('animaux')
-              .select('id, nom, espece, race, photo_url, uid_eleveur')
+              .select('id, nom, espece, race, photo_url, uid_eleveur, sexe, '
+                  'portee_id, nom_mere, date_naissance, reproducteur, is_retraite, '
+                  'identification, statut')
               .inFilter('id', assocIds)
               .not('statut', 'in', '("sorti","decede")') as List;
           for (final a in assocAnimaux) {
@@ -3271,6 +3276,7 @@ class _MesEmployeursPageState extends State<MesEmployeursPage> {
                               ),
                             ).then((created) { if (created == true) _load(); });
                           },
+                          onReload: _load,
                         );
                       },
                     ),
@@ -3295,6 +3301,7 @@ class _EmployeurExpandedCard extends StatelessWidget {
   final VoidCallback onPlanningTap;
   final VoidCallback onProtocolesTap;
   final VoidCallback onCreateTacheTap;
+  final VoidCallback onReload;
 
   const _EmployeurExpandedCard({
     required this.uid, required this.nom, required this.photo,
@@ -3303,7 +3310,7 @@ class _EmployeurExpandedCard extends StatelessWidget {
     required this.animaux, required this.taches,
     required this.onTabChange, required this.onVoirProfil, required this.onMarquerFait,
     required this.onAnimalTap, required this.onPlanningTap, required this.onProtocolesTap,
-    required this.onCreateTacheTap,
+    required this.onCreateTacheTap, required this.onReload,
   });
 
   @override
@@ -3379,7 +3386,10 @@ class _EmployeurExpandedCard extends StatelessWidget {
           ]),
         ),
         // Contenu
-        if (activeTab == 'animaux') _buildAnimaux()
+        if (activeTab == 'animaux') _EmployeAnimauxSection(
+          animaux: animaux, perms: perms, eleveurUid: uid, teal: teal, dark: dark,
+          onAnimalTap: onAnimalTap, onReload: onReload,
+        )
         else if (activeTab == 'taches') _buildTaches(context)
         else _buildInventaire(context),
       ]),
@@ -3400,43 +3410,6 @@ class _EmployeurExpandedCard extends StatelessWidget {
       ),
     ),
   );
-
-  Widget _buildAnimaux() {
-    if (animaux.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.all(16),
-        child: Center(child: Text('Aucun animal',
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade400))),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.all(10),
-      child: GridView.builder(
-        shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 0.85),
-        itemCount: animaux.length,
-        itemBuilder: (_, i) {
-          final a = animaux[i];
-          final photoUrl = a['photo_url'] as String?;
-          return GestureDetector(
-            onTap: () => onAnimalTap(a),
-            child: Column(children: [
-              Expanded(child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: photoUrl != null
-                    ? CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover, width: double.infinity)
-                    : Container(color: Colors.grey.shade100, child: const Icon(Icons.pets, color: Colors.grey)),
-              )),
-              const SizedBox(height: 4),
-              Text(a['nom'] ?? '—', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
-              Text(a['race'] ?? a['espece'] ?? '', style: TextStyle(fontSize: 10, color: Colors.grey.shade500), maxLines: 1, overflow: TextOverflow.ellipsis),
-            ]),
-          );
-        },
-      ),
-    );
-  }
 
   Widget _buildTaches(BuildContext context) {
     final canCreateProtocole = perms.contains('write_protocoles');
@@ -3571,6 +3544,223 @@ class _EmployeurExpandedCard extends StatelessWidget {
           ]),
         ),
       ),
+    );
+  }
+}
+
+// ─── Onglet Animaux d'un employeur : portées + actions selon permissions ──────
+
+class _EmployeAnimauxSection extends StatefulWidget {
+  final List<Map<String, dynamic>> animaux;
+  final Set<String> perms;
+  final String eleveurUid;
+  final Color teal, dark;
+  final void Function(Map<String, dynamic>) onAnimalTap;
+  final VoidCallback onReload;
+
+  const _EmployeAnimauxSection({
+    required this.animaux, required this.perms, required this.eleveurUid,
+    required this.teal, required this.dark,
+    required this.onAnimalTap, required this.onReload,
+  });
+
+  @override
+  State<_EmployeAnimauxSection> createState() => _EmployeAnimauxSectionState();
+}
+
+class _EmployeAnimauxSectionState extends State<_EmployeAnimauxSection> {
+  String _selectedPorteeId = ''; // '' = toutes
+
+  bool get _canSante => widget.perms.contains('write_sante');
+  bool get _canRepro => widget.perms.contains('write_repro');
+
+  DateTime? _dnOf(List<Map<String, dynamic>> members) =>
+      DateTime.tryParse(members.first['date_naissance'] as String? ?? '');
+
+  Future<void> _openPoids(List<Map<String, dynamic>> members) async {
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => PorteePoidsPage(
+        animals: members,
+        dateNaissance: _dnOf(members),
+        canEditPoids: _canSante,
+      ),
+    ));
+    widget.onReload();
+  }
+
+  Future<void> _openSoin(List<Map<String, dynamic>> members) async {
+    final ok = await PorteeSoinSheet.show(context, members);
+    if (ok) widget.onReload();
+  }
+
+  Future<void> _openEdit(List<Map<String, dynamic>> members) async {
+    final ok = await PorteeEditSheet.show(context, members,
+        eleveurUidOverride: widget.eleveurUid);
+    if (ok) widget.onReload();
+  }
+
+  Widget _actionIcon(IconData icon, Color color, Color bg, VoidCallback onTap) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
+      child: Icon(icon, size: 18, color: color),
+    ),
+  );
+
+  Widget _animalGrid(List<Map<String, dynamic>> list) => GridView.builder(
+    shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 0.85),
+    itemCount: list.length,
+    itemBuilder: (_, i) {
+      final a = list[i];
+      final photoUrl = a['photo_url'] as String?;
+      return GestureDetector(
+        onTap: () => widget.onAnimalTap(a),
+        child: Column(children: [
+          Expanded(child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: photoUrl != null
+                ? CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover, width: double.infinity)
+                : Container(color: Colors.grey.shade100, child: const Icon(Icons.pets, color: Colors.grey)),
+          )),
+          const SizedBox(height: 4),
+          Text(a['nom'] ?? '—', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+          Text(a['race'] ?? a['espece'] ?? '',
+              style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+        ]),
+      );
+    },
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final teal = widget.teal;
+    if (widget.animaux.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Center(child: Text('Aucun animal',
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade400))),
+      );
+    }
+
+    final bebes = widget.animaux.where((a) =>
+        a['portee_id'] != null && a['reproducteur'] != true).toList();
+    final autres = widget.animaux.where((a) =>
+        !(a['portee_id'] != null && a['reproducteur'] != true)).toList();
+
+    final groups = <String, List<Map<String, dynamic>>>{};
+    for (final a in bebes) {
+      groups.putIfAbsent(a['portee_id'] as String, () => []).add(a);
+    }
+    final porteeIds = groups.keys.toList();
+    final visibleIds = _selectedPorteeId.isEmpty || !groups.containsKey(_selectedPorteeId)
+        ? porteeIds
+        : [_selectedPorteeId];
+
+    final df = DateFormat('dd/MM/yyyy');
+
+    return Padding(
+      padding: const EdgeInsets.all(10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Sélecteur de portée
+        if (porteeIds.length >= 2)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: DropdownButtonFormField<String>(
+              value: _selectedPorteeId.isEmpty ? '' : _selectedPorteeId,
+              isExpanded: true,
+              decoration: InputDecoration(
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              items: [
+                const DropdownMenuItem(value: '', child: Text('Toutes les portées')),
+                ...porteeIds.map((pid) {
+                  final m = groups[pid]!.first;
+                  final nomMere = ((m['nom_mere'] as String?) ?? '').trim();
+                  return DropdownMenuItem(value: pid,
+                      child: Text(nomMere.isNotEmpty ? 'Portée de $nomMere' : 'Portée',
+                          overflow: TextOverflow.ellipsis));
+                }),
+              ],
+              onChanged: (v) => setState(() => _selectedPorteeId = v ?? ''),
+            ),
+          ),
+
+        // Portées
+        ...visibleIds.map((pid) {
+          final members = groups[pid]!;
+          final first = members.first;
+          final nomMere = ((first['nom_mere'] as String?) ?? '').trim();
+          final espece = (first['espece'] as String?) ?? '';
+          final race = (first['race'] as String?) ?? '';
+          final dn = _dnOf(members);
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: teal.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: teal.withValues(alpha: 0.2)),
+              ),
+              child: Row(children: [
+                Icon(Icons.diversity_3, size: 16, color: teal),
+                const SizedBox(width: 8),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(
+                    [
+                      nomMere.isNotEmpty ? 'Portée de $nomMere' : 'Portée',
+                      if (espece.isNotEmpty) '· ${speciesLabel(espece)}',
+                    ].join(' '),
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 12.5, color: teal),
+                  ),
+                  if (race.isNotEmpty || dn != null)
+                    Text(
+                      [
+                        if (race.isNotEmpty) race,
+                        if (dn != null) 'Nés le ${df.format(dn)}',
+                      ].join(' · '),
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, color: teal.withValues(alpha: 0.8)),
+                    ),
+                ])),
+                _actionIcon(Icons.bar_chart, teal, teal.withValues(alpha: 0.12),
+                    () => _openPoids(members)),
+                if (_canSante) ...[
+                  const SizedBox(width: 4),
+                  _actionIcon(Icons.medical_services_outlined, const Color(0xFFF57F17),
+                      const Color(0xFFFFF8E1), () => _openSoin(members)),
+                ],
+                if (_canRepro) ...[
+                  const SizedBox(width: 4),
+                  _actionIcon(Icons.edit_outlined, teal, teal.withValues(alpha: 0.1),
+                      () => _openEdit(members)),
+                ],
+              ]),
+            ),
+            _animalGrid(members),
+            const SizedBox(height: 14),
+          ]);
+        }),
+
+        // Autres animaux (reproducteurs, adultes…)
+        if (autres.isNotEmpty) ...[
+          if (groups.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text('Autres animaux',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 12.5, color: Colors.grey.shade600)),
+            ),
+          _animalGrid(autres),
+        ],
+      ]),
     );
   }
 }

@@ -7,11 +7,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class PorteePoidsPage extends StatefulWidget {
   final List<Map<String, dynamic>> animals;
   final DateTime? dateNaissance;
+  /// false = lecture seule (employé sans permission « Carnet de santé ») :
+  /// on affiche le graphe et les pesées mais pas la saisie ni la suppression.
+  final bool canEditPoids;
 
   const PorteePoidsPage({
     super.key,
     required this.animals,
     this.dateNaissance,
+    this.canEditPoids = true,
   });
 
   @override
@@ -151,15 +155,17 @@ class _PorteePoidsPageState extends State<PorteePoidsPage> {
             boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
           ),
           child: series.isEmpty
-              ? const Center(
+              ? Center(
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.monitor_weight_outlined, size: 44, color: Color(0xFFB0BEC5)),
-                    SizedBox(height: 8),
-                    Text('Aucune pesée pour l\'instant',
+                    const Icon(Icons.monitor_weight_outlined, size: 44, color: Color(0xFFB0BEC5)),
+                    const SizedBox(height: 8),
+                    const Text('Aucune pesée pour l\'instant',
                         style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFFB0BEC5))),
-                    SizedBox(height: 4),
-                    Text('Appuyez sur un bébé ci-dessous pour peser',
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFB0BEC5))),
+                    if (widget.canEditPoids) ...[
+                      const SizedBox(height: 4),
+                      const Text('Appuyez sur un bébé ci-dessous pour peser',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFB0BEC5))),
+                    ],
                   ]),
                 )
               : ClipRRect(
@@ -189,8 +195,9 @@ class _PorteePoidsPageState extends State<PorteePoidsPage> {
                 const Text('Bébés de la portée',
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
                 const SizedBox(width: 6),
-                Text('· appuyez pour peser',
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+                if (widget.canEditPoids)
+                  Text('· appuyez pour peser',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
               ]),
               const SizedBox(height: 10),
               ...List.generate(widget.animals.length, (i) {
@@ -207,7 +214,7 @@ class _PorteePoidsPageState extends State<PorteePoidsPage> {
                     ? double.tryParse(docs.last['valeur']?.toString() ?? '')
                     : null;
                 return InkWell(
-                  onTap: () => _openAddPoids(a),
+                  onTap: widget.canEditPoids ? () => _openAddPoids(a) : null,
                   borderRadius: BorderRadius.circular(10),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 9),
@@ -246,8 +253,10 @@ class _PorteePoidsPageState extends State<PorteePoidsPage> {
                               style: TextStyle(fontFamily: 'Galey', fontSize: 12,
                                   color: color, fontWeight: FontWeight.w700)),
                         ),
-                      const SizedBox(width: 4),
-                      Icon(Icons.add_circle_outline, size: 18, color: _teal.withValues(alpha: 0.6)),
+                      if (widget.canEditPoids) ...[
+                        const SizedBox(width: 4),
+                        Icon(Icons.add_circle_outline, size: 18, color: _teal.withValues(alpha: 0.6)),
+                      ],
                     ]),
                   ),
                 );
