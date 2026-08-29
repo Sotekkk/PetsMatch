@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class PorteePoidsPage extends StatefulWidget {
@@ -87,16 +88,19 @@ class _PorteePoidsPageState extends State<PorteePoidsPage> {
   Future<void> _openAddPoids(Map<String, dynamic> animal) async {
     final id = animal['id'] as String?;
     if (id == null) return;
-    final docs = _poidsPerAnimal[id] ?? [];
-    final lastKg = docs.isNotEmpty
-        ? double.tryParse(docs.last['valeur']?.toString() ?? '')
-        : null;
-    await showDialog<void>(
+    await showModalBottomSheet<void>(
       context: context,
-      builder: (_) => _QuickPoidsDialog(
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _BebePoidsSheet(
         animalId: id,
-        animalNom: (animal['nom'] as String?) ?? 'Bébé',
-        lastKg: lastKg,
+        animalNom: (animal['nom'] as String?)?.trim().isNotEmpty == true
+            ? animal['nom'] as String
+            : 'Bébé',
+        dateNaissance: widget.dateNaissance ??
+            DateTime.tryParse(animal['date_naissance'] as String? ?? ''),
       ),
     );
     _load();
@@ -260,39 +264,66 @@ class _PorteePoidsPageState extends State<PorteePoidsPage> {
   }
 }
 
-// ─── Dialog pesée rapide (choix g / kg) ──────────────────────────────────────
+// ─── Sheet pesées d'un bébé (saisir / supprimer plusieurs d'affilée) ─────────
 
-class _QuickPoidsDialog extends StatefulWidget {
+class _BebePoidsSheet extends StatefulWidget {
   final String animalId;
   final String animalNom;
-  final double? lastKg;
-  const _QuickPoidsDialog({required this.animalId, required this.animalNom, this.lastKg});
+  final DateTime? dateNaissance;
+  const _BebePoidsSheet({required this.animalId, required this.animalNom, this.dateNaissance});
   @override
-  State<_QuickPoidsDialog> createState() => _QuickPoidsDialogState();
+  State<_BebePoidsSheet> createState() => _BebePoidsSheetState();
 }
 
-class _QuickPoidsDialogState extends State<_QuickPoidsDialog> {
+class _BebePoidsSheetState extends State<_BebePoidsSheet> {
   static const _teal = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
+  final _supa = Supabase.instance.client;
 
   final _valeur = TextEditingController();
   DateTime _date = DateTime.now();
   String _unite = 'g';
   bool _saving = false;
+  bool _loading = true;
+  List<Map<String, dynamic>> _pesees = [];
 
   @override
   void initState() {
     super.initState();
-    // Défaut : g si le bébé a déjà été pesé en g (ou pas encore pesé), sinon kg.
-    _unite = (widget.lastKg == null || widget.lastKg! < 1) ? 'g' : 'kg';
+    _load();
   }
 
   @override
   void dispose() { _valeur.dispose(); super.dispose(); }
 
+  Future<void> _load() async {
+    try {
+      final rows = await _supa.from('poids').select()
+          .eq('animal_id', widget.animalId).order('date', ascending: true);
+      final list = List<Map<String, dynamic>>.from(rows as List);
+      if (!mounted) return;
+      setState(() {
+        _pesees = list;
+        _loading = false;
+        // Unité par défaut : celle de la dernière pesée, sinon g.
+        if (list.isNotEmpty) {
+          final lastKg = double.tryParse(list.last['valeur']?.toString() ?? '');
+          if (lastKg != null) _unite = lastKg < 1 ? 'g' : 'kg';
+        }
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   String _fmtInput(double v) {
     if (v == v.roundToDouble()) return v.toStringAsFixed(0);
     return v.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+  }
+
+  String _fmtKg(double v) {
+    if (v < 1) return '${(v * 1000).round()} g';
+    return '${v.toStringAsFixed(1).replaceAll('.', ',')} kg';
   }
 
   void _switchUnite(String u) {
@@ -304,130 +335,196 @@ class _QuickPoidsDialogState extends State<_QuickPoidsDialog> {
     });
   }
 
-  Future<void> _save() async {
+  Future<void> _add() async {
     final v = double.tryParse(_valeur.text.replaceAll(',', '.'));
     if (v == null) return;
     final kg = _unite == 'g' ? v / 1000 : v;
     setState(() => _saving = true);
     try {
-      await Supabase.instance.client.from('poids').insert({
+      await _supa.from('poids').insert({
         'id': DateTime.now().microsecondsSinceEpoch.toString(),
         'animal_id': widget.animalId,
         'valeur': kg,
         'date': DateTime(_date.year, _date.month, _date.day).toIso8601String(),
       });
-      if (mounted) Navigator.pop(context);
+      _valeur.clear();
+      await _load();
     } catch (e) {
       if (mounted) {
-        setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.redAccent));
       }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _delete(String id) async {
+    try {
+      await _supa.from('poids').delete().eq('id', id);
+      await _load();
+    } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('Peser ${widget.animalNom}',
-              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _teal)),
-          const SizedBox(height: 16),
-          // Date
-          GestureDetector(
-            onTap: () async {
-              final p = await showDatePicker(
-                context: context, initialDate: _date,
-                firstDate: DateTime(2015), lastDate: DateTime(2100),
-                builder: (ctx, child) => Theme(
-                  data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: _green)),
-                  child: child!),
-              );
-              if (p != null) setState(() => _date = p);
-            },
-            child: InputDecorator(
-              decoration: InputDecoration(
-                labelText: 'Date',
-                labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                isDense: true,
-                suffixIcon: const Icon(Icons.calendar_today_outlined, size: 16, color: _green),
+    final df = DateFormat('dd/MM/yyyy');
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        builder: (_, scrollCtrl) => Column(children: [
+          const SizedBox(height: 10),
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 12, 4),
+            child: Row(children: [
+              Expanded(
+                child: Text('Pesées de ${widget.animalNom}',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _teal)),
               ),
-              child: Text(
-                '${_date.day.toString().padLeft(2, '0')}/${_date.month.toString().padLeft(2, '0')}/${_date.year}',
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.grey),
+                onPressed: () => Navigator.pop(context),
               ),
-            ),
+            ]),
           ),
-          const SizedBox(height: 12),
-          // Poids + unité
-          Row(children: [
-            Expanded(
-              child: TextField(
-                controller: _valeur,
-                autofocus: true,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 15),
-                decoration: InputDecoration(
-                  labelText: 'Poids *',
-                  labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: _green)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                  isDense: true,
-                ),
-                onSubmitted: (_) => _save(),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFFE4E7E2)),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                for (final u in const ['g', 'kg']) ...[
-                  if (u == 'kg') Container(width: 1, height: 34, color: const Color(0xFFE4E7E2)),
-                  GestureDetector(
-                    onTap: () => _switchUnite(u),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                      color: _unite == u ? _green : Colors.transparent,
-                      child: Text(u, style: TextStyle(
-                          fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700,
-                          color: _unite == u ? Colors.white : const Color(0xFF6F767B))),
-                    ),
+
+          // Formulaire d'ajout (reste ouvert pour enchaîner)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+            child: Column(children: [
+              GestureDetector(
+                onTap: () async {
+                  final p = await showDatePicker(
+                    context: context, initialDate: _date,
+                    firstDate: DateTime(2015), lastDate: DateTime(2100),
+                    builder: (ctx, child) => Theme(
+                      data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(primary: _green)),
+                      child: child!),
+                  );
+                  if (p != null) setState(() => _date = p);
+                },
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: 'Date de la pesée',
+                    labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    isDense: true,
+                    suffixIcon: const Icon(Icons.calendar_today_outlined, size: 16, color: _green),
                   ),
-                ],
+                  child: Text(df.format(_date),
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E))),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: _valeur,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 15),
+                    decoration: InputDecoration(
+                      labelText: 'Poids',
+                      labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Color(0xFFE4E7E2))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: _green)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      isDense: true,
+                    ),
+                    onSubmitted: (_) => _add(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFFE4E7E2)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    for (final u in const ['g', 'kg']) ...[
+                      if (u == 'kg') Container(width: 1, height: 34, color: const Color(0xFFE4E7E2)),
+                      GestureDetector(
+                        onTap: () => _switchUnite(u),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                          color: _unite == u ? _green : Colors.transparent,
+                          child: Text(u, style: TextStyle(
+                              fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700,
+                              color: _unite == u ? Colors.white : const Color(0xFF6F767B))),
+                        ),
+                      ),
+                    ],
+                  ]),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  height: 40,
+                  child: ElevatedButton(
+                    onPressed: _saving ? null : _add,
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: _green, foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14)),
+                    child: _saving
+                        ? const SizedBox(width: 14, height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.add, size: 20),
+                  ),
+                ),
               ]),
-            ),
-          ]),
-          const SizedBox(height: 18),
-          Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-            TextButton(
-              onPressed: _saving ? null : () => Navigator.pop(context),
-              child: const Text('Annuler', style: TextStyle(color: Colors.grey, fontFamily: 'Galey')),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton(
-              onPressed: _saving ? null : _save,
-              style: ElevatedButton.styleFrom(backgroundColor: _green, foregroundColor: Colors.white),
-              child: _saving
-                  ? const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey')),
-            ),
-          ]),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Ajoutez plusieurs pesées d\'affilée — le panneau reste ouvert.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, color: Colors.grey.shade500)),
+              ),
+            ]),
+          ),
+          const Divider(height: 1),
+
+          // Liste des pesées existantes (suppression)
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: _teal))
+                : _pesees.isEmpty
+                    ? Center(child: Text('Aucune pesée',
+                        style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)))
+                    : ListView.separated(
+                        controller: scrollCtrl,
+                        padding: const EdgeInsets.fromLTRB(20, 10, 12, 24),
+                        itemCount: _pesees.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, i) {
+                          final p = _pesees[_pesees.length - 1 - i]; // plus récentes en haut
+                          final dt = DateTime.tryParse(p['date']?.toString() ?? '');
+                          final kg = double.tryParse(p['valeur']?.toString() ?? '') ?? 0;
+                          return Row(children: [
+                            Expanded(
+                              child: Text(dt != null ? df.format(dt) : '—',
+                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B))),
+                            ),
+                            Text(_fmtKg(kg),
+                                style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                                    fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                              onPressed: () => _delete(p['id']?.toString() ?? ''),
+                            ),
+                          ]);
+                        },
+                      ),
+          ),
         ]),
       ),
     );

@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
 import { thumbUrl } from '@/lib/upload-media';
 import CessionModal from '@/components/animaux/CessionModal';
+import PorteePoidsModal from '@/components/animaux/PorteePoidsModal';
 
 interface Animal {
   id: string;
@@ -304,6 +305,7 @@ export default function MesAnimauxPage() {
 
   // Modal soin portée
   const [soinPorteeAnimals, setSoinPorteeAnimals] = useState<Animal[] | null>(null);
+  const [poidsPortee, setPoidsPortee] = useState<{ animals: Animal[]; dn: string | null } | null>(null);
   const [editPorteeGroup, setEditPorteeGroup] = useState<{ pid: string; members: Animal[] } | null>(null);
 
   // Filtres présents
@@ -886,6 +888,13 @@ export default function MesAnimauxPage() {
                     ✏️ Modifier
                   </button>
                   <button
+                    onClick={() => setPoidsPortee({ animals: members, dn: first.date_naissance ?? null })}
+                    className="flex items-center gap-1 text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C40] px-2.5 py-1.5 rounded-lg hover:bg-[#0C5C6C0D] transition-colors"
+                    title="Courbes de poids de la portée"
+                    style={{ fontFamily: 'Galey, sans-serif' }}>
+                    📈 Poids
+                  </button>
+                  <button
                     onClick={() => setSoinPorteeAnimals(members)}
                     className="flex items-center gap-1 text-xs font-semibold text-[#F57F17] border border-[#FFCA28] px-2.5 py-1.5 rounded-lg hover:bg-[#FFF8E1] transition-colors"
                     title="Soin pour toute la portée"
@@ -1002,6 +1011,15 @@ export default function MesAnimauxPage() {
         uid={user?.uid ?? ''}
         activeProfileId={activeProfileId ?? null}
         onClose={() => setSoinPorteeAnimals(null)}
+      />
+    )}
+
+    {/* Modal courbes de poids portée */}
+    {poidsPortee && (
+      <PorteePoidsModal
+        animals={poidsPortee.animals}
+        dateNaissance={poidsPortee.dn}
+        onClose={() => setPoidsPortee(null)}
       />
     )}
 
