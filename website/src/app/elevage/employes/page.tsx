@@ -38,6 +38,7 @@ interface ProtoGroupe {
   typeActe: string;
   date: string;
   assigneNom?: string;
+  assignedTo?: string | null;
 }
 
 interface Employe {
@@ -85,6 +86,7 @@ function groupProtos(pts: PlanTache[]): ProtoGroupe[] {
     typeActe:  items[0]?.type_acte ?? '',
     date:      (items[0]?.date_prevue ?? '').split('T')[0],
     assigneNom: items[0]?.assigne_nom,
+    assignedTo: items[0]?.assigned_to ?? null,
   })).sort((a, b) => a.date.localeCompare(b.date));
 }
 
@@ -120,6 +122,7 @@ export default function EmployesPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [tacheModal, setTacheModal] = useState<{ mode: 'create' } | { mode: 'edit'; tache: TacheManuelle } | null>(null);
   const [isPension, setIsPension] = useState(false);
+  const [assignProtoGroup, setAssignProtoGroup] = useState<ProtoGroupe | null>(null);
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
 
@@ -256,6 +259,47 @@ export default function EmployesPage() {
     setPermsSaving(false);
     setPermsModal(null);
   }, [permsModal, permsData]);
+
+  // Assigne (ou retire) tout un groupe de tâches de protocole à un employé,
+  // avec notification — miroir de _assignPlanTache de l'appli.
+  const assignProto = useCallback(async (groupe: ProtoGroupe, employeUid: string) => {
+    if (!user) return;
+    const ids = groupe.items.map(t => t.id);
+    const newUid = employeUid || null;
+
+    let newProfileId: string | null = null;
+    if (newUid) {
+      const { data } = await supabase.from('user_profiles')
+        .select('id').eq('uid', newUid).eq('profile_type', 'particulier').maybeSingle();
+      newProfileId = (data?.id as string | undefined) ?? null;
+    }
+
+    await supabase.from('plan_taches')
+      .update({ assigned_to: newUid, assigned_profile_id: newProfileId })
+      .in('id', ids);
+
+    if (newUid) {
+      const { data: prof } = await supabase.from('user_profiles')
+        .select('nom, firstname, lastname').eq('uid', user.uid).eq('is_main', true).maybeSingle();
+      const nomElevage = ((prof?.nom as string | undefined)?.trim())
+        || `${prof?.firstname ?? ''} ${prof?.lastname ?? ''}`.trim()
+        || 'Votre élevage';
+      const total = groupe.items.length;
+      const titre = total > 1 ? `${groupe.label} (${total} animaux)` : groupe.label;
+      await supabase.from('notifications').insert({
+        uid: newUid,
+        type: 'tache',
+        title: 'Nouvelle tâche assignée',
+        body: `${nomElevage} vous a assigné : ${titre}`,
+        ...(newProfileId ? { profile_id: newProfileId } : {}),
+        data: { eleveurUid: user.uid },
+        read: false,
+      });
+    }
+
+    setAssignProtoGroup(null);
+    load();
+  }, [user, load]);
 
   const deleteManuel = useCallback(async (t: TacheManuelle) => {
     await supabase.from('taches_elevage').delete().eq('id', t.id);
@@ -490,6 +534,20 @@ export default function EmployesPage() {
                           </div>
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <button
+                              onClick={() => setAssignProtoGroup(g)}
+                              title={g.assigneNom ? `Assigné à ${g.assigneNom} — réassigner` : 'Assigner à un employé'}
+                              className={`p-1.5 rounded-lg transition-colors ${
+                                g.assigneNom
+                                  ? 'text-teal-600 bg-teal-50 hover:bg-teal-100'
+                                  : 'text-gray-300 hover:bg-teal-50 hover:text-teal-600'
+                              }`}
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                  d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                              </svg>
+                            </button>
+                            <button
                               onClick={() => setConfirmDelete({
                                 label: `Supprimer le protocole "${g.label}" du ${dateLabel(g.date)} ?`,
                                 onConfirm: () => deleteProtoGroupe(g),
@@ -636,6 +694,57 @@ export default function EmployesPage() {
               <button onClick={() => setProtoModal(null)}
                 className="w-full py-2.5 bg-teal-600 text-white rounded-xl text-sm font-semibold hover:bg-teal-700">
                 Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal : assigner un protocole à un employé */}
+      {assignProtoGroup && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center sm:items-center p-4"
+             onClick={e => { if (e.target === e.currentTarget) setAssignProtoGroup(null); }}>
+          <div className="bg-white rounded-2xl w-full max-w-sm">
+            <div className="p-5 border-b">
+              <h3 className="font-bold text-gray-800 text-sm">Assigner « {assignProtoGroup.label} »</h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                L&apos;employé choisi reçoit une notification et retrouve la tâche dans son espace.
+              </p>
+            </div>
+            <div className="p-3 max-h-[50vh] overflow-y-auto">
+              {employes.length === 0 ? (
+                <p className="text-center text-sm text-gray-400 py-6">Aucun employé actif</p>
+              ) : (
+                <>
+                  {employes.map(e => {
+                    const active = assignProtoGroup.assignedTo === e.uid_employe;
+                    return (
+                      <button key={e.uid_employe}
+                        onClick={() => assignProto(assignProtoGroup, e.uid_employe)}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors ${
+                          active ? 'bg-teal-50' : 'hover:bg-gray-50'
+                        }`}>
+                        <div className="w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 text-xs font-bold flex-shrink-0">
+                          {(e.nom[0] ?? '?').toUpperCase()}
+                        </div>
+                        <span className="text-sm font-medium text-gray-800 flex-1">{e.nom}</span>
+                        {active && <span className="text-teal-600 text-sm">✓</span>}
+                      </button>
+                    );
+                  })}
+                  {assignProtoGroup.assignedTo && (
+                    <button onClick={() => assignProto(assignProtoGroup, '')}
+                      className="w-full text-center px-3 py-2.5 mt-1 rounded-xl text-sm font-medium text-red-500 hover:bg-red-50 transition-colors">
+                      Retirer l&apos;attribution
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="px-5 pb-5 pt-1">
+              <button onClick={() => setAssignProtoGroup(null)}
+                className="w-full py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 font-medium">
+                Annuler
               </button>
             </div>
           </div>
