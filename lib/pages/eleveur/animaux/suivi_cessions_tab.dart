@@ -237,7 +237,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
         otherUid: acqUid,
         categorie: 'contact-elevage',
       );
-      await _taguerConversation(convId, acqUid);
+      await _taguerConversation(convId, acqUid, await _profilAcquereur(a, acqUid));
       await _supa.from('messages').insert({
         'conversation_id': convId,
         'sender_id':       widget.uid,
@@ -259,6 +259,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
           'last_message': ctrl.text.trim(),
           'unread_count': unread,
           'updated_at':   DateTime.now().toIso8601String(),
+          'deleted_for':  {},
         }).eq('id', convId);
       }
       if (!mounted) return;
@@ -376,29 +377,46 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
     }
   }
 
+  /// Profil de l'acquéreur auquel rattacher la relance : celui qui détient
+  /// l'animal cédé (`animaux.profile_id_acquereur`), sinon son profil
+  /// particulier, sinon son profil principal. C'est ce profil-là qui verra la
+  /// conversation ET la notification (cohérence indispensable).
+  Future<String?> _profilAcquereur(Map<String, dynamic> a, String acqUid) async {
+    final direct = '${a['profile_id_acquereur'] ?? ''}';
+    if (direct.isNotEmpty) return direct;
+    try {
+      final part = await _supa.from('user_profiles')
+          .select('id').eq('uid', acqUid).eq('profile_type', 'particulier').maybeSingle();
+      if (part?['id'] != null) return part!['id'] as String;
+      final main = await _supa.from('user_profiles')
+          .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
+      return main?['id'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Tague la conversation `pro_profile_id` (éleveur) + `consumer_profile_id`
-  /// (acquéreur, profil particulier). Sans ça, la liste /messages masque la
-  /// conversation « sans profil » à l'acquéreur (profil particulier).
-  Future<void> _taguerConversation(String convId, String acqUid) async {
+  /// (profil de l'acquéreur qui détient l'animal). Sans ça, la liste /messages
+  /// masque la conversation à l'acquéreur.
+  Future<void> _taguerConversation(String convId, String acqUid, String? acqProfileId) async {
     try {
       final elevP = await _supa.from('user_profiles')
           .select('id').eq('uid', widget.uid ?? '').eq('profile_type', 'eleveur').maybeSingle();
-      // Profil que l'acquéreur consulte au quotidien = son profil principal
-      // (particulier pour un client classique, mais respecte un compte multi-profil).
-      final acqP = await _supa.from('user_profiles')
-          .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
       final conv = await _supa.from('conversations')
-          .select('pro_profile_id, consumer_profile_id, categorie').eq('id', convId).maybeSingle();
+          .select('pro_profile_id, consumer_profile_id, categorie, deleted_for').eq('id', convId).maybeSingle();
       final patch = <String, dynamic>{};
       if ('${conv?['pro_profile_id'] ?? ''}'.isEmpty && elevP?['id'] != null) {
         patch['pro_profile_id'] = elevP!['id'];
       }
-      if ('${conv?['consumer_profile_id'] ?? ''}'.isEmpty && acqP?['id'] != null) {
-        patch['consumer_profile_id'] = acqP!['id'];
+      if ('${conv?['consumer_profile_id'] ?? ''}'.isEmpty && acqProfileId != null) {
+        patch['consumer_profile_id'] = acqProfileId;
       }
       if ('${conv?['categorie'] ?? ''}'.isEmpty || conv?['categorie'] == 'elevage') {
         patch['categorie'] = 'contact-elevage';
       }
+      // Réafficher la conversation si l'acquéreur l'avait supprimée.
+      if ((conv?['deleted_for'] as Map?)?.isNotEmpty == true) patch['deleted_for'] = {};
       if (patch.isNotEmpty) {
         await _supa.from('conversations').update(patch).eq('id', convId);
       }
@@ -419,10 +437,11 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
       return;
     }
     try {
+      final acqProfileId = await _profilAcquereur(a, acqUid);
       final convId = await MessagingHelper.openOrCreateConversation(
         otherUid: acqUid, categorie: 'contact-elevage',
       );
-      await _taguerConversation(convId, acqUid);
+      await _taguerConversation(convId, acqUid, acqProfileId);
       await _supa.from('messages').insert({
         'conversation_id': convId,
         'sender_id':       widget.uid,
@@ -443,16 +462,17 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
           'last_message': texte,
           'unread_count': unread,
           'updated_at':   DateTime.now().toIso8601String(),
+          // Un nouveau message fait réapparaître la conversation si le
+          // destinataire l'avait supprimée de sa liste.
+          'deleted_for':  {},
         }).eq('id', convId);
       }
-      final acqProfile = await _supa.from('user_profiles')
-          .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
       await _supa.from('notifications').insert({
         'uid':   acqUid,
         'type':  'sterilisation_relance',
         'title': '✂️ Rappel stérilisation — ${a['nom'] ?? 'votre animal'}',
         'body':  texte.length > 140 ? '${texte.substring(0, 137)}…' : texte,
-        if (acqProfile?['id'] != null) 'profile_id': acqProfile!['id'],
+        if (acqProfileId != null) 'profile_id': acqProfileId,
         'data':  {'animalId': a['id']},
         'read':  false,
       });

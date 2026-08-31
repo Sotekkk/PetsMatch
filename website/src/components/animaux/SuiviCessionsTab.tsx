@@ -12,6 +12,7 @@ interface AnimalLite {
   statut?: string;
   date_naissance?: string;
   uid_acquereur?: string | null;
+  profile_id_acquereur?: string | null;
   destinataire_nom?: string | null;
   sterilise?: boolean | null;
   sterilisation_requise?: boolean | null;
@@ -135,7 +136,7 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
     if (!texte || !texte.trim()) return;
     setBusy(a.id);
     try {
-      const convId = await openOrCreateConv(a.uid_acquereur);
+      const convId = await openOrCreateConv(a.uid_acquereur, a);
       await postToConv(convId, texte.trim());
       router.push(`/messages?conv=${convId}`);
     } finally {
@@ -144,29 +145,39 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
   }
 
   // ── Relance famille (stérilisation) ────────────────────────────────────────
-  /// Profils pour taguer la conversation : sans `pro_profile_id` +
-  /// `consumer_profile_id`, la liste /messages masque la conversation « sans
-  /// profil » à l'acquéreur (profil particulier). Backfill si elle existe déjà.
-  async function convTags(acqUid: string) {
-    const [{ data: elevP }, { data: acqP }] = await Promise.all([
-      supabase.from('user_profiles').select('id').eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle(),
-      // Profil consulté au quotidien par l'acquéreur = son profil principal.
-      supabase.from('user_profiles').select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle(),
-    ]);
-    return { pro: (elevP?.id ?? activeProfileId ?? null) as string | null, consumer: (acqP?.id ?? null) as string | null };
+  /// Profils pour taguer la conversation. `consumer_profile_id` = profil de
+  /// l'acquéreur qui détient l'animal cédé (`profile_id_acquereur`), sinon son
+  /// profil particulier, sinon principal. Ce profil-là doit voir la conversation
+  /// ET la notification (cohérence). Sans tag, /messages masque la conversation.
+  async function convTags(acqUid: string, a?: AnimalLite) {
+    const { data: elevP } = await supabase.from('user_profiles')
+      .select('id').eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle();
+    let consumer = (a?.profile_id_acquereur ?? null) as string | null;
+    if (!consumer) {
+      const { data: part } = await supabase.from('user_profiles')
+        .select('id').eq('uid', acqUid).eq('profile_type', 'particulier').maybeSingle();
+      consumer = part?.id ?? null;
+    }
+    if (!consumer) {
+      const { data: main } = await supabase.from('user_profiles')
+        .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
+      consumer = main?.id ?? null;
+    }
+    return { pro: (elevP?.id ?? activeProfileId ?? null) as string | null, consumer };
   }
 
-  async function openOrCreateConv(acqUid: string): Promise<string> {
+  async function openOrCreateConv(acqUid: string, a?: AnimalLite): Promise<string> {
     const sorted = [uid, acqUid].sort().join('_');
-    const { pro, consumer } = await convTags(acqUid);
+    const { pro, consumer } = await convTags(acqUid, a);
     const { data: existing } = await supabase.from('conversations')
-      .select('id, pro_profile_id, consumer_profile_id, categorie')
+      .select('id, pro_profile_id, consumer_profile_id, categorie, deleted_for')
       .eq('participant_ids', sorted).or('type.eq.direct,type.is.null').maybeSingle();
     if (existing) {
       const patch: Record<string, unknown> = {};
       if (!existing.pro_profile_id && pro) patch.pro_profile_id = pro;
       if (!existing.consumer_profile_id && consumer) patch.consumer_profile_id = consumer;
       if (!existing.categorie || existing.categorie === 'elevage') patch.categorie = 'contact-elevage';
+      if (existing.deleted_for && Object.keys(existing.deleted_for).length) patch.deleted_for = {};
       if (Object.keys(patch).length) await supabase.from('conversations').update(patch).eq('id', existing.id);
       return existing.id;
     }
@@ -206,6 +217,9 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
       for (const m of members) if (m !== uid) unread[m] = (unread[m] ?? 0) + 1;
       await supabase.from('conversations').update({
         last_message: texte, unread_count: unread, updated_at: new Date().toISOString(),
+        // Un nouveau message fait réapparaître la conversation si le
+        // destinataire l'avait supprimée de sa liste.
+        deleted_for: {},
       }).eq('id', convId);
     }
   }
@@ -277,16 +291,15 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
     }
     setBusy(a.id);
     try {
-      const convId = await openOrCreateConv(a.uid_acquereur);
+      const { consumer } = await convTags(a.uid_acquereur, a);
+      const convId = await openOrCreateConv(a.uid_acquereur, a);
       await postToConv(convId, texte);
-      const { data: acqProfile } = await supabase.from('user_profiles')
-        .select('id').eq('uid', a.uid_acquereur).eq('is_main', true).maybeSingle();
       await supabase.from('notifications').insert({
         uid: a.uid_acquereur,
         type: 'sterilisation_relance',
         title: `✂️ Rappel stérilisation — ${a.nom ?? 'votre animal'}`,
         body: texte.length > 140 ? texte.slice(0, 137) + '…' : texte,
-        ...(acqProfile?.id ? { profile_id: acqProfile.id } : {}),
+        ...(consumer ? { profile_id: consumer } : {}),
         data: { animalId: a.id },
         read: false,
       });
