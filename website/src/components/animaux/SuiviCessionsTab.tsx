@@ -26,6 +26,8 @@ interface Props {
   onLocalUpdate: (id: string, patch: Partial<AnimalLite>) => void;
 }
 
+interface Contact { prenom?: string; nom?: string; tel?: string; email?: string; adresse?: string }
+
 function parseDate(s?: string | null): Date | null {
   if (!s) return null;
   const d = new Date(s);
@@ -34,12 +36,22 @@ function parseDate(s?: string | null): Date | null {
 
 function fmt(d: Date) { return d.toLocaleDateString('fr-FR'); }
 
+/** Téléphone au format international sans « + » pour wa.me (France par défaut). */
+function waPhone(raw: string): string {
+  let d = raw.replace(/[^0-9]/g, '');
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.startsWith('0')) d = '33' + d.slice(1);
+  return d;
+}
+
 export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLocalUpdate }: Props) {
   const router = useRouter();
   const [nonFaitesOnly, setNonFaitesOnly] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [annivAuto, setAnnivAuto] = useState(false);
   const [annivLoaded, setAnnivLoaded] = useState(false);
+  const [relance, setRelance] = useState<{ a: AnimalLite; contact: Contact } | null>(null);
+  const [relanceMsg, setRelanceMsg] = useState('');
 
   useEffect(() => {
     supabase.from('user_profiles').select('cession_anniv_auto')
@@ -170,6 +182,129 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
     }
   }
 
+  // ── Relance famille (stérilisation) ────────────────────────────────────────
+  async function openOrCreateConv(acqUid: string): Promise<string> {
+    const sorted = [uid, acqUid].sort().join('_');
+    const { data: existing } = await supabase.from('conversations')
+      .select('id').eq('participant_ids', sorted).or('type.eq.direct,type.is.null').maybeSingle();
+    if (existing) return existing.id;
+    const { data: me } = await supabase.from('user_profiles')
+      .select('firstname, lastname, nom, avatar_url').eq('uid', uid).eq('is_main', true).maybeSingle();
+    const { data: other } = await supabase.from('user_profiles')
+      .select('firstname, lastname, nom, avatar_url').eq('uid', acqUid).eq('is_main', true).maybeSingle();
+    const myName = (me?.nom || `${me?.firstname ?? ''} ${me?.lastname ?? ''}`.trim()) || 'Élevage';
+    const otherName = `${other?.firstname ?? ''} ${other?.lastname ?? ''}`.trim() || (other?.nom ?? 'Utilisateur');
+    const { data: created } = await supabase.from('conversations').insert({
+      type: 'direct',
+      participants: [uid, acqUid],
+      participant_ids: sorted,
+      participants_info: {
+        [uid]: { name: myName, ...(me?.avatar_url ? { photo: me.avatar_url } : {}) },
+        [acqUid]: { name: otherName, ...(other?.avatar_url ? { photo: other.avatar_url } : {}) },
+      },
+      last_message: '',
+      unread_count: { [uid]: 0, [acqUid]: 0 },
+      updated_at: new Date().toISOString(),
+      ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}),
+    }).select('id').single();
+    return created!.id;
+  }
+
+  async function postToConv(convId: string, texte: string) {
+    await supabase.from('messages').insert({
+      conversation_id: convId, sender_id: uid, text: texte, msg_type: 'text', is_read: false,
+    });
+    const { data: conv } = await supabase.from('conversations')
+      .select('participants, unread_count').eq('id', convId).maybeSingle();
+    if (conv) {
+      const members: string[] = (conv.participants ?? []).map((x: unknown) => String(x));
+      const unread: Record<string, number> = { ...(conv.unread_count ?? {}) };
+      for (const m of members) if (m !== uid) unread[m] = (unread[m] ?? 0) + 1;
+      await supabase.from('conversations').update({
+        last_message: texte, unread_count: unread, updated_at: new Date().toISOString(),
+      }).eq('id', convId);
+    }
+  }
+
+  async function openRelance(a: AnimalLite) {
+    setBusy(a.id);
+    try {
+      const c: Contact = {};
+      const put = (k: keyof Contact, v: unknown) => {
+        const s = (v ?? '').toString().trim();
+        if (s && !c[k]) c[k] = s;
+      };
+      const { data: doc } = await supabase.from('documents_animaux')
+        .select('metadata')
+        .eq('animal_id', a.id)
+        .in('type', ['contrat_vente', 'certificat_cession'])
+        .order('created_at', { ascending: false })
+        .limit(1).maybeSingle();
+      const m = (doc?.metadata ?? {}) as Record<string, unknown>;
+      put('prenom', m.acquereur_prenom);
+      put('nom', m.acquereur_nom_famille ?? m.acquereur_nom);
+      put('tel', m.acquereur_tel);
+      put('email', m.acquereur_email);
+      put('adresse', [m.acquereur_adresse, [m.acquereur_cp, m.acquereur_ville].filter(Boolean).join(' ')]
+        .filter((x) => x && String(x).trim()).join(', '));
+
+      const { data: cs } = await supabase.from('cessions')
+        .select('prenom_acquereur, nom_acquereur, tel_acquereur, email_acquereur, adresse_acquereur')
+        .eq('animal_id', a.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
+      if (cs) {
+        put('prenom', cs.prenom_acquereur); put('nom', cs.nom_acquereur);
+        put('tel', cs.tel_acquereur); put('email', cs.email_acquereur); put('adresse', cs.adresse_acquereur);
+      }
+      if (a.uid_acquereur) {
+        const { data: p } = await supabase.from('user_profiles')
+          .select('firstname, lastname, phone_number, email_contact, adresse, rue, code_postal, ville')
+          .eq('uid', a.uid_acquereur).eq('profile_type', 'particulier').maybeSingle();
+        if (p) {
+          put('prenom', p.firstname); put('nom', p.lastname);
+          put('tel', p.phone_number); put('email', p.email_contact);
+          put('adresse', p.adresse ?? [p.rue, p.code_postal, p.ville].filter(Boolean).join(' '));
+        }
+      }
+      put('nom', a.destinataire_nom);
+
+      const nomA = a.nom ?? "l'animal";
+      const ech = parseDate(a.sterilisation_echeance);
+      const echStr = ech ? fmt(ech) : null;
+      const salut = c.prenom ? `Bonjour ${c.prenom},` : 'Bonjour,';
+      const msg = a.sterilise
+        ? `${salut}\n\nLa stérilisation de ${nomA} a bien été déclarée. Pourriez-vous nous transmettre le certificat vétérinaire afin que nous puissions la valider ? Merci beaucoup.`
+        : `${salut}\n\nPetit rappel concernant la stérilisation de ${nomA}${echStr ? `, à réaliser avant le ${echStr}` : ''}. Merci de nous transmettre le certificat vétérinaire une fois l'intervention réalisée. Bien à vous.`;
+      setRelanceMsg(msg);
+      setRelance({ a, contact: c });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function relanceInApp(a: AnimalLite, texte: string) {
+    if (!a.uid_acquereur || !texte) return;
+    setBusy(a.id);
+    try {
+      const convId = await openOrCreateConv(a.uid_acquereur);
+      await postToConv(convId, texte);
+      const { data: acqProfile } = await supabase.from('user_profiles')
+        .select('id').eq('uid', a.uid_acquereur).eq('is_main', true).maybeSingle();
+      await supabase.from('notifications').insert({
+        uid: a.uid_acquereur,
+        type: 'sterilisation_relance',
+        title: `✂️ Rappel stérilisation — ${a.nom ?? 'votre animal'}`,
+        body: texte.length > 140 ? texte.slice(0, 137) + '…' : texte,
+        ...(acqProfile?.id ? { profile_id: acqProfile.id } : {}),
+        data: { animalId: a.id },
+        read: false,
+      });
+      setRelance(null);
+      alert('Relance envoyée dans l\'application ✅');
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (cedes.length === 0) {
     return (
       <div className="flex flex-col items-center py-20 text-center">
@@ -233,11 +368,19 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
                         : validee ? `Échéance : ${fmt(ech)}` : `Avant le ${fmt(ech)}${days != null ? ` · dans ${days} j` : ''}`)
                       : 'Échéance non définie'}
                   </p>
-                  {done && !validee && (
-                    <button onClick={() => valider(a)} disabled={busy === a.id}
-                      className="mt-2 w-full bg-[#6E9E57] hover:bg-[#5A8A45] text-white text-xs font-semibold py-2 rounded-lg transition-colors disabled:opacity-50">
-                      {busy === a.id ? '…' : '✓ Valider la stérilisation'}
-                    </button>
+                  {!validee && (
+                    <div className="mt-2 flex gap-2">
+                      {done && (
+                        <button onClick={() => valider(a)} disabled={busy === a.id}
+                          className="flex-1 bg-[#6E9E57] hover:bg-[#5A8A45] text-white text-xs font-semibold py-2 rounded-lg transition-colors disabled:opacity-50">
+                          {busy === a.id ? '…' : '✓ Valider'}
+                        </button>
+                      )}
+                      <button onClick={() => openRelance(a)} disabled={busy === a.id}
+                        className="flex-1 border border-[#0C5C6C] text-[#0C5C6C] text-xs font-semibold py-2 rounded-lg hover:bg-[#0C5C6C]/5 transition-colors disabled:opacity-50">
+                        {busy === a.id ? '…' : '📣 Relancer la famille'}
+                      </button>
+                    </div>
                   )}
                 </div>
               );
@@ -286,6 +429,57 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
           </div>
         )}
       </section>
+
+      {/* ── Modale « Relancer la famille » ── */}
+      {relance && (() => {
+        const c = relance.contact;
+        const a = relance.a;
+        const aucune = !c.prenom && !c.nom && !c.tel && !c.email && !c.adresse;
+        return (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 sm:p-4"
+            onClick={() => setRelance(null)}>
+            <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 max-h-[90vh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}>
+              <h3 className="font-bold text-[#1F2A2E] text-base mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>
+                Relancer la famille — {a.nom ?? 'Animal'}
+              </h3>
+              <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 text-xs space-y-1 mb-3">
+                {(c.prenom || c.nom) && <p>👤 {[c.prenom, c.nom].filter(Boolean).join(' ')}</p>}
+                {c.tel && <p>📞 <a href={`tel:${c.tel}`} className="text-[#0C5C6C] font-medium">{c.tel}</a></p>}
+                {c.email && <p>✉️ {c.email}</p>}
+                {c.adresse && <p>🏠 {c.adresse}</p>}
+                {aucune && <p className="text-gray-500">Aucune coordonnée dans le contrat.</p>}
+              </div>
+              <textarea value={relanceMsg} onChange={e => setRelanceMsg(e.target.value)} rows={6}
+                className="w-full border border-gray-300 rounded-xl p-3 text-sm resize-none focus:outline-none focus:border-[#0C5C6C]" />
+              <p className="text-[11px] font-bold text-gray-400 tracking-wide mt-3 mb-2">ENVOYER VIA</p>
+              <div className="flex flex-wrap gap-2">
+                {a.uid_acquereur && (
+                  <button onClick={() => relanceInApp(a, relanceMsg.trim())} disabled={busy === a.id}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#0C5C6C] bg-[#0C5C6C]/10 border border-[#0C5C6C]/30 disabled:opacity-50">
+                    🔔 Application
+                  </button>
+                )}
+                {c.tel && (
+                  <a href={`https://wa.me/${waPhone(c.tel)}?text=${encodeURIComponent(relanceMsg.trim())}`}
+                    target="_blank" rel="noopener noreferrer" onClick={() => setRelance(null)}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#1a9e4b] bg-[#25D366]/10 border border-[#25D366]/40">
+                    WhatsApp
+                  </a>
+                )}
+                {c.email && (
+                  <a href={`mailto:${c.email}?subject=${encodeURIComponent(`Stérilisation ${a.nom ?? ''} — rappel`)}&body=${encodeURIComponent(relanceMsg.trim())}`}
+                    onClick={() => setRelance(null)}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#EA4335] bg-[#EA4335]/10 border border-[#EA4335]/30">
+                    Email
+                  </a>
+                )}
+              </div>
+              <button onClick={() => setRelance(null)} className="mt-4 w-full text-xs text-gray-500 py-2">Fermer</button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -470,8 +470,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
       ));
       return;
     }
-    // Stérilisation validée (côté acquéreur) → fiche de l'animal
-    if (type == 'sterilisation_validee') {
+    // Stérilisation : validée / relance famille (côté acquéreur) → fiche animal
+    if (type == 'sterilisation_validee' || type == 'sterilisation_relance') {
       final animalId = data is Map ? data['animalId'] as String? : null;
       if (animalId != null) {
         await Navigator.push(context, MaterialPageRoute(
@@ -819,6 +819,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'sterilisation_declaree':
       case 'sterilisation_a_valider':
       case 'sterilisation_rappel':
+      case 'sterilisation_relance':
       case 'sterilisation_validee':  return Icons.content_cut;
       case 'cession_anniversaire':   return Icons.cake_outlined;
       case 'inventaire_alerte':      return Icons.inventory_2_outlined;

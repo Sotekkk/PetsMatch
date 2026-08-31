@@ -2,8 +2,10 @@ import 'package:PetsMatch/pages/petfriends/petfriend_chat_page.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -34,6 +36,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
   bool _nonFaitesOnly = false;
   String? _validating;
   String? _wishing;
+  String? _relancing;
 
   bool _annivAuto = false;
   bool _annivLoaded = false;
@@ -247,6 +250,299 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
     }
   }
 
+  // ── Relance famille (stérilisation) ─────────────────────────────────────────
+
+  /// Téléphone au format international sans « + » pour wa.me (France par défaut).
+  String _waPhone(String raw) {
+    var d = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    if (d.startsWith('00')) d = d.substring(2);
+    if (d.startsWith('0')) d = '33${d.substring(1)}';
+    return d;
+  }
+
+  String _telDigits(String raw) => raw.replaceAll(RegExp(r'[^0-9+]'), '');
+
+  /// Coordonnées de l'acquéreur : contrat signé → ligne `cessions` → profil
+  /// particulier. Retourne { prenom, nom, tel, email, adresse }.
+  Future<Map<String, String>> _contactAcquereur(Map<String, dynamic> a) async {
+    final out = <String, String>{};
+    void put(String k, dynamic v) {
+      final s = (v ?? '').toString().trim();
+      if (s.isNotEmpty && (out[k] == null || out[k]!.isEmpty)) out[k] = s;
+    }
+    String joinNonEmpty(Iterable parts, String sep) => parts
+        .where((e) => (e ?? '').toString().trim().isNotEmpty)
+        .map((e) => e.toString().trim())
+        .join(sep);
+
+    try {
+      final doc = await _supa.from('documents_animaux')
+          .select('metadata')
+          .eq('animal_id', a['id'])
+          .inFilter('type', ['contrat_vente', 'certificat_cession'])
+          .order('created_at', ascending: false)
+          .limit(1).maybeSingle();
+      final m = (doc?['metadata'] as Map?)?.cast<String, dynamic>() ?? {};
+      put('prenom', m['acquereur_prenom']);
+      put('nom', m['acquereur_nom_famille'] ?? m['acquereur_nom']);
+      put('tel', m['acquereur_tel']);
+      put('email', m['acquereur_email']);
+      put('adresse', joinNonEmpty([
+        m['acquereur_adresse'],
+        joinNonEmpty([m['acquereur_cp'], m['acquereur_ville']], ' '),
+      ], ', '));
+    } catch (_) {}
+
+    try {
+      final c = await _supa.from('cessions')
+          .select('prenom_acquereur, nom_acquereur, tel_acquereur, email_acquereur, adresse_acquereur')
+          .eq('animal_id', a['id'])
+          .order('created_at', ascending: false)
+          .limit(1).maybeSingle();
+      if (c != null) {
+        put('prenom', c['prenom_acquereur']);
+        put('nom', c['nom_acquereur']);
+        put('tel', c['tel_acquereur']);
+        put('email', c['email_acquereur']);
+        put('adresse', c['adresse_acquereur']);
+      }
+    } catch (_) {}
+
+    final acqUid = (a['uid_acquereur'] ?? '').toString();
+    if (acqUid.isNotEmpty) {
+      try {
+        final p = await _supa.from('user_profiles')
+            .select('firstname, lastname, phone_number, email_contact, adresse, rue, code_postal, ville')
+            .eq('uid', acqUid)
+            .eq('profile_type', 'particulier')
+            .maybeSingle();
+        if (p != null) {
+          put('prenom', p['firstname']);
+          put('nom', p['lastname']);
+          put('tel', p['phone_number']);
+          put('email', p['email_contact']);
+          put('adresse', p['adresse'] ??
+              joinNonEmpty([p['rue'], p['code_postal'], p['ville']], ' '));
+        }
+      } catch (_) {}
+    }
+    put('nom', a['destinataire_nom']);
+    return out;
+  }
+
+  Future<void> _openUri(Uri uri) async {
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Impossible d\'ouvrir : ${uri.scheme}')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  /// Relance « in-app » : message dans la conversation + notification.
+  Future<void> _relanceInApp(Map<String, dynamic> a, String acqUid, String texte) async {
+    try {
+      final convId = await MessagingHelper.openOrCreateConversation(
+        otherUid: acqUid, categorie: 'elevage',
+      );
+      await _supa.from('messages').insert({
+        'conversation_id': convId,
+        'sender_id':       widget.uid,
+        'text':            texte,
+        'msg_type':        'text',
+        'is_read':         false,
+      });
+      final conv = await _supa.from('conversations')
+          .select('participants, unread_count').eq('id', convId).maybeSingle();
+      if (conv != null) {
+        final members = List<String>.from(
+            (conv['participants'] as List?)?.map((e) => e.toString()) ?? []);
+        final unread = Map<String, dynamic>.from(conv['unread_count'] as Map? ?? {});
+        for (final u in members) {
+          if (u != widget.uid) unread[u] = (unread[u] as int? ?? 0) + 1;
+        }
+        await _supa.from('conversations').update({
+          'last_message': texte,
+          'unread_count': unread,
+          'updated_at':   DateTime.now().toIso8601String(),
+        }).eq('id', convId);
+      }
+      final acqProfile = await _supa.from('user_profiles')
+          .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
+      await _supa.from('notifications').insert({
+        'uid':   acqUid,
+        'type':  'sterilisation_relance',
+        'title': '✂️ Rappel stérilisation — ${a['nom'] ?? 'votre animal'}',
+        'body':  texte.length > 140 ? '${texte.substring(0, 137)}…' : texte,
+        if (acqProfile?['id'] != null) 'profile_id': acqProfile!['id'],
+        'data':  {'animalId': a['id']},
+        'read':  false,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Relance envoyée dans l\'application ✅'), backgroundColor: _green));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  Future<void> _relancer(Map<String, dynamic> a) async {
+    setState(() => _relancing = a['id'] as String);
+    Map<String, String> c;
+    try {
+      c = await _contactAcquereur(a);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _relancing = null);
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red));
+      }
+      return;
+    }
+    if (mounted) setState(() => _relancing = null);
+    if (!mounted) return;
+
+    final nom = a['nom'] as String? ?? 'l\'animal';
+    final ech = _parseDate(a['sterilisation_echeance']);
+    final echStr = ech != null ? DateFormat('dd/MM/yyyy').format(ech) : null;
+    final done = a['sterilise'] == true;
+    final prenom = c['prenom'] ?? '';
+    final salut = prenom.isNotEmpty ? 'Bonjour $prenom,' : 'Bonjour,';
+    final defaut = done
+        ? '$salut\n\nLa stérilisation de $nom a bien été déclarée. Pourriez-vous '
+          'nous transmettre le certificat vétérinaire afin que nous puissions la '
+          'valider ? Merci beaucoup.'
+        : '$salut\n\nPetit rappel concernant la stérilisation de $nom'
+          '${echStr != null ? ', à réaliser avant le $echStr' : ''}. '
+          'Merci de nous transmettre le certificat vétérinaire une fois '
+          'l\'intervention réalisée. Bien à vous.';
+    final ctrl = TextEditingController(text: defaut);
+
+    final acqUid = (a['uid_acquereur'] ?? '').toString();
+    final tel = c['tel'] ?? '';
+    final email = c['email'] ?? '';
+    final nomComplet = [c['prenom'], c['nom']]
+        .where((e) => (e ?? '').isNotEmpty).join(' ');
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 18, right: 18, top: 12,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+        ),
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            Text('Relancer la famille — $nom',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15, color: _dark)),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (nomComplet.isNotEmpty) _contactLine(Icons.person_outline, nomComplet),
+                if (tel.isNotEmpty)
+                  _contactLine(Icons.phone_outlined, tel, onTap: () => _openUri(Uri(scheme: 'tel', path: _telDigits(tel)))),
+                if (email.isNotEmpty) _contactLine(Icons.mail_outline, email),
+                if ((c['adresse'] ?? '').isNotEmpty) _contactLine(Icons.home_outlined, c['adresse']!),
+                if (nomComplet.isEmpty && tel.isEmpty && email.isEmpty && (c['adresse'] ?? '').isEmpty)
+                  Text('Aucune coordonnée dans le contrat.', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+              ]),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl, maxLines: 6, minLines: 4,
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                contentPadding: const EdgeInsets.all(12),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text('ENVOYER VIA',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 11, letterSpacing: 0.5, color: Colors.grey.shade500)),
+            const SizedBox(height: 8),
+            Wrap(spacing: 10, runSpacing: 10, children: [
+              if (acqUid.isNotEmpty)
+                _canalBtn('Application', const Icon(Icons.notifications_active_outlined, size: 16, color: _teal), _teal, () {
+                  Navigator.pop(ctx);
+                  _relanceInApp(a, acqUid, ctrl.text.trim());
+                }),
+              if (tel.isNotEmpty)
+                _canalBtn('WhatsApp', const FaIcon(FontAwesomeIcons.whatsapp, size: 15, color: Color(0xFF25D366)), const Color(0xFF25D366), () {
+                  Navigator.pop(ctx);
+                  _openUri(Uri.parse('https://wa.me/${_waPhone(tel)}?text=${Uri.encodeComponent(ctrl.text.trim())}'));
+                }),
+              if (tel.isNotEmpty)
+                _canalBtn('SMS', const Icon(Icons.sms_outlined, size: 16, color: Color(0xFF6E9E57)), const Color(0xFF6E9E57), () {
+                  Navigator.pop(ctx);
+                  _openUri(Uri.parse('sms:${_telDigits(tel)}?body=${Uri.encodeComponent(ctrl.text.trim())}'));
+                }),
+              if (email.isNotEmpty)
+                _canalBtn('Email', const Icon(Icons.email_outlined, size: 16, color: Color(0xFFEA4335)), const Color(0xFFEA4335), () {
+                  Navigator.pop(ctx);
+                  final subj = Uri.encodeComponent('Stérilisation de $nom — rappel');
+                  final body = Uri.encodeComponent(ctrl.text.trim());
+                  _openUri(Uri.parse('mailto:$email?subject=$subj&body=$body'));
+                }),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _contactLine(IconData icon, String value, {VoidCallback? onTap}) {
+    final row = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icon, size: 15, color: Colors.grey.shade500),
+        const SizedBox(width: 8),
+        Expanded(child: Text(value, style: TextStyle(
+            fontSize: 12.5,
+            color: onTap != null ? _teal : _dark,
+            fontWeight: onTap != null ? FontWeight.w600 : FontWeight.w400))),
+      ]),
+    );
+    return onTap != null ? InkWell(onTap: onTap, child: row) : row;
+  }
+
+  Widget _canalBtn(String label, Widget icon, Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          icon,
+          const SizedBox(width: 7),
+          Text(label, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12.5, color: color)),
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.loading) {
@@ -399,24 +695,42 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
             style: TextStyle(fontSize: 11, color: enRetard ? Colors.red.shade700 : Colors.grey.shade700),
           ),
         ]),
-        if (done && !validee) ...[
+        if (!validee) ...[
           const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: _validating == a['id'] ? null : () => _valider(a),
-              icon: _validating == a['id']
-                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.verified_outlined, size: 16),
-              label: const Text('Valider la stérilisation',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _green, foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          Row(children: [
+            if (done && !validee)
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _validating == a['id'] ? null : () => _valider(a),
+                  icon: _validating == a['id']
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.verified_outlined, size: 16),
+                  label: const Text('Valider',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _green, foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            if (done && !validee) const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _relancing == a['id'] ? null : () => _relancer(a),
+                icon: _relancing == a['id']
+                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
+                    : const Icon(Icons.campaign_outlined, size: 16),
+                label: const Text('Relancer la famille',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _teal,
+                  side: const BorderSide(color: _teal),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
               ),
             ),
-          ),
+          ]),
         ],
       ]),
     );

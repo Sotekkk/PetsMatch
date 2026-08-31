@@ -527,6 +527,7 @@ function getNotifUrl(n: Notif): string | null {
     case 'cession_anniversaire':
       return d.tab === 'suivi_cessions' ? '/mes-animaux?tab=suivi' : (d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux?tab=suivi');
     case 'sterilisation_validee':
+    case 'sterilisation_relance':
       return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
     // Reçues par l'acquéreur → sa page « Mes contrats » (pas le lien de signature brut)
     case 'contrat_signe_eleveur':
