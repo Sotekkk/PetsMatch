@@ -135,54 +135,8 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
     if (!texte || !texte.trim()) return;
     setBusy(a.id);
     try {
-      const sorted = [uid, a.uid_acquereur].sort().join('_');
-      let convId: string;
-      const { data: existing } = await supabase.from('conversations')
-        .select('id').eq('participant_ids', sorted).or('type.eq.direct,type.is.null').maybeSingle();
-      if (existing) {
-        convId = existing.id;
-      } else {
-        const { data: me } = await supabase.from('user_profiles')
-          .select('firstname, lastname, nom, avatar_url').eq('uid', uid).eq('is_main', true).maybeSingle();
-        const { data: other } = await supabase.from('user_profiles')
-          .select('firstname, lastname, nom, avatar_url').eq('uid', a.uid_acquereur).eq('is_main', true).maybeSingle();
-        const myName = (me?.nom || `${me?.firstname ?? ''} ${me?.lastname ?? ''}`.trim()) || 'Élevage';
-        const otherName = `${other?.firstname ?? ''} ${other?.lastname ?? ''}`.trim() || (other?.nom ?? 'Utilisateur');
-        const participantsInfo: Record<string, unknown> = {
-          [uid]: { name: myName, ...(me?.avatar_url ? { photo: me.avatar_url } : {}) },
-          [a.uid_acquereur]: { name: otherName, ...(other?.avatar_url ? { photo: other.avatar_url } : {}) },
-        };
-        const { data: created } = await supabase.from('conversations').insert({
-          type: 'direct',
-          participants: [uid, a.uid_acquereur],
-          participant_ids: sorted,
-          participants_info: participantsInfo,
-          last_message: '',
-          unread_count: { [uid]: 0, [a.uid_acquereur]: 0 },
-          updated_at: new Date().toISOString(),
-          ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}),
-        }).select('id').single();
-        convId = created!.id;
-      }
-      await supabase.from('messages').insert({
-        conversation_id: convId,
-        sender_id: uid,
-        text: texte.trim(),
-        msg_type: 'text',
-        is_read: false,
-      });
-      const { data: conv } = await supabase.from('conversations')
-        .select('participants, unread_count').eq('id', convId).maybeSingle();
-      if (conv) {
-        const members: string[] = (conv.participants ?? []).map((x: unknown) => String(x));
-        const unread: Record<string, number> = { ...(conv.unread_count ?? {}) };
-        for (const m of members) if (m !== uid) unread[m] = (unread[m] ?? 0) + 1;
-        await supabase.from('conversations').update({
-          last_message: texte.trim(),
-          unread_count: unread,
-          updated_at: new Date().toISOString(),
-        }).eq('id', convId);
-      }
+      const convId = await openOrCreateConv(a.uid_acquereur);
+      await postToConv(convId, texte.trim());
       router.push(`/messages?conv=${convId}`);
     } finally {
       setBusy(null);
@@ -190,11 +144,31 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
   }
 
   // ── Relance famille (stérilisation) ────────────────────────────────────────
+  /// Profils pour taguer la conversation : sans `pro_profile_id` +
+  /// `consumer_profile_id`, la liste /messages masque la conversation « sans
+  /// profil » à l'acquéreur (profil particulier). Backfill si elle existe déjà.
+  async function convTags(acqUid: string) {
+    const [{ data: elevP }, { data: acqP }] = await Promise.all([
+      supabase.from('user_profiles').select('id').eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle(),
+      supabase.from('user_profiles').select('id').eq('uid', acqUid).eq('profile_type', 'particulier').maybeSingle(),
+    ]);
+    return { pro: (elevP?.id ?? activeProfileId ?? null) as string | null, consumer: (acqP?.id ?? null) as string | null };
+  }
+
   async function openOrCreateConv(acqUid: string): Promise<string> {
     const sorted = [uid, acqUid].sort().join('_');
+    const { pro, consumer } = await convTags(acqUid);
     const { data: existing } = await supabase.from('conversations')
-      .select('id').eq('participant_ids', sorted).or('type.eq.direct,type.is.null').maybeSingle();
-    if (existing) return existing.id;
+      .select('id, pro_profile_id, consumer_profile_id, categorie')
+      .eq('participant_ids', sorted).or('type.eq.direct,type.is.null').maybeSingle();
+    if (existing) {
+      const patch: Record<string, unknown> = {};
+      if (!existing.pro_profile_id && pro) patch.pro_profile_id = pro;
+      if (!existing.consumer_profile_id && consumer) patch.consumer_profile_id = consumer;
+      if (!existing.categorie || existing.categorie === 'elevage') patch.categorie = 'contact-elevage';
+      if (Object.keys(patch).length) await supabase.from('conversations').update(patch).eq('id', existing.id);
+      return existing.id;
+    }
     const { data: me } = await supabase.from('user_profiles')
       .select('firstname, lastname, nom, avatar_url').eq('uid', uid).eq('is_main', true).maybeSingle();
     const { data: other } = await supabase.from('user_profiles')
@@ -212,7 +186,9 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
       last_message: '',
       unread_count: { [uid]: 0, [acqUid]: 0 },
       updated_at: new Date().toISOString(),
-      ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}),
+      categorie: 'contact-elevage',
+      ...(pro ? { pro_profile_id: pro } : {}),
+      ...(consumer ? { consumer_profile_id: consumer } : {}),
     }).select('id').single();
     return created!.id;
   }

@@ -235,8 +235,9 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
     try {
       final convId = await MessagingHelper.openOrCreateConversation(
         otherUid: acqUid,
-        categorie: 'elevage',
+        categorie: 'contact-elevage',
       );
+      await _taguerConversation(convId, acqUid);
       await _supa.from('messages').insert({
         'conversation_id': convId,
         'sender_id':       widget.uid,
@@ -375,12 +376,40 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
     }
   }
 
+  /// Tague la conversation `pro_profile_id` (éleveur) + `consumer_profile_id`
+  /// (acquéreur, profil particulier). Sans ça, la liste /messages masque la
+  /// conversation « sans profil » à l'acquéreur (profil particulier).
+  Future<void> _taguerConversation(String convId, String acqUid) async {
+    try {
+      final elevP = await _supa.from('user_profiles')
+          .select('id').eq('uid', widget.uid ?? '').eq('profile_type', 'eleveur').maybeSingle();
+      final acqP = await _supa.from('user_profiles')
+          .select('id').eq('uid', acqUid).eq('profile_type', 'particulier').maybeSingle();
+      final conv = await _supa.from('conversations')
+          .select('pro_profile_id, consumer_profile_id, categorie').eq('id', convId).maybeSingle();
+      final patch = <String, dynamic>{};
+      if ('${conv?['pro_profile_id'] ?? ''}'.isEmpty && elevP?['id'] != null) {
+        patch['pro_profile_id'] = elevP!['id'];
+      }
+      if ('${conv?['consumer_profile_id'] ?? ''}'.isEmpty && acqP?['id'] != null) {
+        patch['consumer_profile_id'] = acqP!['id'];
+      }
+      if ('${conv?['categorie'] ?? ''}'.isEmpty || conv?['categorie'] == 'elevage') {
+        patch['categorie'] = 'contact-elevage';
+      }
+      if (patch.isNotEmpty) {
+        await _supa.from('conversations').update(patch).eq('id', convId);
+      }
+    } catch (_) {}
+  }
+
   /// Relance « in-app » : message dans la conversation + notification.
   Future<void> _relanceInApp(Map<String, dynamic> a, String acqUid, String texte) async {
     try {
       final convId = await MessagingHelper.openOrCreateConversation(
-        otherUid: acqUid, categorie: 'elevage',
+        otherUid: acqUid, categorie: 'contact-elevage',
       );
+      await _taguerConversation(convId, acqUid);
       await _supa.from('messages').insert({
         'conversation_id': convId,
         'sender_id':       widget.uid,
