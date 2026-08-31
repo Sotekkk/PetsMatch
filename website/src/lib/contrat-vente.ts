@@ -36,17 +36,36 @@ export interface DataContrat {
   dateCession?: string;
   prix?: string;
   notes?: string;
+  acompte?: string;
+  tranche1?: string;
+  tva?: string;
+  tvaTaux?: string;
+  modePaiement?: string;
+  montantTranche2?: string;
+  civilite?: string;
+  prenom?: string;
+  nomFamille?: string;
+  cp?: string;
+  ville?: string;
+  villeNaissance?: string;
+  villeSignature?: string;
+  sterilisationClause?: string;
+  clausesOff?: string[];
+  mediateurNom?: string;
+  mediateurUrl?: string;
 }
 
+// ⚠️ Garder identique à `_termes()` de l'appli (lib/pages/eleveur/animaux/contrat_pdf.dart).
+// pedigree === '' → pas de livre généalogique officiel → n° d'identification obligatoire.
 export function animalTerms(espece?: string) {
   switch ((espece ?? '').toLowerCase()) {
-    case 'chien':  return { jeune:'chiot',    pedigree:'LOF ou pedigree FFP n°', vices:'maladie de Carré, de Rubarth, parvovirose, dysplasie coxo-fémorale, atrophie rétinienne, ectopie testiculaire (seulement si cédé âgé de plus de 6 mois)', sterilM:'12 mois à compter de la date de naissance pour un chiot mâle', sterilF:'12 mois à compter de la date de naissance pour un chiot femelle (ou après ses premières chaleurs)' };
-    case 'chat':   return { jeune:'chaton',   pedigree:'LOOF n°', vices:'leucopénie et péritonite infectieuses félines, FeLV, FIV', sterilM:'6 mois à compter de la date de naissance', sterilF:'6 mois à compter de la date de naissance (ou après les premières chaleurs)' };
-    case 'lapin':  return { jeune:'lapereau', pedigree:'N° registre', vices:'myxomatose, maladie hémorragique virale (VHD)', sterilM:'5 mois', sterilF:'5 mois' };
-    case 'cheval': return { jeune:'poulain',  pedigree:'SIRE n°', vices:'cornage chronique, emphysème pulmonaire, immobilité, stringhalt, mélanose cutanée (pour chevaux gris)', sterilM:'N/A', sterilF:'N/A' };
-    case 'ovin':   return { jeune:'agneau',   pedigree:'N° registre', vices:'clavelée, piétin chronique', sterilM:'N/A', sterilF:'N/A' };
-    case 'caprin': return { jeune:'chevreau', pedigree:'N° registre', vices:'artérite encéphalite caprine (CAE), brucellose', sterilM:'N/A', sterilF:'N/A' };
-    default:       return { jeune:'animal',   pedigree:'N° registre/pedigree', vices:'vices rédhibitoires définis par le code rural', sterilM:'à convenir', sterilF:'à convenir' };
+    case 'chien':  return { jeune:'chiot',    pedigree:'LOF ou n° de pedigree (autre club)', vices:'maladie de Carré, hépatite contagieuse (maladie de Rubarth), parvovirose, dysplasie coxo-fémorale, atrophie rétinienne, ectopie testiculaire (uniquement si cédé âgé de plus de six mois)', sterilM:'12 mois à compter de la date de naissance pour un mâle', sterilF:'12 mois à compter de la date de naissance pour une femelle (ou après ses premières chaleurs)' };
+    case 'chat':   return { jeune:'chaton',   pedigree:'LOOF n°', vices:'leucopénie infectieuse (typhus), péritonite infectieuse féline (PIF), virus leucémogène félin (FeLV), virus de l\'immunodéficience féline (FIV)', sterilM:'6 mois à compter de la date de naissance', sterilF:'6 mois à compter de la date de naissance (ou après les premières chaleurs)' };
+    case 'lapin':  return { jeune:'lapereau', pedigree:'', vices:'myxomatose, maladie hémorragique virale (VHD)', sterilM:'5 mois', sterilF:'5 mois' };
+    case 'cheval': return { jeune:'poulain',  pedigree:'', vices:'cornage chronique, emphysème pulmonaire, immobilité, tic proprement dit avec ou sans usure des dents, boiterie intermittente (stringhalt), uvéite isolée', sterilM:'à convenir', sterilF:'à convenir' };
+    case 'ovin':   return { jeune:'agneau',   pedigree:'', vices:'clavelée, piétin chronique', sterilM:'à convenir', sterilF:'à convenir' };
+    case 'caprin': return { jeune:'chevreau', pedigree:'', vices:'arthrite encéphalite caprine (CAEV), brucellose', sterilM:'à convenir', sterilF:'à convenir' };
+    default:       return { jeune:'animal',   pedigree:'', vices:'vices rédhibitoires définis aux articles L.213-1 et suivants du code rural', sterilM:'à convenir', sterilF:'à convenir' };
   }
 }
 
@@ -58,26 +77,34 @@ function fmtMontant(x: string | number | null | undefined): string {
 
 const CSS = `
 *{box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:11.5px;margin:0;color:#222;line-height:1.6;orphans:4;widows:4}
-.page{max-width:780px;margin:0 auto;padding:30px 40px 120px}
-h1{font-size:18px;text-align:center;margin-bottom:2px;letter-spacing:1px;text-transform:uppercase;page-break-after:avoid;break-after:avoid}
+body{font-family:Arial,Helvetica,sans-serif;font-size:11px;margin:0;color:#1F2A2E;line-height:1.5;orphans:4;widows:4}
+.page{max-width:780px;margin:0 auto;padding:30px 44px 120px}
+h1{font-size:16px;text-align:center;margin:0 0 16px;letter-spacing:1.5px;font-weight:bold;page-break-after:avoid;break-after:avoid}
 h2{font-size:13px;text-align:center;text-transform:uppercase;letter-spacing:0.5px;margin:24px 0 10px;page-break-after:avoid;break-after:avoid}
-.parties{margin:18px 0;line-height:2;page-break-inside:avoid;break-inside:avoid}
-.between{text-align:center;font-style:italic;margin:12px 0}
-.article{page-break-inside:avoid;break-inside:avoid;margin-bottom:2px}
-.art-title{font-weight:bold;margin:14px 0 4px;font-size:12px;text-transform:uppercase;color:#0C5C6C;page-break-after:avoid;break-after:avoid}
-.block{margin-bottom:8px}
-.sign-section{page-break-inside:avoid;break-inside:avoid;margin-top:20px}
-.sign-row{display:flex;gap:24px}
-.sign-block{flex:1;border:1px solid #ddd;border-radius:8px;padding:12px 14px;text-align:center;page-break-inside:avoid;break-inside:avoid}
-.sign-label{font-size:10px;font-weight:bold;text-transform:uppercase;letter-spacing:0.5px;color:#0C5C6C;margin-bottom:2px}
+.parties{margin:0 0 10px;page-break-inside:avoid;break-inside:avoid}
+.lbl-strong{font-weight:bold;margin-bottom:2px}
+.role{font-size:9px;color:#6B7280;font-style:italic;margin-top:2px}
+.ln{margin:1px 0}
+.ln .lbl{font-weight:bold}
+.pp{text-align:justify;margin:4px 0}
+.between{text-align:center;font-style:italic;margin:6px 0}
+.sep{border:none;border-top:.5px solid #d1d5db;margin:6px 0}
+.fait-a{margin-top:14px}
+.article{page-break-inside:avoid;break-inside:avoid;margin:9px 0 2px}
+.art-title{font-weight:bold;margin:0 0 3px;font-size:11px;color:#0C5C6C;letter-spacing:.3px;page-break-after:avoid;break-after:avoid}
+.block{margin-bottom:4px}
+.sign-section{page-break-inside:avoid;break-inside:avoid;margin-top:16px}
+.sign-row{display:flex;gap:16px}
+.sign-block{flex:1;padding:4px 2px;page-break-inside:avoid;break-inside:avoid}
+.sign-label{font-size:10px;font-weight:bold;color:#1F2A2E;margin-bottom:4px}
+.sign-approved{font-size:9px;color:#1F2A2E;margin-bottom:2px}
+.sign-approved .cbx{font-size:11px}
 .sign-name{font-size:10px;color:#555;margin-bottom:6px}
-.sign-img{height:64px;border-bottom:1px solid #888;display:flex;align-items:center;justify-content:center;margin-bottom:4px}
-.sign-img img{max-height:60px;max-width:100%;object-fit:contain}
-.sign-img:not(:has(img))::after{content:"_________________________";color:#bbb;font-size:11px}
-.sign-note{font-size:9px;color:#888}
-.copy-banner{border:2px dashed #0C5C6C;border-radius:6px;padding:6px 14px;text-align:center;font-size:10px;color:#0C5C6C;font-weight:bold;margin:14px 0 8px;page-break-inside:avoid;break-inside:avoid}
-.foot{margin-top:16px;font-size:9px;color:#aaa;text-align:center;page-break-before:avoid;break-before:avoid}
+.sign-img{height:46px;display:flex;align-items:flex-end;margin-bottom:2px;border-bottom:.6px solid #9ca3af;max-width:160px}
+.sign-img img{max-height:44px;max-width:100%;object-fit:contain}
+.sign-note{font-size:8px;color:#888}
+.copy-banner{font-size:8px;color:#6B7280;font-style:italic;margin:8px 0 6px;page-break-inside:avoid;break-inside:avoid}
+.foot{margin-top:14px;font-size:8px;color:#aaa;text-align:center;page-break-before:avoid;break-before:avoid}
 .cb{display:inline-block;width:12px;height:12px;border:1px solid #444;vertical-align:middle;margin-right:3px;cursor:pointer;background:#fff;text-align:center;line-height:11px;font-size:9px}
 .cb.checked{background:#0C5C6C;color:#fff}
 .e{border-bottom:1px solid #0C5C6C;min-width:60px;display:inline-block;outline:none;padding:0 3px;color:#0C5C6C;cursor:text}
@@ -616,30 +643,50 @@ ${signBlockSaillie('proprietaire_femelle', t.titreFemelle, proprietaireFemelle)}
 </body></html>`;
 }
 
-function signBlock(role: 'vendeur' | 'acheteur', nom: string) {
+function signBlock(role: 'vendeur' | 'acheteur', nom: string, sig?: string) {
+  const label = role === 'vendeur' ? 'Le Vendeur' : "L'Acquéreur";
+  const img = sig
+    ? `<img src="${sig}" style="max-height:44px;max-width:100%;object-fit:contain">`
+    : '';
   return `
 <div class="sign-block" data-signer="${role}">
-  <div class="sign-label">${role === 'vendeur' ? 'Le Vendeur' : "L'Acheteur"}</div>
-  <div class="sign-name">${nom || '…'}</div>
-  <div class="sign-img"></div>
-  <div class="sign-note">« Lu et approuvé »</div>
-  <div style="margin-top:6px;font-size:9px"><span class="cb" onclick="toggleCb(this)">☐</span> J'ai reçu mon exemplaire original</div>
+  <div class="sign-label">${label} : ${nom || '…'}</div>
+  <div class="sign-approved"><span class="cbx">${sig ? '☑' : '☐'}</span> Lu et approuvé</div>
+  <div class="sign-img">${img}</div>
+  <div class="sign-note">Date et signature</div>
 </div>`;
+}
+
+// ── Helpers de mise en page « identique à l'appli » ──────────────────────────
+// Une info par ligne : « Libellé : valeur » (rien si valeur vide).
+function line(label: string, value?: string | null): string {
+  const v = (value ?? '').toString().trim();
+  if (!v) return '';
+  return `<div class="ln"><span class="lbl">${label} :</span> ${v}</div>`;
+}
+function para(text: string): string {
+  return `<p class="pp">${text}</p>`;
+}
+function art(key: string, off: Set<string>, titre: string, corps: string): string {
+  if (off.has(key)) return '';
+  return `<div class="article"><div class="art-title">${titre}</div>${corps}</div>`;
 }
 
 export function generateContratHTML(
   animal: AnimalContrat,
   data: DataContrat,
   eleveur: EleveurContrat,
-  opts?: { animalId?: string; supabaseUrl?: string; supabaseKey?: string; avecSterilisation?: boolean }
+  opts?: {
+    animalId?: string; supabaseUrl?: string; supabaseKey?: string;
+    avecSterilisation?: boolean;
+    signatureEleveur?: string; signatureAcquereur?: string;
+  }
 ): string {
   const today = new Date().toLocaleDateString('fr-FR');
   const t = animalTerms(animal.espece);
   const isMasculin = ['male','mâle','m'].includes((animal.sexe ?? '').toLowerCase());
-  const sterilDelai = isMasculin ? t.sterilM : t.sterilF;
-  const acheteurNom = data.nom || '';
+  const sterilDelai = data.sterilisationClause?.trim() || (isMasculin ? t.sterilM : t.sterilF);
   const isGratuit = !data.prix || Math.round(parseFloat(String(data.prix))) === 0;
-  const prixTTC = data.prix ? `${fmtMontant(data.prix)} euros TTC` : '';
   const dn = animal.date_naissance ? new Date(animal.date_naissance).toLocaleDateString('fr-FR') : '';
   const dateVente = data.dateCession ? new Date(data.dateCession).toLocaleDateString('fr-FR') : today;
   const animalId = opts?.animalId ?? '';
@@ -647,13 +694,72 @@ export function generateContratHTML(
   const sbKey = opts?.supabaseKey ?? '';
   const hasSign = !!animalId;
   const avecSteril = opts?.avecSterilisation !== false;
-  const couleur        = animal.couleur ?? '';
-  const pedigreeNum    = animal.pedigree_numero ?? '';
-  const nomPere        = animal.nom_pere ?? '';
-  const pucePere       = animal.puce_pere ? ` (puce ${animal.puce_pere})` : '';
-  const nomMere        = animal.nom_mere ?? '';
-  const puceMere       = animal.puce_mere ? ` (puce ${animal.puce_mere})` : '';
-  const villeNaissance = animal.ville_naissance ?? '';
+  const clausesOff = new Set(data.clausesOff ?? []);
+  const sigElv = opts?.signatureEleveur;
+  const sigAcq = opts?.signatureAcquereur;
+
+  const acheteurLabel = [data.civilite, data.prenom, data.nomFamille].filter(Boolean).join(' ').trim() || data.nom || '';
+  const villeCp = [data.cp, data.ville].filter(Boolean).join(' ').trim();
+  const villeNais = (data.villeNaissance || animal.ville_naissance || '').trim();
+  const villeSig = (data.villeSignature || '').trim();
+  const pedigreeVal = animal.pedigree_lof || animal.pedigree_numero || '';
+  const nomPere = animal.nom_pere ? `${animal.nom_pere}${animal.puce_pere ? ` (puce ${animal.puce_pere})` : ''}` : '';
+  const nomMere = animal.nom_mere ? `${animal.nom_mere}${animal.puce_mere ? ` (puce ${animal.puce_mere})` : ''}` : '';
+  const eur = (v?: string | null) => { const s = (v ?? '').toString().trim(); return s ? `${s.replace('.', ',')} €` : ''; };
+  const tranche1Str = (data.tranche1 ?? '').trim()
+    || (isGratuit ? 'néant (cession gratuite)' : (data.prix ? fmtMontant(data.prix) : ''));
+  const montantT2 = (data.montantTranche2 ?? '').trim() || '2 000';
+
+  const art1 = `<div class="block">
+${line(`Un ${t.jeune} du nom`, animal.nom)}
+${line('De race', animal.race)}
+${line('Né le', dn ? `${dn}${villeNais ? ` à ${villeNais}` : ''}` : '')}
+${line('Sexe', isMasculin ? 'Mâle' : 'Femelle')}
+${line('Couleur / robe', animal.couleur)}
+${line(t.pedigree ? 'Identification (transpondeur / puce) n°' : "Numéro d'identification (obligatoire)", animal.identification)}
+${t.pedigree ? line(t.pedigree, pedigreeVal) : ''}
+${line('Nom du père', nomPere)}
+${line('Nom de la mère', nomMere)}
+${para(`L'animal est cédé avec : un certificat vétérinaire de bonne santé, un carnet de santé ou passeport, un certificat provisoire d'identification, un certificat d'engagement et de connaissance signé au moins 7 jours avant le départ, et un document d'information sur l'accueil d'un ${t.jeune}.`)}
+</div>`;
+
+  const art2 = `<div class="block">
+${line('Acompte déjà versé', eur(data.acompte))}
+${line("Tranche 1 (payable au départ effectif de l'animal)", (isGratuit && !(data.tranche1 ?? '').trim()) ? 'néant (cession gratuite)' : `${tranche1Str} €`)}
+${line(`Dont TVA${data.tvaTaux ? ` (${String(data.tvaTaux).replace('.', ',')} %)` : ''}`, eur(data.tva))}
+${line('Payé par', data.modePaiement)}
+${(avecSteril && sterilDelai) ? para(`Tranche 2 (payable au terme du délai de stérilisation (${sterilDelai}) en cas de non-présentation du certificat de stérilisation établi par un vétérinaire agréé) : ${montantT2} euros.`) + para(`La Tranche 2 n'est pas due par l'Acheteur si la stérilisation a été effectuée par le Vendeur avant la livraison effective de l'animal.`) : ''}
+</div>`;
+
+  const art3 = art('art3', clausesOff, 'Article 3 - Les conditions de la vente',
+    para(`L'Acheteur s'engage à détenir l'animal dans des conditions compatibles avec ses besoins biologiques et comportementaux et à lui donner des soins attentifs conformément aux obligations légales (art. D.214-32-1 du code rural).`)
+  + para(`Responsabilité de l'Acheteur : en adoptant un animal, l'Acheteur assume la responsabilité de son bien-être, ce qui inclut les soins quotidiens et les soins vétérinaires nécessaires. Si l'Acheteur souhaite se séparer de l'animal, il s'engage à prévenir le Vendeur prioritairement et dans les plus brefs délais afin que celui-ci l'aide à trouver une nouvelle famille.`)
+  + para(`Obligations financières : dès le premier jour, l'Acheteur est responsable financièrement de l'animal (entretien, nourriture, soins vétérinaires et autres besoins).`)
+  + para(`Proposition d'une assurance santé animale : le Vendeur peut proposer une mutuelle partenaire pour aider à couvrir les frais vétérinaires. Le Vendeur n'est toutefois pas responsable des frais médicaux de l'animal après la vente ; la prise en charge médicale relève entièrement de la responsabilité de l'Acheteur à compter de la vente.`));
+
+  const art4 = art('art4', clausesOff, 'Article 4 - Le transfert de propriété',
+    para(`L'Acheteur déclare avoir été informé et accepter que, quel que soit le mode de règlement, le Vendeur conserve la propriété de l'animal jusqu'à encaissement de la totalité de la somme convenue, et que cet encaissement conditionne le transfert de propriété. L'Acheteur convient qu'en compensation de la jouissance immédiate de l'animal il assumera, pendant cette période, l'entière responsabilité de tous les risques de perte, vol, accident, décès ou maladie, quelle qu'en soit la cause, y compris cas fortuit ou force majeure, à l'exception de ceux mentionnés au paragraphe garantie. Le « volet B » de la carte d'identification I-CAD ne sera adressé au fichier national qu'après encaissement de la totalité du prix.`));
+
+  const art5 = art('art5', clausesOff, 'Article 5 - Les garanties',
+    para(`L'Acheteur admet avoir été informé de ce que ne sont garantis que les maladies et défauts définis comme vices rédhibitoires par les articles L.213-1 à L.213-9 du code rural (${t.vices}), qui surviendraient dans les conditions, modalités et délais déterminés par les articles R.213-3 à R.213-7 du code rural. Cette garantie donne droit, dans les conditions de ce code, à une réduction de prix si l'animal est conservé par l'Acheteur, ou à un remboursement intégral contre restitution de l'animal.`)
+  + para(`L'Acheteur ne bénéficie pas de la garantie des vices cachés des articles 1641 et suivants du code civil ; la vente est assortie de la seule garantie légale des vices rédhibitoires.`)
+  + para(`L'Acheteur, ayant le jour de la livraison examiné les caractéristiques de l'animal, atteste que celles-ci ne soulèvent de sa part ni réserve ni objection. La vente ne peut être assortie d'aucune garantie de confirmation ultérieure, de réussite en élevage, concours, dressage, expositions ou de conformité au standard.`)
+  + para(`Préalablement à toute action au titre des garanties, le vétérinaire de l'Acheteur devra se rapprocher de celui du Vendeur et lui communiquer par écrit ses constats et diagnostic. Dans l'attente de la réponse du Vendeur, l'animal sera autant que possible conservé en vie et dans un état permettant les contre-expertises. Toute euthanasie ou intervention non motivée par un pronostic vital effectuée sans accord écrit du Vendeur décharge ce dernier de toute obligation de garantie. Le Vendeur ne prend en charge aucun frais vétérinaire qui ne serait du fait de son propre vétérinaire, sauf accord exprès et écrit préalable.`));
+
+  const art6 = art('art6', clausesOff, 'Article 6 - Clause de confidentialité',
+    para(`Toutes les informations, de quelque nature que ce soit, que l'une des Parties a pu recueillir sur l'autre, par écrit ou oralement, sont confidentielles. Chaque Partie s'engage à ne pas les divulguer ni les communiquer à quiconque, à prendre toute disposition pour en préserver la confidentialité, et à n'en faire aucun usage dans un but autre que l'exécution du présent contrat.`));
+
+  const art7 = art('art7', clausesOff, 'Article 7 - Droit de rétractation - Non applicable',
+    para(`Lorsque la vente ou la réservation s'est réalisée à distance, l'Acheteur reconnaît que l'animal entre dans la catégorie visée par l'article L.221-28 3° du code de la consommation (« biens confectionnés selon les spécifications du consommateur ou nettement personnalisés »). Un ${t.jeune} est un être vivant unique et irremplaçable, destiné à recevoir l'affection de son maître, sans vocation économique. L'Acheteur reconnaît en conséquence qu'il ne pourra invoquer le droit de rétractation issu de l'article L.221-18 du code de la consommation.`));
+
+  const medNom = (data.mediateurNom ?? '').trim() || 'Yves Legeay';
+  const medUrl = (data.mediateurUrl ?? '').trim() || 'https://snpcc.com/';
+  const art8 = art('art8', clausesOff, 'Article 8 - Clause de règlement amiable préalable obligatoire',
+    para(`En cas de litige ou réclamation relatif au présent contrat (formation, validité, interprétation, exécution, violation), les Parties tenteront d'abord de le résoudre à l'amiable préalablement à toute instance judiciaire, notamment par la saisine du médiateur ${medNom}${medUrl ? ` (${medUrl})` : ''}.`));
+
+  const conditionsParticulieres = (data.notes ?? '').trim()
+    ? `<div class="article"><div class="art-title">Conditions particulières</div>${para(data.notes!.trim())}</div>`
+    : '';
 
   return `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"><title>Contrat de vente — ${animal.nom || 'animal'}</title>
@@ -674,163 +780,53 @@ export function generateContratHTML(
 
 <div id="sign-status" class="status-ok" style="display:none"></div>
 
-<h1>Contrat de vente</h1>
+<h1>CONTRAT DE VENTE</h1>
 
 <div class="parties">
-<strong>ENTRE :</strong><br>
-${eleveur.nom}${eleveur.adresse ? `, demeurant ${eleveur.adresse}` : ''}${eleveur.siret ? ` — SIRET ${eleveur.siret}` : ''}${eleveur.tel ? ` — ${eleveur.tel}` : ''}<br>
-<em>Le Vendeur</em>
+<div class="lbl-strong">ENTRE :</div>
+${line('Vendeur', eleveur.nom)}
+${line('Demeurant à', eleveur.adresse)}
+${line('Téléphone', eleveur.tel)}
+${line('SIRET', eleveur.siret)}
+${line('Email', eleveur.email)}
+<div class="role">Le Vendeur</div>
 </div>
-<div class="between">ET :</div>
+
 <div class="parties">
-<span class="cb" onclick="toggleCb(this)">☐</span> M. &nbsp; <span class="cb" onclick="toggleCb(this)">☐</span> Mme<br>
-Nom : <span class="e wide" contenteditable="true" data-ph="Nom">${acheteurNom ? acheteurNom.split(' ').slice(-1)[0] : ''}</span> &nbsp;
-Prénom : <span class="e wide" contenteditable="true" data-ph="Prénom">${acheteurNom ? acheteurNom.split(' ').slice(0,-1).join(' ') : ''}</span><br>
-Adresse : <span class="e wide" contenteditable="true" data-ph="Adresse">${data.adresse || ''}</span><br>
-Tél : <span class="e" contenteditable="true" data-ph="Téléphone">${data.tel || ''}</span> &nbsp;
-Mail : <span class="e wide" contenteditable="true" data-ph="Email">${data.email || ''}</span><br>
-<em>L'Acheteur</em>
+<div class="lbl-strong">ET :</div>
+${line('Acheteur', acheteurLabel)}
+${line('Demeurant à', data.adresse)}
+${line('Ville, code postal', villeCp)}
+${line('Téléphone', data.tel)}
+${line('Email', data.email)}
+<div class="role">L'Acheteur</div>
 </div>
 
-<p style="text-align:center;font-style:italic;margin:8px 0">Il a été convenu ce qui suit :</p>
+<p class="pp">Désignés séparément comme la « Partie » et collectivement comme les « Parties ».</p>
+<p class="between">Il a été convenu ce qui suit :</p>
+<hr class="sep">
 
-<div class="article">
-<div class="art-title">Article 1 – Objet de la vente</div>
-<div class="block">
-Un ${t.jeune} du Nom <span class="e wide" contenteditable="true" data-ph="Nom">${animal.nom || ''}</span>
-De race <span class="e wide" contenteditable="true" data-ph="Race">${animal.race || ''}</span><br>
-Né le <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA">${dn}</span> à <span class="e" contenteditable="true" data-ph="Ville de naissance">${villeNaissance}</span> &nbsp;
-Sexe <span class="e" contenteditable="true" data-ph="M/F">${isMasculin ? 'Mâle' : 'Femelle'}</span> &nbsp;
-Couleur <span class="e wide" contenteditable="true" data-ph="Couleur/robe">${couleur}</span><br>
-Puce n° <span class="e wide" contenteditable="true" data-ph="N° identification">${animal.identification || ''}</span><br>
-${t.pedigree} <span class="e wide" contenteditable="true" data-ph="N° pedigree">${pedigreeNum}</span><br>
-Père <span class="e wide" contenteditable="true" data-ph="Nom du père">${nomPere}${pucePere}</span> &nbsp; Mère <span class="e wide" contenteditable="true" data-ph="Nom de la mère">${nomMere}${puceMere}</span><br>
-Documents remis :
-<span class="cb" onclick="toggleCb(this)">☐</span> Certificat de bonne santé &nbsp;
-<span class="cb" onclick="toggleCb(this)">☐</span> Carnet/passeport &nbsp;
-<span class="cb" onclick="toggleCb(this)">☐</span> Certificat d'identification &nbsp;
-<span class="cb" onclick="toggleCb(this)">☐</span> Certificat d'engagement &nbsp;
-<span class="cb" onclick="toggleCb(this)">☐</span> Document d'accueil
-</div>
-</div>
+<div class="article"><div class="art-title">Article 1 - Objet de la vente</div>${art1}</div>
+<div class="article"><div class="art-title">Article 2 - Prix de vente${(avecSteril && sterilDelai) ? ' - Stérilisation' : ''}</div>${art2}</div>
+${art3}
+${art4}
+${art5}
+${art6}
+${art7}
+${art8}
+${conditionsParticulieres}
 
-<div class="article">
-<div class="art-title">Article 2 – Prix de vente${avecSteril ? ' – Stérilisation' : ''}</div>
-<div class="block">
-Acompte versé : <span class="e" contenteditable="true" data-ph="0">………</span> € &nbsp;
-Tranche 1 (au départ) : <span class="e wide" contenteditable="true" data-ph="Montant">${prixTTC}</span><br>
-TVA (si assujetti) : <span class="e" contenteditable="true" data-ph="0">………</span> € &nbsp;
-Paiement : <span class="cb" onclick="toggleCb(this)">☐</span> virement <span class="cb" onclick="toggleCb(this)">☐</span> espèces <span class="cb" onclick="toggleCb(this)">☐</span> Oney${avecSteril ? `<br>
-Tranche 2 (si non-présentation certificat stérilisation sous ${sterilDelai}) : <span class="e" contenteditable="true" data-ph="Montant">2 000</span> €<br>
-La Tranche 2 n'est pas due si la stérilisation a été effectuée par le Vendeur avant la livraison.` : ''}
-</div>
-</div>
-
-<div class="article">
-<div class="art-title">Article 3 – Conditions de la vente</div>
-<div class="block">
-L'Acheteur s'engage à détenir l'animal dans des conditions compatibles avec ses besoins biologiques et comportementaux. Il assume la responsabilité de son bien-être, de son entretien et de ses soins vétérinaires dès le premier jour. Si l'Acheteur souhaite se séparer de l'animal, il s'engage à prévenir le Vendeur prioritairement.
-</div>
-</div>
-
-<div class="article">
-<div class="art-title">Article 4 – Transfert de propriété</div>
-<div class="block">
-Le Vendeur conserve la propriété de l'animal jusqu'à encaissement complet du prix convenu. Le volet B de la carte I-CAD ne sera transmis qu'après paiement intégral.
-</div>
-</div>
-
-<div class="article">
-<div class="art-title">Article 5 – Garanties</div>
-<div class="block">
-Sont garantis les vices rédhibitoires (art. L.213-1 à L.213-9 du code rural) : ${t.vices}. L'Acheteur ne bénéficie pas de la garantie des vices cachés (art. 1641 c.civ.). Toute euthanasie ou intervention sans accord écrit du Vendeur décharge ce dernier de toute obligation de garantie.
-</div>
-</div>
-
-<div class="article">
-<div class="art-title">Article 6 – Confidentialité</div>
-<div class="block">Toutes les informations échangées sont confidentielles et ne peuvent être utilisées à d'autres fins que l'exécution du présent contrat.</div>
-</div>
-
-<div class="article">
-<div class="art-title">Article 7 – Droit de rétractation (non applicable)</div>
-<div class="block">
-L'Acheteur reconnaît qu'un ${t.jeune} est un être vivant unique et irremplaçable. Le droit de rétractation (art. L.221-18 C. conso.) ne s'applique pas.
-</div>
-</div>
-
-<div class="article">
-<div class="art-title">Article 8 – Règlement amiable</div>
-<div class="block">
-En cas de litige, les Parties saisissent prioritairement le médiateur SNPPC
-(<span class="e" contenteditable="true" data-ph="Nom médiateur">Yves Legeay</span> — <span class="e wide" contenteditable="true" data-ph="Site">https://snpcc.com/</span>).
-</div>
-</div>
-
-${data.notes ? `<div class="article"><div class="art-title">Conditions particulières</div><div class="block"><span class="e full" contenteditable="true">${data.notes}</span></div></div>` : ''}
-
-<div style="margin-top:12px">Fait à <span class="e wide" contenteditable="true" data-ph="Ville"></span>, le <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA">${dateVente}</span></div>
+<div class="fait-a">${villeSig ? `Fait à ${villeSig}, le ${dateVente}.` : `Le ${dateVente}.`}</div>
 
 <div class="sign-section">
-  <div class="copy-banner">📄 Contrat établi en DEUX exemplaires originaux — un pour chaque partie</div>
+  <div class="copy-banner">Contrat établi en deux exemplaires originaux, un pour chaque partie.</div>
   <div class="sign-row">
-    ${signBlock('vendeur', eleveur.nom)}
-    ${signBlock('acheteur', acheteurNom)}
+    ${signBlock('vendeur', eleveur.nom, sigElv)}
+    ${signBlock('acheteur', acheteurLabel, sigAcq)}
   </div>
 </div>
 
-<div class="page-break"></div>
-
-<!-- ── ATTESTATION DE CESSION ────────────────────────────────────── -->
-<h2>Attestation de cession à titre ${isGratuit ? 'gratuit' : 'onéreux'}</h2>
-
-<div class="parties">
-<strong>Entre les soussignés :</strong><br>
-<span class="e" contenteditable="true" data-ph="Nom">${eleveur.nom.split(' ').slice(-1)[0]}</span>
-<span class="e wide" contenteditable="true" data-ph="Prénom">${eleveur.nom.split(' ').slice(0,-1).join(' ')}</span> —
-Société : <span class="e wide" contenteditable="true" data-ph="Élevage">${eleveur.nom}</span>
-SIRET : <span class="e" contenteditable="true" data-ph="SIRET">${eleveur.siret || ''}</span><br>
-Adresse : <span class="e wide" contenteditable="true" data-ph="Adresse">${eleveur.adresse || ''}</span><br>
-<em>ci-après « le cessionnaire »</em><br><br>
-Et <span class="e wide" contenteditable="true" data-ph="Nom et prénom acheteur">${acheteurNom}</span>,
-demeurant <span class="e wide" contenteditable="true" data-ph="Adresse">${data.adresse || ''}</span><br>
-<em>ci-après « le cédant »</em>
-</div>
-
-<div class="article">
-<div class="block"><strong>Animal concerné :</strong><br>
-Nom : <span class="e wide" contenteditable="true" data-ph="Nom">${animal.nom || ''}</span> &nbsp;
-Né le : <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA">${dn}</span> &nbsp;
-${isMasculin ? 'M' : 'F'} &nbsp;
-Race : <span class="e wide" contenteditable="true" data-ph="Race">${animal.race || ''}</span><br>
-Identifié : <span class="e wide" contenteditable="true" data-ph="N° puce">${animal.identification || ''}</span>
-</div>
-</div>
-
-<div class="article">
-<div class="art-title">Art. 1 – Cession</div>
-<div class="block">
-Les parties conviennent de la cession à titre ${isGratuit ? 'gratuit' : 'onéreux'} de l'animal${isGratuit ? ' sans contrepartie financière' : ` pour ${prixTTC}`}.
-L'animal a été remis le <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA">${dateVente}</span> à <span class="e" contenteditable="true" data-ph="HH">……</span>h<span class="e" contenteditable="true" data-ph="MM">……</span>
-</div>
-</div>
-
-<div class="article">
-<div class="art-title">Art. 2 – Documents remis</div>
-<div class="block">Carte I-CAD originale signée, carnet de vaccination/passeport, certificat vétérinaire avant cession${animal.race ? `, document généalogique (${t.pedigree})` : ''}.</div>
-</div>
-
-<div style="margin-top:12px">Fait à <span class="e wide" contenteditable="true" data-ph="Ville"></span>, le <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA">${dateVente}</span></div>
-
-<div class="sign-section">
-  <div class="copy-banner">📄 Attestation établie en DEUX exemplaires originaux — un pour chaque partie</div>
-  <div class="sign-row">
-    ${signBlock('acheteur', acheteurNom)}
-    ${signBlock('vendeur', eleveur.nom)}
-  </div>
-</div>
-
-<p class="foot">Document établi en deux exemplaires originaux · ${today} · PetsMatch</p>
+<p class="foot">${today} · PetsMatch</p>
 </div>
 
 ${hasSign ? `
@@ -842,7 +838,7 @@ ${hasSign ? `
     <button class="sig-clear" onclick="clearSig(0)">✕ Effacer</button>
   </div>
   <div class="sig-pad">
-    <div class="sig-pad-label">✍️ Acheteur — ${acheteurNom || '…'}</div>
+    <div class="sig-pad-label">✍️ Acheteur — ${acheteurLabel || '…'}</div>
     <canvas id="sigAcheteur" class="sig-canvas" width="220" height="80"></canvas>
     <button class="sig-clear" onclick="clearSig(1)">✕ Effacer</button>
   </div>
@@ -913,10 +909,11 @@ ${eleveur.nom}${eleveur.adresse ? `, ${eleveur.adresse}` : ''}${eleveur.siret ? 
 
 <div class="parties">
 <strong>Acquéreur</strong><br>
-<span class="cb" onclick="toggleCb(this)">☐</span> M. &nbsp; <span class="cb" onclick="toggleCb(this)">☐</span> Mme<br>
-Nom / Prénom : <span class="e wide" contenteditable="true" data-ph="Nom et prénom">${acqNom}</span><br>
-Adresse : <span class="e full" contenteditable="true" data-ph="Adresse complète">${data.adresse ?? ''}</span>
-Email : <span class="e wide" contenteditable="true" data-ph="Email">${data.email ?? ''}</span> &nbsp;
+Civilité : <span class="e" contenteditable="true" data-ph="M. / Mme">${data.civilite ?? ''}</span><br>
+Nom / Prénom : <span class="e wide" contenteditable="true" data-ph="Nom et prénom">${[data.prenom, data.nomFamille].filter(Boolean).join(' ') || acqNom}</span><br>
+Demeurant à : <span class="e full" contenteditable="true" data-ph="Adresse complète">${data.adresse ?? ''}</span><br>
+Ville, code postal : <span class="e wide" contenteditable="true" data-ph="CP Ville">${[data.cp, data.ville].filter(Boolean).join(' ')}</span><br>
+Email : <span class="e wide" contenteditable="true" data-ph="Email">${data.email ?? ''}</span><br>
 Téléphone : <span class="e wide" contenteditable="true" data-ph="Téléphone">${data.tel ?? ''}</span>
 </div>
 
@@ -925,13 +922,15 @@ Téléphone : <span class="e wide" contenteditable="true" data-ph="Téléphone">
 <div class="block">
 Espèce : <span class="e wide" contenteditable="true" data-ph="Espèce">${espece}</span> &nbsp;
 Race : <span class="e wide" contenteditable="true" data-ph="Race">${animal.race ?? ''}</span><br>
-Sexe : <span class="cb" onclick="toggleCb(this)">${isMasculin ? '✓' : '☐'}</span> Mâle &nbsp; <span class="cb" onclick="toggleCb(this)">${!isMasculin ? '✓' : '☐'}</span> Femelle<br>
+Sexe : <span class="e" contenteditable="true" data-ph="Mâle / Femelle">${isMasculin ? 'Mâle' : 'Femelle'}</span><br>
 Nom de l'animal : <span class="e wide" contenteditable="true" data-ph="Nom">${animal.nom ?? ''}</span><br>
 Date de naissance : <span class="e wide" contenteditable="true" data-ph="jj/mm/aaaa">${dn}</span><br>
-N° d'identification (puce / tatouage) : <span class="e wide" contenteditable="true" data-ph="N° identification">${animal.identification ?? ''}</span><br>
-${animal.espece?.toLowerCase() === 'chien' || animal.espece?.toLowerCase() === 'chat'
-  ? `Numéro de pedigree : <span class="e full" contenteditable="true" data-ph="${t.pedigree}"></span>`
+${t.pedigree ? "N° d'identification (puce / tatouage)" : "Numéro d'identification (obligatoire)"} : <span class="e wide" contenteditable="true" data-ph="N° identification">${animal.identification ?? ''}</span><br>
+${t.pedigree
+  ? `${t.pedigree} : <span class="e full" contenteditable="true" data-ph="N° pedigree">${animal.pedigree_lof || animal.pedigree_numero || ''}</span><br>`
   : ''}
+Nom du père : <span class="e wide" contenteditable="true" data-ph="Nom du père">${animal.nom_pere ?? ''}${animal.puce_pere ? ` (puce ${animal.puce_pere})` : ''}</span><br>
+Nom de la mère : <span class="e wide" contenteditable="true" data-ph="Nom de la mère">${animal.nom_mere ?? ''}${animal.puce_mere ? ` (puce ${animal.puce_mere})` : ''}</span>
 </div>
 </div>
 
@@ -940,9 +939,7 @@ ${animal.espece?.toLowerCase() === 'chien' || animal.espece?.toLowerCase() === '
 <div class="block">
 Date effective de cession : <span class="e wide" contenteditable="true" data-ph="jj/mm/aaaa">${dateVente}</span><br>
 Prix de cession : <span class="e wide" contenteditable="true" data-ph="Montant en euros">${data.prix ? `${fmtMontant(data.prix)} euros TTC` : ''}</span><br>
-Mode de règlement : <span class="cb" onclick="toggleCb(this)">☐</span> Virement &nbsp;
-<span class="cb" onclick="toggleCb(this)">☐</span> Espèces &nbsp;
-<span class="cb" onclick="toggleCb(this)">☐</span> Chèque<br>
+Mode de règlement : <span class="e wide" contenteditable="true" data-ph="virement / espèces / chèque"></span><br>
 ${data.notes ? `Conditions particulières : <span class="e full" contenteditable="true">${data.notes}</span>` : 'Conditions particulières : <span class="e full" contenteditable="true" data-ph="Conditions particulières éventuelles"></span>'}
 </div>
 </div>
@@ -958,14 +955,9 @@ L'acquéreur déclare avoir reçu les informations nécessaires concernant les b
 </div>
 
 <div class="article">
-<div class="art-title">Article 4 — Documents remis</div>
+<div class="art-title">Article 4 — Documents remis à l'acquéreur</div>
 <div class="block">
-<span class="cb" onclick="toggleCb(this)">☐</span> Carnet de santé / passeport européen<br>
-<span class="cb" onclick="toggleCb(this)">☐</span> Certificat vétérinaire de moins de 5 jours<br>
-<span class="cb" onclick="toggleCb(this)">☐</span> Attestation de cession (présent document)<br>
-<span class="cb" onclick="toggleCb(this)">☐</span> Pedigree / document de filiation<br>
-<span class="cb" onclick="toggleCb(this)">☐</span> Certificat d'engagement et de connaissance<br>
-<span class="cb" onclick="toggleCb(this)">☐</span> Contrat de vente / réservation
+Carte d'identification I-CAD, carnet de santé / passeport européen, certificat vétérinaire de bonne santé de moins de 5 jours, certificat d'engagement et de connaissance, document de filiation (pedigree) pour un animal de race, et copie du contrat de vente / réservation.
 </div>
 </div>
 
@@ -1083,7 +1075,7 @@ Le Futur Acheteur réserve auprès du Vendeur, pour en devenir le futur proprié
 Nom : <span class="e wide" contenteditable="true" data-ph="Nom de l'animal">${animal.nom ?? ''}</span><br>
 Né le : <span class="e wide" contenteditable="true" data-ph="Date de naissance">${dn}</span><br>
 Couleur / Robe : <span class="e wide" contenteditable="true" data-ph="Couleur">${couleurR}</span><br>
-${pedigreeNumR ? `${t.pedigree} <span class="e wide" contenteditable="true">${pedigreeNumR}</span><br>` : ''}
+${pedigreeNumR && t.pedigree ? `${t.pedigree} <span class="e wide" contenteditable="true">${pedigreeNumR}</span><br>` : ''}
 Père : <span class="e full" contenteditable="true" data-ph="Nom du père">${nomPereR}${pucePereR}</span>
 Mère : <span class="e full" contenteditable="true" data-ph="Nom de la mère">${nomMereR}${puceMereR}</span>
 ${animal.identification ? `Puce / Tatouage : <span class="e wide" contenteditable="true">${animal.identification}</span><br>` : ''}

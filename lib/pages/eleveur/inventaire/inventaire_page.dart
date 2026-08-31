@@ -46,11 +46,15 @@ class InventairePage extends StatefulWidget {
   final String? eleveurProfileIdOverride;
   final String? eleveurUidOverride;
   final bool readOnly;
+  /// Ouvre directement la fiche de cet article au chargement (ex. depuis une
+  /// notification « Stock bas »).
+  final String? focusItemId;
   const InventairePage({
     super.key,
     this.eleveurProfileIdOverride,
     this.eleveurUidOverride,
     this.readOnly = false,
+    this.focusItemId,
   });
   @override
   State<InventairePage> createState() => _InventairePageState();
@@ -62,6 +66,7 @@ class _InventairePageState extends State<InventairePage> {
   String? _profileId;
 
   bool _loading = true;
+  bool _focusHandled = false;
   List<Map<String, dynamic>> _items = [];
   String _catFilter = 'tous';
 
@@ -88,6 +93,22 @@ class _InventairePageState extends State<InventairePage> {
         _items = List<Map<String, dynamic>>.from(rows);
         _loading = false;
       });
+      // Ouvre la fiche de l'article ciblé (notification « Stock bas »)
+      if (widget.focusItemId != null && !_focusHandled && mounted) {
+        _focusHandled = true;
+        final target = _items.where((i) => '${i['id']}' == widget.focusItemId).toList();
+        if (target.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            showModalBottomSheet(
+              context: context, isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => _ItemDetailSheet(
+                item: target.first, uid: widget.eleveurUidOverride ?? _uid, onChanged: _load),
+            );
+          });
+        }
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);

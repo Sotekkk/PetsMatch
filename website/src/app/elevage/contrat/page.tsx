@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
 import { generateContratHTML, generateContratVente, generateContratReservationHTML, generateCertificatCessionHTML } from '@/lib/contrat-vente';
 import { sendNotification } from '@/lib/notifications';
+import { resolveAcquereurProfileId } from '@/lib/acquereur-profile';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 
 interface DocAnimal {
@@ -97,6 +98,14 @@ export default function ContratsPage() {
   const [dateDoc, setDateDoc]         = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes]             = useState('');
   const [avecSteril, setAvecSteril]   = useState(true);
+  // Animal — modifiable (surcharge la fiche animale dans le contrat)
+  const [animalNom, setAnimalNom]         = useState('');
+  const [animalRace, setAnimalRace]       = useState('');
+  const [animalCouleur, setAnimalCouleur] = useState('');
+  const [animalSexe, setAnimalSexe]       = useState('');
+  const [animalDN, setAnimalDN]           = useState('');
+  const [tvaAssujetti, setTvaAssujetti] = useState(false);
+  const [tvaTaux, setTvaTaux]         = useState('20');
   // Recherche acquéreur PetsMatch
   const [userSearch, setUserSearch]   = useState('');
   type UserResult = { uid:string; firstname:string; lastname:string; name_elevage?:string; is_elevage?:boolean; email:string; phone_number?:string; numero_elevage?:string; code_iso_elevage?:string; rue?:string; ville?:string; code_postal?:string; adress_elevage?:string; siret?:string; };
@@ -131,7 +140,12 @@ export default function ContratsPage() {
       localStorage.removeItem('cession_prefill');
       // Sélectionner l'animal
       const found = animaux.find(a => a.id === p.animal_id) ?? null;
-      if (found) { setAnimalId(found.id); setSelectedAnimal(found); }
+      if (found) {
+        setAnimalId(found.id); setSelectedAnimal(found);
+        setAnimalNom(found.nom ?? ''); setAnimalRace(found.race ?? '');
+        setAnimalCouleur(found.couleur ?? ''); setAnimalSexe((found.sexe ?? '').toLowerCase());
+        setAnimalDN(found.date_naissance ? found.date_naissance.split('T')[0] : '');
+      }
       // Remplir les champs acquéreur
       if (p.acq_is_eleveur) {
         setAcqRaisonSociale(p.acq_raison_sociale ?? '');
@@ -243,15 +257,46 @@ export default function ContratsPage() {
 
   function selectAnimal(id: string) {
     setAnimalId(id);
-    setSelectedAnimal(animaux.find(a => a.id === id) ?? null);
+    const a = animaux.find(x => x.id === id) ?? null;
+    setSelectedAnimal(a);
+    setAnimalNom(a?.nom ?? '');
+    setAnimalRace(a?.race ?? '');
+    setAnimalCouleur(a?.couleur ?? '');
+    setAnimalSexe((a?.sexe ?? '').toLowerCase());
+    setAnimalDN(a?.date_naissance ? a.date_naissance.split('T')[0] : '');
   }
+
+  // TVA incluse dans le prix TTC (le prix saisi est TTC)
+  const prixTtcNum = parseFloat((prix || '').replace(',', '.')) || 0;
+  const tvaMontant = tvaAssujetti && prixTtcNum > 0
+    ? prixTtcNum - prixTtcNum / (1 + (parseFloat(tvaTaux) || 0) / 100)
+    : 0;
+  const tvaFields = tvaAssujetti
+    ? { tva: tvaMontant.toFixed(2), tvaTaux }
+    : {};
 
   function resetForm() {
     setAnimalId(''); setSelectedAnimal(null); setAcqRaisonSociale(''); setAcqSiret(''); setAcqNom(''); setAcqPrenom('');
     setAcqEmail(''); setAcqTel(''); setAcqAdresse(''); setPrix('');
     setDateDoc(new Date().toISOString().split('T')[0]); setNotes('');
     setAvecSteril(true);
+    setTvaAssujetti(false); setTvaTaux('20');
+    setAnimalNom(''); setAnimalRace(''); setAnimalCouleur(''); setAnimalSexe(''); setAnimalDN('');
     setUserSearch(''); setUserResults([]);
+  }
+
+  // Animal enrichi (fiche + champs modifiés)
+  function animalEnrichiForm(): Animal & { ville_naissance: string } {
+    const villeElevage = profile?.ville_elevage ?? profile?.ville ?? '';
+    return {
+      ...(selectedAnimal as Animal),
+      nom: animalNom || selectedAnimal?.nom || '',
+      race: animalRace || selectedAnimal?.race || '',
+      couleur: animalCouleur || selectedAnimal?.couleur || '',
+      sexe: animalSexe || selectedAnimal?.sexe || '',
+      date_naissance: animalDN || selectedAnimal?.date_naissance || '',
+      ville_naissance: villeElevage,
+    };
   }
 
   function eleveurInfo() {
@@ -267,14 +312,9 @@ export default function ContratsPage() {
     const elv = eleveurInfo();
     const acqNomFull = `${acqPrenom} ${acqNom}`.trim();
     const opts = { animalId: selectedAnimal.id, supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!, supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! };
-    const dataContrat = { nom: acqNomFull, adresse: acqAdresse, email: acqEmail, tel: acqTel, prix, dateCession: dateDoc, notes };
+    const dataContrat = { nom: acqNomFull, prenom: acqPrenom, nomFamille: acqNom, adresse: acqAdresse, email: acqEmail, tel: acqTel, prix, dateCession: dateDoc, notes, ...tvaFields };
     const elvInfo = { nom: elv.nom, adresse: elv.adresse, email: elv.email, siret: elv.siret, tel: elv.tel };
-    // Champs enrichis animal + ville naissance = ville_elevage du profil
-    const villeElevage = profile?.ville_elevage ?? profile?.ville ?? '';
-    const animalEnrichi = {
-      ...selectedAnimal,
-      ville_naissance: villeElevage,
-    };
+    const animalEnrichi = animalEnrichiForm();
 
     // Sauvegarder d'abord pour obtenir le token, puis ouvrir via /signer-contrat/[token]
     const token = await saveDraft();
@@ -323,11 +363,10 @@ export default function ContratsPage() {
   async function previsualiser() {
     if (!selectedAnimal || !profile) { alert('Sélectionnez un animal d\'abord.'); return; }
     const elv = eleveurInfo();
-    const villeElevage = profile?.ville_elevage ?? profile?.ville ?? '';
     const acqNomFull = `${acqPrenom} ${acqNom}`.trim();
-    const dataContrat = { nom: acqNomFull, adresse: acqAdresse, email: acqEmail, tel: acqTel, prix, dateCession: dateDoc, notes };
+    const dataContrat = { nom: acqNomFull, prenom: acqPrenom, nomFamille: acqNom, adresse: acqAdresse, email: acqEmail, tel: acqTel, prix, dateCession: dateDoc, notes, ...tvaFields };
     const elvInfo = { nom: elv.nom, adresse: elv.adresse, email: elv.email, siret: elv.siret, tel: elv.tel };
-    const animalEnrichi = { ...selectedAnimal, ville_naissance: villeElevage };
+    const animalEnrichi = animalEnrichiForm();
     const opts = { animalId: selectedAnimal.id, supabaseUrl: '', supabaseKey: '' };
     let html = '';
     if (formType === 'certificat_cession') html = generateCertificatCessionHTML(animalEnrichi, dataContrat, elvInfo, { ...opts, eleveurUid: user?.uid ?? '' });
@@ -341,9 +380,20 @@ export default function ContratsPage() {
   async function saveDraft(): Promise<string | null> {
     if (!user || !selectedAnimal) return null;
     const titreLabel = formType === 'contrat_vente' ? 'Contrat de vente' : formType === 'contrat_reservation' ? 'Contrat de réservation' : formType === 'contrat_saillie' ? 'Contrat de saillie' : 'Certificat de cession';
+    // Résoudre l'acquéreur PetsMatch (uid + profil qui recevra l'animal)
+    const qualiteAcq = acqRaisonSociale.trim() || acqSiret.trim() ? 'eleveur' : 'particulier';
+    let acqUid: string | null = null;
+    let acqProfileId: string | null = null;
+    if (acqEmail.trim()) {
+      const { data: u } = await supabase.from('users').select('uid').eq('email', acqEmail.trim()).maybeSingle();
+      acqUid = (u?.uid as string | undefined) ?? null;
+      if (acqUid) acqProfileId = await resolveAcquereurProfileId(acqUid, qualiteAcq);
+    }
     const { data } = await supabase.from('documents_animaux').insert({
       animal_id:   selectedAnimal.id,
       uid_eleveur: user.uid,
+      ...(acqUid ? { uid_acquereur: acqUid } : {}),
+      ...(acqProfileId ? { acquereur_profile_id: acqProfileId } : {}),
       type:        formType,
       titre:       `${titreLabel} — ${selectedAnimal.nom ?? 'Animal'}`,
       statut:      'brouillon',
@@ -352,6 +402,11 @@ export default function ContratsPage() {
         acquereur_raison_sociale: acqRaisonSociale || null,
         acquereur_siret:     acqSiret || null,
         acquereur_nom:       `${acqPrenom} ${acqNom}`.trim(),
+        acquereur_prenom:    acqPrenom || null,
+        acquereur_nom_famille: acqNom || null,
+        ...(acqUid ? { acquereur_uid: acqUid } : {}),
+        ...(acqProfileId ? { acquereur_profile_id: acqProfileId } : {}),
+        qualite:             qualiteAcq,
         acquereur_email:     acqEmail,
         acquereur_tel:       acqTel,
         acquereur_adresse:   acqAdresse,
@@ -359,6 +414,13 @@ export default function ContratsPage() {
         date_cession:        dateDoc,
         notes,
         avec_sterilisation:  avecSteril,
+        tva_assujetti:       tvaAssujetti,
+        ...(tvaAssujetti ? { tva_taux: tvaTaux, tva: tvaMontant.toFixed(2) } : {}),
+        animal_nom:          animalNom || null,
+        animal_race:         animalRace || null,
+        animal_couleur:      animalCouleur || null,
+        animal_sexe:         animalSexe || null,
+        animal_date_naissance: animalDN || null,
       },
     }).select('token').single();
     await load();
@@ -626,6 +688,27 @@ export default function ContratsPage() {
               )}
             </div>
 
+            {/* Animal — champs modifiables */}
+            {selectedAnimal && (
+              <div className="border border-gray-100 rounded-xl p-3 space-y-2">
+                <p className="text-xs font-semibold text-gray-600">Détails de l&apos;animal (modifiables)</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><label className="text-[10px] text-gray-500 block">Nom</label><input value={animalNom} onChange={e => setAnimalNom(e.target.value)} className={iCls} /></div>
+                  <div><label className="text-[10px] text-gray-500 block">Race</label><input value={animalRace} onChange={e => setAnimalRace(e.target.value)} className={iCls} /></div>
+                  <div><label className="text-[10px] text-gray-500 block">Couleur / robe</label><input value={animalCouleur} onChange={e => setAnimalCouleur(e.target.value)} className={iCls} /></div>
+                  <div>
+                    <label className="text-[10px] text-gray-500 block">Sexe</label>
+                    <select value={animalSexe} onChange={e => setAnimalSexe(e.target.value)} className={iCls}>
+                      <option value="">—</option>
+                      <option value="male">Mâle</option>
+                      <option value="femelle">Femelle</option>
+                    </select>
+                  </div>
+                  <div className="col-span-2"><label className="text-[10px] text-gray-500 block">Date de naissance</label><input type="date" value={animalDN} onChange={e => setAnimalDN(e.target.value)} className={iCls} /></div>
+                </div>
+              </div>
+            )}
+
             {/* Recherche acquéreur */}
             <div>
               <label className="text-xs font-semibold text-gray-600 mb-1 block">Rechercher l&apos;acquéreur (PetsMatch)</label>
@@ -674,6 +757,35 @@ export default function ContratsPage() {
                   <p className="text-xs text-amber-700 mt-0.5">Inclure la pénalité financière si l&apos;acquéreur ne stérilise pas l&apos;animal dans le délai légal.</p>
                 </div>
               </label>
+            )}
+
+            {formType === 'contrat_vente' && (
+              <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input type="checkbox" checked={tvaAssujetti} onChange={e => setTvaAssujetti(e.target.checked)}
+                    className="mt-0.5 accent-[#0C5C6C]" />
+                  <div>
+                    <p className="text-xs font-semibold text-[#1F2A2E]">Assujetti à la TVA</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Le prix saisi est TTC — la TVA est calculée automatiquement et reportée dans le contrat.</p>
+                  </div>
+                </label>
+                {tvaAssujetti && (
+                  <div className="pl-6 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-600">Taux</span>
+                      {['20', '10', '5.5'].map(t => (
+                        <button key={t} type="button" onClick={() => setTvaTaux(t)}
+                          className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors ${tvaTaux === t ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200'}`}>
+                          {t.replace('.', ',')} %
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs font-semibold text-[#0C5C6C]">
+                      Base TTC : {prixTtcNum.toFixed(2).replace('.', ',')} € · TVA : {tvaMontant.toFixed(2).replace('.', ',')} € · HT : {(prixTtcNum - tvaMontant).toFixed(2).replace('.', ',')} €
+                    </p>
+                  </div>
+                )}
+              </div>
             )}
 
             <div className="flex gap-2 pt-2 flex-wrap">

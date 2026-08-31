@@ -521,10 +521,17 @@ function getNotifUrl(n: Notif): string | null {
       return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
     case 'cession_revoquee':
       return null;
+    case 'sterilisation_declaree':
+    case 'sterilisation_a_valider':
+    case 'sterilisation_rappel':
+    case 'cession_anniversaire':
+      return d.tab === 'suivi_cessions' ? '/mes-animaux?tab=suivi' : (d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux?tab=suivi');
+    case 'sterilisation_validee':
+      return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
     case 'contrat_saillie_invite':
     case 'contrat_signe_eleveur':
     case 'contrat_signe_complet':
-      return d.url ?? '/elevage/contrat';
+      return d.url ?? d.signingUrl ?? (d.token ? `/signer-contrat/${d.token}` : '/elevage/contrat');
     case 'contrat_signe_acquereur':
     case 'contrat_refuse':
     case 'contrat_expire':
@@ -1046,6 +1053,8 @@ export default function Header() {
                               : n.type === 'cession_signature_demandee' ? '✍️'
                               : n.type === 'cession_confirmee' || n.type === 'cession_animal' ? '🐾'
                               : n.type === 'cession_signee_acquereur' || n.type === 'cession_signe_acquereur' ? '🔔'
+                              : n.type === 'cession_anniversaire' ? '🎂'
+                              : n.type?.startsWith('sterilisation') ? '✂️'
                               : n.type?.startsWith('cession') ? '🤝'
                               : n.type === 'rdv_confirme' ? '✅'
                               : n.type === 'rdv_modifie' ? '✏️'

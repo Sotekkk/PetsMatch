@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -10,7 +9,7 @@ import 'package:PetsMatch/pages/pro/toilettage_fiche_client_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/utils/geocoding_helper.dart';
-import 'package:PetsMatch/config.dart';
+import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:intl/intl.dart';
 
 class ProAgendaPage extends StatefulWidget {
@@ -1006,14 +1005,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             .eq('type', 'contrat_prestation_photo');
       }
       if (token == null) return;
-      final url = '$kSiteBaseUrl/signer-contrat/$token';
-      await Clipboard.setData(ClipboardData(text: url));
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Lien de signature copié — envoyez-le au client',
-              style: TextStyle(fontFamily: 'Galey')),
-          backgroundColor: Color(0xFF90A4AE),
-          behavior: SnackBarBehavior.floating,
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ContratSignaturePage(token: token),
         ));
       }
     } catch (e) {

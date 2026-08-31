@@ -16,7 +16,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/cession_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/reservation_sheet.dart';
-import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
+import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/pages/pro/animal_devis_page.dart';
@@ -157,6 +157,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   String? _cessionNotes;
   // Cession en cours
   Map<String, dynamic>? _cessionEnCours;
+  bool _cessionContratSigne = false;
   Map<String, dynamic>? _reservation;
   bool _confirmingCession = false;
   bool _revokingCession   = false;
@@ -910,8 +911,20 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           .order('created_at', ascending: false)
           .limit(1);
       _cessionEnCours = cessions.isNotEmpty ? cessions.first : null;
+      // Un contrat de vente / certificat entièrement signé vaut accord de
+      // l'acquéreur → l'éleveur peut confirmer même si le récap n'est pas signé.
+      try {
+        final signedDocs = await _supa.from('documents_animaux')
+            .select('id').eq('animal_id', widget.animalId!)
+            .inFilter('type', ['contrat_vente', 'certificat_cession'])
+            .eq('statut', 'signe').limit(1);
+        _cessionContratSigne = signedDocs.isNotEmpty;
+      } catch (_) {
+        _cessionContratSigne = false;
+      }
     } else {
       _cessionEnCours = null;
+      _cessionContratSigne = false;
     }
     // Charger la réservation active si l'animal est réservé
     if (_statut == 'reserve' && widget.animalId != null) {
@@ -1063,12 +1076,26 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     try {
       final cessionId = _cessionEnCours!['id'];
       final uidAcq    = _cessionEnCours!['uid_acquereur'] as String?;
+      final qualiteAcq = (_cessionEnCours!['qualite'] as String?) ?? 'particulier';
+      // Profil de l'acquéreur qui recevra l'animal (jamais un profil pro)
+      String? acqProfileId = _cessionEnCours!['acquereur_profile_id'] as String?;
+      if ((acqProfileId == null || acqProfileId.isEmpty) && uidAcq != null) {
+        final wanted = qualiteAcq == 'eleveur'
+            ? 'eleveur'
+            : qualiteAcq == 'refuge' || qualiteAcq == 'association' ? 'association' : 'particulier';
+        final byType = await _supa.from('user_profiles')
+            .select('id').eq('uid', uidAcq).eq('profile_type', wanted).maybeSingle();
+        acqProfileId = byType?['id'] as String?;
+        acqProfileId ??= (await _supa.from('user_profiles')
+            .select('id').eq('uid', uidAcq).eq('is_main', true).maybeSingle())?['id'] as String?;
+      }
       // Transférer la fiche
       final dateCession = (_cessionEnCours!['date_cession'] as String?)
           ?? DateTime.now().toIso8601String().split('T').first;
       await _supa.from('animaux').update({
         'statut':        'sorti',
         'uid_acquereur': uidAcq,
+        if (acqProfileId != null) 'profile_id_acquereur': acqProfileId,
         'date_sortie':   dateCession,
       }).eq('id', widget.animalId!);
       // Historique de propriété (animaux_proprietes) — clôture la ligne du
@@ -1082,14 +1109,13 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               .eq('animal_id', widget.animalId!)
               .eq('uid_proprio', FirebaseAuth.instance.currentUser?.uid ?? '')
               .isFilter('date_fin', null);
-          final acqProfileOwn = await _supa.from('user_profiles')
-              .select('id').eq('uid', uidAcq).eq('is_main', true).maybeSingle();
-          await _supa.from('animaux_proprietes').insert({
+          await _supa.from('animaux_proprietes').upsert({
             'animal_id':   widget.animalId,
             'uid_proprio': uidAcq,
             'date_debut':  dateCession,
-            if (acqProfileOwn?['id'] != null) 'profile_id_proprio': acqProfileOwn!['id'],
-          });
+            'date_fin':    null,
+            if (acqProfileId != null) 'profile_id_proprio': acqProfileId,
+          }, onConflict: 'animal_id,uid_proprio');
         } catch (_) {}
       }
       // Insérer mouvements dans registre_mouvements (historique de vie de l'animal)
@@ -1139,16 +1165,14 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'statut':       'confirme',
         'confirmed_at': DateTime.now().toIso8601String(),
       }).eq('id', cessionId);
-      // Notifier l'acquéreur
+      // Notifier l'acquéreur (sur le profil qui reçoit l'animal)
       if (uidAcq != null) {
-        final acqProfileNotif = await _supa.from('user_profiles')
-            .select('id').eq('uid', uidAcq).eq('is_main', true).maybeSingle();
         await _supa.from('notifications').insert({
           'uid':   uidAcq,
           'type':  'cession_confirmee',
           'title': '🐾 Animal transféré : ${_nomCtrl.text}',
           'body':  '${_nomElevage ?? 'L\'éleveur'} a confirmé la cession. L\'animal apparaît maintenant dans votre compte.',
-          if (acqProfileNotif?['id'] != null) 'profile_id': acqProfileNotif!['id'],
+          if (acqProfileId != null) 'profile_id': acqProfileId,
           'data':  {'animalId': widget.animalId},
           'read':  false,
         });
@@ -1185,6 +1209,14 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       final uidAcq = _cessionEnCours!['uid_acquereur'] as String?;
       await _supa.from('cessions').update({'statut': 'revoquee'}).eq('id', _cessionEnCours!['id']);
       await _supa.from('animaux').update({'statut': 'present'}).eq('id', widget.animalId!);
+      // Supprimer les contrats non signés générés pour cette cession avortée
+      try {
+        await _supa.from('documents_animaux')
+            .delete()
+            .eq('animal_id', widget.animalId!)
+            .inFilter('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession'])
+            .inFilter('statut', ['brouillon', 'en_attente']);
+      } catch (_) {}
       if (uidAcq != null) {
         final acqProfileNotif = await _supa.from('user_profiles')
             .select('id').eq('uid', uidAcq).eq('is_main', true).maybeSingle();
@@ -1779,6 +1811,7 @@ class _IdentiteTab extends StatelessWidget {
                 ? _CessionAcquereurBanner(cession: s._cessionEnCours!)
                 : _CessionEnCoursBanner(
                     cession: s._cessionEnCours!,
+                    contratSigne: s._cessionContratSigne,
                     confirming: s._confirmingCession,
                     revoking: s._revokingCession,
                     onConfirm: s._confirmerCession,
@@ -3656,7 +3689,6 @@ class _CessionAcquereurBanner extends StatelessWidget {
     final dateC       = cession['date_cession']     as String?;
     final statut      = cession['statut']           as String? ?? '';
     final hasSigned   = statut == 'signe_acquereur' || statut == 'confirme';
-    final signingUrl  = token != null ? '$kSiteBaseUrl/signer-cession/$token' : null;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -3689,24 +3721,15 @@ class _CessionAcquereurBanner extends StatelessWidget {
         _docLine('Contrat', contratUrl),
         _docLine('Certificat de cession', certifUrl),
         const SizedBox(height: 10),
-        if (!hasSigned && signingUrl != null)
+        if (!hasSigned && token != null)
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: () async {
-                final url = Uri.parse(signingUrl);
-                if (await canLaunchUrl(url)) {
-                  await launchUrl(url, mode: LaunchMode.externalApplication);
-                } else {
-                  await Clipboard.setData(ClipboardData(text: signingUrl));
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Lien copié — ouvrez-le dans votre navigateur')));
-                  }
-                }
-              },
+              onPressed: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => ContratSignaturePage(cessionToken: token),
+              )),
               icon: const Icon(Icons.draw_outlined, size: 16),
-              label: const Text('Signer les documents',
+              label: const Text('Lire et signer',
                   style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF1D4ED8),
@@ -3760,13 +3783,15 @@ class _CessionAcquereurBanner extends StatelessWidget {
 
 class _CessionEnCoursBanner extends StatelessWidget {
   final Map<String, dynamic> cession;
+  final bool contratSigne;
   final bool confirming;
   final bool revoking;
   final VoidCallback onConfirm;
   final VoidCallback onRevoke;
 
   const _CessionEnCoursBanner({
-    required this.cession, required this.confirming, required this.revoking,
+    required this.cession, required this.contratSigne,
+    required this.confirming, required this.revoking,
     required this.onConfirm, required this.onRevoke,
   });
 
@@ -3774,10 +3799,13 @@ class _CessionEnCoursBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final nomAcq  = (cession['nom_acquereur'] as String?) ?? '…';
     final statut  = (cession['statut'] as String?) ?? '';
-    final signedByAcq = statut == 'signe_acquereur' || statut == 'confirme';
+    // Récap signé OU contrat de vente/certificat entièrement signé → l'éleveur
+    // peut confirmer le transfert.
+    final signedByAcq = statut == 'signe_acquereur' || statut == 'confirme' || contratSigne;
     final dateC   = cession['date_cession'] as String?;
     final prix    = (cession['prix'] as num?)?.toDouble();
     final contratUrl = cession['contrat_url'] as String?;
+    final token   = cession['token'] as String?;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -3798,12 +3826,23 @@ class _CessionEnCoursBanner extends StatelessWidget {
         if (prix != null && prix > 0) _line('Prix', '${prix.toStringAsFixed(0)} €'),
         const SizedBox(height: 8),
         // Statut signatures
-        _sigBadge('Acquéreur', signedByAcq),
-        _sigBadge('Éleveur (vous)', false, pending: true),
-        if (contratUrl != null) ...[
+        _sigBadge(contratSigne ? 'Acquéreur' : 'Acquéreur (signature)', signedByAcq),
+        _sigBadge(
+          signedByAcq ? 'Éleveur — à confirmer' : 'Éleveur (en attente)',
+          false, pending: true,
+        ),
+        if (token != null) ...[
           const SizedBox(height: 4),
           GestureDetector(
-            onTap: () {},
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => ContratSignaturePage(cessionToken: token),
+            )),
+            child: const Text('📄 Voir le récap / signer', style: TextStyle(fontSize: 11, color: Color(0xFF0C5C6C), decoration: TextDecoration.underline)),
+          ),
+        ] else if (contratUrl != null) ...[
+          const SizedBox(height: 4),
+          GestureDetector(
+            onTap: () => launchUrl(Uri.parse(contratUrl), mode: LaunchMode.externalApplication),
             child: const Text('📄 Voir le contrat', style: TextStyle(fontSize: 11, color: Color(0xFF0C5C6C), decoration: TextDecoration.underline)),
           ),
         ],
@@ -12728,17 +12767,29 @@ class _DocumentsTabState extends State<_DocumentsTab> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (signingUrl != null && !isBrouillon) ...[
+              if (type == 'facture')
                 IconButton(
-                  icon: const Icon(Icons.open_in_new, size: 18, color: _green),
-                  tooltip: 'Ouvrir',
-                  onPressed: () => launchUrl(Uri.parse(signingUrl), mode: LaunchMode.externalApplication),
+                  icon: const Icon(Icons.visibility_outlined, size: 18, color: _green),
+                  tooltip: 'Ouvrir la facture',
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => ContratSignaturePage(
+                      token: token, documentId: token == null ? doc['id'] as String? : null,
+                    ),
+                  )),
+                )
+              else if (token != null && !isBrouillon) ...[
+                IconButton(
+                  icon: const Icon(Icons.draw_outlined, size: 18, color: _green),
+                  tooltip: 'Lire et signer',
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => ContratSignaturePage(token: token),
+                  )),
                 ),
                 IconButton(
                   icon: const Icon(Icons.link, size: 18, color: _green),
                   tooltip: 'Copier le lien',
                   onPressed: () {
-                    Clipboard.setData(ClipboardData(text: signingUrl));
+                    Clipboard.setData(ClipboardData(text: signingUrl!));
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Lien copié'), duration: Duration(seconds: 2)),
                     );
@@ -12753,7 +12804,7 @@ class _DocumentsTabState extends State<_DocumentsTab> {
           ),
         ),
         // Bouton Transmettre pour les brouillons
-        if (isBrouillon && token != null)
+        if (isBrouillon && token != null && type != 'facture')
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
             child: FilledButton.icon(
@@ -12824,6 +12875,7 @@ class _DocumentsTabState extends State<_DocumentsTab> {
       case 'contrat_vente': return Icons.handshake_outlined;
       case 'contrat_reservation': return Icons.bookmark_border;
       case 'certificat_cession': return Icons.assignment_turned_in_outlined;
+      case 'facture': return Icons.receipt_long_outlined;
       case 'devis': return Icons.request_quote_outlined;
       default: return Icons.description_outlined;
     }
@@ -12836,6 +12888,7 @@ class _DocumentsTabState extends State<_DocumentsTab> {
       case 'contrat_saillie': return 'Contrat de saillie';
       case 'certificat_cession': return 'Certificat de cession';
       case 'contrat_adoption': return 'Contrat d\'adoption';
+      case 'facture': return 'Facture';
       case 'devis': return 'Devis (éducateur)';
       default: return 'Document';
     }
@@ -12845,6 +12898,9 @@ class _DocumentsTabState extends State<_DocumentsTab> {
     Color bg; Color fg; String label;
     switch (statut) {
       case 'signe':   bg = const Color(0xFFDCFCE7); fg = const Color(0xFF166534); label = 'Signé'; break;
+      case 'partiellement_signe': bg = const Color(0xFFDBEAFE); fg = const Color(0xFF1E40AF); label = 'Partiel'; break;
+      case 'en_attente': bg = const Color(0xFFFEF3C7); fg = const Color(0xFF92400E); label = 'Transmis'; break;
+      case 'genere':  bg = const Color(0xFFE0F2FE); fg = const Color(0xFF075985); label = 'Émise'; break;
       case 'archive': bg = const Color(0xFFE5E7EB); fg = const Color(0xFF374151); label = 'Archivé'; break;
       default:        bg = const Color(0xFFFEF3C7); fg = const Color(0xFF92400E); label = 'Brouillon';
     }

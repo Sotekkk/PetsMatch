@@ -70,6 +70,13 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   final _especeAutreCtrl = TextEditingController();
   String _sexe = 'male';
   bool _sterilise = false;
+  bool _steriliseInitial = false;
+  // Condition de stérilisation imposée par l'éleveur à la cession
+  bool _sterilRequise = false;
+  DateTime? _sterilEcheance;
+  bool _sterilValidee = false;
+  String? _sterilEleveurUid;
+  String? _sterilEleveurProfileId;
   DateTime? _dateNaissance;
   String? _typePoil;
   bool _pedigree = false;
@@ -223,6 +230,14 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     _especeAutreCtrl.text = d['espece_autre'] ?? '';
     _sexe      = d['sexe'] ?? 'male';
     _sterilise = d['sterilise'] ?? false;
+    _steriliseInitial = _sterilise;
+    _sterilRequise = d['sterilisation_requise'] ?? false;
+    _sterilValidee = d['sterilisation_validee'] ?? false;
+    _sterilEleveurUid = d['sterilisation_eleveur_uid'] as String?;
+    _sterilEleveurProfileId = d['sterilisation_eleveur_profile_id'] as String?;
+    _sterilEcheance = d['sterilisation_echeance'] != null
+        ? DateTime.tryParse(d['sterilisation_echeance'].toString())
+        : null;
     _photoUrl  = d['photo_url'];
     if (d['date_naissance'] != null) {
       try { _dateNaissance = DateTime.parse(d['date_naissance'].toString()); } catch (_) {}
@@ -347,8 +362,27 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           );
         }
       } else {
+        // Stérilisation déclarée (false → true) alors que l'éleveur l'exige :
+        // horodater et notifier l'éleveur pour qu'il valide.
+        final declareSteril = _sterilise && !_steriliseInitial && _sterilRequise && !_sterilValidee;
+        if (declareSteril) {
+          data['sterilisation_declaree_at'] = DateTime.now().toIso8601String();
+        }
         await _supa.from('animaux').update(data).eq('id', _animalId!);
-        setState(() { _photoFile = null; _photoUrl = photoUrl; _editing = false; });
+        if (declareSteril && _sterilEleveurUid != null) {
+          try {
+            await _supa.from('notifications').insert({
+              'uid':   _sterilEleveurUid,
+              'type':  'sterilisation_declaree',
+              'title': '✂️ Stérilisation déclarée — $nom',
+              'body':  'Le propriétaire de $nom a déclaré la stérilisation. À valider dans le suivi des cessions.',
+              if (_sterilEleveurProfileId != null) 'profile_id': _sterilEleveurProfileId,
+              'data':  {'animalId': _animalId, 'tab': 'suivi_cessions'},
+              'read':  false,
+            });
+          } catch (_) {}
+        }
+        setState(() { _photoFile = null; _photoUrl = photoUrl; _editing = false; _steriliseInitial = _sterilise; });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Modifications enregistrées ✓'), backgroundColor: _green));
@@ -571,7 +605,11 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
             if (_sterilise) _viewChip('✂️ Stérilisé(e)', _green),
           ]),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
+
+        if (_sterilRequise && !_sterilise) _sterilisationBanner(),
+
+        const SizedBox(height: 8),
 
         // Infos
         if (_raceCtrl.text.isNotEmpty) _infoRow('Race', _raceCtrl.text),
@@ -813,6 +851,40 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     ]),
   );
 
+  Widget _sterilisationBanner() {
+    final ech = _sterilEcheance;
+    final now = DateTime.now();
+    final enRetard = ech != null && ech.isBefore(DateTime(now.year, now.month, now.day));
+    final echStr = ech != null ? DateFormat('dd/MM/yyyy').format(ech) : null;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: (enRetard ? Colors.red : Colors.orange).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: (enRetard ? Colors.red : Colors.orange).withValues(alpha: 0.3)),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(enRetard ? Icons.warning_amber_rounded : Icons.content_cut,
+            size: 18, color: enRetard ? Colors.red.shade700 : Colors.orange.shade800),
+        const SizedBox(width: 8),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(enRetard ? 'Stérilisation en retard' : 'Stérilisation à réaliser',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13,
+                  color: enRetard ? Colors.red.shade800 : Colors.orange.shade900)),
+          const SizedBox(height: 2),
+          Text(
+            echStr != null
+                ? 'L\'éleveur demande la stérilisation avant le $echStr. Activez « Stérilisé(e) » une fois faite pour qu\'il valide.'
+                : 'L\'éleveur demande la stérilisation de cet animal. Activez « Stérilisé(e) » une fois faite.',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF5B5B5B)),
+          ),
+        ])),
+      ]),
+    );
+  }
+
   Widget _viewChip(String label, Color color) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
     decoration: BoxDecoration(
@@ -921,6 +993,15 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
               onChanged: (v) => setState(() => _sterilise = v),
             ),
           ]),
+          if (_sterilRequise && !_sterilValidee) ...[
+            const SizedBox(height: 4),
+            Text(
+              _sterilise
+                  ? 'Déclaration transmise à l\'éleveur pour validation.'
+                  : 'Stérilisation demandée par l\'éleveur${_sterilEcheance != null ? ' avant le ${DateFormat('dd/MM/yyyy').format(_sterilEcheance!)}' : ''}. Activez ce réglage une fois faite.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.orange.shade800),
+            ),
+          ],
           const SizedBox(height: 18),
 
           _FLabel('Passeport européen n°'),

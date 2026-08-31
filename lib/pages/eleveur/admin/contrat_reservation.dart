@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/config.dart';
+import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/certificats_engagement_page.dart';
 
 class ContratReservationPage extends StatefulWidget {
@@ -274,14 +275,16 @@ class _DocCard extends StatelessWidget {
           ])),
         ]),
 
-        if (signingUrl != null) ...[
+        if (token != null) ...[
           const SizedBox(height: 10),
           Row(children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: () => launchUrl(Uri.parse(signingUrl), mode: LaunchMode.externalApplication),
-                icon: const Icon(Icons.open_in_new, size: 15),
-                label: const Text('Ouvrir sur le web', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+                onPressed: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => ContratSignaturePage(token: token),
+                )),
+                icon: const Icon(Icons.draw_outlined, size: 15),
+                label: const Text('Lire et signer', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _teal,
                   side: const BorderSide(color: _teal),
@@ -295,7 +298,7 @@ class _DocCard extends StatelessWidget {
             if (!isFinal) ...[
               OutlinedButton(
                 onPressed: () {
-                  Clipboard.setData(ClipboardData(text: signingUrl));
+                  Clipboard.setData(ClipboardData(text: signingUrl!));
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Lien copié'), duration: Duration(seconds: 2)),
                   );

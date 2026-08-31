@@ -5,6 +5,7 @@ import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_poids_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_soin_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_edit_sheet.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/suivi_cessions_tab.dart';
 import 'package:PetsMatch/services/chaleurs_notif_service.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:cached_network_image/cached_network_image.dart';
@@ -54,7 +55,9 @@ Widget speciesIcon(String espece, double size, Color color) {
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 class MesAnimauxPage extends StatefulWidget {
-  const MesAnimauxPage({super.key});
+  /// 0 = Présents, 1 = Anciens, 2 = Suivi cessions
+  final int initialTab;
+  const MesAnimauxPage({super.key, this.initialTab = 0});
   @override
   State<MesAnimauxPage> createState() => _MesAnimauxPageState();
 }
@@ -99,7 +102,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this,
+        initialIndex: widget.initialTab.clamp(0, 2));
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         setState(() { _selectMode = false; _selectedIds.clear(); });
@@ -954,6 +958,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               onPressed: () => ChipScannerService.scanFromElevage(context, _uid),
               tooltip: 'Scanner une puce',
             ),
+          if (_tabController.index != 2)
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: Stack(
@@ -987,6 +992,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           tabs: const [
             Tab(text: 'Présents'),
             Tab(text: 'Anciens'),
+            Tab(text: 'Suivi'),
           ],
           indicatorColor: const Color(0xFF6E9E57),
           indicatorWeight: 3,
@@ -1008,6 +1014,12 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         children: [
           _buildPresentsTab(),
           _buildAnciensTab(),
+          SuiviCessionsTab(
+            uid: _uid,
+            animaux: _animauxData,
+            loading: _loading,
+            onChanged: _loadAnimaux,
+          ),
         ],
       ),
     );

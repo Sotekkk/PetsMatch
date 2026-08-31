@@ -10,6 +10,7 @@ import 'package:PetsMatch/services/profile_service.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
+import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
@@ -24,6 +25,8 @@ import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
+import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
+import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/config.dart';
@@ -121,6 +124,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
         if (idx != -1) _notifs[idx] = {..._notifs[idx], 'read': true};
       });
     } catch (_) {}
+  }
+
+  /// Extrait le token d'une URL `…/signer-contrat/<token>` ou
+  /// `…/signer-cession/<token>` pour ouvrir la signature DANS l'appli.
+  String? _tokenFromUrl(String? url) {
+    if (url == null) return null;
+    final m = RegExp(r'/signer-(?:contrat|cession)/([A-Za-z0-9_-]+)').firstMatch(url);
+    return m?.group(1);
   }
 
   Future<void> _handleTap(Map<String, dynamic> notif) async {
@@ -341,34 +352,65 @@ class _NotificationsPageState extends State<NotificationsPage> {
       ));
       return;
     }
-    // Notifications contrats — ouvre le lien de signature dans le navigateur
+    // Notifications contrats — ouvre la signature DANS l'appli
     if (type == 'contrat_saillie_invite' ||
         type == 'contrat_signe_eleveur' ||
-        type == 'contrat_signe_complet') {
-      final url = data is Map ? data['url'] as String? : null;
-      if (url != null) {
-        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        type == 'contrat_signe_complet' ||
+        type == 'contrat_signe_acquereur' ||
+        type == 'contrat_invite' ||
+        type == 'contrat_a_signer') {
+      final token = data is Map ? data['token'] as String? : null;
+      final docId = data is Map ? data['documentId'] as String? : null;
+      final urlTok = _tokenFromUrl(data is Map ? data['url'] as String? : null)
+          ?? _tokenFromUrl(data is Map ? data['signingUrl'] as String? : null);
+      if (token != null || docId != null || urlTok != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ContratSignaturePage(token: token ?? urlTok, documentId: docId),
+        ));
       } else {
         await Navigator.push(context, MaterialPageRoute(
-          builder: (_) => const ContratReservationPage(),
+          builder: (_) => const MesContratsParticulierPage(),
         ));
       }
       return;
     }
-    // Notifications contrats côté éleveur — ouvre la page Mes Contrats dans l'app
-    if (type == 'contrat_signe_acquereur' || type == 'contrat_refuse' || type == 'contrat_expire') {
+    // Alerte de stock bas → inventaire, fiche de l'article ouverte
+    if (type == 'inventaire_alerte') {
+      final itemId = data is Map ? data['itemId']?.toString() : null;
+      final profId = notif['profile_id'] as String?;
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => InventairePage(
+          eleveurProfileIdOverride: profId,
+          focusItemId: itemId,
+        ),
+      ));
+      return;
+    }
+    if (type == 'contrat_refuse' || type == 'contrat_expire') {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => const ContratReservationPage(),
       ));
       return;
     }
-    // Cession — signature demandée à l'acquéreur → ouvrir le lien de signature
+    // Cession — signature demandée à l'acquéreur → signer le récap DANS l'appli
     if (type == 'cession_signature_demandee') {
-      final signingUrl = data is Map ? data['signingUrl'] as String? : null;
-      final token      = data is Map ? data['token']      as String? : null;
-      final url = signingUrl ?? (token != null ? '$kSiteBaseUrl/signer-contrat/$token' : null);
-      if (url != null) {
-        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      final token = data is Map ? data['token'] as String? : null;
+      final docId = data is Map ? data['documentId'] as String? : null;
+      final urlTok = _tokenFromUrl(data is Map ? data['url'] as String? : null)
+          ?? _tokenFromUrl(data is Map ? data['signingUrl'] as String? : null);
+      if (docId != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ContratSignaturePage(documentId: docId, token: token),
+        ));
+      } else if (token != null || urlTok != null) {
+        // token de cessions → récap ; token via URL /signer-contrat → contrat
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ContratSignaturePage(cessionToken: token ?? urlTok),
+        ));
+      } else {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const MesContratsParticulierPage(),
+        ));
       }
       return;
     }
@@ -400,6 +442,24 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
     // Cession révoquée → juste marquer lue (déjà fait)
     if (type == 'cession_revoquee') return;
+    // Suivi stérilisation / anniversaires côté éleveur → onglet « Suivi »
+    if (type == 'sterilisation_declaree' || type == 'sterilisation_a_valider' ||
+        type == 'sterilisation_rappel' || type == 'cession_anniversaire') {
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => const MesAnimauxPage(initialTab: 2),
+      ));
+      return;
+    }
+    // Stérilisation validée (côté acquéreur) → fiche de l'animal
+    if (type == 'sterilisation_validee') {
+      final animalId = data is Map ? data['animalId'] as String? : null;
+      if (animalId != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => AnimalFichePage(animalId: animalId, readOnly: false),
+        ));
+      }
+      return;
+    }
     // Animal reçu par l'acquéreur (cession simple sans signature)
     if (type == 'cession_animal') {
       await Navigator.push(context, MaterialPageRoute(
@@ -736,6 +796,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'cession_signe_acquereur': return Icons.pets;
       case 'cession_signature_demandee': return Icons.draw_outlined;
       case 'cession_revoquee':       return Icons.cancel_outlined;
+      case 'sterilisation_declaree':
+      case 'sterilisation_a_valider':
+      case 'sterilisation_rappel':
+      case 'sterilisation_validee':  return Icons.content_cut;
+      case 'cession_anniversaire':   return Icons.cake_outlined;
+      case 'inventaire_alerte':      return Icons.inventory_2_outlined;
       case 'profil_en_attente':      return Icons.hourglass_empty_outlined;
       case 'profil_valide':          return Icons.verified_outlined;
       case 'lieu_naturel_valide':
@@ -791,6 +857,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'cession_signe_acquereur':
       case 'cession_signature_demandee': return Color(0xFFB45309);
       case 'cession_revoquee':       return Colors.redAccent;
+      case 'inventaire_alerte':      return const Color(0xFFD97706);
       case 'profil_en_attente':      return Colors.orange;
       case 'profil_valide':          return const Color(0xFF6E9E57);
       case 'lieu_naturel_valide':

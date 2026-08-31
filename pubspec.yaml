@@ -62,6 +62,7 @@ dependencies:
   flutter_localization: ^0.4.0
   pdf: ^3.11.1
   printing: ^5.13.1
+  http: ^1.2.1
   open_file: ^3.5.3
   flutter_local_notifications: ^21.0.0
   timezone: ^0.11.0
@@ -114,6 +115,7 @@ flutter:
     - assets/logo/
     - assets/icon/
     - assets/anatomie/
+    - assets/font/
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/assets-and-images/#resolution-aware
 

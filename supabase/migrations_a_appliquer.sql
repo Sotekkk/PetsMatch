@@ -41,3 +41,62 @@ ALTER TABLE gestations
 ALTER TABLE animaux
   ADD COLUMN IF NOT EXISTS chaleurs_responsable_uid        TEXT,
   ADD COLUMN IF NOT EXISTS chaleurs_responsable_profile_id UUID;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 3. Cession — condition de stérilisation + suivi chiots cédés + anniversaires
+--    À la cession, l'éleveur peut imposer une stérilisation avant un âge
+--    donné (mois). Le propriétaire ET l'éleveur reçoivent des rappels
+--    J-30 / J-7 / J-48h / J-0 puis quotidiens tant que la stérilisation
+--    n'est pas déclarée faite (proprio, via animaux.sterilise) ET validée
+--    (éleveur, via sterilisation_validee). Colonnes miroir sur `animaux`
+--    car le web ne crée pas de ligne `cessions` et la fiche est transférée
+--    à l'acquéreur à la confirmation.
+--    `user_profiles.cession_anniv_auto` : envoi auto du message
+--    d'anniversaire aux chiots cédés (sinon rappel + envoi 1 clic).
+--    ⚠ Nécessite aussi un redéploiement des Cloud Functions
+--    (sendSterilisationReminders, sendCessionBirthdayReminders).
+-- ────────────────────────────────────────────────────────────
+
+ALTER TABLE cessions
+  ADD COLUMN IF NOT EXISTS prenom_acquereur         TEXT,
+  ADD COLUMN IF NOT EXISTS sterilisation_requise    BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS sterilisation_age_mois   INTEGER,
+  ADD COLUMN IF NOT EXISTS sterilisation_echeance   DATE,
+  ADD COLUMN IF NOT EXISTS sterilisation_validee    BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS sterilisation_validee_at TIMESTAMPTZ;
+
+ALTER TABLE animaux
+  ADD COLUMN IF NOT EXISTS sterilisation_requise            BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS sterilisation_echeance           DATE,
+  ADD COLUMN IF NOT EXISTS sterilisation_validee            BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS sterilisation_declaree_at        TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS sterilisation_eleveur_uid        TEXT,
+  ADD COLUMN IF NOT EXISTS sterilisation_eleveur_profile_id UUID;
+
+CREATE INDEX IF NOT EXISTS idx_animaux_sterilisation_suivi
+  ON animaux(sterilisation_eleveur_uid)
+  WHERE sterilisation_requise = TRUE;
+
+ALTER TABLE user_profiles
+  ADD COLUMN IF NOT EXISTS cession_anniv_auto  BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS cession_anniv_texte TEXT;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 4. Contrat de cession lié au profil de l'acquéreur
+--    Le contrat/facture (documents_animaux) doit porter l'uid ET le profil
+--    (particulier, pas le profil pro/pension) de l'acquéreur, pour :
+--      - notifier la bonne personne quand l'éleveur signe,
+--      - transférer l'animal sur le bon profil à la signature complète,
+--      - retrouver l'acquéreur dans « Mes contrats ».
+--    Sans cette migration : erreur « couldn't find uid_acquereur column of
+--    documents_animaux » à la création d'un contrat de cession.
+-- ────────────────────────────────────────────────────────────
+
+ALTER TABLE documents_animaux
+  ADD COLUMN IF NOT EXISTS uid_acquereur        TEXT,
+  ADD COLUMN IF NOT EXISTS acquereur_profile_id UUID REFERENCES user_profiles(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_docs_uid_acquereur     ON documents_animaux(uid_acquereur);
+CREATE INDEX IF NOT EXISTS idx_docs_acquereur_profile ON documents_animaux(acquereur_profile_id);

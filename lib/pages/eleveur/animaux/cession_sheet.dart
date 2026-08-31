@@ -6,9 +6,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:printing/printing.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -54,6 +56,7 @@ class _CessionSheetState extends State<CessionSheet> {
 
   // Champs acquéreur
   String _qualite = 'particulier';
+  final _prenomCtrl   = TextEditingController();
   final _nomCtrl      = TextEditingController();
   final _emailCtrl    = TextEditingController();
   final _telCtrl      = TextEditingController();
@@ -61,6 +64,23 @@ class _CessionSheetState extends State<CessionSheet> {
   final _prixCtrl     = TextEditingController();
   final _notesCtrl    = TextEditingController();
   late DateTime _dateCession;
+
+  // Condition de stérilisation (cession éleveur uniquement)
+  bool _sterilisationRequise = false;
+  final _sterilAgeCtrl = TextEditingController(text: '12');
+
+  DateTime? get _dateNaissanceAnimal {
+    final raw = widget.animal['date_naissance'];
+    if (raw == null || (raw is String && raw.isEmpty)) return null;
+    return DateTime.tryParse(raw.toString());
+  }
+
+  DateTime? get _sterilisationEcheance {
+    final dn = _dateNaissanceAnimal;
+    final mois = int.tryParse(_sterilAgeCtrl.text.trim());
+    if (dn == null || mois == null || mois <= 0) return null;
+    return DateTime(dn.year, dn.month + mois, dn.day);
+  }
 
   // Documents uploadés manuellement
   String? _contratUrl;
@@ -71,14 +91,25 @@ class _CessionSheetState extends State<CessionSheet> {
   // Documents existants dans documents_animaux (sélectionnable)
   List<Map<String, dynamic>> _existingContrats     = [];
   List<Map<String, dynamic>> _existingCertificats  = [];
+  List<Map<String, dynamic>> _existingFactures      = [];
   Map<String, dynamic>? _selectedContrat;
   Map<String, dynamic>? _selectedCertificat;
   bool _loadingDocs = true;
 
+  // Profil éleveur (pour la facture)
+  Map<String, dynamic>? _eleveurProfile;
+
   bool _saving = false;
   bool _generatingPdf  = false;
   bool _generatingCert = false;
+  bool _generatingFacture = false;
   String? _error;
+
+  // Contrats créés pendant cette session de cession. Si la cession n'est pas
+  // validée (feuille fermée sans `_save`), on supprime ceux restés à l'état
+  // brouillon / en attente — inutile de les garder.
+  final Set<String> _createdDocIds = {};
+  bool _cessionSaved = false;
 
   @override
   void initState() {
@@ -107,28 +138,49 @@ class _CessionSheetState extends State<CessionSheet> {
     try {
       final res = await _supa
           .from('documents_animaux')
-          .select('id, type, titre, url, statut, created_at, metadata')
+          .select('id, token, type, titre, url, statut, created_at, metadata')
           .eq('animal_id', animalId)
           .eq('uid_eleveur', widget.uid)
-          .inFilter('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession'])
+          .inFilter('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession', 'facture'])
           .order('created_at', ascending: false);
       if (mounted) {
         final all = List<Map<String, dynamic>>.from(res);
         setState(() {
-          _existingContrats    = all.where((d) => d['type'] != 'certificat_cession').toList();
+          _existingContrats    = all.where((d) => d['type'] == 'contrat_vente' || d['type'] == 'contrat_reservation').toList();
           _existingCertificats = all.where((d) => d['type'] == 'certificat_cession').toList();
+          _existingFactures    = all.where((d) => d['type'] == 'facture').toList();
           _loadingDocs = false;
         });
       }
+      _supa.from('user_profiles')
+          .select('nom, firstname, lastname, adresse, rue, ville, ville_pro, code_postal, siret, numero_elevage, phone_number, email_contact')
+          .eq('uid', widget.uid).eq('is_main', true).maybeSingle()
+          .then((up) { if (mounted && up != null) _eleveurProfile = Map<String, dynamic>.from(up); });
     } catch (_) {
       if (mounted) setState(() => _loadingDocs = false);
     }
   }
 
+  /// Supprime les contrats créés ici mais restés non signés quand la cession
+  /// n'a pas été validée. Fire-and-forget (appelé depuis `dispose`).
+  void _cleanupDrafts() {
+    if (_cessionSaved || _createdDocIds.isEmpty) return;
+    final ids = _createdDocIds.toList();
+    _supa
+        .from('documents_animaux')
+        .delete()
+        .inFilter('id', ids)
+        .inFilter('statut', ['brouillon', 'en_attente', 'genere'])
+        .then((_) {}, onError: (_) {});
+  }
+
   @override
   void dispose() {
+    _cleanupDrafts();
     _searchCtrl.dispose();
+    _prenomCtrl.dispose();
     _nomCtrl.dispose();
+    _sterilAgeCtrl.dispose();
     _emailCtrl.dispose();
     _telCtrl.dispose();
     _adresseCtrl.dispose();
@@ -139,10 +191,33 @@ class _CessionSheetState extends State<CessionSheet> {
 
   List<Map<String, dynamic>> _searchResults = [];
 
-  static const _cpFields = 'uid, firstname, lastname, nom, profile_type, avatar_url, phone_number, adresse, rue, ville, code_postal, numero_elevage, email_contact';
+  static const _cpFields = 'uid, id, is_main, firstname, lastname, nom, profile_type, avatar_url, phone_number, adresse, rue, ville, code_postal, numero_elevage, email_contact';
+
+  /// Résout le `user_profiles.id` de l'acquéreur selon la qualité choisie :
+  /// particulier → profil particulier, éleveur → profil éleveur, refuge →
+  /// association. Repli sur `is_main` puis n'importe quel profil.
+  Future<String?> _resolveAcqProfileId(String uid, String qualite) async {
+    final wanted = qualite == 'eleveur'
+        ? 'eleveur'
+        : qualite == 'refuge' ? 'association' : 'particulier';
+    try {
+      final byType = await _supa.from('user_profiles')
+          .select('id').eq('uid', uid).eq('profile_type', wanted).maybeSingle();
+      if (byType?['id'] != null) return byType!['id'] as String;
+      final main = await _supa.from('user_profiles')
+          .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+      if (main?['id'] != null) return main!['id'] as String;
+      final any = await _supa.from('user_profiles')
+          .select('id').eq('uid', uid).limit(1).maybeSingle();
+      return any?['id'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
 
   Map<String, dynamic> _mapProfile(Map<String, dynamic> cp, {String? email}) => {
     'uid': cp['uid'],
+    'profile_id': cp['id'], 'is_main': cp['is_main'], 'profile_type': cp['profile_type'],
     'firstname': cp['firstname'], 'lastname': cp['lastname'],
     'name_elevage': cp['nom'], 'is_elevage': cp['profile_type'] == 'eleveur',
     'profile_picture_url': cp['avatar_url'], 'phone_number': cp['phone_number'],
@@ -199,19 +274,46 @@ class _CessionSheetState extends State<CessionSheet> {
     }
   }
 
-  void _selectUser(Map<String, dynamic> r) {
+  Future<void> _selectUser(Map<String, dynamic> r) async {
     final isElv = r['is_elevage'] == true;
+    final uid = r['uid'] as String?;
+
+    // Cession à un particulier → prendre les coordonnées du **profil
+    // particulier** (pas le profil pro/pension qui est souvent `is_main`).
+    Map<String, dynamic> contact = r;
+    if (!isElv && uid != null) {
+      try {
+        final part = await _supa.from('user_profiles')
+            .select('id, firstname, lastname, adresse, rue, ville, code_postal, phone_number, email_contact')
+            .eq('uid', uid).eq('profile_type', 'particulier').maybeSingle();
+        if (part != null) {
+          contact = {...r, ...Map<String, dynamic>.from(part), 'adress': part['adresse'], 'email': part['email_contact']};
+        }
+      } catch (_) {}
+    }
+
     final adresse = isElv
         ? (r['adress_elevage'] as String? ?? [r['rue'], r['ville'], r['code_postal']].where((e) => e != null).join(', '))
-        : (r['adress'] as String? ?? [r['rue'], r['ville'], r['code_postal']].where((e) => e != null).join(', '));
+        : ((contact['adresse'] ?? contact['adress']) as String? ??
+            [contact['rue'], contact['code_postal'], contact['ville']].where((e) => e != null && '$e'.isNotEmpty).join(', '));
     final tel = isElv
         ? '${r['code_iso_elevage'] ?? '+33'} ${r['numero_elevage'] ?? ''}'.trim()
-        : '${r['code_iso'] ?? '+33'} ${r['phone_number'] ?? ''}'.trim();
+        : '${contact['code_iso'] ?? '+33'} ${contact['phone_number'] ?? ''}'.trim();
+    if (!mounted) return;
     setState(() {
-      _foundUser = r;
-      _nomCtrl.text    = r['nom'] as String;
-      _emailCtrl.text  = (r['email'] as String? ?? '');
-      _telCtrl.text    = tel;
+      _foundUser = contact;
+      if (isElv) {
+        _prenomCtrl.text = '';
+        _nomCtrl.text    = r['nom'] as String;
+      } else {
+        _prenomCtrl.text = (contact['firstname'] as String? ?? '').trim();
+        _nomCtrl.text    = (contact['lastname'] as String? ?? '').trim();
+        if (_prenomCtrl.text.isEmpty && _nomCtrl.text.isEmpty) {
+          _nomCtrl.text = r['nom'] as String? ?? '';
+        }
+      }
+      _emailCtrl.text  = (contact['email'] ?? contact['email_contact'] ?? '') as String;
+      _telCtrl.text    = tel.replaceFirst(RegExp(r'^\+33\s*$'), '');
       _adresseCtrl.text = adresse;
       _searchResults   = [];
     });
@@ -239,6 +341,18 @@ class _CessionSheetState extends State<CessionSheet> {
     }
   }
 
+  /// « 12 rue X, 75001 Paris » → (rue, cp, ville). Repli propre.
+  (String, String, String) _splitAdresse(String full) {
+    final s = full.trim();
+    if (s.isEmpty) return ('', '', '');
+    final m = RegExp(r'\b(\d{5})\b').firstMatch(s);
+    if (m == null) return (s, '', '');
+    final cp = m.group(1)!;
+    var ville = s.substring(m.end).replaceFirst(RegExp(r'^[\s,]+'), '').trim();
+    var rue = s.substring(0, m.start).replaceFirst(RegExp(r'[\s,]+$'), '').trim();
+    return (rue, cp, ville);
+  }
+
   // Crée un doc dans documents_animaux et ouvre le lien dans le navigateur
   Future<void> _ouvrirContratWeb(String type) async {
     final isCert = type == 'certificat_cession';
@@ -251,52 +365,258 @@ class _CessionSheetState extends State<CessionSheet> {
       final animalId = widget.animal['id'] as String;
       final titreLabel = isCert ? 'Certificat de cession' : 'Contrat de vente';
       final nomAnimal  = widget.animal['nom'] as String? ?? '';
-      final acqNom     = _nomCtrl.text.trim();
+      final nomComplet = [_prenomCtrl.text.trim(), _nomCtrl.text.trim()]
+          .where((s) => s.isNotEmpty).join(' ');
+      final acqNom     = nomComplet.isEmpty ? _nomCtrl.text.trim() : nomComplet;
+      final acqUid     = _foundUser?['uid'] as String?;
+      final acqProfileId = acqUid != null
+          ? await _resolveAcqProfileId(acqUid, _qualite) : null;
+
+      // Rue / CP / ville : profil particulier si dispo, sinon découpe de l'adresse
+      final profCp    = '${_foundUser?['code_postal'] ?? ''}'.trim();
+      final profVille = '${_foundUser?['ville'] ?? ''}'.trim();
+      final (splitRue, splitCp, splitVille) = _splitAdresse(_adresseCtrl.text.trim());
+      final acqCp    = profCp.isNotEmpty ? profCp : splitCp;
+      final acqVille = profVille.isNotEmpty ? profVille : splitVille;
+      final acqRue   = (profCp.isNotEmpty && '${_foundUser?['rue'] ?? ''}'.trim().isNotEmpty)
+          ? '${_foundUser!['rue']}'.trim()
+          : (splitRue.isNotEmpty ? splitRue : _adresseCtrl.text.trim());
 
       final pid = User_Info.activeProfileId;
       // Créer ou récupérer le doc dans documents_animaux
       final res = await _supa.from('documents_animaux').insert({
         'animal_id':   animalId,
         'uid_eleveur': widget.uid,
+        if (acqUid != null) 'uid_acquereur': acqUid,
+        if (acqProfileId != null) 'acquereur_profile_id': acqProfileId,
         if (pid.isNotEmpty) 'pro_profile_id': pid,
         'type':        type,
         'titre':       '$titreLabel — $nomAnimal',
         'statut':      'brouillon',
         'metadata': {
-          'acquereur_nom':     acqNom,
+          'acquereur_nom':         acqNom,
+          'acquereur_prenom':      _prenomCtrl.text.trim(),
+          'acquereur_nom_famille': _nomCtrl.text.trim(),
+          if (acqUid != null) 'acquereur_uid': acqUid,
+          if (acqProfileId != null) 'acquereur_profile_id': acqProfileId,
+          'qualite':           _qualite,
           'acquereur_email':   _emailCtrl.text.trim(),
           'acquereur_tel':     _telCtrl.text.trim(),
-          'acquereur_adresse': _adresseCtrl.text.trim(),
+          'acquereur_adresse': acqRue,
+          if (acqCp.isNotEmpty) 'acquereur_cp': acqCp,
+          if (acqVille.isNotEmpty) 'acquereur_ville': acqVille,
+          // Filiation animale (préremplie, modifiable dans le contrat)
+          if ('${widget.animal['nom_pere'] ?? ''}'.isNotEmpty) 'animal_nom_pere': '${widget.animal['nom_pere']}',
+          if ('${widget.animal['nom_mere'] ?? ''}'.isNotEmpty) 'animal_nom_mere': '${widget.animal['nom_mere']}',
+          if ('${widget.animal['puce_pere'] ?? ''}'.isNotEmpty) 'animal_puce_pere': '${widget.animal['puce_pere']}',
+          if ('${widget.animal['puce_mere'] ?? ''}'.isNotEmpty) 'animal_puce_mere': '${widget.animal['puce_mere']}',
+          if ('${widget.animal['identification'] ?? ''}'.isNotEmpty) 'animal_identification': '${widget.animal['identification']}',
           'prix':              _prixCtrl.text.trim(),
           'date_cession':      _dateCession.toIso8601String().split('T').first,
           'notes':             _notesCtrl.text.trim(),
         },
-      }).select('token').single();
+      }).select('token, id').single();
 
       final token = res['token'] as String;
-      const baseUrl = kSiteBaseUrl;
-      final url = Uri.parse('$baseUrl/signer-contrat/$token');
-
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      } else {
-        // Copier le lien dans le presse-papier si le navigateur ne s'ouvre pas
-        if (mounted) {
-          await Clipboard.setData(ClipboardData(text: url.toString()));
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Lien copié — ouvrez-le dans votre navigateur')),
-          );
-        }
+      _createdDocIds.add(res['id'] as String);
+      await _loadExistingDocs();
+      if (mounted) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ContratSignaturePage(token: token),
+        ));
+        await _loadExistingDocs();
       }
     } catch (e) {
       setState(() => _error = 'Erreur : $e');
     } finally {
-      setState(() { _generatingPdf = false; _generatingCert = false; });
+      if (mounted) setState(() { _generatingPdf = false; _generatingCert = false; });
     }
   }
 
   Future<void> _genererPdf()       async => _ouvrirContratWeb('contrat_vente');
   Future<void> _genererCertificat() async => _ouvrirContratWeb('certificat_cession');
+
+  /// Génère une facture PDF (montant = prix), l'enregistre dans documents_animaux
+  /// (type `facture`) et la partage. TVA reprise du contrat sélectionné si
+  /// « assujetti à la TVA » y est coché.
+  Future<void> _genererFacture() async {
+    final montant = double.tryParse(_prixCtrl.text.trim().replaceAll(',', '.')) ?? 0;
+    if (montant <= 0) {
+      setState(() => _error = 'Renseignez d\'abord le prix pour générer une facture.');
+      return;
+    }
+    setState(() { _generatingFacture = true; _error = null; });
+    try {
+      // TVA : contrat sélectionné en priorité, sinon n'importe quel contrat
+      // « assujetti à la TVA » lié à cet animal.
+      Map<String, dynamic> tvaMeta =
+          (_selectedContrat?['metadata'] as Map?)?.cast<String, dynamic>() ?? {};
+      if (tvaMeta['tva_assujetti'] != true) {
+        for (final c in _existingContrats) {
+          final cm = (c['metadata'] as Map?)?.cast<String, dynamic>() ?? {};
+          if (cm['tva_assujetti'] == true) { tvaMeta = cm; break; }
+        }
+      }
+      final tvaTaux = (tvaMeta['tva_assujetti'] == true)
+          ? (double.tryParse('${tvaMeta['tva_taux'] ?? 20}'.replaceAll(',', '.')) ?? 20.0)
+          : 0.0;
+      final ht = tvaTaux > 0 ? montant / (1 + tvaTaux / 100) : montant;
+      final tvaMontant = montant - ht;
+      final eleveur = _eleveurProfile ?? {'nom': widget.nomElevage};
+      final numero = 'F${_dateCession.year}-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+
+      final bytes = await factureVentePdfBytes(
+        eleveur: {
+          'name_elevage': eleveur['nom'],
+          'firstname': eleveur['firstname'], 'lastname': eleveur['lastname'],
+          'adress_elevage': (eleveur['adresse'] as String?) ??
+              [eleveur['rue'], eleveur['code_postal'], eleveur['ville']]
+                  .where((e) => e != null && '$e'.isNotEmpty).join(', '),
+          'siret': eleveur['siret'],
+          'email_contact': eleveur['email_contact'],
+          'code_iso_elevage': '+33',
+          'numero_elevage': eleveur['numero_elevage'] ?? eleveur['phone_number'],
+        },
+        animal: widget.animal,
+        numero: numero,
+        montantTtc: montant,
+        tvaTaux: tvaTaux,
+        acquereurNom: [_prenomCtrl.text.trim(), _nomCtrl.text.trim()].where((s) => s.isNotEmpty).join(' '),
+        acquereurAdresse: _adresseCtrl.text.trim(),
+        acquereurEmail: _emailCtrl.text.trim(),
+        acquereurTel: _telCtrl.text.trim(),
+        date: _dateCession,
+      );
+
+      final animalId = widget.animal['id'] as String;
+      final path = 'cessions/${widget.uid}/$animalId/facture_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final snap = await FirebaseStorage.instance.ref(path).putData(bytes);
+      final url = await snap.ref.getDownloadURL();
+
+      final pid = User_Info.activeProfileId;
+      final row = await _supa.from('documents_animaux').insert({
+        'animal_id': animalId,
+        'uid_eleveur': widget.uid,
+        if (pid.isNotEmpty) 'pro_profile_id': pid,
+        'type': 'facture',
+        'titre': 'Facture $numero — ${widget.animal['nom'] ?? ''}'.trim(),
+        'statut': 'genere',
+        'url': url,
+        'metadata': {'numero': numero, 'montant': montant, 'tva_taux': tvaTaux},
+      }).select('id').single();
+      _createdDocIds.add(row['id'] as String);
+
+      // Enregistrer aussi dans « Mes factures » (table factures)
+      try {
+        final numRows = await _supa.from('factures').select('numero_facture')
+            .eq('uid_eleveur', widget.uid)
+            .order('numero_facture', ascending: false).limit(1);
+        final nextNum = numRows.isEmpty
+            ? 1 : (((numRows.first['numero_facture'] as num?) ?? 0).toInt() + 1);
+        final adr = _adresseCtrl.text.trim();
+        final cpMatch = RegExp(r'\b(\d{5})\b').firstMatch(adr);
+        await _supa.from('factures').insert({
+          'uid_eleveur': widget.uid,
+          if (pid.isNotEmpty) 'profile_id': pid,
+          'profil_source': 'eleveur',
+          'numero_facture': nextNum,
+          'date_facture': _dateCession.toIso8601String().split('T').first,
+          'date_prestation': _dateCession.toIso8601String().split('T').first,
+          'lignes': [
+            {
+              'description': 'Cession — ${widget.animal['nom'] ?? 'animal'}'
+                  '${widget.animal['espece'] != null ? ' (${widget.animal['espece']})' : ''}',
+              'quantite': 1,
+              // clés app (facturation.dart) + clés site (elevage/facturation)
+              'prixUnitaireHT': double.parse(ht.toStringAsFixed(2)),
+              'prixUnitaire': double.parse(ht.toStringAsFixed(2)),
+              'tauxTVA': tvaTaux,
+              'tva': tvaTaux,
+              'totalHT': double.parse(ht.toStringAsFixed(2)),
+              'montantTVA': double.parse(tvaMontant.toStringAsFixed(2)),
+            }
+          ],
+          'total_ht': double.parse(ht.toStringAsFixed(2)),
+          'total_tva': double.parse(tvaMontant.toStringAsFixed(2)),
+          'total_ttc': montant,
+          'regime_tva': tvaTaux > 0 ? 'normal' : 'franchise',
+          'nom_client': _nomCtrl.text.trim(),
+          'prenom_client': _prenomCtrl.text.trim(),
+          'email_client': _emailCtrl.text.trim(),
+          'telephone_client': _telCtrl.text.trim(),
+          'rue_client': cpMatch != null ? adr.substring(0, cpMatch.start).trim() : adr,
+          'cp_client': cpMatch?.group(1),
+          'ville_client': cpMatch != null
+              ? adr.substring(cpMatch.end).replaceFirst(RegExp(r'^[\s,]+'), '').trim() : null,
+          'nom_emetteur': eleveur['nom'],
+          'rue_emetteur': eleveur['rue'] ?? eleveur['adresse'],
+          'cp_emetteur': eleveur['code_postal'],
+          'ville_emetteur': eleveur['ville'] ?? eleveur['ville_pro'],
+          'siret_emetteur': eleveur['siret'],
+          'email_emetteur': eleveur['email_contact'],
+          'statut': 'emise',
+        });
+      } catch (_) { /* la facture reste attachée à l'animal même si l'insert échoue */ }
+
+      await _loadExistingDocs();
+      await Printing.sharePdf(bytes: bytes, filename: '$numero.pdf');
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Erreur facture : $e');
+    } finally {
+      if (mounted) setState(() => _generatingFacture = false);
+    }
+  }
+
+  Future<void> _ouvrirFacture(Map<String, dynamic> d) async {
+    final url = d['url'] as String?;
+    if (url == null) return;
+    try {
+      final resp = await http.get(Uri.parse(url));
+      if (resp.statusCode == 200) {
+        await Printing.sharePdf(bytes: resp.bodyBytes, filename: '${d['titre'] ?? 'facture'}.pdf');
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _ouvrirDoc(Map<String, dynamic> d) async {
+    final token = (d['token'] as String?)?.trim();
+    final id = d['id'] as String?;
+    if ((token == null || token.isEmpty) && id == null) return;
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => ContratSignaturePage(
+        token: (token != null && token.isNotEmpty) ? token : null,
+        documentId: (token == null || token.isEmpty) ? id : null,
+      ),
+    ));
+    await _loadExistingDocs();
+  }
+
+  Future<void> _supprimerDoc(Map<String, dynamic> d) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Supprimer ce document ?',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+        content: const Text('Il sera définitivement supprimé pour les deux parties.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
+          TextButton(onPressed: () => Navigator.pop(context, true),
+              child: const Text('Supprimer', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _supa.from('documents_animaux').delete().eq('id', d['id']);
+      _createdDocIds.remove(d['id']);
+      if (_selectedContrat?['id'] == d['id']) _selectedContrat = null;
+      if (_selectedCertificat?['id'] == d['id']) _selectedCertificat = null;
+      await _loadExistingDocs();
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Erreur suppression : $e');
+    }
+  }
 
   Future<void> _save() async {
     if (_nomCtrl.text.trim().isEmpty) {
@@ -309,42 +629,72 @@ class _CessionSheetState extends State<CessionSheet> {
       final contratUrl     = _contratUrl ?? _selectedContrat?['url'] as String?;
       final certificatUrl  = _certificatUrl ?? _selectedCertificat?['url'] as String?;
 
+      // Aucun document à signer → cession directe (animal cédé tout de suite).
+      final hasDocuments = contratUrl != null || certificatUrl != null
+          || _selectedContrat != null || _selectedCertificat != null
+          || _existingContrats.any((d) => d['type'] != 'facture')
+          || _existingCertificats.isNotEmpty;
+      final finaliseNow = !widget.isReCession && !hasDocuments;
+      final dateCessionStr = _dateCession.toIso8601String().split('T').first;
+
       final cedantProfileId = User_Info.activeProfileId;
+      final acqUidForProfile = _foundUser?['uid'] as String?;
+      final acqProfileId = acqUidForProfile != null
+          ? await _resolveAcqProfileId(acqUidForProfile, _qualite) : null;
+      final sterilOn = !widget.isReCession && _sterilisationRequise && _sterilisationEcheance != null;
+      final sterilAgeMois = int.tryParse(_sterilAgeCtrl.text.trim());
+      final sterilEcheanceStr = _sterilisationEcheance?.toIso8601String().split('T').first;
+      final nomComplet = [_prenomCtrl.text.trim(), _nomCtrl.text.trim()]
+          .where((s) => s.isNotEmpty).join(' ');
       // 1. Créer l'enregistrement de cession (sans transférer la fiche)
       final row = await _supa.from('cessions').insert({
         'animal_id':          widget.animal['id'],
         'uid_eleveur':        widget.uid,
         if (cedantProfileId.isNotEmpty) 'pro_profile_id': cedantProfileId,
         'uid_acquereur':      _foundUser?['uid'],
+        if (acqProfileId != null) 'acquereur_profile_id': acqProfileId,
         'email_acquereur':    _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
-        'nom_acquereur':      _nomCtrl.text.trim(),
+        'prenom_acquereur':   _prenomCtrl.text.trim().isEmpty ? null : _prenomCtrl.text.trim(),
+        'nom_acquereur':      nomComplet.isEmpty ? _nomCtrl.text.trim() : nomComplet,
         'tel_acquereur':      _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
         'adresse_acquereur':  _adresseCtrl.text.trim().isEmpty ? null : _adresseCtrl.text.trim(),
         'qualite':            _qualite,
         'prix':               _prixCtrl.text.isEmpty ? null : double.tryParse(_prixCtrl.text.replaceAll(',', '.')),
         'notes':              _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
-        'date_cession':       _dateCession.toIso8601String().split('T').first,
-        'statut':             'en_attente_acquereur',
+        'date_cession':       dateCessionStr,
+        'statut':             finaliseNow ? 'confirme' : 'en_attente_acquereur',
+        if (finaliseNow) 'confirmed_at': DateTime.now().toIso8601String(),
         'contrat_url':        contratUrl,
         'certificat_url':     certificatUrl,
-      }).select('token').single();
+        'sterilisation_requise':  sterilOn,
+        if (sterilOn) 'sterilisation_age_mois': sterilAgeMois,
+        if (sterilOn) 'sterilisation_echeance': sterilEcheanceStr,
+      }).select('token, id').single();
 
       final token = row['token'] as String;
+      _cessionSaved = true; // cession validée → on garde les contrats
       const baseUrl = kSiteBaseUrl;
       final signingUrl = '$baseUrl/signer-cession/$token';
 
-      // 2. Passer l'animal en 'cession_en_cours' (pas encore sorti)
-      // uid_acquereur posé dès maintenant si compte PetsMatch → acquéreur peut voir la fiche en lecture seule
+      // 2. Passer l'animal en 'cession_en_cours' (ou 'sorti' si cession directe
+      // sans document). uid_acquereur posé pour que l'acquéreur voie la fiche.
       await _supa.from('animaux').update({
-        'statut':               'cession_en_cours',
+        'statut':               finaliseNow ? 'sorti' : 'cession_en_cours',
+        if (finaliseNow) 'date_sortie': dateCessionStr,
         'uid_acquereur':        _foundUser?['uid'],
+        if (acqProfileId != null) 'profile_id_acquereur': acqProfileId,
         'destinataire_qualite': _qualite,
-        'destinataire_nom':     _nomCtrl.text.trim(),
+        'destinataire_nom':     nomComplet.isEmpty ? _nomCtrl.text.trim() : nomComplet,
         'destinataire_adresse': _adresseCtrl.text.trim().isEmpty ? null : _adresseCtrl.text.trim(),
         'cession_prix':         _prixCtrl.text.isEmpty ? null : double.tryParse(_prixCtrl.text.replaceAll(',', '.')),
         'cession_notes':        _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
         'cession_contrat_url':  contratUrl,
         'cession_certificat_url': certificatUrl,
+        'sterilisation_requise':  sterilOn,
+        if (sterilOn) 'sterilisation_echeance': sterilEcheanceStr,
+        if (sterilOn) 'sterilisation_validee': false,
+        if (sterilOn) 'sterilisation_eleveur_uid': widget.uid,
+        if (sterilOn && cedantProfileId.isNotEmpty) 'sterilisation_eleveur_profile_id': cedantProfileId,
       }).eq('id', widget.animal['id']);
 
       // 3. Résoudre le profil (is_main) de l'acquéreur — utilisé pour la
@@ -355,31 +705,60 @@ class _CessionSheetState extends State<CessionSheet> {
       // (mes-animaux/[id]/page.tsx). Le faire ici, dès 'cession_en_cours',
       // ferait apparaître l'animal comme "ancien" dans la liste alors que la
       // fiche permet encore de révoquer la cession.
-      Map<String, dynamic>? acqProfileRow;
-      if (_foundUser?['uid'] != null) {
-        acqProfileRow = await _supa
-            .from('user_profiles')
-            .select('id')
-            .eq('uid', _foundUser!['uid'])
-            .eq('is_main', true)
-            .maybeSingle();
-      }
-
-      // 4. Notifier l'acquéreur
-      if (_foundUser?['uid'] != null) {
-        // In-app si compte PetsMatch
+      // 4. Notifier l'acquéreur (sur le profil qui recevra l'animal).
+      // Si un contrat de vente a été créé, la notif pointe dessus (lecture +
+      // signature) ; sinon sur le récap de cession.
+      final contratDoc = _selectedContrat ??
+          (_existingContrats.isNotEmpty ? _existingContrats.first : null);
+      final contratToken = contratDoc?['token'] as String?;
+      final contratId = contratDoc?['id'] as String?;
+      final contratUrlSign = contratToken != null
+          ? '$kSiteBaseUrl/signer-contrat/$contratToken' : null;
+      if (finaliseNow && _foundUser?['uid'] != null) {
+        // Cession directe : transfert de propriété tout de suite.
+        final acqUid = _foundUser!['uid'] as String;
+        try {
+          await _supa.from('animaux_proprietes')
+              .update({'date_fin': dateCessionStr})
+              .eq('animal_id', widget.animal['id'])
+              .eq('uid_proprio', widget.uid)
+              .isFilter('date_fin', null);
+          await _supa.from('animaux_proprietes').upsert({
+            'animal_id':   widget.animal['id'],
+            'uid_proprio': acqUid,
+            'date_debut':  dateCessionStr,
+            'date_fin':    null,
+            if (acqProfileId != null) 'profile_id_proprio': acqProfileId,
+          }, onConflict: 'animal_id,uid_proprio');
+        } catch (_) {}
+        await _supa.from('notifications').insert({
+          'uid':   acqUid,
+          'type':  'cession_confirmee',
+          'title': '🐾 Animal reçu : ${widget.animal['nom'] ?? 'Animal'}',
+          'body':  '${widget.nomElevage} vous a cédé ${widget.animal['nom'] ?? 'un animal'}. Il apparaît dans votre compte.',
+          if (acqProfileId != null) 'profile_id': acqProfileId,
+          'data':  {'animalId': widget.animal['id']},
+          'read':  false,
+        });
+      } else if (_foundUser?['uid'] != null) {
         await _supa.from('notifications').insert({
           'uid':   _foundUser!['uid'],
-          'type':  'cession_signature_demandee',
+          'type':  contratToken != null ? 'contrat_signe_eleveur' : 'cession_signature_demandee',
           'title': '✍️ Signature requise — ${widget.animal['nom'] ?? 'Animal'}',
-          'body':  '${widget.nomElevage} souhaite vous céder ${widget.animal['nom'] ?? 'un animal'}. Signez le contrat pour valider.',
-          if (acqProfileRow?['id'] != null) 'profile_id': acqProfileRow!['id'],
-          'data':  {'animalId': widget.animal['id'], 'token': token, 'signingUrl': signingUrl},
+          'body':  '${widget.nomElevage} souhaite vous céder ${widget.animal['nom'] ?? 'un animal'}. Vérifiez et signez le contrat.',
+          if (acqProfileId != null) 'profile_id': acqProfileId,
+          'data':  {
+            'animalId': widget.animal['id'],
+            'token': contratToken ?? token,
+            if (contratId != null) 'documentId': contratId,
+            'url': contratUrlSign ?? signingUrl,
+            'signingUrl': contratUrlSign ?? signingUrl,
+          },
           'read':  false,
         });
       }
       // Email si adresse fournie (avec ou sans compte)
-      if (_emailCtrl.text.trim().isNotEmpty) {
+      if (!finaliseNow && _emailCtrl.text.trim().isNotEmpty) {
         try {
           await http.post(
             Uri.parse('$kSiteBaseUrl/api/cession/notify-email'),
@@ -391,7 +770,7 @@ class _CessionSheetState extends State<CessionSheet> {
               'eleveur_nom':  widget.nomElevage,
               'signing_url':  signingUrl,
               'prix':         _prixCtrl.text.trim().isEmpty ? null : _prixCtrl.text.trim(),
-              'date_cession': _dateCession.toIso8601String().split('T').first,
+              'date_cession': dateCessionStr,
             }),
           );
         } catch (_) {}
@@ -407,19 +786,101 @@ class _CessionSheetState extends State<CessionSheet> {
       if (mounted) {
         Navigator.pop(context);
         widget.onCeded();
-        // Afficher le lien de signature
-        showDialog(
-          context: context,
-          builder: (_) => _SigningLinkDialog(
-            url: signingUrl,
-            nomAcquereur: _nomCtrl.text.trim(),
-            hasAccount: _foundUser != null,
-          ),
-        );
+        if (finaliseNow) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('✅ Cession finalisée — animal cédé'),
+            backgroundColor: Color(0xFF6E9E57),
+          ));
+        } else {
+          showDialog(
+            context: context,
+            builder: (_) => _SigningLinkDialog(
+              url: signingUrl,
+              token: token,
+              nomAcquereur: _nomCtrl.text.trim(),
+              hasAccount: _foundUser != null,
+            ),
+          );
+        }
       }
     } catch (e) {
       setState(() { _saving = false; _error = 'Erreur : $e'; });
     }
+  }
+
+  // ── Validation / helpers formulaire ───────────────────────────────────────
+  // Pour une cession éleveur, prénom + nom + email + téléphone + adresse sont
+  // obligatoires (nécessaires pour joindre l'acquéreur, notamment pour les
+  // rappels de stérilisation). Pour une re-cession particulier, seul le nom.
+  String _req(String label) => widget.isReCession && label != 'Nom' ? label : '$label *';
+
+  bool _detailsValid() {
+    if (_nomCtrl.text.trim().isEmpty) return false;
+    if (widget.isReCession) return true;
+    if (_prenomCtrl.text.trim().isEmpty) return false;
+    if (_emailCtrl.text.trim().isEmpty) return false;
+    if (_telCtrl.text.trim().isEmpty) return false;
+    if (_adresseCtrl.text.trim().isEmpty) return false;
+    if (_sterilisationRequise &&
+        (int.tryParse(_sterilAgeCtrl.text.trim()) ?? 0) <= 0) return false;
+    return true;
+  }
+
+  String _fmtDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+  Widget _sterilisationBlock() {
+    final dn = _dateNaissanceAnimal;
+    final echeance = _sterilisationEcheance;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+      decoration: BoxDecoration(
+        color: _green.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _green.withValues(alpha: 0.25)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          activeThumbColor: _green,
+          title: const Text('Condition de stérilisation',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _dark)),
+          subtitle: Text(
+            dn == null
+                ? 'Renseignez la date de naissance de l\'animal pour activer cette condition.'
+                : 'Le nouveau propriétaire devra faire stériliser l\'animal avant l\'âge fixé.',
+            style: const TextStyle(fontSize: 11, color: Colors.grey),
+          ),
+          value: _sterilisationRequise,
+          onChanged: dn == null ? null : (v) => setState(() => _sterilisationRequise = v),
+        ),
+        if (_sterilisationRequise) ...[
+          const SizedBox(height: 6),
+          Row(children: [
+            SizedBox(
+              width: 110,
+              child: TextField(
+                controller: _sterilAgeCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                onChanged: (_) => setState(() {}),
+                decoration: _inputDec('12'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Text('mois maximum', style: TextStyle(fontSize: 12, color: _dark)),
+          ]),
+          const SizedBox(height: 8),
+          Text(
+            echeance != null
+                ? '📅 Échéance : ${_fmtDate(echeance)}'
+                : 'Saisissez un âge en mois valide.',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _teal),
+          ),
+        ],
+      ]),
+    );
   }
 
   @override
@@ -432,7 +893,8 @@ class _CessionSheetState extends State<CessionSheet> {
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           // Handle + titre
           Center(child: Container(width: 40, height: 4,
               decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
@@ -619,36 +1081,61 @@ class _CessionSheetState extends State<CessionSheet> {
               ))),
             ]),
             const SizedBox(height: 10),
-            _FieldBlock('Nom de l\'acquéreur *', child: TextField(
-              controller: _nomCtrl,
-              decoration: _inputDec('Nom complet'),
-            )),
+            Row(children: [
+              Expanded(child: _FieldBlock(_req('Prénom'), child: TextField(
+                controller: _prenomCtrl,
+                onChanged: (_) => setState(() {}),
+                decoration: _inputDec('Prénom'),
+              ))),
+              const SizedBox(width: 8),
+              Expanded(child: _FieldBlock(_req('Nom'), child: TextField(
+                controller: _nomCtrl,
+                onChanged: (_) => setState(() {}),
+                decoration: _inputDec('Nom'),
+              ))),
+            ]),
             const SizedBox(height: 10),
             Row(children: [
-              Expanded(child: _FieldBlock('Email', child: TextField(
+              Expanded(child: _FieldBlock(_req('Email'), child: TextField(
                 controller: _emailCtrl, keyboardType: TextInputType.emailAddress,
+                onChanged: (_) => setState(() {}),
                 decoration: _inputDec('email@exemple.fr'),
               ))),
               const SizedBox(width: 8),
-              if (!widget.isReCession)
-                Expanded(child: _FieldBlock('Prix (€)', child: TextField(
-                  controller: _prixCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: _inputDec('0'),
-                ))),
+              Expanded(child: _FieldBlock(_req('Téléphone'), child: TextField(
+                controller: _telCtrl, keyboardType: TextInputType.phone,
+                onChanged: (_) => setState(() {}),
+                decoration: _inputDec('06 XX XX XX XX'),
+              ))),
             ]),
             const SizedBox(height: 10),
-            _FieldBlock('Adresse', child: TextField(
+            _FieldBlock(_req('Adresse postale'), child: TextField(
               controller: _adresseCtrl,
+              onChanged: (_) => setState(() {}),
               decoration: _inputDec('Adresse de l\'acquéreur'),
             )),
+            if (!widget.isReCession) ...[
+              const SizedBox(height: 10),
+              _FieldBlock('Prix (€)', child: TextField(
+                controller: _prixCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: _inputDec('0'),
+              )),
+            ],
             const SizedBox(height: 10),
             _FieldBlock('Notes', child: TextField(
               controller: _notesCtrl, maxLines: 2,
               decoration: _inputDec('Conditions particulières…'),
             )),
+
+            // ── Condition de stérilisation (cession éleveur) ──
+            if (!widget.isReCession) ...[
+              const SizedBox(height: 14),
+              _sterilisationBlock(),
+            ],
+
             const SizedBox(height: 14),
             ElevatedButton(
-              onPressed: _nomCtrl.text.trim().isEmpty ? null : () {
+              onPressed: !_detailsValid() ? null : () {
                 if (widget.isReCession) {
                   // Particulier qui re-cède : pas de documents, valider directement
                   _save();
@@ -664,6 +1151,16 @@ class _CessionSheetState extends State<CessionSheet> {
                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600),
               ),
             ),
+            if (!widget.isReCession) ...[
+              const SizedBox(height: 4),
+              TextButton(
+                onPressed: (!_detailsValid() || _saving) ? null : _save,
+                child: _saving
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Valider sans document (remise en main propre)',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal)),
+              ),
+            ],
           ],
 
           // ── Étape 2 : Documents ──────────────────────────────
@@ -683,6 +1180,8 @@ class _CessionSheetState extends State<CessionSheet> {
                     selected: _selectedCertificat?['id'] == d['id'],
                     onTap: () => setState(() =>
                       _selectedCertificat = _selectedCertificat?['id'] == d['id'] ? null : Map.from(d)),
+                    onOpen: () => _ouvrirDoc(d),
+                    onDelete: () => _supprimerDoc(d),
                   ),
               const SizedBox(height: 8),
               Row(children: [
@@ -728,6 +1227,8 @@ class _CessionSheetState extends State<CessionSheet> {
                     selected: _selectedContrat?['id'] == d['id'],
                     onTap: () => setState(() =>
                       _selectedContrat = _selectedContrat?['id'] == d['id'] ? null : Map.from(d)),
+                    onOpen: () => _ouvrirDoc(d),
+                    onDelete: () => _supprimerDoc(d),
                   ),
               const SizedBox(height: 8),
               Row(children: [
@@ -756,6 +1257,36 @@ class _CessionSheetState extends State<CessionSheet> {
                   const Text(' importé', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: _green)),
                 ],
               ]),
+
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              const SizedBox(height: 16),
+
+              // ── Facture (optionnel) ─────────────────────────
+              _docSectionHeader('🧾 Facture (optionnel)'),
+              const SizedBox(height: 8),
+              if (_existingFactures.isEmpty)
+                _docEmptyHint('Aucune facture générée')
+              else
+                for (final d in _existingFactures)
+                  _docPickerTile(
+                    doc: d,
+                    selected: false,
+                    onTap: () => _ouvrirFacture(d),
+                    onOpen: () => _ouvrirFacture(d),
+                    onDelete: () => _supprimerDoc(d),
+                    openLabel: 'Ouvrir / partager',
+                  ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: _generatingFacture ? null : _genererFacture,
+                icon: _generatingFacture
+                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.receipt_long_outlined, size: 14),
+                label: Text(_generatingFacture ? 'Génération…' : 'Générer la facture (montant = prix)',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                style: TextButton.styleFrom(foregroundColor: _teal, padding: EdgeInsets.zero),
+              ),
             ],
             const SizedBox(height: 20),
             ElevatedButton(
@@ -771,7 +1302,7 @@ class _CessionSheetState extends State<CessionSheet> {
             const Center(child: Text('Les documents sont optionnels.',
                 style: TextStyle(fontSize: 11, color: Colors.grey))),
           ],
-        ]),
+        ])),
       ),
     );
   }
@@ -792,16 +1323,23 @@ Widget _docPickerTile({
   required Map<String, dynamic> doc,
   required bool selected,
   required VoidCallback onTap,
+  VoidCallback? onOpen,
+  VoidCallback? onDelete,
+  String openLabel = 'Lire / modifier / signer',
 }) {
   final type = doc['type'] as String? ?? '';
   final statut = doc['statut'] as String? ?? '';
   final typeLabel = type == 'certificat_cession'
       ? 'Certificat de cession'
-      : type == 'contrat_reservation' ? 'Contrat de réservation' : 'Contrat de vente';
-  final statutLabel = statut == 'signe'
-      ? '✅ Signé'
-      : statut == 'partiellement_signe' ? '✍️ Partiellement signé'
-      : statut == 'en_attente' ? '⏳ En attente signature' : '📝 Brouillon';
+      : type == 'facture'
+          ? (doc['titre'] as String? ?? 'Facture')
+          : type == 'contrat_reservation' ? 'Contrat de réservation' : 'Contrat de vente';
+  final statutLabel = type == 'facture'
+      ? '🧾 Facture générée'
+      : statut == 'signe'
+          ? '✅ Signé'
+          : statut == 'partiellement_signe' ? '✍️ Partiellement signé'
+          : statut == 'en_attente' ? '⏳ En attente signature' : '📝 Brouillon';
   final rawDate = doc['created_at'] as String?;
   final date = rawDate != null
       ? '${DateTime.parse(rawDate).day.toString().padLeft(2, '0')}/${DateTime.parse(rawDate).month.toString().padLeft(2, '0')}/${DateTime.parse(rawDate).year}'
@@ -812,7 +1350,7 @@ Widget _docPickerTile({
     child: AnimatedContainer(
       duration: const Duration(milliseconds: 150),
       margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.only(left: 12, top: 6, bottom: 6, right: 4),
       decoration: BoxDecoration(
         color: selected ? const Color(0xFFECFDF5) : Colors.grey.shade50,
         border: Border.all(
@@ -821,9 +1359,11 @@ Widget _docPickerTile({
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(children: [
-        Icon(selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-            size: 18, color: selected ? const Color(0xFF059669) : Colors.grey.shade400),
-        const SizedBox(width: 10),
+        Padding(
+          padding: const EdgeInsets.only(right: 10),
+          child: Icon(selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+              size: 18, color: selected ? const Color(0xFF059669) : Colors.grey.shade400),
+        ),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(typeLabel, style: const TextStyle(
               fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
@@ -832,6 +1372,35 @@ Widget _docPickerTile({
           Text('$statutLabel${date.isNotEmpty ? '  ·  $date' : ''}',
               style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
         ])),
+        if (onOpen != null || (onDelete != null && statut != 'signe'))
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, size: 20, color: Color(0xFF6F767B)),
+            tooltip: 'Actions',
+            onSelected: (v) {
+              if (v == 'open') onOpen?.call();
+              if (v == 'delete') onDelete?.call();
+            },
+            itemBuilder: (_) => [
+              if (onOpen != null)
+                PopupMenuItem(
+                  value: 'open',
+                  child: Row(children: [
+                    const Icon(Icons.draw_outlined, size: 18, color: _teal),
+                    const SizedBox(width: 10),
+                    Text(openLabel, style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                  ]),
+                ),
+              if (onDelete != null && statut != 'signe')
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Row(children: [
+                    Icon(Icons.delete_outline, size: 18, color: Colors.red.shade400),
+                    const SizedBox(width: 10),
+                    const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.red)),
+                  ]),
+                ),
+            ],
+          ),
       ]),
     ),
   );
@@ -863,10 +1432,11 @@ class _FieldBlock extends StatelessWidget {
 
 class _SigningLinkDialog extends StatelessWidget {
   final String url;
+  final String token;
   final String nomAcquereur;
   final bool hasAccount;
 
-  const _SigningLinkDialog({required this.url, required this.nomAcquereur, required this.hasAccount});
+  const _SigningLinkDialog({required this.url, required this.token, required this.nomAcquereur, required this.hasAccount});
 
   @override
   Widget build(BuildContext context) => AlertDialog(
@@ -891,6 +1461,15 @@ class _SigningLinkDialog extends StatelessWidget {
           style: TextStyle(fontSize: 11, color: Colors.grey)),
     ]),
     actions: [
+      TextButton(
+        onPressed: () {
+          Navigator.pop(context);
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => ContratSignaturePage(cessionToken: token),
+          ));
+        },
+        child: const Text('✍️ Signer dans l\'appli', style: TextStyle(color: Color(0xFF0C5C6C), fontFamily: 'Galey')),
+      ),
       TextButton(
         onPressed: () { Clipboard.setData(ClipboardData(text: url)); Navigator.pop(context); },
         child: const Text('📋 Copier le lien', style: TextStyle(color: Color(0xFF0C5C6C), fontFamily: 'Galey')),

@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/config.dart';
+import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 
 const _teal  = Color(0xFF0C5C6C);
@@ -218,16 +218,10 @@ class _ReservationSheetState extends State<ReservationSheet> {
       }).select('token').single();
 
       final token = res['token'] as String;
-      final url = Uri.parse('$kSiteBaseUrl/signer-contrat/$token');
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      } else {
-        await Clipboard.setData(ClipboardData(text: url.toString()));
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Lien copié — ouvrez-le dans votre navigateur')),
-          );
-        }
+      if (mounted) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ContratSignaturePage(token: token),
+        ));
       }
     } catch (e) {
       setState(() => _error = 'Erreur : $e');

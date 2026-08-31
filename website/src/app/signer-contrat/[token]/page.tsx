@@ -124,21 +124,22 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         tel: elvTel,
       };
       const animal: AnimalContrat = {
-        nom: data.animaux?.nom ?? '',
+        nom: meta.animal_nom || data.animaux?.nom || '',
         espece: data.animaux?.espece ?? '',
-        race: data.animaux?.race ?? '',
-        sexe: data.animaux?.sexe ?? '',
-        identification: data.animaux?.identification ?? '',
-        date_naissance: data.animaux?.date_naissance ?? '',
-        couleur: data.animaux?.couleur ?? '',
+        race: meta.animal_race || data.animaux?.race || '',
+        sexe: meta.animal_sexe || data.animaux?.sexe || '',
+        identification: meta.animal_identification || data.animaux?.identification || '',
+        date_naissance: meta.animal_date_naissance || data.animaux?.date_naissance || '',
+        couleur: meta.animal_couleur || data.animaux?.couleur || '',
         pedigree_numero: data.animaux?.pedigree_numero ?? '',
-        pedigree_lof: data.animaux?.pedigree_lof ?? '',
-        nom_pere: data.animaux?.nom_pere ?? '',
-        puce_pere: data.animaux?.puce_pere ?? '',
-        nom_mere: data.animaux?.nom_mere ?? '',
-        puce_mere: data.animaux?.puce_mere ?? '',
-        ville_naissance: villeElevage,
+        pedigree_lof: meta.animal_pedigree || data.animaux?.pedigree_lof || '',
+        nom_pere: meta.animal_nom_pere || data.animaux?.nom_pere || '',
+        puce_pere: meta.animal_puce_pere || data.animaux?.puce_pere || '',
+        nom_mere: meta.animal_nom_mere || data.animaux?.nom_mere || '',
+        puce_mere: meta.animal_puce_mere || data.animaux?.puce_mere || '',
+        ville_naissance: meta.ville_naissance || villeElevage,
       };
+      const clausesOffMeta = (data.metadata as Record<string, unknown>)?.clauses_off;
       const dataContrat: DataContrat = {
         nom: meta.acquereur_nom ?? '',
         email: meta.acquereur_email ?? '',
@@ -147,12 +148,31 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         prix: meta.prix ?? '',
         dateCession: meta.date_cession ?? '',
         notes: meta.notes ?? '',
+        acompte: meta.acompte ?? '',
+        tranche1: meta.tranche1 ?? '',
+        tva: meta.tva ?? '',
+        tvaTaux: (String(meta.tva_assujetti) === 'true') ? (meta.tva_taux ?? '') : '',
+        modePaiement: meta.mode_paiement ?? '',
+        montantTranche2: meta.montant_tranche2 ?? '',
+        civilite: meta.acquereur_civilite ?? '',
+        prenom: meta.acquereur_prenom ?? '',
+        nomFamille: meta.acquereur_nom_famille ?? '',
+        cp: meta.acquereur_cp ?? '',
+        ville: meta.acquereur_ville ?? '',
+        villeNaissance: meta.ville_naissance ?? '',
+        villeSignature: meta.ville_signature ?? '',
+        sterilisationClause: meta.sterilisation_clause ?? '',
+        clausesOff: Array.isArray(clausesOffMeta) ? (clausesOffMeta as string[]) : [],
+        mediateurNom: meta.mediateur_nom ?? '',
+        mediateurUrl: meta.mediateur_url ?? '',
       };
       const opts = {
         animalId: '',
         supabaseUrl: '',
         supabaseKey: '',
         avecSterilisation: (meta as Record<string, unknown>).avec_sterilisation !== false,
+        signatureEleveur: meta.signature_eleveur,
+        signatureAcquereur: meta.signature_acquereur,
       };
 
       let generatedHtml = '';
@@ -410,14 +430,21 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     const now = new Date().toISOString();
     const sigField  = role === 'eleveur' ? 'signature_eleveur'  : 'signature_acquereur';
     const dateField = role === 'eleveur' ? 'signe_eleveur_le'   : 'signe_acquereur_le';
-    const newSaved  = { ...saved, [role]: true };
-    const bothSigned = newSaved.eleveur && newSaved.acquereur;
+
+    // Relire les métadonnées en base pour ne pas écraser la signature de
+    // l'autre partie si elle a signé entre-temps.
+    const { data: freshDoc } = await supabase.from('documents_animaux')
+      .select('metadata').eq('token', token).maybeSingle();
+    const baseMeta = { ...(freshDoc?.metadata ?? doc.metadata ?? {}) } as Record<string, unknown>;
+    const mergedMeta = { ...baseMeta, [sigField]: dataUrl, [dateField]: now };
+    const notBlank = (v: unknown) => v != null && String(v).trim() !== '';
+    const bothSigned = notBlank(mergedMeta.signature_eleveur) && notBlank(mergedMeta.signature_acquereur);
     const newStatut: DocStatut = bothSigned ? 'signe'
-      : (newSaved.eleveur || newSaved.acquereur) ? 'partiellement_signe'
+      : (notBlank(mergedMeta.signature_eleveur) || notBlank(mergedMeta.signature_acquereur)) ? 'partiellement_signe'
       : 'en_attente';
 
     await supabase.from('documents_animaux').update({
-      metadata: { ...doc.metadata, [sigField]: dataUrl, [dateField]: now },
+      metadata: mergedMeta,
       statut:   newStatut,
       ...(bothSigned ? { signe_le: now } : {}),
     }).eq('token', token);
@@ -425,8 +452,13 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     // Quand le contrat de cession est entièrement signé → finaliser le transfert de l'animal
     if (bothSigned && (doc.type === 'contrat_vente' || doc.type === 'certificat_cession') && doc.animal_id) {
       const { data: cededAnimal } = await supabase.from('animaux')
-        .update({ statut: 'sorti' }).eq('id', doc.animal_id).eq('statut', 'en_attente_cession')
+        .update({ statut: 'sorti' }).eq('id', doc.animal_id)
+        .in('statut', ['en_attente_cession', 'cession_en_cours'])
         .select('uid_eleveur, uid_acquereur, date_sortie').maybeSingle();
+      try {
+        await supabase.from('cessions').update({ statut: 'confirme', confirmed_at: now })
+          .eq('animal_id', doc.animal_id).in('statut', ['en_attente_acquereur', 'signe_acquereur']);
+      } catch { /* pas bloquant */ }
 
       // Historique de propriété — bascule seulement maintenant que la cession
       // est définitive (contrat signé par les deux parties), pas avant : sinon
@@ -442,15 +474,28 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             .is('date_fin', null);
         }
         if (cededAnimal.uid_acquereur) {
-          const { data: acqProfile } = await supabase.from('user_profiles')
-            .select('id').eq('uid', cededAnimal.uid_acquereur).eq('is_main', true).maybeSingle();
+          const acqProfileId = await (async (): Promise<string | null> => {
+            const stored = doc.metadata?.acquereur_profile_id as string | undefined;
+            if (stored) return stored;
+            const q = (doc.metadata?.qualite as string | undefined) ?? 'particulier';
+            const wanted = q === 'eleveur' ? 'eleveur' : (q === 'refuge' || q === 'association') ? 'association' : 'particulier';
+            const { data: byType } = await supabase.from('user_profiles')
+              .select('id').eq('uid', cededAnimal.uid_acquereur).eq('profile_type', wanted).maybeSingle();
+            if (byType?.id) return byType.id as string;
+            const { data: main } = await supabase.from('user_profiles')
+              .select('id').eq('uid', cededAnimal.uid_acquereur).eq('is_main', true).maybeSingle();
+            return (main?.id as string | undefined) ?? null;
+          })();
           await supabase.from('animaux_proprietes').upsert({
             animal_id:          doc.animal_id,
             uid_proprio:        cededAnimal.uid_acquereur,
             date_debut:         dateCession,
             date_fin:           null,
-            profile_id_proprio: acqProfile?.id ?? null,
+            profile_id_proprio: acqProfileId,
           }, { onConflict: 'animal_id,uid_proprio' });
+          if (acqProfileId) {
+            await supabase.from('animaux').update({ profile_id_acquereur: acqProfileId }).eq('id', doc.animal_id);
+          }
         }
       }
     }
@@ -468,16 +513,14 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     const signingUrl = `${window.location.origin}/signer-contrat/${token}`;
 
     if (bothSigned) {
-      // Les deux ont signé → notifier les deux
+      const complet = `${titre} est désormais signé par les deux parties.`;
       fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: doc.uid_eleveur, type: 'contrat_signe_complet', title: '✅ Contrat signé !',
-          body: `${acqNom} a apposé sa signature — ${titre} est désormais signé par les deux parties.`,
-          profileType: isAdoption ? 'association' : 'eleveur',
-          data: { token } }) });
+          body: complet, profileType: isAdoption ? 'association' : 'eleveur',
+          data: { token, url: signingUrl } }) });
       if (acqEmail) fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: acqEmail, type: 'contrat_signe_complet', title: '✅ Contrat signé !',
-          body: `${partieVendeur} a apposé sa signature — ${titre} est désormais signé par les deux parties.`,
-          data: { token, url: signingUrl } }) });
+          body: complet, data: { token, url: signingUrl } }) });
     } else if (role === 'acquereur') {
       // Acquéreur vient de signer → notifier l'éleveur
       fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -493,8 +536,17 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           data: { token, url: signingUrl } }) });
     }
 
-    setDoc(prev => prev ? { ...prev, statut: newStatut, ...(bothSigned ? { signe_le: now } : {}), metadata: { ...prev.metadata, [sigField]: dataUrl, [dateField]: now } } : prev);
-    setSaved(newSaved);
+    setDoc(prev => prev ? { ...prev, statut: newStatut, ...(bothSigned ? { signe_le: now } : {}), metadata: mergedMeta as DocRow['metadata'] } : prev);
+    setSaved({ eleveur: notBlank(mergedMeta.signature_eleveur), acquereur: notBlank(mergedMeta.signature_acquereur) });
+    // Régénérer le contrat avec la ou les signatures incrustées (comme l'appli)
+    if (animalStored && eleveurStored && dataContratStored && (doc.type === 'contrat_vente' || doc.type === 'contrat_reservation')) {
+      const sigOpts = {
+        signatureEleveur: mergedMeta.signature_eleveur as string | undefined,
+        signatureAcquereur: mergedMeta.signature_acquereur as string | undefined,
+        avecSterilisation: (doc.metadata as Record<string, unknown>)?.avec_sterilisation !== false,
+      };
+      setHtml(generateContratHTML(animalStored, dataContratStored, eleveurStored, sigOpts));
+    }
     setSaving(null);
   }
 
@@ -574,12 +626,13 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     await supabase.from('documents_animaux').update({ metadata: newMeta }).eq('id', doc.id);
     // Régénère le HTML avec les nouvelles coordonnées
     if (eleveurStored && animalStored) {
-      const updatedData = { ...dataContratStored!, nom: contactNom.trim(), adresse: contactAdresse.trim(), tel: contactTel.trim() };
+      const updatedData = { ...dataContratStored!, nom: contactNom.trim(), prenom: contactPrenom.trim(), adresse: contactAdresse.trim(), tel: contactTel.trim() };
+      const sigOpts = { signatureEleveur: doc.metadata?.signature_eleveur, signatureAcquereur: doc.metadata?.signature_acquereur };
       let newHtml = '';
       if (doc.type === 'contrat_reservation') newHtml = generateContratReservationHTML(animalStored, updatedData, eleveurStored, {});
-      else if (doc.type === 'certificat_cession') newHtml = generateCertificatCessionHTML(animalStored, updatedData, eleveurStored, { eleveurUid: doc.uid_eleveur });
+      else if (doc.type === 'certificat_cession') newHtml = generateCertificatCessionHTML(animalStored, updatedData, eleveurStored, { eleveurUid: doc.uid_eleveur, ...sigOpts });
       else if (doc.type === 'contrat_saillie') newHtml = generateContratSaillieHTML(animalStored, updatedData, eleveurStored, {});
-      else newHtml = generateContratHTML(animalStored, updatedData, eleveurStored, {});
+      else newHtml = generateContratHTML(animalStored, updatedData, eleveurStored, sigOpts);
       if (newHtml) setHtml(newHtml);
     }
     setDoc(prev => prev ? { ...prev, metadata: newMeta } : prev);
@@ -615,7 +668,10 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
   const isFinal     = isSigned || isRefused || isCancelled || isExpired;
   // Éleveur/propriétaire = peut modifier les champs du contrat. Acquéreur = lecture seule sur les champs vendeur.
   const isOwner = !!user && !!doc && user.uid === doc.uid_eleveur;
-  const iframeHtml = isOwner ? html : html.replace(/contenteditable="true"/g, 'contenteditable="false"');
+  // Non modifiable une fois transmis au client / signé par l'acquéreur.
+  const acqHasSigned = !!doc?.metadata?.signature_acquereur;
+  const ownerCanEdit = isOwner && !isFinal && !isEnAttente && !acqHasSigned;
+  const iframeHtml = ownerCanEdit ? html : html.replace(/contenteditable="true"/g, 'contenteditable="false"');
   const elvHandlers  = makeDrawHandlers(canvasElvRef,  drawingElv);
   const acqHandlers  = makeDrawHandlers(canvasAcqRef,  drawingAcq);
 

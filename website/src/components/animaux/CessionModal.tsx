@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { uploadDocument } from '@/lib/upload-media';
+import { factureVentePdfBlob } from '@/lib/facture-vente';
+import { resolveAcquereurProfileId } from '@/lib/acquereur-profile';
 interface Animal {
   id: string;
   nom?: string;
@@ -95,6 +97,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
 
   // Détails
   const [qualite, setQualite]       = useState(reservation?.qualite || 'particulier');
+  const [prenom, setPrenom]         = useState('');
   const [nom, setNom]               = useState(reservation?.nom ?? '');
   const [email, setEmail]           = useState(reservation?.email ?? '');
   const [tel, setTel]               = useState(reservation?.tel ?? '');
@@ -102,6 +105,18 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
   const [dateCession, setDateCession] = useState(new Date().toISOString().split('T')[0]);
   const [prix, setPrix]             = useState('');
   const [notes, setNotes]           = useState(reservation?.notes ?? '');
+
+  // Condition de stérilisation (cession éleveur uniquement)
+  const [sterilRequise, setSterilRequise] = useState(false);
+  const [sterilAgeMois, setSterilAgeMois] = useState('12');
+  const dateNaissance = animal.date_naissance || null;
+  const sterilEcheance = (() => {
+    const m = parseInt(sterilAgeMois, 10);
+    if (!dateNaissance || !m || m <= 0) return null;
+    const d = new Date(dateNaissance);
+    d.setMonth(d.getMonth() + m);
+    return d;
+  })();
 
   // Documents uploadés manuellement
   const [contratUrl, setContratUrl]       = useState('');
@@ -121,12 +136,14 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
   const contratPopupRef = useRef<Window | null>(null);
 
   // Documents existants sélectionnables
-  type DocEntry = { id: string; type: string; statut: string; url: string; created_at: string };
+  type DocEntry = { id: string; type: string; statut: string; url: string; created_at: string; titre?: string; metadata?: Record<string, unknown> };
   const [existingContrats,    setExistingContrats]    = useState<DocEntry[]>([]);
   const [existingCertificats, setExistingCertificats] = useState<DocEntry[]>([]);
+  const [existingFactures,    setExistingFactures]    = useState<DocEntry[]>([]);
   const [selectedContrat,    setSelectedContrat]    = useState<DocEntry | null>(null);
   const [selectedCertificat, setSelectedCertificat] = useState<DocEntry | null>(null);
   const [loadingDocs, setLoadingDocs] = useState(true);
+  const [generatingFacture, setGeneratingFacture] = useState(false);
 
   // Écoute le contrat ou certificat signé depuis la popup
   useEffect(() => {
@@ -143,34 +160,32 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
     return () => window.removeEventListener('message', handler);
   }, []);
 
+  function applyDocs(data: unknown) {
+    const all = (data ?? []) as DocEntry[];
+    setExistingContrats(all.filter(d => d.type === 'contrat_vente' || d.type === 'contrat_reservation'));
+    setExistingCertificats(all.filter(d => d.type === 'certificat_cession'));
+    setExistingFactures(all.filter(d => d.type === 'facture'));
+    setLoadingDocs(false);
+  }
+
   // Chargement de tous les documents liés à l'animal
   useEffect(() => {
     supabase.from('documents_animaux')
-      .select('id, type, statut, url, created_at')
+      .select('id, type, titre, statut, url, created_at, metadata')
       .eq('animal_id', animal.id)
-      .in('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession'])
+      .in('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession', 'facture'])
       .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        const all = (data ?? []) as DocEntry[];
-        setExistingContrats(all.filter(d => d.type !== 'certificat_cession'));
-        setExistingCertificats(all.filter(d => d.type === 'certificat_cession'));
-        setLoadingDocs(false);
-      });
+      .then(({ data }) => applyDocs(data));
   }, [animal.id]);
 
   function reloadDocs() {
     setLoadingDocs(true);
     supabase.from('documents_animaux')
-      .select('id, type, statut, url, created_at')
+      .select('id, type, titre, statut, url, created_at, metadata')
       .eq('animal_id', animal.id)
-      .in('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession'])
+      .in('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession', 'facture'])
       .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        const all = (data ?? []) as DocEntry[];
-        setExistingContrats(all.filter(d => d.type !== 'certificat_cession'));
-        setExistingCertificats(all.filter(d => d.type === 'certificat_cession'));
-        setLoadingDocs(false);
-      });
+      .then(({ data }) => applyDocs(data));
   }
 
   function openContratCreation(formType: 'contrat_vente' | 'certificat_cession' = 'contrat_vente') {
@@ -201,7 +216,25 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
     }, 800);
   }
 
-  function fillFromUser(data: Record<string, unknown>) {
+  async function fillFromUser(data: Record<string, unknown>) {
+    // Cession à un particulier → coordonnées du profil particulier
+    // (pas le profil pro/pension souvent `is_main`).
+    if (data.is_elevage !== true && data.uid) {
+      const { data: part } = await supabase.from('user_profiles')
+        .select('firstname, lastname, adresse, rue, ville, code_postal, phone_number, email_contact')
+        .eq('uid', data.uid as string).eq('profile_type', 'particulier').maybeSingle();
+      if (part) {
+        data = {
+          ...data,
+          firstname: part.firstname ?? data.firstname,
+          lastname: part.lastname ?? data.lastname,
+          adress: (part.adresse ?? [part.rue, part.code_postal, part.ville].filter(Boolean).join(', ')) || data.adress,
+          rue: part.rue, ville: part.ville, code_postal: part.code_postal,
+          phone_number: part.phone_number ?? data.phone_number,
+          email: (part.email_contact as string) || data.email,
+        };
+      }
+    }
     setSelectedUserData(data);
     const isElv = data.is_elevage === true;
     const n = isElv
@@ -213,7 +246,15 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
     const addr = isElv
       ? ((data.adress_elevage as string) || [data.rue_elevage, data.code_postal_elevage, data.ville_elevage, data.pays_elevage].filter(Boolean).join(', '))
       : ((data.adress as string) || [data.rue, data.code_postal, data.ville, data.pays].filter(Boolean).join(', '));
-    setNom(n || 'Utilisateur PetsMatch');
+    if (isElv) {
+      setPrenom('');
+      setNom(n || 'Utilisateur PetsMatch');
+    } else {
+      const fn = (data.firstname as string ?? '').trim();
+      const ln = (data.lastname as string ?? '').trim();
+      setPrenom(fn);
+      setNom(ln || n || 'Utilisateur PetsMatch');
+    }
     setEmail((data.email as string) ?? '');
     setTel(phone.replace(/^\+33\s*$/, ''));
     setAdresse(addr || '');
@@ -322,8 +363,101 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
     }
   }
 
+  const nomComplet = [prenom.trim(), nom.trim()].filter(Boolean).join(' ');
+
+  async function genererFacture() {
+    const montant = parseFloat((prix || '').replace(',', '.')) || 0;
+    if (montant <= 0) { setError('Renseignez d\'abord le prix pour générer une facture.'); return; }
+    setGeneratingFacture(true);
+    setError('');
+    try {
+      const meta = (selectedContrat?.metadata ?? {}) as Record<string, unknown>;
+      const tvaTaux = String(meta.tva_assujetti) === 'true'
+        ? (parseFloat(String(meta.tva_taux ?? '20').replace(',', '.')) || 20)
+        : 0;
+      const numero = `F${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+      const blob = await factureVentePdfBlob({
+        numero,
+        date: dateCession,
+        montantTtc: montant,
+        tvaTaux,
+        emetteur: {
+          nom: eleveurInfo.nom, adresse: eleveurInfo.adresse, siret: eleveurInfo.siret,
+          tel: eleveurInfo.tel, email: eleveurInfo.email,
+        },
+        client: { nom: nomComplet, adresse: adresse.trim(), tel: tel.trim(), email: email.trim() },
+        animal: {
+          nom: animal.nom, espece: animal.espece, race: animal.race,
+          identification: animal.identification, date_naissance: animal.date_naissance,
+        },
+      });
+      const path = `cessions/${uid}/${animal.id}/facture_${Date.now()}.pdf`;
+      const file = new File([blob], `${numero}.pdf`, { type: 'application/pdf' });
+      const url = await uploadDocument(file, path);
+      await supabase.from('documents_animaux').insert({
+        animal_id: animal.id,
+        uid_eleveur: uid,
+        ...(profileId ? { pro_profile_id: profileId } : {}),
+        type: 'facture',
+        titre: `Facture ${numero}${animal.nom ? ` — ${animal.nom}` : ''}`,
+        statut: 'genere',
+        url,
+        metadata: { numero, montant, tva_taux: tvaTaux },
+      });
+
+      // Enregistrer aussi dans « Mes factures » (table factures)
+      try {
+        const ht = tvaTaux > 0 ? montant / (1 + tvaTaux / 100) : montant;
+        const tvaMontant = montant - ht;
+        const { data: lastRows } = await supabase.from('factures')
+          .select('numero_facture').eq('uid_eleveur', uid)
+          .order('numero_facture', { ascending: false }).limit(1);
+        const nextNum = ((lastRows?.[0]?.numero_facture as number | undefined) ?? 0) + 1;
+        const cpMatch = adresse.trim().match(/\b(\d{5})\b/);
+        await supabase.from('factures').insert({
+          uid_eleveur: uid,
+          ...(profileId ? { profile_id: profileId } : {}),
+          profil_source: 'eleveur',
+          numero_facture: nextNum,
+          date_facture: dateCession,
+          date_prestation: dateCession,
+          token: crypto.randomUUID(),
+          lignes: [{
+            description: `Cession — ${animal.nom ?? 'animal'}${animal.espece ? ` (${animal.espece})` : ''}`,
+            quantite: 1,
+            prixUnitaire: Number(ht.toFixed(2)), prixUnitaireHT: Number(ht.toFixed(2)),
+            tva: tvaTaux, tauxTVA: tvaTaux,
+            totalHT: Number(ht.toFixed(2)), montantTVA: Number(tvaMontant.toFixed(2)),
+          }],
+          total_ht: Number(ht.toFixed(2)),
+          total_tva: Number(tvaMontant.toFixed(2)),
+          total_ttc: montant,
+          regime_tva: tvaTaux > 0 ? 'normal' : 'franchise',
+          nom_client: nom.trim(),
+          prenom_client: prenom.trim() || null,
+          email_client: email.trim() || null,
+          telephone_client: tel.trim() || null,
+          rue_client: cpMatch ? adresse.trim().slice(0, cpMatch.index).trim() : adresse.trim() || null,
+          cp_client: cpMatch ? cpMatch[1] : null,
+          ville_client: cpMatch ? adresse.trim().slice((cpMatch.index ?? 0) + cpMatch[1].length).replace(/^[\s,]+/, '').trim() : null,
+          nom_emetteur: eleveurInfo.nom,
+          siret_emetteur: eleveurInfo.siret ?? null,
+          email_emetteur: eleveurInfo.email ?? null,
+          statut: 'emise',
+        });
+      } catch { /* la facture reste rattachée à l'animal même si l'insert échoue */ }
+
+      reloadDocs();
+      window.open(URL.createObjectURL(blob), '_blank');
+    } catch (e) {
+      setError(`Erreur facture : ${e}`);
+    } finally {
+      setGeneratingFacture(false);
+    }
+  }
+
   async function save() {
-    if (!nom.trim() && !searchResult) { setError('Le nom de l\'acquéreur est requis.'); return; }
+    if (!nomComplet && !searchResult) { setError('Le nom de l\'acquéreur est requis.'); return; }
     if (!dateCession) { setError('La date de cession est requise.'); return; }
     setSaving(true);
     setError('');
@@ -331,17 +465,37 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
       const finalContratUrl    = contratUrl    || selectedContrat?.url    || null;
       const finalCertificatUrl = certificatUrl || selectedCertificat?.url || null;
 
+      const sterilOn = !isReCession && sterilRequise && !!sterilEcheance;
+      const sterilEcheanceStr = sterilEcheance ? sterilEcheance.toISOString().split('T')[0] : null;
+
+      // Profil de l'acquéreur qui recevra l'animal (particulier, pas pension…)
+      const acqProfileId = await resolveAcquereurProfileId(searchResult?.uid ?? null, qualite);
+
+      // Aucun document → cession directe (animal cédé tout de suite)
+      const hasDocuments = !!finalContratUrl || !!finalCertificatUrl
+        || !!selectedContrat || !!selectedCertificat
+        || existingContrats.length > 0 || existingCertificats.length > 0;
+      const finaliseNow = !isReCession && !hasDocuments;
+
       const { error: animalUpdateError } = await supabase.from('animaux').update({
-        statut:                 'en_attente_cession',
+        statut:                 finaliseNow ? 'sorti' : 'en_attente_cession',
         date_sortie:            dateCession,
         destinataire_qualite:   qualite,
-        destinataire_nom:       nom.trim(),
+        destinataire_nom:       nomComplet,
         destinataire_adresse:   adresse.trim() || null,
         uid_acquereur:          searchResult?.uid ?? null,
+        ...(acqProfileId ? { profile_id_acquereur: acqProfileId } : {}),
         cession_contrat_url:    finalContratUrl,
         cession_certificat_url: finalCertificatUrl,
         cession_prix:           prix ? parseFloat(prix) : null,
         cession_notes:          notes.trim() || null,
+        sterilisation_requise:  sterilOn,
+        ...(sterilOn ? {
+          sterilisation_echeance:           sterilEcheanceStr,
+          sterilisation_validee:            false,
+          sterilisation_eleveur_uid:        uid,
+          ...(profileId ? { sterilisation_eleveur_profile_id: profileId } : {}),
+        } : {}),
       }).eq('id', animal.id);
       if (animalUpdateError) throw animalUpdateError;
 
@@ -356,7 +510,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
         date_mouvement:        dateCession,
         motif:                 'cession',
         destinataire_qualite:  qualite,
-        destinataire_nom:      nom.trim() || null,
+        destinataire_nom:      nomComplet || null,
         destinataire_adresse:  adresse.trim() || null,
       });
       // Entrée pour l'acquéreur s'il a un compte éleveur ou association
@@ -384,15 +538,19 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
       // parties — voir signer-contrat/[token]/page.tsx. Le faire ici, dès
       // 'en_attente_cession', ferait apparaître l'animal comme "ancien" dans
       // la liste alors que la fiche permet encore d'annuler/recéder.
-      let acqProfile: { id: string } | null = null;
-      if (acqUid) {
-        const { data } = await supabase
-          .from('user_profiles')
-          .select('id')
-          .eq('uid', acqUid)
-          .eq('is_main', true)
-          .maybeSingle();
-        acqProfile = data;
+      const acqProfile: { id: string } | null = acqProfileId ? { id: acqProfileId } : null;
+
+      // Cession directe (aucun document) → transfert de propriété immédiat
+      if (finaliseNow && acqUid) {
+        await supabase.from('animaux_proprietes').update({ date_fin: dateCession })
+          .eq('animal_id', animal.id).eq('uid_proprio', uid).is('date_fin', null);
+        await supabase.from('animaux_proprietes').upsert({
+          animal_id:          animal.id,
+          uid_proprio:        acqUid,
+          date_debut:         dateCession,
+          date_fin:           null,
+          profile_id_proprio: acqProfileId,
+        }, { onConflict: 'animal_id,uid_proprio' });
       }
 
       // Certificat de bonne santé vétérinaire → documents_animaux
@@ -434,7 +592,14 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
     }
   }
 
-  const cessionData: CessionData = { qualite, nom, email, tel, adresse, dateCession, prix, notes, uid_acquereur: searchResult?.uid ?? null };
+  const cessionData: CessionData = { qualite, nom: nomComplet, email, tel, adresse, dateCession, prix, notes, uid_acquereur: searchResult?.uid ?? null };
+
+  // Cession éleveur : prénom + nom + email + téléphone + adresse obligatoires.
+  const reqMark = isReCession ? '' : ' *';
+  const detailsValid = !!dateCession && !!nom.trim() && (isReCession || (
+    !!prenom.trim() && !!email.trim() && !!tel.trim() && !!adresse.trim() &&
+    (!sterilRequise || (parseInt(sterilAgeMois, 10) || 0) > 0)
+  ));
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4">
@@ -564,27 +729,34 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Nom de l'acquéreur *</label>
-                <input type="text" placeholder="Nom complet" value={nom} onChange={e => setNom(e.target.value)}
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Prénom{reqMark}</label>
+                  <input type="text" placeholder="Prénom" value={prenom} onChange={e => setPrenom(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Nom{reqMark}</label>
+                  <input type="text" placeholder="Nom" value={nom} onChange={e => setNom(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Email</label>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Email{reqMark}</label>
                   <input type="email" placeholder="email@exemple.fr" value={email} onChange={e => setEmail(e.target.value)}
                     className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Téléphone</label>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Téléphone{reqMark}</label>
                   <input type="tel" placeholder="06 XX XX XX XX" value={tel} onChange={e => setTel(e.target.value)}
                     className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
                 </div>
               </div>
 
               <div className="relative">
-                <label className="block text-xs font-semibold text-gray-500 mb-1">Adresse</label>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Adresse postale{reqMark}</label>
                 <input type="text" placeholder="Adresse de l'acquéreur" value={adresse}
                   onChange={e => manual ? onAdresseChange(e.target.value) : setAdresse(e.target.value)}
                   readOnly={!!searchResult && !manual}
@@ -607,6 +779,37 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] resize-none" />
               </div>
 
+              {/* ── Condition de stérilisation (cession éleveur) ── */}
+              {!isReCession && (
+                <div className="rounded-xl border border-[#6E9E57]/30 bg-[#6E9E57]/5 p-3 space-y-2">
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input type="checkbox" checked={sterilRequise} disabled={!dateNaissance}
+                      onChange={e => setSterilRequise(e.target.checked)}
+                      className="mt-0.5 accent-[#6E9E57] w-4 h-4" />
+                    <span>
+                      <span className="block text-sm font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey,sans-serif' }}>Condition de stérilisation</span>
+                      <span className="block text-[11px] text-gray-500">
+                        {dateNaissance
+                          ? "Le nouveau propriétaire devra faire stériliser l'animal avant l'âge fixé."
+                          : "Renseignez la date de naissance de l'animal pour activer cette condition."}
+                      </span>
+                    </span>
+                  </label>
+                  {sterilRequise && (
+                    <div className="pl-6 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <input type="number" min={1} value={sterilAgeMois} onChange={e => setSterilAgeMois(e.target.value)}
+                          className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+                        <span className="text-sm text-[#1F2A2E]">mois maximum</span>
+                      </div>
+                      <p className="text-xs font-semibold text-[#0C5C6C]">
+                        {sterilEcheance ? `📅 Échéance : ${sterilEcheance.toLocaleDateString('fr-FR')}` : 'Saisissez un âge en mois valide.'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex gap-2 pt-2">
                 <button onClick={() => setStep('acquéreur')}
                   className="flex-1 border border-gray-200 text-gray-600 font-semibold py-2.5 rounded-xl text-sm hover:bg-gray-50 transition-colors">
@@ -614,11 +817,19 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
                 </button>
                 <button
                   onClick={() => isReCession ? save() : setStep('documents')}
-                  disabled={!nom.trim() || !dateCession || saving}
+                  disabled={!detailsValid || saving}
                   className="flex-1 bg-[#0C5C6C] text-white font-semibold py-2.5 rounded-xl text-sm hover:bg-[#094F5D] disabled:opacity-40 transition-colors">
                   {isReCession ? (saving ? 'Enregistrement…' : 'Confirmer le transfert') : 'Documents →'}
                 </button>
               </div>
+              {!isReCession && (
+                <button
+                  onClick={save}
+                  disabled={!detailsValid || saving}
+                  className="w-full text-xs font-medium text-[#0C5C6C] hover:underline disabled:opacity-40 disabled:no-underline">
+                  {saving ? 'Enregistrement…' : 'Valider sans document (remise en main propre)'}
+                </button>
+              )}
             </>
           )}
 
@@ -741,6 +952,39 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
                       {uploadingSante ? '⏳ Upload…' : santeUrl ? '✅ PDF importé · Remplacer' : '⬆️ Importer PDF'}
                     </button>
                   </div>
+
+                  <hr className="my-1 border-gray-100" />
+
+                  {/* ── Facture (optionnel) ── */}
+                  <p className="text-xs font-semibold text-[#1F2A2E]">🧾 Facture <span className="font-normal text-gray-400">(optionnel)</span></p>
+                  {existingFactures.length > 0 && (
+                    <div className="space-y-1.5">
+                      {existingFactures.map(d => {
+                        const date = d.created_at ? new Date(d.created_at).toLocaleDateString('fr-FR') : '';
+                        return (
+                          <div key={d.id} className="flex items-center gap-1 rounded-xl border border-gray-200">
+                            <div className="flex-1 min-w-0 px-3 py-2">
+                              <p className="text-xs font-semibold text-[#1F2A2E] truncate">{d.titre ?? 'Facture'}</p>
+                              <p className="text-[10px] text-gray-500">🧾 Facture générée{date ? `  ·  ${date}` : ''}</p>
+                            </div>
+                            {d.url && (
+                              <a href={d.url} target="_blank" rel="noreferrer" className="p-2 text-gray-400 hover:text-[#0C5C6C]" title="Ouvrir">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                              </a>
+                            )}
+                            <button onClick={async () => { if (confirm('Supprimer cette facture ?')) { await supabase.from('documents_animaux').delete().eq('id', d.id); reloadDocs(); } }}
+                              className="p-2 text-gray-300 hover:text-red-500" title="Supprimer">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <button onClick={genererFacture} disabled={generatingFacture}
+                    className="text-[#0C5C6C] text-xs font-semibold hover:underline disabled:opacity-50">
+                    {generatingFacture ? '⏳ Génération…' : '🧾 Générer la facture (montant = prix)'}
+                  </button>
                 </>
               )}
 

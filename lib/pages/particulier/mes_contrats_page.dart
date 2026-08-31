@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/config.dart';
+import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -163,24 +164,42 @@ class _DocCard extends StatelessWidget {
         : null;
     final signingUrl = token != null ? '$kSiteBaseUrl/signer-contrat/$token' : null;
 
+    final meta       = (doc['metadata'] as Map?) ?? {};
     final isSigned   = statut == 'signe';
     final isFinal    = ['signe', 'annule', 'expire', 'refuse'].contains(statut);
     final canRefuse  = !isFinal && signingUrl != null;
+    // Contrat qui attend MA signature (acquéreur) → mis en avant
+    final aSigner = !isFinal && token != null &&
+        '${meta['signature_acquereur'] ?? ''}'.trim().isEmpty;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: aSigner ? const Color(0xFFFFFBEB) : Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isSigned ? const Color(0xFF6EE7B7) : const Color(0xFFE5E7EB),
-          width: isSigned ? 1.5 : 1,
+          color: aSigner
+              ? const Color(0xFFF59E0B)
+              : isSigned ? const Color(0xFF6EE7B7) : const Color(0xFFE5E7EB),
+          width: aSigner || isSigned ? 1.5 : 1,
         ),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (aSigner) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF59E0B),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Text('✍️ À signer',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white, fontFamily: 'Galey')),
+            ),
+            const SizedBox(height: 8),
+          ],
           // Titre + badge
           Row(children: [
             Expanded(
@@ -214,12 +233,14 @@ class _DocCard extends StatelessWidget {
           ],
 
           // Boutons
-          if (signingUrl != null && statut != 'annule') ...[
+          if (token != null && statut != 'annule') ...[
             const SizedBox(height: 12),
             Row(children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () => launchUrl(Uri.parse(signingUrl), mode: LaunchMode.externalApplication),
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => ContratSignaturePage(token: token),
+                  )),
                   icon: Icon(isFinal ? Icons.visibility_outlined : Icons.edit_outlined, size: 16),
                   label: Text(isFinal ? 'Voir' : 'Consulter & signer',
                       style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
@@ -249,7 +270,7 @@ class _DocCard extends StatelessWidget {
               const SizedBox(width: 8),
               OutlinedButton(
                 onPressed: () {
-                  Clipboard.setData(ClipboardData(text: signingUrl));
+                  Clipboard.setData(ClipboardData(text: signingUrl!));
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Lien copié'), duration: Duration(seconds: 2)),
                   );

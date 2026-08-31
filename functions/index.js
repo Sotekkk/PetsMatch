@@ -14,6 +14,7 @@ const matchFunctions = require("./match");
 const marketplaceBillingFunctions = require("./marketplace_billing");
 const retardFunctions = require("./retard");
 const pensionFunctions = require("./pension");
+const cessionSterilisationFunctions = require("./cession_sterilisation");
 
 // Stripe + messagerie
 exports.createStripePaymentIntent = stripeFunctions.createStripePaymentIntent;
@@ -74,3 +75,10 @@ exports.sendRetardNotification = retardFunctions.sendRetardNotification;
 
 // Pension — rappels quotidiens de sortie en retard tant que non loggée
 exports.sendPensionSortieReminders = pensionFunctions.sendPensionSortieReminders;
+
+// Cession — condition de stérilisation : rappels J-30/J-7/J-48h/J-0 puis
+// quotidiens au propriétaire + éleveur tant que non faite/validée
+exports.sendSterilisationReminders = cessionSterilisationFunctions.sendSterilisationReminders;
+
+// Cession — anniversaires des chiots cédés : rappel éleveur + message auto
+exports.sendCessionBirthdayReminders = cessionSterilisationFunctions.sendCessionBirthdayReminders;

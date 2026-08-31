@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -11,6 +11,7 @@ import HealthSection from '@/components/animaux/HealthSection';
 import CessionModal from '@/components/animaux/CessionModal';
 import ReservationModal from '@/components/animaux/ReservationModal';
 import { uploadBlob, uploadDocument as uploadDocToStorage } from '@/lib/upload-media';
+import { resolveAcquereurProfileId } from '@/lib/acquereur-profile';
 import ImageCropModal from '@/components/ImageCropModal';
 import AlimentationTab from './AlimentationTab';
 import { AnatomieOwnerSection } from '@/components/AnatomiePoints';
@@ -40,6 +41,11 @@ interface Animal {
   intervalle_chaleurs_jours?: number | null;
   chaleurs_responsable_uid?: string | null;
   chaleurs_responsable_profile_id?: string | null;
+  sterilisation_requise?: boolean | null;
+  sterilisation_echeance?: string | null;
+  sterilisation_validee?: boolean | null;
+  sterilisation_eleveur_uid?: string | null;
+  sterilisation_eleveur_profile_id?: string | null;
 }
 
 interface HealthRecord { id: string; [key: string]: unknown; }
@@ -1422,6 +1428,7 @@ export default function AnimalFichePage() {
   // unique_constraint.sql), contrairement à animaux.uid_eleveur/uid_
   // proprietaire qui ne bougent pas forcément à chaque cession/transfert.
   const [currentProprioUid, setCurrentProprioUid] = useState<string | null>(null);
+  const steriliseSavedRef = useRef(false);
   const [breeds, setBreeds] = useState<string[]>([]);
 
   // ── Cession
@@ -1510,6 +1517,7 @@ export default function AnimalFichePage() {
     const { data } = await supabase.from('animaux').select('*').eq('id', id).single();
     if (data) {
       setAnimal(data as Animal);
+      steriliseSavedRef.current = data.sterilise === true;
       supabase.from('animaux_proprietes').select('uid_proprio')
         .eq('animal_id', id).is('date_fin', null).maybeSingle()
         .then(({ data: prop }) => setCurrentProprioUid(prop?.uid_proprio ?? null));
@@ -1639,13 +1647,20 @@ export default function AnimalFichePage() {
     const now = new Date().toISOString();
     const dateCession = (cessionEnCours.date_cession as string) ?? now.split('T')[0];
     await supabase.from('cessions').update({ statut: 'confirme', confirmed_at: now }).eq('id', cessionEnCours.id);
+    const acqUidC = cessionEnCours.uid_acquereur as string | null;
+    const acqProfileId = await resolveAcquereurProfileId(
+      acqUidC,
+      (cessionEnCours.qualite as string | undefined) ?? null,
+      (cessionEnCours.acquereur_profile_id as string | undefined) ?? null,
+    );
     await supabase.from('animaux').update({
       statut: 'sorti',
       date_sortie: dateCession,
       destinataire_nom: cessionEnCours.nom_acquereur,
       destinataire_adresse: cessionEnCours.adresse_acquereur ?? null,
       destinataire_qualite: cessionEnCours.qualite ?? 'particulier',
-      uid_acquereur: cessionEnCours.uid_acquereur ?? null,
+      uid_acquereur: acqUidC ?? null,
+      ...(acqProfileId ? { profile_id_acquereur: acqProfileId } : {}),
     }).eq('id', id);
 
     // Historique de propriété — bascule seulement maintenant que la cession
@@ -1657,16 +1672,13 @@ export default function AnimalFichePage() {
       .eq('animal_id', id)
       .eq('uid_proprio', user.uid)
       .is('date_fin', null);
-    const acqUid = cessionEnCours.uid_acquereur as string | null;
-    if (acqUid) {
-      const { data: acqProfile } = await supabase.from('user_profiles')
-        .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
+    if (acqUidC) {
       await supabase.from('animaux_proprietes').upsert({
         animal_id:          id,
-        uid_proprio:        acqUid,
+        uid_proprio:        acqUidC,
         date_debut:         dateCession,
         date_fin:           null,
-        profile_id_proprio: acqProfile?.id ?? null,
+        profile_id_proprio: acqProfileId,
       }, { onConflict: 'animal_id,uid_proprio' });
     }
 
@@ -1835,8 +1847,25 @@ export default function AnimalFichePage() {
         if (error) throw error;
         router.replace(`/mes-animaux/${newId}`);
       } else {
-        const { error } = await supabase.from('animaux').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', id);
+        // Stérilisation déclarée (false → true) alors que l'éleveur l'exige :
+        // horodater et notifier l'éleveur pour qu'il valide.
+        const declareSteril = !!animal.sterilise && !steriliseSavedRef.current
+          && !!animal.sterilisation_requise && !animal.sterilisation_validee;
+        const updatePayload: Record<string, unknown> = { ...payload, updated_at: new Date().toISOString() };
+        if (declareSteril) updatePayload.sterilisation_declaree_at = new Date().toISOString();
+        const { error } = await supabase.from('animaux').update(updatePayload).eq('id', id);
         if (error) throw error;
+        if (declareSteril && animal.sterilisation_eleveur_uid) {
+          await supabase.from('notifications').insert({
+            uid:   animal.sterilisation_eleveur_uid,
+            type:  'sterilisation_declaree',
+            title: `✂️ Stérilisation déclarée — ${animal.nom ?? 'Animal'}`,
+            body:  `Le propriétaire de ${animal.nom ?? 'l\'animal'} a déclaré la stérilisation. À valider dans le suivi des cessions.`,
+            ...(animal.sterilisation_eleveur_profile_id ? { profile_id: animal.sterilisation_eleveur_profile_id } : {}),
+            data:  { animalId: id, tab: 'suivi' },
+            read:  false,
+          });
+        }
         setEditing(false);
         await loadAnimal();
       }
@@ -2466,6 +2495,28 @@ export default function AnimalFichePage() {
         </div>
       )}
 
+      {/* Bannière condition de stérilisation — vue propriétaire / acquéreur */}
+      {isAcquereur && animal.sterilisation_requise && !animal.sterilise && !animal.sterilisation_validee && (() => {
+        const ech = animal.sterilisation_echeance ? new Date(animal.sterilisation_echeance) : null;
+        const enRetard = !!ech && ech < new Date(new Date().toDateString());
+        return (
+          <div className={`mb-4 rounded-2xl p-4 border ${enRetard ? 'bg-red-50 border-red-200' : 'bg-orange-50 border-orange-200'}`}>
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">✂️</span>
+              <div className="flex-1">
+                <p className={`text-sm font-bold ${enRetard ? 'text-red-800' : 'text-orange-900'}`} style={{ fontFamily:'Galey,sans-serif' }}>
+                  {enRetard ? 'Stérilisation en retard' : 'Stérilisation à réaliser'}
+                </p>
+                <p className={`text-xs mt-0.5 ${enRetard ? 'text-red-700' : 'text-orange-800'}`}>
+                  L&apos;éleveur demande la stérilisation de {animal.nom ?? 'cet animal'}
+                  {ech ? ` avant le ${ech.toLocaleDateString('fr-FR')}` : ''}. Modifiez la fiche et activez « Stérilisé(e) » une fois faite pour qu&apos;il valide.
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Bannière cession TERMINÉE */}
       {isCede && animal.date_sortie && (
         <div className="mb-4 bg-blue-50 border border-blue-200 rounded-2xl p-4">
@@ -2610,6 +2661,12 @@ export default function AnimalFichePage() {
                     <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform ${animal.sterilise ? 'translate-x-6' : 'translate-x-0.5'}`}/>
                   </button>
                 </div>
+                {animal.sterilisation_requise && !animal.sterilise && (
+                  <p className="text-xs text-orange-700 -mt-1">
+                    Stérilisation demandée par l&apos;éleveur
+                    {animal.sterilisation_echeance ? ` avant le ${fmtDate(animal.sterilisation_echeance)}` : ''}. Activez ce réglage une fois faite pour qu&apos;il valide.
+                  </p>
+                )}
                 {showPoil && <SelectField label="Type de poil" value={animal.type_poil??''} onChange={v=>set('type_poil',v)}
                   options={[{value:'',label:'—'}, ...TYPES_POIL.map(t=>({value:t,label:t}))]} />}
                 {showTaille && <Field label={animal.espece==='cheval'?'Taille au garrot (cm)':'Taille (cm)'} value={animal.taille??''} onChange={v=>set('taille',v)} />}

@@ -11,6 +11,7 @@ import CessionModal from '@/components/animaux/CessionModal';
 import PorteePoidsModal from '@/components/animaux/PorteePoidsModal';
 import PorteeSoinModal from '@/components/animaux/PorteeSoinModal';
 import EditPorteeModal from '@/components/animaux/EditPorteeModal';
+import SuiviCessionsTab from '@/components/animaux/SuiviCessionsTab';
 
 interface Animal {
   id: string;
@@ -40,6 +41,11 @@ interface Animal {
   intervalle_chaleurs_jours?: number | null;
   uid_eleveur?: string | null;
   uid_acquereur?: string | null;
+  destinataire_nom?: string | null;
+  sterilise?: boolean | null;
+  sterilisation_requise?: boolean | null;
+  sterilisation_echeance?: string | null;
+  sterilisation_validee?: boolean | null;
 }
 
 const CHALEURS_INTERVAL_WEB: Record<string, number> = {
@@ -272,7 +278,9 @@ export default function MesAnimauxPage() {
 
   // Filtre restauré depuis l'URL (?tab=&sub=) pour que la flèche "retour" depuis
   // la fiche d'un animal retrouve le même filtre au lieu de repartir à zéro.
-  const initialTab: 'presents' | 'anciens' = searchParams.get('tab') === 'anciens' ? 'anciens' : 'presents';
+  const tabParam = searchParams.get('tab');
+  const initialTab: 'presents' | 'anciens' | 'suivi' =
+    tabParam === 'anciens' ? 'anciens' : tabParam === 'suivi' ? 'suivi' : 'presents';
   const initialSub = searchParams.get('sub');
   const initialSubTab: 'tous' | 'repro' | 'bebes' =
     initialSub === 'repro' || initialSub === 'bebes' ? initialSub : 'tous';
@@ -283,7 +291,7 @@ export default function MesAnimauxPage() {
   const [fetching, setFetching] = useState(true);
   const [chaleurFlags, setChaleurFlags] = useState<Record<string, boolean>>({});
   const [gestanteFlags, setGestanteFlags] = useState<Record<string, boolean>>({});
-  const [tab, setTab] = useState<'presents' | 'anciens'>(initialTab);
+  const [tab, setTab] = useState<'presents' | 'anciens' | 'suivi'>(initialTab);
   const [cederAnimal, setCederAnimal] = useState<Animal | null>(null);
   const [nomElevage, setNomElevage] = useState('');
   const [adresseElevage, setAdresseElevage] = useState('');
@@ -652,17 +660,28 @@ export default function MesAnimauxPage() {
       {/* Tabs (éleveur uniquement) */}
       {isEleveur && (
         <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-4">
-          {(['presents', 'anciens'] as const).map((t) => (
+          {(['presents', 'anciens', 'suivi'] as const).map((t) => (
             <button key={t} onClick={() => { setTab(t); setFilterOpen(false); }}
               className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${
                 tab === t ? 'bg-white text-[#0C5C6C] shadow-sm' : 'text-gray-500 hover:text-gray-700'
               }`}>
               {t === 'presents'
                 ? `Présents (${presents.length})`
-                : `Anciens (${anciens.length})`}
+                : t === 'anciens'
+                ? `Anciens (${anciens.length})`
+                : 'Suivi'}
             </button>
           ))}
         </div>
+      )}
+
+      {tab === 'suivi' && isEleveur && user && (
+        <SuiviCessionsTab
+          animaux={animaux}
+          uid={user.uid}
+          activeProfileId={activeProfileId ?? null}
+          onLocalUpdate={(id, patch) => setAnimaux(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a))}
+        />
       )}
 
       {/* Sous-onglets présents */}
@@ -716,6 +735,8 @@ export default function MesAnimauxPage() {
         </div>
       )}
 
+      {tab !== 'suivi' && (
+      <>
       {/* Barre de recherche */}
       <div className="relative mb-3">
         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#6E9E57]">🔍</span>
@@ -935,6 +956,8 @@ export default function MesAnimauxPage() {
             onCeder={isEleveur && tab === 'presents' && !selectMode && a.uid_eleveur === user?.uid ? () => setCederAnimal(a) : undefined}
             onTransferer={tab === 'presents' && !selectMode && a.uid_eleveur !== user?.uid && a.uid_acquereur === user?.uid ? () => setCederAnimal(a) : undefined} />)}
         </div>
+      )}
+      </>
       )}
 
       {/* Barre action sélection */}

@@ -8,8 +8,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/config.dart';
+import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:http/http.dart' as http;
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'dart:convert';
@@ -429,16 +429,11 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
             .eq('type', 'contrat_hebergement');
       }
       if (token == null) return;
-      final url = '$kSiteBaseUrl/signer-contrat/$token';
       if (mounted) {
-        await Clipboard.setData(ClipboardData(text: url));
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Lien de signature copié — envoyez-le au propriétaire',
-              style: TextStyle(fontFamily: 'Galey')),
-          backgroundColor: _teal,
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ContratSignaturePage(token: token),
         ));
       }
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     } catch (e2) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e2')));

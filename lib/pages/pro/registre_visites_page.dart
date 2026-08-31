@@ -1,11 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:PetsMatch/config.dart';
+import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 
@@ -116,14 +115,9 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
             .eq('type', 'contrat_garde');
       }
       if (token == null) return;
-      final url = '$kSiteBaseUrl/signer-contrat/$token';
-      await Clipboard.setData(ClipboardData(text: url));
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Lien de signature copié — envoyez-le au client',
-              style: TextStyle(fontFamily: 'Galey')),
-          backgroundColor: _teal,
-          behavior: SnackBarBehavior.floating,
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ContratSignaturePage(token: token),
         ));
       }
     } catch (e) {

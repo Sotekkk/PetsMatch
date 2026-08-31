@@ -2,8 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/config.dart';
+import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 
 const _teal  = Color(0xFF0C5C6C);
@@ -263,16 +263,15 @@ class _ContratCard extends StatelessWidget {
             Row(children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  icon: const Icon(Icons.open_in_browser, size: 15),
-                  label: const Text('Ouvrir le contrat', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  icon: const Icon(Icons.draw_outlined, size: 15),
+                  label: const Text('Lire et signer', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
                   style: OutlinedButton.styleFrom(
                       foregroundColor: _teal, side: const BorderSide(color: _teal),
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                  onPressed: () async {
-                    final url = Uri.parse('$kSiteBaseUrl/signer-contrat/$token');
-                    if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
-                  },
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => ContratSignaturePage(token: token),
+                  )),
                 ),
               ),
               const SizedBox(width: 8),
@@ -516,14 +515,13 @@ class _CreerContratSheetState extends State<_CreerContratSheet> {
                 Row(children: [
                   Expanded(
                     child: ElevatedButton.icon(
-                      icon: const Icon(Icons.open_in_browser, size: 16),
-                      label: const Text('Ouvrir', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                      icon: const Icon(Icons.draw_outlined, size: 16),
+                      label: const Text('Signer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
                       style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white, elevation: 0,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                      onPressed: () async {
-                        final url = Uri.parse('$kSiteBaseUrl/signer-contrat/$_token');
-                        if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
-                      },
+                      onPressed: _token == null ? null : () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => ContratSignaturePage(token: _token!),
+                      )),
                     ),
                   ),
                   const SizedBox(width: 8),
