@@ -7,7 +7,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
 const ADMIN_EMAIL    = Deno.env.get('ADMIN_EMAIL') ?? 'nabil35830@gmail.com';
-const ADMIN_URL      = Deno.env.get('ADMIN_URL') ?? 'https://petsmatch.fr/admin';
+const ADMIN_URL      = Deno.env.get('ADMIN_URL') ?? 'https://petsmatchapp.com/admin';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -103,7 +103,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'PetsMatch <admin@petsmatch.fr>',
+        from: 'PetsMatch <admin@petsmatchapp.com>',
         to: [ADMIN_EMAIL],
         subject: `🚨 Conversation signalée — ${reason}`,
         html,
