@@ -28,6 +28,23 @@ const CAT_BADGE: Record<string, { bg: string; label: string }> = {
   'communaute':            { bg: 'bg-[#EEF5EA] text-[#4A7A36]',     label: '🌿 Communauté' },
 };
 
+// ── Thèmes de conversation ──────────────────────────────────────────────────────
+interface ChatTheme { id: string; name: string; emoji: string; bgFrom: string; bgTo: string; sentColor: string; sentText: string; isDark: boolean; }
+const CHAT_THEMES: ChatTheme[] = [
+  { id: 'default',  name: 'Classique',          emoji: '💬', bgFrom: '#F5F5F0', bgTo: '#F0F0EB', sentColor: '#0C5C6C', sentText: '#fff', isDark: false },
+  { id: 'sunset',   name: 'Coucher de soleil',  emoji: '🌅', bgFrom: '#FFE4CC', bgTo: '#FFB5C8', sentColor: '#D4603A', sentText: '#fff', isDark: false },
+  { id: 'forest',   name: 'Forêt',              emoji: '🌿', bgFrom: '#E8F5E9', bgTo: '#C5DFC6', sentColor: '#3D7A32', sentText: '#fff', isDark: false },
+  { id: 'ocean',    name: 'Océan',              emoji: '🌊', bgFrom: '#DCEEF​D', bgTo: '#B3D4F5', sentColor: '#1256A0', sentText: '#fff', isDark: false },
+  { id: 'lavender', name: 'Lavande',            emoji: '💜', bgFrom: '#F3E8FA', bgTo: '#DDB8EE', sentColor: '#7B1FA2', sentText: '#fff', isDark: false },
+  { id: 'night',    name: 'Nuit',               emoji: '🌙', bgFrom: '#1A1A2E', bgTo: '#0F213E', sentColor: '#2C5F8A', sentText: '#fff', isDark: true  },
+];
+const themeById = (id?: string) => CHAT_THEMES.find(t => t.id === (id ?? 'default')) ?? CHAT_THEMES[0];
+
+const EMOJIS = ['❤️', '😂', '😮', '😢', '👍', '🐾'];
+const REPORT_REASONS = ['Contenu inapproprié', 'Harcèlement', 'Spam / arnaque', 'Autre'];
+
+interface Reaction { message_id: string; uid: string; emoji: string; }
+
 interface Conversation {
   id: string;
   participants: string[];
@@ -37,6 +54,7 @@ interface Conversation {
   updated_at: string | null;
   unread_count: Record<string, number>;
   categorie?: string;
+  theme_id?: string;
   pro_profile_id?: string;
   consumer_profile_id?: string;
   pinned_for: Record<string, boolean>;
@@ -104,6 +122,19 @@ function MessagesPageInner() {
   const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [msgMenu, setMsgMenu] = useState<{ id: string; isMe: boolean } | null>(null);
   const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
+  // Thème
+  const [themeId, setThemeId] = useState('default');
+  const [showThemeModal, setShowThemeModal] = useState(false);
+  // Réactions
+  const [reactions, setReactions] = useState<Record<string, Reaction[]>>({});
+  const [emojiPickerMsgId, setEmojiPickerMsgId] = useState<string | null>(null);
+  // Signalement
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportSending, setReportSending] = useState(false);
+  // Header menu
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const convChannelRef = useRef<RealtimeChannel | null>(null);
@@ -140,6 +171,12 @@ function MessagesPageInner() {
     const convId = searchParams.get('conv');
     if (convId) { setSelectedId(convId); setMobileView('thread'); }
   }, [searchParams]);
+
+  // Thème de la conversation sélectionnée
+  useEffect(() => {
+    const conv = conversations.find(c => c.id === selectedId);
+    setThemeId(conv?.theme_id ?? 'default');
+  }, [selectedId, conversations]);
 
   // Nom/avatar depuis Supabase users
   const getUserInfo = useCallback(async (uid: string): Promise<UserInfo> => {
@@ -221,6 +258,21 @@ function MessagesPageInner() {
       .subscribe();
     return () => { msgChannelRef.current?.unsubscribe(); };
   }, [selectedId]);
+
+  // Réactions — charge quand les messages changent
+  useEffect(() => {
+    if (messages.length === 0) { setReactions({}); return; }
+    const ids = messages.map(m => m.id);
+    supabase.from('message_reactions').select('*').in('message_id', ids)
+      .then(({ data }) => {
+        if (!data) return;
+        const map: Record<string, Reaction[]> = {};
+        for (const r of data as Reaction[]) {
+          map[r.message_id] = [...(map[r.message_id] ?? []), r];
+        }
+        setReactions(map);
+      });
+  }, [messages]);
 
   // Marquer comme lu
   useEffect(() => {
@@ -311,6 +363,39 @@ function MessagesPageInner() {
     setMsgMenu(null);
   }
 
+  async function saveTheme(id: string) {
+    setThemeId(id);
+    setShowThemeModal(false);
+    if (selectedId) await supabase.from('conversations').update({ theme_id: id }).eq('id', selectedId);
+  }
+
+  async function toggleReaction(messageId: string, emoji: string) {
+    if (!user) return;
+    const uid = user.uid;
+    const existing = (reactions[messageId] ?? []).find(r => r.uid === uid);
+    if (existing && existing.emoji === emoji) {
+      setReactions(prev => ({ ...prev, [messageId]: (prev[messageId] ?? []).filter(r => r.uid !== uid) }));
+      await supabase.from('message_reactions').delete().eq('message_id', messageId).eq('uid', uid);
+    } else {
+      const row = { message_id: messageId, uid, emoji };
+      setReactions(prev => ({ ...prev, [messageId]: [...(prev[messageId] ?? []).filter(r => r.uid !== uid), row] }));
+      await supabase.from('message_reactions').upsert(row, { onConflict: 'message_id,uid' });
+    }
+    setEmojiPickerMsgId(null);
+  }
+
+  async function submitReport() {
+    if (!reportReason || !selectedId || !user) return;
+    setReportSending(true);
+    try {
+      await supabase.from('conversation_reports').insert({
+        conversation_id: selectedId, reported_by_uid: user.uid,
+        reason: reportReason, details: reportDetails.trim() || null,
+      });
+      setShowReportModal(false); setReportReason(''); setReportDetails('');
+    } finally { setReportSending(false); }
+  }
+
   if (loading || !user) {
     return (
       <div className="flex justify-center py-32">
@@ -324,6 +409,7 @@ function MessagesPageInner() {
   const selectedConv = conversations.find(c => c.id === selectedId);
   const otherUid = selectedConv?.participants.find(p => p !== user.uid);
   const otherInfo = otherUid ? (userInfoCacheRef.current[otherUid] ?? { name: '…' }) : null;
+  const theme = themeById(themeId);
 
   const filteredConvs = conversations
     .filter(conv => {
@@ -531,7 +617,7 @@ function MessagesPageInner() {
         ) : (
           <>
             {/* Header thread */}
-            <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 flex-shrink-0">
+            <div className="bg-white border-b border-gray-100 px-4 py-3 flex items-center gap-3 flex-shrink-0 relative">
               <button onClick={() => setMobileView('list')} className="md:hidden p-1 text-gray-500">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
@@ -544,11 +630,37 @@ function MessagesPageInner() {
                   <span className="text-white font-bold">{(otherInfo?.name[0] ?? '?').toUpperCase()}</span>
                 )}
               </div>
-              <p className="font-semibold text-sm text-[#1F2A2E]">{otherInfo?.name ?? '…'}</p>
+              <p className="font-semibold text-sm text-[#1F2A2E] flex-1">{otherInfo?.name ?? '…'}</p>
+              {/* Menu 3 points */}
+              <div className="relative">
+                <button onClick={() => setShowHeaderMenu(v => !v)}
+                  className="p-2 rounded-full hover:bg-gray-100 text-gray-500 transition-colors">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
+                  </svg>
+                </button>
+                {showHeaderMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowHeaderMenu(false)} />
+                    <div className="absolute right-0 top-10 z-50 bg-white rounded-xl shadow-xl border border-gray-100 py-1 w-52">
+                      <button onClick={() => { setShowHeaderMenu(false); setShowThemeModal(true); }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 text-left">
+                        <span>🎨</span>Thème de la conversation
+                      </button>
+                      <div className="my-1 border-t border-gray-100" />
+                      <button onClick={() => { setShowHeaderMenu(false); setShowReportModal(true); }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-orange-600 hover:bg-orange-50 text-left">
+                        <span>🚩</span>Signaler la conversation
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1" onClick={() => setMsgMenu(null)}>
+            <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1" onClick={() => { setMsgMenu(null); setEmojiPickerMsgId(null); }}
+              style={{ background: `linear-gradient(to bottom, ${theme.bgFrom}, ${theme.bgTo})` }}>
               {messages.length === 0 && (
                 <p className="text-center text-gray-400 text-sm py-8">Commencez la conversation !</p>
               )}
@@ -596,42 +708,131 @@ function MessagesPageInner() {
                   </div>
                 );
 
+                const isAnimalCard = msg.msg_type === 'animal_card';
+                const msgReactions = reactions[msg.id] ?? [];
+                const isEmojiOpen = emojiPickerMsgId === msg.id;
+
                 return (
                   <div key={msg.id}>
                     {showDate && iso && (
                       <div className="flex justify-center my-3">
-                        <span className="bg-gray-200 text-gray-500 text-xs px-3 py-1 rounded-full">{fmtDate(iso)}</span>
+                        <span className="text-xs px-3 py-1 rounded-full" style={{ background: 'rgba(0,0,0,0.12)', color: theme.isDark ? '#fff' : '#555' }}>{fmtDate(iso)}</span>
                       </div>
                     )}
-                    <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} items-end gap-1 mb-0.5`}>
+                    <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} items-end gap-1 mb-0.5 group`}>
                       {isMe && dotsButton('left')}
-                      <div className={`max-w-[75%] rounded-2xl text-sm ${
-                        isMe ? 'bg-[#0C5C6C] text-white rounded-br-md' : 'bg-white text-[#1F2A2E] shadow-sm rounded-bl-md'
-                      } ${isLocation || msg.image_url ? 'p-1' : 'px-4 py-2.5'}`}>
-                        {msg.image_url && (
-                          <a href={msg.image_url} target="_blank" rel="noopener noreferrer">
-                            <Image src={msg.image_url} alt="photo" width={200} height={200} className="rounded-xl object-cover" unoptimized />
-                          </a>
-                        )}
-                        {isLocation && msg.lat != null && msg.lng != null && (
-                          <a href={`https://www.google.com/maps/search/?api=1&query=${msg.lat},${msg.lng}`}
-                            target="_blank" rel="noopener noreferrer"
-                            className={`flex items-center gap-2 px-3 py-2.5 rounded-xl ${isMe ? 'bg-white/15' : 'bg-[#EEF5EA]'}`}>
-                            <span className="text-xl">📍</span>
-                            <div>
-                              <p className={`text-xs font-semibold ${isMe ? 'text-white' : 'text-[#1F2A2E]'}`}>Position GPS partagée</p>
-                              <p className={`text-[10px] ${isMe ? 'text-white/70' : 'text-gray-500'}`}>Appuyer pour ouvrir Maps</p>
+
+                      {/* Bouton réaction (apparaît au survol) */}
+                      <div className="relative self-center flex-shrink-0">
+                        <button
+                          onClick={e => { e.stopPropagation(); setEmojiPickerMsgId(isEmojiOpen ? null : msg.id); }}
+                          className="w-7 h-7 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/10 text-gray-500 text-sm"
+                          title="Réagir">
+                          😊
+                        </button>
+                        {isEmojiOpen && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setEmojiPickerMsgId(null)} />
+                            <div className={`absolute z-50 bottom-8 ${isMe ? 'right-0' : 'left-0'} bg-white rounded-2xl shadow-xl border border-gray-100 px-2 py-1.5 flex gap-1`}>
+                              {EMOJIS.map(e => {
+                                const mine = msgReactions.find(r => r.uid === user.uid);
+                                return (
+                                  <button key={e} onClick={() => toggleReaction(msg.id, e)}
+                                    className={`w-9 h-9 text-xl rounded-full transition-colors ${mine?.emoji === e ? 'bg-gray-100' : 'hover:bg-gray-50'}`}>
+                                    {e}
+                                  </button>
+                                );
+                              })}
                             </div>
-                          </a>
+                          </>
                         )}
-                        {msg.text && (
-                          <p className={`leading-relaxed ${(msg.image_url || isLocation) ? 'px-3 pt-2 pb-1' : ''}`}>{msg.text}</p>
-                        )}
-                        <p className={`text-[10px] mt-0.5 text-right ${isMe ? 'text-white/60' : 'text-gray-400'} ${(msg.image_url || isLocation) ? 'px-3 pb-1' : ''}`}>
-                          {fmtTime(iso)}
-                          {isMe && msg.is_read && ' · Vu'}
-                        </p>
                       </div>
+
+                      <div className="flex flex-col" style={{ alignItems: isMe ? 'flex-end' : 'flex-start' }}>
+                        {/* Bulle */}
+                        <div className={`max-w-[75%] rounded-2xl text-sm ${
+                          isMe ? 'rounded-br-md' : 'bg-white shadow-sm rounded-bl-md'
+                        } ${isLocation || msg.image_url || isAnimalCard ? 'p-1' : 'px-4 py-2.5'}`}
+                          style={isMe ? { background: theme.sentColor, color: theme.sentText } : {}}>
+                          {/* Image */}
+                          {msg.image_url && (
+                            <a href={msg.image_url} target="_blank" rel="noopener noreferrer">
+                              <Image src={msg.image_url} alt="photo" width={200} height={200} className="rounded-xl object-cover" unoptimized />
+                            </a>
+                          )}
+                          {/* Location */}
+                          {isLocation && msg.lat != null && msg.lng != null && (
+                            <a href={`https://www.google.com/maps/search/?api=1&query=${msg.lat},${msg.lng}`}
+                              target="_blank" rel="noopener noreferrer"
+                              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl ${isMe ? 'bg-white/15' : 'bg-[#EEF5EA]'}`}>
+                              <span className="text-xl">📍</span>
+                              <div>
+                                <p className={`text-xs font-semibold ${isMe ? 'text-white' : 'text-[#1F2A2E]'}`}>Position GPS partagée</p>
+                                <p className={`text-[10px] ${isMe ? 'text-white/70' : 'text-gray-500'}`}>Cliquer pour ouvrir Maps</p>
+                              </div>
+                            </a>
+                          )}
+                          {/* Animal card */}
+                          {isAnimalCard && (() => {
+                            try {
+                              const a = JSON.parse(msg.text ?? '{}');
+                              const sub = [a.espece, a.race].filter(Boolean).join(' · ');
+                              return (
+                                <div className="w-52 rounded-xl overflow-hidden" style={{ background: isMe ? 'rgba(255,255,255,0.1)' : '#F5F7FA' }}>
+                                  {a.photo_url ? (
+                                    <Image src={a.photo_url} alt={a.nom} width={208} height={120} className="w-full object-cover" style={{ height: 120 }} unoptimized />
+                                  ) : (
+                                    <div className="w-full h-28 flex items-center justify-center text-3xl" style={{ background: isMe ? 'rgba(255,255,255,0.15)' : '#EEF5EA' }}>🐾</div>
+                                  )}
+                                  <div className="p-2.5">
+                                    <p className="font-bold text-sm" style={{ color: isMe ? '#fff' : '#1F2A2E' }}>{a.nom}</p>
+                                    {sub && <p className="text-[11px] mt-0.5" style={{ color: isMe ? 'rgba(255,255,255,0.7)' : '#6B7280' }}>{sub}</p>}
+                                    <div className="mt-2 text-center py-1.5 rounded-lg text-xs font-semibold"
+                                      style={{ background: isMe ? 'rgba(255,255,255,0.2)' : `${theme.sentColor}18`, color: isMe ? '#fff' : theme.sentColor, border: `1px solid ${isMe ? 'rgba(255,255,255,0.3)' : theme.sentColor + '44'}` }}>
+                                      🐾 Voir le profil
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            } catch { return null; }
+                          })()}
+                          {/* Texte */}
+                          {msg.text && !isAnimalCard && (
+                            <p className={`leading-relaxed ${(msg.image_url || isLocation) ? 'px-3 pt-2 pb-1' : ''}`}>{msg.text}</p>
+                          )}
+                          <p className={`text-[10px] mt-0.5 text-right ${(msg.image_url || isLocation || isAnimalCard) ? 'px-3 pb-1' : ''}`}
+                            style={{ color: isMe ? 'rgba(255,255,255,0.6)' : '#9CA3AF' }}>
+                            {fmtTime(iso)}{isMe && msg.is_read && ' · Vu'}
+                          </p>
+                        </div>
+
+                        {/* Réactions */}
+                        {msgReactions.length > 0 && (() => {
+                          const counts: Record<string, number> = {};
+                          let myEmoji: string | undefined;
+                          for (const r of msgReactions) {
+                            counts[r.emoji] = (counts[r.emoji] ?? 0) + 1;
+                            if (r.uid === user.uid) myEmoji = r.emoji;
+                          }
+                          return (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {Object.entries(counts).map(([emoji, count]) => (
+                                <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)}
+                                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-all"
+                                  style={{
+                                    background: myEmoji === emoji ? `${theme.sentColor}22` : '#fff',
+                                    borderColor: myEmoji === emoji ? `${theme.sentColor}88` : '#E5E7EB',
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                                  }}>
+                                  <span>{emoji}</span>
+                                  {count > 1 && <span style={{ color: myEmoji === emoji ? theme.sentColor : '#6B7280', fontWeight: 600 }}>{count}</span>}
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
+
                       {!isMe && dotsButton('right')}
                     </div>
                   </div>
@@ -670,6 +871,59 @@ function MessagesPageInner() {
           </>
         )}
       </main>
+
+      {/* ── Modal sélecteur de thème ─────────────────────────────────────────── */}
+      {showThemeModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={() => setShowThemeModal(false)}>
+          <div className="bg-white rounded-t-3xl w-full max-w-lg p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+            <h2 className="text-base font-bold text-[#1E2025] mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>Thème de la conversation</h2>
+            <div className="grid grid-cols-3 gap-3">
+              {CHAT_THEMES.map(t => (
+                <button key={t.id} onClick={() => saveTheme(t.id)}
+                  className="rounded-2xl p-3 flex flex-col items-center gap-1 border-2 transition-all"
+                  style={{
+                    background: `linear-gradient(135deg, ${t.bgFrom}, ${t.bgTo})`,
+                    borderColor: themeId === t.id ? '#0C5C6C' : 'transparent',
+                  }}>
+                  <span className="text-2xl">{t.emoji}</span>
+                  <span className="text-[11px] font-semibold" style={{ color: t.isDark ? '#fff' : '#1E2025' }}>{t.name}</span>
+                  {themeId === t.id && <span className="text-[10px]" style={{ color: t.isDark ? '#fff' : '#0C5C6C' }}>✓</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal signalement ────────────────────────────────────────────────── */}
+      {showReportModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={() => setShowReportModal(false)}>
+          <div className="bg-white rounded-t-3xl w-full max-w-lg p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+            <h2 className="text-base font-bold text-[#1E2025] mb-4" style={{ fontFamily: 'Galey, sans-serif' }}>Signaler la conversation</h2>
+            <div className="space-y-2 mb-4">
+              {REPORT_REASONS.map(r => (
+                <label key={r} className="flex items-center gap-3 cursor-pointer">
+                  <input type="radio" name="reason" value={r} checked={reportReason === r}
+                    onChange={() => setReportReason(r)} className="accent-[#0C5C6C]" />
+                  <span className="text-sm text-[#1E2025]">{r}</span>
+                </label>
+              ))}
+            </div>
+            {reportReason === 'Autre' && (
+              <textarea value={reportDetails} onChange={e => setReportDetails(e.target.value)}
+                placeholder="Précisez…" rows={3}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30 mb-4" />
+            )}
+            <button onClick={submitReport} disabled={!reportReason || reportSending}
+              className="w-full py-3 rounded-xl font-semibold text-sm text-white disabled:opacity-40 transition-colors"
+              style={{ background: '#f97316', fontFamily: 'Galey, sans-serif' }}>
+              {reportSending ? 'Envoi…' : 'Envoyer le signalement'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Context menu (right-click) ────────────────────────────────────────── */}
       {contextMenu && (() => {
