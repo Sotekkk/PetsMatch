@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:PetsMatch/main.dart';
@@ -39,7 +40,7 @@ class ChatScreen extends StatefulWidget {
   _ChatScreenState createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   static final _supa = Supabase.instance.client;
   static const _teal = Color(0xFF0C5C6C);
 
@@ -59,12 +60,22 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadMessages().then((_) => _loadReactions());
     _loadTheme();
     _subscribeRealtime();
     _markAsRead();
     if (widget.isNewConversation && widget.alerteId != null) {
       SchedulerBinding.instance.addPostFrameCallback((_) => _sendAlertRefMessage());
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadMessages().then((_) => _loadReactions());
+      _channel?.unsubscribe();
+      _subscribeRealtime();
     }
   }
 
@@ -75,6 +86,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _reactionOverlay?.remove();
     _channel?.unsubscribe();
     _controller.dispose();
@@ -434,26 +446,33 @@ class _ChatScreenState extends State<ChatScreen> {
         alerteId: widget.alerteId);
   }
 
-  Future<void> _sendMessage(String text, {String? imageUrl, double? lat, double? lng, String? alerteId}) async {
-    if (text.trim().isEmpty && imageUrl == null && lat == null) return;
+  Future<void> _sendMessage(String text, {String? imageUrl, double? lat, double? lng, String? alerteId, Map<String, dynamic>? animalData}) async {
+    if (text.trim().isEmpty && imageUrl == null && lat == null && animalData == null) return;
     final uid = _uid;
     setState(() => _sending = true);
 
     try {
       final senderProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
 
-      await _supa.from('messages').insert({
+      final inserted = await _supa.from('messages').insert({
         'conversation_id': widget.conversationId,
         'sender_id':       uid,
-        'text':            text.isNotEmpty ? text : null,
+        'text':            animalData != null
+                               ? jsonEncode({'id': animalData['id'], 'nom': animalData['nom'], 'espece': animalData['espece'], 'race': animalData['race'], 'photo_url': animalData['photo_url']})
+                               : (text.isNotEmpty ? text : null),
         'image_url':       imageUrl,
-        'msg_type':        imageUrl != null ? 'image' : (lat != null ? 'location' : 'text'),
+        'msg_type':        imageUrl != null ? 'image' : (lat != null ? 'location' : (animalData != null ? 'animal_card' : 'text')),
         'lat':             lat,
         'lng':             lng,
         'alerte_id':       alerteId,
         'is_read':         false,
         if (senderProfileId != null) 'sender_profile_id': senderProfileId,
-      });
+      }).select().single();
+      // Ajout optimiste — le callback realtime vérifiera le doublon si il arrive
+      if (mounted && !_messages.any((m) => m['id'] == inserted['id'])) {
+        setState(() => _messages.insert(0, inserted));
+        _scrollToBottom();
+      }
 
       // Mettre à jour la conversation
       final conv = await _supa.from('conversations')
@@ -475,7 +494,7 @@ class _ChatScreenState extends State<ChatScreen> {
         };
 
         await _supa.from('conversations').update({
-          'last_message':      imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : text),
+          'last_message':      imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : (animalData != null ? '🐾 ${animalData['nom'] ?? 'Animal'}' : text)),
           'updated_at':        DateTime.now().toIso8601String(),
           'unread_count':      unread,
           'participants_info': info,
@@ -804,6 +823,134 @@ class _ChatScreenState extends State<ChatScreen> {
     return dt == null ? '' : DateFormat('HH:mm').format(dt);
   }
 
+  // ── Options conversation (menu 3 points) ─────────────────────────────────────
+
+  void _showConvOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(0, 12, 0, 32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 40, height: 4,
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          _OptionsItem(
+            icon: Icons.palette_outlined,
+            label: 'Thème de la conversation',
+            onTap: () { Navigator.pop(context); _showThemeSelector(); },
+          ),
+          _OptionsItem(
+            icon: Icons.delete_outline_rounded,
+            label: 'Supprimer la conversation',
+            color: Colors.redAccent,
+            onTap: () { Navigator.pop(context); _confirmDeleteConv(); },
+          ),
+          _OptionsItem(
+            icon: Icons.flag_outlined,
+            label: 'Signaler la conversation',
+            color: Colors.orange,
+            onTap: () { Navigator.pop(context); _reportConv(); },
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteConv() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Supprimer la conversation ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('Cette action est irréversible.', style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Supprimer', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await _supa.from('messages').delete().eq('conversation_id', widget.conversationId);
+      await _supa.from('conversations').delete().eq('id', widget.conversationId);
+      if (mounted) Navigator.maybePop(context);
+    } catch (_) {}
+  }
+
+  void _reportConv() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _ReportSheet(
+        conversationId: widget.conversationId,
+        reporterUid: _uid,
+      ),
+    );
+  }
+
+  // ── Menu "+" glassmorphe ──────────────────────────────────────────────────────
+
+  void _showPlusMenu(ChatTheme theme) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+            decoration: BoxDecoration(
+              color: theme.bgGradient[0].withValues(alpha: 0.55),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
+            ),
+            padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).padding.bottom + 24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(2))),
+              _PlusItem(icon: Icons.photo_outlined,           label: 'Galerie',             isDark: theme.isDark, onTap: () { Navigator.pop(ctx); _pickImage(); }),
+              _PlusItem(icon: Icons.camera_alt_outlined,      label: 'Appareil photo',       isDark: theme.isDark, onTap: () { Navigator.pop(ctx); _takePhoto(); }),
+              _PlusItem(icon: Icons.location_on_outlined,     label: 'Ma position',           isDark: theme.isDark, onTap: () { Navigator.pop(ctx); _shareLocation(); }),
+              _PlusItem(icon: Icons.calendar_today_outlined,  label: 'Proposer une visite',   isDark: theme.isDark, onTap: () { Navigator.pop(ctx); _proposeVisite(); }),
+              _PlusItem(icon: Icons.pets_rounded,             label: 'Partager un animal',    isDark: theme.isDark, onTap: () { Navigator.pop(ctx); _showAnimalPicker(); }),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showAnimalPicker() async {
+    final uid = _uid;
+    List<Map<String, dynamic>> animaux = [];
+    try {
+      final rows = await _supa.from('animaux')
+          .select('id, nom, espece, race, photo_url')
+          .or('uid_eleveur.eq.$uid,uid_proprietaire.eq.$uid')
+          .not('statut', 'in', '(decede)')
+          .order('created_at', ascending: false);
+      animaux = List<Map<String, dynamic>>.from(rows as List);
+    } catch (_) {}
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _AnimalPickerSheet(
+        animaux: animaux,
+        onSelected: (animal) => _sendMessage('', animalData: animal),
+      ),
+    );
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────────
 
   @override
@@ -852,9 +999,8 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.palette_outlined, color: Colors.white, size: 22),
-            tooltip: 'Thème',
-            onPressed: _showThemeSelector,
+            icon: const Icon(Icons.more_vert, color: Colors.white, size: 24),
+            onPressed: _showConvOptions,
           ),
         ],
         title: widget.groupName != null
@@ -936,6 +1082,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           onLongPress: (pos, isOwner) => _showEmojiPicker(msg['id']?.toString() ?? '', isOwner, pos, msg),
                           onDoubleTap: () => _toggleReaction(msg['id']?.toString() ?? '', '❤️'),
                           onImageTap: (url) => _showFullImage(url),
+                          onAnimalTap: () => Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => ChatProfilePage(uid: msg['sender_id']?.toString() ?? widget.eleveurId),
+                          )),
                           sentBubbleColor: theme.sentColor,
                           sentTextColor: theme.sentTextColor,
                           reactions: _reactions[msg['id']?.toString()] ?? [],
@@ -958,8 +1107,8 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           padding: EdgeInsets.fromLTRB(8, 12, 8, MediaQuery.of(context).padding.bottom + 8),
           child: Row(children: [
-            PopupMenuButton<String>(
-              padding: EdgeInsets.zero,
+            GestureDetector(
+              onTap: () => _showPlusMenu(theme),
               child: ClipOval(
                 child: BackdropFilter(
                   filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
@@ -974,19 +1123,6 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
               ),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              onSelected: (v) {
-                if (v == 'photo')    _pickImage();
-                else if (v == 'camera')   _takePhoto();
-                else if (v == 'location') _shareLocation();
-                else if (v == 'visite')   _proposeVisite();
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'photo',    child: Row(children: [Icon(Icons.photo_outlined, size: 18), SizedBox(width: 10), Text('Galerie', style: TextStyle(fontFamily: 'Galey'))])),
-                PopupMenuItem(value: 'camera',   child: Row(children: [Icon(Icons.camera_alt_outlined, size: 18), SizedBox(width: 10), Text('Appareil photo', style: TextStyle(fontFamily: 'Galey'))])),
-                PopupMenuItem(value: 'location', child: Row(children: [Icon(Icons.location_on_outlined, size: 18), SizedBox(width: 10), Text('Ma position', style: TextStyle(fontFamily: 'Galey'))])),
-                PopupMenuItem(value: 'visite',   child: Row(children: [Icon(Icons.calendar_today_outlined, size: 18, color: Color(0xFF0C5C6C)), SizedBox(width: 10), Text('Proposer une visite', style: TextStyle(fontFamily: 'Galey', color: Color(0xFF0C5C6C)))])),
-              ],
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -1014,6 +1150,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         fontSize: 14),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
                   ),
                 ),
               ),
@@ -1053,6 +1191,7 @@ class _MessageBubble extends StatelessWidget {
   final void Function(Offset position, bool isOwner) onLongPress;
   final VoidCallback onDoubleTap;
   final void Function(String url) onImageTap;
+  final VoidCallback? onAnimalTap;
   final Color sentBubbleColor;
   final Color sentTextColor;
   final List<Map<String, dynamic>> reactions;
@@ -1062,6 +1201,7 @@ class _MessageBubble extends StatelessWidget {
     required this.data, required this.isMe, required this.myUid, required this.time,
     required this.isLastRead, required this.onLongPress, required this.onDoubleTap, required this.onImageTap,
     required this.reactions, required this.onReact,
+    this.onAnimalTap,
     this.sentBubbleColor = const Color(0xFF0C5C6C),
     this.sentTextColor = Colors.white,
   });
@@ -1072,7 +1212,8 @@ class _MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final text       = (data['text'] as String?) ?? '';
     final imageUrl   = data['image_url'] as String?;
-    final isLocation = data['msg_type'] == 'location';
+    final isLocation   = data['msg_type'] == 'location';
+    final isAnimalCard = data['msg_type'] == 'animal_card';
 
     return GestureDetector(
       onLongPress: () {
@@ -1097,7 +1238,7 @@ class _MessageBubble extends StatelessWidget {
                   child: Container(
                     constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
                     margin: EdgeInsets.only(left: isMe ? 48 : 4, right: isMe ? 4 : 48),
-                    padding: imageUrl != null || isLocation
+                    padding: imageUrl != null || isLocation || isAnimalCard
                         ? const EdgeInsets.all(4)
                         : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
@@ -1129,6 +1270,14 @@ class _MessageBubble extends StatelessWidget {
                             lat: (data['lat'] as num).toDouble(),
                             lng: (data['lng'] as num).toDouble(),
                             isMe: isMe,
+                          ),
+                        if (isAnimalCard)
+                          _AnimalCardContent(
+                            jsonText: text,
+                            isMe: isMe,
+                            sentColor: sentBubbleColor,
+                            sentTextColor: sentTextColor,
+                            onTap: onAnimalTap,
                           ),
                         if (text.isNotEmpty)
                           Padding(
@@ -1251,4 +1400,293 @@ class _ReactionBar extends StatelessWidget {
       );
     }).toList());
   }
+}
+
+// ── Helpers UI ─────────────────────────────────────────────────────────────────
+
+class _OptionsItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _OptionsItem({required this.icon, required this.label, required this.onTap, this.color = const Color(0xFF1E2025)});
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    leading: Icon(icon, color: color, size: 22),
+    title: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 15, color: color)),
+    onTap: onTap,
+  );
+}
+
+class _PlusItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isDark;
+  final VoidCallback onTap;
+  const _PlusItem({required this.icon, required this.label, required this.isDark, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    leading: Icon(icon, color: isDark ? Colors.white : Colors.white, size: 22),
+    title: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.white)),
+    onTap: onTap,
+  );
+}
+
+class _ReportSheet extends StatefulWidget {
+  final String conversationId;
+  final String reporterUid;
+  const _ReportSheet({required this.conversationId, required this.reporterUid});
+
+  @override
+  State<_ReportSheet> createState() => _ReportSheetState();
+}
+
+// ── Animal card content (inside bubble) ───────────────────────────────────────
+
+class _AnimalCardContent extends StatelessWidget {
+  final String jsonText;
+  final bool isMe;
+  final Color sentColor;
+  final Color sentTextColor;
+  final VoidCallback? onTap;
+
+  const _AnimalCardContent({
+    required this.jsonText,
+    required this.isMe,
+    required this.sentColor,
+    required this.sentTextColor,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Map<String, dynamic> animal = {};
+    try { animal = Map<String, dynamic>.from(jsonDecode(jsonText) as Map); } catch (_) {}
+
+    final nom      = animal['nom'] as String? ?? 'Animal';
+    final espece   = animal['espece'] as String? ?? '';
+    final race     = animal['race'] as String? ?? '';
+    final photoUrl = animal['photo_url'] as String?;
+    final subtitle = [espece, race].where((s) => s.isNotEmpty).join(' · ');
+
+    return Container(
+      width: 210,
+      decoration: BoxDecoration(
+        color: isMe ? Colors.white.withValues(alpha: 0.12) : const Color(0xFFF5F7FA),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+        // Photo
+        SizedBox(
+          height: 130,
+          child: photoUrl != null && photoUrl.isNotEmpty
+              ? CachedNetworkImage(imageUrl: photoUrl, fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(color: Colors.grey.shade200,
+                      child: const Center(child: Icon(Icons.pets, color: Colors.grey, size: 36))),
+                  errorWidget: (_, __, ___) => Container(color: Colors.grey.shade200,
+                      child: const Center(child: Icon(Icons.pets, color: Colors.grey, size: 36))),
+                )
+              : Container(color: isMe ? Colors.white.withValues(alpha: 0.18) : Colors.grey.shade200,
+                  child: Center(child: Icon(Icons.pets, color: isMe ? Colors.white54 : Colors.grey, size: 40))),
+        ),
+        // Infos
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(nom,
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14,
+                  color: isMe ? Colors.white : const Color(0xFF1E2025)),
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+            if (subtitle.isNotEmpty)
+              Text(subtitle,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                    color: isMe ? Colors.white70 : Colors.grey.shade600),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+          ]),
+        ),
+        // Bouton Voir profil
+        GestureDetector(
+          onTap: onTap,
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(10, 4, 10, 10),
+            padding: const EdgeInsets.symmetric(vertical: 7),
+            decoration: BoxDecoration(
+              color: isMe ? Colors.white.withValues(alpha: 0.22) : sentColor.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isMe ? Colors.white.withValues(alpha: 0.35) : sentColor.withValues(alpha: 0.30),
+              ),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.open_in_new_rounded, size: 13,
+                  color: isMe ? Colors.white : sentColor),
+              const SizedBox(width: 5),
+              Text('Voir le profil',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                    color: isMe ? Colors.white : sentColor)),
+            ]),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+// ── Animal picker sheet ────────────────────────────────────────────────────────
+
+class _AnimalPickerSheet extends StatelessWidget {
+  final List<Map<String, dynamic>> animaux;
+  final void Function(Map<String, dynamic> animal) onSelected;
+
+  const _AnimalPickerSheet({required this.animaux, required this.onSelected});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).padding.bottom + 24),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+        const Text('Choisir un animal',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17, color: Color(0xFF1E2025))),
+        const SizedBox(height: 16),
+        if (animaux.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: Text('Aucun animal dans votre profil.',
+                style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500))),
+          )
+        else
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.45),
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: animaux.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, i) {
+                final a = animaux[i];
+                final photoUrl = a['photo_url'] as String?;
+                final espece = a['espece'] as String? ?? '';
+                final race   = a['race'] as String? ?? '';
+                final subtitle = [espece, race].where((s) => s.isNotEmpty).join(' · ');
+                return ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                  leading: CircleAvatar(
+                    radius: 26, backgroundColor: const Color(0xFFEEF5EA),
+                    backgroundImage: photoUrl != null && photoUrl.isNotEmpty
+                        ? CachedNetworkImageProvider(photoUrl) : null,
+                    child: photoUrl == null || photoUrl.isEmpty
+                        ? const Icon(Icons.pets, color: Color(0xFF6E9E57), size: 22) : null,
+                  ),
+                  title: Text(a['nom'] as String? ?? '',
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+                  subtitle: subtitle.isNotEmpty
+                      ? Text(subtitle, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500))
+                      : null,
+                  trailing: const Icon(Icons.chevron_right_rounded, color: Color(0xFF0C5C6C)),
+                  onTap: () { Navigator.pop(context); onSelected(a); },
+                );
+              },
+            ),
+          ),
+      ]),
+    );
+  }
+}
+
+class _ReportSheetState extends State<_ReportSheet> {
+  static final _supa = Supabase.instance.client;
+  String? _selected;
+  final _detailsCtrl = TextEditingController();
+  bool _sending = false;
+
+  static const _reasons = [
+    'Contenu inapproprié',
+    'Harcèlement',
+    'Spam / arnaque',
+    'Autre',
+  ];
+
+  @override
+  void dispose() { _detailsCtrl.dispose(); super.dispose(); }
+
+  Future<void> _submit() async {
+    if (_selected == null) return;
+    setState(() => _sending = true);
+    try {
+      await _supa.from('conversation_reports').insert({
+        'conversation_id': widget.conversationId,
+        'reported_by_uid': widget.reporterUid,
+        'reason': _selected,
+        'details': _detailsCtrl.text.trim().isNotEmpty ? _detailsCtrl.text.trim() : null,
+      });
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Conversation signalée. Merci, nous allons examiner.', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Color(0xFF0C5C6C),
+        ));
+      }
+    } catch (_) {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Container(
+    decoration: const BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).viewInsets.bottom + 32),
+    child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+      const Text('Signaler la conversation',
+          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17, color: Color(0xFF1E2025))),
+      const SizedBox(height: 16),
+      ..._reasons.map((r) => RadioListTile<String>(
+        value: r, groupValue: _selected,
+        onChanged: (v) => setState(() => _selected = v),
+        title: Text(r, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+        activeColor: const Color(0xFF0C5C6C),
+        contentPadding: EdgeInsets.zero,
+      )),
+      if (_selected == 'Autre') ...[
+        const SizedBox(height: 8),
+        TextField(
+          controller: _detailsCtrl,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: 'Précisez...',
+            hintStyle: const TextStyle(fontFamily: 'Galey'),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          ),
+        ),
+      ],
+      const SizedBox(height: 20),
+      SizedBox(
+        width: double.infinity,
+        child: FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.orange,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+          onPressed: _selected == null || _sending ? null : _submit,
+          child: _sending
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Text('Envoyer le signalement', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        ),
+      ),
+    ]),
+  );
 }
