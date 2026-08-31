@@ -150,7 +150,8 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
   async function convTags(acqUid: string) {
     const [{ data: elevP }, { data: acqP }] = await Promise.all([
       supabase.from('user_profiles').select('id').eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle(),
-      supabase.from('user_profiles').select('id').eq('uid', acqUid).eq('profile_type', 'particulier').maybeSingle(),
+      // Profil consulté au quotidien par l'acquéreur = son profil principal.
+      supabase.from('user_profiles').select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle(),
     ]);
     return { pro: (elevP?.id ?? activeProfileId ?? null) as string | null, consumer: (acqP?.id ?? null) as string | null };
   }
@@ -269,6 +270,11 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
 
   async function relanceInApp(a: AnimalLite, texte: string) {
     if (!a.uid_acquereur || !texte) return;
+    if (a.uid_acquereur === uid) {
+      alert("L'acquéreur est votre propre compte : la relance in-app ne peut pas s'afficher. "
+        + 'Testez avec un autre compte, ou par WhatsApp / Email.');
+      return;
+    }
     setBusy(a.id);
     try {
       const convId = await openOrCreateConv(a.uid_acquereur);

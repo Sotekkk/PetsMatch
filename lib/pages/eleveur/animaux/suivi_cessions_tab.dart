@@ -383,8 +383,10 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
     try {
       final elevP = await _supa.from('user_profiles')
           .select('id').eq('uid', widget.uid ?? '').eq('profile_type', 'eleveur').maybeSingle();
+      // Profil que l'acquéreur consulte au quotidien = son profil principal
+      // (particulier pour un client classique, mais respecte un compte multi-profil).
       final acqP = await _supa.from('user_profiles')
-          .select('id').eq('uid', acqUid).eq('profile_type', 'particulier').maybeSingle();
+          .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
       final conv = await _supa.from('conversations')
           .select('pro_profile_id, consumer_profile_id, categorie').eq('id', convId).maybeSingle();
       final patch = <String, dynamic>{};
@@ -405,6 +407,17 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
 
   /// Relance « in-app » : message dans la conversation + notification.
   Future<void> _relanceInApp(Map<String, dynamic> a, String acqUid, String texte) async {
+    if (acqUid == (widget.uid ?? '')) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('L\'acquéreur est votre propre compte : la relance in-app '
+              'ne peut pas s\'afficher. Testez avec un autre compte, ou par '
+              'WhatsApp / SMS / Email.'),
+          duration: Duration(seconds: 6),
+        ));
+      }
+      return;
+    }
     try {
       final convId = await MessagingHelper.openOrCreateConversation(
         otherUid: acqUid, categorie: 'contact-elevage',
