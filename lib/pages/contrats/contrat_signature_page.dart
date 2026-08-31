@@ -327,15 +327,24 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       _doc!['metadata'] = meta;
       _doc!['statut'] = statut;
 
-      if (bothSigned) {
+      // Le transfert de l'animal n'a lieu QUE lorsque le vendeur/éleveur pose la
+      // dernière signature. Si c'est l'acquéreur qui signe en dernier, on
+      // notifie le vendeur pour qu'il confirme (bandeau « Confirmer la cession »).
+      final vendeurAFinalise = bothSigned && role == 'eleveur';
+      if (vendeurAFinalise) {
         await finalizeContratSigne(doc: _doc!, animal: _animal);
       }
-      await notifierContratSignature(doc: _doc!, role: role, bothSigned: bothSigned);
+      await notifierContratSignature(
+        doc: _doc!, role: role, bothSigned: vendeurAFinalise);
 
       await _buildPdf();
       if (mounted) {
         setState(() {});
-        _snack(bothSigned ? '✅ Contrat signé par les deux parties' : '✍️ Signature enregistrée');
+        _snack(bothSigned
+            ? (vendeurAFinalise
+                ? '✅ Contrat signé — cession finalisée'
+                : '✅ Signé. Le vendeur va confirmer la cession.')
+            : '✍️ Signature enregistrée');
       }
     } catch (e) {
       _snack('Erreur : $e');

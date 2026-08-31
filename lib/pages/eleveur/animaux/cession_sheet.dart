@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
@@ -15,6 +16,17 @@ import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
 const _dark  = Color(0xFF1F2A2E);
+
+String _uuid() {
+  final rng = Random.secure();
+  final b = List<int>.generate(16, (_) => rng.nextInt(256));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  String h(int v) => v.toRadixString(16).padLeft(2, '0');
+  return '${h(b[0])}${h(b[1])}${h(b[2])}${h(b[3])}'
+      '-${h(b[4])}${h(b[5])}-${h(b[6])}${h(b[7])}-${h(b[8])}${h(b[9])}'
+      '-${h(b[10])}${h(b[11])}${h(b[12])}${h(b[13])}${h(b[14])}${h(b[15])}';
+}
 
 // ── Feuille de cession ────────────────────────────────────────────────────────
 
@@ -511,14 +523,17 @@ class _CessionSheetState extends State<CessionSheet> {
         final numRows = await _supa.from('factures').select('numero_facture')
             .eq('uid_eleveur', widget.uid)
             .order('numero_facture', ascending: false).limit(1);
-        final nextNum = numRows.isEmpty
-            ? 1 : (((numRows.first['numero_facture'] as num?) ?? 0).toInt() + 1);
+        final rawNum = numRows.isEmpty ? null : numRows.first['numero_facture'];
+        final nextNum = (rawNum is num
+            ? rawNum.toInt()
+            : int.tryParse('${rawNum ?? ''}') ?? 0) + 1;
         final adr = _adresseCtrl.text.trim();
         final cpMatch = RegExp(r'\b(\d{5})\b').firstMatch(adr);
         await _supa.from('factures').insert({
           'uid_eleveur': widget.uid,
           if (pid.isNotEmpty) 'profile_id': pid,
           'profil_source': 'eleveur',
+          'token': _uuid(),
           'numero_facture': nextNum,
           'date_facture': _dateCession.toIso8601String().split('T').first,
           'date_prestation': _dateCession.toIso8601String().split('T').first,
@@ -556,7 +571,17 @@ class _CessionSheetState extends State<CessionSheet> {
           'email_emetteur': eleveur['email_contact'],
           'statut': 'emise',
         });
-      } catch (_) { /* la facture reste attachée à l'animal même si l'insert échoue */ }
+      } catch (e) {
+        // La facture PDF reste attachée à l'animal même si l'insert échoue,
+        // mais on prévient l'utilisatrice qu'elle n'est pas dans « Mes factures ».
+        debugPrint('[cession] insert factures échoué : $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Facture créée, mais non ajoutée à « Mes factures » : $e'),
+            duration: const Duration(seconds: 5),
+          ));
+        }
+      }
 
       await _loadExistingDocs();
       await Printing.sharePdf(bytes: bytes, filename: '$numero.pdf');

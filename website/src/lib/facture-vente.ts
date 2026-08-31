@@ -48,28 +48,39 @@ export async function factureVentePdfBlob(d: FactureVenteData): Promise<Blob> {
   y += 22;
 
   const colW = (W - M * 2 - 16) / 2;
-  const block = (x: number, titre: string, lignes: string[]) => {
+  // Mêmes libellés que la facture de l'appli (contrat_pdf.dart · _line) :
+  // « Label : valeur », une info par ligne, ligne absente si vide.
+  const block = (x: number, titre: string, lignes: [string, string | undefined][]) => {
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.setTextColor(120);
-    doc.text(titre, x, y);
-    doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(40);
-    lignes.filter(Boolean).slice(0, 6).forEach((l, i) => doc.text(doc.splitTextToSize(l, colW), x, y + 14 + i * 12));
+    doc.text(titre, x, y);
+    doc.setFontSize(9);
+    let yy = y + 14;
+    lignes.filter(([, v]) => v && v.trim()).slice(0, 6).forEach(([label, v]) => {
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(60);
+      doc.text(`${label} : `, x, yy);
+      const lw = doc.getTextWidth(`${label} : `);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(40);
+      const wrapped = doc.splitTextToSize(String(v), colW - lw);
+      doc.text(wrapped, x + lw, yy);
+      yy += 12 * Math.max(1, wrapped.length);
+    });
   };
-  block(M, 'ÉMETTEUR', [
-    d.emetteur.nom,
-    d.emetteur.adresse ?? '',
-    d.emetteur.siret ? `SIRET : ${d.emetteur.siret}` : '',
-    d.emetteur.tel ?? '',
-    d.emetteur.email ?? '',
+  block(M, 'Émetteur', [
+    ['Nom', d.emetteur.nom],
+    ['Adresse', d.emetteur.adresse],
+    ['SIRET', d.emetteur.siret],
+    ['Téléphone', d.emetteur.tel],
+    ['Email', d.emetteur.email],
   ]);
-  block(M + colW + 16, 'CLIENT', [
-    d.client.nom ?? '',
-    d.client.adresse ?? '',
-    d.client.tel ?? '',
-    d.client.email ?? '',
+  block(M + colW + 16, 'Client', [
+    ['Nom', d.client.nom],
+    ['Adresse', d.client.adresse],
+    ['Téléphone', d.client.tel],
+    ['Email', d.client.email],
   ]);
   y += 14 + 6 * 12;
 
@@ -120,7 +131,7 @@ export async function factureVentePdfBlob(d: FactureVenteData): Promise<Blob> {
 
   doc.setFontSize(8);
   doc.setTextColor(150);
-  doc.text(`Facture générée via PetsMatch le ${fmtD(d.date)}`, M, 800);
+  doc.text(`Facture générée via PetsMatch le ${fmtD(d.date)}`, W / 2, 800, { align: 'center' });
 
   return doc.output('blob');
 }

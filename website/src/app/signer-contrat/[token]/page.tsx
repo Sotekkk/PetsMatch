@@ -449,8 +449,11 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       ...(bothSigned ? { signe_le: now } : {}),
     }).eq('token', token);
 
-    // Quand le contrat de cession est entièrement signé → finaliser le transfert de l'animal
-    if (bothSigned && (doc.type === 'contrat_vente' || doc.type === 'certificat_cession') && doc.animal_id) {
+    // Le transfert de l'animal n'a lieu QUE si le vendeur pose la dernière
+    // signature. Si l'acquéreur signe en dernier → le vendeur confirmera
+    // depuis la fiche animale (notif ci-dessous).
+    const vendeurAFinalise = bothSigned && role === 'eleveur';
+    if (vendeurAFinalise && (doc.type === 'contrat_vente' || doc.type === 'certificat_cession') && doc.animal_id) {
       const { data: cededAnimal } = await supabase.from('animaux')
         .update({ statut: 'sorti' }).eq('id', doc.animal_id)
         .in('statut', ['en_attente_cession', 'cession_en_cours'])
@@ -512,7 +515,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     const titre     = doc.titre ?? 'le contrat';
     const signingUrl = `${window.location.origin}/signer-contrat/${token}`;
 
-    if (bothSigned) {
+    if (vendeurAFinalise || (bothSigned && isAdoption)) {
       const complet = `${titre} est désormais signé par les deux parties.`;
       fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: doc.uid_eleveur, type: 'contrat_signe_complet', title: '✅ Contrat signé !',
@@ -522,12 +525,16 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         body: JSON.stringify({ email: acqEmail, type: 'contrat_signe_complet', title: '✅ Contrat signé !',
           body: complet, data: { token, url: signingUrl } }) });
     } else if (role === 'acquereur') {
-      // Acquéreur vient de signer → notifier l'éleveur
+      // Acquéreur vient de signer → notifier l'éleveur (à signer OU à confirmer)
+      const aConfirmer = bothSigned;
       fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: doc.uid_eleveur, type: 'contrat_signe_acquereur', title: '✍️ Signature reçue',
-          body: `${acqNom} a signé ${titre} — à vous de signer pour finaliser.`,
+        body: JSON.stringify({ uid: doc.uid_eleveur, type: 'contrat_signe_acquereur',
+          title: aConfirmer ? '✍️ Contrat signé — à confirmer' : '✍️ Signature reçue',
+          body: aConfirmer
+            ? `${acqNom} a signé ${titre}. Confirmez la cession pour transférer l'animal.`
+            : `${acqNom} a signé ${titre} — à vous de signer pour finaliser.`,
           profileType: isAdoption ? 'association' : 'eleveur',
-          data: { token } }) });
+          data: { token, ...(doc.animal_id ? { animalId: doc.animal_id } : {}) } }) });
     } else {
       // Éleveur vient de signer → notifier l'acquéreur
       if (acqEmail) fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },

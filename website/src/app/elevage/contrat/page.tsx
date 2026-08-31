@@ -81,6 +81,7 @@ export default function ContratsPage() {
   const [deleting, setDeleting]       = useState<string | null>(null);
   const [cancelling, setCancelling]   = useState<string | null>(null);
   const [transmitting, setTransmitting] = useState<string | null>(null);
+  const [highlightToken, setHighlightToken] = useState<string | null>(null);
   const [auditOpen, setAuditOpen] = useState<Record<string, boolean>>({});
   const [auditCache, setAuditCache] = useState<Record<string, AuditEntry[]>>({});
 
@@ -171,6 +172,22 @@ export default function ContratsPage() {
     } catch { /* ignore */ }
   }, [fetching, animaux]);
 
+  // Notif « l'acquéreur a signé » → ?doc=<token> : surligner + ouvrir le contrat.
+  useEffect(() => {
+    const tok = new URLSearchParams(window.location.search).get('doc');
+    if (!tok) return;
+    setHighlightToken(tok);
+    if (docs.some(d => d.token === tok)) {
+      window.open(`/signer-contrat/${tok}`, '_blank', 'noopener');
+      const el = document.getElementById(`doc-${tok}`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Ne rouvre pas à chaque render
+      const url = new URL(window.location.href);
+      url.searchParams.delete('doc');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [docs]);
+
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (e.data?.type === 'contract_signed') {
@@ -190,7 +207,7 @@ export default function ContratsPage() {
     if (!user) return;
     setFetching(true);
     const [docsRes, animauxRes, profileRes, userRowRes] = await Promise.all([
-      supabase.from('documents_animaux').select('*').eq('uid_eleveur', user.uid).neq('type', 'contrat_adoption').order('created_at', { ascending: false }),
+      supabase.from('documents_animaux').select('*').eq('uid_eleveur', user.uid).neq('type', 'contrat_adoption').neq('type', 'facture').order('created_at', { ascending: false }),
       supabase.from('animaux').select('id, nom, espece, race, identification, date_naissance, sexe, couleur, pedigree_numero, pedigree_lof, nom_pere, puce_pere, nom_mere, puce_mere').eq('uid_eleveur', user.uid).or('is_association.is.null,is_association.eq.false').not('statut', 'in', '(sorti,decede)').order('nom'),
       supabase.from('user_profiles').select('firstname,lastname,nom,profile_type,adresse,rue,ville,ville_pro,code_postal,siret,numero_elevage,phone_number,email_contact').eq('uid', user.uid).eq('is_main', true).maybeSingle(),
       supabase.from('users').select('email').eq('uid', user.uid).maybeSingle(),
@@ -558,7 +575,11 @@ export default function ContratsPage() {
               const date = new Date(d.created_at).toLocaleDateString('fr-FR');
               const acqNomMeta = (d.metadata?.acquereur_nom as string) ?? '';
               return (
-                <div key={d.id} className="border border-gray-100 rounded-xl bg-white hover:border-gray-200 transition-colors overflow-hidden">
+                <div key={d.id} id={`doc-${d.token ?? d.id}`}
+                  className={`border rounded-xl bg-white transition-colors overflow-hidden ${
+                    highlightToken && d.token === highlightToken
+                      ? 'border-amber-400 ring-2 ring-amber-200 bg-amber-50'
+                      : 'border-gray-100 hover:border-gray-200'}`}>
                   <div className="flex items-center gap-3 p-3">
                   <div className="w-10 h-10 rounded-lg flex items-center justify-center text-xl flex-shrink-0 bg-gray-50 border border-gray-100">
                     {tm.icon}

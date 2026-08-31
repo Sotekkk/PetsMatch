@@ -528,11 +528,17 @@ function getNotifUrl(n: Notif): string | null {
       return d.tab === 'suivi_cessions' ? '/mes-animaux?tab=suivi' : (d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux?tab=suivi');
     case 'sterilisation_validee':
       return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
-    case 'contrat_saillie_invite':
+    // Reçues par l'acquéreur → sa page « Mes contrats » (pas le lien de signature brut)
     case 'contrat_signe_eleveur':
     case 'contrat_signe_complet':
+    case 'contrat_invite':
+    case 'contrat_a_signer':
+      return d.token ? `/mes-contrats?doc=${d.token}` : '/mes-contrats';
+    // Reçues par le vendeur / éleveur
+    case 'contrat_saillie_invite':
       return d.url ?? d.signingUrl ?? (d.token ? `/signer-contrat/${d.token}` : '/elevage/contrat');
     case 'contrat_signe_acquereur':
+      return d.token ? `/elevage/contrat?doc=${d.token}` : '/elevage/contrat';
     case 'contrat_refuse':
     case 'contrat_expire':
       return '/elevage/contrat';

@@ -117,6 +117,10 @@ Future<void> notifierContratSignature({
 }) async {
   final supa = Supabase.instance.client;
   final meta = (doc['metadata'] as Map?) ?? {};
+  bool nb(dynamic v) => v != null && '$v'.trim().isNotEmpty;
+  // Les deux ont signé mais le vendeur n'a pas encore confirmé le transfert.
+  final aConfirmer = !bothSigned && role == 'acquereur'
+      && nb(meta['signature_eleveur']) && nb(meta['signature_acquereur']);
   final type = doc['type'] as String? ?? '';
   final isAdoption = type == 'contrat_adoption';
   final titre = (doc['titre'] as String?) ?? 'le contrat';
@@ -138,9 +142,11 @@ Future<void> notifierContratSignature({
   }
   final token = doc['token'] as String?;
   final signingUrl = token != null ? 'https://petsmatchapp.com/signer-contrat/$token' : null;
+  final animalId = doc['animal_id'] as String?;
   final data = {
     if (token != null) 'token': token,
     'documentId': doc['id'],
+    if (animalId != null) 'animalId': animalId,
     // `url` : lu par le routeur de notifs du site (Header.getNotifUrl).
     if (signingUrl != null) 'url': signingUrl,
     if (signingUrl != null) 'signingUrl': signingUrl,
@@ -176,6 +182,9 @@ Future<void> notifierContratSignature({
     if (acqUid != eleveurUid) {
       await notif(acqUid, 'contrat_signe_complet', '✅ Contrat signé !', '$titre $complet');
     }
+  } else if (aConfirmer) {
+    await notif(eleveurUid, 'contrat_signe_acquereur', '✍️ Contrat signé — à confirmer',
+        '$acqNom a signé $titre. Confirmez la cession pour transférer l\'animal.');
   } else if (role == 'acquereur') {
     await notif(eleveurUid, 'contrat_signe_acquereur', '✍️ Signature reçue',
         '$acqNom a signé $titre — à vous de signer pour finaliser.');

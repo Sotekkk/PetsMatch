@@ -11,7 +11,10 @@ const _green = Color(0xFF6E9E57);
 const _dark  = Color(0xFF1F2A2E);
 
 class MesContratsParticulierPage extends StatefulWidget {
-  const MesContratsParticulierPage({super.key});
+  /// Ouvre directement ce contrat au chargement (depuis une notification).
+  final String? highlightToken;
+  final String? highlightDocId;
+  const MesContratsParticulierPage({super.key, this.highlightToken, this.highlightDocId});
 
   @override
   State<MesContratsParticulierPage> createState() => _MesContratsParticulierPageState();
@@ -21,6 +24,7 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
   static final _supa = Supabase.instance.client;
   List<Map<String, dynamic>> _docs = [];
   bool _loading = true;
+  bool _openedHighlight = false;
 
   @override
   void initState() {
@@ -29,18 +33,44 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
   }
 
   Future<void> _load() async {
-    final email = FirebaseAuth.instance.currentUser?.email;
-    if (email == null) { setState(() => _loading = false); return; }
+    final user = FirebaseAuth.instance.currentUser;
+    final email = user?.email;
+    final uid = user?.uid;
+    if (email == null && uid == null) { setState(() => _loading = false); return; }
     try {
-      final rows = await _supa
+      final sel = _supa
           .from('documents_animaux')
-          .select('id, type, titre, statut, token, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)')
-          .filter('metadata->>acquereur_email', 'eq', email)
+          .select('id, type, titre, statut, token, uid_acquereur, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)');
+      final rows = await (uid != null
+              ? sel.or('metadata->>acquereur_email.eq.${email ?? '-'},uid_acquereur.eq.$uid,metadata->>acquereur_uid.eq.$uid')
+              : sel.filter('metadata->>acquereur_email', 'eq', email!))
           .order('created_at', ascending: false);
-      if (mounted) setState(() { _docs = List<Map<String, dynamic>>.from(rows); _loading = false; });
+      if (mounted) {
+        setState(() { _docs = List<Map<String, dynamic>>.from(rows); _loading = false; });
+        _maybeOpenHighlight();
+      }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _maybeOpenHighlight() {
+    if (_openedHighlight) return;
+    final tk = widget.highlightToken;
+    final did = widget.highlightDocId;
+    if (tk == null && did == null) return;
+    final match = _docs.where((d) =>
+        (tk != null && d['token'] == tk) || (did != null && d['id'] == did)).toList();
+    if (match.isEmpty) return;
+    _openedHighlight = true;
+    final d = match.first;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => ContratSignaturePage(token: d['token'] as String?, documentId: d['id'] as String?),
+      ));
+      _load();
+    });
   }
 
   @override

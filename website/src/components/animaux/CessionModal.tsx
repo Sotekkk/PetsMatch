@@ -445,7 +445,12 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
           email_emetteur: eleveurInfo.email ?? null,
           statut: 'emise',
         });
-      } catch { /* la facture reste rattachée à l'animal même si l'insert échoue */ }
+      } catch (e) {
+        // Le PDF reste rattaché à l'animal même si l'insert échoue ; on prévient
+        // que la facture n'est pas apparue dans « Mes factures ».
+        console.error('[cession] insert factures échoué :', e);
+        setError(`Facture créée, mais non ajoutée à « Mes factures » : ${e}`);
+      }
 
       reloadDocs();
       window.open(URL.createObjectURL(blob), '_blank');

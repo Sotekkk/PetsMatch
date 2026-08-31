@@ -352,13 +352,37 @@ class _NotificationsPageState extends State<NotificationsPage> {
       ));
       return;
     }
-    // Notifications contrats — ouvre la signature DANS l'appli
-    if (type == 'contrat_saillie_invite' ||
-        type == 'contrat_signe_eleveur' ||
+    // Notifications contrats reçues par l'ACQUÉREUR → sa page « Mes contrats »
+    // (le contrat concerné y est mis en avant « À signer »), jamais le lien web.
+    if (type == 'contrat_signe_eleveur' ||
         type == 'contrat_signe_complet' ||
-        type == 'contrat_signe_acquereur' ||
         type == 'contrat_invite' ||
         type == 'contrat_a_signer') {
+      final token = data is Map ? data['token'] as String? : null;
+      final docId = data is Map ? data['documentId'] as String? : null;
+      final urlTok = _tokenFromUrl(data is Map ? data['url'] as String? : null)
+          ?? _tokenFromUrl(data is Map ? data['signingUrl'] as String? : null);
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => MesContratsParticulierPage(highlightToken: token ?? urlTok, highlightDocId: docId),
+      ));
+      return;
+    }
+    // L'acquéreur a signé → le vendeur (éleveur) atterrit sur « Mes contrats »
+    // (Administratif), le contrat concerné surligné et ouvert pour confirmer.
+    if (type == 'contrat_signe_acquereur') {
+      final token = data is Map ? data['token'] as String? : null;
+      final docId = data is Map ? data['documentId'] as String? : null;
+      final urlTok = _tokenFromUrl(data is Map ? data['url'] as String? : null)
+          ?? _tokenFromUrl(data is Map ? data['signingUrl'] as String? : null);
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => ContratReservationPage(
+          highlightDocId: docId,
+          highlightToken: token ?? urlTok,
+        ),
+      ));
+      return;
+    }
+    if (type == 'contrat_saillie_invite') {
       final token = data is Map ? data['token'] as String? : null;
       final docId = data is Map ? data['documentId'] as String? : null;
       final urlTok = _tokenFromUrl(data is Map ? data['url'] as String? : null)
@@ -366,10 +390,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
       if (token != null || docId != null || urlTok != null) {
         await Navigator.push(context, MaterialPageRoute(
           builder: (_) => ContratSignaturePage(token: token ?? urlTok, documentId: docId),
-        ));
-      } else {
-        await Navigator.push(context, MaterialPageRoute(
-          builder: (_) => const MesContratsParticulierPage(),
         ));
       }
       return;

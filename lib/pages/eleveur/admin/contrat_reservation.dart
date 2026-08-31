@@ -9,7 +9,11 @@ import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/certificats_engagement_page.dart';
 
 class ContratReservationPage extends StatefulWidget {
-  const ContratReservationPage({super.key});
+  /// Document à mettre en avant (ouvert automatiquement + carte surlignée),
+  /// p. ex. quand l'éleveur clique la notif « l'acquéreur a signé ».
+  final String? highlightDocId;
+  final String? highlightToken;
+  const ContratReservationPage({super.key, this.highlightDocId, this.highlightToken});
   @override
   State<ContratReservationPage> createState() => _ContratReservationPageState();
 }
@@ -24,6 +28,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
   List<Map<String, dynamic>> _animaux = [];
   Map<String, dynamic>?      _profil;
   bool _loading = true;
+  bool _highlightOpened = false;
 
   @override
   void initState() { super.initState(); _load(); }
@@ -44,6 +49,7 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
       _supa.from('documents_animaux')
           .select()
           .eq('uid_eleveur', uid)
+          .neq('type', 'facture')
           .order('created_at', ascending: false),
       eleveurProfileId != null
           ? _supa.from('animaux')
@@ -68,6 +74,31 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
       _animaux = List<Map<String, dynamic>>.from(animaux as List);
       _profil  = profil as Map<String, dynamic>?;
       _loading = false;
+    });
+    _maybeOpenHighlight();
+  }
+
+  /// Ouvre une fois le document mis en avant (notif « l'acquéreur a signé »).
+  void _maybeOpenHighlight() {
+    if (_highlightOpened) return;
+    final wantId  = widget.highlightDocId;
+    final wantTok = widget.highlightToken;
+    if (wantId == null && wantTok == null) return;
+    Map<String, dynamic>? doc;
+    for (final d in _docs) {
+      if ((wantId != null && d['id'] == wantId) ||
+          (wantTok != null && d['token'] == wantTok)) { doc = d; break; }
+    }
+    if (doc == null) return;
+    _highlightOpened = true;
+    final token = doc['token'] as String?;
+    final id    = doc['id'] as String?;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => ContratSignaturePage(token: token, documentId: id),
+      ));
+      if (mounted) _load();
     });
   }
 
@@ -147,7 +178,12 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
     padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
     itemCount: _docs.length,
     separatorBuilder: (_, __) => const SizedBox(height: 10),
-    itemBuilder: (_, i) => _DocCard(doc: _docs[i], onDelete: _deleteDoc),
+    itemBuilder: (_, i) => _DocCard(
+      doc: _docs[i],
+      onDelete: _deleteDoc,
+      highlight: (widget.highlightDocId != null && _docs[i]['id'] == widget.highlightDocId) ||
+                 (widget.highlightToken != null && _docs[i]['token'] == widget.highlightToken),
+    ),
   );
 
   Future<void> _deleteDoc(String id) async {
@@ -190,8 +226,9 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
 class _DocCard extends StatelessWidget {
   final Map<String, dynamic> doc;
   final Future<void> Function(String) onDelete;
+  final bool highlight;
 
-  const _DocCard({required this.doc, required this.onDelete});
+  const _DocCard({required this.doc, required this.onDelete, this.highlight = false});
 
   static const _teal = Color(0xFF0C5C6C);
 
@@ -241,8 +278,9 @@ class _DocCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: highlight ? const Color(0xFFFFFBEB) : Colors.white,
         borderRadius: BorderRadius.circular(14),
+        border: highlight ? Border.all(color: const Color(0xFFF59E0B), width: 1.5) : null,
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

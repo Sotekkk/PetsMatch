@@ -50,17 +50,24 @@ export default function MesContratsPage() {
   }, [loading, user, router]);
 
   useEffect(() => {
-    if (!user?.email) return;
+    if (!user?.uid && !user?.email) return;
+    const email = user?.email ?? '-';
     supabase
       .from('documents_animaux')
-      .select('id, type, titre, statut, token, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)')
-      .filter('metadata->>acquereur_email', 'eq', user.email)
+      .select('id, type, titre, statut, token, uid_acquereur, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)')
+      .or(`metadata->>acquereur_email.eq.${email},uid_acquereur.eq.${user?.uid ?? '-'},metadata->>acquereur_uid.eq.${user?.uid ?? '-'}`)
       .order('created_at', { ascending: false })
       .then(({ data }) => {
-        setDocs((data ?? []) as unknown as DocRow[]);
+        const rows = (data ?? []) as unknown as DocRow[];
+        setDocs(rows);
         setFetching(false);
+        // ?doc=<token> depuis une notif → ouvrir directement la signature
+        const wantToken = new URLSearchParams(window.location.search).get('doc');
+        if (wantToken && rows.some(r => r.token === wantToken)) {
+          router.push(`/signer-contrat/${wantToken}`);
+        }
       });
-  }, [user?.email]);
+  }, [user?.uid, user?.email]);
 
   async function refuser() {
     if (!refuseModal) return;
