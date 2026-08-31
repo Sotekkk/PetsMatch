@@ -40,6 +40,15 @@ interface Signalement {
   admin_note?: string; created_at: string; handled_at?: string; handled_by?: string;
 }
 
+interface ConvReport {
+  id: string; conversation_id: string; reported_by_uid: string;
+  reason: string; details?: string; status: string; created_at: string;
+}
+interface ConvMessage {
+  id: string; sender_id: string; text?: string; msg_type: string;
+  created_at: string; image_url?: string;
+}
+
 interface SignalementAlerte {
   target_type: string; target_id: string;
   nb_signalements: number; premier_signalement: string; dernier_signalement: string;
@@ -59,7 +68,7 @@ interface DossierEntry {
   isSecondary?: boolean; profileTableId?: string;
 }
 
-type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs' | 'annonces' | 'lieux_naturels' | 'tarification';
+type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs' | 'annonces' | 'lieux_naturels' | 'tarification' | 'signalements_conv';
 type FilterType = 'tous' | 'eleveur' | 'particulier' | 'pro' | 'secondaire' | 'admin' | 'en_attente';
 type SigFilter = 'en_attente' | 'traite' | 'rejete';
 
@@ -180,6 +189,15 @@ export default function AdminPage() {
   const [tarifSaving, setTarifSaving] = useState(false);
   const [selectedAnnonceAdmin, setSelectedAnnonceAdmin] = useState<AnnonceAdmin | null>(null);
   const [annonceSaving, setAnnonceSaving] = useState<string | null>(null);
+
+  // Signalements conversations
+  const [convReports, setConvReports] = useState<ConvReport[]>([]);
+  const [convFilter, setConvFilter] = useState<'pending' | 'reviewed' | 'dismissed'>('pending');
+  const [convLoading, setConvLoading] = useState(false);
+  const [selectedConvReport, setSelectedConvReport] = useState<ConvReport | null>(null);
+  const [convMessages, setConvMessages] = useState<ConvMessage[]>([]);
+  const [convMessagesLoading, setConvMessagesLoading] = useState(false);
+  const [convSaving, setConvSaving] = useState<string | null>(null);
 
   // ── Admin check ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -956,6 +974,36 @@ export default function AdminPage() {
     } finally { setTarifSaving(false); }
   }
 
+  const loadConvReports = useCallback(async (status: string) => {
+    setConvLoading(true);
+    try {
+      const { data } = await supabase.from('conversation_reports')
+        .select('*').eq('status', status).order('created_at', { ascending: false });
+      setConvReports((data ?? []) as ConvReport[]);
+    } finally { setConvLoading(false); }
+  }, []);
+
+  async function loadConvMessages(convId: string) {
+    setConvMessagesLoading(true);
+    setConvMessages([]);
+    try {
+      const { data } = await supabase.from('messages')
+        .select('id, sender_id, text, msg_type, created_at, image_url')
+        .eq('conversation_id', convId)
+        .order('created_at', { ascending: true });
+      setConvMessages((data ?? []) as ConvMessage[]);
+    } finally { setConvMessagesLoading(false); }
+  }
+
+  async function handleConvReportAction(report: ConvReport, newStatus: 'reviewed' | 'dismissed') {
+    setConvSaving(report.id);
+    try {
+      await supabase.from('conversation_reports').update({ status: newStatus }).eq('id', report.id);
+      setConvReports(prev => prev.filter(r => r.id !== report.id));
+      if (selectedConvReport?.id === report.id) { setSelectedConvReport(null); setConvMessages([]); }
+    } finally { setConvSaving(null); }
+  }
+
   async function saveProduit(produit: ProduitAdmin) {
     setTarifSaving(true);
     try {
@@ -993,6 +1041,7 @@ export default function AdminPage() {
     if (tab === 'annonces') { loadAnnoncesEnAttente(); loadAnnoncesSuspectes(); loadAnnoncesSuspendues(); }
     if (tab === 'lieux_naturels') { loadNaturalPlacesEnAttente(); loadAmenitySuggestions(); loadPhotoSuggestions(); }
     if (tab === 'tarification') loadTarification();
+    if (tab === 'signalements_conv') loadConvReports(convFilter);
   }, [isAdmin, tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -1048,6 +1097,7 @@ export default function AdminPage() {
           { key: 'annonces',      label: 'Annonces',      icon: '📋', badge: annoncesEnAttente.length || undefined },
           { key: 'lieux_naturels',label: 'Lieux naturels',icon: '🌲', badge: (naturalPlacesEnAttente.length + amenitySuggestions.length + photoSuggestions.length) || undefined },
           { key: 'tarification',  label: 'Tarification',  icon: '💰' },
+          { key: 'signalements_conv', label: 'Conv. signalées', icon: '💬' },
         ] as { key: AdminTab; label: string; icon: string; badge?: number }[]).map(t => (
           <button
             key={t.key}
@@ -2109,6 +2159,163 @@ export default function AdminPage() {
                 </section>
               </>
             )}
+          </div>
+        )}
+
+        {/* ─── Signalements conversations ─────────────────────────────────── */}
+        {tab === 'signalements_conv' && (
+          <div className="max-w-5xl mx-auto">
+            {/* Filtres */}
+            <div className="flex gap-2 mb-5 flex-wrap">
+              {(['pending', 'reviewed', 'dismissed'] as const).map(s => (
+                <button key={s}
+                  onClick={() => { setConvFilter(s); loadConvReports(s); }}
+                  className={`px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
+                    convFilter === s
+                      ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
+                  }`}
+                  style={{ fontFamily: 'Galey, sans-serif' }}>
+                  {s === 'pending' ? '⏳ En attente' : s === 'reviewed' ? '✅ Traités' : '❌ Rejetés'}
+                </button>
+              ))}
+              <button onClick={() => loadConvReports(convFilter)}
+                className="ml-auto px-3 py-1.5 text-sm text-gray-500 border border-gray-200 rounded-full hover:bg-gray-50 bg-white"
+                title="Rafraîchir">↺</button>
+            </div>
+
+            <div className="flex gap-4">
+              {/* Liste */}
+              <div className="flex-1 min-w-0 space-y-3">
+                {convLoading ? (
+                  <div className="flex justify-center py-16">
+                    <div className="w-8 h-8 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : convReports.length === 0 ? (
+                  <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
+                    <div className="text-3xl mb-2">{convFilter === 'pending' ? '🎉' : '📭'}</div>
+                    <p className="text-gray-500">
+                      {convFilter === 'pending' ? 'Aucune conversation signalée en attente.' : 'Aucun signalement dans cette catégorie.'}
+                    </p>
+                  </div>
+                ) : (
+                  convReports.map(report => (
+                    <div key={report.id}
+                      onClick={() => { setSelectedConvReport(report); loadConvMessages(report.conversation_id); }}
+                      className={`bg-white rounded-2xl p-4 shadow-sm border cursor-pointer hover:shadow-md transition-all ${
+                        selectedConvReport?.id === report.id ? 'border-[#0C5C6C] ring-1 ring-[#0C5C6C]' : 'border-gray-100'
+                      }`}>
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-lg flex-shrink-0">💬</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-red-100 text-red-600">{report.reason}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                              report.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                              report.status === 'reviewed' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                            }`}>
+                              {report.status === 'pending' ? '⏳ En attente' : report.status === 'reviewed' ? '✅ Traité' : '❌ Rejeté'}
+                            </span>
+                          </div>
+                          {report.details && (
+                            <p className="text-xs text-gray-500 mt-1 line-clamp-1">{report.details}</p>
+                          )}
+                          <p className="text-xs text-gray-400 mt-1 font-mono truncate">Conv: {report.conversation_id.slice(0, 16)}…</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {new Date(report.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                        {report.status === 'pending' && (
+                          <div className="flex flex-col gap-1.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                            <button
+                              onClick={() => handleConvReportAction(report, 'reviewed')}
+                              disabled={convSaving === report.id}
+                              className="px-3 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-200 disabled:opacity-50"
+                              style={{ fontFamily: 'Galey, sans-serif' }}>
+                              {convSaving === report.id ? '…' : '✅ Traité'}
+                            </button>
+                            <button
+                              onClick={() => handleConvReportAction(report, 'dismissed')}
+                              disabled={convSaving === report.id}
+                              className="px-3 py-1 bg-gray-100 text-gray-500 text-xs font-semibold rounded-lg hover:bg-gray-200 disabled:opacity-50"
+                              style={{ fontFamily: 'Galey, sans-serif' }}>
+                              ❌ Rejeter
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Panneau conversation */}
+              {selectedConvReport && (
+                <div className="w-[380px] flex-shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col max-h-[70vh]">
+                  <div className="p-4 border-b border-gray-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm font-bold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                        Messages de la conversation
+                      </span>
+                      <button onClick={() => { setSelectedConvReport(null); setConvMessages([]); }}
+                        className="ml-auto text-gray-400 hover:text-gray-600 text-lg">✕</button>
+                    </div>
+                    <p className="text-xs text-gray-400 font-mono break-all">{selectedConvReport.conversation_id}</p>
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        onClick={() => handleConvReportAction(selectedConvReport, 'reviewed')}
+                        disabled={convSaving === selectedConvReport.id || selectedConvReport.status !== 'pending'}
+                        className="flex-1 py-1.5 bg-green-100 text-green-700 text-xs font-semibold rounded-lg hover:bg-green-200 disabled:opacity-40 transition-colors"
+                        style={{ fontFamily: 'Galey, sans-serif' }}>
+                        ✅ Marquer traité
+                      </button>
+                      <button
+                        onClick={() => handleConvReportAction(selectedConvReport, 'dismissed')}
+                        disabled={convSaving === selectedConvReport.id || selectedConvReport.status !== 'pending'}
+                        className="flex-1 py-1.5 bg-gray-100 text-gray-500 text-xs font-semibold rounded-lg hover:bg-gray-200 disabled:opacity-40 transition-colors"
+                        style={{ fontFamily: 'Galey, sans-serif' }}>
+                        ❌ Rejeter
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Messages */}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    {convMessagesLoading ? (
+                      <div className="flex justify-center py-8">
+                        <div className="w-6 h-6 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : convMessages.length === 0 ? (
+                      <p className="text-center text-gray-400 text-sm py-8">Aucun message trouvé.</p>
+                    ) : (
+                      convMessages.map(msg => {
+                        const isReport = msg.sender_id === selectedConvReport.reported_by_uid;
+                        const time = new Date(msg.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                        const date = new Date(msg.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+                        return (
+                          <div key={msg.id} className={`flex ${isReport ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
+                              isReport ? 'bg-[#0C5C6C] text-white' : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {msg.msg_type === 'image' ? (
+                                <span className="text-xs opacity-75">📷 Image</span>
+                              ) : msg.msg_type === 'location' ? (
+                                <span className="text-xs opacity-75">📍 Position partagée</span>
+                              ) : msg.msg_type === 'animal_card' ? (
+                                <span className="text-xs opacity-75">🐾 Fiche animal partagée</span>
+                              ) : (
+                                <p className="break-words" style={{ fontFamily: 'Galey, sans-serif' }}>{msg.text}</p>
+                              )}
+                              <p className={`text-[10px] mt-1 ${isReport ? 'text-white/60' : 'text-gray-400'}`}>{date} {time}</p>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

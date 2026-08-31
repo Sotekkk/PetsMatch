@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/chat_profile_page.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/user_detail_page_feed.dart';
 import 'package:PetsMatch/pages/main_feed.dart' show UserSelected;
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
@@ -1082,9 +1083,22 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           onLongPress: (pos, isOwner) => _showEmojiPicker(msg['id']?.toString() ?? '', isOwner, pos, msg),
                           onDoubleTap: () => _toggleReaction(msg['id']?.toString() ?? '', '❤️'),
                           onImageTap: (url) => _showFullImage(url),
-                          onAnimalTap: () => Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => ChatProfilePage(uid: msg['sender_id']?.toString() ?? widget.eleveurId),
-                          )),
+                          onAnimalTap: () {
+                            try {
+                              final jsonText = msg['text'] as String? ?? '';
+                              final animal = jsonDecode(jsonText) as Map<String, dynamic>;
+                              final animalId = animal['id'] as String?;
+                              if (animalId != null) {
+                                Navigator.push(context, MaterialPageRoute(
+                                  builder: (_) => AnimalFichePage(animalId: animalId, readOnly: true),
+                                ));
+                                return;
+                              }
+                            } catch (_) {}
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => ChatProfilePage(uid: msg['sender_id']?.toString() ?? widget.eleveurId),
+                            ));
+                          },
                           sentBubbleColor: theme.sentColor,
                           sentTextColor: theme.sentTextColor,
                           reactions: _reactions[msg['id']?.toString()] ?? [],
