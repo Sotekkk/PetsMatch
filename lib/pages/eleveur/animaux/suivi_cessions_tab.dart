@@ -127,10 +127,37 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
   }
 
   Future<void> _valider(Map<String, dynamic> a) async {
+    final nom = a['nom'] as String? ?? 'l\'animal';
+    // L'éleveur peut valider dès qu'il a reçu le certificat vétérinaire, même si
+    // le propriétaire n'a pas déclaré la stérilisation dans l'appli.
+    final dejaDeclaree = a['sterilise'] == true;
+    if (!dejaDeclaree) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Valider la stérilisation',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          content: Text(
+              'Confirmez-vous avoir reçu le certificat de stérilisation vétérinaire '
+              'pour $nom ?\n\nLa stérilisation sera marquée comme faite et validée, '
+              'et le propriétaire en sera informé.',
+              style: const TextStyle(fontSize: 13)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false),
+                child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
+            TextButton(onPressed: () => Navigator.pop(context, true),
+                child: const Text('Valider', style: TextStyle(color: _green, fontFamily: 'Galey', fontWeight: FontWeight.w700))),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
     setState(() => _validating = a['id'] as String);
     try {
       await _supa.from('animaux').update({
         'sterilisation_validee': true,
+        'sterilise': true,
       }).eq('id', a['id']);
       // Ligne cession éventuelle (workflow appli)
       try {
@@ -701,23 +728,22 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
         if (!validee) ...[
           const SizedBox(height: 8),
           Row(children: [
-            if (done && !validee)
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _validating == a['id'] ? null : () => _valider(a),
-                  icon: _validating == a['id']
-                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.verified_outlined, size: 16),
-                  label: const Text('Valider',
-                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _green, foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _validating == a['id'] ? null : () => _valider(a),
+                icon: _validating == a['id']
+                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.verified_outlined, size: 16),
+                label: Text(done ? 'Valider' : 'Certificat reçu',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _green, foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               ),
-            if (done && !validee) const SizedBox(width: 8),
+            ),
+            const SizedBox(width: 8),
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: _relancing == a['id'] ? null : () => _relancer(a),

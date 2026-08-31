@@ -93,9 +93,16 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
     .sort((x, y) => x.days - y.days);
 
   async function valider(a: AnimalLite) {
+    // L'éleveur peut valider dès réception du certificat vétérinaire, même si le
+    // propriétaire n'a pas déclaré la stérilisation.
+    if (!a.sterilise && !window.confirm(
+      `Confirmez-vous avoir reçu le certificat de stérilisation vétérinaire pour ${a.nom ?? 'cet animal'} ?\n\n`
+      + 'La stérilisation sera marquée comme faite et validée, et le propriétaire en sera informé.')) {
+      return;
+    }
     setBusy(a.id);
     try {
-      await supabase.from('animaux').update({ sterilisation_validee: true }).eq('id', a.id);
+      await supabase.from('animaux').update({ sterilisation_validee: true, sterilise: true }).eq('id', a.id);
       await supabase.from('cessions')
         .update({ sterilisation_validee: true, sterilisation_validee_at: new Date().toISOString() })
         .eq('animal_id', a.id).eq('sterilisation_requise', true);
@@ -112,7 +119,7 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
           read: false,
         });
       }
-      onLocalUpdate(a.id, { sterilisation_validee: true });
+      onLocalUpdate(a.id, { sterilisation_validee: true, sterilise: true });
     } finally {
       setBusy(null);
     }
@@ -373,12 +380,10 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
                   </p>
                   {!validee && (
                     <div className="mt-2 flex gap-2">
-                      {done && (
-                        <button onClick={() => valider(a)} disabled={busy === a.id}
-                          className="flex-1 bg-[#6E9E57] hover:bg-[#5A8A45] text-white text-xs font-semibold py-2 rounded-lg transition-colors disabled:opacity-50">
-                          {busy === a.id ? '…' : '✓ Valider'}
-                        </button>
-                      )}
+                      <button onClick={() => valider(a)} disabled={busy === a.id}
+                        className="flex-1 bg-[#6E9E57] hover:bg-[#5A8A45] text-white text-xs font-semibold py-2 rounded-lg transition-colors disabled:opacity-50">
+                        {busy === a.id ? '…' : (done ? '✓ Valider' : '✓ Certificat reçu')}
+                      </button>
                       <button onClick={() => openRelance(a)} disabled={busy === a.id}
                         className="flex-1 border border-[#0C5C6C] text-[#0C5C6C] text-xs font-semibold py-2 rounded-lg hover:bg-[#0C5C6C]/5 transition-colors disabled:opacity-50">
                         {busy === a.id ? '…' : '📣 Relancer la famille'}
