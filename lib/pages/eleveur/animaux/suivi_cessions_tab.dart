@@ -262,8 +262,10 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
 
   String _telDigits(String raw) => raw.replaceAll(RegExp(r'[^0-9+]'), '');
 
-  /// Coordonnées de l'acquéreur : contrat signé → ligne `cessions` → profil
-  /// particulier. Retourne { prenom, nom, tel, email, adresse }.
+  /// Coordonnées de l'acquéreur. Priorité : **profil particulier** de l'acquéreur
+  /// s'il est utilisateur PetsMatch (données à jour, qu'il maîtrise) → contrat
+  /// signé → ligne `cessions`. `put` conserve la 1re valeur non vide.
+  /// Retourne { prenom, nom, tel, email, adresse }.
   Future<Map<String, String>> _contactAcquereur(Map<String, dynamic> a) async {
     final out = <String, String>{};
     void put(String k, dynamic v) {
@@ -274,6 +276,25 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
         .where((e) => (e ?? '').toString().trim().isNotEmpty)
         .map((e) => e.toString().trim())
         .join(sep);
+
+    final acqUid = (a['uid_acquereur'] ?? '').toString();
+    if (acqUid.isNotEmpty) {
+      try {
+        final p = await _supa.from('user_profiles')
+            .select('firstname, lastname, phone_number, email_contact, adresse, rue, code_postal, ville')
+            .eq('uid', acqUid)
+            .eq('profile_type', 'particulier')
+            .maybeSingle();
+        if (p != null) {
+          put('prenom', p['firstname']);
+          put('nom', p['lastname']);
+          put('tel', p['phone_number']);
+          put('email', p['email_contact']);
+          put('adresse', p['adresse'] ??
+              joinNonEmpty([p['rue'], p['code_postal'], p['ville']], ' '));
+        }
+      } catch (_) {}
+    }
 
     try {
       final doc = await _supa.from('documents_animaux')
@@ -308,24 +329,6 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
       }
     } catch (_) {}
 
-    final acqUid = (a['uid_acquereur'] ?? '').toString();
-    if (acqUid.isNotEmpty) {
-      try {
-        final p = await _supa.from('user_profiles')
-            .select('firstname, lastname, phone_number, email_contact, adresse, rue, code_postal, ville')
-            .eq('uid', acqUid)
-            .eq('profile_type', 'particulier')
-            .maybeSingle();
-        if (p != null) {
-          put('prenom', p['firstname']);
-          put('nom', p['lastname']);
-          put('tel', p['phone_number']);
-          put('email', p['email_contact']);
-          put('adresse', p['adresse'] ??
-              joinNonEmpty([p['rue'], p['code_postal'], p['ville']], ' '));
-        }
-      } catch (_) {}
-    }
     put('nom', a['destinataire_nom']);
     return out;
   }

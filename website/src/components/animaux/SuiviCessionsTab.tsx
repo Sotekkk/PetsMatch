@@ -234,6 +234,19 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
         const s = (v ?? '').toString().trim();
         if (s && !c[k]) c[k] = s;
       };
+      // Priorité : profil particulier de l'acquéreur (s'il est utilisateur, ses
+      // coordonnées sont à jour) → contrat signé → ligne cessions.
+      if (a.uid_acquereur) {
+        const { data: p } = await supabase.from('user_profiles')
+          .select('firstname, lastname, phone_number, email_contact, adresse, rue, code_postal, ville')
+          .eq('uid', a.uid_acquereur).eq('profile_type', 'particulier').maybeSingle();
+        if (p) {
+          put('prenom', p.firstname); put('nom', p.lastname);
+          put('tel', p.phone_number); put('email', p.email_contact);
+          put('adresse', p.adresse ?? [p.rue, p.code_postal, p.ville].filter(Boolean).join(' '));
+        }
+      }
+
       const { data: doc } = await supabase.from('documents_animaux')
         .select('metadata')
         .eq('animal_id', a.id)
@@ -254,16 +267,6 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
       if (cs) {
         put('prenom', cs.prenom_acquereur); put('nom', cs.nom_acquereur);
         put('tel', cs.tel_acquereur); put('email', cs.email_acquereur); put('adresse', cs.adresse_acquereur);
-      }
-      if (a.uid_acquereur) {
-        const { data: p } = await supabase.from('user_profiles')
-          .select('firstname, lastname, phone_number, email_contact, adresse, rue, code_postal, ville')
-          .eq('uid', a.uid_acquereur).eq('profile_type', 'particulier').maybeSingle();
-        if (p) {
-          put('prenom', p.firstname); put('nom', p.lastname);
-          put('tel', p.phone_number); put('email', p.email_contact);
-          put('adresse', p.adresse ?? [p.rue, p.code_postal, p.ville].filter(Boolean).join(' '));
-        }
       }
       put('nom', a.destinataire_nom);
 
