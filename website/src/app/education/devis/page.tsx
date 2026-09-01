@@ -65,6 +65,9 @@ export default function DevisPage() {
   const [tarifsBase, setTarifsBase] = useState<Record<string, number>>({});
   const [forfaits, setForfaits] = useState<{ id: string; nom: string; prix: number }[]>([]);
   const [newLink, setNewLink] = useState<string | null>(null);
+  // devisId -> token du contrat (documents_animaux) rattaché, pour construire
+  // les liens /signer-contrat/<token> (même système que les contrats éleveur).
+  const [docTokens, setDocTokens] = useState<Record<string, string>>({});
 
   // Form state
   const [nomClient, setNomClient] = useState('');
@@ -107,6 +110,17 @@ export default function DevisPage() {
       const pt = (t.data?.profile_type ?? t.data?.cat_pro ?? '') as string;
       setCatPro(pt);
       setDevisList((d.data ?? []) as Devis[]);
+
+      // Charger les tokens des contrats (documents_animaux) rattachés aux devis
+      // déjà envoyés/répondus — pour les liens "Voir le lien" / email.
+      const { data: docs } = await supabase.from('documents_animaux')
+        .select('token, metadata').eq('uid_eleveur', user.uid).eq('type', 'contrat_education');
+      const tokMap: Record<string, string> = {};
+      for (const doc of (docs ?? []) as { token: string | null; metadata: Record<string, unknown> | null }[]) {
+        const devisId = doc.metadata?.devis_id as string | undefined;
+        if (devisId && doc.token) tokMap[devisId] = doc.token;
+      }
+      setDocTokens(tokMap);
       const base = (pt === 'garde' ? t.data?.tarifs_garde : t.data?.tarifs_education) ?? {};
       setTarifsBase(base as Record<string, number>);
       setTarifs(base as Record<string, number>);
@@ -211,27 +225,39 @@ export default function DevisPage() {
     setError('');
   }
 
-  // Le devis lié à un animal apparaît dans les documents de l'animal (visible par
-  // le propriétaire) — l'éducateur, lui, n'a pas accès à l'onglet Documents de la fiche.
-  async function syncDocumentAnimal(devisId: string, animal: string, statut: string, token: string, total: number) {
-    if (!user || !animal) return;
+  // Un devis envoyé devient un contrat signable (documents_animaux,
+  // type='contrat_education') — même système que les contrats éleveur/garde :
+  // le client le lit et le signe via /signer-contrat/<token de CE document>
+  // (pas le token_acceptation du devis, gardé pour compat des anciens liens
+  // /devis/[token]). Renvoie le token du document pour construire le lien.
+  async function syncContratDocument(d: Devis, statut: string): Promise<string | null> {
+    if (!user) return null;
     const docStatut = statut === 'accepte' ? 'signe' : statut === 'refuse' ? 'refuse' : statut === 'brouillon' ? 'brouillon' : 'en_attente';
-    const { data: existing } = await supabase.from('documents_animaux').select('id')
-      .eq('animal_id', animal).eq('type', 'devis').contains('metadata', { devis_id: devisId }).maybeSingle();
+    const clientNom = `${d.prenom_client ?? ''} ${d.nom_client ?? ''}`.trim() || d.nom_client || 'Client';
+    const { data: existing } = await supabase.from('documents_animaux').select('id, token')
+      .eq('type', 'contrat_education').contains('metadata', { devis_id: d.id }).maybeSingle();
     if (existing) {
       await supabase.from('documents_animaux').update({ statut: docStatut }).eq('id', existing.id);
-    } else {
-      await supabase.from('documents_animaux').insert({
-        animal_id: animal,
-        uid_eleveur: user.uid,
-        pro_profile_id: activeProfileId || null,
-        type: 'devis',
-        titre: `Devis — ${total.toFixed(2)} €`,
-        url: `${window.location.origin}/devis/${token}`,
-        statut: docStatut,
-        metadata: { devis_id: devisId, token },
-      });
+      return existing.token as string;
     }
+    const { data: inserted } = await supabase.from('documents_animaux').insert({
+      animal_id: d.animal_id || null,
+      uid_eleveur: user.uid,
+      pro_profile_id: activeProfileId || null,
+      type: 'contrat_education',
+      titre: `Devis — ${d.total_ttc.toFixed(2)} €`,
+      statut: docStatut,
+      metadata: {
+        devis_id: d.id,
+        acquereur_nom: clientNom,
+        acquereur_email: d.email_client,
+        lignes: d.lignes,
+        total_ttc: d.total_ttc,
+        date_validite: d.date_validite,
+        notes: d.note,
+      },
+    }).select('token').single();
+    return (inserted?.token as string) ?? null;
   }
 
   async function handleCreate(envoyer: boolean) {
@@ -270,6 +296,9 @@ export default function DevisPage() {
       const { data, error: err } = await supabase.from('devis').insert(row).select().single();
       if (err) { setError(err.message); return; }
 
+      const docToken = await syncContratDocument(data as Devis, row.statut);
+      if (docToken) setDocTokens(prev => ({ ...prev, [data.id]: docToken }));
+
       if (envoyer && clientUid) {
         await supabase.from('notifications').insert({
           uid: clientUid,
@@ -277,15 +306,14 @@ export default function DevisPage() {
           title: 'Vous avez reçu un devis',
           body: `Un devis de ${totalTtc.toFixed(2)} € vous a été envoyé.`,
           ...(clientProfileId ? { profile_id: clientProfileId } : {}),
-          data: { devis_id: data.id, token },
+          data: { devis_id: data.id, token: docToken ?? token, url: docToken ? `/signer-contrat/${docToken}` : `/devis/${token}` },
           read: false,
         });
       }
-      if (animalId) await syncDocumentAnimal(data.id, animalId, row.statut, token, totalTtc);
 
       setDevisList(prev => [data as Devis, ...prev]);
       setShowForm(false);
-      if (envoyer) setNewLink(`${window.location.origin}/devis/${token}`);
+      if (envoyer) setNewLink(`${window.location.origin}/signer-contrat/${docToken ?? token}`);
       resetForm();
     } finally {
       setSaving(false);
@@ -294,6 +322,9 @@ export default function DevisPage() {
 
   async function handleSend(d: Devis) {
     await supabase.from('devis').update({ statut: 'envoye', updated_at: new Date().toISOString() }).eq('id', d.id);
+    const docToken = await syncContratDocument(d, 'envoye');
+    if (docToken) setDocTokens(prev => ({ ...prev, [d.id]: docToken }));
+    const signingUrl = docToken ? `/signer-contrat/${docToken}` : `/devis/${d.token_acceptation}`;
     if (d.client_uid) {
       await supabase.from('notifications').insert({
         uid: d.client_uid,
@@ -301,20 +332,20 @@ export default function DevisPage() {
         title: 'Vous avez reçu un devis',
         body: `Un devis de ${d.total_ttc.toFixed(2)} € vous a été envoyé.`,
         ...(d.client_profile_id ? { profile_id: d.client_profile_id } : {}),
-        data: { devis_id: d.id, token: d.token_acceptation },
+        data: { devis_id: d.id, token: docToken ?? d.token_acceptation, url: signingUrl },
         read: false,
       });
     }
-    if (d.animal_id) await syncDocumentAnimal(d.id, d.animal_id, 'envoye', d.token_acceptation, d.total_ttc);
     setDevisList(prev => prev.map(x => x.id === d.id ? { ...x, statut: 'envoye' } : x));
-    setNewLink(`${window.location.origin}/devis/${d.token_acceptation}`);
+    setNewLink(`${window.location.origin}${signingUrl}`);
   }
 
   async function envoyerParEmail(d: Devis) {
     if (!d.email_client) return;
     setSendingEmailId(d.id);
     const proNom = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre professionnel';
-    const devisUrl = `${window.location.origin}/devis/${d.token_acceptation}`;
+    const token = docTokens[d.id];
+    const devisUrl = `${window.location.origin}${token ? `/signer-contrat/${token}` : `/devis/${d.token_acceptation}`}`;
     try {
       const res = await fetch('/api/devis/notify-email', {
         method: 'POST',
@@ -585,12 +616,12 @@ export default function DevisPage() {
                   )
                 )}
                 {d.statut !== 'brouillon' && (
-                  <button onClick={() => navigator.clipboard.writeText(`${origin}/devis/${d.token_acceptation}`)}
+                  <button onClick={() => navigator.clipboard.writeText(`${origin}${docTokens[d.id] ? `/signer-contrat/${docTokens[d.id]}` : `/devis/${d.token_acceptation}`}`)}
                     className="text-xs border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50">
                     Lien
                   </button>
                 )}
-                <Link href={`/devis/${d.token_acceptation}`} target="_blank"
+                <Link href={docTokens[d.id] ? `/signer-contrat/${docTokens[d.id]}` : `/devis/${d.token_acceptation}`} target="_blank"
                   className="text-xs bg-[#0C5C6C]/10 text-[#0C5C6C] px-3 py-1.5 rounded-lg hover:bg-[#0C5C6C]/20 font-medium">
                   Voir
                 </Link>

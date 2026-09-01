@@ -11,6 +11,7 @@ import { generateContratAdoptionHTML } from '@/lib/contrat-adoption';
 import { generateContratHebergementHTML } from '@/lib/contrat-pension';
 import { generateContratGardeHTML } from '@/lib/contrat-garde';
 import { generateContratPrestationPhotoHTML } from '@/lib/contrat-photographe';
+import { generateContratEducationHTML, type LigneEducation } from '@/lib/contrat-education';
 import { useAuth } from '@/lib/auth-context';
 
 const supabase = createClient(
@@ -287,6 +288,57 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             prixTotal: prestationInfo.prix ?? (meta.prix_total ? Number(meta.prix_total) : undefined),
             acomptePourcentage: prestationInfo.acompte_pourcentage ?? (meta.acompte_pourcentage ? Number(meta.acompte_pourcentage) : undefined),
             delaiLivraisonJours: prestationInfo.delai_livraison_jours,
+            notes: meta.notes,
+          },
+        );
+      } else if (data.type === 'contrat_education') {
+        const metaLoose = meta as unknown as Record<string, unknown>;
+        let animalInfo: { nom?: string; espece?: string; race?: string } = {};
+        let clientInfo: { nom?: string; contact?: string } = {};
+        let datePrestation: string | undefined;
+        if (data.rdv_id) {
+          const { data: rdv } = await supabase
+            .from('rdv')
+            .select('animal_id, client_uid, date_heure')
+            .eq('id', data.rdv_id)
+            .maybeSingle();
+          if (rdv?.animal_id) {
+            const { data: an } = await supabase.from('animaux').select('nom, espece, race').eq('id', rdv.animal_id).maybeSingle();
+            animalInfo = an ?? {};
+          }
+          if (rdv?.client_uid) {
+            const { data: cp2 } = await supabase.from('user_profiles')
+              .select('firstname, lastname, email_contact').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle();
+            clientInfo = {
+              nom: `${cp2?.firstname ?? ''} ${cp2?.lastname ?? ''}`.trim(),
+              contact: cp2?.email_contact ?? '',
+            };
+          }
+          datePrestation = rdv?.date_heure;
+        } else if (data.animal_id) {
+          const { data: an } = await supabase.from('animaux').select('nom, espece, race').eq('id', data.animal_id).maybeSingle();
+          animalInfo = an ?? {};
+        }
+        generatedHtml = generateContratEducationHTML(
+          {
+            animal_nom: animalInfo.nom ?? meta.acquereur_nom ?? '',
+            espece: animalInfo.espece,
+            race: animalInfo.race,
+            client_nom: meta.acquereur_nom || clientInfo.nom,
+            client_contact: meta.acquereur_email || clientInfo.contact,
+            date_prestation: datePrestation ?? (metaLoose.date_cession as string | undefined),
+            lignes: Array.isArray(metaLoose.lignes) ? (metaLoose.lignes as LigneEducation[]) : undefined,
+            total_ttc: metaLoose.total_ttc ? Number(metaLoose.total_ttc) : undefined,
+            date_validite: metaLoose.date_validite as string | undefined,
+          },
+          {
+            nom: elvNom,
+            adresse: profil?.adress_elevage ?? profil?.adress ?? '',
+            email: profil?.email ?? '',
+            tel: elvTel,
+            siret: profil?.siret ?? '',
+          },
+          {
             notes: meta.notes,
           },
         );
@@ -593,6 +645,17 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           data: { token, url: signingUrl } }) });
     }
 
+    // Devis d'éducation : la signature du client vaut acceptation du devis
+    // auquel ce contrat est rattaché (metadata.devis_id).
+    if (doc.type === 'contrat_education' && role === 'acquereur') {
+      const devisId = (mergedMeta as Record<string, unknown>).devis_id as string | undefined;
+      if (devisId) {
+        await supabase.from('devis')
+          .update({ statut: 'accepte', date_reponse: now, updated_at: now })
+          .eq('id', devisId).eq('statut', 'envoye');
+      }
+    }
+
     setDoc(prev => prev ? { ...prev, statut: newStatut, ...(bothSigned ? { signe_le: now } : {}), metadata: mergedMeta as DocRow['metadata'] } : prev);
     setSaved({ eleveur: notBlank(mergedMeta.signature_eleveur), acquereur: notBlank(mergedMeta.signature_acquereur) });
     // Régénérer le contrat avec la ou les signatures incrustées (comme l'appli)
@@ -664,6 +727,14 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         body: `${acqNom} a refusé ${doc.titre ?? 'le contrat'}${reason ? ` — ${reason}` : ''}.`,
         profileType: doc.type === 'contrat_adoption' ? 'association' : 'eleveur',
         data: { token } }) });
+    if (doc.type === 'contrat_education') {
+      const devisId = (doc.metadata as Record<string, unknown> | undefined)?.devis_id as string | undefined;
+      if (devisId) {
+        await supabase.from('devis')
+          .update({ statut: 'refuse', date_reponse: new Date().toISOString() })
+          .eq('id', devisId).eq('statut', 'envoye');
+      }
+    }
     setDoc(prev => prev ? { ...prev, statut: 'refuse', rejection_reason: reason } : prev);
     setRefusing(false);
     setRefuseModal(false);

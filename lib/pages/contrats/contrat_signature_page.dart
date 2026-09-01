@@ -816,6 +816,46 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
         row('Date', dateStr != null && dateStr.isNotEmpty
             ? DateFormat('dd/MM/yyyy').format(DateTime.tryParse(dateStr) ?? DateTime.now())
             : null),
+        // Devis d'éducation : détail des prestations
+        if (meta['lignes'] is List && (meta['lignes'] as List).isNotEmpty) ...[
+          const SizedBox(height: 8),
+          const Text('Détail de la prestation',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: _dark)),
+          const SizedBox(height: 4),
+          ...(meta['lignes'] as List).map((l) {
+            final m = (l as Map);
+            final q = m['quantite'];
+            final pu = m['prix_unitaire'];
+            final tot = m['total'];
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(
+                  child: Text(
+                    '${m['description'] ?? ''}${(q != null && q != 1) ? '  ×$q' : ''}'
+                    '${pu != null ? '  (${(pu as num).toStringAsFixed(2)} €)' : ''}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _dark),
+                  ),
+                ),
+                if (tot != null)
+                  Text('${(tot as num).toStringAsFixed(2)} €',
+                      style: const TextStyle(
+                          fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: _dark)),
+              ]),
+            );
+          }),
+          if (meta['total_ttc'] != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                const Text('Total TTC',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: _dark)),
+                Text('${(meta['total_ttc'] as num).toStringAsFixed(2)} €',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: _teal)),
+              ]),
+            ),
+          const SizedBox(height: 4),
+        ],
         if ((meta['notes'] as String?)?.isNotEmpty == true) row('Notes', meta['notes'] as String?),
         if (widget.isCession && _doc?['sterilisation_requise'] == true)
           row('Stérilisation', 'Requise avant le '

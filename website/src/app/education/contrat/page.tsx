@@ -5,24 +5,25 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useEducationAccess } from '@/hooks/useEducationAccess';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
-import { sendNotification } from '@/lib/notifications';
 
-interface Rdv {
+interface DocRow {
   id: string;
-  animal_id: string | null;
-  client_uid: string | null;
-  date_heure: string;
-  statut: string;
-  _animal_nom?: string;
-  _client_nom?: string;
-  _client_email?: string;
-}
-
-interface Doc {
-  id: string;
-  rdv_id: string;
   token: string | null;
   statut: string;
+  animal_id: string | null;
+  titre: string | null;
+  created_at: string;
+  metadata: Record<string, unknown> | null;
+  _animal_nom?: string;
+}
+
+interface Paire {
+  client_uid: string;
+  client_profile_id: string | null;
+  animal_id: string | null;
+  _client_nom: string;
+  _client_email: string;
+  _animal_nom: string;
 }
 
 const STATUT_META: Record<string, { label: string; cls: string }> = {
@@ -38,11 +39,10 @@ export default function EducationContratPage() {
   const { user, userData, isEducation, loading: authLoading } = useEducationAccess();
   const router = useRouter();
   const activeProfileId = useActiveProfile();
-  const [rdvs, setRdvs] = useState<Rdv[]>([]);
-  const [docs, setDocs] = useState<Record<string, Doc>>({});
+  const [docs, setDocs] = useState<DocRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState<string | null>(null);
-  const [sendingEmail, setSendingEmail] = useState<string | null>(null);
+  const [picker, setPicker] = useState<Paire[] | null>(null);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     if (authLoading) return;
@@ -52,101 +52,85 @@ export default function EducationContratPage() {
 
   const load = useCallback(async () => {
     if (!user) return;
-    let q = supabase.from('rdv').select('id, animal_id, client_uid, date_heure, statut').eq('pro_uid', user.uid);
+    let q = supabase.from('documents_animaux').select('id, token, statut, animal_id, titre, created_at, metadata')
+      .eq('uid_eleveur', user.uid).eq('type', 'contrat_education');
     if (activeProfileId) q = q.eq('pro_profile_id', activeProfileId) as typeof q;
-    const [{ data: rows }, { data: docsData }] = await Promise.all([
-      q.in('statut', ['confirme', 'termine']).order('date_heure', { ascending: false }).limit(50),
-      supabase.from('documents_animaux').select('id, rdv_id, token, statut').eq('uid_eleveur', user.uid).eq('type', 'contrat_education'),
-    ]);
-    const rowsList = (rows ?? []) as Rdv[];
-    const clientUids = [...new Set(rowsList.map(r => r.client_uid).filter((u): u is string => !!u))];
-    const animalIds = [...new Set(rowsList.map(r => r.animal_id).filter((a): a is string => !!a))];
-    const [{ data: clients }, { data: animaux }] = await Promise.all([
-      clientUids.length
-        ? supabase.from('user_profiles').select('uid, firstname, lastname, nom, email_contact').in('uid', clientUids).eq('is_main', true)
-        : Promise.resolve({ data: [] as { uid: string; firstname: string | null; lastname: string | null; nom: string | null; email_contact: string | null }[] }),
-      animalIds.length
-        ? supabase.from('animaux').select('id, nom').in('id', animalIds)
-        : Promise.resolve({ data: [] as { id: string; nom: string | null }[] }),
-    ]);
-    const clientNames = new Map((clients ?? []).map(c => {
-      const nom = c.nom?.trim();
-      const full = nom || `${c.firstname ?? ''} ${c.lastname ?? ''}`.trim();
-      return [c.uid, full || 'Client'];
-    }));
-    const clientEmails = new Map((clients ?? []).map(c => [c.uid, c.email_contact ?? '']));
-    const animalNames = new Map((animaux ?? []).map(a => [a.id, a.nom ?? '']));
-    setRdvs(rowsList.map(r => ({
-      ...r,
-      _client_nom: r.client_uid ? clientNames.get(r.client_uid) ?? 'Client' : 'Client',
-      _client_email: r.client_uid ? clientEmails.get(r.client_uid) ?? '' : '',
-      _animal_nom: r.animal_id ? animalNames.get(r.animal_id) ?? '' : '',
-    })));
-    setDocs(Object.fromEntries(((docsData ?? []) as Doc[]).map(d => [d.rdv_id, d])));
+    const { data } = await q.order('created_at', { ascending: false });
+    const rows = (data ?? []) as DocRow[];
+    const animalIds = [...new Set(rows.map(r => r.animal_id).filter((a): a is string => !!a))];
+    if (animalIds.length) {
+      const { data: anims } = await supabase.from('animaux').select('id, nom').in('id', animalIds);
+      const names = new Map((anims ?? []).map(a => [a.id, a.nom ?? '']));
+      rows.forEach(r => { r._animal_nom = r.animal_id ? names.get(r.animal_id) ?? '' : ''; });
+    }
+    setDocs(rows);
     setLoading(false);
   }, [user, activeProfileId]);
 
   useEffect(() => { load(); }, [load]);
 
-  async function genererContrat(r: Rdv) {
+  async function ouvrirPicker() {
     if (!user) return;
-    setGenerating(r.id);
-    const { data } = await supabase.from('documents_animaux').insert({
-      uid_eleveur: user.uid,
-      animal_id: r.animal_id,
-      rdv_id: r.id,
-      type: 'contrat_education',
-      titre: `Contrat de prestation d'éducation — ${r._animal_nom}`,
-      statut: 'brouillon',
-      metadata: {
-        acquereur_nom: r._client_nom,
-        ...(r._client_email ? { acquereur_email: r._client_email } : {}),
-        date_cession: r.date_heure,
-        prestation: 'Séance d\'éducation canine',
-      },
-    }).select('id, token').single();
-    setGenerating(null);
-    if (data) load();
-  }
-
-  async function transmettre(r: Rdv) {
-    const doc = docs[r.id];
-    if (!user || !doc?.token) return;
-    await supabase.from('documents_animaux').update({ statut: 'en_attente' }).eq('id', doc.id);
-    const signingUrl = `${window.location.origin}/signer-contrat/${doc.token}`;
-    if (r.client_uid) {
-      const proNom = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre éducateur';
-      await sendNotification({
-        uid: r.client_uid, type: 'contrat_invite',
-        title: '📄 Contrat à signer',
-        body: `${proNom} vous envoie le contrat de prestation d'éducation de ${r._animal_nom} — vérifiez et signez`,
-        data: { token: doc.token, url: signingUrl },
+    let rq = supabase.from('rdv').select('animal_id, client_uid, client_profile_id, date_heure').eq('pro_uid', user.uid);
+    if (activeProfileId) rq = rq.eq('pro_profile_id', activeProfileId) as typeof rq;
+    const { data: rdvs } = await rq.in('statut', ['confirme', 'termine']).order('date_heure', { ascending: false });
+    const seen = new Set<string>();
+    const paires = ((rdvs ?? []) as { animal_id: string | null; client_uid: string | null; client_profile_id: string | null }[])
+      .filter(r => {
+        if (!r.client_uid) return false;
+        const k = `${r.client_uid}|${r.animal_id}`;
+        return seen.has(k) ? false : (seen.add(k), true);
       });
+    const dejaContrat = new Set(docs.map(d => d.animal_id).filter(Boolean));
+    const candidats = paires.filter(p => !p.animal_id || !dejaContrat.has(p.animal_id));
+    if (candidats.length === 0) {
+      alert('Aucun nouveau client / animal à contractualiser. Les contrats se créent depuis vos RDV confirmés.');
+      return;
     }
-    await navigator.clipboard.writeText(signingUrl).catch(() => {});
-    alert(`Contrat transmis ! Lien copié dans le presse-papiers :\n${signingUrl}`);
-    load();
+    const clientUids = [...new Set(candidats.map(p => p.client_uid as string))];
+    const animalIds = [...new Set(candidats.map(p => p.animal_id).filter((a): a is string => !!a))];
+    const [{ data: clients }, { data: anims }] = await Promise.all([
+      supabase.from('user_profiles').select('uid, firstname, lastname, nom, email_contact').in('uid', clientUids).eq('is_main', true),
+      animalIds.length ? supabase.from('animaux').select('id, nom').in('id', animalIds) : Promise.resolve({ data: [] as { id: string; nom: string | null }[] }),
+    ]);
+    const cInfo = new Map((clients ?? []).map(c => {
+      const nom = (c.nom as string | null)?.trim();
+      const full = nom || `${c.firstname ?? ''} ${c.lastname ?? ''}`.trim();
+      return [c.uid, { nom: full || 'Client', email: (c.email_contact as string | null) ?? '' }];
+    }));
+    const aNames = new Map((anims ?? []).map(a => [a.id, a.nom ?? '']));
+    setPicker(candidats.map(p => ({
+      client_uid: p.client_uid as string,
+      client_profile_id: p.client_profile_id,
+      animal_id: p.animal_id,
+      _client_nom: cInfo.get(p.client_uid as string)?.nom ?? 'Client',
+      _client_email: cInfo.get(p.client_uid as string)?.email ?? '',
+      _animal_nom: p.animal_id ? aNames.get(p.animal_id) ?? '' : '',
+    })));
   }
 
-  async function envoyerParEmail(r: Rdv) {
-    const doc = docs[r.id];
-    if (!doc?.token || !r._client_email) return;
-    setSendingEmail(r.id);
-    const signingUrl = `${window.location.origin}/signer-contrat/${doc.token}`;
-    const proNom = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre éducateur';
+  async function creerContrat(p: Paire) {
+    if (!user) return;
+    setCreating(true);
     try {
-      const res = await fetch('/api/contrat/notify-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: r._client_email, client_nom: r._client_nom, pro_nom: proNom,
-          titre: `Contrat de prestation d'éducation — ${r._animal_nom}`, signing_url: signingUrl,
-        }),
-      });
-      if (res.ok) alert('Email envoyé au client.');
-      else alert('Erreur lors de l\'envoi de l\'email.');
+      const { data } = await supabase.from('documents_animaux').insert({
+        animal_id: p.animal_id,
+        uid_eleveur: user.uid,
+        pro_profile_id: activeProfileId || null,
+        type: 'contrat_education',
+        titre: `Contrat de prestation d'éducation — ${p._client_nom}`,
+        statut: 'brouillon',
+        metadata: {
+          acquereur_nom: p._client_nom,
+          ...(p._client_email ? { acquereur_email: p._client_email } : {}),
+          prestation: 'Prestation d\'éducation canine',
+        },
+      }).select('token').single();
+      setPicker(null);
+      if (data?.token) window.open(`/signer-contrat/${data.token}`, '_blank');
+      load();
     } finally {
-      setSendingEmail(null);
+      setCreating(false);
     }
   }
 
@@ -154,63 +138,70 @@ export default function EducationContratPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-      <h1 className="text-2xl font-bold font-galey text-teal-800">Mes Contrats</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold font-galey text-teal-800">Mes Contrats</h1>
+        <button onClick={ouvrirPicker}
+          className="bg-teal-700 text-white px-4 py-2 rounded-full text-sm font-galey font-semibold hover:bg-teal-800">
+          + Nouveau contrat
+        </button>
+      </div>
       <p className="text-sm text-gray-500 font-galey">
-        Générez un contrat de prestation d&apos;éducation par rendez-vous, signable électroniquement.
+        Un contrat par client + animal. Un devis accepté devient automatiquement un contrat rattaché.
       </p>
 
       {loading ? (
         <div className="flex justify-center py-16">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-700" />
         </div>
-      ) : rdvs.length === 0 ? (
+      ) : docs.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <p className="text-4xl mb-3">📄</p>
-          <p className="font-galey">Aucun rendez-vous confirmé pour l&apos;instant</p>
+          <p className="font-galey">Aucun contrat pour l&apos;instant</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {rdvs.map(r => {
-            const doc = docs[r.id];
-            const meta = doc ? STATUT_META[doc.statut] ?? STATUT_META.brouillon : null;
+          {docs.map(d => {
+            const meta = STATUT_META[d.statut] ?? STATUT_META.brouillon;
+            const issuDevis = !!d.metadata?.devis_id;
             return (
-              <div key={r.id} className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100 flex items-center justify-between gap-4">
-                <div>
-                  <p className="font-bold font-galey text-gray-900">{r._animal_nom || 'Animal'} — {r._client_nom}</p>
-                  <p className="text-xs text-gray-500 font-galey">
-                    {new Date(r.date_heure).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                  </p>
+              <a key={d.id} href={`/signer-contrat/${d.token}`} target="_blank" rel="noopener noreferrer"
+                className="block bg-white rounded-2xl shadow-sm p-4 border border-gray-100 hover:border-teal-200 transition-colors">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-bold font-galey text-gray-900">{String(d.metadata?.acquereur_nom ?? 'Client')}</p>
+                    <p className="text-xs text-gray-500 font-galey">
+                      {[
+                        d._animal_nom ? `Animal : ${d._animal_nom}` : null,
+                        new Date(d.created_at).toLocaleDateString('fr-FR'),
+                        issuDevis ? 'issu d\'un devis' : null,
+                      ].filter(Boolean).join(' · ')}
+                    </p>
+                  </div>
+                  <span className={`text-xs font-galey font-bold px-2.5 py-1 rounded-full ${meta.cls}`}>{meta.label}</span>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {meta && (
-                    <span className={`text-xs font-galey font-bold px-2.5 py-1 rounded-full ${meta.cls}`}>{meta.label}</span>
-                  )}
-                  {!doc ? (
-                    <button onClick={() => genererContrat(r)} disabled={generating === r.id}
-                      className="bg-teal-700 text-white px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-800 disabled:opacity-50">
-                      {generating === r.id ? '…' : 'Générer le contrat'}
-                    </button>
-                  ) : doc.statut === 'brouillon' ? (
-                    <button onClick={() => transmettre(r)}
-                      className="bg-teal-700 text-white px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-800">
-                      Envoyer pour signature
-                    </button>
-                  ) : (
-                    <a href={`/signer-contrat/${doc.token}`} target="_blank" rel="noopener noreferrer"
-                      className="border border-teal-200 text-teal-700 px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-50">
-                      Voir le contrat
-                    </a>
-                  )}
-                  {doc && doc.statut !== 'brouillon' && r._client_email && (
-                    <button onClick={() => envoyerParEmail(r)} disabled={sendingEmail === r.id}
-                      className="border border-gray-200 text-gray-600 px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-gray-50 disabled:opacity-50">
-                      {sendingEmail === r.id ? '…' : '📧 Par email'}
-                    </button>
-                  )}
-                </div>
-              </div>
+              </a>
             );
           })}
+        </div>
+      )}
+
+      {picker && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setPicker(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[80vh] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold font-galey text-gray-900">Nouveau contrat — choisir le client</h3>
+              <button onClick={() => setPicker(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <div className="flex flex-col gap-2">
+              {picker.map((p, i) => (
+                <button key={i} disabled={creating} onClick={() => creerContrat(p)}
+                  className="text-left p-3 rounded-xl border border-gray-200 hover:bg-teal-50 disabled:opacity-50">
+                  <p className="font-semibold font-galey text-gray-900 text-sm">{p._client_nom}</p>
+                  <p className="text-xs text-gray-500 font-galey">{p._animal_nom ? `Animal : ${p._animal_nom}` : 'Sans animal spécifié'}</p>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>

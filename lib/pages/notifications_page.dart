@@ -337,10 +337,20 @@ class _NotificationsPageState extends State<NotificationsPage> {
       ));
       return;
     }
-    // Devis reçu par le client — ouvre le lien d'acceptation dans le navigateur
+    // Devis reçu par le client. Nouveau : le devis est un contrat signable
+    // (documents_animaux) → ouvre la signature dans l'appli. Ancien lien
+    // /devis/<token> → navigateur (compat).
     if (type == 'devis_recu') {
       final token = data is Map ? data['token'] as String? : null;
-      if (token != null) {
+      final urlStr = data is Map ? data['url'] as String? : null;
+      if (urlStr != null && urlStr.contains('/signer-contrat/')) {
+        final tok = _tokenFromUrl(urlStr) ?? token;
+        if (tok != null) {
+          await Navigator.push(context, MaterialPageRoute(
+            builder: (_) => ContratSignaturePage(token: tok),
+          ));
+        }
+      } else if (token != null) {
         await launchUrl(Uri.parse('$kSiteBaseUrl/devis/$token'), mode: LaunchMode.externalApplication);
       }
       return;

@@ -564,7 +564,8 @@ function getNotifUrl(n: Notif): string | null {
     case 'cours_collectif_inscription':
       return '/education/planning';
     case 'devis_recu':
-      return d.token ? `/devis/${d.token}` : '/education/devis';
+      // Nouveau : le devis est un contrat signable (d.url = /signer-contrat/<token>)
+      return d.url ?? (d.token ? `/devis/${d.token}` : '/education/devis');
     case 'devis_accepte':
     case 'devis_refuse':
       return '/education/devis';

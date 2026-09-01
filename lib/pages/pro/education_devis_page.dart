@@ -17,31 +17,45 @@ const _kStatutColors = {
   'accepte': Color(0xFF6E9E57), 'refuse': Colors.red, 'expire': Colors.orange,
 };
 
-// Le devis lié à un animal apparaît dans les documents de l'animal (visible par
-// le propriétaire) — l'éducateur, lui, n'a pas accès à l'onglet Documents de la fiche.
-Future<void> _syncDocumentAnimal(String devisId, String animalId, String statut,
-    String token, double total, String? proProfileId) async {
+// Un devis envoyé devient un contrat signable (documents_animaux,
+// type='contrat_education') — même système que les contrats éleveur/garde :
+// le client le lit et le signe via ContratSignaturePage / /signer-contrat
+// (token du DOCUMENT, pas token_acceptation du devis — gardé pour compat des
+// anciens liens web /devis/[token]). Renvoie le token du document.
+Future<String?> _syncContratDocument(Map<String, dynamic> devisRow, String devisId, String statut) async {
   final supa = Supabase.instance.client;
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return null;
   final docStatut = statut == 'accepte' ? 'signe' : statut == 'refuse' ? 'refuse' : statut == 'brouillon' ? 'brouillon' : 'en_attente';
+  final nomClient = '${devisRow['prenom_client'] ?? ''} ${devisRow['nom_client'] ?? ''}'.trim();
   try {
-    final existing = await supa.from('documents_animaux').select('id')
-        .eq('animal_id', animalId).eq('type', 'devis').contains('metadata', {'devis_id': devisId}).maybeSingle();
+    final existing = await supa.from('documents_animaux').select('id, token')
+        .eq('type', 'contrat_education').contains('metadata', {'devis_id': devisId}).maybeSingle();
     if (existing != null) {
       await supa.from('documents_animaux').update({'statut': docStatut}).eq('id', existing['id']);
-    } else {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      await supa.from('documents_animaux').insert({
-        'animal_id': animalId,
-        'uid_eleveur': uid,
-        'pro_profile_id': proProfileId,
-        'type': 'devis',
-        'titre': 'Devis — ${total.toStringAsFixed(2)} €',
-        'url': '$kSiteBaseUrl/devis/$token',
-        'statut': docStatut,
-        'metadata': {'devis_id': devisId, 'token': token},
-      });
+      return existing['token'] as String?;
     }
-  } catch (_) {}
+    final inserted = await supa.from('documents_animaux').insert({
+      'animal_id': devisRow['animal_id'],
+      'uid_eleveur': uid,
+      'pro_profile_id': devisRow['pro_profile_id'],
+      'type': 'contrat_education',
+      'titre': 'Devis — ${(devisRow['total_ttc'] as num).toStringAsFixed(2)} €',
+      'statut': docStatut,
+      'metadata': {
+        'devis_id': devisId,
+        'acquereur_nom': nomClient.isEmpty ? devisRow['nom_client'] : nomClient,
+        'acquereur_email': devisRow['email_client'],
+        'lignes': devisRow['lignes'],
+        'total_ttc': devisRow['total_ttc'],
+        'date_validite': devisRow['date_validite'],
+        'notes': devisRow['note'],
+      },
+    }).select('token').single();
+    return inserted['token'] as String?;
+  } catch (_) {
+    return null;
+  }
 }
 
 class DevisPage extends StatefulWidget {
@@ -53,6 +67,7 @@ class DevisPage extends StatefulWidget {
 class _DevisPageState extends State<DevisPage> {
   final _supa = Supabase.instance.client;
   List<Map<String, dynamic>> _devis = [];
+  Map<String, String> _docTokens = {}; // devisId -> token du contrat rattaché
   bool _loading = true;
 
   @override
@@ -72,7 +87,28 @@ class _DevisPageState extends State<DevisPage> {
       var q = _supa.from('devis').select().eq('pro_uid', uid);
       if (pid.isNotEmpty) q = q.eq('pro_profile_id', pid);
       final rows = await q.order('created_at', ascending: false);
-      if (mounted) setState(() { _devis = List<Map<String, dynamic>>.from(rows as List); _loading = false; });
+
+      // Tokens des contrats (documents_animaux) déjà rattachés aux devis
+      // envoyés/répondus — pour "Voir le lien" / partage.
+      Map<String, String> docTokens = {};
+      try {
+        final docs = await _supa.from('documents_animaux')
+            .select('token, metadata').eq('uid_eleveur', uid).eq('type', 'contrat_education');
+        for (final doc in List<Map<String, dynamic>>.from(docs as List)) {
+          final meta = doc['metadata'] as Map?;
+          final devisId = meta?['devis_id'] as String?;
+          final tok = doc['token'] as String?;
+          if (devisId != null && tok != null) docTokens[devisId] = tok;
+        }
+      } catch (_) {}
+
+      if (mounted) {
+        setState(() {
+          _devis = List<Map<String, dynamic>>.from(rows as List);
+          _docTokens = docTokens;
+          _loading = false;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -92,6 +128,9 @@ class _DevisPageState extends State<DevisPage> {
     await _supa.from('devis').update({
       'statut': 'envoye', 'updated_at': DateTime.now().toIso8601String(),
     }).eq('id', d['id']);
+    final docToken = await _syncContratDocument(d, d['id'] as String, 'envoye');
+    if (docToken != null) setState(() => _docTokens[d['id'] as String] = docToken);
+    final signingToken = docToken ?? (d['token_acceptation'] as String);
     final clientUid = d['client_uid'] as String?;
     if (clientUid != null) {
       await _supa.from('notifications').insert({
@@ -99,21 +138,22 @@ class _DevisPageState extends State<DevisPage> {
         'title': 'Vous avez reçu un devis',
         'body': 'Un devis de ${(d['total_ttc'] as num).toStringAsFixed(2)} € vous a été envoyé.',
         if (d['client_profile_id'] != null) 'profile_id': d['client_profile_id'],
-        'data': {'devis_id': d['id'], 'token': d['token_acceptation']},
+        'data': {
+          'devis_id': d['id'], 'token': signingToken,
+          'url': docToken != null ? '/signer-contrat/$docToken' : '/devis/${d['token_acceptation']}',
+        },
         'read': false,
       });
     }
-    final animalId = d['animal_id'] as String?;
-    if (animalId != null) {
-      await _syncDocumentAnimal(d['id'] as String, animalId, 'envoye',
-          d['token_acceptation'] as String, (d['total_ttc'] as num).toDouble(), d['pro_profile_id'] as String?);
-    }
     _load();
-    if (mounted) _shareLink(d['token_acceptation'] as String);
+    if (mounted) _shareLink(d['id'] as String, docToken ?? d['token_acceptation'] as String);
   }
 
-  void _shareLink(String token) {
-    final url = '$kSiteBaseUrl/devis/$token';
+  void _shareLink(String devisId, String token) {
+    final docToken = _docTokens[devisId];
+    final url = docToken != null
+        ? '$kSiteBaseUrl/signer-contrat/$docToken'
+        : '$kSiteBaseUrl/devis/$token';
     launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
@@ -202,7 +242,7 @@ class _DevisPageState extends State<DevisPage> {
                             )
                           else
                             TextButton.icon(
-                              onPressed: () => _shareLink(d['token_acceptation'] as String),
+                              onPressed: () => _shareLink(d['id'] as String, d['token_acceptation'] as String),
                               icon: const Icon(Icons.link, size: 15),
                               label: const Text('Voir le lien', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
                               style: TextButton.styleFrom(foregroundColor: _kTeal),
@@ -434,19 +474,19 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
         'token_acceptation': token,
       };
       final inserted = await _supa.from('devis').insert(row).select().single();
+      final docToken = await _syncContratDocument(row, inserted['id'] as String, row['statut'] as String);
       if (envoyer && _clientUid != null) {
         await _supa.from('notifications').insert({
           'uid': _clientUid, 'type': 'devis_recu',
           'title': 'Vous avez reçu un devis',
           'body': 'Un devis de ${_total.toStringAsFixed(2)} € vous a été envoyé.',
           if (_clientProfileId != null) 'profile_id': _clientProfileId,
-          'data': {'devis_id': inserted['id'], 'token': token},
+          'data': {
+            'devis_id': inserted['id'], 'token': docToken ?? token,
+            'url': docToken != null ? '/signer-contrat/$docToken' : '/devis/$token',
+          },
           'read': false,
         });
-      }
-      if (_animalId != null) {
-        await _syncDocumentAnimal(inserted['id'] as String, _animalId!,
-            row['statut'] as String, token, _total, pid.isNotEmpty ? pid : null);
       }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
