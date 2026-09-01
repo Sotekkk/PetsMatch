@@ -156,7 +156,7 @@ export default function AssociationProfilePage() {
     <div className="bg-[#F8F8F6] min-h-screen">
       {/* Banner + avatar overlay */}
       <div className="relative">
-        <div className="h-52 sm:h-64 bg-[#EEF5EA] overflow-hidden relative">
+        <div className="h-64 sm:h-80 lg:h-96 bg-[#EEF5EA] overflow-hidden relative">
           {profile.banner ? (
             <Image src={profile.banner} alt={profile.nom} fill className="object-cover" sizes="100vw" unoptimized />
           ) : profile.avatar ? (

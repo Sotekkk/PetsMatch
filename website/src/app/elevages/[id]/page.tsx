@@ -296,7 +296,7 @@ export default function EleveurProfilePage() {
     <div className="bg-[#F8F8F6] min-h-screen">
       {/* Banner + photo */}
       <div className="relative">
-        <div className="h-52 sm:h-64 bg-[#EEF5EA] overflow-hidden relative">
+        <div className="h-64 sm:h-80 lg:h-96 bg-[#EEF5EA] overflow-hidden relative">
           {eleveur.banner ? (
             <Image src={eleveur.banner} alt={eleveur.name} fill className="object-cover" sizes="100vw" />
           ) : eleveur.photo ? (

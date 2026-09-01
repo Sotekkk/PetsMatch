@@ -566,7 +566,7 @@ function ProDetailContent() {
 
       {/* ── Bannière + avatar ── */}
       <div className="relative">
-        <div className="h-48 w-full overflow-hidden" style={{
+        <div className="h-64 sm:h-80 lg:h-96 w-full overflow-hidden" style={{
           background: `linear-gradient(135deg, ${catColor}cc, #1E2025)`,
         }}>
           {(pro.banner || pro.photo) && (

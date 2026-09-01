@@ -79,7 +79,7 @@ export default function ProfilEleveurPage() {
 
       {/* Bannière + Avatar */}
       <div className="relative rounded-2xl overflow-hidden mb-4">
-        <div className="h-36 bg-gradient-to-br from-teal-100 to-green-100">
+        <div className="h-56 sm:h-72 bg-gradient-to-br from-teal-100 to-green-100">
           {banner && (
             <Image src={banner} alt="Bannière" fill className="object-cover" sizes="672px" />
           )}
