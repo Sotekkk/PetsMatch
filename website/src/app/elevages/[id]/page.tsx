@@ -343,7 +343,7 @@ export default function EleveurProfilePage() {
               )}
             </div>
             {isOwnProfile ? (
-              <Link href="/profil/modifier"
+              <Link href="/elevage/profil/edit"
                 className="text-sm border border-gray-200 text-gray-600 px-4 py-1.5 rounded-xl hover:bg-gray-50 transition-colors">
                 Modifier
               </Link>

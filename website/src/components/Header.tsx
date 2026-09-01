@@ -1209,7 +1209,7 @@ export default function Header() {
 
                     <div className="border-t border-gray-100 mt-1">
                       {!menuSections.some((sec) => sec.section === 'Mon Profil') && (
-                        <Link href="/profil" onClick={() => setDropdownOpen(false)}
+                        <Link href={effectiveIsEleveur ? '/elevage/profil/edit' : '/profil'} onClick={() => setDropdownOpen(false)}
                           className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
                           <span>⚙️</span> Mon Profil
                         </Link>
@@ -1365,7 +1365,7 @@ export default function Header() {
 
               <div className="border-t border-white/10 mt-2 pt-2 space-y-0.5">
                 {!menuSections.some((sec) => sec.section === 'Mon Profil') && (
-                  <Link href="/profil" onClick={() => setMenuOpen(false)}
+                  <Link href={effectiveIsEleveur ? '/elevage/profil/edit' : '/profil'} onClick={() => setMenuOpen(false)}
                     className="flex items-center gap-2 py-2 text-white/70 hover:text-white text-sm">
                     ⚙️ Mon Profil
                   </Link>
