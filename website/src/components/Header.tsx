@@ -303,14 +303,24 @@ const MENU_GARDE = [
 
 const MENU_EDUCATION = [
   {
-    section: 'Mon Activité',
-    icon: '📅',
+    section: 'Mon espace pro',
+    icon: '💼',
     items: [
       { href: '/education/planning', label: 'Planning des cours', icon: '📅' },
-      { href: '/mes-rdv',            label: 'Gérer mes RDV',      icon: '🗓️' },
+      { href: '/mes-rdv',            label: 'Mon agenda RDV',     icon: '🗓️' },
       { href: '/pro/creneaux',       label: 'Mes créneaux',       icon: '⏰' },
-      { href: '/agenda',             label: 'Mon agenda',         icon: '📅' },
       { href: '/mes-patients',       label: 'Mes animaux suivis', icon: '🐾' },
+      { href: '/elevage/employes',   label: 'Mes employés',       icon: '👥' },
+      { href: '/education/abonnement', label: 'Mon abonnement',   icon: '💳' },
+    ],
+  },
+  {
+    section: 'Administratif',
+    icon: '🗂️',
+    items: [
+      { href: '/education/devis',     label: 'Devis',        icon: '📋' },
+      { href: '/elevage/facturation', label: 'Mes Factures', icon: '🧾' },
+      { href: '/education/contrat',    label: 'Mes Contrats', icon: '📄' },
     ],
   },
   {
@@ -318,11 +328,7 @@ const MENU_EDUCATION = [
     icon: '👤',
     items: [
       { href: '/profil',     label: 'Modifier mon profil', icon: '✏️' },
-      { href: '/elevage/employes',   label: 'Mes employés',        icon: '👥' },
       { href: '/mes-taches', label: 'Mes tâches',          icon: '✅' },
-      { href: '/education/devis',    label: 'Devis',       icon: '📋' },
-      { href: '/elevage/facturation', label: 'Facturation', icon: '🧾' },
-      { href: '/education/abonnement', label: 'Mon abonnement', icon: '💳' },
     ],
   },
   {

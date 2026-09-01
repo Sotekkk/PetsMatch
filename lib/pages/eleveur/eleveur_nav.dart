@@ -59,6 +59,7 @@ import 'package:PetsMatch/pages/pro/toilettage_planning_employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_factures_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_dashboard_page.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
+import 'package:PetsMatch/pages/pro/education_contrats_page.dart';
 import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
@@ -233,6 +234,113 @@ class _EleveurNavState extends State<EleveurNav> {
                     setState(() => _selectedIndex = 0);
                   },
                 ),
+                if (User_Info.catPro == 'education') ...[
+                  _DrawerSection(
+                    icon: Icons.work_outline,
+                    label: 'Mon espace pro',
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Planning des cours',
+                        icon: Icons.calendar_month_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const EducationPlanningPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mon agenda RDV',
+                        icon: Icons.event_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const ProAgendaPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes créneaux',
+                        icon: Icons.schedule_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const ProAgendaPage(initialTabIndex: 3),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes animaux suivis',
+                        icon: Icons.psychology_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const ProClientsPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes Employés',
+                        icon: Icons.groups_outlined,
+                        locked: _educationPlanCode == 'free',
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => _educationPlanCode == 'free'
+                                ? const EducationAbonnementPage()
+                                : const EmployesPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mon abonnement',
+                        icon: Icons.workspace_premium_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const EducationAbonnementPage(),
+                          ));
+                        },
+                      ),
+                    ],
+                  ),
+                  _DrawerSection(
+                    icon: Icons.folder_open_outlined,
+                    label: 'Administratif',
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Devis',
+                        icon: Icons.request_quote_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const DevisPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes Factures',
+                        icon: Icons.receipt_long_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const FacturationPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes Contrats',
+                        icon: Icons.description_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const EducationContratsPage(),
+                          ));
+                        },
+                      ),
+                    ],
+                  ),
+                ],
                 if (User_Info.catPro == 'pension') ...[
                   _DrawerSection(
                     icon: Icons.cottage_outlined,
@@ -784,7 +892,7 @@ class _EleveurNavState extends State<EleveurNav> {
                               fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
                     ),
                   ],
-                  if (User_Info.catPro != 'pension') _DrawerItem(
+                  if (User_Info.catPro != 'pension' && User_Info.catPro != 'education') _DrawerItem(
                     icon: Icons.calendar_month_outlined,
                     label: 'Mon agenda RDV',
                     onTap: () {
@@ -804,68 +912,21 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                  if (User_Info.catPro == 'education') _DrawerItem(
-                    icon: Icons.calendar_month_outlined,
-                    label: 'Planning des cours',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const EducationPlanningPage(),
-                      ));
-                    },
-                  ),
-                  if (User_Info.catPro == 'education') _DrawerItem(
-                    icon: Icons.request_quote_outlined,
-                    label: 'Devis',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const DevisPage(),
-                      ));
-                    },
-                  ),
-                  if (User_Info.catPro == 'education') _DrawerItem(
-                    icon: Icons.groups_outlined,
-                    label: 'Mes Employés',
-                    locked: _educationPlanCode == 'free',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => _educationPlanCode == 'free'
-                            ? const EducationAbonnementPage()
-                            : const EmployesPage(),
-                      ));
-                    },
-                  ),
-                  if (User_Info.catPro == 'education') _DrawerItem(
-                    icon: Icons.workspace_premium_outlined,
-                    label: 'Mon abonnement',
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => const EducationAbonnementPage(),
-                      ));
-                    },
-                  ),
-                  if (User_Info.catPro == 'sante' || User_Info.catPro == 'education' || User_Info.catPro == 'garde' || User_Info.catPro == 'marechal_ferrant' || User_Info.catPro == 'photographe') _DrawerItem(
-                    icon: User_Info.catPro == 'education'
-                        ? Icons.psychology_outlined
-                        : User_Info.catPro == 'garde'
-                            ? Icons.directions_walk_outlined
-                            : User_Info.catPro == 'marechal_ferrant'
-                                ? Icons.handyman_outlined
-                                : User_Info.catPro == 'photographe'
-                                    ? Icons.people_outline
-                                    : Icons.self_improvement_outlined,
-                    label: User_Info.catPro == 'education'
-                        ? 'Mes animaux suivis'
-                        : User_Info.catPro == 'garde'
-                            ? 'Mes animaux en garde'
-                            : User_Info.catPro == 'marechal_ferrant'
-                                ? 'Mes équidés suivis'
-                                : User_Info.catPro == 'photographe'
-                                    ? 'Mes clients'
-                                    : 'Mes patients',
+                  if (User_Info.catPro == 'sante' || User_Info.catPro == 'garde' || User_Info.catPro == 'marechal_ferrant' || User_Info.catPro == 'photographe') _DrawerItem(
+                    icon: User_Info.catPro == 'garde'
+                        ? Icons.directions_walk_outlined
+                        : User_Info.catPro == 'marechal_ferrant'
+                            ? Icons.handyman_outlined
+                            : User_Info.catPro == 'photographe'
+                                ? Icons.people_outline
+                                : Icons.self_improvement_outlined,
+                    label: User_Info.catPro == 'garde'
+                        ? 'Mes animaux en garde'
+                        : User_Info.catPro == 'marechal_ferrant'
+                            ? 'Mes équidés suivis'
+                            : User_Info.catPro == 'photographe'
+                                ? 'Mes clients'
+                                : 'Mes patients',
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(
