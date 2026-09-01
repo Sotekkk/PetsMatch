@@ -1947,6 +1947,11 @@ export default function ProfilPage() {
     if (resolvedType === 'association') {
       return <AssociationEdit profileId={activeProfileId} uid={user.uid} />;
     }
+    // éleveur → éditeur dédié (le formulaire pro générique n'a pas les champs élevage)
+    if (resolvedType === 'eleveur') {
+      router.replace('/elevage/profil/edit');
+      return <div className="flex justify-center py-32"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
+    }
     // particulier → formulaire principal ci-dessous (pas de page pro)
     if (resolvedType && resolvedType !== 'particulier') {
       return <SecondaryProEdit profileId={activeProfileId} uid={user.uid} />;
