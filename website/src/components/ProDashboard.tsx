@@ -95,6 +95,9 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
   const catPro = profile.profile_type ?? profile.cat_pro ?? '';
   const isVet  = catPro === 'veterinaire' || catPro === 'sante';
   const isPension = catPro === 'pension';
+  const isEducation = catPro === 'education';
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const rdvTodayEdu = upcomingRdvs.filter(r => (r.date_heure ?? '').slice(0, 10) === todayIso).length;
   const name   = profile.nom || userData?.firstname || 'Mon cabinet';
   const avatar = profile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
 
@@ -281,6 +284,21 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
               <Link href="/pension/abonnement" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center flex flex-col justify-center">
                 <p className="text-base font-bold">Pension</p>
                 <p className="text-xs text-white/70 mt-0.5">Mon abonnement</p>
+              </Link>
+            </div>
+          ) : isEducation ? (
+            <div className="grid grid-cols-3 gap-3 mt-4">
+              <Link href="/education/planning" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold">{rdvTodayEdu}</p>
+                <p className="text-xs text-white/70 mt-0.5">RDV aujourd&apos;hui</p>
+              </Link>
+              <Link href="/mes-rdv" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold">{upcomingRdvs.length}</p>
+                <p className="text-xs text-white/70 mt-0.5">RDV à venir</p>
+              </Link>
+              <Link href="/education/abonnement" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center flex flex-col justify-center">
+                <p className="text-base font-bold">Éducateur</p>
+                <p className="text-xs text-white/70 mt-0.5">Ma formule</p>
               </Link>
             </div>
           ) : (

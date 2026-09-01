@@ -28,6 +28,8 @@ import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
+import 'package:PetsMatch/pages/pro/education_planning_page.dart';
+import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/utils.dart';
@@ -513,6 +515,27 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
         _StatCard(
           value: 'Garde', label: 'Statut', icon: Icons.verified_outlined,
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const GardeAbonnementPage())),
+        ),
+      ]);
+    }
+    if (User_Info.catPro == 'education') {
+      return Row(children: [
+        _StatCard(
+          value: _rdvTodayCount.toString(), label: 'RDV aujourd\'hui', icon: Icons.calendar_today_outlined,
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const EducationPlanningPage())),
+        ),
+        const SizedBox(width: 12),
+        _StatCard(
+          value: _rdvMonthCount.toString(), label: 'RDV ce mois', icon: Icons.calendar_month_outlined,
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const ProAgendaPage(initialTabIndex: 1))),
+        ),
+        const SizedBox(width: 12),
+        _StatCard(
+          value: _proLabel(), label: 'Statut', icon: Icons.verified_outlined,
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const EducationAbonnementPage())),
         ),
       ]);
     }
