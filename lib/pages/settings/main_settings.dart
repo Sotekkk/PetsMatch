@@ -270,11 +270,15 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                   label: const Text('Se deconnecter',
                       style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15)),
                   onPressed: () async {
-                    // Ne pas naviguer manuellement : AuthWrapper (racine de l'app) écoute
-                    // authStateChanges() et bascule seul sur WelcomePage. Un pushAndRemoveUntil
-                    // ici détruirait cet AuthWrapper racine et casserait la reconnexion suivante
-                    // (retour en boucle sur l'écran de bienvenue après un nouveau login).
                     await _auth.signOut();
+                    // Sur un profil secondaire, l'AuthWrapper racine a été détruit
+                    // par le pushAndRemoveUntil du switch de profil : signOut()
+                    // seul ne ramène pas à l'accueil. On repose un AuthWrapper
+                    // neuf (réactif) comme unique route.
+                    navigatorKey.currentState?.pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => AuthWrapper()),
+                      (_) => false,
+                    );
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red.shade600,

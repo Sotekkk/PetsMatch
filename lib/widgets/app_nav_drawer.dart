@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:url_launcher/url_launcher.dart';
-import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/main.dart' show User_Info, navigatorKey, AuthWrapper;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/widgets/profile_switcher_header.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
@@ -181,11 +181,17 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
                     fontSize: 15,
                     color: Colors.redAccent)),
             onTap: () async {
-              // Ne pas naviguer manuellement : AuthWrapper (racine de l'app) écoute
-              // authStateChanges() et bascule seul sur WelcomePage. Un pushAndRemoveUntil
-              // ici détruirait cet AuthWrapper racine et casserait la reconnexion suivante
-              // (retour en boucle sur l'écran de bienvenue après un nouveau login).
               await FirebaseAuth.instance.signOut();
+              // Après un switch de profil, `_switchToProfile` a fait un
+              // pushAndRemoveUntil(BottomNav, (_) => false) qui a détruit
+              // l'AuthWrapper racine — plus personne n'écoute authStateChanges,
+              // donc signOut() seul ne ramène pas à l'accueil. On repose donc
+              // un AuthWrapper neuf (réactif) comme unique route : user == null
+              // → WelcomePage, et la reconnexion suivante refonctionne.
+              navigatorKey.currentState?.pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => AuthWrapper()),
+                (_) => false,
+              );
             },
             dense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),

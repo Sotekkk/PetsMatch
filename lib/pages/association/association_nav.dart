@@ -449,11 +449,14 @@ class _AssociationNavState extends State<AssociationNav> {
             title: const Text('Déconnexion',
                 style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500, fontSize: 15, color: Colors.redAccent)),
             onTap: () async {
-              // Ne pas naviguer manuellement : AuthWrapper (racine de l'app) écoute
-              // authStateChanges() et bascule seul sur WelcomePage. Un pushAndRemoveUntil
-              // ici détruirait cet AuthWrapper racine et casserait la reconnexion suivante
-              // (retour en boucle sur l'écran de bienvenue après un nouveau login).
               await FirebaseAuth.instance.signOut();
+              // Sur un profil secondaire, l'AuthWrapper racine a été détruit par
+              // le pushAndRemoveUntil du switch de profil : signOut() seul ne
+              // ramène pas à l'accueil. On repose un AuthWrapper neuf (réactif).
+              navigatorKey.currentState?.pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => AuthWrapper()),
+                (_) => false,
+              );
             },
             dense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
