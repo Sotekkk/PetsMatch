@@ -568,11 +568,14 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbis_url': siretDocUrl,
           if (acacedDocUrl != null && acacedDocUrl.isNotEmpty) 'acaced_doc_url': acacedDocUrl,
         }).eq('uid', uid).eq('is_main', true);
+      } catch (_) {}
 
-        // Identité publique + vitrine reproducteurs — TOUJOURS sur le profil
-        // ÉLEVEUR (le compte peut avoir d'autres profils sur le même uid ;
-        // is_main peut pointer ailleurs). Source de vérité : desc_entreprise.
-        await supa.from('user_profiles').update({
+      // Identité publique + vitrine reproducteurs — TOUJOURS sur le profil
+      // ÉLEVEUR (le compte peut avoir d'autres profils sur le même uid ;
+      // is_main peut pointer ailleurs). Source de vérité : desc_entreprise.
+      // try isolé : ne doit pas être sauté si l'update is_main échoue.
+      try {
+        await Supabase.instance.client.from('user_profiles').update({
           'montre_reproducteurs': _montreRepro,
           'desc_entreprise': _descCtrl.text.trim(),
           'description':     _descCtrl.text.trim(),

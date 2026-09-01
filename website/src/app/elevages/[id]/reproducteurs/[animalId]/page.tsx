@@ -5,18 +5,12 @@ import { useParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { ageLabel, type Repro } from '../page';
+import { ESPECE_LABEL, UUID_RE, ageLabel, type Repro } from '@/lib/repro';
 
-const ESPECE_LABEL: Record<string, string> = {
-  chien: 'Chien', chat: 'Chat', cheval: 'Cheval', lapin: 'Lapin',
-  oiseau: 'Oiseau', nac: 'NAC', ovin: 'Ovin', caprin: 'Caprin',
-  porcin: 'Porcin', furet: 'Furet', autre: 'Autre',
-};
 const TEST_LABEL: Record<string, string> = {
   adn: 'Test ADN', hanches: 'Test hanches',
   sante_repro: 'Santé reproducteur', filiation: 'Filiation',
 };
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function fmtDate(iso?: string | null) {
   if (!iso) return '';

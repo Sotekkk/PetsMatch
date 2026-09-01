@@ -56,21 +56,39 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
           .eq('uid', widget.user.uid)
           .eq('profile_type', 'eleveur')
           .maybeSingle();
-      if (prof == null) return;
-      String v(String k) => (prof[k] ?? '').toString().trim();
-      final desc = v('desc_entreprise').isNotEmpty
+      String v(String k) => (prof?[k] ?? '').toString().trim();
+      var desc = v('desc_entreprise').isNotEmpty
           ? v('desc_entreprise')
           : v('description').isNotEmpty ? v('description') : v('bio');
-      final tel = v('numero_elevage').isNotEmpty ? v('numero_elevage') : v('phone_number');
+      var tel = v('numero_elevage').isNotEmpty ? v('numero_elevage') : v('phone_number');
+      var insta = v('instagram'), fb = v('facebook'), web = v('site_web');
+
+      // Repli Firestore `users` : profils dont l'édition n'a pas encore propagé
+      // les réseaux vers `user_profiles`.
+      if (insta.isEmpty || fb.isEmpty || web.isEmpty || desc.isEmpty || tel.isEmpty) {
+        try {
+          final snap = await FirebaseFirestore.instance
+              .collection('users').doc(widget.user.uid).get();
+          final d = snap.data() ?? {};
+          String f(String k) => (d[k] ?? '').toString().trim();
+          if (insta.isEmpty) insta = f('instagram');
+          if (fb.isEmpty) fb = f('facebook');
+          if (web.isEmpty) web = f('siteWeb');
+          if (desc.isEmpty) desc = f('descEntreprise').isNotEmpty ? f('descEntreprise') : f('desc');
+          if (tel.isEmpty) tel = f('numeroElevage');
+        } catch (_) {}
+      }
+
       if (mounted) {
         setState(() {
           _descEntreprise = desc;
-          _instagram = v('instagram');
-          _facebook = v('facebook');
-          _siteWeb = v('site_web');
+          _instagram = insta;
+          _facebook = fb;
+          _siteWeb = web;
           _telephone = tel;
         });
       }
+      if (prof == null) return;
 
       final profileId = prof['id'] as String?;
       if (profileId == null || prof['montre_reproducteurs'] != true) return;
