@@ -192,13 +192,17 @@ export default function EmployesPage() {
       // Tâches protocole — à faire (J-7 → J+90) + terminées (30j)
       const pastStr   = toDateStr(new Date(Date.now() - 7 * 86400000));
       const futureStr = toDateStr(new Date(Date.now() + 90 * 86400000));
-      const ptFilter = profileId
-        ? (q: ReturnType<typeof supabase.from>) => (q as ReturnType<typeof supabase.from>).eq('eleveur_profile_id', profileId)
-        : (q: ReturnType<typeof supabase.from>) => (q as ReturnType<typeof supabase.from>).eq('uid_eleveur', user.uid);
+      const ptSelect = () => supabase.from('plan_taches')
+        .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to');
+      // `.eq()` n'existe que sur le PostgrestFilterBuilder (retour de .select()),
+      // pas sur le QueryBuilder (retour de .from()) — d'où le typage via ptSelect.
+      const ptFilter = (q: ReturnType<typeof ptSelect>) => profileId
+        ? q.eq('eleveur_profile_id', profileId)
+        : q.eq('uid_eleveur', user.uid);
       const [{ data: pt1 }, { data: pt2 }] = await Promise.all([
-        ptFilter(supabase.from('plan_taches').select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to'))
+        ptFilter(ptSelect())
           .not('statut', 'eq', 'fait').gte('date_prevue', pastStr).lte('date_prevue', futureStr).limit(2000),
-        ptFilter(supabase.from('plan_taches').select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to'))
+        ptFilter(ptSelect())
           .eq('statut', 'fait').gte('date_prevue', pastStr).limit(500),
       ]);
       const seen = new Set<string>();
