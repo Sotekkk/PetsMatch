@@ -127,6 +127,24 @@ export default function EleveurProfilePage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [contacting, setContacting] = useState(false);
+  const [reproCount, setReproCount] = useState(0);
+
+  // Vitrine reproducteurs : uniquement si l'éleveur l'a activée sur son profil
+  // ÉLEVEUR (jamais un autre profil du même compte).
+  useEffect(() => {
+    const euid = eleveur?.uid;
+    if (!euid) return;
+    (async () => {
+      const { data: prof } = await supabase.from('user_profiles')
+        .select('id, montre_reproducteurs')
+        .eq('uid', euid).eq('profile_type', 'eleveur').maybeSingle();
+      if (!prof?.id || prof.montre_reproducteurs !== true) { setReproCount(0); return; }
+      const { data: rows } = await supabase.from('animaux')
+        .select('id')
+        .eq('profile_id', prof.id).eq('uid_eleveur', euid).eq('reproducteur_public', true);
+      setReproCount((rows ?? []).length);
+    })();
+  }, [eleveur?.uid]);
 
   useEffect(() => {
     if (!id) return;
@@ -383,6 +401,14 @@ export default function EleveurProfilePage() {
             </div>
           )}
         </div>
+
+        {/* Voir les reproducteurs */}
+        {reproCount > 0 && (
+          <Link href={`/elevages/${id}/reproducteurs`}
+            className="flex items-center justify-center gap-2 w-full mb-4 py-3 rounded-2xl border border-[#0C5C6C] text-[#0C5C6C] font-semibold text-sm hover:bg-[#0C5C6C]/5 transition-colors">
+            🐾 Voir les reproducteurs ({reproCount})
+          </Link>
+        )}
 
         {/* Annonces disponibles */}
         <div>

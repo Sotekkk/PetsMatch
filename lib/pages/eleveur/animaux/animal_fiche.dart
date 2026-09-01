@@ -106,6 +106,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
 
   // ── Champs identité
   final _nomCtrl    = TextEditingController();
+  final _nomPedigreeCtrl = TextEditingController();
   final _raceCtrl   = TextEditingController();
   final _couleurCtrl = TextEditingController();
   final _identCtrl  = TextEditingController();
@@ -839,6 +840,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _especeAutreCtrl.text = (d['espece_autre'] as String?) ?? '';
     _descriptionCtrl.text = d['description'] ?? '';
     _nomCtrl.text   = d['nom'] ?? '';
+    _nomPedigreeCtrl.text = d['nom_pedigree'] ?? '';
     _raceCtrl.text  = d['race'] ?? '';
     _couleurCtrl.text = d['couleur'] ?? '';
     _identCtrl.text = d['identification'] ?? '';
@@ -948,7 +950,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _puceMereDebounce?.cancel();
     _pucePereCtrl.removeListener(_onPucePereChanged);
     _puceMereCtrl.removeListener(_onPuceMereChanged);
-    for (final c in [_nomCtrl, _raceCtrl, _couleurCtrl, _identCtrl,
+    for (final c in [_nomCtrl, _nomPedigreeCtrl, _raceCtrl, _couleurCtrl, _identCtrl,
       _tailleCtrl, _poidsCtrl, _notesCtrl, _nomPereCtrl, _pucePereCtrl, _racePereCtrl,
       _nomMereCtrl, _puceMereCtrl, _passeportCtrl, _clubRegistreCtrl, _pedigreeNumeroCtrl, _descriptionCtrl,
       _provenanceNomCtrl, _provenanceAdresseCtrl, _importationRefCtrl,
@@ -987,6 +989,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'espece_autre':        _espece == 'autre' ? _especeAutreCtrl.text.trim() : null,
         'description':         _descriptionCtrl.text.trim(),
         'nom':                 _nomCtrl.text.trim(),
+        'nom_pedigree':        _nomPedigreeCtrl.text.trim(),
         'race':                _raceCtrl.text.trim(),
         'couleur':             _couleurCtrl.text.trim(),
         'identification':      _identCtrl.text.trim(),
@@ -1848,6 +1851,7 @@ class _IdentiteTab extends StatelessWidget {
                 const SizedBox(height: 16),
                 _card([
                   _field('Nom', s._nomCtrl, required: true),
+                  _field('Nom de pedigree / affixe', s._nomPedigreeCtrl),
                   _hasBreeds ? _raceAutocomplete(context) : _field('Race', s._raceCtrl),
                   _field('Couleur / Robe', s._couleurCtrl),
                   _field(_identLabel, s._identCtrl),

@@ -314,6 +314,26 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     } catch (_) {}
   }
 
+  /// Rend visible / masque ce reproducteur sur le profil public de l'éleveur.
+  Future<void> _toggleReproPublic(String id, bool current) async {
+    try {
+      await Supabase.instance.client.from('animaux')
+          .update({'reproducteur_public': !current}).eq('id', id);
+      if (mounted) setState(() {
+        final idx = _animauxData.indexWhere((a) => a['id']?.toString() == id);
+        if (idx >= 0) _animauxData[idx] = {..._animauxData[idx], 'reproducteur_public': !current};
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(!current
+              ? 'Reproducteur visible sur votre profil public'
+              : 'Reproducteur masqué du profil public'),
+          duration: const Duration(seconds: 2),
+        ));
+      }
+    } catch (_) {}
+  }
+
   void _openAnnonceFromPortee(List<Map<String, dynamic>> members) {
     if (members.isEmpty) return;
     final first = members.first;
@@ -1241,6 +1261,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
             onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
             onToggleReproducteur: id.isEmpty ? null : () => _toggleReproducteur(id, data['reproducteur'] == true),
             onToggleRetraite: id.isEmpty ? null : () => _toggleRetraite(id, data['is_retraite'] == true),
+            reproPublic: data['reproducteur_public'] == true,
+            onToggleReproPublic: id.isEmpty ? null : () => _toggleReproPublic(id, data['reproducteur_public'] == true),
           );
         },
       ),
@@ -1475,6 +1497,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                 onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
                 onToggleReproducteur: id.isEmpty ? null : () => _toggleReproducteur(id, data['reproducteur'] == true),
                 onToggleRetraite: id.isEmpty ? null : () => _toggleRetraite(id, data['is_retraite'] == true),
+                reproPublic: data['reproducteur_public'] == true,
+                onToggleReproPublic: id.isEmpty ? null : () => _toggleReproPublic(id, data['reproducteur_public'] == true),
               );
             },
           ),
@@ -1701,9 +1725,11 @@ class _AnimalCard extends StatelessWidget {
   final VoidCallback? onDelete;
   final VoidCallback? onToggleReproducteur;
   final VoidCallback? onToggleRetraite;
+  final VoidCallback? onToggleReproPublic;
   final bool showStatut;
   final bool showPorteeBadge;
   final bool reproducteur;
+  final bool reproPublic;
   final bool isRetraite;
   final bool chaleurFlag;
   final bool gestanteFlag;
@@ -1716,9 +1742,11 @@ class _AnimalCard extends StatelessWidget {
     this.onDelete,
     this.onToggleReproducteur,
     this.onToggleRetraite,
+    this.onToggleReproPublic,
     this.showStatut = false,
     this.showPorteeBadge = false,
     this.reproducteur = false,
+    this.reproPublic = false,
     this.isRetraite = false,
     this.chaleurFlag = false,
     this.gestanteFlag = false,
@@ -1768,6 +1796,24 @@ class _AnimalCard extends StatelessWidget {
                   onTap: () {
                     Navigator.pop(context);
                     onToggleReproducteur!();
+                  },
+                ),
+              if (onToggleReproPublic != null && reproducteur)
+                ListTile(
+                  leading: Icon(
+                      reproPublic ? Icons.visibility : Icons.visibility_off_outlined,
+                      color: reproPublic ? const Color(0xFF0C5C6C) : Colors.grey.shade400),
+                  title: Text(
+                    reproPublic
+                        ? 'Masquer du profil public'
+                        : 'Afficher sur mon profil public',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 15),
+                  ),
+                  subtitle: const Text('Visible par les visiteurs de votre élevage',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    onToggleReproPublic!();
                   },
                 ),
               if (onToggleRetraite != null)
@@ -1895,14 +1941,26 @@ class _AnimalCard extends StatelessWidget {
                     if (!showStatut && reproducteur)
                       Positioned(
                         top: 6, right: 6,
-                        child: Container(
-                          padding: const EdgeInsets.all(3),
-                          decoration: BoxDecoration(
-                            color: Colors.amber.withOpacity(0.92),
-                            shape: BoxShape.circle,
+                        child: Row(children: [
+                          if (reproPublic)
+                            Container(
+                              margin: const EdgeInsets.only(right: 4),
+                              padding: const EdgeInsets.all(3),
+                              decoration: const BoxDecoration(
+                                color: Color(0xE60C5C6C),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.visibility, size: 11, color: Colors.white),
+                            ),
+                          Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withOpacity(0.92),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.star, size: 11, color: Colors.white),
                           ),
-                          child: const Icon(Icons.star, size: 11, color: Colors.white),
-                        ),
+                        ]),
                       ),
                     if (isRetraite)
                       Positioned(

@@ -37,6 +37,8 @@ interface Animal {
   race_mere?: string;
   date_naissance_mere?: string;
   reproducteur?: boolean;
+  reproducteur_public?: boolean;
+  nom_pedigree?: string;
   is_retraite?: boolean;
   intervalle_chaleurs_jours?: number | null;
   uid_eleveur?: string | null;
@@ -94,11 +96,11 @@ function Chip({
   );
 }
 
-function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, isRetraite = false, chaleurFlag = false, gestanteFlag = false, selectMode = false, selected = false, onDelete, onToggleReproducteur, onToggleRetraite, onSelect, onCeder, onTransferer }: {
+function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, reproPublic = false, isRetraite = false, chaleurFlag = false, gestanteFlag = false, selectMode = false, selected = false, onDelete, onToggleReproducteur, onToggleReproPublic, onToggleRetraite, onSelect, onCeder, onTransferer }: {
   a: Animal; tab: 'presents' | 'anciens'; showPorteeBadge?: boolean;
-  reproducteur?: boolean; isRetraite?: boolean; chaleurFlag?: boolean; gestanteFlag?: boolean;
+  reproducteur?: boolean; reproPublic?: boolean; isRetraite?: boolean; chaleurFlag?: boolean; gestanteFlag?: boolean;
   selectMode?: boolean; selected?: boolean;
-  onDelete?: () => void; onToggleReproducteur?: () => void; onToggleRetraite?: () => void; onSelect?: () => void;
+  onDelete?: () => void; onToggleReproducteur?: () => void; onToggleReproPublic?: () => void; onToggleRetraite?: () => void; onSelect?: () => void;
   onCeder?: () => void;
   onTransferer?: () => void;
 }) {
@@ -135,6 +137,11 @@ function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, isR
       {tab === 'presents' && reproducteur && !selectMode && (
         <span className="absolute top-2 right-2 bg-amber-400/90 text-white text-[9px] font-bold w-5 h-5 rounded-full flex items-center justify-center">
           ⭐
+        </span>
+      )}
+      {tab === 'presents' && reproducteur && reproPublic && !selectMode && (
+        <span className="absolute top-2 right-9 bg-[#0C5C6C]/90 text-white text-[9px] font-bold w-5 h-5 rounded-full flex items-center justify-center" title="Visible sur le profil public">
+          👁
         </span>
       )}
       {tab === 'presents' && isRetraite && !selectMode && (
@@ -208,6 +215,14 @@ function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, isR
           className={`absolute top-10 right-2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full w-7 h-7 flex items-center justify-center shadow-md text-xs ${reproducteur ? 'bg-amber-400 text-white' : 'bg-white text-amber-400 border border-amber-400'}`}
           title={reproducteur ? 'Retirer reproducteur' : 'Marquer reproducteur'}>
           ⭐
+        </button>
+      )}
+      {!selectMode && reproducteur && onToggleReproPublic && (
+        <button
+          onClick={e => { e.preventDefault(); onToggleReproPublic(); }}
+          className={`absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity rounded-full w-7 h-7 flex items-center justify-center shadow-md text-xs ${reproPublic ? 'bg-[#0C5C6C] text-white' : 'bg-white text-[#0C5C6C] border border-[#0C5C6C]'}`}
+          title={reproPublic ? 'Masquer du profil public' : 'Afficher sur mon profil public'}>
+          {reproPublic ? '👁' : '🔒'}
         </button>
       )}
       {!selectMode && onToggleRetraite && (
@@ -474,6 +489,11 @@ export default function MesAnimauxPage() {
   async function toggleReproducteur(id: string, current: boolean) {
     await supabase.from('animaux').update({ reproducteur: !current }).eq('id', id);
     setAnimaux(prev => prev.map(a => a.id === id ? { ...a, reproducteur: !current } : a));
+  }
+
+  async function toggleReproPublic(id: string, current: boolean) {
+    await supabase.from('animaux').update({ reproducteur_public: !current }).eq('id', id);
+    setAnimaux(prev => prev.map(a => a.id === id ? { ...a, reproducteur_public: !current } : a));
   }
 
   async function toggleRetraite(id: string, current: boolean) {
@@ -933,11 +953,12 @@ export default function MesAnimauxPage() {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   {members.map(a => <AnimalCard key={a.id} a={a} tab={tab} showPorteeBadge
-                    reproducteur={!!a.reproducteur} isRetraite={!!a.is_retraite}
+                    reproducteur={!!a.reproducteur} reproPublic={!!a.reproducteur_public} isRetraite={!!a.is_retraite}
                     chaleurFlag={!!chaleurFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]}
                     selectMode={selectMode} selected={selectedIds.has(a.id)} onSelect={() => toggleSelect(a.id)}
                     onDelete={selectMode ? undefined : () => deleteAnimal(a.id)}
                     onToggleReproducteur={isEleveur && !selectMode ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
+                    onToggleReproPublic={isEleveur && !selectMode ? () => toggleReproPublic(a.id, !!a.reproducteur_public) : undefined}
                     onToggleRetraite={isEleveur && !selectMode ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined} />)}
                 </div>
               </div>
@@ -947,11 +968,12 @@ export default function MesAnimauxPage() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {currentList.map(a => <AnimalCard key={a.id} a={a} tab={tab}
-            reproducteur={!!a.reproducteur} isRetraite={!!a.is_retraite}
+            reproducteur={!!a.reproducteur} reproPublic={!!a.reproducteur_public} isRetraite={!!a.is_retraite}
             chaleurFlag={!!chaleurFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]}
             selectMode={tab === 'presents' && selectMode} selected={selectedIds.has(a.id)} onSelect={() => toggleSelect(a.id)}
             onDelete={selectMode ? undefined : () => deleteAnimal(a.id)}
             onToggleReproducteur={isEleveur && tab === 'presents' && !selectMode ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
+            onToggleReproPublic={isEleveur && tab === 'presents' && !selectMode ? () => toggleReproPublic(a.id, !!a.reproducteur_public) : undefined}
             onToggleRetraite={isEleveur && tab === 'presents' && !selectMode ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined}
             onCeder={isEleveur && tab === 'presents' && !selectMode && a.uid_eleveur === user?.uid ? () => setCederAnimal(a) : undefined}
             onTransferer={tab === 'presents' && !selectMode && a.uid_eleveur !== user?.uid && a.uid_acquereur === user?.uid ? () => setCederAnimal(a) : undefined} />)}

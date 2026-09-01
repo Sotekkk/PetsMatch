@@ -100,3 +100,23 @@ ALTER TABLE documents_animaux
 
 CREATE INDEX IF NOT EXISTS idx_docs_uid_acquereur     ON documents_animaux(uid_acquereur);
 CREATE INDEX IF NOT EXISTS idx_docs_acquereur_profile ON documents_animaux(acquereur_profile_id);
+
+
+-- ────────────────────────────────────────────────────────────
+-- 5. Vitrine « Reproducteurs » sur le profil public de l'éleveur
+--    - animaux.reproducteur_public : l'éleveur autorise l'affichage public
+--      de CE reproducteur (candidats = animaux déjà marqués reproducteur=true)
+--    - animaux.nom_pedigree : nom de pedigree / affixe complet (≠ nom d'usage)
+--    - user_profiles.montre_reproducteurs : interrupteur maître de l'éleveur
+--    La page publique n'affiche un repro que si les DEUX sont vrais.
+-- ────────────────────────────────────────────────────────────
+
+ALTER TABLE animaux
+  ADD COLUMN IF NOT EXISTS reproducteur_public BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS nom_pedigree        TEXT;
+
+ALTER TABLE user_profiles
+  ADD COLUMN IF NOT EXISTS montre_reproducteurs BOOLEAN DEFAULT FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_animaux_repro_public
+  ON animaux(uid_eleveur) WHERE reproducteur_public = TRUE;

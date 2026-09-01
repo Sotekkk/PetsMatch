@@ -22,7 +22,7 @@ import { typesVaccinPour, categorieOptions, suggestFromCategorie } from '@/lib/v
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Animal {
-  id: string; nom?: string; espece?: string; espece_autre?: string; race?: string; sexe?: string;
+  id: string; nom?: string; nom_pedigree?: string; espece?: string; espece_autre?: string; race?: string; sexe?: string;
   date_naissance?: string; couleur?: string; identification?: string;
   sterilise?: boolean; description?: string; notes?: string; photo_url?: string;
   statut?: string; passeport_europeen?: string; type_poil?: string; taille?: string; poids?: string;
@@ -1807,7 +1807,7 @@ export default function AnimalFichePage() {
     setSaving(true);
     try {
       const payload: Partial<Animal> = {
-        nom: animal.nom?.trim(), espece: animal.espece,
+        nom: animal.nom?.trim(), nom_pedigree: animal.nom_pedigree?.trim() || undefined, espece: animal.espece,
         espece_autre: animal.espece === 'autre' ? (animal.espece_autre || undefined) : undefined,
         race: animal.race, sexe: animal.sexe,
         date_naissance: animal.date_naissance || undefined, couleur: animal.couleur,
@@ -2628,6 +2628,7 @@ export default function AnimalFichePage() {
             {editing ? (
               <>
                 <Field label="Nom" value={animal.nom??''} onChange={v=>set('nom',v)} required />
+                <Field label="Nom de pedigree / affixe" value={animal.nom_pedigree??''} onChange={v=>set('nom_pedigree',v)} />
                 <SelectField label="Espèce" value={animal.espece??'chien'} onChange={v=>set('espece',v)}
                   options={ESPECES.map(e=>({ value:e, label:e.charAt(0).toUpperCase()+e.slice(1) }))} />
                 {animal.espece === 'autre' && (

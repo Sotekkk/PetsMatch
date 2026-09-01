@@ -248,6 +248,7 @@ export default function EleveurProfilEditPage() {
 
   // Espèces
   const [especesElevees, setEspecesElevees] = useState<EspeceEntry[]>([]);
+  const [montreRepro, setMontreRepro] = useState(false);
   const [allBreeds, setAllBreeds] = useState<Record<string, string[]>>({});
   const [breedPickerEspece, setBreedPickerEspece] = useState<string | null>(null);
 
@@ -337,6 +338,15 @@ export default function EleveurProfilEditPage() {
       setEspecesElevees(fallback);
     }
   }, [userData]);
+
+  // Interrupteur « afficher mes reproducteurs » — sur le profil ÉLEVEUR
+  useEffect(() => {
+    if (!user) return;
+    supabase.from('user_profiles')
+      .select('montre_reproducteurs')
+      .eq('uid', user.uid).eq('profile_type', 'eleveur').maybeSingle()
+      .then(({ data }) => setMontreRepro(data?.montre_reproducteurs === true));
+  }, [user]);
 
   // Google Maps Places
   useEffect(() => {
@@ -588,6 +598,12 @@ export default function EleveurProfilEditPage() {
         .update(profileUpdate)
         .eq('uid', user!.uid)
         .eq('is_main', true);
+
+      // Vitrine reproducteurs — toujours sur le profil ÉLEVEUR du compte
+      await supabase.from('user_profiles')
+        .update({ montre_reproducteurs: montreRepro })
+        .eq('uid', user!.uid)
+        .eq('profile_type', 'eleveur');
 
       // Sync to Firestore
       try {
@@ -852,6 +868,24 @@ export default function EleveurProfilEditPage() {
               </div>
             );
           })}
+        </Card>
+
+        {/* ── Vitrine reproducteurs ── */}
+        <Card title="Vitrine reproducteurs">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" checked={montreRepro}
+              onChange={e => setMontreRepro(e.target.checked)}
+              className="mt-0.5 w-4 h-4 accent-[#6E9E57]" />
+            <span>
+              <span className="block text-sm font-semibold text-[#1F2A2E]">
+                Afficher mes reproducteurs sur mon profil public
+              </span>
+              <span className="block text-xs text-gray-500 mt-0.5">
+                Les visiteurs de votre élevage pourront voir les reproducteurs que vous
+                sélectionnez (bouton 👁 dans Mes Animaux).
+              </span>
+            </span>
+          </label>
         </Card>
 
         {/* ── Réseaux sociaux ── */}

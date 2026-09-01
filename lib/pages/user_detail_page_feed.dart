@@ -1,6 +1,7 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
+import 'package:PetsMatch/pages/eleveur/reproducteurs_publics_page.dart';
 import 'package:PetsMatch/pages/main_feed.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
@@ -24,13 +25,38 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
   List<Map<String, dynamic>> _annonces = [];
   bool _loadingAnnonces = true;
   late String _bannerUrl;
+  int _reproCount = 0;
 
   @override
   void initState() {
     super.initState();
     _bannerUrl = widget.user.bannerUrl;
     _loadAnnonces();
+    _loadReproInfo();
     if (_bannerUrl.isEmpty) _loadBannerFromSupabase();
+  }
+
+  /// Nombre de reproducteurs que l'éleveur a choisi d'exposer publiquement
+  /// (interrupteur maître `montre_reproducteurs` + `reproducteur_public` par animal).
+  /// Scopé au profil ÉLEVEUR du compte (jamais un autre profil du même uid).
+  Future<void> _loadReproInfo() async {
+    try {
+      final prof = await Supabase.instance.client
+          .from('user_profiles')
+          .select('id, montre_reproducteurs')
+          .eq('uid', widget.user.uid)
+          .eq('profile_type', 'eleveur')
+          .maybeSingle();
+      final profileId = prof?['id'] as String?;
+      if (profileId == null || prof?['montre_reproducteurs'] != true) return;
+      final rows = await Supabase.instance.client
+          .from('animaux')
+          .select('id')
+          .eq('profile_id', profileId)
+          .eq('uid_eleveur', widget.user.uid)
+          .eq('reproducteur_public', true);
+      if (mounted) setState(() => _reproCount = (rows as List).length);
+    } catch (_) {}
   }
 
   Future<void> _loadBannerFromSupabase() async {
@@ -415,6 +441,36 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
                       const SizedBox(height: 8),
                       Text(user.descEntreprise, style: const TextStyle(fontSize: 13, color: Colors.black87, fontFamily: 'Galey', height: 1.5)),
                     ]),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
+                // ── Voir les reproducteurs (si l'éleveur les expose) ──────
+                if (user.isElevage && _reproCount > 0) ...[
+                  Container(
+                    color: Colors.white,
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => ReproducteursPublicsPage(
+                            uid: user.uid,
+                            nomElevage: user.nameElevage,
+                          ),
+                        )),
+                        icon: const Icon(Icons.pets, size: 18),
+                        label: Text('Voir les reproducteurs ($_reproCount)',
+                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF0C5C6C),
+                          side: const BorderSide(color: Color(0xFF0C5C6C)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 8),
                 ],

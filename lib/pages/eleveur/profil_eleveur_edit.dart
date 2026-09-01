@@ -75,6 +75,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
 
   // ── Espèces ───────────────────────────────────────────────────────────────────
   List<Map<String, dynamic>> _especesElevees = [];
+  bool _montreRepro = false;
   Map<String, List<String>> _allBreeds = {};
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -119,7 +120,17 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       } catch (_) {}
     }
 
+    // Interrupteur « afficher mes reproducteurs » — sur le profil ÉLEVEUR
+    bool montreRepro = false;
+    try {
+      final row = await Supabase.instance.client
+          .from('user_profiles').select('montre_reproducteurs')
+          .eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle();
+      montreRepro = row?['montre_reproducteurs'] == true;
+    } catch (_) {}
+
     setState(() {
+      _montreRepro = montreRepro;
       _prenomCtrl.text     = d['firstname']       ?? User_Info.firstname;
       _nomCtrl.text        = d['lastname']         ?? User_Info.lastname;
       _dobCtrl.text        = d['dateofbirth']      ?? User_Info.dateofbirth;
@@ -545,6 +556,12 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbis_url': siretDocUrl,
           if (acacedDocUrl != null && acacedDocUrl.isNotEmpty) 'acaced_doc_url': acacedDocUrl,
         }).eq('uid', uid).eq('is_main', true);
+
+        // Vitrine reproducteurs — toujours écrite sur le profil ÉLEVEUR
+        // (le compte peut avoir d'autres profils sur le même uid).
+        await supa.from('user_profiles')
+            .update({'montre_reproducteurs': _montreRepro})
+            .eq('uid', uid).eq('profile_type', 'eleveur');
       } catch (_) {}
 
       // Propagate location fields to all existing announcements
@@ -665,6 +682,8 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
                   _addressCard(),
                   const SizedBox(height: 12),
                   _especesCard(),
+                  const SizedBox(height: 12),
+                  _reproPublicCard(),
                   const SizedBox(height: 12),
                   _socialCard(),
                   const SizedBox(height: 12),
@@ -861,6 +880,30 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
         const SizedBox(height: 10),
         _inlineField('Pays *', _paysCtrl),
       ]),
+    );
+  }
+
+  // ── Vitrine reproducteurs ─────────────────────────────────────────────────────
+  Widget _reproPublicCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+      child: SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        activeColor: const Color(0xFF6E9E57),
+        value: _montreRepro,
+        onChanged: (v) => setState(() => _montreRepro = v),
+        title: const Text('Afficher mes reproducteurs sur mon profil public',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF1F2A2E))),
+        subtitle: const Text(
+            'Les visiteurs de votre élevage pourront voir les reproducteurs que vous '
+            'sélectionnez (bouton 👁 dans Mes Animaux).',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+      ),
     );
   }
 
