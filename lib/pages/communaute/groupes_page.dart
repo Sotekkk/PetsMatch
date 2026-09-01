@@ -33,6 +33,10 @@ class _GroupesPageState extends State<GroupesPage>
   String? _profileId;
   late TabController _tabCtrl;
 
+  final _searchCtrl = TextEditingController();
+  String _search = '';
+  String _typeFilter = ''; // '' = tous
+
   @override
   void initState() {
     super.initState();
@@ -43,7 +47,22 @@ class _GroupesPageState extends State<GroupesPage>
   @override
   void dispose() {
     _tabCtrl.dispose();
+    _searchCtrl.dispose();
     super.dispose();
+  }
+
+  List<Map<String, dynamic>> _applyFilters(List<Map<String, dynamic>> list) {
+    final q = _search.trim().toLowerCase();
+    return list.where((g) {
+      if (_typeFilter.isNotEmpty && (g['type']?.toString() ?? 'autre') != _typeFilter) {
+        return false;
+      }
+      if (q.isEmpty) return true;
+      final nom = (g['nom']?.toString() ?? '').toLowerCase();
+      final desc = (g['description']?.toString() ?? '').toLowerCase();
+      final typeLabel = (_kGroupeTypesLabels[g['type']?.toString()] ?? '').toLowerCase();
+      return nom.contains(q) || desc.contains(q) || typeLabel.contains(q);
+    }).toList();
   }
 
   Future<void> _load() async {
@@ -173,9 +192,73 @@ class _GroupesPageState extends State<GroupesPage>
     if (created == true) _load();
   }
 
-  List<Map<String, dynamic>> get _tousGroupes => _groupes;
-  List<Map<String, dynamic>> get _mesGroupesList =>
-      _groupes.where((g) => _mesGroupes.contains(g['id'].toString())).toList();
+  List<Map<String, dynamic>> get _tousGroupes => _applyFilters(_groupes);
+  List<Map<String, dynamic>> get _mesGroupesList => _applyFilters(
+      _groupes.where((g) => _mesGroupes.contains(g['id'].toString())).toList());
+
+  Widget _buildSearchBar() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Column(children: [
+        TextField(
+          controller: _searchCtrl,
+          onChanged: (v) => setState(() => _search = v),
+          decoration: InputDecoration(
+            hintText: 'Rechercher un groupe (nom, thème…)',
+            hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey, fontSize: 14),
+            prefixIcon: const Icon(Icons.search, color: _tealC, size: 20),
+            suffixIcon: _search.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () {
+                      _searchCtrl.clear();
+                      setState(() => _search = '');
+                    },
+                  )
+                : null,
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            filled: true,
+            fillColor: const Color(0xFFF4F4F4),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+          ),
+        ),
+        const SizedBox(height: 10),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(children: [
+            _typeChip('', 'Tous'),
+            for (final t in _kGroupeTypes) _typeChip(t, _kGroupeTypesLabels[t] ?? t),
+          ]),
+        ),
+      ]),
+    );
+  }
+
+  Widget _typeChip(String value, String label) {
+    final active = _typeFilter == value;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: GestureDetector(
+        onTap: () => setState(() => _typeFilter = active ? '' : value),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            color: active ? _tealC : const Color(0xFFF0F0F0),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(label,
+              style: TextStyle(
+                  fontFamily: 'Galey',
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: active ? Colors.white : const Color(0xFF6F767B))),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -210,25 +293,34 @@ class _GroupesPageState extends State<GroupesPage>
           : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _tealC))
-          : TabBarView(
-              controller: _tabCtrl,
-              children: [
-                _buildList(_tousGroupes),
-                _buildList(_mesGroupesList,
-                    emptyMsg: 'Vous n\'avez rejoint aucun groupe'),
-              ],
-            ),
+          : Column(children: [
+              _buildSearchBar(),
+              const Divider(height: 1),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabCtrl,
+                  children: [
+                    _buildList(_tousGroupes),
+                    _buildList(_mesGroupesList,
+                        emptyMsg: 'Vous n\'avez rejoint aucun groupe'),
+                  ],
+                ),
+              ),
+            ]),
     );
   }
 
   Widget _buildList(List<Map<String, dynamic>> items, {String? emptyMsg}) {
     if (items.isEmpty) {
+      final filtering = _search.trim().isNotEmpty || _typeFilter.isNotEmpty;
       return Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           const Icon(Icons.group_outlined, size: 72, color: Color(0xFFCCCCCC)),
           const SizedBox(height: 16),
           Text(
-            emptyMsg ?? 'Aucun groupe pour l\'instant',
+            filtering
+                ? 'Aucun groupe ne correspond à votre recherche'
+                : emptyMsg ?? 'Aucun groupe pour l\'instant',
             style: const TextStyle(
                 fontFamily: 'Galey',
                 fontWeight: FontWeight.w700,
@@ -236,9 +328,11 @@ class _GroupesPageState extends State<GroupesPage>
                 color: Color(0xFFAAAAAA)),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 8),
-          const Text('Créez le premier !',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey)),
+          if (!filtering) ...[
+            const SizedBox(height: 8),
+            const Text('Créez le premier !',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey)),
+          ],
         ]),
       );
     }
@@ -295,10 +389,13 @@ class _GroupeCard extends StatelessWidget {
     final type = groupe['type']?.toString() ?? 'autre';
     final prive = groupe['prive'] == true;
     final typeLabel = _kGroupeTypesLabels[type] ?? type;
+    final bannerUrl = groupe['photo_cover_url']?.toString();
+    final avatarUrl = groupe['avatar_url']?.toString();
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -309,8 +406,42 @@ class _GroupeCard extends StatelessWidget {
               offset: const Offset(0, 2))
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Bannière + photo de profil
+        SizedBox(
+          height: 96,
+          width: double.infinity,
+          child: Stack(clipBehavior: Clip.none, children: [
+            Positioned.fill(
+              child: (bannerUrl != null && bannerUrl.isNotEmpty)
+                  ? Image.network(bannerUrl, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(color: _tealC.withValues(alpha: 0.15)))
+                  : Container(color: _tealC.withValues(alpha: 0.12)),
+            ),
+            Positioned(
+              left: 14,
+              bottom: -22,
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 3),
+                ),
+                child: CircleAvatar(
+                  radius: 24,
+                  backgroundColor: const Color(0xFFE0F7FA),
+                  backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+                      ? NetworkImage(avatarUrl)
+                      : null,
+                  child: (avatarUrl == null || avatarUrl.isEmpty)
+                      ? const Icon(Icons.groups_rounded, color: _tealC, size: 24)
+                      : null,
+                ),
+              ),
+            ),
+          ]),
+        ),
+        Padding(
+        padding: const EdgeInsets.fromLTRB(14, 28, 14, 14),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             Expanded(
@@ -387,6 +518,7 @@ class _GroupeCard extends StatelessWidget {
           ],
         ]),
       ),
+      ]),
     ),
     );
   }

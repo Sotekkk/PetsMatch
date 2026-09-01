@@ -50,6 +50,12 @@ Map<String, dynamic> _toProfileMap(Map<String, dynamic> cp) => {
 // Modération du contenu
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Règle ajoutée d'office sur TOUS les groupes (non modifiable).
+const kRegleNoVente =
+    '🚫 Pas de vente, ni petites annonces. Les cessions et ventes d\'animaux '
+    'passent exclusivement par les annonces officielles de PetsMatch. Tout post '
+    'commercial est bloqué et peut être signalé.';
+
 class _Moderator {
   static const _grosMotsFR = [
     'merde', 'putain', 'connard', 'connasse', 'salope', 'pute', 'enculé',
@@ -58,9 +64,15 @@ class _Moderator {
   ];
 
   static const _commerceKw = [
-    'prix :', 'prix:', 'tarif ', 'tarif:', '€', ' euro', 'paypal',
-    'virement', 'paiement', 'vend ', 'vends ', 'achète ', 'a vendre',
-    'à vendre', 'achat', 'solde', 'livraison gratuite',
+    'prix :', 'prix:', 'prix ferme', 'tarif ', 'tarif:', '€', ' eur ', ' euro',
+    'euros', 'paypal', 'lydia', 'paylib', 'virement', 'especes', 'espèces',
+    'la main à la main', 'paiement', 'payable', 'acompte', 'arrhes',
+    'vend ', 'vends ', 'vend,', 'vends,', 'à vendre', 'a vendre', 'mise en vente',
+    'en vente', 'à céder contre', 'a ceder contre', 'contre bons soins payants',
+    'achète ', 'achete ', 'achat', 'rachète', 'reprise payante',
+    'solde', 'promo ', 'réduction', 'livraison gratuite', 'port offert',
+    'négociable', 'negociable', 'premier arrivé premier servi',
+    'mp pour prix', 'mp pour le prix', 'dm pour prix', 'prix en mp',
   ];
 
   static const _adoptionKw = [
@@ -122,6 +134,7 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
   List<String> _friendsInGroup = [];
   bool _loading = true;
   int _membresCount = 0;
+  List<Map<String, dynamic>> _membres = []; // {user_uid, role} triés
   Map<String, Map<String, dynamic>> _userProfiles = {};
   bool _currentUserIsPro = false;
   String? _profileId;
@@ -156,13 +169,15 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
         myMem = memData != null ? Map<String, dynamic>.from(memData) : null;
       }
 
-      // 3. Nombre de membres actifs
+      // 3. Membres actifs (avec rôle) — pour la liste + le compteur
       final membresData = await _supa
           .from('groupes_membres')
-          .select('user_uid')
+          .select('user_uid, role, rejoint_at')
           .eq('groupe_id', _groupe['id'])
-          .eq('statut', 'active');
-      final membresUids = (membresData as List).map((e) => e['user_uid'].toString()).toList();
+          .eq('statut', 'active')
+          .order('rejoint_at');
+      final membresRows = List<Map<String, dynamic>>.from(membresData as List);
+      final membresUids = membresRows.map((e) => e['user_uid'].toString()).toList();
 
       // 4. Mes amis dans le groupe — scopés au profil actif (chaque profil a
       // sa propre liste de PetFriends, cf. demandeur_profile_id/recepteur_profile_id)
@@ -204,10 +219,11 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
         likes = Set<String>.from((likesData as List).map((l) => l['post_id'].toString()));
       }
 
-      // 7. Profils des auteurs + profil courant (pour modération)
+      // 7. Profils des auteurs + membres + profil courant (pour modération)
       final allUids = <String>{
         if (_uid.isNotEmpty) _uid,
         for (final p in (postsData as List)) p['auteur_uid'].toString(),
+        ...membresUids,
       }.toList();
       final profilesMap = <String, Map<String, dynamic>>{};
       bool currentIsPro = false;
@@ -225,10 +241,19 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
         }
       }
 
+      // Liste des membres triée : admins → modérateurs → membres
+      const roleRank = {'admin': 0, 'moderateur': 1, 'membre': 2};
+      membresRows.sort((a, b) {
+        final ra = roleRank[a['role']?.toString()] ?? 2;
+        final rb = roleRank[b['role']?.toString()] ?? 2;
+        return ra != rb ? ra.compareTo(rb) : 0;
+      });
+
       if (mounted) {
         setState(() {
           _myMembership = myMem;
           _membresCount = membresUids.length;
+          _membres = membresRows;
           _friendsInGroup = friendsInGroup;
           _posts = List<Map<String, dynamic>>.from(postsData);
           _myLikes = likes;
@@ -244,6 +269,9 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
 
   bool get _isMember => _myMembership?['statut'] == 'active';
   bool get _isAdmin => _myMembership?['role'] == 'admin' && _isMember;
+  bool get _isModerator => _myMembership?['role'] == 'moderateur' && _isMember;
+  /// Admin OU modérateur : peut épingler / supprimer / traiter les signalements.
+  bool get _canModerate => _isAdmin || _isModerator;
   bool get _isPending => _myMembership?['statut'] == 'pending';
   bool get _isPrive => _groupe['prive'] == true;
 
@@ -305,7 +333,7 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
   }
 
   Future<void> _togglePin(String postId, bool currentPin) async {
-    if (!_isAdmin) return;
+    if (!_canModerate) return;
     await _supa.from('groupe_posts').update({'epingle': !currentPin}).eq('id', postId);
     final idx = _posts.indexWhere((p) => p['id'] == postId);
     if (idx != -1) {
@@ -323,9 +351,105 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
     final myUid = _uid;
     final post = _posts.firstWhere((p) => p['id'] == postId, orElse: () => {});
     if (post.isEmpty) return;
-    if (post['auteur_uid'] != myUid && !_isAdmin) return;
+    if (post['auteur_uid'] != myUid && !_canModerate) return;
     await _supa.from('groupe_posts').delete().eq('id', postId);
     setState(() => _posts.removeWhere((p) => p['id'] == postId));
+  }
+
+  // ── Signalement d'un post ──────────────────────────────────────────────────
+  Future<void> _signalerPost(Map<String, dynamic> post) async {
+    if (_uid.isEmpty) return;
+    String motif = 'vente_interdite';
+    final detailCtrl = TextEditingController();
+    final envoye = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Container(
+          decoration: const BoxDecoration(
+              color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+          padding: EdgeInsets.only(
+              left: 20, right: 20, top: 16, bottom: MediaQuery.of(ctx).viewInsets.bottom + 24),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(
+                child: Container(width: 40, height: 4,
+                    decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 16),
+            const Text('Signaler cette publication',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            ...{
+              'vente_interdite': 'Vente / petite annonce (interdit)',
+              'spam': 'Spam ou publicité',
+              'contenu_inapproprie': 'Contenu inapproprié',
+              'maltraitance': 'Maltraitance animale',
+              'autre': 'Autre',
+            }.entries.map((e) => InkWell(
+                  onTap: () => setSheet(() => motif = e.key),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(children: [
+                      Icon(
+                        motif == e.key ? Icons.radio_button_checked : Icons.radio_button_off,
+                        size: 20,
+                        color: motif == e.key ? _tealC : Colors.grey,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(e.value,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                      ),
+                    ]),
+                  ),
+                )),
+            const SizedBox(height: 8),
+            TextField(
+              controller: detailCtrl,
+              maxLines: 2,
+              decoration: InputDecoration(
+                hintText: 'Précisions (facultatif)',
+                hintStyle: const TextStyle(fontFamily: 'Galey', color: _greyC, fontSize: 13),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                contentPadding: const EdgeInsets.all(12),
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFD32F2F), padding: const EdgeInsets.symmetric(vertical: 13)),
+                child: const Text('Envoyer le signalement',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+    if (envoye != true) return;
+    try {
+      await _supa.from('signalements').insert({
+        'reporter_uid': _uid,
+        'target_type': 'groupe_post',
+        'target_id': post['id'].toString(),
+        'groupe_id': _groupe['id'],
+        'raison': motif,
+        if (detailCtrl.text.trim().isNotEmpty) 'description': detailCtrl.text.trim(),
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Merci, le signalement a été transmis aux modérateurs.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        final already = e.toString().contains('duplicate') || e.toString().contains('23505');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(already ? 'Vous avez déjà signalé cette publication.' : 'Erreur : $e')));
+      }
+    }
   }
 
   Future<void> _openCreatePost() async {
@@ -375,6 +499,8 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
       backgroundColor: Colors.transparent,
       builder: (_) => _AdminSheet(
         groupe: _groupe,
+        isFullAdmin: _isAdmin,
+        userProfiles: _userProfiles,
         onUpdated: () {
           Navigator.pop(context);
           _load();
@@ -411,7 +537,7 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
                     onPressed: () => Navigator.pop(context),
                   ),
                   actions: [
-                    if (_isAdmin)
+                    if (_canModerate)
                       IconButton(
                         icon: const Icon(Icons.settings_outlined),
                         onPressed: _openAdmin,
@@ -511,8 +637,11 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
                         ),
                       ),
 
-                      // Règles
-                      if (regles.isNotEmpty) _buildRegles(regles),
+                      // Règle « pas de vente » ajoutée d'office + règles du groupe
+                      _buildRegles(regles),
+
+                      // Membres / équipe du groupe
+                      _buildMembresSection(),
 
                       // Séparateur
                       const SizedBox(height: 8),
@@ -577,7 +706,9 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
                             child: _PostCard(
                               post: _posts[i],
                               isLiked: _myLikes.contains(_posts[i]['id']?.toString()),
-                              isAdmin: _isAdmin,
+                              isAdmin: _canModerate,
+                              canReport: _uid.isNotEmpty &&
+                                  _posts[i]['auteur_uid']?.toString() != _uid,
                               myUid: _uid,
                               userProfiles: _userProfiles,
                               onLike: () => _toggleLike(_posts[i]['id'].toString()),
@@ -585,6 +716,7 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
                               onPin: () => _togglePin(
                                   _posts[i]['id'].toString(), _posts[i]['epingle'] == true),
                               onDelete: () => _deletePost(_posts[i]['id'].toString()),
+                              onReport: () => _signalerPost(_posts[i]),
                               onShowLikes: () => _showLikes(_posts[i]['id'].toString()),
                             ),
                           ),
@@ -604,8 +736,8 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
     Color fg;
     VoidCallback? onTap;
 
-    if (_isAdmin) {
-      label = 'Admin ★';
+    if (_canModerate) {
+      label = _isAdmin ? 'Admin ★' : 'Modérateur ★';
       bg = _tealC;
       fg = Colors.white;
       onTap = _openAdmin;
@@ -690,6 +822,26 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
                     fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _darkC)),
           ]),
           children: [
+            // Règle imposée par PetsMatch (non modifiable)
+            Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFDECEC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFF5B5B5)),
+              ),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Icon(Icons.gavel_rounded, size: 16, color: Color(0xFFD32F2F)),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(kRegleNoVente,
+                      style: TextStyle(
+                          fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFFB71C1C),
+                          fontWeight: FontWeight.w600, height: 1.3)),
+                ),
+              ]),
+            ),
             ...regles.asMap().entries.map((e) => Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -715,6 +867,96 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
     );
   }
 
+  // ── Section membres / équipe ───────────────────────────────────────────────
+  Widget _buildMembresSection() {
+    // Sur un groupe privé, un non-membre ne voit que l'équipe (admins + modérateurs).
+    final restreint = _isPrive && !_isMember;
+    final visibles = restreint
+        ? _membres.where((m) {
+            final r = m['role']?.toString();
+            return r == 'admin' || r == 'moderateur';
+          }).toList()
+        : _membres;
+
+    if (visibles.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)]),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: restreint,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          title: Row(children: [
+            const Icon(Icons.groups_2_outlined, size: 18, color: _tealC),
+            const SizedBox(width: 8),
+            Text(
+              restreint
+                  ? 'Équipe du groupe'
+                  : 'Membres ($_membresCount)',
+              style: const TextStyle(
+                  fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _darkC),
+            ),
+          ]),
+          children: [
+            if (restreint)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Groupe privé — rejoignez-le pour voir tous les membres.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _greyC),
+                ),
+              ),
+            ...visibles.map((m) {
+              final uid = m['user_uid'].toString();
+              final role = m['role']?.toString() ?? 'membre';
+              final prof = _userProfiles[uid];
+              final isMe = uid == _uid;
+              final name = _profileName(prof, isMe: isMe);
+              final photo = _profilePhoto(prof);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: _tealC.withValues(alpha: 0.15),
+                    backgroundImage: photo != null ? NetworkImage(photo) : null,
+                    child: photo == null
+                        ? const Icon(Icons.person_outline, size: 18, color: _tealC)
+                        : null,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(name,
+                        style: const TextStyle(
+                            fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: _darkC),
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                  if (role == 'admin') _roleBadge('Admin', const Color(0xFF00838F)),
+                  if (role == 'moderateur') _roleBadge('Modérateur', const Color(0xFF8E24AA)),
+                ]),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _roleBadge(String label, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+        child: Text(label,
+            style: TextStyle(
+                fontFamily: 'Galey', fontSize: 10.5, fontWeight: FontWeight.w700, color: color)),
+      );
+
   Widget _badge(String label, {Color? color, Color? textColor}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -739,24 +981,28 @@ class _PostCard extends StatefulWidget {
   final Map<String, dynamic> post;
   final bool isLiked;
   final bool isAdmin;
+  final bool canReport;
   final String myUid;
   final Map<String, Map<String, dynamic>> userProfiles;
   final VoidCallback onLike;
   final VoidCallback onComment;
   final VoidCallback onPin;
   final VoidCallback onDelete;
+  final VoidCallback onReport;
   final VoidCallback onShowLikes;
 
   const _PostCard({
     required this.post,
     required this.isLiked,
     required this.isAdmin,
+    required this.canReport,
     required this.myUid,
     required this.userProfiles,
     required this.onLike,
     required this.onComment,
     required this.onPin,
     required this.onDelete,
+    required this.onReport,
     required this.onShowLikes,
   });
 
@@ -845,7 +1091,7 @@ class _PostCardState extends State<_PostCard> {
                 padding: EdgeInsets.only(right: 6),
                 child: Icon(Icons.push_pin, size: 16, color: _tealC),
               ),
-            if (canDelete || canPin)
+            if (canDelete || canPin || widget.canReport)
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_horiz, color: _greyC, size: 20),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -858,6 +1104,8 @@ class _PostCardState extends State<_PostCard> {
                     widget.onPin();
                   } else if (val == 'delete') {
                     widget.onDelete();
+                  } else if (val == 'report') {
+                    widget.onReport();
                   }
                 },
                 itemBuilder: (_) => [
@@ -869,6 +1117,14 @@ class _PostCardState extends State<_PostCard> {
                           Icon(epingle ? Icons.push_pin_outlined : Icons.push_pin, size: 16),
                           const SizedBox(width: 8),
                           Text(epingle ? 'Désépingler' : 'Épingler'),
+                        ])),
+                  if (widget.canReport)
+                    const PopupMenuItem(
+                        value: 'report',
+                        child: Row(children: [
+                          Icon(Icons.flag_outlined, size: 16, color: Color(0xFFEF6C00)),
+                          SizedBox(width: 8),
+                          Text('Signaler'),
                         ])),
                   if (canDelete)
                     const PopupMenuItem(
@@ -1679,14 +1935,21 @@ class _LikesSheetState extends State<_LikesSheet> {
 
 class _AdminSheet extends StatefulWidget {
   final Map<String, dynamic> groupe;
+  final bool isFullAdmin; // true = admin ; false = modérateur (droits réduits)
+  final Map<String, Map<String, dynamic>> userProfiles;
   final VoidCallback onUpdated;
-  const _AdminSheet({required this.groupe, required this.onUpdated});
+  const _AdminSheet({
+    required this.groupe,
+    required this.isFullAdmin,
+    required this.userProfiles,
+    required this.onUpdated,
+  });
 
   @override
   State<_AdminSheet> createState() => _AdminSheetState();
 }
 
-class _AdminSheetState extends State<_AdminSheet> with SingleTickerProviderStateMixin {
+class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin {
   final _supa = Supabase.instance.client;
   late TabController _tabCtrl;
 
@@ -1696,7 +1959,12 @@ class _AdminSheetState extends State<_AdminSheet> with SingleTickerProviderState
 
   // Membres
   List<Map<String, dynamic>> _membres = [];
+  Map<String, Map<String, dynamic>> _profils = {};
   bool _loadingMembres = true;
+
+  // Signalements
+  List<Map<String, dynamic>> _signalements = [];
+  bool _loadingSignalements = true;
 
   // Infos groupe
   File? _avatarFile;
@@ -1704,13 +1972,19 @@ class _AdminSheetState extends State<_AdminSheet> with SingleTickerProviderState
   bool _uploadingAvatar = false;
   bool _uploadingBanner = false;
 
+  // Onglets : Membres, Demandes, Signalements toujours présents ;
+  // Règles + Photos réservés aux admins.
+  int get _tabCount => widget.isFullAdmin ? 5 : 3;
+
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 4, vsync: this);
+    _tabCtrl = TabController(length: _tabCount, vsync: this);
+    _profils = Map<String, Map<String, dynamic>>.from(widget.userProfiles);
     final reglesRaw = widget.groupe['regles'] as List? ?? [];
     _regles = reglesRaw.map((r) => r.toString()).toList();
     _loadMembres();
+    _loadSignalements();
   }
 
   @override
@@ -1762,11 +2036,85 @@ class _AdminSheetState extends State<_AdminSheet> with SingleTickerProviderState
         .select('user_uid, role, statut, rejoint_at')
         .eq('groupe_id', widget.groupe['id'])
         .order('rejoint_at');
+    final rows = List<Map<String, dynamic>>.from(data);
+
+    // Compléter les profils manquants (membres non-auteurs de posts)
+    final missing = rows
+        .map((m) => m['user_uid'].toString())
+        .where((u) => !_profils.containsKey(u))
+        .toSet()
+        .toList();
+    if (missing.isNotEmpty) {
+      final pd = await _supa
+          .from('user_profiles')
+          .select('uid, firstname, lastname, avatar_url, profile_type, nom')
+          .inFilter('uid', missing).eq('is_main', true);
+      for (final p in (pd as List)) {
+        _profils[p['uid'].toString()] = _toProfileMap(Map<String, dynamic>.from(p));
+      }
+    }
+
     if (mounted) {
       setState(() {
-        _membres = List<Map<String, dynamic>>.from(data);
+        _membres = rows;
         _loadingMembres = false;
       });
+    }
+  }
+
+  Future<void> _loadSignalements() async {
+    try {
+      final data = await _supa
+          .from('signalements')
+          .select('id, reporter_uid, target_id, target_type, raison, description, statut, created_at')
+          .eq('groupe_id', widget.groupe['id'])
+          .eq('statut', 'en_attente')
+          .order('created_at', ascending: false);
+      final rows = List<Map<String, dynamic>>.from(data as List);
+
+      final missing = rows
+          .map((s) => s['reporter_uid'].toString())
+          .where((u) => !_profils.containsKey(u))
+          .toSet()
+          .toList();
+      if (missing.isNotEmpty) {
+        final pd = await _supa
+            .from('user_profiles')
+            .select('uid, firstname, lastname, avatar_url, profile_type, nom')
+            .inFilter('uid', missing).eq('is_main', true);
+        for (final p in (pd as List)) {
+          _profils[p['uid'].toString()] = _toProfileMap(Map<String, dynamic>.from(p));
+        }
+      }
+      if (mounted) setState(() { _signalements = rows; _loadingSignalements = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loadingSignalements = false);
+    }
+  }
+
+  Future<void> _traiterSignalement(String id, {bool supprimerPost = false, String? postId}) async {
+    try {
+      if (supprimerPost && postId != null) {
+        await _supa.from('groupe_posts').delete().eq('id', postId);
+        // les autres signalements du même post deviennent traités
+        await _supa.from('signalements').update({
+          'statut': 'traite',
+          'handled_at': DateTime.now().toIso8601String(),
+          'handled_by': FirebaseAuth.instance.currentUser?.uid,
+        }).eq('target_type', 'groupe_post').eq('target_id', postId);
+      } else {
+        await _supa.from('signalements').update({
+          'statut': 'rejete',
+          'handled_at': DateTime.now().toIso8601String(),
+          'handled_by': FirebaseAuth.instance.currentUser?.uid,
+        }).eq('id', id);
+      }
+      await _loadSignalements();
+      widget.onUpdated();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      }
     }
   }
 
@@ -1783,7 +2131,12 @@ class _AdminSheetState extends State<_AdminSheet> with SingleTickerProviderState
         await _supa.from('groupes_membres').update({'statut': 'active'})
             .eq('groupe_id', widget.groupe['id']).eq('user_uid', userUid);
         break;
-      case 'promote':
+      case 'promote_mod':
+        await _supa.from('groupes_membres').update({'role': 'moderateur'})
+            .eq('groupe_id', widget.groupe['id']).eq('user_uid', userUid);
+        break;
+      case 'promote_admin':
+        if (!widget.isFullAdmin) return;
         await _supa.from('groupes_membres').update({'role': 'admin'})
             .eq('groupe_id', widget.groupe['id']).eq('user_uid', userUid);
         break;
@@ -1824,11 +2177,12 @@ class _AdminSheetState extends State<_AdminSheet> with SingleTickerProviderState
           isScrollable: true,
           tabAlignment: TabAlignment.start,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13),
-          tabs: const [
-            Tab(text: 'Membres'),
-            Tab(text: 'Demandes'),
-            Tab(text: 'Règles'),
-            Tab(text: 'Photos'),
+          tabs: [
+            const Tab(text: 'Membres'),
+            const Tab(text: 'Demandes'),
+            Tab(text: _signalements.isEmpty ? 'Signalements' : 'Signalements (${_signalements.length})'),
+            if (widget.isFullAdmin) const Tab(text: 'Règles'),
+            if (widget.isFullAdmin) const Tab(text: 'Photos'),
           ],
         ),
         const Divider(height: 1),
@@ -1838,12 +2192,88 @@ class _AdminSheetState extends State<_AdminSheet> with SingleTickerProviderState
             children: [
               _buildMembresList(actifOnly: true),
               _buildMembresList(pendingOnly: true),
-              _buildReglesTab(),
-              _buildPhotosTab(),
+              _buildSignalementsTab(),
+              if (widget.isFullAdmin) _buildReglesTab(),
+              if (widget.isFullAdmin) _buildPhotosTab(),
             ],
           ),
         ),
       ]),
+    );
+  }
+
+  Widget _buildSignalementsTab() {
+    if (_loadingSignalements) {
+      return const Center(child: CircularProgressIndicator(color: _tealC));
+    }
+    if (_signalements.isEmpty) {
+      return const Center(
+        child: Text('Aucun signalement en attente',
+            style: TextStyle(fontFamily: 'Galey', color: _greyC)),
+      );
+    }
+    const raisonLabels = {
+      'vente_interdite': '🚫 Vente / petite annonce',
+      'spam': 'Spam ou publicité',
+      'contenu_inapproprie': 'Contenu inapproprié',
+      'maltraitance': 'Maltraitance animale',
+      'faux_profil': 'Faux profil',
+      'autre': 'Autre',
+    };
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      itemCount: _signalements.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (_, i) {
+        final s = _signalements[i];
+        final reporter = _profils[s['reporter_uid'].toString()];
+        final postId = s['target_id'].toString();
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF8F5),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFFFE0D0)),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(raisonLabels[s['raison']?.toString()] ?? s['raison'].toString(),
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFFC62828))),
+            if ((s['description']?.toString() ?? '').isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(s['description'].toString(),
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _darkC)),
+            ],
+            const SizedBox(height: 4),
+            Text('Signalé par ${_profileName(reporter)}',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _greyC)),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => _traiterSignalement(s['id'].toString()),
+                  style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: _greyC),
+                      padding: const EdgeInsets.symmetric(vertical: 8)),
+                  child: const Text('Ignorer',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _greyC)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => _traiterSignalement(s['id'].toString(),
+                      supprimerPost: true, postId: postId),
+                  style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFD32F2F),
+                      padding: const EdgeInsets.symmetric(vertical: 8)),
+                  child: const Text('Supprimer le post',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ]),
+          ]),
+        );
+      },
     );
   }
 
@@ -1871,50 +2301,66 @@ class _AdminSheetState extends State<_AdminSheet> with SingleTickerProviderState
         final uid = m['user_uid'].toString();
         final role = m['role'].toString();
         final statut = m['statut']?.toString() ?? 'active';
+        final prof = _profils[uid];
+        final photo = _profilePhoto(prof);
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
           leading: CircleAvatar(
             backgroundColor: _tealC.withValues(alpha: 0.15),
-            child: const Icon(Icons.person_outline, color: _tealC, size: 20),
+            backgroundImage: photo != null ? NetworkImage(photo) : null,
+            child: photo == null
+                ? const Icon(Icons.person_outline, color: _tealC, size: 20)
+                : null,
           ),
           title: Text(
-            uid.length > 8 ? '${uid.substring(0, 8)}…' : uid,
+            _profileName(prof),
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
+            overflow: TextOverflow.ellipsis,
           ),
           subtitle: Row(mainAxisSize: MainAxisSize.min, children: [
             if (role == 'admin')
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                margin: const EdgeInsets.only(right: 6),
-                decoration: BoxDecoration(color: _tealC.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
-                child: const Text('Admin', style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: _tealC)),
-              ),
+              _miniBadge('Admin', const Color(0xFF00838F)),
+            if (role == 'moderateur')
+              _miniBadge('Modérateur', const Color(0xFF8E24AA)),
             if (statut == 'banned')
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-                child: const Text('Banni', style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.red)),
-              ),
+              _miniBadge('Banni', Colors.red),
           ]),
           trailing: PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, size: 18, color: _greyC),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             onSelected: (val) => _updateMembre(uid, val),
-            itemBuilder: (_) => [
-              if (statut == 'pending')
-                const PopupMenuItem(value: 'approve', child: Row(children: [Icon(Icons.check_circle_outline, size: 16, color: Colors.green), SizedBox(width: 8), Text('Approuver')])),
-              if (role == 'membre' && statut == 'active')
-                const PopupMenuItem(value: 'promote', child: Row(children: [Icon(Icons.star_outline, size: 16, color: _tealC), SizedBox(width: 8), Text('Passer admin')])),
-              if (role == 'admin')
-                const PopupMenuItem(value: 'demote', child: Row(children: [Icon(Icons.star_border, size: 16), SizedBox(width: 8), Text('Retirer admin')])),
-              const PopupMenuItem(value: 'ban', child: Row(children: [Icon(Icons.block, size: 16, color: Colors.orange), SizedBox(width: 8), Text('Bannir')])),
-              const PopupMenuItem(value: 'remove', child: Row(children: [Icon(Icons.person_remove_outlined, size: 16, color: Colors.red), SizedBox(width: 8), Text('Retirer', style: TextStyle(color: Colors.red))])),
-            ],
+            itemBuilder: (_) {
+              // Un modérateur ne peut pas agir sur un admin.
+              final protege = role == 'admin' && !widget.isFullAdmin;
+              return [
+                if (statut == 'pending')
+                  const PopupMenuItem(value: 'approve', child: Row(children: [Icon(Icons.check_circle_outline, size: 16, color: Colors.green), SizedBox(width: 8), Text('Approuver')])),
+                if (statut == 'active' && role == 'membre')
+                  const PopupMenuItem(value: 'promote_mod', child: Row(children: [Icon(Icons.shield_outlined, size: 16, color: Color(0xFF8E24AA)), SizedBox(width: 8), Text('Passer modérateur')])),
+                if (statut == 'active' && role == 'moderateur' && widget.isFullAdmin)
+                  const PopupMenuItem(value: 'promote_admin', child: Row(children: [Icon(Icons.star_outline, size: 16, color: Color(0xFF00838F)), SizedBox(width: 8), Text('Passer admin')])),
+                if (statut == 'active' && role != 'membre' && !protege)
+                  const PopupMenuItem(value: 'demote', child: Row(children: [Icon(Icons.star_border, size: 16), SizedBox(width: 8), Text('Retirer le rôle')])),
+                if (!protege)
+                  const PopupMenuItem(value: 'ban', child: Row(children: [Icon(Icons.block, size: 16, color: Colors.orange), SizedBox(width: 8), Text('Bannir')])),
+                if (!protege)
+                  const PopupMenuItem(value: 'remove', child: Row(children: [Icon(Icons.person_remove_outlined, size: 16, color: Colors.red), SizedBox(width: 8), Text('Retirer', style: TextStyle(color: Colors.red))])),
+              ];
+            },
           ),
         );
       },
     );
   }
+
+  Widget _miniBadge(String label, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        margin: const EdgeInsets.only(right: 6),
+        decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.13), borderRadius: BorderRadius.circular(10)),
+        child: Text(label,
+            style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: color, fontWeight: FontWeight.w700)),
+      );
 
   Widget _buildReglesTab() {
     return Column(children: [

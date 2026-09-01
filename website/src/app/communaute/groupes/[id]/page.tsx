@@ -25,8 +25,24 @@ function toUserProfile(cp: { uid: string; firstname?: string; lastname?: string;
 }
 
 // ── Modération ────────────────────────────────────────────────────────────────
+// Règle ajoutée d'office sur TOUS les groupes (non modifiable, appli + web).
+const NO_VENTE_RULE =
+  '🚫 Pas de vente, ni petites annonces. Les cessions et ventes d\'animaux passent ' +
+  'exclusivement par les annonces officielles de PetsMatch. Tout post commercial est ' +
+  'bloqué et peut être signalé.';
+
 const GROS_MOTS = ['merde', 'putain', 'connard', 'connasse', 'salope', 'pute', 'enculé', 'enculer', 'fdp', 'nique', 'niquer', 'ntm', 'bâtard', 'batard', 'chier', 'bite ', 'branleur', 'branler'];
-const COMMERCE_KW = ['prix :', 'prix:', 'tarif ', 'tarif:', '€', ' euro', 'paypal', 'virement', 'paiement', 'vend ', 'vends ', 'achète ', 'a vendre', 'à vendre', 'achat', 'solde', 'livraison gratuite'];
+const COMMERCE_KW = [
+  'prix :', 'prix:', 'prix ferme', 'tarif ', 'tarif:', '€', ' eur ', ' euro', 'euros',
+  'paypal', 'lydia', 'paylib', 'virement', 'especes', 'espèces', 'la main à la main',
+  'paiement', 'payable', 'acompte', 'arrhes',
+  'vend ', 'vends ', 'vend,', 'vends,', 'à vendre', 'a vendre', 'mise en vente', 'en vente',
+  'à céder contre', 'a ceder contre', 'contre bons soins payants',
+  'achète ', 'achete ', 'achat', 'rachète', 'reprise payante',
+  'solde', 'promo ', 'réduction', 'livraison gratuite', 'port offert',
+  'négociable', 'negociable', 'premier arrivé premier servi',
+  'mp pour prix', 'mp pour le prix', 'dm pour prix', 'prix en mp',
+];
 const ADOPTION_KW = ['adoption', 'adopter', 'à donner', 'a donner', 'cherche preneur', 'cession', 'céder', 'ceder'];
 const TRANSACTION_KW = ['contrat de vente', 'contrat de cession', 'bon de commande'];
 
@@ -99,6 +115,8 @@ export default function GroupeDetailPage() {
   const [myLikes, setMyLikes] = useState<Set<string>>(new Set());
   const [membresCount, setMembresCount] = useState(0);
   const [friendsCount, setFriendsCount] = useState(0);
+  const [membresList, setMembresList] = useState<{ user_uid: string; role: string }[]>([]);
+  const [showAllMembres, setShowAllMembres] = useState(false);
   const [loading, setLoading] = useState(true);
   const [newPost, setNewPost] = useState('');
   const [posting, setPosting] = useState(false);
@@ -133,10 +151,17 @@ export default function GroupeDetailPage() {
   const [postImagePreview, setPostImagePreview] = useState<string | null>(null);
   const [uploadingImg, setUploadingImg] = useState(false);
 
+  // Signalement d'un post
+  const [reportPostId, setReportPostId] = useState<string | null>(null);
+  const [reportMotif, setReportMotif] = useState('vente_interdite');
+  const [reportDetail, setReportDetail] = useState('');
+  const [reportSending, setReportSending] = useState(false);
+
   // Admin state
   const [showAdmin, setShowAdmin] = useState(false);
-  const [adminTab, setAdminTab] = useState<'membres' | 'demandes' | 'regles' | 'photos'>('membres');
+  const [adminTab, setAdminTab] = useState<'membres' | 'demandes' | 'signalements' | 'regles' | 'photos'>('membres');
   const [membres, setMembres] = useState<{ user_uid: string; role: string; statut: string }[]>([]);
+  const [signalements, setSignalements] = useState<{ id: string; reporter_uid: string; target_id: string; raison: string; description: string | null }[]>([]);
   const [editRegles, setEditRegles] = useState<string[]>([]);
   const [newRegle, setNewRegle] = useState('');
   const [savingRegles, setSavingRegles] = useState(false);
@@ -145,6 +170,8 @@ export default function GroupeDetailPage() {
 
   const isMember = membership?.statut === 'active';
   const isAdmin = membership?.role === 'admin' && isMember;
+  const isModerator = membership?.role === 'moderateur' && isMember;
+  const canModerate = isAdmin || isModerator;
   const isPending = membership?.statut === 'pending';
 
   const load = useCallback(async () => {
@@ -156,9 +183,16 @@ export default function GroupeDetailPage() {
       setEditRegles((g.regles as string[]) ?? []);
 
       const { data: membresData } = await supabase
-        .from('groupes_membres').select('user_uid').eq('groupe_id', id).eq('statut', 'active');
+        .from('groupes_membres').select('user_uid, role, rejoint_at')
+        .eq('groupe_id', id).eq('statut', 'active').order('rejoint_at');
       setMembresCount((membresData ?? []).length);
       const membresUids = (membresData ?? []).map((m: { user_uid: string }) => m.user_uid);
+      const roleRank: Record<string, number> = { admin: 0, moderateur: 1, membre: 2 };
+      setMembresList(
+        [...((membresData ?? []) as { user_uid: string; role: string }[])]
+          .sort((a, b) => (roleRank[a.role] ?? 2) - (roleRank[b.role] ?? 2))
+          .map(m => ({ user_uid: m.user_uid, role: m.role })),
+      );
 
       let mem: Membership | null = null;
       if (user?.uid) {
@@ -192,9 +226,10 @@ export default function GroupeDetailPage() {
         setMyLikes(new Set((likes ?? []).map((l: { post_id: string }) => l.post_id)));
       }
 
-      // Load user profiles for post authors + current user
+      // Load user profiles for post authors + members + current user
       const authorUids = [...new Set([
         ...(postsData ?? []).map((p: Post) => p.auteur_uid),
+        ...membresUids,
         ...(user?.uid ? [user.uid] : []),
       ])];
       if (authorUids.length > 0) {
@@ -333,7 +368,7 @@ export default function GroupeDetailPage() {
   }
 
   async function togglePin(post: Post) {
-    if (!isAdmin) return;
+    if (!canModerate) return;
     await supabase.from('groupe_posts').update({ epingle: !post.epingle }).eq('id', post.id);
     setPosts(prev => {
       const updated = prev.map(p => p.id === post.id ? { ...p, epingle: !p.epingle } : p);
@@ -344,9 +379,71 @@ export default function GroupeDetailPage() {
   async function deletePost(postId: string) {
     const post = posts.find(p => p.id === postId);
     if (!post) return;
-    if (post.auteur_uid !== user?.uid && !isAdmin) return;
+    if (post.auteur_uid !== user?.uid && !canModerate) return;
     await supabase.from('groupe_posts').delete().eq('id', postId);
     setPosts(prev => prev.filter(p => p.id !== postId));
+  }
+
+  async function submitReport() {
+    if (!user?.uid || !reportPostId) return;
+    setReportSending(true);
+    try {
+      const { error } = await supabase.from('signalements').insert({
+        reporter_uid: user.uid,
+        target_type: 'groupe_post',
+        target_id: reportPostId,
+        groupe_id: id,
+        raison: reportMotif,
+        ...(reportDetail.trim() ? { description: reportDetail.trim() } : {}),
+      });
+      if (error) {
+        const dup = error.code === '23505' || /duplicate/i.test(error.message);
+        alert(dup ? 'Vous avez déjà signalé cette publication.' : `Erreur : ${error.message}`);
+      } else {
+        alert('Merci, le signalement a été transmis aux modérateurs.');
+      }
+    } finally {
+      setReportSending(false);
+      setReportPostId(null);
+      setReportMotif('vente_interdite');
+      setReportDetail('');
+    }
+  }
+
+  async function loadSignalements() {
+    const { data } = await supabase
+      .from('signalements')
+      .select('id, reporter_uid, target_id, raison, description')
+      .eq('groupe_id', id).eq('statut', 'en_attente')
+      .order('created_at', { ascending: false });
+    const rows = (data ?? []) as { id: string; reporter_uid: string; target_id: string; raison: string; description: string | null }[];
+    setSignalements(rows);
+    const missing = [...new Set(rows.map(s => s.reporter_uid))].filter(u => !userProfiles[u]);
+    if (missing.length > 0) {
+      const { data: pd } = await supabase.from('user_profiles')
+        .select('uid, firstname, lastname, avatar_url, profile_type, nom')
+        .in('uid', missing).eq('is_main', true);
+      if (pd) {
+        const np: Record<string, UserProfile> = {};
+        for (const p of pd) np[p.uid] = toUserProfile(p);
+        setUserProfiles(prev => ({ ...prev, ...np }));
+      }
+    }
+  }
+
+  async function traiterSignalement(sigId: string, opts: { deletePost?: boolean; postId?: string } = {}) {
+    if (opts.deletePost && opts.postId) {
+      await supabase.from('groupe_posts').delete().eq('id', opts.postId);
+      await supabase.from('signalements')
+        .update({ statut: 'traite', handled_at: new Date().toISOString(), handled_by: user?.uid })
+        .eq('target_type', 'groupe_post').eq('target_id', opts.postId);
+      setPosts(prev => prev.filter(p => p.id !== opts.postId));
+    } else {
+      await supabase.from('signalements')
+        .update({ statut: 'rejete', handled_at: new Date().toISOString(), handled_by: user?.uid })
+        .eq('id', sigId);
+    }
+    await loadSignalements();
   }
 
   async function openComments(post: Post) {
@@ -441,13 +538,26 @@ export default function GroupeDetailPage() {
   async function loadAdminMembres() {
     const { data } = await supabase.from('groupes_membres').select('user_uid, role, statut')
       .eq('groupe_id', id).order('rejoint_at');
-    setMembres((data ?? []) as { user_uid: string; role: string; statut: string }[]);
+    const rows = (data ?? []) as { user_uid: string; role: string; statut: string }[];
+    setMembres(rows);
+    const missing = [...new Set(rows.map(m => m.user_uid))].filter(u => !userProfiles[u]);
+    if (missing.length > 0) {
+      const { data: pd } = await supabase.from('user_profiles')
+        .select('uid, firstname, lastname, avatar_url, profile_type, nom')
+        .in('uid', missing).eq('is_main', true);
+      if (pd) {
+        const np: Record<string, UserProfile> = {};
+        for (const p of pd) np[p.uid] = toUserProfile(p);
+        setUserProfiles(prev => ({ ...prev, ...np }));
+      }
+    }
   }
 
   async function updateMembre(userUid: string, action: string) {
     switch (action) {
       case 'approve': await supabase.from('groupes_membres').update({ statut: 'active' }).eq('groupe_id', id).eq('user_uid', userUid); break;
-      case 'promote': await supabase.from('groupes_membres').update({ role: 'admin' }).eq('groupe_id', id).eq('user_uid', userUid); break;
+      case 'promote_mod': await supabase.from('groupes_membres').update({ role: 'moderateur' }).eq('groupe_id', id).eq('user_uid', userUid); break;
+      case 'promote_admin': if (!isAdmin) return; await supabase.from('groupes_membres').update({ role: 'admin' }).eq('groupe_id', id).eq('user_uid', userUid); break;
       case 'demote': await supabase.from('groupes_membres').update({ role: 'membre' }).eq('groupe_id', id).eq('user_uid', userUid); break;
       case 'ban': await supabase.from('groupes_membres').update({ statut: 'banned' }).eq('groupe_id', id).eq('user_uid', userUid); break;
       case 'remove': await supabase.from('groupes_membres').delete().eq('groupe_id', id).eq('user_uid', userUid); break;
@@ -509,10 +619,10 @@ export default function GroupeDetailPage() {
               ← Retour
             </button>
           </div>
-          {isAdmin && (
+          {canModerate && (
             <div className="absolute top-4 right-4">
               <button
-                onClick={() => { setShowAdmin(true); loadAdminMembres(); }}
+                onClick={() => { setShowAdmin(true); setAdminTab('membres'); loadAdminMembres(); loadSignalements(); }}
                 className="text-white/80 hover:text-white bg-black/20 p-2 rounded-full"
               >
                 ⚙️
@@ -553,7 +663,7 @@ export default function GroupeDetailPage() {
         {/* Bouton rejoindre */}
         {user && (
           <button
-            onClick={joinOrLeave}
+            onClick={canModerate ? () => { setShowAdmin(true); setAdminTab('membres'); loadAdminMembres(); loadSignalements(); } : joinOrLeave}
             className={`w-full py-3 rounded-xl font-bold text-sm mb-5 transition-colors ${
               isMember
                 ? 'bg-[#00ACC1] text-white'
@@ -563,26 +673,77 @@ export default function GroupeDetailPage() {
             }`}
             style={{ fontFamily: 'Galey, sans-serif' }}
           >
-            {isAdmin ? '⚙️ Admin' : isMember ? 'Membre ✓ — Quitter' : isPending ? 'Demande en attente…' : groupe.prive ? 'Demander à rejoindre' : 'Rejoindre le groupe'}
+            {canModerate ? (isAdmin ? '⚙️ Admin' : '⚙️ Modérateur') : isMember ? 'Membre ✓ — Quitter' : isPending ? 'Demande en attente…' : groupe.prive ? 'Demander à rejoindre' : 'Rejoindre le groupe'}
           </button>
         )}
 
         {/* Règles */}
-        {groupe.regles && groupe.regles.length > 0 && (
-          <details className="bg-white rounded-2xl shadow-sm border border-gray-100 mb-5 overflow-hidden">
-            <summary className="px-5 py-4 cursor-pointer font-bold text-sm text-[#1E2025] flex items-center gap-2" style={{ fontFamily: 'Galey, sans-serif' }}>
-              📋 Règles du groupe
-            </summary>
-            <div className="px-5 pb-4 flex flex-col gap-2">
-              {groupe.regles.map((r, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <span className="w-6 h-6 rounded-full bg-[#00ACC1] text-white text-xs flex items-center justify-center font-bold flex-shrink-0 mt-0.5">{i + 1}</span>
-                  <p className="text-sm text-gray-700" style={{ fontFamily: 'Galey, sans-serif' }}>{r}</p>
-                </div>
-              ))}
+        <details className="bg-white rounded-2xl shadow-sm border border-gray-100 mb-5 overflow-hidden" open>
+          <summary className="px-5 py-4 cursor-pointer font-bold text-sm text-[#1E2025] flex items-center gap-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+            📋 Règles du groupe
+          </summary>
+          <div className="px-5 pb-4 flex flex-col gap-2">
+            {/* Règle imposée par PetsMatch (non modifiable) */}
+            <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-3">
+              <span className="text-lg leading-none">⚖️</span>
+              <p className="text-xs text-red-800 font-semibold leading-relaxed" style={{ fontFamily: 'Galey, sans-serif' }}>
+                {NO_VENTE_RULE}
+              </p>
             </div>
-          </details>
-        )}
+            {(groupe.regles ?? []).map((r, i) => (
+              <div key={i} className="flex items-start gap-3">
+                <span className="w-6 h-6 rounded-full bg-[#00ACC1] text-white text-xs flex items-center justify-center font-bold flex-shrink-0 mt-0.5">{i + 1}</span>
+                <p className="text-sm text-gray-700" style={{ fontFamily: 'Galey, sans-serif' }}>{r}</p>
+              </div>
+            ))}
+          </div>
+        </details>
+
+        {/* Membres / équipe */}
+        {membresList.length > 0 && (() => {
+          const restreint = groupe.prive && !isMember;
+          const visibles = restreint
+            ? membresList.filter(m => m.role === 'admin' || m.role === 'moderateur')
+            : membresList;
+          if (visibles.length === 0) return null;
+          const shown = showAllMembres ? visibles : visibles.slice(0, 12);
+          return (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 mb-5 p-4">
+              <p className="font-bold text-sm text-[#1E2025] mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+                {restreint ? 'Équipe du groupe' : `Membres (${membresCount})`}
+              </p>
+              {restreint && (
+                <p className="text-xs text-gray-400 mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+                  Groupe privé — rejoignez-le pour voir tous les membres.
+                </p>
+              )}
+              <div className="flex flex-col gap-2.5 mt-2">
+                {shown.map(m => {
+                  const p = userProfiles[m.user_uid];
+                  return (
+                    <div key={m.user_uid} className="flex items-center gap-3">
+                      <ProfileAvatar profile={p} size={32} />
+                      <span className="flex-1 text-sm font-semibold text-[#1E2025] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
+                        {profileName(p)}
+                      </span>
+                      {m.role === 'admin' && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800">Admin</span>}
+                      {m.role === 'moderateur' && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800">Modérateur</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              {visibles.length > 12 && (
+                <button
+                  onClick={() => setShowAllMembres(v => !v)}
+                  className="mt-3 text-xs font-semibold text-[#00ACC1]"
+                  style={{ fontFamily: 'Galey, sans-serif' }}
+                >
+                  {showAllMembres ? 'Réduire' : `Voir les ${visibles.length} membres`}
+                </button>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Créer un post */}
         {isMember && (
@@ -637,7 +798,7 @@ export default function GroupeDetailPage() {
             {posts.map(post => {
               const isMe = post.auteur_uid === user?.uid;
               const liked = myLikes.has(post.id);
-              const canDelete = isMe || isAdmin;
+              const canDelete = isMe || canModerate;
               const profile = userProfiles[post.auteur_uid];
               const displayName = profileName(profile, isMe);
 
@@ -653,13 +814,18 @@ export default function GroupeDetailPage() {
                         <p className="text-xs text-gray-400">{fmtDate(post.created_at)}</p>
                       </div>
                       {post.epingle && <span className="text-[#00ACC1] text-sm">📌</span>}
-                      {(canDelete || isAdmin) && (
+                      {(canDelete || canModerate || (!!user && !isMe)) && (
                         <div className="relative group">
                           <button className="text-gray-400 hover:text-gray-600 px-2">⋯</button>
-                          <div className="absolute right-0 top-6 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-10 min-w-[140px] hidden group-hover:block">
-                            {isAdmin && (
+                          <div className="absolute right-0 top-6 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-10 min-w-[150px] hidden group-hover:block">
+                            {canModerate && (
                               <button onClick={() => togglePin(post)} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 text-gray-700" style={{ fontFamily: 'Galey, sans-serif' }}>
                                 {post.epingle ? '📌 Désépingler' : '📌 Épingler'}
+                              </button>
+                            )}
+                            {!!user && !isMe && (
+                              <button onClick={() => { setReportPostId(post.id); setReportMotif('vente_interdite'); setReportDetail(''); }} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 text-orange-600" style={{ fontFamily: 'Galey, sans-serif' }}>
+                                🚩 Signaler
                               </button>
                             )}
                             {canDelete && (
@@ -864,14 +1030,18 @@ export default function GroupeDetailPage() {
               <button onClick={() => setShowAdmin(false)} className="text-gray-400 hover:text-gray-600">✕</button>
             </div>
             <div className="flex border-b border-gray-100">
-              {(['membres', 'demandes', 'regles', 'photos'] as const).map(t => (
+              {((isAdmin
+                ? ['membres', 'demandes', 'signalements', 'regles', 'photos']
+                : ['membres', 'demandes', 'signalements']) as typeof adminTab[]).map(t => (
                 <button
                   key={t}
                   onClick={() => setAdminTab(t)}
                   className={`flex-1 py-3 text-xs font-semibold transition-colors ${adminTab === t ? 'text-[#00ACC1] border-b-2 border-[#00ACC1]' : 'text-gray-500'}`}
                   style={{ fontFamily: 'Galey, sans-serif' }}
                 >
-                  {t === 'membres' ? 'Membres' : t === 'demandes' ? 'Demandes' : t === 'regles' ? 'Règles' : 'Photos'}
+                  {t === 'membres' ? 'Membres' : t === 'demandes' ? 'Demandes'
+                    : t === 'signalements' ? `Signal.${signalements.length ? ` (${signalements.length})` : ''}`
+                    : t === 'regles' ? 'Règles' : 'Photos'}
                 </button>
               ))}
             </div>
@@ -880,36 +1050,73 @@ export default function GroupeDetailPage() {
                 <div className="p-4 flex flex-col gap-2">
                   {membres
                     .filter(m => adminTab === 'demandes' ? m.statut === 'pending' : m.statut === 'active')
-                    .map(m => (
+                    .map(m => {
+                      const p = userProfiles[m.user_uid];
+                      const protege = m.role === 'admin' && !isAdmin;
+                      return (
                       <div key={m.user_uid} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                        <div className="w-9 h-9 rounded-full bg-[#E0F7FA] flex items-center justify-center flex-shrink-0">
-                          <span>👤</span>
-                        </div>
+                        <ProfileAvatar profile={p} size={36} />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-gray-800 truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
-                            {m.user_uid.slice(0, 12)}…
+                            {profileName(p)}
                           </p>
-                          {m.role === 'admin' && <span className="text-xs text-[#00ACC1] font-semibold">Admin</span>}
+                          {m.role === 'admin' && <span className="text-xs text-cyan-700 font-semibold">Admin</span>}
+                          {m.role === 'moderateur' && <span className="text-xs text-purple-700 font-semibold">Modérateur</span>}
                         </div>
                         <div className="flex gap-1">
                           {m.statut === 'pending' && (
-                            <button onClick={() => updateMembre(m.user_uid, 'approve')} className="px-2 py-1 bg-green-50 text-green-600 rounded-lg text-xs font-semibold">✓</button>
+                            <button onClick={() => updateMembre(m.user_uid, 'approve')} className="px-2 py-1 bg-green-50 text-green-600 rounded-lg text-xs font-semibold" title="Approuver">✓</button>
                           )}
                           {m.role === 'membre' && m.statut === 'active' && (
-                            <button onClick={() => updateMembre(m.user_uid, 'promote')} className="px-2 py-1 bg-[#E0F7FA] text-[#00ACC1] rounded-lg text-xs font-semibold">⭐</button>
+                            <button onClick={() => updateMembre(m.user_uid, 'promote_mod')} className="px-2 py-1 bg-purple-50 text-purple-600 rounded-lg text-xs font-semibold" title="Passer modérateur">🛡️</button>
                           )}
-                          {m.role === 'admin' && (
-                            <button onClick={() => updateMembre(m.user_uid, 'demote')} className="px-2 py-1 bg-gray-100 text-gray-600 rounded-lg text-xs font-semibold">−</button>
+                          {m.role === 'moderateur' && m.statut === 'active' && isAdmin && (
+                            <button onClick={() => updateMembre(m.user_uid, 'promote_admin')} className="px-2 py-1 bg-cyan-50 text-cyan-700 rounded-lg text-xs font-semibold" title="Passer admin">⭐</button>
                           )}
-                          <button onClick={() => updateMembre(m.user_uid, 'remove')} className="px-2 py-1 bg-red-50 text-red-500 rounded-lg text-xs font-semibold">✕</button>
+                          {m.role !== 'membre' && m.statut === 'active' && !protege && (
+                            <button onClick={() => updateMembre(m.user_uid, 'demote')} className="px-2 py-1 bg-gray-100 text-gray-600 rounded-lg text-xs font-semibold" title="Retirer le rôle">−</button>
+                          )}
+                          {!protege && (
+                            <button onClick={() => updateMembre(m.user_uid, 'remove')} className="px-2 py-1 bg-red-50 text-red-500 rounded-lg text-xs font-semibold" title="Retirer">✕</button>
+                          )}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   {membres.filter(m => adminTab === 'demandes' ? m.statut === 'pending' : m.statut === 'active').length === 0 && (
                     <p className="text-center text-gray-400 py-8" style={{ fontFamily: 'Galey, sans-serif' }}>
                       {adminTab === 'demandes' ? 'Aucune demande en attente' : 'Aucun membre'}
                     </p>
                   )}
+                </div>
+              )}
+              {adminTab === 'signalements' && (
+                <div className="p-4 flex flex-col gap-3">
+                  {signalements.length === 0 && (
+                    <p className="text-center text-gray-400 py-8" style={{ fontFamily: 'Galey, sans-serif' }}>Aucun signalement en attente</p>
+                  )}
+                  {signalements.map(s => {
+                    const reporter = userProfiles[s.reporter_uid];
+                    const RAISON: Record<string, string> = {
+                      vente_interdite: '🚫 Vente / petite annonce',
+                      spam: 'Spam ou publicité',
+                      contenu_inapproprie: 'Contenu inapproprié',
+                      maltraitance: 'Maltraitance animale',
+                      faux_profil: 'Faux profil',
+                      autre: 'Autre',
+                    };
+                    return (
+                      <div key={s.id} className="border border-orange-200 bg-orange-50 rounded-xl p-3">
+                        <p className="text-sm font-bold text-red-700" style={{ fontFamily: 'Galey, sans-serif' }}>{RAISON[s.raison] ?? s.raison}</p>
+                        {s.description && <p className="text-sm text-gray-700 mt-1" style={{ fontFamily: 'Galey, sans-serif' }}>{s.description}</p>}
+                        <p className="text-xs text-gray-400 mt-1">Signalé par {profileName(reporter)}</p>
+                        <div className="flex gap-2 mt-2">
+                          <button onClick={() => traiterSignalement(s.id)} className="flex-1 py-1.5 rounded-lg text-xs font-semibold border border-gray-300 text-gray-600">Ignorer</button>
+                          <button onClick={() => traiterSignalement(s.id, { deletePost: true, postId: s.target_id })} className="flex-1 py-1.5 rounded-lg text-xs font-bold bg-red-600 text-white">Supprimer le post</button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               {adminTab === 'regles' && (
@@ -985,6 +1192,48 @@ export default function GroupeDetailPage() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal signalement d'un post */}
+      {reportPostId && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center p-4" onClick={() => setReportPostId(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-md p-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>Signaler cette publication</h3>
+              <button onClick={() => setReportPostId(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <div className="flex flex-col gap-1.5 mb-3">
+              {Object.entries({
+                vente_interdite: 'Vente / petite annonce (interdit)',
+                spam: 'Spam ou publicité',
+                contenu_inapproprie: 'Contenu inapproprié',
+                maltraitance: 'Maltraitance animale',
+                autre: 'Autre',
+              }).map(([k, label]) => (
+                <label key={k} className="flex items-center gap-2 text-sm cursor-pointer" style={{ fontFamily: 'Galey, sans-serif' }}>
+                  <input type="radio" name="report-motif" checked={reportMotif === k} onChange={() => setReportMotif(k)} className="accent-[#00ACC1]" />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <textarea
+              value={reportDetail}
+              onChange={e => setReportDetail(e.target.value)}
+              placeholder="Précisions (facultatif)"
+              rows={2}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#00ACC1] resize-none mb-3"
+              style={{ fontFamily: 'Galey, sans-serif' }}
+            />
+            <button
+              onClick={submitReport}
+              disabled={reportSending}
+              className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-red-600 disabled:opacity-50"
+              style={{ fontFamily: 'Galey, sans-serif' }}
+            >
+              {reportSending ? '…' : 'Envoyer le signalement'}
+            </button>
           </div>
         </div>
       )}

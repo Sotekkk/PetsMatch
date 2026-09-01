@@ -29,6 +29,8 @@ interface Groupe {
   createur_uid: string;
   created_at: string;
   regles: string[];
+  avatar_url?: string | null;
+  photo_cover_url?: string | null;
 }
 
 interface CreateGroupeData {
@@ -49,6 +51,7 @@ export default function GroupesPage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'tous' | 'mes'>('tous');
   const [filterType, setFilterType] = useState<string>('');
+  const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [createData, setCreateData] = useState<CreateGroupeData>({
     nom: '', description: '', type: 'autre', prive: false, regles: [],
@@ -179,9 +182,14 @@ export default function GroupesPage() {
     }
   }
 
+  const q = search.trim().toLowerCase();
   const displayed = groupes.filter(g => {
     if (tab === 'mes' && !mesGroupes.has(g.id)) return false;
     if (filterType && g.type !== filterType) return false;
+    if (q) {
+      const hay = `${g.nom} ${g.description} ${TYPE_LABELS[g.type] ?? ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
     return true;
   });
 
@@ -227,6 +235,26 @@ export default function GroupesPage() {
           )}
         </div>
 
+        {/* Recherche par nom / thème */}
+        <div className="relative mb-4">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Rechercher un groupe (nom, thème…)"
+            className="w-full border border-gray-200 rounded-xl pl-9 pr-9 py-2.5 text-sm focus:outline-none focus:border-[#00ACC1]"
+            style={{ fontFamily: 'Galey, sans-serif' }}
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
         {/* Filtres par type */}
         <div className="flex gap-2 flex-wrap mb-5">
           <button
@@ -260,7 +288,9 @@ export default function GroupesPage() {
           <div className="text-center py-20">
             <p className="text-4xl mb-4">👥</p>
             <p className="text-gray-500" style={{ fontFamily: 'Galey, sans-serif' }}>
-              {tab === 'mes' ? 'Vous n\'avez rejoint aucun groupe' : 'Aucun groupe pour l\'instant'}
+              {q || filterType
+                ? 'Aucun groupe ne correspond à votre recherche'
+                : tab === 'mes' ? 'Vous n\'avez rejoint aucun groupe' : 'Aucun groupe pour l\'instant'}
             </p>
           </div>
         ) : (
@@ -273,14 +303,29 @@ export default function GroupesPage() {
 
               return (
                 <div key={g.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                  <div className="p-4">
+                  {/* Bannière */}
+                  <Link href={`/communaute/groupes/${g.id}`} className="block relative h-24 bg-[#00ACC1]/10">
+                    {g.photo_cover_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={g.photo_cover_url} alt="" className="w-full h-full object-cover" />
+                    )}
+                  </Link>
+                  <div className="px-4 pb-4 -mt-6">
                     <div className="flex items-start gap-3">
-                      <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: color + '20' }}>
-                        <span className="text-2xl">
-                          {g.type === 'race' ? '🐾' : g.type === 'region' ? '📍' : g.type === 'loisir' ? '🎯' : '💬'}
-                        </span>
+                      <div
+                        className="w-14 h-14 rounded-2xl border-4 border-white shadow flex items-center justify-center flex-shrink-0 overflow-hidden"
+                        style={{ backgroundColor: color + '20' }}
+                      >
+                        {g.avatar_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={g.avatar_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-2xl">
+                            {g.type === 'race' ? '🐾' : g.type === 'region' ? '📍' : g.type === 'loisir' ? '🎯' : '💬'}
+                          </span>
+                        )}
                       </div>
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-0 pt-6">
                         <div className="flex items-center gap-2 flex-wrap">
                           <Link
                             href={`/communaute/groupes/${g.id}`}
