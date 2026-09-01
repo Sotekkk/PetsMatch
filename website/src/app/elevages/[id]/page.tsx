@@ -52,6 +52,14 @@ const ESPECE_LABEL: Record<string, string> = {
   porcin: 'Porcin', autre: 'Autre',
 };
 
+/** Téléphone FR → format international sans « + » pour wa.me. */
+function waPhone(raw: string): string {
+  let d = raw.replace(/[^0-9]/g, '');
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.startsWith('0')) d = '33' + d.slice(1);
+  return d;
+}
+
 // ─── Normalisation Firestore → interface commune ──────────────────────────────
 
 function fromFirestore(uid: string, d: Record<string, unknown>): EleveurData {
@@ -129,16 +137,28 @@ export default function EleveurProfilePage() {
   const [contacting, setContacting] = useState(false);
   const [reproCount, setReproCount] = useState(0);
 
-  // Vitrine reproducteurs : uniquement si l'éleveur l'a activée sur son profil
-  // ÉLEVEUR (jamais un autre profil du même compte).
+  // Profil ÉLEVEUR = source de vérité pour description / réseaux / tél /
+  // vitrine reproducteurs (jamais un autre profil du même compte, jamais
+  // Firestore périmé). Écrase les champs correspondants de `eleveur`.
   useEffect(() => {
     const euid = eleveur?.uid;
     if (!euid) return;
     (async () => {
       const { data: prof } = await supabase.from('user_profiles')
-        .select('id, montre_reproducteurs')
+        .select('id, montre_reproducteurs, desc_entreprise, description, bio, instagram, facebook, site_web, phone_number, numero_elevage')
         .eq('uid', euid).eq('profile_type', 'eleveur').maybeSingle();
-      if (!prof?.id || prof.montre_reproducteurs !== true) { setReproCount(0); return; }
+      if (!prof) return;
+      const desc = (prof.desc_entreprise || prof.description || prof.bio || '').trim();
+      const tel = (prof.numero_elevage || prof.phone_number || '').trim();
+      setEleveur(prev => prev && ({
+        ...prev,
+        description: desc || prev.description,
+        instagram: (prof.instagram as string) || prev.instagram,
+        facebook: (prof.facebook as string) || prev.facebook,
+        siteWeb: (prof.site_web as string) || prev.siteWeb,
+        telephone: tel || prev.telephone,
+      }));
+      if (!prof.id || prof.montre_reproducteurs !== true) { setReproCount(0); return; }
       const { data: rows } = await supabase.from('animaux')
         .select('id')
         .eq('profile_id', prof.id).eq('uid_eleveur', euid).eq('reproducteur_public', true);
@@ -330,12 +350,21 @@ export default function EleveurProfilePage() {
             ) : (
               <div className="flex gap-2 flex-wrap">
                 {eleveur.telephone && (
-                  <a href={`tel:${eleveur.telephone}`}
+                  <a href={`tel:${eleveur.telephone.replace(/[^0-9+]/g, '')}`}
                     className="flex items-center gap-1.5 border border-[#6E9E57] text-[#6E9E57] px-3 py-1.5 rounded-xl text-sm font-semibold hover:bg-[#EEF5EA] transition-colors">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                     </svg>
                     Appeler
+                  </a>
+                )}
+                {eleveur.telephone && (
+                  <a href={`https://wa.me/${waPhone(eleveur.telephone)}`} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 border border-[#25D366] text-[#1a9e4b] px-3 py-1.5 rounded-xl text-sm font-semibold hover:bg-[#25D366]/10 transition-colors">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 004.79 1.22c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.8 14.04c-.24.68-1.4 1.3-1.94 1.38-.5.07-1.13.1-1.82-.11-.42-.13-.96-.31-1.65-.61-2.9-1.25-4.8-4.17-4.94-4.36-.15-.19-1.18-1.57-1.18-3s.75-2.12 1.02-2.41c.27-.29.58-.36.78-.36.19 0 .39 0 .56.01.18.01.42-.07.66.5.24.58.82 2 .89 2.15.07.14.12.31.02.5-.09.19-.14.31-.28.48-.14.17-.29.37-.42.5-.14.14-.28.29-.12.57.16.28.7 1.15 1.5 1.86 1.04.93 1.9 1.22 2.18 1.36.28.14.44.12.6-.07.16-.19.69-.8.87-1.08.18-.28.36-.23.6-.14.24.1 1.55.73 1.82.86.27.14.44.21.51.32.07.11.07.64-.17 1.32z" />
+                    </svg>
+                    WhatsApp
                   </a>
                 )}
                 <button

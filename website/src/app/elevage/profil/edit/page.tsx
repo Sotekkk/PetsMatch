@@ -339,13 +339,24 @@ export default function EleveurProfilEditPage() {
     }
   }, [userData]);
 
-  // Interrupteur « afficher mes reproducteurs » — sur le profil ÉLEVEUR
+  // Identité publique + interrupteur reproducteurs — lus sur le profil ÉLEVEUR
+  // (source de vérité, jamais is_main / Firestore contaminés par un autre profil).
   useEffect(() => {
     if (!user) return;
     supabase.from('user_profiles')
-      .select('montre_reproducteurs')
+      .select('montre_reproducteurs, desc_entreprise, description, bio, instagram, facebook, site_web, numero_elevage, phone_number')
       .eq('uid', user.uid).eq('profile_type', 'eleveur').maybeSingle()
-      .then(({ data }) => setMontreRepro(data?.montre_reproducteurs === true));
+      .then(({ data }) => {
+        if (!data) return;
+        setMontreRepro(data.montre_reproducteurs === true);
+        const desc = (data.desc_entreprise || data.description || data.bio || '').trim();
+        if (desc) setDescription(desc);
+        if (data.instagram) setInstagram(data.instagram);
+        if (data.facebook) setFacebook(data.facebook);
+        if (data.site_web) setSiteWeb(data.site_web);
+        const tel = (data.numero_elevage || data.phone_number || '').trim();
+        if (tel) setPhoneElevage(tel);
+      });
   }, [user]);
 
   // Google Maps Places
@@ -599,9 +610,21 @@ export default function EleveurProfilEditPage() {
         .eq('uid', user!.uid)
         .eq('is_main', true);
 
-      // Vitrine reproducteurs — toujours sur le profil ÉLEVEUR du compte
+      // Identité publique + vitrine reproducteurs — TOUJOURS sur le profil
+      // ÉLEVEUR du compte (is_main peut pointer ailleurs). desc_entreprise =
+      // colonne canonique lue par le profil public.
       await supabase.from('user_profiles')
-        .update({ montre_reproducteurs: montreRepro })
+        .update({
+          montre_reproducteurs: montreRepro,
+          desc_entreprise: description,
+          description,
+          bio: description,
+          instagram: instagram.trim(),
+          facebook: facebook.trim(),
+          site_web: siteWeb.trim(),
+          numero_elevage: phoneElevage,
+          phone_number: phoneElevage,
+        })
         .eq('uid', user!.uid)
         .eq('profile_type', 'eleveur');
 

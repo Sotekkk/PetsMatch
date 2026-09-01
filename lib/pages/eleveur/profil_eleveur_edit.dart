@@ -120,14 +120,22 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       } catch (_) {}
     }
 
-    // Interrupteur « afficher mes reproducteurs » — sur le profil ÉLEVEUR
+    // Profil ÉLEVEUR (source de vérité, jamais is_main ni User_Info) : description
+    // publique + réseaux + tél + interrupteur reproducteurs.
     bool montreRepro = false;
+    Map<String, dynamic>? elevRow;
     try {
-      final row = await Supabase.instance.client
-          .from('user_profiles').select('montre_reproducteurs')
+      elevRow = await Supabase.instance.client
+          .from('user_profiles')
+          .select('montre_reproducteurs, desc_entreprise, description, bio, '
+              'instagram, facebook, site_web, numero_elevage, phone_number')
           .eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle();
-      montreRepro = row?['montre_reproducteurs'] == true;
+      montreRepro = elevRow?['montre_reproducteurs'] == true;
     } catch (_) {}
+    String elev(String k, [String fb = '']) {
+      final v = (elevRow?[k] ?? '').toString().trim();
+      return v.isNotEmpty ? v : fb;
+    }
 
     setState(() {
       _montreRepro = montreRepro;
@@ -135,8 +143,10 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       _nomCtrl.text        = d['lastname']         ?? User_Info.lastname;
       _dobCtrl.text        = d['dateofbirth']      ?? User_Info.dateofbirth;
       _nomElevageCtrl.text = d['nameElevage']      ?? User_Info.nameElevage;
-      _telCtrl.text        = d['numeroElevage']    ?? User_Info.numeroElevage;
-      _descCtrl.text       = d['desc']             ?? User_Info.desc;
+      _telCtrl.text        = elev('numero_elevage', elev('phone_number', d['numeroElevage'] ?? User_Info.numeroElevage));
+      // Description publique = profil ÉLEVEUR (desc_entreprise), jamais User_Info.desc
+      // qui est contaminé par le profil actif.
+      _descCtrl.text       = elev('desc_entreprise', elev('description', elev('bio', (d['desc'] as String?) ?? '')));
       _rueCtrl.text        = d['rueElevage']       ?? User_Info.rueElevage;
       _cpCtrl.text         = d['codePostalElevage'] ?? User_Info.codePostalElevage;
       _villeCtrl.text      = d['villeElevage']     ?? User_Info.villeElevage;
@@ -149,9 +159,9 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       _acacedCtrl.text   = d['acaced']    ?? User_Info.acacedNumero;
       _siretDocUrl       = d['kbisUrl']   ?? User_Info.kbisUrl;
       _acacedDocUrl      = d['acacedDocUrl'] ?? User_Info.acacedDocUrl;
-      _instagramCtrl.text = (d['instagram'] as String?) ?? '';
-      _facebookCtrl.text  = (d['facebook']  as String?) ?? '';
-      _siteWebCtrl.text   = (d['siteWeb']   as String?) ?? '';
+      _instagramCtrl.text = elev('instagram', (d['instagram'] as String?) ?? '');
+      _facebookCtrl.text  = elev('facebook',  (d['facebook']  as String?) ?? '');
+      _siteWebCtrl.text   = elev('site_web',  (d['siteWeb']   as String?) ?? '');
 
       if (d['acacedDateObtention'] != null) {
         try { _acacedDateObtention = DateFormat('dd/MM/yyyy').parse(d['acacedDateObtention']); } catch (_) {}
@@ -443,6 +453,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
         'nameElevage':        _nomElevageCtrl.text.trim(),
         'numeroElevage':      _telCtrl.text.trim(),
         'desc':               _descCtrl.text.trim(),
+        'descEntreprise':     _descCtrl.text.trim(),
         'rueElevage':         _rueCtrl.text.trim(),
         'codePostalElevage':  _cpCtrl.text.trim(),
         'villeElevage':       _villeCtrl.text.trim(),
@@ -552,16 +563,26 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           'site_web':       _siteWebCtrl.text.trim(),
           'numero_elevage': _telCtrl.text.trim(),
           'phone_number':   _telCtrl.text.trim(),
-          'description':    _descCtrl.text.trim(),
+          'description':      _descCtrl.text.trim(),
+          'desc_entreprise': _descCtrl.text.trim(),
           if (siretDocUrl != null && siretDocUrl.isNotEmpty) 'kbis_url': siretDocUrl,
           if (acacedDocUrl != null && acacedDocUrl.isNotEmpty) 'acaced_doc_url': acacedDocUrl,
         }).eq('uid', uid).eq('is_main', true);
 
-        // Vitrine reproducteurs — toujours écrite sur le profil ÉLEVEUR
-        // (le compte peut avoir d'autres profils sur le même uid).
-        await supa.from('user_profiles')
-            .update({'montre_reproducteurs': _montreRepro})
-            .eq('uid', uid).eq('profile_type', 'eleveur');
+        // Identité publique + vitrine reproducteurs — TOUJOURS sur le profil
+        // ÉLEVEUR (le compte peut avoir d'autres profils sur le même uid ;
+        // is_main peut pointer ailleurs). Source de vérité : desc_entreprise.
+        await supa.from('user_profiles').update({
+          'montre_reproducteurs': _montreRepro,
+          'desc_entreprise': _descCtrl.text.trim(),
+          'description':     _descCtrl.text.trim(),
+          'bio':            _descCtrl.text.trim(),
+          'instagram':      _instagramCtrl.text.trim(),
+          'facebook':       _facebookCtrl.text.trim(),
+          'site_web':       _siteWebCtrl.text.trim(),
+          'numero_elevage': _telCtrl.text.trim(),
+          'phone_number':   _telCtrl.text.trim(),
+        }).eq('uid', uid).eq('profile_type', 'eleveur');
       } catch (_) {}
 
       // Propagate location fields to all existing announcements

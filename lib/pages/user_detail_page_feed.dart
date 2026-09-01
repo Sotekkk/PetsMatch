@@ -9,6 +9,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -26,29 +27,53 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
   bool _loadingAnnonces = true;
   late String _bannerUrl;
   int _reproCount = 0;
+  // Identité publique lue sur le profil ÉLEVEUR (jamais is_main ni le modèle
+  // UserSelected, contaminés par le profil actif / Firestore périmé).
+  String _descEntreprise = '';
+  String _instagram = '';
+  String _facebook = '';
+  String _siteWeb = '';
+  String _telephone = '';
 
   @override
   void initState() {
     super.initState();
     _bannerUrl = widget.user.bannerUrl;
     _loadAnnonces();
-    _loadReproInfo();
+    _loadEleveurProfil();
     if (_bannerUrl.isEmpty) _loadBannerFromSupabase();
   }
 
-  /// Nombre de reproducteurs que l'éleveur a choisi d'exposer publiquement
-  /// (interrupteur maître `montre_reproducteurs` + `reproducteur_public` par animal).
-  /// Scopé au profil ÉLEVEUR du compte (jamais un autre profil du même uid).
-  Future<void> _loadReproInfo() async {
+  /// Charge l'identité publique + le nombre de reproducteurs exposés, depuis la
+  /// ligne `user_profiles` `profile_type='eleveur'` du compte (jamais un autre
+  /// profil du même uid).
+  Future<void> _loadEleveurProfil() async {
     try {
       final prof = await Supabase.instance.client
           .from('user_profiles')
-          .select('id, montre_reproducteurs')
+          .select('id, montre_reproducteurs, desc_entreprise, description, bio, '
+              'instagram, facebook, site_web, numero_elevage, phone_number')
           .eq('uid', widget.user.uid)
           .eq('profile_type', 'eleveur')
           .maybeSingle();
-      final profileId = prof?['id'] as String?;
-      if (profileId == null || prof?['montre_reproducteurs'] != true) return;
+      if (prof == null) return;
+      String v(String k) => (prof[k] ?? '').toString().trim();
+      final desc = v('desc_entreprise').isNotEmpty
+          ? v('desc_entreprise')
+          : v('description').isNotEmpty ? v('description') : v('bio');
+      final tel = v('numero_elevage').isNotEmpty ? v('numero_elevage') : v('phone_number');
+      if (mounted) {
+        setState(() {
+          _descEntreprise = desc;
+          _instagram = v('instagram');
+          _facebook = v('facebook');
+          _siteWeb = v('site_web');
+          _telephone = tel;
+        });
+      }
+
+      final profileId = prof['id'] as String?;
+      if (profileId == null || prof['montre_reproducteurs'] != true) return;
       final rows = await Supabase.instance.client
           .from('animaux')
           .select('id')
@@ -57,6 +82,17 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
           .eq('reproducteur_public', true);
       if (mounted) setState(() => _reproCount = (rows as List).length);
     } catch (_) {}
+  }
+
+  String _waPhone(String raw) {
+    var d = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    if (d.startsWith('00')) d = d.substring(2);
+    if (d.startsWith('0')) d = '33${d.substring(1)}';
+    return d;
+  }
+
+  Future<void> _openExt(Uri uri) async {
+    try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
   }
 
   Future<void> _loadBannerFromSupabase() async {
@@ -406,32 +442,66 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
                   const SizedBox(height: 8),
                 ],
 
-                // ── Bouton contacter ───────────────────────────────────────
+                // ── Boutons contacter ──────────────────────────────────────
                 if (!isOwnProfile) ...[
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _loadingChat ? null : _openChat,
-                        icon: _loadingChat
-                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : const Icon(Icons.chat_bubble_outline, size: 18),
-                        label: const Text('Contacter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0C5C6C),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Column(children: [
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _loadingChat ? null : _openChat,
+                          icon: _loadingChat
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Icon(Icons.chat_bubble_outline, size: 18),
+                          label: const Text('Contacter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0C5C6C),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
                         ),
                       ),
-                    ),
+                      if (_telephone.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Row(children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _openExt(Uri(scheme: 'tel', path: _telephone.replaceAll(RegExp(r'[^0-9+]'), ''))),
+                              icon: const Icon(Icons.call_outlined, size: 17),
+                              label: const Text('Appeler', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF6E9E57),
+                                side: const BorderSide(color: Color(0xFF6E9E57)),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(vertical: 11),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _openExt(Uri.parse('https://wa.me/${_waPhone(_telephone)}')),
+                              icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 15),
+                              label: const Text('WhatsApp', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF25D366),
+                                side: const BorderSide(color: Color(0xFF25D366)),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(vertical: 11),
+                              ),
+                            ),
+                          ),
+                        ]),
+                      ],
+                    ]),
                   ),
                   const SizedBox(height: 8),
                 ],
 
                 // ── À propos ───────────────────────────────────────────────
-                if (user.descEntreprise.isNotEmpty && user.descEntreprise != 'Aucune description disponible') ...[
+                if (_descEntreprise.isNotEmpty && _descEntreprise != 'Aucune description disponible') ...[
                   Container(
                     color: Colors.white,
                     width: double.infinity,
@@ -439,7 +509,38 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       const Text('À propos', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1F2A2E))),
                       const SizedBox(height: 8),
-                      Text(user.descEntreprise, style: const TextStyle(fontSize: 13, color: Colors.black87, fontFamily: 'Galey', height: 1.5)),
+                      Text(_descEntreprise, style: const TextStyle(fontSize: 13, color: Colors.black87, fontFamily: 'Galey', height: 1.5)),
+                    ]),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
+                // ── Réseaux sociaux / site web ─────────────────────────────
+                if (_instagram.isNotEmpty || _facebook.isNotEmpty || _siteWeb.isNotEmpty) ...[
+                  Container(
+                    color: Colors.white,
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('Liens', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1F2A2E))),
+                      const SizedBox(height: 8),
+                      Wrap(spacing: 10, runSpacing: 8, children: [
+                        if (_siteWeb.isNotEmpty)
+                          _LinkChip(icon: Icons.language, label: 'Site web', onTap: () {
+                            var u = _siteWeb;
+                            if (!u.startsWith('http')) u = 'https://$u';
+                            _openExt(Uri.parse(u));
+                          }),
+                        if (_instagram.isNotEmpty)
+                          _LinkChip(icon: Icons.camera_alt_outlined, label: 'Instagram', onTap: () =>
+                              _openExt(Uri.parse('https://instagram.com/${_instagram.replaceAll('@', '').trim()}'))),
+                        if (_facebook.isNotEmpty)
+                          _LinkChip(icon: Icons.facebook, label: 'Facebook', onTap: () {
+                            var u = _facebook;
+                            if (!u.startsWith('http')) u = 'https://$u';
+                            _openExt(Uri.parse(u));
+                          }),
+                      ]),
                     ]),
                   ),
                   const SizedBox(height: 8),
@@ -653,6 +754,33 @@ class _AnnoncePlaceholder extends StatelessWidget {
           Text(a['race'] as String, style: const TextStyle(fontSize: 9, color: Colors.grey), textAlign: TextAlign.center, maxLines: 2)),
     ])),
   );
+}
+
+class _LinkChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _LinkChip({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0C5C6C).withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 15, color: const Color(0xFF0C5C6C)),
+          const SizedBox(width: 6),
+          Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C))),
+        ]),
+      ),
+    );
+  }
 }
 
 class _SpeciesChip extends StatelessWidget {
