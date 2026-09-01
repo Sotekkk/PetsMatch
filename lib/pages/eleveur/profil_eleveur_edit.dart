@@ -127,7 +127,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
     try {
       elevRow = await Supabase.instance.client
           .from('user_profiles')
-          .select('montre_reproducteurs, desc_entreprise, description, bio, '
+          .select('montre_reproducteurs, desc_entreprise, description, '
               'instagram, facebook, site_web, numero_elevage, phone_number')
           .eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle();
       montreRepro = elevRow?['montre_reproducteurs'] == true;
@@ -146,7 +146,7 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       _telCtrl.text        = elev('numero_elevage', elev('phone_number', d['numeroElevage'] ?? User_Info.numeroElevage));
       // Description publique = profil ÉLEVEUR (desc_entreprise), jamais User_Info.desc
       // qui est contaminé par le profil actif.
-      _descCtrl.text       = elev('desc_entreprise', elev('description', elev('bio', (d['desc'] as String?) ?? '')));
+      _descCtrl.text       = elev('desc_entreprise', elev('description', (d['desc'] as String?) ?? ''));
       _rueCtrl.text        = d['rueElevage']       ?? User_Info.rueElevage;
       _cpCtrl.text         = d['codePostalElevage'] ?? User_Info.codePostalElevage;
       _villeCtrl.text      = d['villeElevage']     ?? User_Info.villeElevage;
@@ -579,7 +579,6 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
           'montre_reproducteurs': _montreRepro,
           'desc_entreprise': _descCtrl.text.trim(),
           'description':     _descCtrl.text.trim(),
-          'bio':            _descCtrl.text.trim(),
           'instagram':      _instagramCtrl.text.trim(),
           'facebook':       _facebookCtrl.text.trim(),
           'site_web':       _siteWebCtrl.text.trim(),

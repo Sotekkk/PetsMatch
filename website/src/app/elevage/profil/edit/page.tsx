@@ -344,12 +344,12 @@ export default function EleveurProfilEditPage() {
   useEffect(() => {
     if (!user) return;
     supabase.from('user_profiles')
-      .select('montre_reproducteurs, desc_entreprise, description, bio, instagram, facebook, site_web, numero_elevage, phone_number')
+      .select('montre_reproducteurs, desc_entreprise, description, instagram, facebook, site_web, numero_elevage, phone_number')
       .eq('uid', user.uid).eq('profile_type', 'eleveur').maybeSingle()
       .then(({ data }) => {
         if (!data) return;
         setMontreRepro(data.montre_reproducteurs === true);
-        const desc = (data.desc_entreprise || data.description || data.bio || '').trim();
+        const desc = (data.desc_entreprise || data.description || '').trim();
         if (desc) setDescription(desc);
         if (data.instagram) setInstagram(data.instagram);
         if (data.facebook) setFacebook(data.facebook);
@@ -618,7 +618,6 @@ export default function EleveurProfilEditPage() {
           montre_reproducteurs: montreRepro,
           desc_entreprise: description,
           description,
-          bio: description,
           instagram: instagram.trim(),
           facebook: facebook.trim(),
           site_web: siteWeb.trim(),

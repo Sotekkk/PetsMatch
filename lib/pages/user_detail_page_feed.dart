@@ -51,7 +51,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
     try {
       final prof = await Supabase.instance.client
           .from('user_profiles')
-          .select('id, montre_reproducteurs, desc_entreprise, description, bio, '
+          .select('id, montre_reproducteurs, desc_entreprise, description, '
               'instagram, facebook, site_web, numero_elevage, phone_number')
           .eq('uid', widget.user.uid)
           .eq('profile_type', 'eleveur')
@@ -59,7 +59,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
       String v(String k) => (prof?[k] ?? '').toString().trim();
       var desc = v('desc_entreprise').isNotEmpty
           ? v('desc_entreprise')
-          : v('description').isNotEmpty ? v('description') : v('bio');
+          : v('description');
       var tel = v('numero_elevage').isNotEmpty ? v('numero_elevage') : v('phone_number');
       var insta = v('instagram'), fb = v('facebook'), web = v('site_web');
 

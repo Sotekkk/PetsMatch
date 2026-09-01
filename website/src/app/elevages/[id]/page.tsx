@@ -145,10 +145,10 @@ export default function EleveurProfilePage() {
     if (!euid) return;
     (async () => {
       const { data: prof } = await supabase.from('user_profiles')
-        .select('id, montre_reproducteurs, desc_entreprise, description, bio, instagram, facebook, site_web, phone_number, numero_elevage')
+        .select('id, montre_reproducteurs, desc_entreprise, description, instagram, facebook, site_web, phone_number, numero_elevage')
         .eq('uid', euid).eq('profile_type', 'eleveur').maybeSingle();
       if (!prof) return;
-      const desc = (prof.desc_entreprise || prof.description || prof.bio || '').trim();
+      const desc = (prof.desc_entreprise || prof.description || '').trim();
       const tel = (prof.numero_elevage || prof.phone_number || '').trim();
       setEleveur(prev => prev && ({
         ...prev,
