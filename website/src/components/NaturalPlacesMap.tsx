@@ -13,6 +13,11 @@ export interface NaturalPlaceMapItem {
   lat: number;
   lng: number;
   alerte_cyano?: boolean | null;
+  alerte_cyano_lat?: number | null;
+  alerte_cyano_lng?: number | null;
+  alerte_cyano_statut?: string | null;
+  alerte_cyano_photo_url?: string | null;
+  alerte_cyano_date?: string | null;
   nb_avis?: number | null;
   note_moyenne?: number | null;
 }
@@ -24,9 +29,11 @@ const CAT_COLOR: Record<string, string> = {
   foret: '#2E7D32', plage: '#1565C0', parc: '#558B2F', lac: '#00838F', riviere: '#0277BD',
 };
 
-function makeIcon(categorie: string, cyano: boolean) {
-  const color = cyano ? '#C62828' : (CAT_COLOR[categorie] ?? '#0C5C6C');
-  const emoji = CAT_EMOJI[categorie] ?? '🌿';
+function makeIcon(categorie: string, cyanoStatut: string | null) {
+  const color = cyanoStatut === 'confirme' ? '#C62828'
+    : cyanoStatut ? '#F59E0B'
+    : (CAT_COLOR[categorie] ?? '#0C5C6C');
+  const emoji = cyanoStatut ? '⚠️' : (CAT_EMOJI[categorie] ?? '🌿');
 
   return L.divIcon({
     className: '',
@@ -98,12 +105,25 @@ export default function NaturalPlacesMap({ places, userPos, radiusKm }: {
       )}
       {places.map(p => {
         const cyano = p.alerte_cyano === true;
+        const cyanoStatut = cyano ? (p.alerte_cyano_statut ?? 'suspecte') : null;
+        const pos: [number, number] = cyano
+          ? [p.alerte_cyano_lat ?? p.lat, p.alerte_cyano_lng ?? p.lng]
+          : [p.lat, p.lng];
         return (
-          <Marker key={p.id} position={[p.lat, p.lng]} icon={makeIcon(p.categorie, cyano)}>
+          <Marker key={p.id} position={pos} icon={makeIcon(p.categorie, cyanoStatut)}>
             <Popup>
               <div className="text-sm" style={{ minWidth: 160 }}>
                 <p className="font-bold text-[#1F2A2E]">{p.nom}</p>
-                {cyano && <p className="text-red-600 text-xs font-semibold">⚠️ Alerte cyanobactéries</p>}
+                {cyano && (
+                  <p className={`text-xs font-semibold ${cyanoStatut === 'confirme' ? 'text-red-600' : 'text-amber-600'}`}>
+                    ⚠️ Cyanobactéries — {cyanoStatut === 'confirme' ? 'confirmées' : 'suspectées'}
+                    {p.alerte_cyano_date ? ` (${new Date(p.alerte_cyano_date).toLocaleDateString('fr-FR')})` : ''}
+                  </p>
+                )}
+                {cyano && p.alerte_cyano_photo_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={p.alerte_cyano_photo_url} alt="" className="mt-1 rounded w-full h-20 object-cover" />
+                )}
                 {(p.nb_avis ?? 0) > 0 && (
                   <p className="text-gray-500 text-xs">★ {(p.note_moyenne ?? 0).toFixed(1)} ({p.nb_avis} avis)</p>
                 )}

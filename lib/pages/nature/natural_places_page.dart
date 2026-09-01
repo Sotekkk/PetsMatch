@@ -68,6 +68,7 @@ class _NaturalPlacesPageState extends State<NaturalPlacesPage> {
   bool _loading     = true;
   bool _mapView     = false;
   String _catFilter = 'tous';
+  bool _alerteEauOnly = false;
   String _search    = '';
   Position? _userPos;
   bool _nearMe      = false;   // filtre « autour de moi »
@@ -141,6 +142,9 @@ class _NaturalPlacesPageState extends State<NaturalPlacesPage> {
     var list = _places;
     if (_catFilter != 'tous') {
       list = list.where((p) => p['categorie'] == _catFilter).toList();
+    }
+    if (_alerteEauOnly) {
+      list = list.where((p) => p['alerte_cyano'] == true).toList();
     }
     if (_search.isNotEmpty) {
       final q = _search.toLowerCase();
@@ -298,6 +302,13 @@ class _NaturalPlacesPageState extends State<NaturalPlacesPage> {
                 color: _catColor[e.key],
                 onTap: () => setState(() => _catFilter = e.key),
               )),
+              _CatChip(
+                value: '_eau',
+                label: '⚠️ Alertes eau',
+                active: _alerteEauOnly,
+                color: const Color(0xFFF59E0B),
+                onTap: () => setState(() => _alerteEauOnly = !_alerteEauOnly),
+              ),
             ]),
           ),
         ),
@@ -478,18 +489,28 @@ class _NaturalMapViewState extends State<_NaturalMapView> {
   void _buildMarkers() {
     final m = <MarkerId, Marker>{};
     for (final p in widget.places) {
-      final lat = (p['lat'] as num?)?.toDouble();
-      final lng = (p['lng'] as num?)?.toDouble();
+      final cyano = p['alerte_cyano'] == true;
+      // Alerte cyano : marqueur au point de la zone d'eau si renseigné.
+      final lat = ((cyano ? p['alerte_cyano_lat'] : null) as num?)?.toDouble()
+          ?? (p['lat'] as num?)?.toDouble();
+      final lng = ((cyano ? p['alerte_cyano_lng'] : null) as num?)?.toDouble()
+          ?? (p['lng'] as num?)?.toDouble();
       if (lat == null || lng == null) continue;
       final id  = MarkerId(p['id']?.toString() ?? '${lat}_$lng');
       final cat = p['categorie'] as String? ?? '';
+      final confirme = (p['alerte_cyano_statut'] as String?) == 'confirme';
+      final hue = cyano
+          ? (confirme ? BitmapDescriptor.hueRed : BitmapDescriptor.hueOrange)
+          : _markerHue(cat);
       m[id] = Marker(
         markerId: id,
         position: LatLng(lat, lng),
-        icon: BitmapDescriptor.defaultMarkerWithHue(_markerHue(cat)),
+        icon: BitmapDescriptor.defaultMarkerWithHue(hue),
         infoWindow: InfoWindow(
           title: p['nom'] as String? ?? '',
-          snippet: '${_catEmoji[cat] ?? ''} ${_catLabel[cat] ?? cat}',
+          snippet: cyano
+              ? '⚠️ Cyanobactéries — ${confirme ? 'confirmé' : 'suspecté'}'
+              : '${_catEmoji[cat] ?? ''} ${_catLabel[cat] ?? cat}',
           onTap: () => widget.onTapPlace(p),
         ),
       );
@@ -804,11 +825,16 @@ class _PlaceCard extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                       decoration: BoxDecoration(
-                        color: Colors.red.shade600,
+                        color: (place['alerte_cyano_statut'] as String?) == 'confirme'
+                            ? Colors.red.shade700
+                            : const Color(0xFFF59E0B),
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: const Text('⚠️ Cyano',
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                      child: Text(
+                          (place['alerte_cyano_statut'] as String?) == 'confirme'
+                              ? '⚠️ Cyano confirmé'
+                              : '⚠️ Cyano suspecté',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
                               fontWeight: FontWeight.w700, color: Colors.white)),
                     ),
                   ),

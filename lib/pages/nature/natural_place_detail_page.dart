@@ -1,10 +1,13 @@
+import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
+import 'package:PetsMatch/widgets/map_point_picker.dart';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -193,47 +196,196 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
     } catch (_) {}
   }
 
-  Future<void> _reportCyano() async {
-    final confirmed = await showDialog<bool>(
+  /// Signalement / confirmation d'une alerte cyanobactéries : mini-carte pour
+  /// poser le point sur la zone d'eau + statut suspecté / confirmé (photo
+  /// obligatoire pour « confirmé »).
+  Future<void> _openCyanoSheet({bool forceConfirme = false}) async {
+    final id = _place['id']?.toString();
+    if (id == null || _uid.isEmpty) return;
+
+    final placeLat = (_place['lat'] as num?)?.toDouble() ?? 46.6;
+    final placeLng = (_place['lng'] as num?)?.toDouble() ?? 1.9;
+    var point = LatLng(
+      (_place['alerte_cyano_lat'] as num?)?.toDouble() ?? placeLat,
+      (_place['alerte_cyano_lng'] as num?)?.toDouble() ?? placeLng,
+    );
+    var statut = forceConfirme
+        ? 'confirme'
+        : (_place['alerte_cyano_statut'] as String?) ?? 'suspecte';
+    File? photo;
+    var saving = false;
+
+    final ok = await showModalBottomSheet<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Signaler cyanobactéries ?',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        content: const Text(
-            'Confirmer la présence de cyanobactéries sur ce site ? '
-            'Cette alerte sera visible par tous les utilisateurs.',
-            style: TextStyle(fontFamily: 'Galey')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annuler', style: TextStyle(color: Colors.grey)),
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+            left: 18, right: 18, top: 14,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Signaler', style: TextStyle(color: Colors.white, fontFamily: 'Galey')),
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+              const Text('Alerte cyanobactéries',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF1F2A2E))),
+              const SizedBox(height: 4),
+              Text('Placez le point sur la zone d\'eau concernée.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+              const SizedBox(height: 10),
+              MapPointPicker(
+                position: point,
+                zoom: 15,
+                onChanged: (p) => setSheet(() => point = p),
+              ),
+              const SizedBox(height: 14),
+              const Text('Statut', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+              const SizedBox(height: 6),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'suspecte', label: Text('Suspecté'), icon: Icon(Icons.help_outline, size: 16)),
+                  ButtonSegment(value: 'confirme', label: Text('Confirmé'), icon: Icon(Icons.verified_outlined, size: 16)),
+                ],
+                selected: {statut},
+                onSelectionChanged: (s) => setSheet(() => statut = s.first),
+              ),
+              if (statut == 'confirme') ...[
+                const SizedBox(height: 10),
+                Text('Une photo est obligatoire pour confirmer.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+                const SizedBox(height: 6),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final f = await pickAndCropBanner();
+                    if (f != null) setSheet(() => photo = f);
+                  },
+                  icon: Icon(photo != null ? Icons.check_circle : Icons.add_a_photo_outlined, size: 18),
+                  label: Text(photo != null ? 'Photo jointe — changer' : 'Joindre une photo',
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: photo != null ? _green : Colors.red.shade600,
+                    side: BorderSide(color: photo != null ? _green : Colors.red.shade600),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: saving || (statut == 'confirme' && photo == null)
+                      ? null
+                      : () async {
+                          setSheet(() => saving = true);
+                          String? photoUrl = (_place['alerte_cyano_photo_url'] as String?);
+                          if (photo != null) {
+                            try {
+                              photoUrl = await uploadPhoto(photo!,
+                                  'natural_places/cyano_${DateTime.now().millisecondsSinceEpoch}_${User_Info.uid}.jpg');
+                            } catch (_) {}
+                          }
+                          try {
+                            await _supa.from('natural_places').update({
+                              'alerte_cyano':            true,
+                              'alerte_cyano_statut':     statut,
+                              'alerte_cyano_lat':        point.latitude,
+                              'alerte_cyano_lng':        point.longitude,
+                              'alerte_cyano_date':       DateTime.now().toIso8601String(),
+                              'alerte_cyano_profile_id': _uid,
+                              if (statut == 'confirme') 'alerte_cyano_photo_url': photoUrl,
+                            }).eq('id', id);
+                          } catch (_) {}
+                          if (ctx.mounted) Navigator.pop(ctx, true);
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade600, foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: saving
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : Text(statut == 'confirme' ? 'Confirmer l\'alerte' : 'Signaler l\'alerte',
+                          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                ),
+              ),
+            ]),
           ),
-        ],
+        ),
       ),
     );
-    if (confirmed != true) return;
-    try {
-      final id = _place['id']?.toString();
-      if (id == null) return;
-      await _supa.from('natural_places').update({
-        'alerte_cyano':      true,
-        'alerte_cyano_date': DateTime.now().toIso8601String(),
-        'alerte_cyano_profile_id':  _uid,
-      }).eq('id', id);
+    if (ok == true) {
       await _refreshPlace();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Alerte signalée. Merci !',
-              style: TextStyle(fontFamily: 'Galey')),
+          content: Text('Merci ! Alerte enregistrée.', style: TextStyle(fontFamily: 'Galey')),
           backgroundColor: Colors.red,
         ));
       }
-    } catch (_) {}
+    }
+  }
+
+  Widget _cyanoBanner() {
+    final statut = (_place['alerte_cyano_statut'] as String?) ?? 'suspecte';
+    final confirme = statut == 'confirme';
+    final photoUrl = _place['alerte_cyano_photo_url'] as String?;
+    final dateRaw = _place['alerte_cyano_date'] as String?;
+    final date = dateRaw != null ? DateTime.tryParse(dateRaw)?.toLocal() : null;
+    final dateStr = date != null
+        ? '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}'
+        : '';
+    final bg = confirme ? Colors.red.shade700 : const Color(0xFFF59E0B);
+
+    return Container(
+      width: double.infinity,
+      color: bg,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.warning_amber_rounded, color: Colors.white),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              confirme
+                  ? '⚠️ Cyanobactéries CONFIRMÉES — baignade et contact avec l\'eau interdits.'
+                  : '⚠️ Cyanobactéries suspectées — prudence, contact avec l\'eau déconseillé.',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600),
+            ),
+          ),
+          if (_uid.isNotEmpty)
+            TextButton(
+              onPressed: _removeCyano,
+              child: const Text('Lever', style: TextStyle(color: Colors.white, fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            ),
+        ]),
+        if (dateStr.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 32),
+            child: Text('Signalée le $dateStr',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white70)),
+          ),
+        if (photoUrl != null && photoUrl.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 32, top: 6),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: CachedNetworkImage(imageUrl: photoUrl, height: 90, width: 140, fit: BoxFit.cover),
+            ),
+          ),
+        if (!confirme && _uid.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 24, top: 4),
+            child: TextButton.icon(
+              onPressed: () => _openCyanoSheet(forceConfirme: true),
+              icon: const Icon(Icons.verified_outlined, size: 15, color: Colors.white),
+              label: const Text('Confirmer l\'alerte (avec photo)',
+                  style: TextStyle(color: Colors.white, fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12)),
+            ),
+          ),
+      ]),
+    );
   }
 
   Future<void> _removeCyano() async {
@@ -241,9 +393,13 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
       final id = _place['id']?.toString();
       if (id == null) return;
       await _supa.from('natural_places').update({
-        'alerte_cyano':      false,
-        'alerte_cyano_date': null,
-        'alerte_cyano_profile_id':  null,
+        'alerte_cyano':            false,
+        'alerte_cyano_date':       null,
+        'alerte_cyano_profile_id': null,
+        'alerte_cyano_statut':     null,
+        'alerte_cyano_lat':        null,
+        'alerte_cyano_lng':        null,
+        'alerte_cyano_photo_url':  null,
       }).eq('id', id);
       await _refreshPlace();
     } catch (_) {}
@@ -376,29 +532,7 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
           SliverToBoxAdapter(
             child: Column(children: [
               // ── Alerte cyano ──────────────────────────────────────────
-              if (cyano)
-                Container(
-                  width: double.infinity,
-                  color: Colors.red.shade600,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  child: Row(children: [
-                    const Icon(Icons.warning_amber_rounded, color: Colors.white),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        '⚠️ Alerte cyanobactéries active — Baignade et contact avec l\'eau déconseillés.',
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white,
-                            fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    if (_uid.isNotEmpty)
-                      TextButton(
-                        onPressed: _removeCyano,
-                        child: const Text('Lever', style: TextStyle(color: Colors.white,
-                            fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-                      ),
-                  ]),
-                ),
+              if (cyano) _cyanoBanner(),
 
               Padding(
                 padding: const EdgeInsets.all(16),
@@ -485,7 +619,7 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
                           icon: Icons.warning_amber_outlined,
                           label: 'Signaler cyano',
                           color: Colors.red.shade600,
-                          onTap: _uid.isEmpty ? null : _reportCyano,
+                          onTap: _uid.isEmpty ? null : () => _openCyanoSheet(),
                         ),
                       ),
                   ]),

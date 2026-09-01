@@ -25,6 +25,11 @@ interface NaturalPlace {
   lat: number | null;
   lng: number | null;
   alerte_cyano: boolean | null;
+  alerte_cyano_lat?: number | null;
+  alerte_cyano_lng?: number | null;
+  alerte_cyano_statut?: string | null;
+  alerte_cyano_photo_url?: string | null;
+  alerte_cyano_date?: string | null;
   nb_avis: number | null;
   note_moyenne: number | null;
   photo_url?: string | null;
@@ -77,6 +82,7 @@ export default function LieuxNaturelsPage() {
   const [places, setPlaces] = useState<NaturalPlace[]>([]);
   const [loading, setLoading] = useState(true);
   const [catFilter, setCatFilter] = useState('tous');
+  const [alerteEauOnly, setAlerteEauOnly] = useState(false);
   const [search, setSearch] = useState('');
   const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
   const [view, setView] = useState<'liste' | 'carte'>('liste');
@@ -113,7 +119,7 @@ export default function LieuxNaturelsPage() {
   async function loadPlaces() {
     setLoading(true);
     try {
-      const cols = 'id, nom, categorie, lat, lng, alerte_cyano, nb_avis, note_moyenne, photo_url, photos, statut';
+      const cols = 'id, nom, categorie, lat, lng, alerte_cyano, alerte_cyano_lat, alerte_cyano_lng, alerte_cyano_statut, alerte_cyano_photo_url, alerte_cyano_date, nb_avis, note_moyenne, photo_url, photos, statut';
       const pageSize = 1000;
       const all: NaturalPlace[] = [];
       let from = 0;
@@ -150,6 +156,7 @@ export default function LieuxNaturelsPage() {
   }, []);
 
   let filtered = catFilter === 'tous' ? places : places.filter(p => p.categorie === catFilter);
+  if (alerteEauOnly) filtered = filtered.filter(p => p.alerte_cyano === true);
   if (search.trim()) {
     const q = search.trim().toLowerCase();
     filtered = filtered.filter(p => p.nom.toLowerCase().includes(q));
@@ -232,6 +239,18 @@ export default function LieuxNaturelsPage() {
               {CAT_EMOJI[cat]} {CAT_LABEL[cat]}
             </button>
           ))}
+          <button
+            onClick={() => setAlerteEauOnly(v => !v)}
+            className="flex-shrink-0 px-4 py-1.5 rounded-full text-xs font-semibold transition-all"
+            style={{
+              fontFamily: 'Galey, sans-serif',
+              backgroundColor: alerteEauOnly ? '#F59E0B' : 'transparent',
+              color: alerteEauOnly ? '#FFFFFF' : '#1E2025',
+              border: `1.5px solid ${alerteEauOnly ? '#F59E0B' : '#D1D5DB'}`,
+            }}
+          >
+            ⚠️ Alertes eau
+          </button>
         </div>
 
         {/* Autour de moi (géoloc GPS + rayon modifiable) */}
@@ -424,10 +443,10 @@ function PlaceCard({ place, distLabel }: { place: NaturalPlace; distLabel: strin
         </span>
         {cyano && (
           <span
-            className="absolute top-3 right-3 text-xs font-bold text-white px-2.5 py-1 rounded-full bg-red-600"
+            className={`absolute top-3 right-3 text-xs font-bold text-white px-2.5 py-1 rounded-full ${place.alerte_cyano_statut === 'confirme' ? 'bg-red-700' : 'bg-amber-500'}`}
             style={{ fontFamily: 'Galey, sans-serif' }}
           >
-            ⚠️ Cyano
+            ⚠️ Cyano {place.alerte_cyano_statut === 'confirme' ? 'confirmé' : 'suspecté'}
           </span>
         )}
         {(enAttente || refuse) && (

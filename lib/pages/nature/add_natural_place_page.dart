@@ -1,8 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart' show Factory;
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -11,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
+import 'package:PetsMatch/widgets/map_point_picker.dart';
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -275,7 +274,7 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
           const SizedBox(height: 8),
           _locating
               ? const SizedBox(height: 220, child: Center(child: CircularProgressIndicator(color: _teal)))
-              : _MapPicker(
+              : MapPointPicker(
                   position: _position,
                   onChanged: (p) => setState(() { _position = p; _positionSet = true; }),
                 ),
@@ -299,39 +298,6 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _MapPicker extends StatelessWidget {
-  final LatLng position;
-  final void Function(LatLng) onChanged;
-  const _MapPicker({required this.position, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: SizedBox(
-        height: 220,
-        child: GoogleMap(
-          initialCameraPosition: CameraPosition(target: position, zoom: 13),
-          onTap: onChanged,
-          gestureRecognizers: {
-            Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
-          },
-          markers: {
-            Marker(
-              markerId: const MarkerId('picked'),
-              position: position,
-              draggable: true,
-              onDragEnd: onChanged,
-            ),
-          },
-          myLocationButtonEnabled: false,
-          zoomControlsEnabled: true,
-        ),
       ),
     );
   }

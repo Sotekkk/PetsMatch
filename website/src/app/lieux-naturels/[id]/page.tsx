@@ -1,10 +1,13 @@
 'use client';
 
 import { useEffect, useState, useRef, use } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { useAuth } from '@/lib/auth-context';
+
+const CyanoReportModal = dynamic(() => import('@/components/CyanoReportModal'), { ssr: false });
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -18,6 +21,11 @@ interface NaturalPlace {
   photo_url?: string | null;
   photos?: string[] | null;
   alerte_cyano: boolean | null;
+  alerte_cyano_lat?: number | null;
+  alerte_cyano_lng?: number | null;
+  alerte_cyano_statut?: string | null;
+  alerte_cyano_photo_url?: string | null;
+  alerte_cyano_date?: string | null;
   nb_avis: number | null;
   note_moyenne: number | null;
   niveau_difficulte?: string | null;
@@ -154,19 +162,12 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
     }
   }
 
-  async function reportCyano() {
-    if (!confirm('Confirmer la présence de cyanobactéries sur ce site ? Cette alerte sera visible par tous les utilisateurs.')) return;
-    await supabase.from('natural_places').update({
-      alerte_cyano: true,
-      alerte_cyano_date: new Date().toISOString(),
-      alerte_cyano_profile_id: profileId || null,
-    }).eq('id', id);
-    loadPlace();
-  }
+  const [cyanoModal, setCyanoModal] = useState<false | 'new' | 'confirm'>(false);
 
   async function removeCyano() {
     await supabase.from('natural_places').update({
       alerte_cyano: false, alerte_cyano_date: null, alerte_cyano_profile_id: null,
+      alerte_cyano_statut: null, alerte_cyano_lat: null, alerte_cyano_lng: null, alerte_cyano_photo_url: null,
     }).eq('id', id);
     loadPlace();
   }
@@ -290,12 +291,31 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
       <div className="max-w-2xl mx-auto px-4 py-5">
         {/* Alerte cyano */}
         {cyano && (
-          <div className="bg-red-600 text-white rounded-xl px-4 py-3 mb-4 flex items-center justify-between gap-3">
-            <p className="text-sm font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
-              ⚠️ Alerte cyanobactéries active — Baignade et contact avec l&apos;eau déconseillés.
-            </p>
-            {profileId && (
-              <button onClick={removeCyano} className="text-sm font-bold underline flex-shrink-0">Lever</button>
+          <div className={`text-white rounded-xl px-4 py-3 mb-4 ${place.alerte_cyano_statut === 'confirme' ? 'bg-red-700' : 'bg-amber-500'}`}>
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-sm font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
+                {place.alerte_cyano_statut === 'confirme'
+                  ? '⚠️ Cyanobactéries CONFIRMÉES — baignade et contact avec l’eau interdits.'
+                  : '⚠️ Cyanobactéries suspectées — prudence, contact avec l’eau déconseillé.'}
+                {place.alerte_cyano_date && (
+                  <span className="block font-normal text-white/80 text-xs mt-0.5">
+                    Signalée le {new Date(place.alerte_cyano_date).toLocaleDateString('fr-FR')}
+                  </span>
+                )}
+              </p>
+              {profileId && (
+                <button onClick={removeCyano} className="text-sm font-bold underline flex-shrink-0">Lever</button>
+              )}
+            </div>
+            {place.alerte_cyano_photo_url && (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={place.alerte_cyano_photo_url} alt="" className="mt-2 rounded-lg w-40 h-24 object-cover" />
+            )}
+            {place.alerte_cyano_statut !== 'confirme' && profileId && (
+              <button onClick={() => setCyanoModal('confirm')}
+                className="mt-2 text-xs font-bold underline">
+                Confirmer l’alerte (avec photo)
+              </button>
             )}
           </div>
         )}
@@ -352,7 +372,7 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
           )}
           {!cyano && (
             <button
-              onClick={reportCyano}
+              onClick={() => setCyanoModal('new')}
               disabled={!profileId}
               className="flex-1 text-center py-3 rounded-xl text-sm font-semibold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ borderColor: '#C6282866', color: '#C62828', backgroundColor: '#C628280F', fontFamily: 'Galey, sans-serif' }}
@@ -519,6 +539,24 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
           </div>
         )}
       </div>
+
+      {cyanoModal && (
+        <CyanoReportModal
+          placeId={id}
+          placeLat={place.lat ?? 46.6}
+          placeLng={place.lng ?? 1.9}
+          current={{
+            lat: place.alerte_cyano_lat,
+            lng: place.alerte_cyano_lng,
+            statut: place.alerte_cyano_statut,
+            photo_url: place.alerte_cyano_photo_url,
+          }}
+          profileId={profileId}
+          forceConfirme={cyanoModal === 'confirm'}
+          onClose={() => setCyanoModal(false)}
+          onDone={() => { setCyanoModal(false); loadPlace(); }}
+        />
+      )}
     </div>
   );
 }
