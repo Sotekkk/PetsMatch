@@ -36,7 +36,7 @@ interface CessionData {
   uid_acquereur: string | null;
 }
 
-interface Reservation {
+export interface Reservation {
   id: string;
   qualite?: string | null;
   nom?: string | null;
@@ -45,6 +45,7 @@ interface Reservation {
   adresse?: string | null;
   uid_acquereur?: string | null;
   notes?: string | null;
+  date_reservation?: string | null;
 }
 
 interface Props {

@@ -8,7 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { loadBreeds } from '@/lib/breeds';
 import HealthSection from '@/components/animaux/HealthSection';
-import CessionModal from '@/components/animaux/CessionModal';
+import CessionModal, { type Reservation } from '@/components/animaux/CessionModal';
 import ReservationModal from '@/components/animaux/ReservationModal';
 import { uploadBlob, uploadDocument as uploadDocToStorage } from '@/lib/upload-media';
 import { resolveAcquereurProfileId } from '@/lib/acquereur-profile';
@@ -1439,7 +1439,7 @@ export default function AnimalFichePage() {
 
   // ── Réservation (avant cession)
   const [showReservation, setShowReservation] = useState(false);
-  const [reservation, setReservation] = useState<Record<string, unknown> | null>(null);
+  const [reservation, setReservation] = useState<Reservation | null>(null);
   const [cancelingReservation, setCancelingReservation] = useState(false);
 
   // ── État enregistre entrée/sortie
@@ -1741,7 +1741,7 @@ export default function AnimalFichePage() {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    setReservation(data ?? null);
+    setReservation((data ?? null) as Reservation | null);
   }, [id, isNew, animal.statut]);
 
   async function annulerReservation() {
