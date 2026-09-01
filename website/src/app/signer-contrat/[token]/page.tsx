@@ -454,13 +454,64 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     // depuis la fiche animale (notif ci-dessous).
     const vendeurAFinalise = bothSigned && role === 'eleveur';
     if (vendeurAFinalise && (doc.type === 'contrat_vente' || doc.type === 'certificat_cession') && doc.animal_id) {
+      // Date de cession : ligne `cessions` → métadonnées du contrat → aujourd'hui.
+      // Devient `animaux.date_sortie` (registre entrées / sorties).
+      const metaDate = String((doc.metadata as Record<string, unknown> | undefined)?.date_cession ?? '').trim();
+      let dateCession = metaDate || now.split('T')[0];
+      let cessionId: string | null = null;
+      try {
+        const { data: cs } = await supabase.from('cessions')
+          .select('id, date_cession').eq('animal_id', doc.animal_id)
+          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (cs) {
+          cessionId = (cs.id as string) ?? null;
+          if (String(cs.date_cession ?? '').trim()) dateCession = String(cs.date_cession).trim();
+        }
+      } catch { /* pas bloquant */ }
+
       const { data: cededAnimal } = await supabase.from('animaux')
-        .update({ statut: 'sorti' }).eq('id', doc.animal_id)
+        .update({ statut: 'sorti', date_sortie: dateCession }).eq('id', doc.animal_id)
         .in('statut', ['en_attente_cession', 'cession_en_cours'])
-        .select('uid_eleveur, uid_acquereur, date_sortie').maybeSingle();
+        .select('uid_eleveur, uid_acquereur').maybeSingle();
       try {
         await supabase.from('cessions').update({ statut: 'confirme', confirmed_at: now })
           .eq('animal_id', doc.animal_id).in('statut', ['en_attente_acquereur', 'signe_acquereur']);
+      } catch { /* pas bloquant */ }
+
+      // Registre entrées / sorties : mouvement de SORTIE pour le cédant
+      // (+ ENTRÉE pour l'acquéreur éleveur / association).
+      try {
+        if (cededAnimal?.uid_eleveur && cededAnimal?.uid_acquereur) {
+          const { data: dejaSorti } = await supabase.from('registre_mouvements')
+            .select('id').eq('animal_id', doc.animal_id).eq('type', 'sortie').eq('motif', 'cession').limit(1);
+          if (!dejaSorti || dejaSorti.length === 0) {
+            const { data: acqU } = await supabase.from('users')
+              .select('firstname, lastname, name_elevage, is_elevage, is_association')
+              .eq('uid', cededAnimal.uid_acquereur).maybeSingle();
+            const acqNom = (acqU?.name_elevage as string || '').trim()
+              || `${acqU?.firstname ?? ''} ${acqU?.lastname ?? ''}`.trim();
+            const acqEleveur = acqU?.is_elevage === true;
+            const acqAsso = acqU?.is_association === true;
+            await supabase.from('registre_mouvements').insert({
+              animal_id: doc.animal_id, uid_eleveur: cededAnimal.uid_eleveur,
+              type: 'sortie', date_mouvement: dateCession, motif: 'cession',
+              destinataire_qualite: acqEleveur ? 'eleveur' : acqAsso ? 'association' : 'particulier',
+              destinataire_nom: acqNom,
+              ...(cessionId ? { cession_id: cessionId } : {}),
+            });
+            if (acqEleveur || acqAsso) {
+              const { data: acqProf } = await supabase.from('user_profiles')
+                .select('id').eq('uid', cededAnimal.uid_acquereur).eq('is_main', true).maybeSingle();
+              await supabase.from('registre_mouvements').insert({
+                animal_id: doc.animal_id, uid_eleveur: cededAnimal.uid_acquereur,
+                ...(acqProf?.id ? { eleveur_profile_id: acqProf.id } : {}),
+                type: 'entree', date_mouvement: dateCession, motif: 'cession',
+                provenance_qualite: 'eleveur',
+                ...(cessionId ? { cession_id: cessionId } : {}),
+              });
+            }
+          }
+        }
       } catch { /* pas bloquant */ }
 
       // Historique de propriété — bascule seulement maintenant que la cession
@@ -468,7 +519,6 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       // l'animal apparaîtrait comme "ancien" dans la liste du cédant alors que
       // la fiche autorisait encore d'annuler/recéder pendant la signature.
       if (cededAnimal) {
-        const dateCession = (cededAnimal.date_sortie as string | null) ?? now.split('T')[0];
         if (cededAnimal.uid_eleveur) {
           await supabase.from('animaux_proprietes')
             .update({ date_fin: dateCession })

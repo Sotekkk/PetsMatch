@@ -1682,6 +1682,40 @@ export default function AnimalFichePage() {
       }, { onConflict: 'animal_id,uid_proprio' });
     }
 
+    // Registre entrées / sorties : SORTIE pour le cédant (+ ENTRÉE pour
+    // l'acquéreur éleveur / association).
+    try {
+      if (acqUidC) {
+        const { data: dejaSorti } = await supabase.from('registre_mouvements')
+          .select('id').eq('animal_id', id).eq('type', 'sortie').eq('motif', 'cession').limit(1);
+        if (!dejaSorti || dejaSorti.length === 0) {
+          const { data: acqU } = await supabase.from('users')
+            .select('firstname, lastname, name_elevage, is_elevage, is_association').eq('uid', acqUidC).maybeSingle();
+          const acqNom = (acqU?.name_elevage as string || '').trim()
+            || `${acqU?.firstname ?? ''} ${acqU?.lastname ?? ''}`.trim()
+            || (cessionEnCours.nom_acquereur as string | undefined) || '';
+          const acqEleveur = acqU?.is_elevage === true;
+          const acqAsso = acqU?.is_association === true;
+          await supabase.from('registre_mouvements').insert({
+            animal_id: id, uid_eleveur: user.uid, type: 'sortie',
+            date_mouvement: dateCession, motif: 'cession',
+            destinataire_qualite: acqEleveur ? 'eleveur' : acqAsso ? 'association' : 'particulier',
+            destinataire_nom: acqNom, cession_id: cessionEnCours.id,
+          });
+          if (acqEleveur || acqAsso) {
+            const { data: acqProf } = await supabase.from('user_profiles')
+              .select('id').eq('uid', acqUidC).eq('is_main', true).maybeSingle();
+            await supabase.from('registre_mouvements').insert({
+              animal_id: id, uid_eleveur: acqUidC,
+              ...(acqProf?.id ? { eleveur_profile_id: acqProf.id } : {}),
+              type: 'entree', date_mouvement: dateCession, motif: 'cession',
+              provenance_qualite: 'eleveur', cession_id: cessionEnCours.id,
+            });
+          }
+        }
+      }
+    } catch { /* pas bloquant */ }
+
     setAnimal(p => ({ ...p, statut: 'sorti', date_sortie: dateCession, destinataire_nom: cessionEnCours.nom_acquereur as string }));
     setCessionEnCours(null);
     setConfirmingCession(false);

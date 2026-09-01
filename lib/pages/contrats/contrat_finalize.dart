@@ -41,13 +41,34 @@ Future<void> finalizeContratSigne({
   // ── Transfert de propriété (contrat de vente / certificat de cession) ──
   if ((type == 'contrat_vente' || type == 'certificat_cession') && animalId != null) {
     try {
+      // Date de cession : ligne `cessions` en priorité, sinon métadonnées du
+      // contrat, sinon aujourd'hui. Sert de `date_sortie` (registre entrées /
+      // sorties) et de bornes `animaux_proprietes`.
+      String? cessionId;
+      String dateCession = (meta['date_cession'] as String?)?.trim().isNotEmpty == true
+          ? (meta['date_cession'] as String).trim()
+          : today;
+      try {
+        final cs = await supa.from('cessions')
+            .select('id, date_cession')
+            .eq('animal_id', animalId)
+            .order('created_at', ascending: false)
+            .limit(1).maybeSingle();
+        if (cs != null) {
+          cessionId = cs['id'] as String?;
+          if ((cs['date_cession'] as String?)?.trim().isNotEmpty == true) {
+            dateCession = (cs['date_cession'] as String).trim();
+          }
+        }
+      } catch (_) {}
+
       // L'appli pose 'cession_en_cours', le site 'en_attente_cession' — accepter
       // les deux, sinon le contrat signé n'entraînait aucun transfert (appli).
       final ceded = await supa.from('animaux')
-          .update({'statut': 'sorti'})
+          .update({'statut': 'sorti', 'date_sortie': dateCession})
           .eq('id', animalId)
           .inFilter('statut', ['en_attente_cession', 'cession_en_cours'])
-          .select('uid_eleveur, uid_acquereur, date_sortie')
+          .select('uid_eleveur, uid_acquereur')
           .maybeSingle();
       // Marquer la cession correspondante comme confirmée
       try {
@@ -57,7 +78,52 @@ Future<void> finalizeContratSigne({
             .inFilter('statut', ['en_attente_acquereur', 'signe_acquereur']);
       } catch (_) {}
       if (ceded != null) {
-        final dateCession = (ceded['date_sortie'] as String?) ?? today;
+        // ── Registre entrées / sorties : mouvement de SORTIE pour le cédant
+        //    (+ ENTRÉE pour l'acquéreur s'il est éleveur / association).
+        try {
+          final cedantUid0 = ceded['uid_eleveur'] as String?;
+          final acqUid0 = ceded['uid_acquereur'] as String?;
+          final dejaSorti = await supa.from('registre_mouvements')
+              .select('id')
+              .eq('animal_id', animalId)
+              .eq('type', 'sortie')
+              .eq('motif', 'cession')
+              .limit(1);
+          if ((dejaSorti as List).isEmpty && cedantUid0 != null && acqUid0 != null) {
+            final acqU = await supa.from('users')
+                .select('firstname, lastname, name_elevage, is_elevage, is_association')
+                .eq('uid', acqUid0).maybeSingle();
+            final acqNom = (acqU?['name_elevage'] as String? ?? '').isNotEmpty
+                ? acqU!['name_elevage'] as String
+                : '${acqU?['firstname'] ?? ''} ${acqU?['lastname'] ?? ''}'.trim();
+            final acqEleveur = acqU?['is_elevage'] == true;
+            final acqAsso = acqU?['is_association'] == true;
+            await supa.from('registre_mouvements').insert({
+              'animal_id':            animalId,
+              'uid_eleveur':          cedantUid0,
+              'type':                 'sortie',
+              'date_mouvement':       dateCession,
+              'motif':                'cession',
+              'destinataire_qualite': acqEleveur ? 'eleveur' : (acqAsso ? 'association' : 'particulier'),
+              'destinataire_nom':     acqNom,
+              if (cessionId != null) 'cession_id': cessionId,
+            });
+            if (acqEleveur || acqAsso) {
+              final acqProf = await supa.from('user_profiles')
+                  .select('id').eq('uid', acqUid0).eq('is_main', true).maybeSingle();
+              await supa.from('registre_mouvements').insert({
+                'animal_id':           animalId,
+                'uid_eleveur':         acqUid0,
+                if (acqProf?['id'] != null) 'eleveur_profile_id': acqProf!['id'],
+                'type':                'entree',
+                'date_mouvement':      dateCession,
+                'motif':               'cession',
+                'provenance_qualite':  'eleveur',
+                if (cessionId != null) 'cession_id': cessionId,
+              });
+            }
+          }
+        } catch (_) {}
         final cedantUid = ceded['uid_eleveur'] as String?;
         final acqUid = ceded['uid_acquereur'] as String?;
         if (cedantUid != null) {
