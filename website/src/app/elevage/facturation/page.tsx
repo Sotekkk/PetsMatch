@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { usePlan, usePensionPlan } from '@/lib/use-plan';
+import { facturePdfBlob } from '@/lib/facture-pdf';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,9 @@ interface Facture {
   lignes?: Ligne[];
   profil_source?: string;
   token?: string;
+  type_facture?: string;
+  pdf_url?: string;
+  pdf_hash?: string;
 }
 
 const STATUT_STYLE: Record<string, string> = {
@@ -146,6 +150,7 @@ export default function FacturationPage() {
           numero_facture: numLabel(f),
           total_ttc: f.total_ttc,
           facture_url: factureUrl,
+          ...(f.pdf_url ? { pdf_url: f.pdf_url } : {}),
         }),
       });
       if (res.ok) alert('Email envoyé au client.');
@@ -345,11 +350,17 @@ export default function FacturationPage() {
                 </button>
               </div>
             )}
-            {selected.statut !== 'annulee' && (selected as { type_facture?: string }).type_facture !== 'avoir' && (
+            {selected.statut !== 'annulee' && selected.type_facture !== 'avoir' && (
               <button onClick={() => { setAvoirSource(selected); setSelected(null); }}
                 className="w-full border border-[#0C5C6C]/30 text-[#0C5C6C] font-medium py-2 rounded-xl text-sm hover:bg-[#0C5C6C]/5 transition-colors mb-3">
                 ↩ Créer un avoir (corriger cette facture)
               </button>
+            )}
+            {selected.pdf_url && (
+              <a href={selected.pdf_url} target="_blank" rel="noopener noreferrer"
+                className="block w-full border border-gray-200 text-gray-600 font-medium py-2 rounded-xl text-sm hover:bg-gray-50 transition-colors text-center mb-3">
+                📄 PDF archivé
+              </a>
             )}
             {selected.token && (
               <div className="flex gap-2 mb-3">
@@ -549,8 +560,51 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
       total_ttc:      totalTTC,
     };
     const { data, error } = await supabase.from('factures').insert(payload).select().single();
-    if (!error && data) onSaved(data as Facture);
-    else if (error) alert(`Erreur : ${error.message}`);
+    if (error || !data) {
+      if (error) alert(`Erreur : ${error.message}`);
+      setSaving(false);
+      return;
+    }
+
+    // PDF figé : généré une fois avec le numéro attribué par le serveur, archivé
+    // (bucket `media`, même emplacement que l'app) + empreinte SHA-256, puis
+    // proposé au client par email.
+    const f = data as Facture & { numero_affichage?: string };
+    const numero = f.numero_affichage || String(f.numero_facture ?? '');
+    try {
+      const blob = await facturePdfBlob({
+        numero,
+        typeFacture: isAvoir ? 'avoir' : null,
+        dateFacture, datePrestation, dateEcheance,
+        nomEmetteur: emNom, rueEmetteur: emRue, cpEmetteur: emCp, villeEmetteur: emVille,
+        paysEmetteur: emPays, telEmetteur: emTel, emailEmetteur: emEmail, siretEmetteur: emSiret,
+        tvaEmetteur: emTva, formeJuridiqueEmetteur: emForme, capitalEmetteur: emCapital,
+        rcsEmetteur: emRcs, rmEmetteur: emRm,
+        prenomClient, nomClient, rueClient, cpClient, villeClient, paysClient,
+        emailClient, siretClient, tvaClient,
+        lignes: lignesNorm, totalHT, totalTVA, totalTTC,
+        franchise, modePaiement, delaiPaiement, conditionsEscompte: escompte,
+        noteComplementaire: note,
+      });
+      const buf = await blob.arrayBuffer();
+      const path = `factures/${uid}/${f.id}.pdf`;
+      const { error: upErr } = await supabase.storage.from('media')
+        .upload(path, blob, { upsert: true, contentType: 'application/pdf' });
+      const pdfUrl = upErr ? null : supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
+      const hashBuf = await crypto.subtle.digest('SHA-256', buf);
+      const pdfHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+      await supabase.from('factures').update({
+        ...(pdfUrl ? { pdf_url: pdfUrl } : {}),
+        pdf_hash: pdfHash,
+        pdf_emis_le: new Date().toISOString(),
+      }).eq('id', f.id);
+      if (pdfUrl) f.pdf_url = pdfUrl;
+    } catch {
+      // L'archivage PDF ne doit pas bloquer l'émission : la facture est déjà
+      // enregistrée et consultable via /facture/[token].
+    }
+
+    onSaved(f);
     setSaving(false);
   }
 
