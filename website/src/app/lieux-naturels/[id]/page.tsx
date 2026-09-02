@@ -44,6 +44,7 @@ interface Review {
   profile_id: string;
   note: number;
   commentaire: string | null;
+  photos: string[] | null;
   created_at: string;
 }
 
@@ -94,6 +95,8 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
   const [loadingReviews, setLoadingReviews] = useState(true);
   const [myNote, setMyNote] = useState(0);
   const [myComment, setMyComment] = useState('');
+  const [myReviewPhotos, setMyReviewPhotos] = useState<string[]>([]); // déjà publiées
+  const [newReviewPhotos, setNewReviewPhotos] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [pendingAmenityFields, setPendingAmenityFields] = useState<Set<string>>(new Set());
@@ -120,7 +123,11 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
       const list = (data ?? []) as Review[];
       setReviews(list);
       const mine = profileId ? list.find(r => r.profile_id === profileId) : undefined;
-      if (mine) { setMyNote(mine.note); setMyComment(mine.commentaire ?? ''); }
+      if (mine) {
+        setMyNote(mine.note);
+        setMyComment(mine.commentaire ?? '');
+        setMyReviewPhotos(mine.photos ?? []);
+      }
     } finally {
       setLoadingReviews(false);
     }
@@ -149,12 +156,25 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
     if (myNote === 0 || !profileId) return;
     setSaving(true);
     try {
+      const photos = [...myReviewPhotos];
+      for (let i = 0; i < newReviewPhotos.length; i++) {
+        const f = newReviewPhotos[i];
+        const path = `natural_places/reviews/${id}_${Date.now()}_${i}.jpg`;
+        const { error: upErr } = await supabase.storage.from('media').upload(path, f, {
+          contentType: f.type || 'application/octet-stream', upsert: true,
+        });
+        if (!upErr) photos.push(supabase.storage.from('media').getPublicUrl(path).data.publicUrl);
+      }
       await supabase.from('natural_place_reviews').upsert({
         place_id: id,
         profile_id: profileId,
         note: myNote,
         commentaire: myComment.trim(),
+        // 'photos' seulement si présentes → avis sans photo possibles même
+        // avant la migration natural_place_review_photos.
+        ...(photos.length || myReviewPhotos.length ? { photos } : {}),
       }, { onConflict: 'place_id,profile_id' });
+      setNewReviewPhotos([]);
       await recalcStats();
       await Promise.all([loadReviews(), loadPlace()]);
     } finally {
@@ -498,6 +518,35 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-[#0C5C6C] mb-2.5"
               style={{ fontFamily: 'Galey, sans-serif', backgroundColor: '#F8F9FA' }}
             />
+            <div className="flex flex-wrap gap-2 mb-2.5">
+              {myReviewPhotos.map((src, i) => (
+                <div key={`e${i}`} className="relative w-16 h-16 rounded-lg overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={src} alt="" className="w-full h-full object-cover" />
+                  <button onClick={() => setMyReviewPhotos(p => p.filter((_, j) => j !== i))}
+                    className="absolute top-0.5 right-0.5 bg-black/55 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px]">✕</button>
+                </div>
+              ))}
+              {newReviewPhotos.map((f, i) => (
+                <div key={`n${i}`} className="relative w-16 h-16 rounded-lg overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={URL.createObjectURL(f)} alt="" className="w-full h-full object-cover" />
+                  <button onClick={() => setNewReviewPhotos(p => p.filter((_, j) => j !== i))}
+                    className="absolute top-0.5 right-0.5 bg-black/55 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px]">✕</button>
+                </div>
+              ))}
+              {myReviewPhotos.length + newReviewPhotos.length < 6 && (
+                <label className="flex items-center justify-center w-16 h-16 rounded-lg border border-dashed border-gray-300 bg-white cursor-pointer hover:border-[#0C5C6C] text-lg">
+                  📷
+                  <input type="file" accept="image/*" multiple className="hidden"
+                    onChange={e => {
+                      const fs = Array.from(e.target.files ?? []);
+                      if (fs.length) setNewReviewPhotos(p => [...p, ...fs].slice(0, 6));
+                      e.target.value = '';
+                    }} />
+                </label>
+              )}
+            </div>
             <button
               onClick={submitReview}
               disabled={saving || myNote === 0}
@@ -533,6 +582,15 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
                 </div>
                 {r.commentaire && (
                   <p className="text-sm text-gray-800" style={{ fontFamily: 'Galey, sans-serif' }}>{r.commentaire}</p>
+                )}
+                {(r.photos?.length ?? 0) > 0 && (
+                  <div className="flex gap-1.5 mt-2 overflow-x-auto">
+                    {r.photos!.map((src, i) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img key={i} src={src} alt="" onClick={() => window.open(src, '_blank')}
+                        className="w-20 h-20 rounded-lg object-cover flex-shrink-0 cursor-pointer" />
+                    ))}
+                  </div>
                 )}
               </div>
             ))}

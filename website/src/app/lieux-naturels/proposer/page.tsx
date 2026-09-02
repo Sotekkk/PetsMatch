@@ -33,8 +33,8 @@ export default function ProposerLieuPage() {
   const [categorie, setCategorie] = useState('plage');
   const [adresse, setAdresse] = useState('');
   const [description, setDescription] = useState('');
-  const [photo, setPhoto] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
   const [pos, setPos] = useState<{ lat: number; lng: number }>({ lat: 46.603354, lng: 1.888334 });
   const [posSet, setPosSet] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -66,10 +66,16 @@ export default function ProposerLieuPage() {
   }, [adresse]);
 
   function selectPhoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setPhoto(file);
-    setPhotoPreview(URL.createObjectURL(file));
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setPhotos(prev => [...prev, ...files].slice(0, 8));
+    setPhotoPreviews(prev => [...prev, ...files.map(f => URL.createObjectURL(f))].slice(0, 8));
+    e.target.value = '';
+  }
+
+  function removePhoto(i: number) {
+    setPhotos(prev => prev.filter((_, j) => j !== i));
+    setPhotoPreviews(prev => prev.filter((_, j) => j !== i));
   }
 
   function useMyPosition() {
@@ -89,15 +95,15 @@ export default function ProposerLieuPage() {
     setSaving(true);
     setError(null);
     try {
-      let photos: string[] = [];
-      if (photo) {
-        const path = `natural_places/${Date.now()}_${user.uid}.jpg`;
-        const { error: upErr } = await supabase.storage.from('media').upload(path, photo, {
-          contentType: photo.type || 'application/octet-stream', upsert: true,
+      const photoUrls: string[] = [];
+      for (let i = 0; i < photos.length; i++) {
+        const f = photos[i];
+        const path = `natural_places/${Date.now()}_${i}_${user.uid}.jpg`;
+        const { error: upErr } = await supabase.storage.from('media').upload(path, f, {
+          contentType: f.type || 'application/octet-stream', upsert: true,
         });
         if (upErr) throw upErr;
-        const url = supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
-        photos = [url];
+        photoUrls.push(supabase.storage.from('media').getPublicUrl(path).data.publicUrl);
       }
 
       const { error: insErr } = await supabase.from('natural_places').insert({
@@ -107,8 +113,8 @@ export default function ProposerLieuPage() {
         lng: pos.lng,
         adresse: adresse.trim() || null,
         description: description.trim() || null,
-        photos,
-        photo_url: photos[0] ?? null,
+        photos: photoUrls,
+        photo_url: photoUrls[0] ?? null,
         statut: 'en_attente',
         submitted_by_uid: user.uid,
         submitted_by_profile_id: profileId || null,
@@ -217,27 +223,31 @@ export default function ProposerLieuPage() {
 
           <div>
             <label className="block text-sm font-bold mb-1.5" style={{ fontFamily: 'Galey, sans-serif' }}>
-              Photo
+              Photos
             </label>
-            {photoPreview ? (
-              <div className="relative h-40 rounded-xl overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={photoPreview} alt="" className="w-full h-full object-cover" />
-                <button
-                  onClick={() => { setPhoto(null); setPhotoPreview(null); }}
-                  className="absolute top-2 right-2 bg-black/55 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm"
-                >
-                  ✕
-                </button>
-              </div>
-            ) : (
-              <label className="flex flex-col items-center justify-center h-32 rounded-xl border border-dashed border-gray-300 bg-white cursor-pointer hover:border-[#0C5C6C] transition-colors">
-                <span className="text-2xl mb-1">📷</span>
-                <span className="text-xs text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
-                  Ajouter une photo (optionnel)
-                </span>
-                <input type="file" accept="image/*" className="hidden" onChange={selectPhoto} />
-              </label>
+            <div className="flex flex-wrap gap-2">
+              {photoPreviews.map((src, i) => (
+                <div key={i} className="relative w-24 h-24 rounded-xl overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={src} alt="" className="w-full h-full object-cover" />
+                  <button
+                    onClick={() => removePhoto(i)}
+                    className="absolute top-1 right-1 bg-black/55 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              {photos.length < 8 && (
+                <label className="flex flex-col items-center justify-center w-24 h-24 rounded-xl border border-dashed border-gray-300 bg-white cursor-pointer hover:border-[#0C5C6C] transition-colors">
+                  <span className="text-xl">📷</span>
+                  <span className="text-[10px] text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>Ajouter</span>
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={selectPhoto} />
+                </label>
+              )}
+            </div>
+            {photoPreviews.length === 0 && (
+              <p className="text-xs text-gray-400 mt-1" style={{ fontFamily: 'Galey, sans-serif' }}>Optionnel — plusieurs photos possibles</p>
             )}
           </div>
 

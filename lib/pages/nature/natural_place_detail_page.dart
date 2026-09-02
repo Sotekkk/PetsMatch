@@ -5,6 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:image_picker/image_picker.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:PetsMatch/widgets/map_point_picker.dart';
@@ -70,6 +71,8 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
   int    _myNote    = 0;
   String _myComment = '';
   final  _commentCtrl = TextEditingController();
+  final  List<File> _reviewPhotos = [];
+  List<String> _myReviewPhotoUrls = []; // photos déjà publiées (édition d'avis)
 
   @override
   void initState() {
@@ -129,6 +132,7 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
             _myNote    = (myReview['note'] as int?) ?? 0;
             _myComment = myReview['commentaire'] as String? ?? '';
             _commentCtrl.text = _myComment;
+            _myReviewPhotoUrls = List<String>.from((myReview['photos'] as List?) ?? const []);
           });
         }
       }
@@ -147,6 +151,17 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
     } catch (_) {}
   }
 
+  Future<void> _pickReviewPhotos() async {
+    final picked = await ImagePicker().pickMultiImage(imageQuality: 85);
+    if (picked.isEmpty || !mounted) return;
+    setState(() {
+      for (final x in picked) {
+        if (_reviewPhotos.length + _myReviewPhotoUrls.length >= 6) break;
+        _reviewPhotos.add(File(x.path));
+      }
+    });
+  }
+
   Future<void> _submitReview() async {
     if (_myNote == 0 || _uid.isEmpty) return;
     setState(() => _savingReview = true);
@@ -154,12 +169,24 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
       final id = _place['id']?.toString();
       if (id == null) return;
 
+      final photos = List<String>.from(_myReviewPhotoUrls);
+      for (var i = 0; i < _reviewPhotos.length; i++) {
+        final path = 'natural_places/reviews/${id}_${DateTime.now().millisecondsSinceEpoch}_${i}_${User_Info.uid}.jpg';
+        photos.add(await uploadPhoto(_reviewPhotos[i], path));
+      }
+
       await _supa.from('natural_place_reviews').upsert({
         'place_id':    id,
         'profile_id':    _uid,
         'note':        _myNote,
         'commentaire': _commentCtrl.text.trim(),
+        // 'photos' seulement si présentes → les avis sans photo restent
+        // possibles même si la migration natural_place_review_photos n'est
+        // pas encore passée.
+        if (photos.isNotEmpty || _myReviewPhotoUrls.isNotEmpty) 'photos': photos,
       }, onConflict: 'place_id,profile_id');
+
+      if (mounted) setState(() => _reviewPhotos.clear());
 
       // Recalcul note moyenne + nb_avis côté client approximatif
       await _recalcStats(id);
@@ -683,7 +710,12 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
                       myNote:      _myNote,
                       controller:  _commentCtrl,
                       saving:      _savingReview,
+                      newPhotos:   _reviewPhotos,
+                      existingPhotoUrls: _myReviewPhotoUrls,
                       onNoteChange: (n) => setState(() => _myNote = n),
+                      onAddPhotos: _pickReviewPhotos,
+                      onRemoveNew: (i) => setState(() => _reviewPhotos.removeAt(i)),
+                      onRemoveExisting: (i) => setState(() => _myReviewPhotoUrls.removeAt(i)),
                       onSubmit:    _submitReview,
                     ),
                     const SizedBox(height: 16),
@@ -923,18 +955,45 @@ class _DifficultyPicker extends StatelessWidget {
 
 // ─── Formulaire avis ─────────────────────────────────────────────────────────
 
+Widget _reviewThumb({required Widget child, required VoidCallback onRemove}) {
+  return Stack(children: [
+    ClipRRect(borderRadius: BorderRadius.circular(10), child: child),
+    Positioned(
+      top: 3, right: 3,
+      child: GestureDetector(
+        onTap: onRemove,
+        child: Container(
+          padding: const EdgeInsets.all(3),
+          decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+          child: const Icon(Icons.close, color: Colors.white, size: 12),
+        ),
+      ),
+    ),
+  ]);
+}
+
 class _ReviewForm extends StatelessWidget {
   final int myNote;
   final TextEditingController controller;
   final bool saving;
+  final List<File> newPhotos;
+  final List<String> existingPhotoUrls;
   final void Function(int) onNoteChange;
+  final VoidCallback onAddPhotos;
+  final void Function(int) onRemoveNew;
+  final void Function(int) onRemoveExisting;
   final VoidCallback onSubmit;
 
   const _ReviewForm({
     required this.myNote,
     required this.controller,
     required this.saving,
+    required this.newPhotos,
+    required this.existingPhotoUrls,
     required this.onNoteChange,
+    required this.onAddPhotos,
+    required this.onRemoveNew,
+    required this.onRemoveExisting,
     required this.onSubmit,
   });
 
@@ -988,6 +1047,32 @@ class _ReviewForm extends StatelessWidget {
         ),
         const SizedBox(height: 10),
 
+        // Photos
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          ...existingPhotoUrls.asMap().entries.map((e) => _reviewThumb(
+                child: CachedNetworkImage(imageUrl: e.value, height: 72, width: 72, fit: BoxFit.cover),
+                onRemove: () => onRemoveExisting(e.key),
+              )),
+          ...newPhotos.asMap().entries.map((e) => _reviewThumb(
+                child: Image.file(e.value, height: 72, width: 72, fit: BoxFit.cover),
+                onRemove: () => onRemoveNew(e.key),
+              )),
+          if (existingPhotoUrls.length + newPhotos.length < 6)
+            GestureDetector(
+              onTap: onAddPhotos,
+              child: Container(
+                height: 72, width: 72,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F9FA),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                ),
+                child: Icon(Icons.add_a_photo_outlined, size: 20, color: Colors.grey.shade400),
+              ),
+            ),
+        ]),
+        const SizedBox(height: 10),
+
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
@@ -1020,6 +1105,7 @@ class _ReviewTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final note      = (review['note'] as int?) ?? 0;
     final comment   = review['commentaire'] as String? ?? '';
+    final photos    = List<String>.from((review['photos'] as List?) ?? const []);
     final createdAt = review['created_at'] as String? ?? '';
     DateTime? dt;
     try { dt = DateTime.parse(createdAt).toLocal(); } catch (_) {}
@@ -1051,6 +1137,37 @@ class _ReviewTile extends StatelessWidget {
           const SizedBox(height: 6),
           Text(comment, style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
               color: Colors.black87)),
+        ],
+        if (photos.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 88,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: photos.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 6),
+              itemBuilder: (_, i) => GestureDetector(
+                onTap: () => showDialog<void>(
+                  context: context,
+                  builder: (_) => Dialog(
+                    backgroundColor: Colors.transparent,
+                    insetPadding: const EdgeInsets.all(12),
+                    child: GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: InteractiveViewer(
+                        child: CachedNetworkImage(imageUrl: photos[i], fit: BoxFit.contain),
+                      ),
+                    ),
+                  ),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: CachedNetworkImage(
+                    imageUrl: photos[i], height: 88, width: 88, fit: BoxFit.cover),
+                ),
+              ),
+            ),
+          ),
         ],
       ]),
     );

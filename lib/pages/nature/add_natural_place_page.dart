@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
-import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:PetsMatch/widgets/map_point_picker.dart';
 
@@ -37,7 +37,7 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
   String _categorie = 'plage';
   LatLng _position   = const LatLng(46.603354, 1.888334);
   bool _positionSet  = false;
-  File? _photo;
+  final List<File> _photos = [];
   bool _saving       = false;
   bool _locating     = true;
   bool _geocoding    = false;
@@ -116,8 +116,14 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
   }
 
   Future<void> _pickPhoto() async {
-    final file = await pickAndCropBanner();
-    if (file != null && mounted) setState(() => _photo = file);
+    final picked = await ImagePicker().pickMultiImage(imageQuality: 85);
+    if (picked.isEmpty || !mounted) return;
+    setState(() {
+      for (final x in picked) {
+        if (_photos.length >= 8) break;
+        _photos.add(File(x.path));
+      }
+    });
   }
 
   Future<void> _submit() async {
@@ -138,11 +144,10 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
 
     setState(() => _saving = true);
     try {
-      List<String> photos = [];
-      if (_photo != null) {
-        final path = 'natural_places/${DateTime.now().millisecondsSinceEpoch}_${User_Info.uid}.jpg';
-        final url = await uploadPhoto(_photo!, path);
-        photos = [url];
+      final List<String> photos = [];
+      for (var i = 0; i < _photos.length; i++) {
+        final path = 'natural_places/${DateTime.now().millisecondsSinceEpoch}_${i}_${User_Info.uid}.jpg';
+        photos.add(await uploadPhoto(_photos[i], path));
       }
 
       await _supa.from('natural_places').insert({
@@ -262,9 +267,13 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
           _TextInput(controller: _descCtrl, hint: 'Règles chiens, accès, équipements...', maxLines: 4),
           const SizedBox(height: 16),
 
-          _Label('Photo'),
+          _Label('Photos'),
           const SizedBox(height: 8),
-          _PhotoPicker(photo: _photo, onTap: _pickPhoto, onClear: () => setState(() => _photo = null)),
+          _PhotoPicker(
+            photos: _photos,
+            onTap: _pickPhoto,
+            onRemove: (i) => setState(() => _photos.removeAt(i)),
+          ),
           const SizedBox(height: 16),
 
           _Label('Position sur la carte *'),
@@ -304,14 +313,14 @@ class _AddNaturalPlacePageState extends State<AddNaturalPlacePage> {
 }
 
 class _PhotoPicker extends StatelessWidget {
-  final File? photo;
+  final List<File> photos;
   final VoidCallback onTap;
-  final VoidCallback onClear;
-  const _PhotoPicker({required this.photo, required this.onTap, required this.onClear});
+  final void Function(int) onRemove;
+  const _PhotoPicker({required this.photos, required this.onTap, required this.onRemove});
 
   @override
   Widget build(BuildContext context) {
-    if (photo == null) {
+    if (photos.isEmpty) {
       return GestureDetector(
         onTap: onTap,
         child: Container(
@@ -319,33 +328,48 @@ class _PhotoPicker extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.grey.shade300, style: BorderStyle.solid),
+            border: Border.all(color: Colors.grey.shade300),
           ),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             Icon(Icons.add_a_photo_outlined, size: 28, color: Colors.grey.shade400),
             const SizedBox(height: 8),
-            Text('Ajouter une photo (optionnel)',
+            Text('Ajouter des photos (optionnel)',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
           ]),
         ),
       );
     }
-    return Stack(children: [
-      ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: Image.file(photo!, height: 160, width: double.infinity, fit: BoxFit.cover),
-      ),
-      Positioned(
-        top: 8, right: 8,
-        child: GestureDetector(
-          onTap: onClear,
+    return Wrap(spacing: 8, runSpacing: 8, children: [
+      ...photos.asMap().entries.map((e) => Stack(children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.file(e.value, height: 96, width: 96, fit: BoxFit.cover),
+            ),
+            Positioned(
+              top: 4, right: 4,
+              child: GestureDetector(
+                onTap: () => onRemove(e.key),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                  child: const Icon(Icons.close, color: Colors.white, size: 14),
+                ),
+              ),
+            ),
+          ])),
+      if (photos.length < 8)
+        GestureDetector(
+          onTap: onTap,
           child: Container(
-            padding: const EdgeInsets.all(6),
-            decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-            child: const Icon(Icons.close, color: Colors.white, size: 16),
+            height: 96, width: 96,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Icon(Icons.add_a_photo_outlined, size: 24, color: Colors.grey.shade400),
           ),
         ),
-      ),
     ]);
   }
 }
