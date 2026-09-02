@@ -491,17 +491,6 @@ class _EleveurNavState extends State<EleveurNav> {
                           ));
                         },
                       ),
-                      // Fonctionnalite app sans equivalent direct sur le site.
-                      _DrawerSubItem(
-                        label: 'Documents',
-                        icon: Icons.folder_outlined,
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const PensionDocumentsPage(),
-                          ));
-                        },
-                      ),
                     ],
                   ),
                   _DrawerSection(
@@ -525,6 +514,17 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => const PensionTarifsPage(),
+                          ));
+                        },
+                      ),
+                      // Fonctionnalite app sans equivalent direct sur le site.
+                      _DrawerSubItem(
+                        label: 'Documents',
+                        icon: Icons.folder_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const PensionDocumentsPage(),
                           ));
                         },
                       ),
