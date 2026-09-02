@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/geocoding_helper.dart';
-import 'package:PetsMatch/pages/pro/taxi_factures_page.dart';
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 
 // ── Mes trajets (taxi animalier) — historique des courses, sur le modèle
 // événementiel de registre_visites_page.dart (garde) : chaque course est un
@@ -93,56 +93,22 @@ class _TaxiTrajetsPageState extends State<TaxiTrajetsPage> {
   }
 
   Future<void> _facturer(Map<String, dynamic> rdv) async {
-    final montantCtrl = TextEditingController();
-    final montant = await showDialog<double>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Facturer la course', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        content: TextField(
-          controller: montantCtrl,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          style: const TextStyle(fontFamily: 'Galey'),
-          decoration: const InputDecoration(hintText: 'Montant en €', suffixText: '€'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, double.tryParse(montantCtrl.text.trim().replaceAll(',', '.'))),
-            child: const Text('Facturer'),
-          ),
+    final trajet = [rdv['adresse_depart'], rdv['adresse_arrivee']]
+        .where((s) => s != null && s.toString().trim().isNotEmpty)
+        .join(' → ');
+    final designation = trajet.isNotEmpty
+        ? 'Transport animalier — $trajet'
+        : 'Transport animalier';
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => CreerFacturePage(
+        clientNom: rdv['_client_nom']?.toString(),
+        clientEmail: rdv['_client_email']?.toString(),
+        lignesPrefill: [
+          FacturePrefillLigne(designation: designation, prixHT: 0, tauxTVA: 20),
         ],
       ),
-    );
-    if (montant == null || montant <= 0) return;
-    try {
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-      final now = DateTime.now();
-      await _supa.from('taxi_factures').insert({
-        'pro_uid': uid,
-        'pro_profile_id': User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
-        'rdv_id': rdv['id'],
-        'client_uid': rdv['client_uid'],
-        if (rdv['client_profile_id'] != null) 'client_profile_id': rdv['client_profile_id'],
-        'numero': 'TAXI-${DateFormat('yyyyMMdd-HHmm').format(now)}',
-        'client_nom': rdv['_client_nom'],
-        'montant': montant,
-        'statut': 'envoyee',
-      });
-      await _load();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Course facturée.', style: TextStyle(fontFamily: 'Galey')),
-          backgroundColor: Color(0xFF6E9E57),
-        ));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')), backgroundColor: Colors.red));
-      }
-    }
+    ));
+    await _load();
   }
 
   @override
@@ -166,7 +132,7 @@ class _TaxiTrajetsPageState extends State<TaxiTrajetsPage> {
           IconButton(
             icon: const Icon(Icons.receipt_long_outlined),
             tooltip: 'Mes factures',
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TaxiFacturesPage())),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FacturationPage())),
           ),
         ],
         bottom: PreferredSize(

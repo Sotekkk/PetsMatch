@@ -48,15 +48,12 @@ import 'package:PetsMatch/pages/pro/tarifs_clients_page.dart';
 import 'package:PetsMatch/pages/pro/tournee_page.dart';
 import 'package:PetsMatch/pages/pro/taxi_tournee_page.dart';
 import 'package:PetsMatch/pages/pro/taxi_trajets_page.dart';
-import 'package:PetsMatch/pages/pro/taxi_factures_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_prestations_page.dart';
-import 'package:PetsMatch/pages/pro/photographe_factures_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_dashboard_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_planning_employes_page.dart';
-import 'package:PetsMatch/pages/pro/toilettage_factures_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_dashboard_page.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_contrats_page.dart';
@@ -1074,7 +1071,7 @@ class _EleveurNavState extends State<EleveurNav> {
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const TaxiFacturesPage(),
+                          builder: (_) => const FacturationPage(),
                         ));
                       },
                     ),
@@ -1096,7 +1093,7 @@ class _EleveurNavState extends State<EleveurNav> {
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PhotographeFacturesPage(),
+                          builder: (_) => const FacturationPage(),
                         ));
                       },
                     ),
@@ -1148,7 +1145,7 @@ class _EleveurNavState extends State<EleveurNav> {
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const ToilettageFacturesPage(),
+                          builder: (_) => const FacturationPage(),
                         ));
                       },
                     ),

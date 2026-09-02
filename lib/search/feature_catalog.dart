@@ -79,14 +79,11 @@ import 'package:PetsMatch/pages/pro/tarifs_clients_page.dart';
 import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/taxi_trajets_page.dart';
 import 'package:PetsMatch/pages/pro/taxi_tournee_page.dart';
-import 'package:PetsMatch/pages/pro/taxi_factures_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_prestations_page.dart';
-import 'package:PetsMatch/pages/pro/photographe_factures_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_dashboard_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_planning_employes_page.dart';
-import 'package:PetsMatch/pages/pro/toilettage_factures_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_dashboard_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_abonnement_page.dart';
 import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
@@ -689,7 +686,7 @@ List<QuickAction> _all(BuildContext ctx) => [
     label: 'Mes factures (taxi)',
     keywords: ['facturation', 'comptabilité'],
     icon: Icons.receipt_long_outlined, group: 'Administratif',
-    visible: () => _catPro == 'taxi_animalier', open: (c) => _push(c, const TaxiFacturesPage()),
+    visible: () => _catPro == 'taxi_animalier', open: (c) => _push(c, const FacturationPage()),
   ),
 
   // ── Photographe ────────────────────────────────────────────────────────────
@@ -703,7 +700,7 @@ List<QuickAction> _all(BuildContext ctx) => [
     label: 'Mes factures (photo)',
     keywords: ['facturation', 'comptabilité'],
     icon: Icons.receipt_long_outlined, group: 'Administratif',
-    visible: () => _catPro == 'photographe', open: (c) => _push(c, const PhotographeFacturesPage()),
+    visible: () => _catPro == 'photographe', open: (c) => _push(c, const FacturationPage()),
   ),
   QuickAction(
     label: 'Tableau de bord (photo)',
@@ -741,7 +738,7 @@ List<QuickAction> _all(BuildContext ctx) => [
     label: 'Mes factures (toilettage)',
     keywords: ['facturation', 'comptabilité'],
     icon: Icons.receipt_long_outlined, group: 'Administratif',
-    visible: () => _catPro == 'toilettage', open: (c) => _push(c, const ToilettageFacturesPage()),
+    visible: () => _catPro == 'toilettage', open: (c) => _push(c, const FacturationPage()),
   ),
   QuickAction(
     label: 'Tableau de bord (toilettage)',

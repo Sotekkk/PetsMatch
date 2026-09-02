@@ -106,7 +106,10 @@ export default function FacturationPage() {
     if (profilSource === 'association') {
       q = q.eq('profil_source', 'association') as typeof q;
     } else {
-      q = q.or('profil_source.is.null,profil_source.eq.eleveur') as typeof q;
+      // Tout sauf « association » — éleveur, garde, éducateur, taxi, photographe,
+      // toilettage… ; le scoping par profile_id garantit qu'on ne voit que les
+      // siennes.
+      q = q.or('profil_source.is.null,profil_source.neq.association') as typeof q;
     }
 
     const { data } = await q;

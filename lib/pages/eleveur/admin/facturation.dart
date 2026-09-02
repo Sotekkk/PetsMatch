@@ -130,9 +130,12 @@ class _FacturationPageState extends State<FacturationPage> {
         ? _supa.from('factures').select().eq('profile_id', profileId)
         : _supa.from('factures').select().eq('uid_eleveur', uid);
 
+    // Association : uniquement ses factures. Sinon : tout ce qui n'est PAS
+    // « association » (éleveur, garde, éducateur, taxi, photographe, toilettage…) —
+    // le scoping par profile_id garantit qu'on ne voit que ses propres factures.
     final rows = widget.isAssociation
         ? await q.eq('profil_source', 'association').order('created_at', ascending: false)
-        : await q.or('profil_source.is.null,profil_source.eq.eleveur').order('created_at', ascending: false);
+        : await q.or('profil_source.is.null,profil_source.neq.association').order('created_at', ascending: false);
     return rows.map(_supaToUi).toList();
   }
 
@@ -434,8 +437,44 @@ class FactureDetailPage extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────
 // 3. CREATE PAGE
 // ─────────────────────────────────────────────────────────────
+/// Une ligne pré-remplie à la création d'une facture.
+class FacturePrefillLigne {
+  final String designation;
+  final String description;
+  final double prixHT;
+  final double quantite;
+  final double tauxTVA;
+  const FacturePrefillLigne({
+    required this.designation,
+    this.description = '',
+    required this.prixHT,
+    this.quantite = 1,
+    this.tauxTVA = 20,
+  });
+}
+
 class CreerFacturePage extends StatefulWidget {
-  const CreerFacturePage({super.key});
+  final String? clientNom;
+  final String? clientPrenom;
+  final String? clientEmail;
+  final String? clientTel;
+  final List<FacturePrefillLigne> lignesPrefill;
+  final String? noteInitiale;
+  final String? typeFacture; // 'acompte' | 'solde' | null
+  final bool franchiseInitiale;
+
+  const CreerFacturePage({
+    super.key,
+    this.clientNom,
+    this.clientPrenom,
+    this.clientEmail,
+    this.clientTel,
+    this.lignesPrefill = const [],
+    this.noteInitiale,
+    this.typeFacture,
+    this.franchiseInitiale = false,
+  });
+
   @override
   State<CreerFacturePage> createState() => _CreerFacturePageState();
 }
@@ -489,6 +528,23 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
   @override
   void initState() {
     super.initState();
+    // Pré-remplissage éventuel (facturation depuis une prestation taxi / photo /
+    // toilettage, un RDV de garde…).
+    if (widget.clientNom != null) _nomClient.text = widget.clientNom!;
+    if (widget.clientPrenom != null) _prenomClient.text = widget.clientPrenom!;
+    if (widget.clientEmail != null) _emailClient.text = widget.clientEmail!;
+    if (widget.clientTel != null) _telClient.text = widget.clientTel!;
+    if (widget.noteInitiale != null) _noteComplementaire.text = widget.noteInitiale!;
+    _franchise = widget.franchiseInitiale;
+    for (final l in widget.lignesPrefill) {
+      final ligne = _Ligne()
+        ..designation.text = l.designation
+        ..description.text = l.description
+        ..quantite.text = l.quantite.toStringAsFixed(0)
+        ..prixHT.text = l.prixHT.toStringAsFixed(2)
+        ..tauxTVA = l.tauxTVA;
+      _lignes.add(ligne);
+    }
     _loadUserData();
   }
 
@@ -592,7 +648,12 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
         'id':                  _uuid(),
         'uid_eleveur':         uid,
         if (_profileId != null) 'profile_id': _profileId,
-        'profil_source':       (User_Info.activeType == 'association' || User_Info.isAssociation) ? 'association' : 'eleveur',
+        'profil_source':       (User_Info.activeType == 'association' || User_Info.isAssociation)
+            ? 'association'
+            : (User_Info.isPro && User_Info.catPro.isNotEmpty && User_Info.catPro != 'eleveur')
+                ? User_Info.catPro
+                : 'eleveur',
+        if (widget.typeFacture != null) 'type_facture': widget.typeFacture,
         'numero_facture':      d['numeroFacture'],
         'date_facture':        _frToIso(d['dateFacture']),
         'date_prestation':     _frToIso(d['datePrestation']),

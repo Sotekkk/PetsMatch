@@ -10,7 +10,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/utils/geocoding_helper.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
-import 'package:intl/intl.dart';
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 
 class ProAgendaPage extends StatefulWidget {
   // Index de l'onglet initial (0=Demandes, 1=À venir, 2=Historique,
@@ -1021,8 +1021,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     }
   }
 
-  // Photographe — crée la facture acompte+solde à partir du prix de la
-  // prestation liée au RDV (montant pré-rempli, modifiable avant envoi).
+  // Photographe — facture (acompte ou complète) via le moteur commun.
   Future<void> _facturerPhoto(Map<String, dynamic> rdv) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -1037,117 +1036,70 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       prixTotal = (prestation?['prix'] as num?)?.toDouble() ?? 0;
       acomptePourcentage = (prestation?['acompte_pourcentage'] as num?)?.toInt() ?? 30;
     }
+    if (!mounted) return;
 
-    final totalCtrl = TextEditingController(text: prixTotal > 0 ? prixTotal.toStringAsFixed(2) : '');
-    final acompteCtrl = TextEditingController(
-        text: prixTotal > 0 ? (prixTotal * acomptePourcentage / 100).toStringAsFixed(2) : '');
-
-    final confirm = await showDialog<bool>(
+    final acompteMontant = prixTotal * acomptePourcentage / 100;
+    final choix = await showModalBottomSheet<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Facturer la prestation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(controller: totalCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Montant total (€)')),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 18, 20, 4),
+            child: Align(alignment: Alignment.centerLeft, child: Text('Facturer la prestation',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
+          ),
+          ListTile(
+            leading: const Icon(Icons.pending_actions_outlined, color: Color(0xFF0C5C6C)),
+            title: const Text('Facture d\'acompte', style: TextStyle(fontFamily: 'Galey')),
+            subtitle: prixTotal > 0
+                ? Text('$acomptePourcentage % = ${acompteMontant.toStringAsFixed(2)} €', style: const TextStyle(fontFamily: 'Galey'))
+                : null,
+            onTap: () => Navigator.pop(ctx, 'acompte'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.receipt_long_outlined, color: Color(0xFF0C5C6C)),
+            title: const Text('Facture complète / solde', style: TextStyle(fontFamily: 'Galey')),
+            onTap: () => Navigator.pop(ctx, 'complete'),
+          ),
           const SizedBox(height: 8),
-          TextField(controller: acompteCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Montant acompte (€)')),
         ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Facturer')),
-        ],
       ),
     );
-    if (confirm != true) return;
+    if (choix == null || !mounted) return;
 
-    final total = double.tryParse(totalCtrl.text.trim().replaceAll(',', '.')) ?? 0;
-    final acompte = double.tryParse(acompteCtrl.text.trim().replaceAll(',', '.')) ?? 0;
-    if (total <= 0) return;
-
-    try {
-      final now = DateTime.now();
-      await supa.from('photographe_factures').insert({
-        'pro_uid': uid,
-        'pro_profile_id': User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
-        'rdv_id': rdv['id'],
-        'client_uid': rdv['client_uid'],
-        if (rdv['client_profile_id'] != null) 'client_profile_id': rdv['client_profile_id'],
-        'numero': 'PHOTO-${DateFormat('yyyyMMdd-HHmm').format(now)}',
-        'client_nom': rdv['_client_name'],
-        'montant_acompte': acompte,
-        'montant_solde': total - acompte,
-        'montant_total': total,
-        'statut': 'acompte_du',
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Prestation facturée.', style: TextStyle(fontFamily: 'Galey')),
-          backgroundColor: Color(0xFF6E9E57),
-        ));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')), backgroundColor: Colors.red));
-      }
-    }
+    final isAcompte = choix == 'acompte';
+    final designation = isAcompte
+        ? 'Acompte $acomptePourcentage % — prestation photographe'
+        : 'Prestation photographe';
+    final montantLigne = isAcompte ? acompteMontant : prixTotal;
+    final note = isAcompte && prixTotal > 0
+        ? 'Total de la prestation : ${prixTotal.toStringAsFixed(2)} € — solde de ${(prixTotal - acompteMontant).toStringAsFixed(2)} € facturé à la livraison.'
+        : null;
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => CreerFacturePage(
+        clientNom: rdv['_client_name']?.toString(),
+        typeFacture: isAcompte ? 'acompte' : null,
+        noteInitiale: note,
+        lignesPrefill: [
+          FacturePrefillLigne(designation: designation, prixHT: montantLigne, tauxTVA: 20),
+        ],
+      ),
+    ));
   }
 
-  // Toiletteur — facture à montant simple (pas d'acompte/solde), montant
-  // pré-rempli depuis prix_calcule (rdv_booking_page.dart) si disponible.
+  // Toiletteur — facture via le moteur commun (montant pré-rempli depuis
+  // prix_calcule si disponible).
   Future<void> _facturerToilettage(Map<String, dynamic> rdv) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final supa = Supabase.instance.client;
-
     final prixCalcule = (rdv['prix_calcule'] as num?)?.toDouble() ?? 0;
-    final montantCtrl = TextEditingController(text: prixCalcule > 0 ? prixCalcule.toStringAsFixed(2) : '');
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Facturer la prestation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        content: TextField(controller: montantCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(labelText: 'Montant (€)')),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Facturer')),
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => CreerFacturePage(
+        clientNom: rdv['_client_name']?.toString(),
+        lignesPrefill: [
+          FacturePrefillLigne(designation: 'Prestation de toilettage', prixHT: prixCalcule, tauxTVA: 20),
         ],
       ),
-    );
-    if (confirm != true) return;
-
-    final montant = double.tryParse(montantCtrl.text.trim().replaceAll(',', '.')) ?? 0;
-    if (montant <= 0) return;
-
-    try {
-      final now = DateTime.now();
-      await supa.from('toilettage_factures').insert({
-        'pro_uid': uid,
-        'pro_profile_id': User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
-        'rdv_id': rdv['id'],
-        'client_uid': rdv['client_uid'],
-        if (rdv['client_profile_id'] != null) 'client_profile_id': rdv['client_profile_id'],
-        'numero': 'TOIL-${DateFormat('yyyyMMdd-HHmm').format(now)}',
-        'client_nom': rdv['_client_name'],
-        'montant': montant,
-        'statut': 'envoyee',
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Prestation facturée.', style: TextStyle(fontFamily: 'Galey')),
-          backgroundColor: Color(0xFF6E9E57),
-        ));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')), backgroundColor: Colors.red));
-      }
-    }
+    ));
   }
 
   Future<void> _updateStatut(String rdvId, String statut,
