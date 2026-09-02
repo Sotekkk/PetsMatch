@@ -1405,6 +1405,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 onTap: () => _showRecordDetail('Traitement', r, [
                   ('Nom', 'nom'), ('Type', 'type'), ('Maladie', 'description_maladie'),
                   ('Posologie', 'posologie'), ('Date début', 'date'), ('Date fin', 'date_fin'),
+                  ('Commentaires', 'notes'),
                 ]),
               );
             },
@@ -1620,7 +1621,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   void _showTraitementSheet() {
     final nom = TextEditingController(), type = TextEditingController(),
         descriptionMaladie = TextEditingController(),
-        posologie = TextEditingController();
+        posologie = TextEditingController(),
+        notes = TextEditingController();
     DateTime? date, dateFin;
 
     // ── Rappels récurrents (ex: piqûre tous les 3 jours pendant 3 semaines),
@@ -1657,6 +1659,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         onAddHeure: () => addHeure(ss),
         onRemoveHeure: (h) => ss(() => rappelHeures = rappelHeures.where((x) => x != h).toList()),
       ),
+      _SFld(ctrl: notes, label: 'Commentaires', maxLines: 3,
+          hint: 'Ex: impressions de tolérance au traitement, effets observés...'),
     ], () async {
       if (rappelActif && rappelHeures.isEmpty) {
         throw 'Ajoute au moins une heure de rappel.';
@@ -1674,6 +1678,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'posologie': posologie.text.trim().isEmpty ? null : posologie.text.trim(),
         'date': date?.toIso8601String().substring(0, 10),
         'date_fin': dateFin?.toIso8601String().substring(0, 10),
+        'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
         'created_at': DateTime.now().toIso8601String(),
         'rappel_actif': rappelActif,
         if (rappelActif) 'rappel_frequence_jours': frequenceJours,

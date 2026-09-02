@@ -4919,7 +4919,7 @@ class _SanteCard extends StatelessWidget {
       case 'vermifuges':       return v('dosage') ?? v('notes');
       case 'vaccinations':     return v('veterinaire');
       case 'antiparasitaires': return v('frequence') ?? v('notes');
-      case 'traitements':      return v('posologie');
+      case 'traitements':      return v('posologie') ?? v('notes');
       case 'visites':          return v('diagnostic') ?? v('notes');
       case 'radios':           return v('notes');
       case 'chirurgies': {
@@ -6238,6 +6238,7 @@ class _AddTraitementDialog extends StatefulWidget {
 class _AddTraitementDialogState extends State<_AddTraitementDialog> {
   final _nom = TextEditingController();
   final _posologie = TextEditingController();
+  final _notes = TextEditingController();
   String _type = 'antiparasitaire';
   DateTime? _date;
   DateTime? _dateFin;
@@ -6253,6 +6254,7 @@ class _AddTraitementDialogState extends State<_AddTraitementDialog> {
   void dispose() {
     _rappelFrequenceCtrl.dispose();
     _rappelDureeCtrl.dispose();
+    _notes.dispose();
     super.dispose();
   }
 
@@ -6326,6 +6328,7 @@ class _AddTraitementDialogState extends State<_AddTraitementDialog> {
     _DD('Date début *', _date, (d) => setState(() => _date = d)),
     _DD('Date fin', _dateFin, (d) => setState(() => _dateFin = d)),
     _DCustom(_buildRappelSection()),
+    _DF('Commentaires', _notes, maxLines: 3),
   ], onSave: () async {
     if (_nom.text.isEmpty || _date == null) return false;
     if (_rappelActif && _rappelHeures.isEmpty) return false;
@@ -6339,6 +6342,7 @@ class _AddTraitementDialogState extends State<_AddTraitementDialog> {
       'type': _type, 'nom': _nom.text.trim(), 'posologie': _posologie.text.trim(),
       'date': _date!.toIso8601String(),
       'date_fin': _dateFin?.toIso8601String(),
+      if (_notes.text.trim().isNotEmpty) 'notes': _notes.text.trim(),
       'source': widget.source,
       if (widget.vetId != null) 'vet_id': widget.vetId,
       'rappel_actif': _rappelActif,

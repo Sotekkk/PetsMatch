@@ -140,6 +140,7 @@ class _PorteeSoinSheetState extends State<PorteeSoinSheet> {
               'id': entryId, 'animal_id': id,
               'nom': desc, 'type': type == 'chirurgie' ? 'autre' : 'medicament',
               'date': dateIso, 'source': 'owner',
+              if (notes.isNotEmpty) 'notes': notes,
             });
         }
         // Log consolidé dans registre_sanitaire

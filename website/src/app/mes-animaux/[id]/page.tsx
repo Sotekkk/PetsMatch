@@ -2046,6 +2046,7 @@ export default function AnimalFichePage() {
       nom: data.nom, type: data.type, description_maladie: data.description_maladie || null,
       posologie: data.posologie,
       date: data.date || null, date_fin: data.date_fin || null,
+      notes: data.notes || null,
       rappel_actif: rappelActif,
     };
     if (rappelActif) {
@@ -3337,10 +3338,11 @@ export default function AnimalFichePage() {
                 {key:'rappel_actif',label:'Activer les rappels récurrents',type:'checkbox'},
                 {key:'rappel_frequence_jours',label:'Répéter tous les X jours',type:'number'},
                 {key:'rappel_duree_jours',label:'Durée du traitement (jours)',type:'number'},
-                {key:'rappel_heures',label:'Heures de rappel (ex: 08:00, 20:00)'}]}/>}>
+                {key:'rappel_heures',label:'Heures de rappel (ex: 08:00, 20:00)'},
+                {key:'notes',label:'Commentaires (ex: impressions de tolérance au traitement)'}]}/>}>
             {health.traitements.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('traitements',r.id)}
-                fields={[{key:'nom',label:'Nom'},{key:'type',label:'Type'},{key:'description_maladie',label:'Maladie'},{key:'posologie',label:'Posologie'},{key:'date',label:'Début'},{key:'date_fin',label:'Fin'}]}/>
+                fields={[{key:'nom',label:'Nom'},{key:'type',label:'Type'},{key:'description_maladie',label:'Maladie'},{key:'posologie',label:'Posologie'},{key:'date',label:'Début'},{key:'date_fin',label:'Fin'},{key:'notes',label:'Commentaires'}]}/>
             ))}
             {health.traitements.length===0 && <p className="p-4 text-sm text-gray-400">Aucun traitement</p>}
           </HealthSection>

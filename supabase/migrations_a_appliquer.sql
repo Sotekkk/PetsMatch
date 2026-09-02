@@ -131,3 +131,17 @@ CREATE INDEX IF NOT EXISTS idx_animaux_repro_public
 
 ALTER TABLE traitements
   ADD COLUMN IF NOT EXISTS description_maladie TEXT;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 7. Commentaires libres sur un traitement (ex: impressions de tolérance),
+--    fiche santé de tous les profils (particulier, éleveur, pro/vétérinaire),
+--    appli + site web.
+--    Sans cette migration : erreur « couldn't find the notes column of
+--    traitements » à l'ajout d'un traitement avec ce champ rempli — bloquait
+--    déjà silencieusement le formulaire vétérinaire (mes-patients) et celui
+--    des associations, qui référençaient tous les deux ce champ.
+-- ────────────────────────────────────────────────────────────
+
+ALTER TABLE traitements
+  ADD COLUMN IF NOT EXISTS notes TEXT;

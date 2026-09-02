@@ -567,12 +567,18 @@ class _SanteTab extends StatelessWidget {
         color: const Color(0xFF9C27B0),
         icon: Icons.medication_outlined,
         items: traitements,
-        buildRow: (t) => _MedRow(
-          label: t['nom']?.toString() ?? t['type']?.toString() ?? '',
-          sub: t['posologie']?.toString(),
-          date: fmtDate(t['date'] as String?),
-          extra: t['date_fin'] != null ? 'Fin : ${fmtDate(t['date_fin'] as String?)}' : null,
-        ),
+        buildRow: (t) {
+          final traitementExtra = [
+            if (t['date_fin'] != null) 'Fin : ${fmtDate(t['date_fin'] as String?)}',
+            if ((t['notes'] as String?)?.isNotEmpty == true) t['notes'].toString(),
+          ].join(' · ');
+          return _MedRow(
+            label: t['nom']?.toString() ?? t['type']?.toString() ?? '',
+            sub: t['posologie']?.toString(),
+            date: fmtDate(t['date'] as String?),
+            extra: traitementExtra.isEmpty ? null : traitementExtra,
+          );
+        },
       ),
       const SizedBox(height: 16),
 

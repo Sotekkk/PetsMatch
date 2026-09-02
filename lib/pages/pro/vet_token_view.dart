@@ -291,7 +291,7 @@ const _sections = [
   _SectionDef('visites', 'Visites vétérinaires', '🏥', Color(0xFF26A69A),
       [['Motif','motif'],['Date','date'],['Vétérinaire','veterinaire'],['Diagnostic','diagnostic'],['Notes','notes']]),
   _SectionDef('traitements', 'Traitements', '💊', Color(0xFFE56C5A),
-      [['Produit','produit'],['Date','date'],['Fin','date_fin'],['Dosage','dosage'],['Fréquence','frequence']]),
+      [['Produit','produit'],['Date','date'],['Fin','date_fin'],['Dosage','dosage'],['Fréquence','frequence'],['Commentaires','notes']]),
   _SectionDef('vermifuges', 'Vermifuges', '🐛', Color(0xFF8D6E63),
       [['Produit','produit'],['Date','date'],['Rappel','date_rappel']]),
   _SectionDef('antiparasitaires', 'Antiparasitaires', '🛡', Color(0xFF7B5EA7),

@@ -454,7 +454,8 @@ function SanteTab({ animalId, allergies, vaccinations, vermifuges, antipara, tra
       </div>
       {traitements.length > 0 && (
         <HealthSection title="Traitements" color={PURPLE} icon="🏥" items={traitements}
-          renderRow={t => <MedRow label={String(t.nom ?? '')} sub={String(t.posologie ?? '')} date={fmtDate(t.date as string)} />} />
+          renderRow={t => <MedRow label={String(t.nom ?? '')} sub={String(t.posologie ?? '')} date={fmtDate(t.date as string)}
+            extra={t.notes ? String(t.notes) : undefined} />} />
       )}
 
       {/* Poids — avec bouton ajout */}
