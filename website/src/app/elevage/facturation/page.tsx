@@ -298,14 +298,17 @@ export default function FacturationPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(selected.lignes ?? []).map((l, i) => (
-                      <tr key={i} className="border-t border-gray-100">
-                        <td className="px-3 py-2 text-gray-700">{l.description}</td>
-                        <td className="px-3 py-2 text-right text-gray-600">{l.quantite}</td>
-                        <td className="px-3 py-2 text-right text-gray-600">{l.prixUnitaire?.toFixed(2)} €</td>
-                        <td className="px-3 py-2 text-right text-gray-600">{l.tva}%</td>
-                      </tr>
-                    ))}
+                    {(selected.lignes ?? []).map((l, i) => {
+                      const ll = l as Ligne & { designation?: string; prixUnitaireHT?: number; tauxTVA?: number };
+                      return (
+                        <tr key={i} className="border-t border-gray-100">
+                          <td className="px-3 py-2 text-gray-700">{ll.designation || ll.description}</td>
+                          <td className="px-3 py-2 text-right text-gray-600">{ll.quantite}</td>
+                          <td className="px-3 py-2 text-right text-gray-600">{(ll.prixUnitaireHT ?? ll.prixUnitaire ?? 0).toFixed(2)} €</td>
+                          <td className="px-3 py-2 text-right text-gray-600">{ll.tauxTVA ?? ll.tva ?? 0}%</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
                 <div className="bg-gray-50 px-3 py-2 space-y-1">
@@ -374,6 +377,21 @@ function NouvelleFactureForm({ uid, profileId, nextNum, profilSource = 'eleveur'
   onClose: () => void;
   onSaved: (f: Facture) => void;
 }) {
+  // Émetteur (identité légale) — pré-rempli depuis le profil, éditable, figé sur la facture
+  const [emNom, setEmNom] = useState('');
+  const [emRue, setEmRue] = useState('');
+  const [emCp, setEmCp] = useState('');
+  const [emVille, setEmVille] = useState('');
+  const [emPays, setEmPays] = useState('France');
+  const [emTel, setEmTel] = useState('');
+  const [emEmail, setEmEmail] = useState('');
+  const [emSiret, setEmSiret] = useState('');
+  const [emTva, setEmTva] = useState('');
+  const [emForme, setEmForme] = useState('');
+  const [emCapital, setEmCapital] = useState('');
+  const [emRcs, setEmRcs] = useState('');
+  const [emRm, setEmRm] = useState('');
+
   const [nomClient, setNomClient] = useState('');
   const [prenomClient, setPrenomClient] = useState('');
   const [emailClient, setEmailClient] = useState('');
@@ -382,11 +400,51 @@ function NouvelleFactureForm({ uid, profileId, nextNum, profilSource = 'eleveur'
   const [cpClient, setCpClient] = useState('');
   const [villeClient, setVilleClient] = useState('');
   const [paysClient, setPaysClient] = useState('France');
+  const [siretClient, setSiretClient] = useState('');
+  const [tvaClient, setTvaClient] = useState('');
   const [dateFacture, setDateFacture] = useState(today());
   const [datePrestation, setDatePrestation] = useState(today());
   const [dateEcheance, setDateEcheance] = useState(addDays(30));
+  const [franchise, setFranchise] = useState(false);
+  const [modePaiement, setModePaiement] = useState('Virement bancaire');
+  const [delaiPaiement, setDelaiPaiement] = useState('30');
+  const [escompte, setEscompte] = useState('Escompte pour paiement anticipé : néant.');
+  const [note, setNote] = useState('');
   const [lignes, setLignes] = useState<Ligne[]>([{ description: '', quantite: 1, prixUnitaire: 0, tva: 20 }]);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    async function loadEmetteur() {
+      // Dernière facture émise → reprend l'identité de facturation
+      let fq = supabase.from('factures').select(
+        'nom_emetteur,rue_emetteur,cp_emetteur,ville_emetteur,pays_emetteur,tel_emetteur,email_emetteur,siret_emetteur,tva_emetteur,forme_juridique_emetteur,capital_emetteur,rcs_emetteur,rm_emetteur,conditions_escompte,mode_paiement,delai_paiement');
+      fq = profileId ? fq.eq('profile_id', profileId) : fq.eq('uid_eleveur', uid);
+      const { data: last } = await fq.order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+      let pq = supabase.from('user_profiles').select('nom,firstname,lastname,phone_number,rue_pro,code_postal_pro,ville_pro,pays_pro,siret,numero_tva');
+      pq = profileId ? pq.eq('id', profileId) : pq.eq('uid', uid).eq('is_main', true);
+      const { data: prof } = await pq.maybeSingle();
+
+      const pick = (a?: string | null, b?: string | null) => (a && String(a).trim()) || (b && String(b).trim()) || '';
+      setEmNom(pick(last?.nom_emetteur, prof?.nom || `${prof?.firstname ?? ''} ${prof?.lastname ?? ''}`.trim()));
+      setEmRue(pick(last?.rue_emetteur, prof?.rue_pro));
+      setEmCp(pick(last?.cp_emetteur, prof?.code_postal_pro));
+      setEmVille(pick(last?.ville_emetteur, prof?.ville_pro));
+      setEmPays(pick(last?.pays_emetteur, prof?.pays_pro) || 'France');
+      setEmTel(pick(last?.tel_emetteur, prof?.phone_number));
+      setEmEmail(pick(last?.email_emetteur, null));
+      setEmSiret(pick(last?.siret_emetteur, prof?.siret));
+      setEmTva(pick(last?.tva_emetteur, prof?.numero_tva));
+      setEmForme(pick(last?.forme_juridique_emetteur, null));
+      setEmCapital(pick(last?.capital_emetteur, null));
+      setEmRcs(pick(last?.rcs_emetteur, null));
+      setEmRm(pick(last?.rm_emetteur, null));
+      if (last?.conditions_escompte) setEscompte(String(last.conditions_escompte));
+      if (last?.mode_paiement) setModePaiement(String(last.mode_paiement));
+      if (last?.delai_paiement != null) setDelaiPaiement(String(last.delai_paiement));
+    }
+    loadEmetteur();
+  }, [uid, profileId]);
 
   function addLigne() { setLignes((prev) => [...prev, { description: '', quantite: 1, prixUnitaire: 0, tva: 20 }]); }
   function removeLigne(i: number) { setLignes((prev) => prev.filter((_, idx) => idx !== i)); }
@@ -395,17 +453,31 @@ function NouvelleFactureForm({ uid, profileId, nextNum, profilSource = 'eleveur'
   }
 
   const totalHT  = lignes.reduce((s, l) => s + l.quantite * l.prixUnitaire, 0);
-  const totalTVA = lignes.reduce((s, l) => s + l.quantite * l.prixUnitaire * l.tva / 100, 0);
+  const totalTVA = franchise ? 0 : lignes.reduce((s, l) => s + l.quantite * l.prixUnitaire * l.tva / 100, 0);
   const totalTTC = totalHT + totalTVA;
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    if (!emNom.trim() || !emRue.trim() || !emSiret.trim()) {
+      alert('L\'identité de l\'émetteur est incomplète : nom, adresse et SIRET sont obligatoires sur une facture.');
+      return;
+    }
     setSaving(true);
+    const lignesNorm = lignes.map(l => ({
+      designation: l.description,
+      description: '',
+      quantite: l.quantite,
+      prixUnitaireHT: l.prixUnitaire,
+      tauxTVA: franchise ? 0 : l.tva,
+      totalHT: l.quantite * l.prixUnitaire,
+      totalTTC: l.quantite * l.prixUnitaire * (franchise ? 1 : 1 + l.tva / 100),
+    }));
     const payload = {
       uid_eleveur:    uid,
       profile_id:     profileId || null,
       profil_source:  profilSource,
       numero_facture: nextNum,
+      regime_tva:     franchise ? 'franchise' : 'normal',
       nom_client:     nomClient,
       prenom_client:  prenomClient || null,
       email_client:   emailClient || null,
@@ -414,18 +486,38 @@ function NouvelleFactureForm({ uid, profileId, nextNum, profilSource = 'eleveur'
       cp_client:      cpClient || null,
       ville_client:   villeClient || null,
       pays_client:    paysClient || null,
+      siret_client:   siretClient || null,
+      tva_client:     tvaClient || null,
+      nom_emetteur:   emNom.trim(),
+      rue_emetteur:   emRue.trim(),
+      cp_emetteur:    emCp || null,
+      ville_emetteur: emVille || null,
+      pays_emetteur:  emPays || null,
+      tel_emetteur:   emTel || null,
+      email_emetteur: emEmail || null,
+      siret_emetteur: emSiret.trim(),
+      tva_emetteur:   emTva || null,
+      forme_juridique_emetteur: emForme || null,
+      capital_emetteur: emCapital || null,
+      rcs_emetteur:   emRcs || null,
+      rm_emetteur:    emRm || null,
       date_facture:   dateFacture,
       date_prestation: datePrestation || null,
       date_echeance:  dateEcheance || null,
+      mode_paiement:  modePaiement,
+      delai_paiement: delaiPaiement || null,
+      conditions_escompte: escompte.trim() || null,
+      note_complementaire: note.trim() || null,
       statut:         'emise',
       token:          crypto.randomUUID(),
-      lignes,
+      lignes:         lignesNorm,
       total_ht:       totalHT,
       total_tva:      totalTVA,
       total_ttc:      totalTTC,
     };
     const { data, error } = await supabase.from('factures').insert(payload).select().single();
     if (!error && data) onSaved(data as Facture);
+    else if (error) alert(`Erreur : ${error.message}`);
     setSaving(false);
   }
 
@@ -436,6 +528,35 @@ function NouvelleFactureForm({ uid, profileId, nextNum, profilSource = 'eleveur'
       <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
         <h3 className="font-bold text-[#1F2A2E] text-lg mb-4">Facture n° {nextNum}</h3>
         <form onSubmit={handleSave} className="space-y-4">
+
+          {/* Émetteur */}
+          <details className="border border-gray-200 rounded-xl px-4 py-3" open={!emSiret}>
+            <summary className="text-sm font-semibold text-gray-700 cursor-pointer">
+              Votre entreprise (émetteur){emSiret ? '' : ' — à compléter'}
+            </summary>
+            <div className="mt-3 space-y-3">
+              <input value={emNom} onChange={(e) => setEmNom(e.target.value)} placeholder="Nom / raison sociale *" className={inp} />
+              <input value={emRue} onChange={(e) => setEmRue(e.target.value)} placeholder="Adresse *" className={inp} />
+              <div className="grid grid-cols-3 gap-2">
+                <input value={emCp} onChange={(e) => setEmCp(e.target.value)} placeholder="Code postal" className={inp} />
+                <input value={emVille} onChange={(e) => setEmVille(e.target.value)} placeholder="Ville" className={`col-span-2 ${inp}`} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input value={emTel} onChange={(e) => setEmTel(e.target.value)} placeholder="Téléphone" className={inp} />
+                <input type="email" value={emEmail} onChange={(e) => setEmEmail(e.target.value)} placeholder="Email" className={inp} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input value={emSiret} onChange={(e) => setEmSiret(e.target.value)} placeholder="SIRET *" className={inp} />
+                <input value={emTva} onChange={(e) => setEmTva(e.target.value)} placeholder="N° TVA intracommunautaire" className={inp} />
+              </div>
+              <input value={emForme} onChange={(e) => setEmForme(e.target.value)} placeholder="Forme juridique (EI, EURL, SAS, association…)" className={inp} />
+              <div className="grid grid-cols-2 gap-2">
+                <input value={emCapital} onChange={(e) => setEmCapital(e.target.value)} placeholder="Capital social (sociétés)" className={inp} />
+                <input value={emRcs} onChange={(e) => setEmRcs(e.target.value)} placeholder="RCS + ville du greffe" className={inp} />
+              </div>
+              <input value={emRm} onChange={(e) => setEmRm(e.target.value)} placeholder="N° répertoire des métiers (artisan)" className={inp} />
+            </div>
+          </details>
 
           {/* Client */}
           <div className="grid grid-cols-2 gap-3">
@@ -465,6 +586,27 @@ function NouvelleFactureForm({ uid, profileId, nextNum, profilSource = 'eleveur'
               <input value={cpClient} onChange={(e) => setCpClient(e.target.value)} placeholder="Code postal" className={inp} />
               <input value={villeClient} onChange={(e) => setVilleClient(e.target.value)} placeholder="Ville" className={`col-span-2 ${inp}`} />
             </div>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <input value={siretClient} onChange={(e) => setSiretClient(e.target.value)} placeholder="SIRET client (si pro)" className={inp} />
+              <input value={tvaClient} onChange={(e) => setTvaClient(e.target.value)} placeholder="N° TVA client (si ≥ 150 € HT)" className={inp} />
+            </div>
+          </div>
+
+          {/* TVA / paiement */}
+          <div className="border border-gray-200 rounded-xl p-4 space-y-3">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" checked={franchise} onChange={(e) => setFranchise(e.target.checked)} />
+              Franchise en base de TVA (mention « TVA non applicable, art. 293 B du CGI »)
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <select value={modePaiement} onChange={(e) => setModePaiement(e.target.value)} className={inp}>
+                {['Virement bancaire', 'Chèque', 'Espèces', 'Carte bancaire', 'PayPal'].map(m => <option key={m}>{m}</option>)}
+              </select>
+              <input value={delaiPaiement} onChange={(e) => setDelaiPaiement(e.target.value)} placeholder="Délai de paiement (jours)" className={inp} />
+            </div>
+            <input value={escompte} onChange={(e) => setEscompte(e.target.value)} placeholder="Conditions d'escompte" className={inp} />
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2}
+              placeholder="Note / coordonnées bancaires (IBAN)…" className={inp} />
           </div>
 
           {/* Dates */}
@@ -497,9 +639,11 @@ function NouvelleFactureForm({ uid, profileId, nextNum, profilSource = 'eleveur'
                   <input type="number" min="0" step="0.01" value={l.quantite} onChange={(e) => updateLigne(i, 'quantite', e.target.value)}
                     className={`col-span-2 ${inp}`} placeholder="Qté" />
                   <input type="number" min="0" step="0.01" value={l.prixUnitaire} onChange={(e) => updateLigne(i, 'prixUnitaire', e.target.value)}
-                    className={`col-span-2 ${inp}`} placeholder="P.U. HT" />
-                  <input type="number" min="0" max="100" value={l.tva} onChange={(e) => updateLigne(i, 'tva', e.target.value)}
-                    className={`col-span-2 ${inp}`} placeholder="TVA%" />
+                    className={`${franchise ? 'col-span-4' : 'col-span-2'} ${inp}`} placeholder="P.U. HT" />
+                  {!franchise && (
+                    <input type="number" min="0" max="100" value={l.tva} onChange={(e) => updateLigne(i, 'tva', e.target.value)}
+                      className={`col-span-2 ${inp}`} placeholder="TVA%" />
+                  )}
                   <button type="button" onClick={() => removeLigne(i)} className="col-span-1 text-red-400 hover:text-red-600 text-lg">×</button>
                 </div>
               ))}
@@ -508,9 +652,9 @@ function NouvelleFactureForm({ uid, profileId, nextNum, profilSource = 'eleveur'
 
           {/* Totaux */}
           <div className="bg-gray-50 rounded-xl p-3 space-y-1 text-sm">
-            <div className="flex justify-between text-gray-500"><span>Total HT</span><span>{totalHT.toFixed(2)} €</span></div>
-            <div className="flex justify-between text-gray-500"><span>TVA</span><span>{totalTVA.toFixed(2)} €</span></div>
-            <div className="flex justify-between font-bold text-[#1F2A2E]"><span>Total TTC</span><span>{totalTTC.toFixed(2)} €</span></div>
+            {!franchise && <div className="flex justify-between text-gray-500"><span>Total HT</span><span>{totalHT.toFixed(2)} €</span></div>}
+            {!franchise && <div className="flex justify-between text-gray-500"><span>TVA</span><span>{totalTVA.toFixed(2)} €</span></div>}
+            <div className="flex justify-between font-bold text-[#1F2A2E]"><span>{franchise ? 'Total' : 'Total TTC'}</span><span>{totalTTC.toFixed(2)} €</span></div>
           </div>
 
           <div className="flex gap-3 pt-1">

@@ -67,19 +67,29 @@ Map<String, dynamic> _supaToUi(Map<String, dynamic> r) => {
   'cpClient':           r['cp_client'],
   'villeClient':        r['ville_client'],
   'paysClient':         r['pays_client'],
+  'siretClient':        r['siret_client'],
+  'tvaClient':          r['tva_client'],
   'nomEmetteur':        r['nom_emetteur'],
   'rueEmetteur':        r['rue_emetteur'],
   'cpEmetteur':         r['cp_emetteur'],
   'villeEmetteur':      r['ville_emetteur'],
   'paysEmetteur':       r['pays_emetteur'],
+  'telEmetteur':        r['tel_emetteur'],
   'siretEmetteur':      r['siret_emetteur'],
   'tvaEmetteur':        r['tva_emetteur'],
+  'formeJuridiqueEmetteur': r['forme_juridique_emetteur'],
+  'capitalEmetteur':    r['capital_emetteur'],
+  'rcsEmetteur':        r['rcs_emetteur'],
+  'rmEmetteur':         r['rm_emetteur'],
   'emailEmetteur':      r['email_emetteur'],
   'modePaiement':       r['mode_paiement'],
   'delaiPaiement':      r['delai_paiement'],
+  'conditionsEscompte': r['conditions_escompte'],
   'noteComplementaire': r['note_complementaire'],
   'statut':             r['statut'],
 };
+
+const _kEscompteDefaut = 'Escompte pour paiement anticipé : néant.';
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -334,21 +344,28 @@ class FactureDetailPage extends StatelessWidget {
           // Émetteur / Client
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(child: _InfoBlock(title: 'Émetteur', lines: [
-              data['nomEmetteur'] ?? '',
+              (data['nomEmetteur'] ?? '').toString(),
+              if ((data['formeJuridiqueEmetteur'] ?? '').toString().isNotEmpty)
+                '${data['formeJuridiqueEmetteur']}${(data['capitalEmetteur'] ?? '').toString().isNotEmpty ? ' — capital ${data['capitalEmetteur']}' : ''}',
               '${data['rueEmetteur'] ?? ''}',
               '${data['cpEmetteur'] ?? ''} ${data['villeEmetteur'] ?? ''}',
-              data['paysEmetteur'] ?? '',
-              if ((data['siretEmetteur'] ?? '').isNotEmpty) 'SIRET: ${data['siretEmetteur']}',
-              if ((data['tvaEmetteur'] ?? '').isNotEmpty) 'TVA: ${data['tvaEmetteur']}',
+              (data['paysEmetteur'] ?? '').toString(),
+              if ((data['telEmetteur'] ?? '').toString().isNotEmpty) 'Tél. : ${data['telEmetteur']}',
+              if ((data['siretEmetteur'] ?? '').toString().isNotEmpty) 'SIRET : ${data['siretEmetteur']}',
+              if ((data['tvaEmetteur'] ?? '').toString().isNotEmpty) 'N° TVA : ${data['tvaEmetteur']}',
+              if ((data['rcsEmetteur'] ?? '').toString().isNotEmpty) (data['rcsEmetteur']).toString(),
+              if ((data['rmEmetteur'] ?? '').toString().isNotEmpty) 'RM : ${data['rmEmetteur']}',
             ])),
             const SizedBox(width: 12),
             Expanded(child: _InfoBlock(title: 'Client', lines: [
               '${data['prenomClient'] ?? ''} ${data['nomClient'] ?? ''}'.trim(),
               '${data['rueClient'] ?? ''}',
               '${data['cpClient'] ?? ''} ${data['villeClient'] ?? ''}',
-              data['paysClient'] ?? '',
-              if ((data['emailClient'] ?? '').isNotEmpty) data['emailClient'],
-              if ((data['telephoneClient'] ?? '').isNotEmpty) data['telephoneClient'],
+              (data['paysClient'] ?? '').toString(),
+              if ((data['emailClient'] ?? '').toString().isNotEmpty) (data['emailClient']).toString(),
+              if ((data['telephoneClient'] ?? '').toString().isNotEmpty) (data['telephoneClient']).toString(),
+              if ((data['siretClient'] ?? '').toString().isNotEmpty) 'SIRET : ${data['siretClient']}',
+              if ((data['tvaClient'] ?? '').toString().isNotEmpty) 'N° TVA : ${data['tvaClient']}',
             ])),
           ]),
           const SizedBox(height: 16),
@@ -389,7 +406,7 @@ class FactureDetailPage extends StatelessWidget {
             _Card(child: Text(data['noteComplementaire'], style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
           ],
           const SizedBox(height: 16),
-          _MentionsLegales(franchise: franchise),
+          _MentionsLegales(franchise: franchise, escompte: data['conditionsEscompte'] as String?),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
@@ -438,6 +455,11 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
   final _siretEmetteur = TextEditingController();
   final _tvaEmetteur = TextEditingController();
   final _emailEmetteur = TextEditingController();
+  final _formeJuridiqueEmetteur = TextEditingController();
+  final _capitalEmetteur = TextEditingController();
+  final _rcsEmetteur = TextEditingController();
+  final _rmEmetteur = TextEditingController();
+  final _conditionsEscompte = TextEditingController(text: _kEscompteDefaut);
 
   // Client
   final _prenomClient = TextEditingController();
@@ -490,17 +512,44 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
         .limit(1);
     final last = rows.isEmpty ? 0 : ((rows.first['numero_facture'] as num?) ?? 0).toInt();
 
+    // Identité de facturation : on reprend celle de la dernière facture émise
+    // (le profil ne stocke pas encore forme juridique / capital / RCS…).
+    Map<String, dynamic>? lastFact;
+    try {
+      final fq = Supabase.instance.client.from('factures').select(
+          'nom_emetteur, rue_emetteur, cp_emetteur, ville_emetteur, pays_emetteur, tel_emetteur, '
+          'siret_emetteur, tva_emetteur, forme_juridique_emetteur, capital_emetteur, rcs_emetteur, '
+          'rm_emetteur, email_emetteur, conditions_escompte');
+      final fr = await (profileId != null
+              ? fq.eq('profile_id', profileId)
+              : fq.eq('uid_eleveur', uid))
+          .order('created_at', ascending: false)
+          .limit(1);
+      if (fr.isNotEmpty) lastFact = Map<String, dynamic>.from(fr.first);
+    } catch (_) {}
+
     if (!mounted) return;
+    String pick(String factKey, String? profileVal) {
+      final f = lastFact?[factKey]?.toString();
+      if (f != null && f.trim().isNotEmpty) return f;
+      return profileVal ?? '';
+    }
     setState(() {
-      _nomEmetteur.text = d['nameElevage'] ?? d['firstname'] ?? '';
-      _rueEmetteur.text = d['rueElevage'] ?? '';
-      _cpEmetteur.text = d['codePostalElevage'] ?? '';
-      _villeEmetteur.text = d['villeElevage'] ?? '';
-      _paysEmetteur.text = d['paysElevage'] ?? 'France';
-      _telEmetteur.text = d['numeroElevage'] ?? d['phone_number'] ?? '';
-      _siretEmetteur.text = d['siret'] ?? '';
-      _tvaEmetteur.text = d['numeroTVA'] ?? '';
-      _emailEmetteur.text = d['email'] ?? '';
+      _nomEmetteur.text = pick('nom_emetteur', d['nameElevage'] ?? d['firstname'] ?? '');
+      _rueEmetteur.text = pick('rue_emetteur', d['rueElevage'] ?? '');
+      _cpEmetteur.text = pick('cp_emetteur', d['codePostalElevage'] ?? '');
+      _villeEmetteur.text = pick('ville_emetteur', d['villeElevage'] ?? '');
+      _paysEmetteur.text = pick('pays_emetteur', d['paysElevage'] ?? 'France');
+      _telEmetteur.text = pick('tel_emetteur', d['numeroElevage'] ?? d['phone_number'] ?? '');
+      _siretEmetteur.text = pick('siret_emetteur', d['siret'] ?? '');
+      _tvaEmetteur.text = pick('tva_emetteur', d['numeroTVA'] ?? '');
+      _emailEmetteur.text = pick('email_emetteur', d['email'] ?? '');
+      _formeJuridiqueEmetteur.text = pick('forme_juridique_emetteur', '');
+      _capitalEmetteur.text = pick('capital_emetteur', '');
+      _rcsEmetteur.text = pick('rcs_emetteur', d['rcs'] ?? '');
+      _rmEmetteur.text = pick('rm_emetteur', '');
+      final esc = lastFact?['conditions_escompte']?.toString();
+      _conditionsEscompte.text = (esc != null && esc.trim().isNotEmpty) ? esc : _kEscompteDefaut;
       _numeroFacture.text = (last + 1).toString();
     });
   }
@@ -561,16 +610,24 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
         'cp_client':           d['cpClient'],
         'ville_client':        d['villeClient'],
         'pays_client':         d['paysClient'],
+        'siret_client':        d['siretClient'],
+        'tva_client':          d['tvaClient'],
         'nom_emetteur':        d['nomEmetteur'],
         'rue_emetteur':        d['rueEmetteur'],
         'cp_emetteur':         d['cpEmetteur'],
         'ville_emetteur':      d['villeEmetteur'],
         'pays_emetteur':       d['paysEmetteur'],
+        'tel_emetteur':        d['telEmetteur'],
         'siret_emetteur':      d['siretEmetteur'],
         'tva_emetteur':        d['tvaEmetteur'],
+        'forme_juridique_emetteur': d['formeJuridiqueEmetteur'],
+        'capital_emetteur':    d['capitalEmetteur'],
+        'rcs_emetteur':        d['rcsEmetteur'],
+        'rm_emetteur':         d['rmEmetteur'],
         'email_emetteur':      d['emailEmetteur'],
         'mode_paiement':       d['modePaiement'],
         'delai_paiement':      d['delaiPaiement'],
+        'conditions_escompte': d['conditionsEscompte'],
         'note_complementaire': d['noteComplementaire'],
         'statut':              'emise',
       });
@@ -596,7 +653,12 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     'telEmetteur': _telEmetteur.text,
     'siretEmetteur': _siretEmetteur.text,
     'tvaEmetteur': _tvaEmetteur.text,
+    'formeJuridiqueEmetteur': _formeJuridiqueEmetteur.text,
+    'capitalEmetteur': _capitalEmetteur.text,
+    'rcsEmetteur': _rcsEmetteur.text,
+    'rmEmetteur': _rmEmetteur.text,
     'emailEmetteur': _emailEmetteur.text,
+    'conditionsEscompte': _conditionsEscompte.text.trim().isEmpty ? _kEscompteDefaut : _conditionsEscompte.text.trim(),
     'prenomClient': _prenomClient.text,
     'nomClient': _nomClient.text,
     'rueClient': _rueClient.text,
@@ -648,6 +710,10 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
               _Field(ctrl: _emailEmetteur, label: 'Email', keyboard: TextInputType.emailAddress),
               _Field(ctrl: _siretEmetteur, label: 'SIRET', required: true),
               _Field(ctrl: _tvaEmetteur, label: 'N° TVA intracommunautaire'),
+              _Field(ctrl: _formeJuridiqueEmetteur, label: 'Forme juridique (EI, EURL, SAS, association…)'),
+              _Field(ctrl: _capitalEmetteur, label: 'Capital social (sociétés) — ex. 5 000 €'),
+              _Field(ctrl: _rcsEmetteur, label: 'RCS + ville du greffe (commerçant)'),
+              _Field(ctrl: _rmEmetteur, label: 'N° au répertoire des métiers (artisan)'),
             ])),
             const SizedBox(height: 16),
 
@@ -689,6 +755,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                 onChanged: (v) => setState(() => _modePaiement = v!),
               ),
               _Field(ctrl: _delaiPaiement, label: 'Délai de paiement (jours)', keyboard: TextInputType.number),
+              _Field(ctrl: _conditionsEscompte, label: 'Conditions d\'escompte'),
             ])),
             const SizedBox(height: 16),
 
@@ -770,7 +837,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
               ),
             )),
             const SizedBox(height: 16),
-            _MentionsLegales(franchise: _franchise),
+            _MentionsLegales(franchise: _franchise, escompte: _conditionsEscompte.text),
             const SizedBox(height: 24),
 
             // ── BOUTON ──
@@ -926,15 +993,25 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
         children: [
           pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
             pw.Text(d['nomEmetteur'] ?? '', style: pw.TextStyle(font: bold, fontSize: 14, color: tealPdf)),
+            if ((d['formeJuridiqueEmetteur'] ?? '').toString().isNotEmpty)
+              pw.Text(
+                '${d['formeJuridiqueEmetteur']}${(d['capitalEmetteur'] ?? '').toString().isNotEmpty ? ' — capital ${d['capitalEmetteur']}' : ''}',
+                style: pw.TextStyle(font: font, fontSize: 9)),
             pw.Text('${d['rueEmetteur'] ?? ''}', style: pw.TextStyle(font: font, fontSize: 10)),
             pw.Text('${d['cpEmetteur'] ?? ''} ${d['villeEmetteur'] ?? ''}', style: pw.TextStyle(font: font, fontSize: 10)),
             pw.Text(d['paysEmetteur'] ?? '', style: pw.TextStyle(font: font, fontSize: 10)),
-            if ((d['siretEmetteur'] ?? '').isNotEmpty)
-              pw.Text('SIRET : ${d['siretEmetteur']}', style: pw.TextStyle(font: font, fontSize: 9)),
-            if ((d['tvaEmetteur'] ?? '').isNotEmpty)
-              pw.Text('N° TVA : ${d['tvaEmetteur']}', style: pw.TextStyle(font: font, fontSize: 9)),
-            if ((d['emailEmetteur'] ?? '').isNotEmpty)
+            if ((d['telEmetteur'] ?? '').toString().isNotEmpty)
+              pw.Text('Tél. : ${d['telEmetteur']}', style: pw.TextStyle(font: font, fontSize: 9)),
+            if ((d['emailEmetteur'] ?? '').toString().isNotEmpty)
               pw.Text(d['emailEmetteur'], style: pw.TextStyle(font: font, fontSize: 9)),
+            if ((d['siretEmetteur'] ?? '').toString().isNotEmpty)
+              pw.Text('SIRET : ${d['siretEmetteur']}', style: pw.TextStyle(font: font, fontSize: 9)),
+            if ((d['tvaEmetteur'] ?? '').toString().isNotEmpty)
+              pw.Text('N° TVA : ${d['tvaEmetteur']}', style: pw.TextStyle(font: font, fontSize: 9)),
+            if ((d['rcsEmetteur'] ?? '').toString().isNotEmpty)
+              pw.Text('${d['rcsEmetteur']}', style: pw.TextStyle(font: font, fontSize: 9)),
+            if ((d['rmEmetteur'] ?? '').toString().isNotEmpty)
+              pw.Text('RM : ${d['rmEmetteur']}', style: pw.TextStyle(font: font, fontSize: 9)),
           ]),
           pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
             pw.Text('FACTURE', style: pw.TextStyle(font: bold, fontSize: 22, color: tealPdf)),
@@ -966,8 +1043,12 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
             pw.Text('${d['rueClient'] ?? ''}', style: pw.TextStyle(font: font, fontSize: 10)),
             pw.Text('${d['cpClient'] ?? ''} ${d['villeClient'] ?? ''}', style: pw.TextStyle(font: font, fontSize: 10)),
             pw.Text(d['paysClient'] ?? '', style: pw.TextStyle(font: font, fontSize: 10)),
-            if ((d['emailClient'] ?? '').isNotEmpty)
+            if ((d['emailClient'] ?? '').toString().isNotEmpty)
               pw.Text(d['emailClient'], style: pw.TextStyle(font: font, fontSize: 9)),
+            if ((d['siretClient'] ?? '').toString().isNotEmpty)
+              pw.Text('SIRET : ${d['siretClient']}', style: pw.TextStyle(font: font, fontSize: 9)),
+            if ((d['tvaClient'] ?? '').toString().isNotEmpty)
+              pw.Text('N° TVA : ${d['tvaClient']}', style: pw.TextStyle(font: font, fontSize: 9)),
           ]),
         ),
       ),
@@ -1040,9 +1121,9 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
         ),
         child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
           pw.Text('Mode de paiement : ${d['modePaiement'] ?? ''}', style: pw.TextStyle(font: font, fontSize: 10)),
-          if ((d['delaiPaiement'] ?? '').isNotEmpty)
-            pw.Text('Délai de règlement : ${d['delaiPaiement']} jours', style: pw.TextStyle(font: font, fontSize: 10)),
-          if ((d['noteComplementaire'] ?? '').isNotEmpty)
+          if ((d['delaiPaiement'] ?? '').toString().isNotEmpty)
+            pw.Text('Délai de règlement : ${d['delaiPaiement']} jours à compter de la date d\'émission.', style: pw.TextStyle(font: font, fontSize: 10)),
+          if ((d['noteComplementaire'] ?? '').toString().isNotEmpty)
             pw.Text(d['noteComplementaire'], style: pw.TextStyle(font: font, fontSize: 9)),
         ]),
       ),
@@ -1055,7 +1136,11 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
           if (franchise)
             pw.Text('TVA non applicable, art. 293 B du CGI.', style: pw.TextStyle(font: bold, fontSize: 9)),
           pw.Text(
-            'En cas de retard de paiement, des pénalités de retard au taux de 3 fois le taux d\'intérêt légal en vigueur seront appliquées, ainsi qu\'une indemnité forfaitaire de recouvrement de 40 €.',
+            (d['conditionsEscompte'] ?? _kEscompteDefaut).toString(),
+            style: pw.TextStyle(font: font, fontSize: 8, color: PdfColor.fromHex('#555555')),
+          ),
+          pw.Text(
+            'En cas de retard de paiement, pénalités au taux de 3 fois le taux d\'intérêt légal en vigueur (exigibles sans rappel le lendemain de la date d\'échéance) et indemnité forfaitaire de recouvrement de 40 € (art. L441-10 et D441-5 du Code de commerce).',
             style: pw.TextStyle(font: font, fontSize: 8, color: PdfColor.fromHex('#555555')),
           ),
         ]),
@@ -1310,31 +1395,38 @@ class _DetailRow extends StatelessWidget {
 
 class _MentionsLegales extends StatelessWidget {
   final bool franchise;
-  const _MentionsLegales({required this.franchise});
+  final String? escompte;
+  const _MentionsLegales({required this.franchise, this.escompte});
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(
-      color: const Color(0xFFF0F4F8),
-      borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: Colors.grey.shade200),
-    ),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Mentions légales obligatoires',
-          style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: _teal)),
-      const SizedBox(height: 6),
-      if (franchise) ...[
-        const Text('• TVA non applicable, art. 293 B du CGI',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: _dark)),
-        const SizedBox(height: 2),
-      ],
-      Text(
-        '• Pénalités de retard : 3× le taux d\'intérêt légal en vigueur (${DateTime.now().year}), exigibles le lendemain de la date d\'échéance.',
-        style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _dark),
+  Widget build(BuildContext context) {
+    final esc = (escompte == null || escompte!.trim().isEmpty) ? _kEscompteDefaut : escompte!.trim();
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F4F8),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade200),
       ),
-      const SizedBox(height: 2),
-      const Text('• Indemnité forfaitaire de recouvrement en cas de retard : 40 €.',
-          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: _dark)),
-    ]),
-  );
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Mentions légales obligatoires',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: _teal)),
+        const SizedBox(height: 6),
+        if (franchise) ...[
+          const Text('• TVA non applicable, art. 293 B du CGI',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: _dark)),
+          const SizedBox(height: 2),
+        ],
+        Text('• $esc',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _dark)),
+        const SizedBox(height: 2),
+        Text(
+          '• Pénalités de retard : 3× le taux d\'intérêt légal en vigueur (${DateTime.now().year}), exigibles sans rappel le lendemain de la date d\'échéance.',
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _dark),
+        ),
+        const SizedBox(height: 2),
+        const Text('• Indemnité forfaitaire de recouvrement en cas de retard : 40 € (art. L441-10 et D441-5 du Code de commerce).',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: _dark)),
+      ]),
+    );
+  }
 }
