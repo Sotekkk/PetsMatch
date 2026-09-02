@@ -318,13 +318,21 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
     final nb = _mesAlertes.length;
     return Row(
       children: [
-        _StatCard(value: '$_nbAnimaux', label: 'Animal${_nbAnimaux > 1 ? 'x' : ''}', icon: Icons.pets),
+        _StatCard(
+          value: '$_nbAnimaux',
+          label: 'Animal${_nbAnimaux > 1 ? 'x' : ''}',
+          icon: Icons.pets,
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const UserParticulierFeed(initialTab: 1))),
+        ),
         const SizedBox(width: 12),
         _StatCard(
           value: '$nb',
           label: 'Alerte${nb > 1 ? 's' : ''} active${nb > 1 ? 's' : ''}',
           icon: Icons.location_searching,
           highlight: nb > 0,
+          onTap: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const MesAlertesPage())),
         ),
       ],
     );
@@ -597,46 +605,64 @@ class _StatCard extends StatelessWidget {
   final String label;
   final IconData icon;
   final bool highlight;
+  final VoidCallback? onTap;
 
   const _StatCard({
     required this.value,
     required this.label,
     required this.icon,
     this.highlight = false,
+    this.onTap,
   });
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.18),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon,
-                color: highlight ? Colors.orange.shade200 : Colors.white,
-                size: 18),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(value,
-                    style: const TextStyle(
-                        fontFamily: 'Galey',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 18,
-                        color: Colors.white)),
-                Text(label,
-                    style: const TextStyle(
-                        fontFamily: 'Galey', fontSize: 11, color: Colors.white70)),
-              ],
-            ),
+  Widget build(BuildContext context) {
+    final content = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.18),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon,
+              color: highlight ? Colors.orange.shade200 : Colors.white,
+              size: 18),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(value,
+                  style: const TextStyle(
+                      fontFamily: 'Galey',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
+                      color: Colors.white)),
+              Text(label,
+                  style: const TextStyle(
+                      fontFamily: 'Galey', fontSize: 11, color: Colors.white70)),
+            ],
+          ),
+          if (onTap != null) ...[
+            const SizedBox(width: 6),
+            const Icon(Icons.chevron_right, color: Colors.white70, size: 18),
           ],
-        ),
-      );
+        ],
+      ),
+    );
+    if (onTap == null) return content;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: content,
+      ),
+    );
+  }
 }
 
 class _QuickTileData {

@@ -156,9 +156,10 @@ export default function ParticulierDashboard() {
               {ville && <p className="text-white/70 text-sm">📍 {ville}</p>}
             </div>
           </div>
-          {/* Stats in header */}
+          {/* Stats in header — boutons cliquables */}
           <div className="flex gap-3">
-            <div className="flex items-center gap-2 bg-white/15 rounded-xl px-4 py-2.5">
+            <Link href="/mes-animaux"
+              className="flex items-center gap-2 bg-white/15 hover:bg-white/25 rounded-xl px-4 py-2.5 transition-colors">
               <span className="text-lg">🐾</span>
               <div>
                 <p className="text-white font-bold text-lg leading-none" style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -166,17 +167,20 @@ export default function ParticulierDashboard() {
                 </p>
                 <p className="text-white/70 text-xs">Animal{animaux.length > 1 ? 'x' : ''}</p>
               </div>
-            </div>
+              <span className="text-white/60 text-lg ml-0.5">›</span>
+            </Link>
             {mesAlertes.length > 0 && (
-              <div className="flex items-center gap-2 bg-white/15 rounded-xl px-4 py-2.5">
+              <Link href="/mes-alertes"
+                className="flex items-center gap-2 bg-white/15 hover:bg-white/25 rounded-xl px-4 py-2.5 transition-colors">
                 <span className="text-lg">🔍</span>
                 <div>
                   <p className="text-amber-300 font-bold text-lg leading-none" style={{ fontFamily: 'Galey, sans-serif' }}>
                     {mesAlertes.length}
                   </p>
-                  <p className="text-white/70 text-xs">Alerte{mesAlertes.length > 1 ? 's' : ''}</p>
+                  <p className="text-white/70 text-xs">Alerte{mesAlertes.length > 1 ? 's' : ''} active{mesAlertes.length > 1 ? 's' : ''}</p>
                 </div>
-              </div>
+                <span className="text-white/60 text-lg ml-0.5">›</span>
+              </Link>
             )}
           </div>
         </div>
