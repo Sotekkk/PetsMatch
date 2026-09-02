@@ -465,24 +465,35 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
       fq = profileId ? fq.eq('profile_id', profileId) : fq.eq('uid_eleveur', uid);
       const { data: last } = await fq.order('created_at', { ascending: false }).limit(1).maybeSingle();
 
-      let pq = supabase.from('user_profiles').select('nom,firstname,lastname,phone_number,rue_pro,code_postal_pro,ville_pro,pays_pro,siret,numero_tva');
+      // Les associations rangent leur adresse dans rue/ville/code_postal/pays et
+      // leur téléphone dans phone (pas les colonnes *_pro).
+      let pq = supabase.from('user_profiles').select('nom,firstname,lastname,phone_number,phone,rue_pro,code_postal_pro,ville_pro,pays_pro,rue,ville,code_postal,pays,siret,numero_tva,forme_juridique_pro,capital_social_pro,rcs_pro,rm_pro,regime_tva_pro,iban_pro,bic_pro');
       pq = profileId ? pq.eq('id', profileId) : pq.eq('uid', uid).eq('is_main', true);
       const { data: prof } = await pq.maybeSingle();
 
-      const pick = (a?: string | null, b?: string | null) => (a && String(a).trim()) || (b && String(b).trim()) || '';
-      setEmNom(pick(last?.nom_emetteur, prof?.nom || `${prof?.firstname ?? ''} ${prof?.lastname ?? ''}`.trim()));
-      setEmRue(pick(last?.rue_emetteur, prof?.rue_pro));
-      setEmCp(pick(last?.cp_emetteur, prof?.code_postal_pro));
-      setEmVille(pick(last?.ville_emetteur, prof?.ville_pro));
-      setEmPays(pick(last?.pays_emetteur, prof?.pays_pro) || 'France');
-      setEmTel(pick(last?.tel_emetteur, prof?.phone_number));
+      const pick = (...vals: (string | null | undefined)[]) => {
+        for (const v of vals) { if (v && String(v).trim()) return String(v).trim(); }
+        return '';
+      };
+      setEmNom(pick(last?.nom_emetteur, prof?.nom, `${prof?.firstname ?? ''} ${prof?.lastname ?? ''}`.trim()));
+      setEmRue(pick(last?.rue_emetteur, prof?.rue_pro, prof?.rue));
+      setEmCp(pick(last?.cp_emetteur, prof?.code_postal_pro, prof?.code_postal));
+      setEmVille(pick(last?.ville_emetteur, prof?.ville_pro, prof?.ville));
+      setEmPays(pick(last?.pays_emetteur, prof?.pays_pro, prof?.pays) || 'France');
+      setEmTel(pick(last?.tel_emetteur, prof?.phone_number, prof?.phone));
       setEmEmail(pick(last?.email_emetteur, null));
       setEmSiret(pick(last?.siret_emetteur, prof?.siret));
       setEmTva(pick(last?.tva_emetteur, prof?.numero_tva));
-      setEmForme(pick(last?.forme_juridique_emetteur, null));
-      setEmCapital(pick(last?.capital_emetteur, null));
-      setEmRcs(pick(last?.rcs_emetteur, null));
-      setEmRm(pick(last?.rm_emetteur, null));
+      setEmForme(pick(last?.forme_juridique_emetteur, prof?.forme_juridique_pro));
+      setEmCapital(pick(last?.capital_emetteur, prof?.capital_social_pro));
+      setEmRcs(pick(last?.rcs_emetteur, prof?.rcs_pro));
+      setEmRm(pick(last?.rm_emetteur, prof?.rm_pro));
+      if (!last && (prof?.regime_tva_pro === 'franchise')) setFranchise(true);
+      if (prof?.iban_pro || prof?.bic_pro) {
+        setNote(prev => prev.trim()
+          ? prev
+          : `Règlement par virement — IBAN ${pick(prof?.iban_pro)}${prof?.bic_pro ? ` / BIC ${pick(prof?.bic_pro)}` : ''}`);
+      }
       if (last?.conditions_escompte) setEscompte(String(last.conditions_escompte));
       if (last?.mode_paiement) setModePaiement(String(last.mode_paiement));
       if (last?.delai_paiement != null) setDelaiPaiement(String(last.delai_paiement));

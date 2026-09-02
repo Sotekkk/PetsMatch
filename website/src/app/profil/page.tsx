@@ -274,6 +274,13 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
   const [capaciteAccueil, setCapaciteAccueil] = useState('');
   const [especesAccueillies, setEspecesAccueillies] = useState<Set<string>>(new Set());
 
+  // Identité de facturation (factures officielles de l'association)
+  const [tvaIntra, setTvaIntra]             = useState('');
+  const [formeJuridique, setFormeJuridique] = useState('Association loi 1901');
+  const [tvaFranchise, setTvaFranchise]     = useState(true);
+  const [ibanAsso, setIbanAsso]             = useState('');
+  const [bicAsso, setBicAsso]               = useState('');
+
   // Photos
   const [avatarFile, setAvatarFile]         = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview]   = useState<string | null>(null);
@@ -337,6 +344,11 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
         setEspecesAccueillies(new Set(
           ((r.especes_accueil as string[] | undefined) ?? (onboarding?.especes_accueillies as string[] | undefined) ?? [])
         ));
+        setTvaIntra((r.numero_tva as string) ?? '');
+        setFormeJuridique((r.forme_juridique_pro as string) || 'Association loi 1901');
+        setTvaFranchise(((r.regime_tva_pro as string) ?? 'franchise') === 'franchise');
+        setIbanAsso((r.iban_pro as string) ?? '');
+        setBicAsso((r.bic_pro as string) ?? '');
         setSiretDocUrl((r.kbis_url as string) ?? null);
         setAcacedDocUrl((r.acaced_doc_url as string) ?? null);
         setStatutsDocUrl((r.statuts_url as string) ?? null);
@@ -384,6 +396,11 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
         agrement_prefectoral: agrementPrefectoral.trim() || null,
         capacite_accueil:     capaciteAccueil.trim() ? parseInt(capaciteAccueil, 10) : null,
         especes_accueil:      Array.from(especesAccueillies),
+        numero_tva:           tvaIntra.trim() || null,
+        forme_juridique_pro:  formeJuridique.trim() || null,
+        regime_tva_pro:       tvaFranchise ? 'franchise' : 'normal',
+        iban_pro:             ibanAsso.trim() || null,
+        bic_pro:              bicAsso.trim() || null,
       };
 
       if (avatarFile) {
@@ -637,6 +654,34 @@ function AssociationEdit({ profileId, uid }: { profileId: string; uid: string })
               <input ref={arretePrefDocRef} type="file" accept="image/*,application/pdf" className="hidden"
                 onChange={e => { const f = e.target.files?.[0]; if (f) setArretePrefDocFile(f); e.target.value = ''; }} />
             </div>
+          </Card>
+
+          <Card title="Facturation">
+            <p className="text-xs text-gray-500 mb-3">
+              Ces informations figurent sur les factures officielles émises par l&apos;association
+              (dons, prestations, adoptions). Une facture doit porter l&apos;identité complète de l&apos;émetteur.
+            </p>
+            <Field label="Forme juridique">
+              <input value={formeJuridique} onChange={e => setFormeJuridique(e.target.value)} className={inputCls}
+                placeholder="Association loi 1901, RUP, fonds de dotation…" />
+            </Field>
+            <label className="flex items-start gap-2 text-sm text-gray-700 my-2">
+              <input type="checkbox" checked={tvaFranchise} onChange={e => setTvaFranchise(e.target.checked)} className="mt-0.5" />
+              <span>Franchise en base de TVA / activité non lucrative
+                <span className="block text-xs text-gray-500">Mention « TVA non applicable, art. 293 B du CGI » sur les factures. Décochez si l&apos;association est assujettie à la TVA.</span>
+              </span>
+            </label>
+            {!tvaFranchise && (
+              <Field label="N° TVA intracommunautaire">
+                <input value={tvaIntra} onChange={e => setTvaIntra(e.target.value)} className={inputCls} placeholder="FR00000000000" />
+              </Field>
+            )}
+            <Field label="IBAN (règlement par virement)">
+              <input value={ibanAsso} onChange={e => setIbanAsso(e.target.value)} className={inputCls} placeholder="FR76 ..." />
+            </Field>
+            <Field label="BIC">
+              <input value={bicAsso} onChange={e => setBicAsso(e.target.value)} className={inputCls} />
+            </Field>
           </Card>
 
           <Card title="ACACED">
