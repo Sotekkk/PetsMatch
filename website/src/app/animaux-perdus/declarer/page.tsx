@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
@@ -22,6 +22,7 @@ interface UserAnimal {
   couleur?: string;
   photo_url?: string;
   identification?: string;
+  description?: string;
   contacts_urgence?: { nom?: string; tel?: string; email?: string }[];
 }
 
@@ -50,6 +51,7 @@ export default function DeclarerPerduPage() {
   const { user, loading } = useAuth();
   const activeProfileId = useActiveProfile();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Form fields
@@ -130,11 +132,22 @@ export default function DeclarerPerduPage() {
     if (!user) return;
     supabase
       .from('animaux')
-      .select('id, nom, espece, race, sexe, couleur, photo_url, identification, contacts_urgence')
+      .select('id, nom, espece, race, sexe, couleur, photo_url, identification, description, contacts_urgence')
       .eq('uid_proprietaire', user.uid)
       .order('nom')
       .then(({ data }) => setUserAnimaux((data as UserAnimal[]) ?? []));
   }, [user]);
+
+  // Pré-remplissage automatique depuis la fiche d'un animal (lien
+  // « Déclarer perdu » sur mes-animaux/[id] : ?animal=<id>) — même effet
+  // que le picker manuel ci-dessous (fillFromAnimal), déclenché dès que la
+  // liste des animaux du propriétaire est chargée.
+  useEffect(() => {
+    const animalId = searchParams.get('animal');
+    if (!animalId || userAnimaux.length === 0) return;
+    const a = userAnimaux.find(x => x.id === animalId);
+    if (a) fillFromAnimal(a);
+  }, [searchParams, userAnimaux]);
 
   // ── Location autocomplete ──────────────────────────────────────────────────
 
@@ -205,6 +218,9 @@ export default function DeclarerPerduPage() {
     setRace(a.race ?? '');
     setSexe(a.sexe ?? '');
     setCouleur(a.couleur ?? '');
+    // Description de la fiche animal reprise par défaut — modifiable
+    // ensuite, ex: pour préciser les circonstances de la disparition.
+    setDescription(a.description ?? '');
     if (a.photo_url) setPhotoPreview(a.photo_url);
     // Pre-fill contact from urgence contacts
     const contacts = a.contacts_urgence ?? [];

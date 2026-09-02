@@ -187,7 +187,7 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
     try {
       final rows = await _supa
           .from('animaux')
-          .select('id, nom, espece, race, sexe, couleur, photo_url, identification, contacts_urgence')
+          .select('id, nom, espece, race, sexe, couleur, photo_url, identification, description, contacts_urgence')
           .eq('uid_proprietaire', uid)
           .order('nom');
       if (mounted) setState(() { _userAnimaux = List<Map<String, dynamic>>.from(rows); _loadingAnimaux = false; });
@@ -257,6 +257,9 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
       _raceCtrl.text    = (d['race'] as String?) ?? '';
       _sexe             = d['sexe'] as String?;
       _couleurCtrl.text = (d['couleur'] as String?) ?? '';
+      // Description de la fiche animal reprise par défaut — modifiable
+      // ensuite, ex: pour préciser les circonstances de la disparition.
+      _descCtrl.text    = (d['description'] as String?) ?? '';
       if ((d['photo_url'] as String?)?.isNotEmpty == true) {
         _existingPhotoUrl = d['photo_url'] as String;
       }
@@ -331,7 +334,7 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
   Future<void> _loadAnimalData() async {
     try {
       final rows = await _supa.from('animaux')
-          .select('nom, espece, race, sexe, couleur, photo_url, identification, contacts_urgence')
+          .select('nom, espece, race, sexe, couleur, photo_url, identification, description, contacts_urgence')
           .eq('id', widget.animalId!)
           .limit(1);
       if ((rows as List).isEmpty || !mounted) return;
@@ -342,6 +345,9 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
         if (_identCtrl.text.isEmpty)   _identCtrl.text   = (d['identification'] ?? '') as String;
         if (_raceCtrl.text.isEmpty)    _raceCtrl.text    = (d['race'] ?? '') as String;
         if (_couleurCtrl.text.isEmpty) _couleurCtrl.text = (d['couleur'] ?? '') as String;
+        // Description de la fiche animal reprise par défaut — modifiable
+        // ensuite, ex: pour préciser les circonstances de la disparition.
+        if (_descCtrl.text.isEmpty)    _descCtrl.text    = (d['description'] ?? '') as String;
         _espece = newEspece;
         _sexe   = (d['sexe'] as String?)?.isNotEmpty == true ? d['sexe'] as String : _sexe;
         if ((_existingPhotoUrl == null || _existingPhotoUrl!.isEmpty) &&
