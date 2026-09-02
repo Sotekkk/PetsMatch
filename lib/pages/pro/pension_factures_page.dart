@@ -19,6 +19,12 @@ class PensionFacturesPage extends StatefulWidget {
   State<PensionFacturesPage> createState() => _PensionFacturesPageState();
 }
 
+String _pnum(Map<String, dynamic> f) {
+  final a = f['numero_affichage']?.toString() ?? '';
+  if (a.trim().isNotEmpty) return a;
+  return f['numero']?.toString() ?? '—';
+}
+
 class _PensionFacturesPageState extends State<PensionFacturesPage> {
   static const _teal = Color(0xFF0C5C6C);
   final _supa = Supabase.instance.client;
@@ -90,7 +96,7 @@ class _PensionFacturesPageState extends State<PensionFacturesPage> {
       final dEnvoi = DateTime.tryParse(f['date_envoi']?.toString() ?? '');
       final dPaie = DateTime.tryParse(f['date_paiement']?.toString() ?? '');
       return [
-        f['numero']?.toString() ?? '—',
+        _pnum(f),
         f['animal_nom']?.toString() ?? '—',
         f['proprietaire_nom']?.toString() ?? '—',
         '${((f['montant'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)} €',
@@ -136,7 +142,7 @@ class _PensionFacturesPageState extends State<PensionFacturesPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Supprimer la facture ${f['numero'] ?? ''} ?',
+        title: Text('Supprimer la facture ${_pnum(f)} ?',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
         content: const Text('Cette facture sera définitivement supprimée.',
             style: TextStyle(fontFamily: 'Galey')),
@@ -165,7 +171,7 @@ class _PensionFacturesPageState extends State<PensionFacturesPage> {
     final entreeId  = f['entree_id']?.toString();
     final token     = f['token']?.toString();
     final ownerUid  = f['proprietaire_uid']?.toString();
-    final numero    = f['numero']?.toString() ?? '';
+    final numero    = _pnum(f);
     final animalNom = f['animal_nom']?.toString() ?? 'votre animal';
     final pdfUrl    = f['pdf_url']?.toString();
     final montant   = (f['montant'] as num?)?.toDouble() ?? 0;
@@ -354,7 +360,7 @@ class _PensionFacturesPageState extends State<PensionFacturesPage> {
                           ),
                         ]),
                         const SizedBox(height: 6),
-                        Text('${((f['montant'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)} € · n° ${f['numero'] ?? ''}',
+                        Text('${((f['montant'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)} € · n° ${_pnum(f)}',
                             style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: _teal)),
                         const SizedBox(height: 2),
                         Text(

@@ -144,34 +144,45 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
   }
 
   // Insert résilient : si `details` / `token` n'existent pas encore (migration
-  // pas passée), on réessaie sans les colonnes manquantes.
-  async function insertFacture(payload: Record<string, unknown>) {
+  // pas passée), on réessaie sans les colonnes manquantes. Renvoie la ligne
+  // créée (dont numero_affichage attribué par le serveur).
+  async function insertFacture(payload: Record<string, unknown>): Promise<{ data: Record<string, unknown> | null; error: { message: string } | null }> {
     let p = payload;
-    for (let i = 0; i < 3; i++) {
-      const res = await supabase.from('pension_factures').insert(p);
-      if (!res.error) return res;
-      const m = /'?(\w+)'? column|column "?(\w+)"?|(\bdetails\b|\btoken\b)/i.exec(res.error.message);
+    for (let i = 0; i < 4; i++) {
+      const res = await supabase.from('pension_factures').insert(p).select('id, numero, numero_affichage').single();
+      if (!res.error) return { data: res.data as Record<string, unknown>, error: null };
+      const m = /'?(\w+)'? column|column "?(\w+)"?|(\bdetails\b|\btoken\b|\bnumero_affichage\b)/i.exec(res.error.message);
       const col = m?.[1] || m?.[2] || m?.[3];
+      if (col === 'numero_affichage') {
+        // Migration 2b pas passée : on retombe sur un select minimal.
+        const res2 = await supabase.from('pension_factures').insert(p).select('id, numero').single();
+        return { data: (res2.data ?? null) as Record<string, unknown> | null, error: res2.error };
+      }
       if (col && col in p) {
         const { [col]: _omit, ...rest } = p;
         void _omit;
         p = rest;
         continue;
       }
-      return res;
+      return { data: null, error: res.error };
     }
-    return supabase.from('pension_factures').insert(p);
+    const last = await supabase.from('pension_factures').insert(p).select('id, numero').single();
+    return { data: (last.data ?? null) as Record<string, unknown> | null, error: last.error };
   }
 
-  // Génère le PDF, l'upload sur le storage, renvoie l'URL publique (ou null).
-  async function genererEtUploaderPdf(numero: string): Promise<string | null> {
+  // Génère le PDF (avec le numéro serveur), l'upload, met à jour la ligne.
+  async function genererEtArchiver(factureId: string, numero: string): Promise<string | null> {
     try {
-      const blob = await pensionInvoicePdfBlob(factureData(numero));
-      const path = `factures-pension/${proUid}/${numero}.pdf`;
+      const data = factureData(numero);
+      const blob = await pensionInvoicePdfBlob(data);
+      const path = `factures-pension/${proUid}/${factureId}.pdf`;
       const { error: upErr } = await supabase.storage.from('petsmatch')
         .upload(path, blob, { upsert: true, contentType: 'application/pdf' });
-      if (upErr) return null;
-      return supabase.storage.from('petsmatch').getPublicUrl(path).data.publicUrl;
+      const pdfUrl = upErr ? null : supabase.storage.from('petsmatch').getPublicUrl(path).data.publicUrl;
+      await supabase.from('pension_factures').update({
+        numero, details: data, ...(pdfUrl ? { pdf_url: pdfUrl } : {}),
+      }).eq('id', factureId);
+      return pdfUrl;
     } catch {
       return null;
     }
@@ -195,13 +206,10 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
     setMarking(true);
     setError('');
     try {
-      const numero = genNumero();
-      const pdf_url = await genererEtUploaderPdf(numero);
-      const { error: err } = await insertFacture({
-        ...facturePayload(numero, crypto.randomUUID()),
-        ...(pdf_url ? { pdf_url } : {}),
-      });
-      if (err) { setError(err.message); setMarking(false); return; }
+      const { data, error: err } = await insertFacture(facturePayload('', crypto.randomUUID()));
+      if (err || !data) { setError(err?.message ?? 'Erreur'); setMarking(false); return; }
+      const numero = (data.numero_affichage as string) || (data.numero as string) || genNumero();
+      await genererEtArchiver(data.id as string, numero);
       onSaved();
     } finally {
       setMarking(false);
@@ -225,9 +233,15 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
         ownerProfileId = propRow?.profile_id_proprio ?? null;
       }
 
-      const numero = genNumero();
       const token = crypto.randomUUID();
-      const pdf_url = await genererEtUploaderPdf(numero);
+
+      const { data, error: err } = await insertFacture({
+        ...facturePayload('', token),
+        ...(ownerUid ? { proprietaire_uid: ownerUid } : {}),
+      });
+      if (err || !data) { setError(err?.message ?? 'Erreur'); setSending(false); return; }
+      const numero = (data.numero_affichage as string) || (data.numero as string) || genNumero();
+      const pdf_url = await genererEtArchiver(data.id as string, numero);
 
       // Notification in-app uniquement si le propriétaire a un compte PetsMatch.
       if (ownerUid) {
@@ -243,13 +257,6 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
           read: false,
         });
       }
-
-      const { error: err } = await insertFacture({
-        ...facturePayload(numero, token),
-        ...(pdf_url ? { pdf_url } : {}),
-        ...(ownerUid ? { proprietaire_uid: ownerUid } : {}),
-      });
-      if (err) { setError(err.message); setSending(false); return; }
 
       // Email avec le lien de consultation (en plus de la notification in-app).
       try {

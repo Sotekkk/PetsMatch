@@ -260,6 +260,12 @@ export default function EleveurProfilEditPage() {
   // Informations administratives
   const [siret, setSiret] = useState('');
   const [tva, setTva] = useState('');
+  const [formeJuridique, setFormeJuridique] = useState('');
+  const [capitalSocial, setCapitalSocial] = useState('');
+  const [rcsPro, setRcsPro] = useState('');
+  const [ibanPro, setIbanPro] = useState('');
+  const [bicPro, setBicPro] = useState('');
+  const [tvaFranchise, setTvaFranchise] = useState(false);
   const [acacedNum, setAcacedNum] = useState('');
   const [acacedDateObtention, setAcacedDateObtention] = useState('');
   const [acacedDateRenewal, setAcacedDateRenewal] = useState('');
@@ -320,6 +326,12 @@ export default function EleveurProfilEditPage() {
     setPays(userData.paysElevage ?? 'France');
     setSiret(userData.siret ?? '');
     setTva(userData.numeroTva ?? '');
+    setFormeJuridique((userData as Record<string, unknown>).formeJuridiquePro as string ?? '');
+    setCapitalSocial((userData as Record<string, unknown>).capitalSocialPro as string ?? '');
+    setRcsPro((userData as Record<string, unknown>).rcsPro as string ?? '');
+    setIbanPro((userData as Record<string, unknown>).ibanPro as string ?? '');
+    setBicPro((userData as Record<string, unknown>).bicPro as string ?? '');
+    setTvaFranchise(((userData as Record<string, unknown>).regimeTvaPro as string) === 'franchise');
     setAcacedNum(userData.acaced ?? '');
     setSiretDocUrl(userData.kbisUrl ?? null);
     setAcacedDocUrl(userData.acacedDocUrl ?? null);
@@ -591,6 +603,12 @@ export default function EleveurProfilEditPage() {
         region: geo?.region ?? '',
         siret: siret.trim(),
         numero_tva: tva.trim(),
+        forme_juridique_pro: formeJuridique.trim(),
+        capital_social_pro: capitalSocial.trim(),
+        rcs_pro: rcsPro.trim(),
+        iban_pro: ibanPro.trim(),
+        bic_pro: bicPro.trim(),
+        regime_tva_pro: tvaFranchise ? 'franchise' : 'normal',
         acaced: acacedNum.trim(),
         especes_elevees: especesElevees,
         instagram: instagram.trim(),
@@ -962,6 +980,31 @@ export default function EleveurProfilEditPage() {
           <Field label="N° TVA intracommunautaire (optionnel)">
             <input value={tva} onChange={e => setTva(e.target.value)} className={inputCls}
               placeholder="FR00000000000" />
+          </Field>
+
+          <Field label="Forme juridique (facturation)">
+            <input value={formeJuridique} onChange={e => setFormeJuridique(e.target.value)} className={inputCls}
+              placeholder="EI, EURL, SAS…" />
+          </Field>
+          <Field label="Capital social (sociétés)">
+            <input value={capitalSocial} onChange={e => setCapitalSocial(e.target.value)} className={inputCls}
+              placeholder="5 000 €" />
+          </Field>
+          <Field label="RCS + ville du greffe">
+            <input value={rcsPro} onChange={e => setRcsPro(e.target.value)} className={inputCls}
+              placeholder="RCS Lyon 900 123 456" />
+          </Field>
+          <label className="flex items-start gap-2 text-sm text-gray-700 my-2">
+            <input type="checkbox" checked={tvaFranchise} onChange={e => setTvaFranchise(e.target.checked)} className="mt-0.5" />
+            <span>Franchise en base de TVA
+              <span className="block text-xs text-gray-500">Mention « TVA non applicable, art. 293 B du CGI » sur les factures.</span>
+            </span>
+          </label>
+          <Field label="IBAN (règlement par virement)">
+            <input value={ibanPro} onChange={e => setIbanPro(e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="BIC">
+            <input value={bicPro} onChange={e => setBicPro(e.target.value)} className={inputCls} />
           </Field>
 
           <div className="border-t border-gray-100 pt-4 mt-2">

@@ -11,6 +11,7 @@ const supabase = createClient(
 
 interface Row {
   numero: string;
+  numero_affichage: string | null;
   animal_nom: string | null;
   proprietaire_nom: string | null;
   montant: number | null;
@@ -30,7 +31,7 @@ export default function FacturePensionPage({ params }: { params: Promise<{ token
   useEffect(() => {
     (async () => {
       const { data } = await supabase.from('pension_factures')
-        .select('numero, animal_nom, proprietaire_nom, montant, statut, type, pdf_url, details, date_envoi, date_paiement')
+        .select('numero, numero_affichage, animal_nom, proprietaire_nom, montant, statut, type, pdf_url, details, date_envoi, date_paiement')
         .eq('token', token).maybeSingle();
       setRow((data as Row) ?? null);
       setLoading(false);
@@ -51,9 +52,9 @@ export default function FacturePensionPage({ params }: { params: Promise<{ token
 
   const paye = row.statut === 'payee';
   const data: PensionFactureData = row.details
-    ? { ...row.details, numero: row.numero }
+    ? { ...row.details, numero: row.numero_affichage || row.numero }
     : {
-        numero: row.numero, pensionNom: 'Votre pension', emiseLe: row.date_envoi,
+        numero: row.numero_affichage || row.numero, pensionNom: 'Votre pension', emiseLe: row.date_envoi,
         animal: { nom: row.animal_nom }, proprietaire: { nom: row.proprietaire_nom },
         sejour: {}, nuits: 1, tarifNuit: row.montant ?? 0, avecTVA: false,
         isAcompte: row.type === 'acompte', acomptePct: 100,
