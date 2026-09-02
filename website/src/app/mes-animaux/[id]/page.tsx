@@ -867,19 +867,40 @@ function WeightForm({ initial, lastKg, saving, onSave, onCancel }: {
 
 // ─── Documents Animal Tab ─────────────────────────────────────────────────────
 
+const DOC_LIBRE_CATS: { value: string; label: string; icon: string }[] = [
+  { value: 'contrat',        label: 'Contrat d\'achat / adoption',  icon: '📄' },
+  { value: 'pedigree',       label: 'Pédigrée numérique',           icon: '🏅' },
+  { value: 'identification', label: 'Carte d\'identification (I-CAD)', icon: '🪪' },
+  { value: 'passeport',      label: 'Passeport européen',           icon: '📘' },
+  { value: 'assurance',      label: 'Attestation d\'assurance',     icon: '🛡️' },
+  { value: 'vaccination',    label: 'Carnet de vaccination',        icon: '💉' },
+  { value: 'facture',        label: 'Facture vétérinaire',          icon: '🧾' },
+  { value: 'autre',          label: 'Autre document administratif', icon: '📎' },
+];
+
+interface DocLibre { nom: string; url: string; categorie?: string; type?: string; ajoute_le?: string; date_expiration?: string }
+
 function DocumentsAnimalTab({ animalId }: { animalId: string }) {
+  const { user } = useAuth();
+  const activeProfileId = useActiveProfile();
   const [docs, setDocs] = useState<Record<string,unknown>[]>([]);
   const [certs, setCerts] = useState<Record<string,unknown>[]>([]);
+  const [libres, setLibres] = useState<DocLibre[]>([]);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [cat, setCat] = useState('contrat');
+  const [expiration, setExpiration] = useState('');
 
   useEffect(() => {
     async function load() {
-      const [docsRes, certsRes] = await Promise.all([
+      const [docsRes, certsRes, animRes] = await Promise.all([
         supabase.from('documents_animaux').select('*').eq('animal_id', animalId).order('created_at', { ascending: false }),
         supabase.from('certificats_engagement').select('id, nom_animal, acquereur_prenom, acquereur_nom, statut, date_remise, date_signature_acquereur, token_signature').eq('animal_id', animalId).order('date_remise', { ascending: false }),
+        supabase.from('animaux').select('documents').eq('id', animalId).maybeSingle(),
       ]);
       setDocs(docsRes.data ?? []);
       setCerts(certsRes.data ?? []);
+      setLibres(((animRes.data?.documents as DocLibre[]) ?? []));
       setLoading(false);
     }
     load();
@@ -888,6 +909,44 @@ function DocumentsAnimalTab({ animalId }: { animalId: string }) {
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [animalId]);
+
+  async function saveLibres(next: DocLibre[]) {
+    setLibres(next);
+    await supabase.from('animaux').update({ documents: next }).eq('id', animalId);
+  }
+
+  async function handleUpload(file: File) {
+    if (!user) return;
+    setUploading(true);
+    try {
+      const path = `documents/${user.uid}/${animalId}/${Date.now()}_${file.name.replace(/\s/g, '_')}`;
+      const { error } = await supabase.storage.from('media').upload(path, file);
+      if (error) throw error;
+      const { data: { publicUrl } } = supabase.storage.from('media').getPublicUrl(path);
+      const entry: DocLibre = {
+        nom: file.name, url: publicUrl, categorie: cat, type: file.type,
+        ajoute_le: new Date().toISOString().slice(0, 10),
+        ...(expiration ? { date_expiration: expiration } : {}),
+      };
+      await saveLibres([...libres, entry]);
+      if (expiration) {
+        const exp = new Date(expiration);
+        let rappel = new Date(exp); rappel.setDate(rappel.getDate() - 30);
+        if (rappel < new Date()) rappel = exp;
+        rappel.setHours(8, 0, 0, 0);
+        await supabase.from('agenda_events').insert({
+          uid: user.uid,
+          titre: `Document à renouveler : ${DOC_LIBRE_CATS.find(c => c.value === cat)?.label ?? file.name}`,
+          type: 'autre',
+          date_debut: rappel.toISOString(),
+          animal_id: Number.isFinite(Number(animalId)) ? Number(animalId) : null,
+          ...(activeProfileId ? { profile_id: activeProfileId, pro_profile_id: activeProfileId } : {}),
+        });
+      }
+      setExpiration('');
+    } catch { /* ignore */ }
+    finally { setUploading(false); }
+  }
 
   const typeLabel: Record<string,string> = {
     contrat_vente: 'Contrat de vente',
@@ -918,17 +977,72 @@ function DocumentsAnimalTab({ animalId }: { animalId: string }) {
 
   if (loading) return <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin" /></div>;
 
-  const empty = docs.length === 0 && certs.length === 0;
+  const uploadCard = (
+    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+      <p className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide mb-2">Mes documents</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <select value={cat} onChange={e => setCat(e.target.value)}
+          className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-[#0C5C6C]">
+          {DOC_LIBRE_CATS.map(c => <option key={c.value} value={c.value}>{c.icon} {c.label}</option>)}
+        </select>
+        <label className="text-xs text-gray-500 flex items-center gap-1">
+          Expire le
+          <input type="date" value={expiration} onChange={e => setExpiration(e.target.value)}
+            className="border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:border-[#0C5C6C]" />
+        </label>
+        <label className={`text-xs font-semibold px-3 py-1.5 rounded-full cursor-pointer transition-colors ${uploading ? 'bg-gray-200 text-gray-400' : 'bg-[#0C5C6C] text-white hover:bg-[#094F5D]'}`}>
+          {uploading ? 'Envoi…' : '+ Ajouter'}
+          <input type="file" className="hidden" disabled={uploading}
+            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = ''; }} />
+        </label>
+      </div>
+      {expiration && <p className="text-[11px] text-gray-400 mt-1.5">Un rappel sera ajouté à votre agenda 30 jours avant l&apos;expiration.</p>}
+      <div className="mt-3 divide-y divide-gray-50">
+        {libres.length === 0 && <p className="text-sm text-gray-400 py-2">Aucun document ajouté.</p>}
+        {libres.map((d, i) => {
+          const exp = d.date_expiration ? new Date(d.date_expiration) : null;
+          const expired = exp && exp < new Date();
+          const soon = exp && !expired && (exp.getTime() - Date.now()) / 86400000 <= 30;
+          return (
+            <div key={i} className="flex items-center gap-3 py-2.5">
+              <span className="text-xl">{DOC_LIBRE_CATS.find(c => c.value === d.categorie)?.icon ?? '📎'}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-800 truncate">{d.nom}</p>
+                <p className="text-xs text-gray-400">
+                  {DOC_LIBRE_CATS.find(c => c.value === d.categorie)?.label ?? 'Document'}
+                  {exp && (
+                    <span className={`ml-2 font-semibold ${expired ? 'text-red-600' : soon ? 'text-orange-600' : 'text-gray-400'}`}>
+                      {expired ? 'Expiré' : 'Expire'} le {exp.toLocaleDateString('fr-FR')}
+                    </span>
+                  )}
+                </p>
+              </div>
+              <a href={d.url} target="_blank" rel="noreferrer" className="text-xs text-[#0C5C6C] hover:underline">Voir</a>
+              <button onClick={() => saveLibres(libres.filter((_, j) => j !== i))}
+                className="text-red-300 hover:text-red-500 text-lg leading-none">×</button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  const empty = docs.length === 0 && certs.length === 0 && libres.length === 0;
   if (empty) return (
-    <div className="flex flex-col items-center py-16 text-gray-400 gap-2">
-      <span className="text-5xl">📂</span>
-      <p className="font-semibold">Aucun document lié à cet animal</p>
-      <p className="text-sm">Créez un contrat depuis <strong>Administratif → Contrats</strong></p>
+    <div className="space-y-3 mt-4">
+      {uploadCard}
+      <div className="flex flex-col items-center py-10 text-gray-400 gap-2">
+        <span className="text-5xl">📂</span>
+        <p className="font-semibold">Aucun contrat officiel pour l&apos;instant</p>
+        <p className="text-sm">Les contrats signés avec un éleveur / éducateur apparaîtront ici.</p>
+      </div>
     </div>
   );
 
   return (
     <div className="space-y-3 mt-4">
+      {uploadCard}
       {docs.length > 0 && (
         <>
           <h3 className="text-xs font-bold text-[#0C5C6C] uppercase tracking-wide">Contrats &amp; Documents</h3>
@@ -997,6 +1111,143 @@ function DocumentsAnimalTab({ animalId }: { animalId: string }) {
             );
           })}
         </>
+      )}
+    </div>
+  );
+}
+
+// ─── Onglet Éducation (comptes rendus + exercices cochables) ─────────────────
+
+interface RapportEdu {
+  id: string;
+  date_seance: string | null;
+  contenu: string | null;
+  exercices_conseilles: string | null;
+  exercices_coches: boolean[] | null;
+}
+
+function EducationRapportsTab({ animalId }: { animalId: string }) {
+  const [rapports, setRapports] = useState<RapportEdu[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.from('education_progression')
+      .select('id, date_seance, contenu, exercices_conseilles, exercices_coches')
+      .eq('animal_id', animalId).order('date_seance', { ascending: false })
+      .then(({ data }) => { setRapports((data ?? []) as RapportEdu[]); setLoading(false); });
+  }, [animalId]);
+
+  const lignes = (raw: string | null) => (raw ?? '')
+    .split(/[\n;]/).map(s => s.trim()).filter(Boolean);
+
+  async function toggle(rapport: RapportEdu, index: number, total: number) {
+    const cur = [...(rapport.exercices_coches ?? [])];
+    while (cur.length < total) cur.push(false);
+    cur[index] = !cur[index];
+    setRapports(rs => rs.map(r => r.id === rapport.id ? { ...r, exercices_coches: cur } : r));
+    await supabase.from('education_progression').update({ exercices_coches: cur }).eq('id', rapport.id);
+  }
+
+  if (loading) return <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-[#7B5EA7] border-t-transparent rounded-full animate-spin" /></div>;
+  if (rapports.length === 0) return (
+    <div className="flex flex-col items-center py-16 text-gray-400 gap-2">
+      <span className="text-5xl">🎓</span>
+      <p className="font-semibold">Aucun suivi éducatif pour l&apos;instant</p>
+      <p className="text-sm">Les comptes rendus de votre éducateur apparaîtront ici.</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3 mt-4">
+      {rapports.map(r => {
+        const exos = lignes(r.exercices_conseilles);
+        const coches = r.exercices_coches ?? [];
+        return (
+          <div key={r.id} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <p className="text-sm font-bold text-[#7B5EA7]">
+              {r.date_seance ? new Date(r.date_seance).toLocaleDateString('fr-FR') : ''}
+            </p>
+            {r.contenu && <p className="text-sm text-gray-800 mt-1 whitespace-pre-line">{r.contenu}</p>}
+            {exos.length > 0 && (
+              <div className="mt-3 rounded-xl bg-[#F3EEFA] p-3">
+                <p className="text-xs font-bold text-[#7B5EA7]">🏋️ Exercices à faire à la maison</p>
+                <div className="mt-1 space-y-1">
+                  {exos.map((ex, i) => {
+                    const done = !!coches[i];
+                    return (
+                      <button key={i} onClick={() => toggle(r, i, exos.length)}
+                        className="flex items-start gap-2 text-left w-full">
+                        <span className={`mt-0.5 text-base ${done ? 'text-[#6E9E57]' : 'text-gray-300'}`}>
+                          {done ? '☑' : '☐'}
+                        </span>
+                        <span className={`text-[13px] ${done ? 'line-through text-gray-400' : 'text-gray-800'}`}>{ex}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Onglet Pension & Garde (journal photos / vidéos / notes) ────────────────
+
+interface PensionUpdate {
+  id: string;
+  created_at: string | null;
+  photo_url: string | null;
+  video_url: string | null;
+  note: string | null;
+}
+
+function PensionJournalTab({ animalId, animalNom }: { animalId: string; animalNom: string }) {
+  const [updates, setUpdates] = useState<PensionUpdate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showFull, setShowFull] = useState(false);
+
+  useEffect(() => {
+    supabase.from('pension_updates')
+      .select('id, created_at, photo_url, video_url, note')
+      .eq('animal_id', animalId).order('created_at', { ascending: false })
+      .then(({ data }) => { setUpdates((data ?? []) as PensionUpdate[]); setLoading(false); });
+  }, [animalId]);
+
+  if (loading) return <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-[#6E9E57] border-t-transparent rounded-full animate-spin" /></div>;
+  if (updates.length === 0) return (
+    <div className="flex flex-col items-center py-16 text-gray-400 gap-2">
+      <span className="text-5xl">📸</span>
+      <p className="font-semibold">Aucune nouvelle pour l&apos;instant</p>
+      <p className="text-sm">Les photos et messages de la pension ou du pet-sitter apparaîtront ici.</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-3 mt-4">
+      <button onClick={() => setShowFull(true)}
+        className="w-full text-sm font-semibold text-[#6E9E57] border border-[#6E9E57]/40 rounded-xl py-2 hover:bg-[#6E9E57]/5 transition-colors">
+        Ouvrir le journal complet (réactions, commentaires…)
+      </button>
+      {updates.map(u => (
+        <div key={u.id} className="rounded-2xl border border-gray-100 bg-white overflow-hidden shadow-sm">
+          {u.photo_url
+            ? <img src={u.photo_url} alt="" className="w-full max-h-72 object-cover" />
+            : u.video_url
+            ? <video src={u.video_url} controls className="w-full max-h-72 bg-black" />
+            : null}
+          <div className="p-3">
+            {u.note && <p className="text-sm text-gray-800 whitespace-pre-line">{u.note}</p>}
+            <p className="text-xs text-gray-400 mt-1">
+              {u.created_at ? new Date(u.created_at).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }) : ''}
+            </p>
+          </div>
+        </div>
+      ))}
+      {showFull && (
+        <PensionJournal animalId={animalId} animalNom={animalNom} readOnly onClose={() => setShowFull(false)} />
       )}
     </div>
   );
@@ -1418,7 +1669,7 @@ export default function AnimalFichePage() {
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(isNew);
-  const [tab, setTab] = useState<'identite'|'sante'|'repro'|'alimentation'|'consultations'|'documents'>(
+  const [tab, setTab] = useState<'identite'|'sante'|'repro'|'alimentation'|'consultations'|'documents'|'education'|'pension'>(
     tabParam === 'sante' ? 'sante' : 'identite'
   );
 
@@ -2344,7 +2595,15 @@ export default function AnimalFichePage() {
     ? [{ key:'identite', label:'Identité' }, { key:'documents', label:'Documents' }]
     : (isEleveur || isEmployeOfOwner)
     ? [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet Santé' }, { key:'repro', label:'Suivi Repro' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations vét.' }, { key:'documents', label:'Documents' }]
-    : [{ key:'identite', label:'Identité' }, { key:'sante', label:'Carnet de santé' }, { key:'alimentation', label:'Alimentation' }, { key:'consultations', label:'Consultations vét.' }, { key:'documents', label:'Documents' }];
+    : [
+        { key:'identite', label:'Identité' },
+        { key:'sante', label:'Carnet de santé' },
+        { key:'alimentation', label:'Alimentation' },
+        { key:'consultations', label:'Consultations vét.' },
+        { key:'documents', label:'Documents' },
+        ...(hasEducationRapports ? [{ key:'education', label:'Éducation' }] : []),
+        ...(hasPensionUpdates ? [{ key:'pension', label:'Pension & Garde' }] : []),
+      ];
 
   const isMale = (animal.sexe ?? '').toLowerCase().startsWith('m');
   const showPoil = ['chien','chat'].includes(animal.espece ?? '');
@@ -3572,6 +3831,14 @@ export default function AnimalFichePage() {
       {/* ── TAB DOCUMENTS ───────────────────────────────────────────────── */}
       {tab === 'documents' && !isNew && (
         <DocumentsAnimalTab animalId={id ?? ''} />
+      )}
+
+      {tab === 'education' && !isNew && (
+        <EducationRapportsTab animalId={id ?? ''} />
+      )}
+
+      {tab === 'pension' && !isNew && (
+        <PensionJournalTab animalId={id ?? ''} animalNom={animal.nom || 'Animal'} />
       )}
 
       {showPerePicker && (

@@ -6,9 +6,12 @@ import 'dart:ui' as ui;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
+import 'package:PetsMatch/config.dart';
+import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
@@ -16,8 +19,6 @@ import 'package:PetsMatch/data/vaccin_types.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/particulier/partage_animal_sheet.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
-import 'package:PetsMatch/pages/pro/education_rapports_page.dart';
-import 'package:PetsMatch/pages/pro/animal_devis_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -95,6 +96,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   bool _hasEducationRapports = false;
   bool _hasDevis = false;
 
+  // Documents libres attachés par le propriétaire (colonne animaux.documents)
+  List<Map<String, dynamic>> _documentsLibres = [];
+
   // Health records
   bool _loadingHealth = false;
   List<Map<String, dynamic>> _vaccinations = [];
@@ -116,7 +120,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(length: 4, vsync: this);
     _animalId = widget.animalId;
     _editing = widget.animalId == null; // nouveau animal → direct en édition
     _fillFromData(widget.initialData);
@@ -152,6 +156,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
 
   Future<void> _loadPensionAcces() async {
     if (_animalId == null) return;
+    List<Map<String, dynamic>> acces = _pensionAcces;
+    bool hasUpd = _hasPensionUpdates, hasRap = _hasEducationRapports, hasDev = _hasDevis;
     try {
       final rows = await _supa
           .from('animal_access')
@@ -159,20 +165,42 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           .eq('animal_id', _animalId!)
           .eq('statut', 'active')
           .contains('permissions', ['write_notes']);
-      if (mounted) setState(() => _pensionAcces = List<Map<String, dynamic>>.from(rows));
+      acces = List<Map<String, dynamic>>.from(rows);
     } catch (_) {}
     try {
       final updates = await _supa.from('pension_updates').select('id').eq('animal_id', _animalId!).limit(1);
-      if (mounted) setState(() => _hasPensionUpdates = (updates as List).isNotEmpty);
+      hasUpd = (updates as List).isNotEmpty;
     } catch (_) {}
     try {
       final rapports = await _supa.from('education_progression').select('id').eq('animal_id', _animalId!).limit(1);
-      if (mounted) setState(() => _hasEducationRapports = (rapports as List).isNotEmpty);
+      hasRap = (rapports as List).isNotEmpty;
     } catch (_) {}
     try {
       final devis = await _supa.from('devis').select('id').eq('animal_id', _animalId!).limit(1);
-      if (mounted) setState(() => _hasDevis = (devis as List).isNotEmpty);
+      hasDev = (devis as List).isNotEmpty;
     } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _pensionAcces = acces;
+      _hasPensionUpdates = hasUpd;
+      _hasEducationRapports = hasRap;
+      _hasDevis = hasDev;
+      _syncTabs();
+    });
+  }
+
+  // Onglets dynamiques : Documents toujours présent ; Éducation / Pension &
+  // Garde n'apparaissent que si l'animal a un suivi correspondant.
+  bool get _showEducationTab => _hasEducationRapports || _hasDevis;
+  bool get _showPensionTab => _hasPensionUpdates;
+
+  void _syncTabs() {
+    final n = 4 + (_showEducationTab ? 1 : 0) + (_showPensionTab ? 1 : 0);
+    if (_tabs.length == n) return;
+    final prev = _tabs.index;
+    _tabs.dispose();
+    _tabs = TabController(
+        length: n, vsync: this, initialIndex: prev < n ? prev : n - 1);
   }
 
   Future<void> _revokePensionAcces(String accesId, String proNom) async {
@@ -240,6 +268,13 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         ? DateTime.tryParse(d['sterilisation_echeance'].toString())
         : null;
     _photoUrl  = d['photo_url'];
+    final docs = d['documents'];
+    if (docs is List) {
+      _documentsLibres = docs
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    }
     if (d['date_naissance'] != null) {
       try { _dateNaissance = DateTime.parse(d['date_naissance'].toString()); } catch (_) {}
     }
@@ -549,16 +584,32 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         ],
         bottom: TabBar(
           controller: _tabs,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           indicatorColor: Colors.white,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white60,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
-          tabs: const [Tab(text: 'Identité'), Tab(text: 'Carnet de santé'), Tab(text: 'Alimentation')],
+          tabs: [
+            const Tab(text: 'Identité'),
+            const Tab(text: 'Carnet de santé'),
+            const Tab(text: 'Alimentation'),
+            const Tab(text: 'Documents'),
+            if (_showEducationTab) const Tab(text: 'Éducation'),
+            if (_showPensionTab) const Tab(text: 'Pension & Garde'),
+          ],
         ),
       ),
       body: TabBarView(
         controller: _tabs,
-        children: [_buildIdentiteTab(), _buildSanteTab(), _buildAlimentationTab()],
+        children: [
+          _buildIdentiteTab(),
+          _buildSanteTab(),
+          _buildAlimentationTab(),
+          _buildDocumentsTab(),
+          if (_showEducationTab) _buildEducationTab(),
+          if (_showPensionTab) _buildPensionTab(),
+        ],
       ),
     );
   }
@@ -669,82 +720,16 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         _infoRow('Description', _descCtrl.text, empty: _descCtrl.text.trim().isEmpty),
         _infoRow('Notes', _notesCtrl.text, empty: _notesCtrl.text.trim().isEmpty),
 
-        if (_hasPensionUpdates) ...[
-          Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => PensionJournalPage(
-                    animalId: _animalId,
-                    animalNom: _nomCtrl.text.isEmpty ? 'Animal' : _nomCtrl.text,
-                    readOnly: true,
-                  ),
-                )),
-                icon: const Icon(Icons.photo_camera_back_outlined, size: 16),
-                label: const Text('📸 Nouvelles de la pension',
-                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF6E9E57),
-                  side: const BorderSide(color: Color(0xFF6E9E57)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ),
-          ),
-        ],
-        if (_hasEducationRapports) ...[
-          Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => EducationRapportsPage(
-                    animalId: _animalId,
-                    animalNom: _nomCtrl.text.isEmpty ? 'Animal' : _nomCtrl.text,
-                  ),
-                )),
-                icon: const Icon(Icons.school_outlined, size: 16),
-                label: const Text('🐾 Suivi de progression',
-                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF7B5EA7),
-                  side: const BorderSide(color: Color(0xFF7B5EA7)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ),
-          ),
-        ],
-        if (_hasDevis) ...[
-          Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => AnimalDevisPage(
-                    animalId: _animalId,
-                    animalNom: _nomCtrl.text.isEmpty ? 'Animal' : _nomCtrl.text,
-                  ),
-                )),
-                icon: const Icon(Icons.request_quote_outlined, size: 16),
-                label: const Text('🧾 Devis reçu(s)',
-                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF0C5C6C),
-                  side: const BorderSide(color: Color(0xFF0C5C6C)),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ),
-          ),
-        ],
+        // Raccourcis vers les onglets de suivi (les contenus complets sont
+        // dans les onglets Documents / Éducation / Pension & Garde).
+        if (_showEducationTab)
+          _tabShortcut('Suivi éducateur / comportementaliste',
+              'Comptes rendus de séance, exercices, devis', Icons.school_outlined,
+              const Color(0xFF7B5EA7), () => _goToTab('Éducation')),
+        if (_showPensionTab)
+          _tabShortcut('Pension & Garde',
+              'Photos, vidéos et nouvelles de votre animal', Icons.photo_camera_back_outlined,
+              const Color(0xFF6E9E57), () => _goToTab('Pension & Garde')),
         // Accès lecture pension actifs
         if (_pensionAcces.isNotEmpty) ...[
           Padding(
@@ -901,6 +886,76 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       ]),
     );
   }
+
+  // ── Navigation entre onglets ──────────────────────────────────────────────
+  List<String> get _tabLabelList => [
+        'Identité', 'Carnet de santé', 'Alimentation', 'Documents',
+        if (_showEducationTab) 'Éducation',
+        if (_showPensionTab) 'Pension & Garde',
+      ];
+
+  void _goToTab(String label) {
+    final i = _tabLabelList.indexOf(label);
+    if (i >= 0 && i < _tabs.length) _tabs.animateTo(i);
+  }
+
+  Widget _tabShortcut(String titre, String sous, IconData icon, Color color, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(children: [
+              Icon(icon, size: 20, color: color),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(titre, style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                    fontWeight: FontWeight.w700, color: color)),
+                Text(sous, style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
+                    color: Color(0xFF6F767B))),
+              ])),
+              Icon(Icons.chevron_right, size: 18, color: color.withValues(alpha: 0.6)),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Onglets Documents / Éducation / Pension ────────────────────────────────
+  Widget _buildDocumentsTab() {
+    if (_animalId == null) {
+      return const _TabEmptyState(
+          icon: Icons.folder_open_outlined,
+          text: 'Enregistrez l\'animal pour attacher des documents.');
+    }
+    return _DocumentsTabP(
+      animalId: _animalId!,
+      animalNom: _nomCtrl.text.isEmpty ? 'Animal' : _nomCtrl.text,
+      documents: _documentsLibres,
+      onChanged: (docs) async {
+        setState(() => _documentsLibres = docs);
+        try {
+          await _supa.from('animaux').update({'documents': docs}).eq('id', _animalId!);
+        } catch (_) {}
+      },
+    );
+  }
+
+  Widget _buildEducationTab() => _EducationTabP(
+        animalId: _animalId,
+        animalNom: _nomCtrl.text.isEmpty ? 'Animal' : _nomCtrl.text,
+      );
+
+  Widget _buildPensionTab() => _PensionTabP(
+        animalId: _animalId,
+        animalNom: _nomCtrl.text.isEmpty ? 'Animal' : _nomCtrl.text,
+      );
 
   Widget _sterilisationBanner() {
     final ech = _sterilEcheance;
@@ -5465,5 +5520,774 @@ class _ChartPainterP extends CustomPainter {
       tp1.paint(canvas, Offset(tx + pad, ty + pad));
       tp2.paint(canvas, Offset(tx + pad, ty + pad + tp1.height + 2));
     }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Onglets Documents / Éducation / Pension & Garde (fiche animal — particulier)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const _kTealDoc = Color(0xFF0C5C6C);
+const _kPurpleEdu = Color(0xFF7B5EA7);
+const _kGreenPension = Color(0xFF6E9E57);
+
+class _TabEmptyState extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _TabEmptyState({required this.icon, required this.text});
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon, size: 52, color: Colors.grey.shade300),
+            const SizedBox(height: 12),
+            Text(text,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500)),
+          ]),
+        ),
+      );
+}
+
+// Catégories de documents attachables par le propriétaire.
+const List<(String, String, IconData)> _kDocCategories = [
+  ('contrat', 'Contrat d\'achat / adoption', Icons.description_outlined),
+  ('pedigree', 'Pédigrée numérique', Icons.workspace_premium_outlined),
+  ('identification', 'Carte d\'identification (I-CAD)', Icons.badge_outlined),
+  ('passeport', 'Passeport européen', Icons.menu_book_outlined),
+  ('assurance', 'Attestation d\'assurance', Icons.shield_outlined),
+  ('vaccination', 'Carnet de vaccination', Icons.vaccines_outlined),
+  ('facture', 'Facture vétérinaire', Icons.receipt_long_outlined),
+  ('autre', 'Autre document administratif', Icons.attach_file),
+];
+
+String _docCatLabel(String? v) =>
+    _kDocCategories.firstWhere((c) => c.$1 == v, orElse: () => _kDocCategories.last).$2;
+IconData _docCatIcon(String? v) =>
+    _kDocCategories.firstWhere((c) => c.$1 == v, orElse: () => _kDocCategories.last).$3;
+
+Future<void> _scheduleDocExpiryReminderP(String animalId, String label, DateTime expiry) async {
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return;
+  var d = expiry.subtract(const Duration(days: 30));
+  if (d.isBefore(DateTime.now())) d = expiry;
+  try {
+    final at8 = DateTime(d.year, d.month, d.day, 8).toUtc();
+    await Supabase.instance.client.from('agenda_events').insert({
+      'uid': uid,
+      'titre': 'Document à renouveler : $label',
+      'type': 'autre',
+      'date_debut': at8.toIso8601String(),
+      'animal_id': int.tryParse(animalId),
+      if (User_Info.activeProfileId.isNotEmpty) 'profile_id': User_Info.activeProfileId,
+      if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
+    });
+  } catch (_) {}
+}
+
+class _DocumentsTabP extends StatefulWidget {
+  final String animalId;
+  final String animalNom;
+  final List<Map<String, dynamic>> documents;
+  final Future<void> Function(List<Map<String, dynamic>>) onChanged;
+  const _DocumentsTabP({
+    required this.animalId,
+    required this.animalNom,
+    required this.documents,
+    required this.onChanged,
+  });
+  @override
+  State<_DocumentsTabP> createState() => _DocumentsTabPState();
+}
+
+class _DocumentsTabPState extends State<_DocumentsTabP> {
+  final _supa = Supabase.instance.client;
+  List<Map<String, dynamic>> _officiels = [];
+  List<Map<String, dynamic>> _certs = [];
+  bool _loading = true;
+  bool _uploading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOfficiels();
+  }
+
+  Future<void> _loadOfficiels() async {
+    try {
+      final docs = await _supa.from('documents_animaux').select('*')
+          .eq('animal_id', widget.animalId).order('created_at', ascending: false);
+      final certs = await _supa.from('certificats_engagement')
+          .select('id, statut, date_remise, token_signature, date_signature_acquereur')
+          .eq('animal_id', widget.animalId).order('date_remise', ascending: false);
+      if (mounted) setState(() {
+        _officiels = List<Map<String, dynamic>>.from(docs);
+        _certs = List<Map<String, dynamic>>.from(certs);
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _pickAndAdd() async {
+    final res = await FilePicker.pickFiles(
+        type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp']);
+    final path = res?.files.single.path;
+    if (path == null) return;
+    final file = File(path);
+
+    if (!mounted) return;
+    String categorie = 'contrat';
+    final nomCtrl = TextEditingController(text: file.path.split(Platform.pathSeparator).last);
+    DateTime? expiration;
+
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 28),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            const Text('Nouveau document', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 14),
+            TextField(
+              controller: nomCtrl,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: InputDecoration(
+                labelText: 'Nom du document',
+                labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: categorie,
+              isExpanded: true,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1F2A2E)),
+              decoration: InputDecoration(
+                labelText: 'Catégorie',
+                labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                isDense: true,
+              ),
+              items: _kDocCategories
+                  .map((c) => DropdownMenuItem(value: c.$1, child: Text(c.$2, overflow: TextOverflow.ellipsis)))
+                  .toList(),
+              onChanged: (v) => setSheet(() => categorie = v ?? 'contrat'),
+            ),
+            const SizedBox(height: 12),
+            InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () async {
+                final d = await showDatePicker(
+                  context: ctx,
+                  initialDate: expiration ?? DateTime.now().add(const Duration(days: 365)),
+                  firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                  lastDate: DateTime(2100),
+                );
+                if (d != null) setSheet(() => expiration = d);
+              },
+              child: InputDecorator(
+                decoration: InputDecoration(
+                  labelText: 'Date d\'expiration (optionnel)',
+                  labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  isDense: true,
+                  suffixIcon: expiration != null
+                      ? IconButton(icon: const Icon(Icons.clear, size: 18), onPressed: () => setSheet(() => expiration = null))
+                      : const Icon(Icons.calendar_today_outlined, size: 18),
+                ),
+                child: Text(
+                  expiration != null ? DateFormat('dd/MM/yyyy').format(expiration!) : 'Aucune',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 14,
+                      color: expiration != null ? const Color(0xFF1F2A2E) : Colors.grey),
+                ),
+              ),
+            ),
+            if (expiration != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('Un rappel sera ajouté à votre agenda 30 jours avant.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+              ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _kTealDoc, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+              ),
+            ),
+          ]),
+        );
+      }),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _uploading = true);
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
+      final ext = file.path.split('.').last;
+      final storagePath =
+          'documents/$uid/${widget.animalId}/${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final url = await uploadDocument(file, storagePath);
+      final entry = <String, dynamic>{
+        'nom': nomCtrl.text.trim().isEmpty ? _docCatLabel(categorie) : nomCtrl.text.trim(),
+        'url': url,
+        'categorie': categorie,
+        'type': ext.toLowerCase() == 'pdf' ? 'application/pdf' : 'image/$ext',
+        'ajoute_le': DateTime.now().toIso8601String().substring(0, 10),
+        if (expiration != null) 'date_expiration': expiration!.toIso8601String().substring(0, 10),
+      };
+      final next = [...widget.documents, entry];
+      await widget.onChanged(next);
+      if (expiration != null) {
+        await _scheduleDocExpiryReminderP(widget.animalId, entry['nom'] as String, expiration!);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Document ajouté ✓'), backgroundColor: _kGreenPension));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _deleteLibre(int index) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Supprimer ce document ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    final next = [...widget.documents]..removeAt(index);
+    await widget.onChanged(next);
+  }
+
+  Future<void> _open(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final libres = widget.documents;
+    return RefreshIndicator(
+      onRefresh: _loadOfficiels,
+      color: _kTealDoc,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+        children: [
+          // Bouton d'ajout
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _uploading ? null : _pickAndAdd,
+              icon: _uploading
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.upload_file_outlined, size: 18),
+              label: Text(_uploading ? 'Envoi…' : 'Ajouter un document',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _kTealDoc, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+
+          if (libres.isNotEmpty) ...[
+            _sectionTitle('Mes documents'),
+            ...libres.asMap().entries.map((e) => _libreCard(e.key, e.value)),
+            const SizedBox(height: 16),
+          ],
+
+          if (_loading)
+            const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator(color: _kTealDoc)))
+          else ...[
+            if (_officiels.isNotEmpty) ...[
+              _sectionTitle('Contrats & documents officiels'),
+              ..._officiels.map(_officielCard),
+              const SizedBox(height: 16),
+            ],
+            if (_certs.isNotEmpty) ...[
+              _sectionTitle('Certificats d\'engagement'),
+              ..._certs.map(_certCard),
+            ],
+          ],
+
+          if (libres.isEmpty && _officiels.isEmpty && _certs.isEmpty && !_loading)
+            const Padding(
+              padding: EdgeInsets.only(top: 40),
+              child: _TabEmptyState(
+                  icon: Icons.folder_open_outlined,
+                  text: 'Aucun document.\nAttachez le contrat d\'achat, le pédigrée, le passeport…'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String t) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(t.toUpperCase(),
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                fontSize: 11, letterSpacing: 0.5, color: Colors.grey.shade500)),
+      );
+
+  Widget _libreCard(int index, Map<String, dynamic> doc) {
+    final exp = doc['date_expiration'] != null ? DateTime.tryParse(doc['date_expiration'].toString()) : null;
+    final expired = exp != null && exp.isBefore(DateTime.now());
+    final soon = exp != null && !expired && exp.difference(DateTime.now()).inDays <= 30;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        leading: CircleAvatar(
+          backgroundColor: _kTealDoc.withValues(alpha: 0.1),
+          child: Icon(_docCatIcon(doc['categorie']?.toString()), color: _kTealDoc, size: 20),
+        ),
+        title: Text(doc['nom']?.toString() ?? 'Document',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(_docCatLabel(doc['categorie']?.toString()),
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+          if (exp != null)
+            Text(
+              expired
+                  ? 'Expiré le ${DateFormat('dd/MM/yyyy').format(exp)}'
+                  : 'Expire le ${DateFormat('dd/MM/yyyy').format(exp)}',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: expired ? Colors.red.shade600 : soon ? Colors.orange.shade700 : Colors.grey.shade500),
+            ),
+        ]),
+        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          IconButton(
+            icon: const Icon(Icons.open_in_new, size: 18, color: _kTealDoc),
+            onPressed: () => _open(doc['url']?.toString() ?? ''),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+            onPressed: () => _deleteLibre(index),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _officielCard(Map<String, dynamic> doc) {
+    final type = doc['type']?.toString() ?? '';
+    final statut = doc['statut']?.toString() ?? 'brouillon';
+    final token = doc['token']?.toString();
+    final url = doc['url']?.toString() ?? doc['pdf_signe_url']?.toString();
+    final date = doc['created_at'] != null
+        ? DateFormat('dd/MM/yyyy').format(DateTime.parse(doc['created_at'].toString()).toLocal())
+        : '';
+    const labels = {
+      'contrat_vente': 'Contrat de vente', 'contrat_reservation': 'Contrat de réservation',
+      'contrat_saillie': 'Contrat de saillie', 'contrat_adoption': 'Contrat d\'adoption',
+      'contrat_education': 'Contrat (éducateur)', 'certificat_cession': 'Certificat de cession',
+      'devis': 'Devis', 'facture': 'Facture',
+    };
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        leading: CircleAvatar(
+          backgroundColor: _kTealDoc.withValues(alpha: 0.1),
+          child: const Icon(Icons.description_outlined, color: _kTealDoc, size: 20),
+        ),
+        title: Text(labels[type] ?? 'Document',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+        subtitle: Row(children: [
+          Text(date, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+          const SizedBox(width: 8),
+          _statutBadge(statut),
+        ]),
+        trailing: (token != null || url != null)
+            ? IconButton(
+                icon: Icon(url != null ? Icons.open_in_new : Icons.draw_outlined, size: 18, color: _kTealDoc),
+                tooltip: url != null ? 'Ouvrir' : 'Lire et signer',
+                onPressed: () {
+                  if (url != null) {
+                    _open(url);
+                  } else {
+                    Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => ContratSignaturePage(token: token)));
+                  }
+                },
+              )
+            : null,
+      ),
+    );
+  }
+
+  Widget _certCard(Map<String, dynamic> cert) {
+    final statut = cert['statut']?.toString() ?? 'en_attente';
+    final signe = statut == 'signe';
+    final date = cert['date_remise'] != null
+        ? DateFormat('dd/MM/yyyy').format(DateTime.parse(cert['date_remise'].toString()))
+        : '';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        leading: CircleAvatar(
+          backgroundColor: _kGreenPension.withValues(alpha: 0.12),
+          child: const Text('✅', style: TextStyle(fontSize: 16)),
+        ),
+        title: const Text('Certificat d\'engagement',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+        subtitle: Row(children: [
+          Text(date, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+          const SizedBox(width: 8),
+          _statutBadge(signe ? 'signe' : 'en_attente'),
+        ]),
+      ),
+    );
+  }
+
+  Widget _statutBadge(String statut) {
+    final cfg = {
+      'signe': (const Color(0xFF2E7D32), 'Signé', const Color(0xFFE8F5E9)),
+      'en_attente': (const Color(0xFF1565C0), 'En attente', const Color(0xFFE3F2FD)),
+      'archive': (Colors.grey.shade600, 'Archivé', Colors.grey.shade200),
+      'refuse': (const Color(0xFFC62828), 'Refusé', const Color(0xFFFFEBEE)),
+    }[statut] ?? (const Color(0xFF8D6E00), 'Brouillon', const Color(0xFFFFF8E1));
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(color: cfg.$3, borderRadius: BorderRadius.circular(6)),
+      child: Text(cfg.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700, color: cfg.$1)),
+    );
+  }
+}
+
+// ─── Onglet Éducation ────────────────────────────────────────────────────────
+
+class _EducationTabP extends StatefulWidget {
+  final String? animalId;
+  final String animalNom;
+  const _EducationTabP({required this.animalId, required this.animalNom});
+  @override
+  State<_EducationTabP> createState() => _EducationTabPState();
+}
+
+class _EducationTabPState extends State<_EducationTabP> {
+  final _supa = Supabase.instance.client;
+  List<Map<String, dynamic>> _rapports = [];
+  List<Map<String, dynamic>> _devis = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (widget.animalId == null) { setState(() => _loading = false); return; }
+    try {
+      final r = await _supa.from('education_progression').select()
+          .eq('animal_id', widget.animalId!).order('date_seance', ascending: false);
+      final d = await _supa.from('devis').select()
+          .eq('animal_id', widget.animalId!).order('created_at', ascending: false);
+      if (mounted) setState(() {
+        _rapports = List<Map<String, dynamic>>.from(r as List);
+        _devis = List<Map<String, dynamic>>.from(d as List);
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  List<String> _exerciceLignes(String? raw) => (raw ?? '')
+      .split(RegExp(r'[\n;]'))
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty)
+      .toList();
+
+  Future<void> _toggleExercice(Map<String, dynamic> rapport, int index, int total) async {
+    final current = (rapport['exercices_coches'] as List?)?.map((e) => e as bool).toList() ??
+        List<bool>.filled(total, false);
+    while (current.length < total) current.add(false);
+    current[index] = !current[index];
+    setState(() => rapport['exercices_coches'] = current);
+    try {
+      await _supa.from('education_progression')
+          .update({'exercices_coches': current}).eq('id', rapport['id']);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: _kPurpleEdu));
+    if (_rapports.isEmpty && _devis.isEmpty) {
+      return const _TabEmptyState(
+          icon: Icons.school_outlined,
+          text: 'Aucun suivi éducatif pour l\'instant.\nLes comptes rendus de votre éducateur apparaîtront ici.');
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+      children: [
+        if (_devis.isNotEmpty) ...[
+          _title('Devis reçus'),
+          ..._devis.map(_devisCard),
+          const SizedBox(height: 18),
+        ],
+        if (_rapports.isNotEmpty) ...[
+          _title('Comptes rendus de séance'),
+          ..._rapports.map(_rapportCard),
+        ],
+      ],
+    );
+  }
+
+  Widget _title(String t) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(t.toUpperCase(),
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                fontSize: 11, letterSpacing: 0.5, color: Colors.grey.shade500)),
+      );
+
+  Widget _rapportCard(Map<String, dynamic> r) {
+    final date = r['date_seance']?.toString() ?? '';
+    final dt = DateTime.tryParse(date);
+    final exos = _exerciceLignes(r['exercices_conseilles']?.toString());
+    final coches = (r['exercices_coches'] as List?)?.map((e) => e == true).toList() ?? const [];
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFECECEC)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(dt != null ? DateFormat('dd/MM/yyyy').format(dt) : date,
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _kPurpleEdu)),
+        const SizedBox(height: 6),
+        if ((r['contenu']?.toString() ?? '').isNotEmpty)
+          Text(r['contenu'].toString(),
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4, color: Color(0xFF1F2A2E))),
+        if (exos.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: const Color(0xFFF3EEFA), borderRadius: BorderRadius.circular(10)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('🏋️ Exercices à faire à la maison',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: _kPurpleEdu)),
+              const SizedBox(height: 4),
+              ...exos.asMap().entries.map((e) {
+                final done = e.key < coches.length && coches[e.key];
+                return InkWell(
+                  onTap: () => _toggleExercice(r, e.key, exos.length),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Icon(done ? Icons.check_box : Icons.check_box_outline_blank,
+                          size: 18, color: done ? _kGreenPension : Colors.grey.shade400),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(e.value,
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12.5,
+                              decoration: done ? TextDecoration.lineThrough : null,
+                              color: done ? Colors.grey.shade500 : const Color(0xFF1F2A2E)))),
+                    ]),
+                  ),
+                );
+              }),
+            ]),
+          ),
+        ],
+      ]),
+    );
+  }
+
+  Widget _devisCard(Map<String, dynamic> d) {
+    final statut = d['statut']?.toString() ?? 'envoye';
+    final token = d['token_acceptation']?.toString();
+    final montant = (d['total_ttc'] as num?)?.toDouble();
+    final labels = {'brouillon': 'Brouillon', 'envoye': 'À signer', 'accepte': 'Accepté', 'refuse': 'Refusé', 'expire': 'Expiré'};
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        leading: const CircleAvatar(backgroundColor: Color(0x1A0C5C6C), child: Text('🧾', style: TextStyle(fontSize: 16))),
+        title: Text(montant != null ? '${montant.toStringAsFixed(2)} €' : 'Devis',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+        subtitle: Text(labels[statut] ?? statut,
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+        trailing: (token != null && statut != 'brouillon')
+            ? IconButton(
+                icon: const Icon(Icons.open_in_new, size: 18, color: _kTealDoc),
+                tooltip: statut == 'envoye' ? 'Voir et répondre' : 'Voir le devis',
+                onPressed: () {
+                  final uri = Uri.tryParse('$kSiteBaseUrl/devis/$token');
+                  if (uri != null) launchUrl(uri, mode: LaunchMode.externalApplication);
+                },
+              )
+            : null,
+      ),
+    );
+  }
+}
+
+// ─── Onglet Pension & Garde ──────────────────────────────────────────────────
+
+class _PensionTabP extends StatefulWidget {
+  final String? animalId;
+  final String animalNom;
+  const _PensionTabP({required this.animalId, required this.animalNom});
+  @override
+  State<_PensionTabP> createState() => _PensionTabPState();
+}
+
+class _PensionTabPState extends State<_PensionTabP> {
+  final _supa = Supabase.instance.client;
+  List<Map<String, dynamic>> _updates = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (widget.animalId == null) { setState(() => _loading = false); return; }
+    try {
+      final rows = await _supa.from('pension_updates').select()
+          .eq('animal_id', widget.animalId!).order('created_at', ascending: false);
+      if (mounted) setState(() {
+        _updates = List<Map<String, dynamic>>.from(rows as List);
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator(color: _kGreenPension));
+    if (_updates.isEmpty) {
+      return const _TabEmptyState(
+          icon: Icons.photo_camera_back_outlined,
+          text: 'Aucune nouvelle pour l\'instant.\nLes photos et messages de la pension ou du pet-sitter apparaîtront ici.');
+    }
+    return Column(children: [
+      Expanded(
+        child: RefreshIndicator(
+          onRefresh: _load,
+          color: _kGreenPension,
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            itemCount: _updates.length,
+            itemBuilder: (_, i) => _updateCard(_updates[i]),
+          ),
+        ),
+      ),
+      SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => PensionJournalPage(
+                  animalId: widget.animalId,
+                  animalNom: widget.animalNom,
+                  readOnly: true,
+                ),
+              )),
+              icon: const Icon(Icons.open_in_full, size: 16),
+              label: const Text('Ouvrir le journal complet (vidéos, réactions…)',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _kGreenPension,
+                side: const BorderSide(color: _kGreenPension),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _updateCard(Map<String, dynamic> u) {
+    final dt = DateTime.tryParse(u['created_at']?.toString() ?? '');
+    final photo = u['photo_url']?.toString();
+    final video = u['video_url']?.toString();
+    final note = u['note']?.toString();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFECECEC)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (photo != null)
+          CachedNetworkImage(
+            imageUrl: photo, width: double.infinity, height: 200, fit: BoxFit.cover,
+            placeholder: (_, __) => Container(height: 200, color: const Color(0xFFEFEFEF)),
+            errorWidget: (_, __, ___) => Container(height: 200, color: const Color(0xFFEFEFEF),
+                child: const Icon(Icons.broken_image_outlined, color: Colors.grey)),
+          )
+        else if (video != null)
+          Container(
+            height: 120, width: double.infinity, color: const Color(0xFF1F2A2E),
+            child: const Center(child: Icon(Icons.play_circle_outline, color: Colors.white, size: 40)),
+          ),
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (note != null && note.isNotEmpty)
+              Text(note, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.35)),
+            if (note != null && note.isNotEmpty) const SizedBox(height: 4),
+            Text(dt != null ? DateFormat('dd/MM/yyyy · HH:mm').format(dt.toLocal()) : '',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+          ]),
+        ),
+      ]),
+    );
   }
 }
