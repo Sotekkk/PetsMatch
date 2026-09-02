@@ -302,6 +302,36 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
             .select('animal_id, date_fin')
             .eq('uid_proprio', uid);
       }
+      // Auto-réparation : animaux ajoutés par ce particulier mais sans ligne
+      // animaux_proprietes (ancien bug — un animal invisible partout). On crée
+      // la ligne manquante à la volée pour le profil actif.
+      try {
+        final mine = await _supa.from('animaux')
+            .select('id')
+            .eq('uid_proprietaire', uid)
+            .isFilter('uid_eleveur', null);
+        final knownIds = ownRows.map((r) => r['animal_id'] as String).toSet();
+        final orphans = List<Map<String, dynamic>>.from(mine as List)
+            .map((a) => a['id'] as String)
+            .where((id) => !knownIds.contains(id))
+            .toList();
+        if (orphans.isNotEmpty) {
+          final today = DateTime.now().toIso8601String().substring(0, 10);
+          await _supa.from('animaux_proprietes').upsert(
+            orphans.map((id) => {
+              'animal_id': id,
+              'uid_proprio': uid,
+              'date_debut': today,
+              if (activeProfileId.isNotEmpty) 'profile_id_proprio': activeProfileId,
+            }).toList(),
+            onConflict: 'animal_id,uid_proprio',
+          );
+          for (final id in orphans) {
+            ownRows.add({'animal_id': id, 'date_fin': null});
+          }
+        }
+      } catch (_) {}
+
       final allIds = (ownRows).map((r) => r['animal_id'] as String).toList();
       final list = allIds.isEmpty ? <Map<String, dynamic>>[] : List<Map<String, dynamic>>.from(
         await _supa.from('animaux').select().inFilter('id', allIds).order('created_at', ascending: false),

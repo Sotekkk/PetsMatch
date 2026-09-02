@@ -353,6 +353,19 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           ...data,
           'created_at': DateTime.now().toIso8601String(),
         });
+        // Historique de propriété — SOURCE DE VÉRITÉ pour la visibilité des
+        // animaux (mes_animaux.dart / user_feed.dart filtrent dessus). Sans
+        // cette ligne, un animal ajouté manuellement par un particulier
+        // n'apparaît nulle part.
+        try {
+          await _supa.from('animaux_proprietes').upsert({
+            'animal_id': id,
+            'uid_proprio': uid,
+            'date_debut': DateTime.now().toIso8601String().substring(0, 10),
+            if (User_Info.activeProfileId.isNotEmpty)
+              'profile_id_proprio': User_Info.activeProfileId,
+          }, onConflict: 'animal_id,uid_proprio');
+        } catch (_) {}
         setState(() { _animalId = id; _photoFile = null; _photoUrl = photoUrl; _editing = false; });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
