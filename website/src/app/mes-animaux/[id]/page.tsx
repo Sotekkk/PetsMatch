@@ -2715,24 +2715,39 @@ export default function AnimalFichePage() {
               <div className="space-y-2">
                 {[
                   { label:'Nom', value:animal.nom },
-                  { label:'Espèce', value: animal.espece === 'autre' && animal.espece_autre ? animal.espece_autre : animal.espece },
+                  { label:'Espèce', value: animal.espece === 'autre'
+                      ? (animal.espece_autre || 'Autre')
+                      : (animal.espece ? animal.espece.charAt(0).toUpperCase()+animal.espece.slice(1) : undefined) },
                   { label:'Race', value:animal.race },
                   { label:'Sexe', value:animal.sexe==='male'?'♂ Mâle':animal.sexe==='femelle'?'♀ Femelle':'Inconnu' },
-                  { label:'Naissance', value:fmtDate(animal.date_naissance) + (animal.date_naissance ? ` (${age(animal.date_naissance)})` : '') },
+                  { label:'Naissance', value: animal.date_naissance ? `${fmtDate(animal.date_naissance)} (${age(animal.date_naissance)})` : undefined },
                   { label:'Couleur', value:animal.couleur },
                   { label:'Identification', value:animal.identification },
-                  { label:'Passeport', value:animal.passeport_europeen },
-                  { label:'Stérilisé(e)', value:animal.sterilise===true?'Oui':animal.sterilise===false?'Non':undefined },
-                  { label:'Type de poil', value:animal.type_poil },
-                  { label:'Taille', value:animal.taille ? animal.taille+' cm' : undefined },
-                  { label:'Poids', value:animal.poids ? animal.poids+' kg' : undefined },
-                ].filter(r=>r.value).map(r=>(
+                  { label:'Passeport', value:animal.passeport_europeen, show: animal.espece !== 'oiseau' },
+                  { label:'Stérilisé(e)', value:animal.sterilise===true?'Oui':'Non' },
+                  { label:'Type de poil', value:animal.type_poil, show: showPoil },
+                  { label:'Taille', value:animal.taille ? animal.taille+' cm' : undefined, show: showTaille },
+                  { label:'Poids', value:animal.poids ? animal.poids+' kg' : undefined, show: animal.espece !== 'oiseau' },
+                ].filter(r=>r.show!==false).map(r=>(
                   <div key={r.label} className="flex gap-2 text-sm">
                     <span className="text-gray-400 w-28 flex-shrink-0">{r.label}</span>
-                    <span className="text-[#1F2A2E] font-medium">{r.value}</span>
+                    <span className={r.value ? 'text-[#1F2A2E] font-medium' : 'text-gray-400 italic'}>
+                      {r.value || 'Non renseigné'}
+                    </span>
                   </div>
                 ))}
-                {animal.description && <p className="text-sm text-gray-600 pt-1 border-t border-gray-100">{animal.description}</p>}
+                <div className="pt-2 border-t border-gray-100 space-y-1">
+                  <p className="text-gray-400 text-xs font-semibold uppercase">Description</p>
+                  <p className={animal.description ? 'text-sm text-gray-600' : 'text-sm text-gray-400 italic'}>
+                    {animal.description || 'Non renseigné'}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-gray-400 text-xs font-semibold uppercase">Notes</p>
+                  <p className={animal.notes ? 'text-sm text-gray-600' : 'text-sm text-gray-400 italic'}>
+                    {animal.notes || 'Non renseigné'}
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -2789,21 +2804,27 @@ export default function AnimalFichePage() {
             </div>
           )}
           {/* Pedigree — vue */}
-          {!editing && (animal.pedigree_lof || animal.club_registre || animal.pedigree_url) && (
+          {!editing && (
             <div className="bg-white rounded-2xl p-4 space-y-2 shadow-sm">
               <h3 className="font-bold text-[#1F2A2E] text-sm uppercase tracking-wide mb-2" style={{ fontFamily:'Galey,sans-serif' }}>🏅 Pedigree & Registre</h3>
-              {animal.pedigree_lof && (
+              <div className="flex gap-2 text-sm">
+                <span className="text-gray-400 w-28 flex-shrink-0">Inscription</span>
+                <span className={animal.pedigree_lof ? 'font-medium text-[#1F2A2E]' : 'text-gray-400 italic'}>
+                  {animal.pedigree_lof || 'Non renseigné'}
+                </span>
+              </div>
+              {animal.pedigree_numero && (
                 <div className="flex gap-2 text-sm">
-                  <span className="text-gray-400 w-28 flex-shrink-0">Inscription</span>
-                  <span className="font-medium text-[#1F2A2E]">{animal.pedigree_lof}</span>
+                  <span className="text-gray-400 w-28 flex-shrink-0">N° pedigree</span>
+                  <span className="font-medium text-[#1F2A2E]">{animal.pedigree_numero}</span>
                 </div>
               )}
-              {animal.club_registre && (
-                <div className="flex gap-2 text-sm">
-                  <span className="text-gray-400 w-28 flex-shrink-0">Club / Registre</span>
-                  <span className="font-medium text-[#1F2A2E]">{animal.club_registre}</span>
-                </div>
-              )}
+              <div className="flex gap-2 text-sm">
+                <span className="text-gray-400 w-28 flex-shrink-0">Club / Registre</span>
+                <span className={animal.club_registre ? 'font-medium text-[#1F2A2E]' : 'text-gray-400 italic'}>
+                  {animal.club_registre || 'Non renseigné'}
+                </span>
+              </div>
               {animal.pedigree_url && (
                 <a href={animal.pedigree_url} target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 text-sm text-[#0C5C6C] hover:underline">📄 Document pedigree</a>

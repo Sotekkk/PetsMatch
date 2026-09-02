@@ -613,12 +613,18 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         // Chips espèce / sexe / stérilisé
         Center(
           child: Wrap(spacing: 8, runSpacing: 8, children: [
-            _viewChip(_capitalize(_espece), _teal),
+            _viewChip(
+              _espece == 'autre' && _especeAutreCtrl.text.trim().isNotEmpty
+                  ? _capitalize(_especeAutreCtrl.text.trim())
+                  : _capitalize(_espece),
+              _teal,
+            ),
             _viewChip(
               _sexe == 'male' ? '♂ Mâle' : _sexe == 'femelle' ? '♀ Femelle' : 'Sexe inconnu',
               Colors.blueGrey,
             ),
-            if (_sterilise) _viewChip('✂️ Stérilisé(e)', _green),
+            _viewChip(_sterilise ? '✂️ Stérilisé(e)' : 'Non stérilisé(e)',
+                _sterilise ? _green : Colors.blueGrey),
           ]),
         ),
         const SizedBox(height: 16),
@@ -627,45 +633,41 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
 
         const SizedBox(height: 8),
 
-        // Infos
-        if (_raceCtrl.text.isNotEmpty) _infoRow('Race', _raceCtrl.text),
-        if (dob != null) _infoRow('Date de naissance', DateFormat('dd/MM/yyyy').format(dob)),
-        if (_couleurCtrl.text.isNotEmpty) _infoRow('Couleur / robe', _couleurCtrl.text),
-        if (_typePoil != null) _infoRow('Type de poil', _typePoil!),
-        if (_tailleCtrl.text.isNotEmpty) _infoRow(_tailleLabelFor(_espece), '${_tailleCtrl.text} cm'),
-        if (_poidsCtrl.text.isNotEmpty) _infoRow('Poids', '${_poidsCtrl.text} kg'),
-        if (_identCtrl.text.isNotEmpty) _infoRow('Identification', _identCtrl.text),
-        if (_passeportCtrl.text.isNotEmpty) _infoRow('Passeport européen', _passeportCtrl.text),
-        if (_pedigree) ...[
-          _infoRow(_pediConfig(_espece).sectionLabel,
-              [if (_pedigreeLof != null) _pedigreeLof!, if (_clubRegistreCtrl.text.isNotEmpty) _clubRegistreCtrl.text].join(' — ')),
-        ],
-        if (_contactsUrgence.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Contacts urgence', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                  fontWeight: FontWeight.w600, color: Colors.grey.shade500, letterSpacing: 0.4)),
-              const SizedBox(height: 6),
-              ..._contactsUrgence.where((c) => c.nom.text.isNotEmpty || c.tel.text.isNotEmpty).map((c) =>
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(children: [
-                    const Icon(Icons.phone_outlined, size: 15, color: Color(0xFF0C5C6C)),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(
-                      [if (c.nom.text.isNotEmpty) c.nom.text, if (c.tel.text.isNotEmpty) c.tel.text].join(' — '),
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1F2A2E)),
-                    )),
-                  ]),
-                ),
-              ),
-              const Divider(height: 20, color: Color(0xFFEEEEEE)),
-            ]),
-          ),
-        ],
-        if (_descCtrl.text.isNotEmpty) _infoRow('Description', _descCtrl.text),
-        if (_notesCtrl.text.isNotEmpty) _infoRow('Notes', _notesCtrl.text),
+        // Toutes les infos du formulaire d'édition — champs vides inclus
+        // (affichés « Non renseigné ») pour que la fiche soit toujours complète.
+        _infoRow('Espèce', _espece == 'autre'
+            ? (_especeAutreCtrl.text.trim().isNotEmpty ? _especeAutreCtrl.text.trim() : 'Autre')
+            : _capitalize(_espece)),
+        _infoRow('Race', _raceCtrl.text, empty: _raceCtrl.text.trim().isEmpty),
+        _infoRow('Date de naissance',
+            dob != null ? DateFormat('dd/MM/yyyy').format(dob) : '', empty: dob == null),
+        _infoRow('Sexe',
+            _sexe == 'male' ? 'Mâle' : _sexe == 'femelle' ? 'Femelle' : 'Inconnu'),
+        _infoRow('Couleur / robe', _couleurCtrl.text, empty: _couleurCtrl.text.trim().isEmpty),
+        _infoRow('Identification (puce / tatouage)', _identCtrl.text,
+            empty: _identCtrl.text.trim().isEmpty),
+        _infoRow('Stérilisation', _sterilise ? 'Stérilisé(e)' : 'Non stérilisé(e)'),
+        _infoRow('Passeport européen', _passeportCtrl.text,
+            empty: _passeportCtrl.text.trim().isEmpty),
+        if (_espece == 'chien' || _espece == 'chat')
+          _infoRow('Type de poil', _typePoil ?? '',
+              empty: _typePoil == null || _typePoil!.isEmpty),
+        _infoRow(_tailleLabelFor(_espece),
+            _tailleCtrl.text.trim().isNotEmpty ? '${_tailleCtrl.text} cm' : '',
+            empty: _tailleCtrl.text.trim().isEmpty),
+        _infoRow('Poids',
+            _poidsCtrl.text.trim().isNotEmpty ? '${_poidsCtrl.text} kg' : '',
+            empty: _poidsCtrl.text.trim().isEmpty),
+        _infoRow(_pediConfig(_espece).sectionLabel, _pedigree
+            ? [
+                _pediConfig(_espece).yesLabel,
+                if (_pedigreeLof != null && _pedigreeLof!.isNotEmpty) _pedigreeLof!,
+                if (_clubRegistreCtrl.text.trim().isNotEmpty) _clubRegistreCtrl.text.trim(),
+              ].join(' · ')
+            : 'Non'),
+        _contactsUrgenceView(),
+        _infoRow('Description', _descCtrl.text, empty: _descCtrl.text.trim().isEmpty),
+        _infoRow('Notes', _notesCtrl.text, empty: _notesCtrl.text.trim().isEmpty),
 
         if (_hasPensionUpdates) ...[
           Padding(
@@ -856,16 +858,49 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     );
   }
 
-  Widget _infoRow(String label, String value) => Padding(
+  Widget _infoRow(String label, String value, {bool empty = false}) => Padding(
     padding: const EdgeInsets.only(bottom: 14),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 11,
           fontWeight: FontWeight.w600, color: Colors.grey.shade500, letterSpacing: 0.4)),
       const SizedBox(height: 4),
-      Text(value, style: const TextStyle(fontFamily: 'Galey', fontSize: 15, color: Color(0xFF1F2A2E))),
+      Text(empty ? 'Non renseigné' : value,
+          style: TextStyle(fontFamily: 'Galey', fontSize: 15,
+              color: empty ? Colors.grey.shade400 : const Color(0xFF1F2A2E),
+              fontStyle: empty ? FontStyle.italic : FontStyle.normal)),
       const Divider(height: 20, color: Color(0xFFEEEEEE)),
     ]),
   );
+
+  Widget _contactsUrgenceView() {
+    final contacts = _contactsUrgence
+        .where((c) => c.nom.text.isNotEmpty || c.tel.text.isNotEmpty)
+        .toList();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Contacts urgence', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+            fontWeight: FontWeight.w600, color: Colors.grey.shade500, letterSpacing: 0.4)),
+        const SizedBox(height: 6),
+        if (contacts.isEmpty)
+          Text('Non renseigné', style: TextStyle(fontFamily: 'Galey', fontSize: 15,
+              color: Colors.grey.shade400, fontStyle: FontStyle.italic))
+        else
+          ...contacts.map((c) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(children: [
+                  const Icon(Icons.phone_outlined, size: 15, color: Color(0xFF0C5C6C)),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    [if (c.nom.text.isNotEmpty) c.nom.text, if (c.tel.text.isNotEmpty) c.tel.text].join(' — '),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1F2A2E)),
+                  )),
+                ]),
+              )),
+        const Divider(height: 20, color: Color(0xFFEEEEEE)),
+      ]),
+    );
+  }
 
   Widget _sterilisationBanner() {
     final ech = _sterilEcheance;
