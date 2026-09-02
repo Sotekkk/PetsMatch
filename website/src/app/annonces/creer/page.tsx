@@ -999,7 +999,7 @@ function CreerAnnoncePageInner() {
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-700">Stérilisé(e)</span>
                 <button type="button" onClick={() => setSterilise(!sterilise)}
-                  className={`w-12 h-6 rounded-full transition-colors relative ${sterilise ? 'bg-[#6E9E57]' : 'bg-gray-200'}`}>
+                  className={`w-12 h-6 rounded-full transition-colors relative ${sterilise ? 'bg-[#6E9E57]' : 'bg-gray-400'}`}>
                   <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform ${sterilise ? 'translate-x-6' : 'translate-x-0.5'}`} />
                 </button>
               </div>

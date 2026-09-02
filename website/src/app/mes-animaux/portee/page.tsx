@@ -607,7 +607,7 @@ export default function PorteePage() {
                 <div className="flex items-center justify-between py-0.5">
                   <span className="text-xs font-medium text-gray-600">Stérilisé(e)</span>
                   <button type="button" onClick={() => updateRow(i, 'sterilise', !row.sterilise)}
-                    className={`w-10 h-5 rounded-full transition-colors relative ${row.sterilise ? 'bg-[#6E9E57]' : 'bg-gray-200'}`}>
+                    className={`w-10 h-5 rounded-full transition-colors relative ${row.sterilise ? 'bg-[#6E9E57]' : 'bg-gray-400'}`}>
                     <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-transform shadow-sm ${row.sterilise ? 'translate-x-5' : 'translate-x-0.5'}`} />
                   </button>
                 </div>

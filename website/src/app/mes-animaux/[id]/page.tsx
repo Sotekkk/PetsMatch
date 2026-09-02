@@ -2694,7 +2694,7 @@ export default function AnimalFichePage() {
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-700">Stérilisé(e)</span>
                   <button onClick={()=>set('sterilise',!animal.sterilise)}
-                    className={`w-12 h-6 rounded-full transition-colors relative ${animal.sterilise ? 'bg-[#6E9E57]' : 'bg-gray-200'}`}>
+                    className={`w-12 h-6 rounded-full transition-colors relative ${animal.sterilise ? 'bg-[#6E9E57]' : 'bg-gray-400'}`}>
                     <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform ${animal.sterilise ? 'translate-x-6' : 'translate-x-0.5'}`}/>
                   </button>
                 </div>

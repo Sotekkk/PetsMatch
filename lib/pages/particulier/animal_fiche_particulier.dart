@@ -1006,6 +1006,11 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
             Switch(
               value: _sterilise,
               activeColor: _teal,
+              // Décoché : le blanc par défaut sur fond gris clair se voit à
+              // peine — piste grise franche + curseur blanc, distincte du
+              // teal actif.
+              inactiveThumbColor: Colors.white,
+              inactiveTrackColor: Colors.grey.shade400,
               onChanged: (v) => setState(() => _sterilise = v),
             ),
           ]),

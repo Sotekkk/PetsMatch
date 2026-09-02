@@ -751,6 +751,11 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
             value: row.sterilise,
             onChanged: (v) => setState(() => row.sterilise = v),
             activeColor: _green,
+            // Décoché : le blanc par défaut sur fond gris clair se voit à
+            // peine — piste grise franche + curseur blanc, distincte du
+            // vert actif.
+            inactiveThumbColor: Colors.white,
+            inactiveTrackColor: Colors.grey.shade400,
           ),
         ]),
         const SizedBox(height: 6),
