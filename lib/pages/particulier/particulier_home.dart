@@ -15,6 +15,7 @@ import 'package:PetsMatch/pages/particulier/user_feed.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
+import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 
@@ -338,6 +339,15 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
         color: Colors.orange.shade700,
         onTap: () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const MesAlertesPage())),
+      ),
+      const SizedBox(height: 10),
+      _QuickTileWide(
+        icon: Icons.groups_outlined,
+        label: 'Communauté',
+        subtitle: 'Balades · Forums · Groupes · Événements',
+        color: const Color(0xFF6E9E57),
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const CommunauteHubPage())),
       ),
       const SizedBox(height: 10),
       _QuickTileWide(
