@@ -1,4 +1,5 @@
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/search/quick_search_page.dart';
 import 'package:PetsMatch/pages/association/animaux/mes_animaux_asso.dart';
 import 'package:PetsMatch/pages/association/equipe/equipe_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
@@ -166,6 +167,7 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
             expandedHeight: 200,
             pinned: true,
             backgroundColor: _teal,
+            actions: const [QuickSearchButton()],
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 fit: StackFit.expand,

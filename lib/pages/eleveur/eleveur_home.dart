@@ -1,4 +1,5 @@
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/search/quick_search_page.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_entree_sortie.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
@@ -324,6 +325,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
       pinned: true,
       backgroundColor: _teal,
       automaticallyImplyLeading: false,
+      actions: const [QuickSearchButton()],
       flexibleSpace: FlexibleSpaceBar(
         background: Container(
           decoration: const BoxDecoration(

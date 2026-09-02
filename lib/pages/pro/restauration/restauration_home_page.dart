@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/search/quick_search_page.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
@@ -148,6 +149,7 @@ class _RestaurationHomePageState extends State<RestaurationHomePage> {
       backgroundColor: _teal,
       foregroundColor: Colors.white,
       automaticallyImplyLeading: false,
+      actions: const [QuickSearchButton()],
       flexibleSpace: FlexibleSpaceBar(
         background: Stack(fit: StackFit.expand, children: [
           if (_bannerUrl != null)

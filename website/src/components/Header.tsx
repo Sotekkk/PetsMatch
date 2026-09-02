@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import QuickSearchModal, { type QuickSearchItem } from '@/components/QuickSearchModal';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
@@ -451,6 +452,83 @@ const MENU_PARTICULIER = [
   },
 ];
 
+// ── Mots-clés de recherche rapide (loupe) — par href ────────────────────────
+// Synonymes / termes courants pour retrouver une fonctionnalité sans fouiller
+// le menu. Fusionnés à l'index au moment de la recherche.
+const SEARCH_KEYWORDS: Record<string, string[]> = {
+  '/mes-animaux': ['carnet de sante', 'sante', 'vaccins', 'vaccination', 'vermifuge', 'antiparasitaire', 'poids', 'courbe de poids', 'fiche animal', 'mes betes', 'chiens', 'chats', 'chirurgie', 'hospitalisation', 'traitement', 'allergie', 'radio'],
+  '/elevage/agenda': ['calendrier', 'rendez-vous', 'planning', 'agenda'],
+  '/elevage/planning': ['protocoles', 'vermifuge', 'soins', 'calendrier sanitaire', 'rappels'],
+  '/elevage/registre-sanitaire': ['suivi sanitaire', 'registre sanitaire'],
+  '/elevage/inventaire': ['stock', 'materiel', 'croquettes', 'medicaments', 'inventaire'],
+  '/elevage/employes': ['salaries', 'equipe', 'personnel', 'employes'],
+  '/elevage/registre-entree-sortie': ['mouvements', 'cheptel', 'entree sortie', 'registre elevage'],
+  '/elevage/contrat': ['contrat de vente', 'contrat de reservation', 'cession', 'contrats'],
+  '/mes-contrats': ['contrats recus', 'mes contrats'],
+  '/elevage/facturation': ['factures', 'devis', 'tva', 'comptabilite', 'facturation'],
+  '/mes-annonces': ['mes annonces', 'portees', 'chiots a vendre'],
+  '/annonces/creer': ['publier une annonce', 'deposer une annonce', 'nouvelle portee', 'vendre', 'nouvelle annonce'],
+  '/annonces': ['trouver un chien', 'adopter', 'acheter', 'chiot', 'chaton', 'compagnon', 'annonces'],
+  '/elevages': ['carte des elevages', 'eleveurs'],
+  '/adoptions': ['adoption', 'adopter', 'refuge', 'annonces adoption'],
+  '/associations': ['associations', 'refuges'],
+  '/animaux-perdus': ['perdu', 'trouve', 'chat perdu', 'chien perdu', 'disparu', 'animal perdu'],
+  '/mes-alertes': ['alertes perdus', 'notifications perdus', 'gerer mes alertes'],
+  '/services': ['annuaire', 'professionnels', 'veterinaire', 'toiletteur', 'educateur', 'pension', 'annuaire pro'],
+  '/communaute': ['groupes', 'forum', 'forums', 'balades', 'balade ludique', 'balades ludiques', 'balade canine', 'evenements', 'lieux pet-friendly', 'lieux naturels', 'dogfriendly', 'dog friendly', 'petfriends', 'promenade', 'communaute'],
+  '/marketplace': ['boutique', 'partenaires', 'reductions', 'bons plans', 'marketplace'],
+  '/mes-taches': ['taches', 'todo', 'rappels', 'mes taches'],
+  '/profil': ['mon profil', 'parametres', 'compte', 'modifier profil'],
+  '/favoris': ['favoris', 'likes', 'mes interactions'],
+  '/messages': ['messagerie', 'chat', 'conversations', 'messages'],
+  '/agenda': ['agenda', 'calendrier', 'rendez-vous', 'rdv'],
+  '/mes-rdv': ['demandes de rdv', 'gerer rdv', 'mes rendez-vous'],
+  '/pro/creneaux': ['disponibilites', 'horaires', 'creneaux'],
+  '/mes-patients': ['patients', 'animaux suivis', 'clients', 'animaux en garde'],
+  '/mes-animaux-acquis': ['animaux adoptes', 'animaux achetes', 'mes acquisitions'],
+  '/mes-animaux-accueil': ['animaux en accueil', 'famille d accueil'],
+  '/mes-employeurs': ['mes employeurs', 'mon travail'],
+  '/mes-associations': ['benevolat', 'mes associations'],
+  // Pension
+  '/pension/registre': ['pensionnaires', 'reservations pension', 'sejours', 'nos pensionnaires'],
+  '/pension/demandes': ['acces fiche', 'demandes acces pensionnaire'],
+  '/pension/chenil': ['logements', 'boxes', 'chenil', 'chatterie'],
+  '/pension/planning': ['occupation', 'planning pension', 'disponibilites pension'],
+  '/pension/entree-sortie': ['arrivees', 'departs', 'check-in', 'check-out', 'entree sortie pension'],
+  '/pension/contrat': ['contrat pension', 'contrat de garde'],
+  '/pension/factures': ['factures pension', 'facturation pension', 'acompte'],
+  '/pension/tarifs': ['tarifs', 'prix', 'tarification pension'],
+  '/pension/abonnement': ['abonnement', 'formule', 'plan pension'],
+  // Garde
+  '/garde/registre': ['visites', 'passages', 'registre visites'],
+  '/garde/devis': ['devis garde'],
+  '/garde/contrat': ['contrat garde'],
+  '/garde/cles': ['cles', 'trousseau', 'gestion des cles'],
+  '/garde/tarifs-clients': ['tarifs clients', 'prix garde'],
+  '/garde/abonnement': ['abonnement garde', 'formule garde'],
+  // Éducation
+  '/education/planning': ['planning des cours', 'cours collectifs', 'seances'],
+  '/education/devis': ['devis', 'nouveau devis'],
+  '/education/contrat': ['contrats education', 'contrat signable', 'mes contrats educateur'],
+  '/education/abonnement': ['abonnement educateur', 'formule', 'ma formule'],
+  // Association
+  '/association': ['mon association', 'refuge'],
+  '/association/animaux': ['animaux association', 'pensionnaires refuge'],
+  '/association/familles-accueil': ['familles d accueil', 'fa'],
+  '/association/chenil': ['hebergements', 'boxes', 'affectation hebergements'],
+  '/association/planning': ['protocoles', 'soins association'],
+  '/association/registre-sanitaire': ['suivi sanitaire association'],
+  '/association/inventaire': ['stock', 'materiel association'],
+  '/association/equipe': ['benevoles', 'employes', 'equipe association'],
+  '/association/registre-entree-sortie': ['mouvements', 'entrees sorties association'],
+  '/association/agenda': ['agenda association', 'calendrier association'],
+  '/association/contrat': ['contrat adoption'],
+  '/association/certificat-engagement': ['certificat engagement', 'certificat'],
+  '/association/facturation': ['dons', 'factures', 'recus fiscaux', 'facturation association'],
+  '/association/annonces': ['annonces association'],
+  '/association/annonces/creer': ['nouvelle annonce adoption'],
+};
+
 // ── Helpers types profil ──────────────────────────────────────────────────────
 
 const PRO_TYPES = new Set(['veterinaire', 'sante', 'education', 'garde', 'pension', 'toilettage', 'photographe', 'marechal_ferrant', 'taxi_animalier']);
@@ -619,6 +697,7 @@ function getNotifUrl(n: Notif): string | null {
 export default function Header() {
   const { user, userData, loading, availableProfiles: authProfiles, activeProfileId: authActiveId, setActiveProfileId: authSetActiveId } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
@@ -727,6 +806,35 @@ export default function Header() {
           }
         : sec)
     : baseMenuSections;
+
+  // ── Index de recherche rapide (loupe) ────────────────────────────────────
+  // À plat : tous les items du menu du profil actif + les liens de nav + les
+  // raccourcis toujours dispo. Scopé au profil courant via `menuSections`.
+  const searchItems: QuickSearchItem[] = useMemo(() => {
+    const seen = new Set<string>();
+    const out: QuickSearchItem[] = [];
+    const add = (href: string, label: string, section: string, icon: string) => {
+      const key = `${href}|${label}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push({ href, label, section, icon, keywords: SEARCH_KEYWORDS[href] });
+    };
+    for (const sec of menuSections) {
+      for (const item of sec.items) {
+        const it = item as { href: string; label: string; icon: string };
+        add(it.href, it.label, sec.section, it.icon);
+      }
+    }
+    for (const l of navLinks) {
+      if (l.href === '/') continue;
+      add(l.href, l.label.replace(/^[^\p{L}]+\s*/u, ''), 'Navigation', '🧭');
+    }
+    add('/favoris', 'Mes interactions', 'Mon Profil', '❤️');
+    add('/messages', 'Messages', 'Mon Profil', '💬');
+    add('/mes-taches', 'Mes tâches', 'Mon Profil', '✅');
+    add(effectiveIsEleveur ? '/elevage/profil/edit' : '/profil', 'Modifier mon profil', 'Mon Profil', '⚙️');
+    return out;
+  }, [menuSections, navLinks, effectiveIsEleveur]);
 
   // ── Détection famille d'accueil & employé/bénévole ───────────────────────
   useEffect(() => {
@@ -969,6 +1077,16 @@ export default function Header() {
         <div className="hidden md:flex items-center gap-3 flex-shrink-0">
           {loading ? null : user ? (
             <>
+            {/* ── Loupe recherche rapide ── */}
+            <button
+              onClick={() => setSearchOpen(true)}
+              title="Rechercher une fonctionnalité"
+              className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+              </svg>
+            </button>
+
             {/* ── Enveloppe messages ── */}
             <Link href="/messages"
               className="relative w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors">
@@ -1257,8 +1375,18 @@ export default function Header() {
           )}
         </div>
 
-        {/* Mobile : cloche + hamburger */}
+        {/* Mobile : loupe + cloche + hamburger */}
         <div className="md:hidden flex items-center gap-2">
+          {user && (
+            <button
+              onClick={() => setSearchOpen(true)}
+              title="Rechercher une fonctionnalité"
+              className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+              </svg>
+            </button>
+          )}
           {user && (
             <Link href="/messages" className="relative w-9 h-9 rounded-full bg-white/10 flex items-center justify-center">
               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1459,6 +1587,9 @@ export default function Header() {
           onClose={() => setRenewDialog(null)}
         />
       )}
+
+      {/* Recherche rapide (loupe) */}
+      <QuickSearchModal open={searchOpen} onClose={() => setSearchOpen(false)} items={searchItems} />
     </header>
   );
 }
