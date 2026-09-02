@@ -103,6 +103,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   List<Map<String, dynamic>> _vermifuges = [];
   List<Map<String, dynamic>> _antiparasitaires = [];
   List<Map<String, dynamic>> _allergies = [];
+  List<Map<String, dynamic>> _chirurgies = [];
   List<Map<String, dynamic>> _poids = [];
 
   Map<String, List<String>> _allBreeds = {};
@@ -274,6 +275,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         _supa.from('antiparasitaires').select().eq('animal_id', _animalId!).order('date', ascending: false),
         _supa.from('allergies').select().eq('animal_id', _animalId!).order('date', ascending: false),
         _supa.from('poids').select().eq('animal_id', _animalId!).order('date', ascending: false),
+        _supa.from('chirurgies').select().eq('animal_id', _animalId!).order('date', ascending: false),
       ]);
       if (!mounted) return;
       setState(() {
@@ -284,6 +286,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         _antiparasitaires = List<Map<String, dynamic>>.from(results[4]);
         _allergies = List<Map<String, dynamic>>.from(results[5]);
         _poids = List<Map<String, dynamic>>.from(results[6]);
+        _chirurgies = List<Map<String, dynamic>>.from(results[7]);
         _loadingHealth = false;
       });
     } catch (_) {
@@ -1460,6 +1463,31 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
             ),
           ),
           _HealthSection(
+            title: 'Chirurgie / Hospitalisation',
+            icon: Icons.local_hospital_outlined,
+            color: const Color(0xFFC2185B),
+            records: _chirurgies,
+            onAdd: _showChirurgieSheet,
+            renderRecord: (r) {
+              final st = r['statut']?.toString();
+              final label = st == 'realise' ? 'Réalisée' : st == 'annule' ? 'Annulée' : 'Prévue';
+              final t = r['type'] == 'hospitalisation' ? 'Hospitalisation' : 'Chirurgie';
+              return _RecordTile(
+                title: r['intitule'] ?? t,
+                subtitle: r['date'] != null ? '$label le ${_fmtDate(r['date'])}' : label,
+                trailing: r['clinique'] ?? r['veterinaire'],
+                onDelete: () => _deleteRecord('chirurgies', r['id'], _chirurgies),
+                onTap: () => _showRecordDetail('Chirurgie / Hospitalisation', r, [
+                  ('Intervention', 'intitule'), ('Type', 'type'), ('Date', 'date'),
+                  ('Statut', 'statut'), ('Clinique / vétérinaire', 'clinique'),
+                  ('Protocole pré-opératoire', 'protocole_preop'),
+                  ('Protocole post-opératoire', 'protocole_postop'),
+                  ('Notes', 'notes'),
+                ]),
+              );
+            },
+          ),
+          _HealthSection(
             title: 'Allergies',
             icon: Icons.warning_amber,
             color: const Color(0xFFFF9800),
@@ -1818,6 +1846,51 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
         'created_at': DateTime.now().toIso8601String(),
       });
+      await _loadHealthRecords();
+    });
+  }
+
+  void _showChirurgieSheet() {
+    final intitule = TextEditingController(), clinique = TextEditingController(),
+        preop = TextEditingController(), postop = TextEditingController(),
+        notes = TextEditingController();
+    DateTime? date;
+    String type = 'chirurgie', statut = 'prevu';
+    _openSheet('Chirurgie / Hospitalisation', (ss) => [
+      _SDrop(label: 'Type', value: type, options: const ['chirurgie', 'hospitalisation'],
+          onChanged: (v) => ss(() => type = v ?? 'chirurgie')),
+      _SFld(ctrl: intitule, label: 'Intervention', hint: 'Ex: Stérilisation, Détartrage sous AG...'),
+      _SDate(label: 'Date (prévue ou réalisée)', date: date, onPicked: (d) => ss(() {
+        date = d;
+        statut = d.isBefore(DateTime.now()) ? 'realise' : 'prevu';
+      })),
+      _SDrop(label: 'Statut', value: statut, options: const ['prevu', 'realise', 'annule'],
+          onChanged: (v) => ss(() => statut = v ?? 'prevu')),
+      _SFld(ctrl: clinique, label: 'Clinique / vétérinaire', hint: 'Nom de la clinique'),
+      _SFld(ctrl: preop, label: 'Protocole pré-opératoire', hint: 'Jeûne, prémédication, anesthésie...', maxLines: 3),
+      _SFld(ctrl: postop, label: 'Protocole post-opératoire', hint: 'Analgésie, soins de plaie, repos, contrôle...', maxLines: 3),
+      _SFld(ctrl: notes, label: 'Notes', hint: 'Notes'),
+    ], () async {
+      if (intitule.text.trim().isEmpty || date == null) return;
+      await _supa.from('chirurgies').insert({
+        'id': '${DateTime.now().millisecondsSinceEpoch}',
+        'animal_id': _animalId!,
+        'type': type,
+        'intitule': intitule.text.trim(),
+        'date': date!.toIso8601String().substring(0, 10),
+        'statut': statut,
+        'protocole_preop': preop.text.trim().isEmpty ? null : preop.text.trim(),
+        'protocole_postop': postop.text.trim().isEmpty ? null : postop.text.trim(),
+        'clinique': clinique.text.trim().isEmpty ? null : clinique.text.trim(),
+        'notes': notes.text.trim().isEmpty ? null : notes.text.trim(),
+        'created_at': DateTime.now().toIso8601String(),
+      });
+      if (statut == 'prevu' && date!.isAfter(DateTime.now())) {
+        await _scheduleRappelAgenda(
+          dateRappel: date!,
+          titre: '${type == 'hospitalisation' ? 'Hospitalisation' : 'Chirurgie'} prévue — ${intitule.text.trim()} (${_nomCtrl.text})',
+        );
+      }
       await _loadHealthRecords();
     });
   }

@@ -4305,6 +4305,7 @@ class _CarnetSanteTab extends StatelessWidget {
     (key: 'vermifuges',       label: 'Vermifuges',            icon: Icons.bug_report_outlined,           color: Color(0xFF6E9E57)),
     (key: 'antiparasitaires', label: 'Antiparasitaires',      icon: Icons.pest_control_outlined,         color: Color(0xFF5B8648)),
     (key: 'traitements',      label: 'Traitements',           icon: Icons.medication_outlined,           color: Color(0xFF8D6E63)),
+    (key: 'chirurgies',       label: 'Chirurgie / Hospitalisation', icon: Icons.local_hospital_outlined, color: Color(0xFFC2185B)),
     (key: 'allergies',        label: 'Allergies',             icon: Icons.warning_amber_outlined,        color: Color(0xFFE25C5C)),
     (key: 'poids',            label: 'Courbe de poids',       icon: Icons.monitor_weight_outlined,       color: Color(0xFF5F9EAA)),
     (key: 'visites',          label: 'Visites vétérinaires',  icon: Icons.medical_services_outlined,     color: Color(0xFF26A69A)),
@@ -4417,6 +4418,7 @@ class SanteDetailPage extends StatelessWidget {
       case 'vermifuges':       return AddVermifugeDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'antiparasitaires': return AddAntiparasitaireDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'traitements':      return _AddTraitementDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
+      case 'chirurgies':       return AddChirurgieDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'allergies':        return _AddAllergieDialog(animalId: animalId);
       case 'visites':          return _AddVisiteDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'radios':           return _AddRadioDialog(animalId: animalId);
@@ -4481,6 +4483,7 @@ class _SanteListState extends State<_SanteList> {
     if (widget.collection == 'traitements')      return data['nom'] ?? data['type'] ?? 'Traitement';
     if (widget.collection == 'vermifuges')       return data['produit'] ?? 'Vermifuge';
     if (widget.collection == 'antiparasitaires') return data['produit'] ?? data['type'] ?? 'Antiparasitaire';
+    if (widget.collection == 'chirurgies')       return data['intitule'] ?? (data['type'] == 'hospitalisation' ? 'Hospitalisation' : 'Chirurgie');
     if (widget.collection == 'allergies')        return data['description'] ?? data['type'] ?? 'Allergie';
     if (widget.collection == 'radios')           return data['titre'] ?? 'Radio / Examen';
     return data['motif'] ?? 'Visite';
@@ -4894,6 +4897,8 @@ class _SanteCard extends StatelessWidget {
     'motif': 'Motif', 'diagnostic': 'Diagnostic', 'notes': 'Notes',
     'valeur': 'Poids (kg)', 'titre': 'Titre',
     'image_url': 'Pièce jointe', 'doc_url': 'Document',
+    'intitule': 'Intervention', 'statut': 'Statut', 'clinique': 'Clinique',
+    'protocole_preop': 'Protocole pré-opératoire', 'protocole_postop': 'Protocole post-opératoire',
   };
 
   static String _fmtVal(String key, dynamic val) {
@@ -4917,6 +4922,12 @@ class _SanteCard extends StatelessWidget {
       case 'traitements':      return v('posologie');
       case 'visites':          return v('diagnostic') ?? v('notes');
       case 'radios':           return v('notes');
+      case 'chirurgies': {
+        final st = data['statut']?.toString();
+        final label = st == 'realise' ? 'Réalisée' : st == 'annule' ? 'Annulée' : 'Prévue';
+        final t = data['type'] == 'hospitalisation' ? 'Hospitalisation' : 'Chirurgie';
+        return '$t · $label${v('clinique') != null ? ' — ${v('clinique')}' : ''}';
+      }
       default:                 return null;
     }
   }
@@ -5147,6 +5158,7 @@ class _QuickEditSheetState extends State<_QuickEditSheet> {
     'visites':          [('veterinaire','Vétérinaire',false,false),('diagnostic','Diagnostic',false,true),('notes','Notes',false,true)],
     'radios':           [('titre','Titre *',true,false),('notes','Notes',false,true)],
     'allergies':        [('description','Description *',true,true)],
+    'chirurgies':       [('intitule','Intervention *',true,false),('clinique','Clinique / vétérinaire',false,false),('protocole_preop','Protocole pré-opératoire',false,true),('protocole_postop','Protocole post-opératoire',false,true),('notes','Notes',false,true)],
   };
 
   late final Map<String, TextEditingController> _ctrls;
@@ -6663,6 +6675,86 @@ class AddAntiparasitaireDialogState extends State<AddAntiparasitaireDialog> {
     }
     return true;
   });
+}
+
+// ── Chirurgie / Hospitalisation ─────────────────────────────────────────────
+// Sert surtout à PLANIFIER : date prévue + protocole pré-op (jeûne,
+// prémédication, anesthésie…) et post-op (analgésie, soins, contrôle…).
+class AddChirurgieDialog extends StatefulWidget {
+  final String animalId;
+  final String source;
+  final String? vetId;
+  final String? vetName;
+  const AddChirurgieDialog({super.key, required this.animalId,
+      this.source = 'owner', this.vetId, this.vetName});
+  @override
+  State<AddChirurgieDialog> createState() => _AddChirurgieDialogState();
+}
+
+class _AddChirurgieDialogState extends State<AddChirurgieDialog> {
+  final _intitule = TextEditingController();
+  final _clinique = TextEditingController();
+  final _preop    = TextEditingController();
+  final _postop   = TextEditingController();
+  final _notes    = TextEditingController();
+  String _type   = 'chirurgie';
+  String _statut = 'prevu';
+  DateTime? _date;
+
+  @override
+  void dispose() {
+    _intitule.dispose(); _clinique.dispose(); _preop.dispose();
+    _postop.dispose(); _notes.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => _BaseDialog(
+    title: 'Chirurgie / Hospitalisation',
+    fields: [
+      _DDrop('Type', _type, const ['chirurgie', 'hospitalisation'],
+          (v) => setState(() => _type = v ?? 'chirurgie')),
+      _DF('Intervention *', _intitule),
+      _DD('Date (prévue ou réalisée) *', _date, (d) {
+        setState(() {
+          _date = d;
+          _statut = d.isBefore(DateTime.now()) ? 'realise' : 'prevu';
+        });
+      }),
+      _DDrop('Statut', _statut, const ['prevu', 'realise', 'annule'],
+          (v) => setState(() => _statut = v ?? 'prevu')),
+      _DF('Clinique / vétérinaire', _clinique),
+      _DF('Protocole pré-opératoire\n(jeûne, prémédication, anesthésie…)', _preop, maxLines: 3),
+      _DF('Protocole post-opératoire\n(analgésie, soins de plaie, repos, contrôle…)', _postop, maxLines: 3),
+      _DF('Notes', _notes, maxLines: 2),
+    ],
+    onSave: () async {
+      if (_intitule.text.trim().isEmpty || _date == null) return false;
+      final id = DateTime.now().microsecondsSinceEpoch.toString();
+      await Supabase.instance.client.from('chirurgies').insert({
+        'id': id, 'animal_id': widget.animalId,
+        'type': _type,
+        'intitule': _intitule.text.trim(),
+        'date': _date!.toIso8601String(),
+        'statut': _statut,
+        'protocole_preop': _preop.text.trim(),
+        'protocole_postop': _postop.text.trim(),
+        'clinique': _clinique.text.trim(),
+        'veterinaire': widget.vetName ?? _clinique.text.trim(),
+        'notes': _notes.text.trim(),
+        'source': widget.source,
+        if (widget.vetId != null) 'vet_id': widget.vetId,
+      });
+      if (_statut == 'prevu' && _date!.isAfter(DateTime.now())) {
+        await _scheduleRappelAgenda(
+          animalId: widget.animalId,
+          dateRappel: _date!,
+          titre: '${_type == 'hospitalisation' ? 'Hospitalisation' : 'Chirurgie'} prévue — ${_intitule.text.trim()}',
+        );
+      }
+      return true;
+    },
+  );
 }
 
 class _AddAllergieDialog extends StatefulWidget {

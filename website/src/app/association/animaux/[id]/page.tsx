@@ -74,6 +74,16 @@ const HEALTH_SECTIONS = [
     fields: [{ key: 'produit', label: 'Produit', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'notes', label: 'Notes' }] },
   { table: 'traitements',      label: 'Traitements',        icon: '💊', color: '#0C5C6C',
     fields: [{ key: 'traitement', label: 'Traitement', required: true }, { key: 'date_debut', label: 'Début', type: 'date' }, { key: 'date_fin', label: 'Fin', type: 'date' }, { key: 'notes', label: 'Notes' }] },
+  { table: 'chirurgies',       label: 'Chirurgie / Hospitalisation', icon: '🏥', color: '#C2185B',
+    fields: [
+      { key: 'intitule', label: 'Intervention (ex : stérilisation)', required: true },
+      { key: 'date', label: 'Date (prévue ou réalisée)', type: 'date', required: true },
+      { key: 'statut', label: 'Statut (prevu / realise / annule)' },
+      { key: 'clinique', label: 'Clinique / vétérinaire' },
+      { key: 'protocole_preop', label: 'Protocole pré-opératoire (jeûne, anesthésie…)', type: 'textarea' },
+      { key: 'protocole_postop', label: 'Protocole post-opératoire (analgésie, soins, contrôle…)', type: 'textarea' },
+      { key: 'notes', label: 'Notes' },
+    ] },
   { table: 'visites',          label: 'Visites vétérinaires', icon: '🏥', color: '#5C7A9E',
     fields: [{ key: 'motif', label: 'Motif', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'veterinaire', label: 'Vétérinaire' }, { key: 'notes', label: 'Notes' }] },
   { table: 'poids',            label: 'Suivi du poids',     icon: '⚖️', color: '#9E6E57',
@@ -92,8 +102,13 @@ function AddForm({ fields, onSave, onCancel, saving }:
           <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 block">
             {f.label}{f.required && <span className="text-red-400 ml-0.5">*</span>}
           </label>
-          <input type={f.type ?? 'text'} value={form[f.key] ?? ''}
-            onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))} className={cls} />
+          {f.type === 'textarea' ? (
+            <textarea rows={3} value={form[f.key] ?? ''}
+              onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))} className={cls} />
+          ) : (
+            <input type={f.type ?? 'text'} value={form[f.key] ?? ''}
+              onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))} className={cls} />
+          )}
         </div>
       ))}
       <div className="flex gap-2 pt-1">

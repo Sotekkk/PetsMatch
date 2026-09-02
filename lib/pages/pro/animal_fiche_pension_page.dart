@@ -42,6 +42,7 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
   List<Map<String, dynamic>> _traitements     = [];
   List<Map<String, dynamic>> _allergies       = [];
   List<Map<String, dynamic>> _visites         = [];
+  List<Map<String, dynamic>> _chirurgies      = [];
   List<Map<String, dynamic>> _poids           = [];
 
   // Alimentation
@@ -97,6 +98,7 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
         _supa.from('poids').select().eq('animal_id', widget.animalId).order('date', ascending: false),
         _supa.from('visites').select().eq('animal_id', widget.animalId).order('date', ascending: false),
         _supa.from('alimentations').select().eq('animal_id', widget.animalId).maybeSingle(),
+        _supa.from('chirurgies').select().eq('animal_id', widget.animalId).order('date', ascending: false),
       ]);
       if (!mounted) return;
       setState(() {
@@ -109,6 +111,7 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
         _poids            = _toList(results[6]);
         _visites          = _toList(results[7]);
         _alimentation     = results[8] as Map<String, dynamic>?;
+        _chirurgies       = _toList(results[9]);
         _loading          = false;
       });
 
@@ -291,6 +294,7 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
                         traitements: _traitements,
                         allergies: _allergies,
                         visites: _visites,
+                        chirurgies: _chirurgies,
                         poids: _poids,
                         fmtDate: _fmtDate,
                         onAddVermifuge: ({renouvellementDe}) => _addVermifuge(renouvellementDe: renouvellementDe),
@@ -504,6 +508,7 @@ class _SanteTab extends StatelessWidget {
   final List<Map<String, dynamic>> traitements;
   final List<Map<String, dynamic>> allergies;
   final List<Map<String, dynamic>> visites;
+  final List<Map<String, dynamic>> chirurgies;
   final List<Map<String, dynamic>> poids;
   final String Function(String?) fmtDate;
   final void Function({Map<String, dynamic>? renouvellementDe}) onAddVermifuge;
@@ -516,6 +521,7 @@ class _SanteTab extends StatelessWidget {
     required this.traitements,
     required this.allergies,
     required this.visites,
+    required this.chirurgies,
     required this.poids,
     required this.fmtDate,
     required this.onAddVermifuge,
@@ -582,6 +588,31 @@ class _SanteTab extends StatelessWidget {
           date: fmtDate(v['date'] as String?),
           extra: (v['diagnostic'] ?? '').toString().isNotEmpty ? v['diagnostic'].toString() : null,
         ),
+      ),
+      const SizedBox(height: 16),
+
+      // Chirurgie / Hospitalisation — important pour la pension (interventions
+      // prévues pendant le séjour, consignes post-opératoires…)
+      _HealthSection(
+        title: 'Chirurgie / Hospitalisation',
+        color: const Color(0xFFC2185B),
+        icon: Icons.local_hospital_outlined,
+        items: chirurgies,
+        buildRow: (c) {
+          final st = c['statut']?.toString();
+          final label = st == 'realise' ? 'Réalisée' : st == 'annule' ? 'Annulée' : 'Prévue';
+          final t = c['type'] == 'hospitalisation' ? 'Hospitalisation' : 'Chirurgie';
+          final proto = [
+            if ((c['protocole_preop'] ?? '').toString().isNotEmpty) 'Pré-op : ${c['protocole_preop']}',
+            if ((c['protocole_postop'] ?? '').toString().isNotEmpty) 'Post-op : ${c['protocole_postop']}',
+          ].join('\n');
+          return _MedRow(
+            label: c['intitule']?.toString() ?? t,
+            sub: '$t · $label${(c['clinique'] ?? '').toString().isNotEmpty ? ' — ${c['clinique']}' : ''}',
+            date: fmtDate(c['date'] as String?),
+            extra: proto.isNotEmpty ? proto : null,
+          );
+        },
       ),
       const SizedBox(height: 16),
 

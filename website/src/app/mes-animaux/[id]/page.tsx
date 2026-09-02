@@ -1455,7 +1455,7 @@ export default function AnimalFichePage() {
 
   // ── État santé
   const [health, setHealth] = useState<Record<string, HealthRecord[]>>({
-    vaccinations:[], traitements:[], visites:[], vermifuges:[], antiparasitaires:[], allergies:[], poids:[]
+    vaccinations:[], traitements:[], visites:[], vermifuges:[], antiparasitaires:[], chirurgies:[], allergies:[], poids:[]
   });
   const [addOpen, setAddOpen] = useState<string|null>(null);
   const [savingHealth, setSavingHealth] = useState(false);
@@ -1559,7 +1559,7 @@ export default function AnimalFichePage() {
 
   const loadHealth = useCallback(async () => {
     if (!id || isNew) return;
-    const tables = ['vaccinations','traitements','visites','vermifuges','antiparasitaires','allergies','poids'];
+    const tables = ['vaccinations','traitements','visites','vermifuges','antiparasitaires','chirurgies','allergies','poids'];
     const results = await Promise.all(
       tables.map(t => supabase.from(t).select('*').eq('animal_id', id).order('date', { ascending: false }))
     );
@@ -3343,6 +3343,38 @@ export default function AnimalFichePage() {
                 fields={[{key:'nom',label:'Nom'},{key:'type',label:'Type'},{key:'description_maladie',label:'Maladie'},{key:'posologie',label:'Posologie'},{key:'date',label:'Début'},{key:'date_fin',label:'Fin'}]}/>
             ))}
             {health.traitements.length===0 && <p className="p-4 text-sm text-gray-400">Aucun traitement</p>}
+          </HealthSection>
+
+          {/* Chirurgie / Hospitalisation */}
+          <HealthSection id="health-chirurgies" defaultOpen={catParam==='chirurgies'}
+            title="Chirurgie / Hospitalisation" icon="🏥" color="#C2185B" count={health.chirurgies.length}
+            onAdd={canWriteSante ? ()=>setAddOpen(addOpen==='chirurgies'?null:'chirurgies') : undefined}
+            addFormOpen={addOpen==='chirurgies'}
+            addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
+              onSave={d=>saveHealthRecord('chirurgies', { ...d, type: d.type || 'chirurgie', statut: d.statut || 'prevu' })}
+              fields={[
+                {key:'type',label:'Type',type:'select',options:[{value:'chirurgie',label:'Chirurgie'},{value:'hospitalisation',label:'Hospitalisation'}]},
+                {key:'intitule',label:'Intervention (ex : stérilisation, détartrage sous AG)',required:true},
+                {key:'date',label:'Date (prévue ou réalisée)',type:'date',required:true},
+                {key:'statut',label:'Statut',type:'select',options:[{value:'prevu',label:'Prévue'},{value:'realise',label:'Réalisée'},{value:'annule',label:'Annulée'}]},
+                {key:'clinique',label:'Clinique / vétérinaire'},
+                {key:'protocole_preop',label:'Protocole pré-opératoire (jeûne, prémédication, anesthésie…)',type:'textarea'},
+                {key:'protocole_postop',label:'Protocole post-opératoire (analgésie, soins de plaie, repos, contrôle…)',type:'textarea'},
+                {key:'notes',label:'Notes'},
+              ]}/>}>
+            {health.chirurgies.map(r=>(
+              <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('chirurgies',r.id)}
+                onSave={d=>updateHealthRecord('chirurgies',r.id,d)} saving={savingHealth} canWrite={canWriteSante}
+                fields={[
+                  {key:'intitule',label:'Intervention',required:true},
+                  {key:'type',label:'Type'},{key:'date',label:'Date',type:'date'},{key:'statut',label:'Statut'},
+                  {key:'clinique',label:'Clinique / vétérinaire'},
+                  {key:'protocole_preop',label:'Protocole pré-opératoire',type:'textarea'},
+                  {key:'protocole_postop',label:'Protocole post-opératoire',type:'textarea'},
+                  {key:'notes',label:'Notes'},
+                ]}/>
+            ))}
+            {health.chirurgies.length===0 && <p className="p-4 text-sm text-gray-400">Aucune intervention</p>}
           </HealthSection>
 
           {/* Allergies */}
