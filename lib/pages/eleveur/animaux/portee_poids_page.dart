@@ -38,6 +38,10 @@ class _PorteePoidsPageState extends State<PorteePoidsPage> {
   bool _loading = true;
   Map<String, List<Map<String, dynamic>>> _poidsPerAnimal = {};
 
+  // Point sélectionné sur le graphe comparatif (tap) → info-bulle.
+  String? _selId;
+  int? _selIdx;
+
   @override
   void initState() {
     super.initState();
@@ -122,11 +126,15 @@ class _PorteePoidsPageState extends State<PorteePoidsPage> {
     // Séries pour le graphe — uniquement les bébés qui ont des pesées.
     final series = <String, List<Offset>>{};
     final colorMap = <String, Color>{};
+    final nameMap = <String, String>{};
     for (var i = 0; i < widget.animals.length; i++) {
       final a = widget.animals[i];
       final id = a['id'] as String?;
       if (id == null) continue;
       colorMap[id] = _colorFor(i);
+      nameMap[id] = (a['nom'] as String?)?.trim().isNotEmpty == true
+          ? a['nom'] as String
+          : 'Bébé ${i + 1}';
       final docs = _poidsPerAnimal[id] ?? [];
       if (docs.isEmpty) continue;
       final birth = widget.dateNaissance ??
@@ -171,9 +179,31 @@ class _PorteePoidsPageState extends State<PorteePoidsPage> {
               : ClipRRect(
                   borderRadius: BorderRadius.circular(16),
                   child: LayoutBuilder(
-                    builder: (_, __) => CustomPaint(
-                      painter: _PorteeChartPainter(series: series, colors: colorMap),
-                      child: const SizedBox.expand(),
+                    builder: (_, c) => GestureDetector(
+                      onTapDown: (d) {
+                        final hit = _PorteeChartPainter.nearestPoint(
+                            d.localPosition, Size(c.maxWidth, c.maxHeight), series);
+                        setState(() {
+                          if (hit == null ||
+                              (hit.$1 == _selId && hit.$2 == _selIdx)) {
+                            _selId = null;
+                            _selIdx = null;
+                          } else {
+                            _selId = hit.$1;
+                            _selIdx = hit.$2;
+                          }
+                        });
+                      },
+                      child: CustomPaint(
+                        painter: _PorteeChartPainter(
+                          series: series,
+                          colors: colorMap,
+                          names: nameMap,
+                          selId: _selId,
+                          selIdx: _selIdx,
+                        ),
+                        child: const SizedBox.expand(),
+                      ),
                     ),
                   ),
                 ),
@@ -583,21 +613,27 @@ class _BebePoidsSheetState extends State<_BebePoidsSheet> {
 class _PorteeChartPainter extends CustomPainter {
   final Map<String, List<Offset>> series;   // animalId → [(xDays, yKg)]
   final Map<String, Color> colors;
+  final Map<String, String> names;
+  final String? selId;
+  final int? selIdx;
 
   static const _l = 46.0, _t = 24.0, _r = 12.0, _b = 28.0;
 
-  const _PorteeChartPainter({required this.series, required this.colors});
+  const _PorteeChartPainter({
+    required this.series,
+    required this.colors,
+    this.names = const {},
+    this.selId,
+    this.selIdx,
+  });
 
   @override
-  bool shouldRepaint(_PorteeChartPainter o) => o.series != series;
+  bool shouldRepaint(_PorteeChartPainter o) =>
+      o.series != series || o.selId != selId || o.selIdx != selIdx;
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (series.isEmpty) return;
-    final w = size.width - _l - _r;
-    final h = size.height - _t - _b;
-
-    // Compute global bounds
+  // Bornes globales de toutes les séries.
+  static ({double minX, double rangeX, double baseY, double rangeY})? _bounds(
+      Map<String, List<Offset>> series) {
     double minX = double.infinity, maxX = -double.infinity;
     double minY = double.infinity, maxY = -double.infinity;
     for (final pts in series.values) {
@@ -608,17 +644,63 @@ class _PorteeChartPainter extends CustomPainter {
         if (p.dy > maxY) maxY = p.dy;
       }
     }
-    if (!minX.isFinite) return;
-
+    if (!minX.isFinite) return null;
     final rangeX = (maxX - minX) < 1 ? 1.0 : (maxX - minX);
     final rangeY = (maxY - minY) < 0.001 ? 1.0 : (maxY - minY) * 1.25;
-    final baseY = minY - rangeY * 0.1;
+    return (minX: minX, rangeX: rangeX, baseY: minY - rangeY * 0.1, rangeY: rangeY);
+  }
 
-    Offset toC(Offset d) {
-      final x = _l + (rangeX < 1 ? w / 2 : (d.dx - minX) / rangeX * w);
-      final y = _t + h - ((d.dy - baseY) / rangeY) * h;
-      return Offset(x, y);
+  static Offset _toCanvas(Offset d, Size size,
+      ({double minX, double rangeX, double baseY, double rangeY}) b) {
+    final w = size.width - _l - _r;
+    final h = size.height - _t - _b;
+    final x = _l + (b.rangeX < 1 ? w / 2 : (d.dx - b.minX) / b.rangeX * w);
+    final y = _t + h - ((d.dy - b.baseY) / b.rangeY) * h;
+    return Offset(x, y);
+  }
+
+  /// Renvoie (animalId, index du point) le plus proche du tap, ou null.
+  static (String, int)? nearestPoint(
+      Offset tap, Size size, Map<String, List<Offset>> series) {
+    final b = _bounds(series);
+    if (b == null) return null;
+    (String, int)? best;
+    double bestDist = 30;
+    for (final entry in series.entries) {
+      for (var i = 0; i < entry.value.length; i++) {
+        final dist = (_toCanvas(entry.value[i], size, b) - tap).distance;
+        if (dist < bestDist) { bestDist = dist; best = (entry.key, i); }
+      }
     }
+    return best;
+  }
+
+  static String _fmtPoids(double kg) {
+    if (kg < 1) return '${(kg * 1000).round()} g';
+    if (kg < 10) {
+      final s = kg.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+      return '${s.replaceAll('.', ',')} kg';
+    }
+    return '${kg.toStringAsFixed(1).replaceAll('.', ',')} kg';
+  }
+
+  static String _fmtAge(double days) {
+    if (days < 14) return '${days.round()} j';
+    if (days < 90) return '${(days / 7).round()} sem';
+    return '${(days / 30).round()} mois';
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (series.isEmpty) return;
+    final w = size.width - _l - _r;
+    final h = size.height - _t - _b;
+
+    final b = _bounds(series);
+    if (b == null) return;
+    final minX = b.minX, rangeX = b.rangeX, baseY = b.baseY, rangeY = b.rangeY;
+
+    Offset toC(Offset d) => _toCanvas(d, size, b);
 
     // Title
     final titleTp = TextPainter(
@@ -679,9 +761,50 @@ class _PorteeChartPainter extends CustomPainter {
           ..style = PaintingStyle.stroke);
       }
 
-      for (final p in pts) {
-        canvas.drawCircle(p, 4.0, Paint()..color = color);
-        canvas.drawCircle(p, 2.5, Paint()..color = Colors.white);
+      final selPoint = entry.key == selId;
+      for (var i = 0; i < pts.length; i++) {
+        final p = pts[i];
+        final isSel = selPoint && i == selIdx;
+        canvas.drawCircle(p, isSel ? 6.0 : 4.0, Paint()..color = color);
+        canvas.drawCircle(p, isSel ? 3.5 : 2.5, Paint()..color = Colors.white);
+      }
+    }
+
+    // Info-bulle : nom de l'animal + poids (g ou kg) + âge
+    final sId = selId, sIdx = selIdx;
+    if (sId != null && sIdx != null) {
+      final raw = series[sId];
+      if (raw != null && sIdx >= 0 && sIdx < raw.length) {
+        final dataPt = raw[sIdx];
+        final p = toC(dataPt);
+        final color = colors[sId] ?? const Color(0xFF5F9EAA);
+        const pad = 8.0;
+        final l1 = names[sId] ?? 'Bébé';
+        final l2 = _fmtPoids(dataPt.dy);
+        final l3 = _fmtAge(dataPt.dx);
+        final tp1 = TextPainter(
+          text: TextSpan(text: l1, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700)),
+          textDirection: ui.TextDirection.ltr)..layout();
+        final tp2 = TextPainter(
+          text: TextSpan(text: l2, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white, fontWeight: FontWeight.w700)),
+          textDirection: ui.TextDirection.ltr)..layout();
+        final tp3 = TextPainter(
+          text: TextSpan(text: l3, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xCCFFFFFF))),
+          textDirection: ui.TextDirection.ltr)..layout();
+        final tw = [tp1.width, tp2.width, tp3.width].reduce((a, b) => a > b ? a : b) + pad * 2;
+        final th = tp1.height + tp2.height + tp3.height + pad * 2 + 4;
+        var tx = p.dx - tw / 2;
+        var ty = p.dy - th - 12;
+        if (tx < _l) tx = _l;
+        if (tx + tw > size.width - _r) tx = size.width - _r - tw;
+        if (ty < 0) ty = p.dy + 12;
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(Rect.fromLTWH(tx, ty, tw, th), const Radius.circular(8)),
+          Paint()..color = color,
+        );
+        tp1.paint(canvas, Offset(tx + pad, ty + pad));
+        tp2.paint(canvas, Offset(tx + pad, ty + pad + tp1.height + 2));
+        tp3.paint(canvas, Offset(tx + pad, ty + pad + tp1.height + tp2.height + 4));
       }
     }
   }

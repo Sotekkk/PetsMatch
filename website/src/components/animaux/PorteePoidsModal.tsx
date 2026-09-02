@@ -39,12 +39,20 @@ function fmtInput(v: number): string {
 
 // ── Graphe multi-séries ───────────────────────────────────────────────────────
 
-function MultiWeightChart({ series, colors }: {
+function ageLabel(days: number): string {
+  if (days < 14) return `${Math.round(days)} j`;
+  if (days < 90) return `${Math.round(days / 7)} sem`;
+  return `${Math.round(days / 30)} mois`;
+}
+
+function MultiWeightChart({ series, colors, names }: {
   series: Record<string, { x: number; y: number }[]>;
   colors: Record<string, string>;
+  names: Record<string, string>;
 }) {
   const W = 360, H = 200, L = 40, T = 18, R = 12, B = 26;
   const w = W - L - R, h = H - T - B;
+  const [sel, setSel] = useState<{ id: string; i: number } | null>(null);
 
   const all = Object.values(series).flat();
   if (all.length === 0) return null;
@@ -58,6 +66,8 @@ function MultiWeightChart({ series, colors }: {
   const baseY = minY - rangeY * 0.1;
   const cx = (x: number) => L + (rangeX < 1 ? w / 2 : ((x - minX) / rangeX) * w);
   const cy = (y: number) => T + h - ((y - baseY) / rangeY) * h;
+
+  const selPt = sel ? series[sel.id]?.[sel.i] : undefined;
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 200 }}>
@@ -85,15 +95,42 @@ function MultiWeightChart({ series, colors }: {
         return (
           <g key={id}>
             {pts.length >= 2 && <path d={d} fill="none" stroke={c} strokeWidth={2} strokeLinecap="round" />}
-            {pts.map((p, i) => (
-              <g key={i}>
-                <circle cx={cx(p.x)} cy={cy(p.y)} r={3.5} fill={c} />
-                <circle cx={cx(p.x)} cy={cy(p.y)} r={1.8} fill="white" />
-              </g>
-            ))}
+            {pts.map((p, i) => {
+              const isSel = sel?.id === id && sel.i === i;
+              return (
+                <g key={i} style={{ cursor: 'pointer' }}
+                  onClick={() => setSel(isSel ? null : { id, i })}>
+                  <circle cx={cx(p.x)} cy={cy(p.y)} r={9} fill="transparent" />
+                  <circle cx={cx(p.x)} cy={cy(p.y)} r={isSel ? 5 : 3.5} fill={c} />
+                  <circle cx={cx(p.x)} cy={cy(p.y)} r={isSel ? 2.6 : 1.8} fill="white" />
+                </g>
+              );
+            })}
           </g>
         );
       })}
+      {sel && selPt && (() => {
+        const c = colors[sel.id] ?? SERIES_COLORS[0];
+        const px = cx(selPt.x), py = cy(selPt.y);
+        const l1 = names[sel.id] ?? 'Bébé';
+        const l2 = poidsLabel(selPt.y);
+        const l3 = ageLabel(selPt.x);
+        const bw = Math.max(l1.length, l2.length, l3.length) * 5.4 + 14;
+        const bh = 40;
+        let bx = px - bw / 2;
+        let by = py - bh - 8;
+        if (bx < L) bx = L;
+        if (bx + bw > W - R) bx = W - R - bw;
+        if (by < 0) by = py + 8;
+        return (
+          <g>
+            <rect x={bx} y={by} width={bw} height={bh} rx={6} fill={c} />
+            <text x={bx + 7} y={by + 13} fontSize="9" fontWeight="700" fill="white">{l1}</text>
+            <text x={bx + 7} y={by + 25} fontSize="10" fontWeight="700" fill="white">{l2}</text>
+            <text x={bx + 7} y={by + 35} fontSize="8" fill="rgba(255,255,255,0.8)">{l3}</text>
+          </g>
+        );
+      })()}
     </svg>
   );
 }
@@ -235,6 +272,12 @@ export default function PorteePoidsModal({ animals, dateNaissance, canWrite = tr
     return m;
   }, [animals]);
 
+  const names = useMemo(() => {
+    const m: Record<string, string> = {};
+    animals.forEach((a, i) => { m[a.id] = a.nom?.trim() || `Bébé ${i + 1}`; });
+    return m;
+  }, [animals]);
+
   const series = useMemo(() => {
     const s: Record<string, { x: number; y: number }[]> = {};
     for (const a of animals) {
@@ -274,7 +317,7 @@ export default function PorteePoidsModal({ animals, dateNaissance, canWrite = tr
             <>
               <div className="border border-gray-100 rounded-xl p-2 mb-4 bg-white">
                 {Object.keys(series).length > 0 ? (
-                  <MultiWeightChart series={series} colors={colors} />
+                  <MultiWeightChart series={series} colors={colors} names={names} />
                 ) : (
                   <p className="text-center text-xs text-gray-400 py-8">
                     Aucune pesée pour l&apos;instant — touchez un bébé ci-dessous pour commencer.

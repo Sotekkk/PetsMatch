@@ -5166,6 +5166,17 @@ String _fmtPoidsP(double v) {
   return v.toStringAsFixed(0);
 }
 
+// Libellé lisible d'un poids : sous 1 kg en grammes (bébés / petites espèces),
+// au-dessus en kg. Le stockage reste toujours en kg.
+String _poidsLabelP(double kg) {
+  if (kg < 1) return '${(kg * 1000).round()} g';
+  if (kg < 10) {
+    final s = kg.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+    return '${s.replaceAll('.', ',')} kg';
+  }
+  return '${kg.toStringAsFixed(1).replaceAll('.', ',')} kg';
+}
+
 class _PoidsSectionP extends StatelessWidget {
   final List<Map<String, dynamic>> records;
   final DateTime? dateNaissance;
@@ -5436,7 +5447,7 @@ class _ChartPainterP extends CustomPainter {
       final i = hoverIdx!;
       final p = pt(i);
       const pad = 7.0;
-      final line1 = '${_fmtPoidsP(vals[i])} kg';
+      final line1 = _poidsLabelP(vals[i]);
       final line2 = xLabelFn(i);
       final tp1 = TextPainter(text: TextSpan(text: line1, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white, fontWeight: FontWeight.w700)), textDirection: ui.TextDirection.ltr)..layout();
       final tp2 = TextPainter(text: TextSpan(text: line2, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Color(0xCCFFFFFF))), textDirection: ui.TextDirection.ltr)..layout();
