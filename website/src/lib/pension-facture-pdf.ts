@@ -30,21 +30,45 @@ export async function pensionInvoicePdfBlob(d: PensionFactureData): Promise<Blob
   const pct = Math.min(100, Math.max(1, Math.round(d.acomptePct || 30)));
   const montant = d.isAcompte ? Math.round(total * pct) / 100 : total;
   const emise = d.emiseLe ? fmtD(d.emiseLe) : new Date().toLocaleDateString('fr-FR');
+  const annee = new Date().getFullYear();
+  const em = d.emetteur ?? {};
+  const escompte = (d.escompte ?? '').trim() || 'Escompte pour paiement anticipe : neant.';
 
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const M = 40;
   let y = 50;
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(18);
+  doc.setFontSize(15);
   doc.setTextColor(...TEAL);
-  doc.text(d.isAcompte ? `Facture d'acompte ${d.numero}` : `Facture ${d.numero}`, M, y);
-  y += 16;
+  doc.text(String(em.nom || d.pensionNom).slice(0, 60), M, y);
+  doc.setFontSize(15);
+  doc.text(d.isAcompte ? "FACTURE D'ACOMPTE" : 'FACTURE', 595 - M, y, { align: 'right' });
+  y += 14;
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
+  doc.setFontSize(8);
   doc.setTextColor(110);
-  doc.text(`${d.pensionNom} — émise le ${emise}${d.isAcompte ? ` · acompte de ${pct}% du séjour` : ''}`, M, y);
-  y += 20;
+  const emLines = [
+    em.formeJuridique ? `${em.formeJuridique}${em.capital ? ` - capital ${em.capital}` : ''}` : '',
+    em.adresse ?? '',
+    em.tel ? `Tel. : ${em.tel}` : '',
+    em.email ?? '',
+    em.siret ? `SIRET : ${em.siret}` : '',
+    em.tva ? `N TVA : ${em.tva}` : '',
+    em.rcs ?? '',
+  ].filter(Boolean) as string[];
+  emLines.forEach((l, i) => doc.text(String(l).slice(0, 70), M, y + i * 10));
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(40);
+  doc.text(`N ${d.numero}`, 595 - M, y, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(110);
+  doc.text(`Emise le ${emise}`, 595 - M, y + 12, { align: 'right' });
+  if (d.echeance) doc.text(`Echeance : ${fmtD(d.echeance)}`, 595 - M, y + 22, { align: 'right' });
+  if (d.isAcompte) doc.text(`Acompte de ${pct}% du sejour`, 595 - M, y + (d.echeance ? 32 : 22), { align: 'right' });
+  y += Math.max(emLines.length * 10, 34) + 14;
 
   const boxW = (595 - M * 2 - 16) / 3;
   const boxes: [string, string[]][] = [
@@ -53,8 +77,9 @@ export async function pensionInvoicePdfBlob(d: PensionFactureData): Promise<Blob
       ...(d.animal.race ? [d.animal.race] : []),
       ...(d.animal.puce ? [`Puce : ${d.animal.puce}`] : []),
     ]],
-    ['PROPRIÉTAIRE', [
+    ['CLIENT', [
       d.proprietaire.nom ?? '—',
+      ...(d.proprietaire.adresse ? [d.proprietaire.adresse] : []),
       ...(d.proprietaire.email ? [d.proprietaire.email] : []),
       ...(d.proprietaire.contact ? [d.proprietaire.contact] : []),
     ]],
@@ -119,14 +144,24 @@ export async function pensionInvoicePdfBlob(d: PensionFactureData): Promise<Blob
     lineTotal(d.avecTVA ? 'TOTAL TTC' : 'TOTAL', eur(total), true);
   }
 
-  y += 20;
+  y += 18;
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(150);
-  const foot = d.isAcompte
-    ? `Acompte à régler pour confirmer la réservation. Le solde de ${eur(total - montant)} sera facturé à la fin du séjour. Document généré via PetsMatch.`
-    : 'Paiement à réception de facture. Document généré via PetsMatch.';
-  doc.text(doc.splitTextToSize(foot, 595 - M * 2), M, y);
+  doc.setFontSize(8.5);
+  doc.setTextColor(90);
+  const pay = d.isAcompte
+    ? `Acompte a regler pour confirmer la reservation. Le solde de ${eur(total - montant)} sera facture a la fin du sejour.`
+    : d.echeance ? `Paiement du au plus tard le ${fmtD(d.echeance)}.` : 'Paiement a reception de facture.';
+  doc.text(doc.splitTextToSize(pay, 595 - M * 2), M, y);
+  y += 22;
+
+  doc.setFontSize(7.5);
+  doc.setTextColor(120);
+  const mentions = [
+    d.avecTVA ? '' : 'TVA non applicable, art. 293 B du CGI.',
+    escompte,
+    `En cas de retard de paiement : penalites au taux de 3 fois le taux d'interet legal en vigueur (${annee}), exigibles sans rappel le lendemain de la date d'echeance, et indemnite forfaitaire de recouvrement de 40 EUR (art. L441-10 et D441-5 du Code de commerce).`,
+  ].filter(Boolean).join(' ');
+  doc.text(doc.splitTextToSize(mentions, 595 - M * 2), M, y);
 
   return doc.output('blob');
 }

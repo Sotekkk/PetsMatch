@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { PensionEntree } from '@/components/PensionEntreeModal';
 import { pensionTarifKeyForEspece, type TarifsPension } from '@/lib/pension-especes';
-import { type PensionFactureData } from '@/lib/pension-facture-html';
+import { type PensionFactureData, type PensionFactureEmetteur } from '@/lib/pension-facture-html';
 import { pensionInvoicePdfBlob } from '@/lib/pension-facture-pdf';
 
 const TEAL = '#0C5C6C';
@@ -37,6 +37,7 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
   const [sending, setSending] = useState(false);
   const [marking, setMarking] = useState(false);
   const [error, setError] = useState('');
+  const [emetteur, setEmetteur] = useState<PensionFactureEmetteur | null>(null);
 
   // Tarification automatisée — pré-remplit le tarif/nuit suggéré à partir de
   // la config du pro (prix par espèce + réduction séjour long), reste
@@ -45,7 +46,19 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
     (async () => {
       if (!proProfileId) return;
       const { data: profil } = await supabase.from('user_profiles')
-        .select('tarifs_pension').eq('id', proProfileId).maybeSingle();
+        .select('tarifs_pension, nom, rue_pro, code_postal_pro, ville_pro, pays_pro, siret, numero_tva, phone_number')
+        .eq('id', proProfileId).maybeSingle();
+      if (profil) {
+        const adresse = [profil.rue_pro, [profil.code_postal_pro, profil.ville_pro].filter(Boolean).join(' '), profil.pays_pro || 'France']
+          .filter(Boolean).join(', ');
+        setEmetteur({
+          nom: profil.nom || pensionNom,
+          adresse: adresse || null,
+          siret: profil.siret || null,
+          tva: profil.numero_tva || null,
+          tel: profil.phone_number || null,
+        });
+      }
       const config = profil?.tarifs_pension as TarifsPension | null;
       if (!config || typeof config !== 'object') return;
       const seul = entree.seul_dans_logement !== false;
@@ -100,6 +113,7 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
     return {
       numero,
       pensionNom,
+      emetteur,
       emiseLe: new Date().toISOString(),
       animal: { nom: entree.animal_nom, espece: entree.espece, race: entree.race, puce: entree.puce },
       proprietaire: { nom: entree.proprietaire_nom, email: entree.proprietaire_email, contact: entree.proprietaire_contact },
@@ -354,6 +368,12 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
             </>
           )}
         </div>
+
+        {(!emetteur?.siret || !emetteur?.adresse) && (
+          <p style={{ background: '#FEF3C7', color: '#92400E', fontFamily: 'Galey, sans-serif', fontSize: 12, padding: '8px 10px', borderRadius: 8, marginBottom: 12 }}>
+            Votre adresse et votre SIRET doivent figurer sur la facture. Complétez-les dans votre profil pro.
+          </p>
+        )}
 
         {error && <p style={{ color: '#dc2626', fontFamily: 'Galey, sans-serif', fontSize: 13, marginBottom: 12 }}>{error}</p>}
 
