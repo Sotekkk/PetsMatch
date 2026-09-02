@@ -73,7 +73,7 @@ const HEALTH_SECTIONS = [
   { table: 'antiparasitaires', label: 'Antiparasitaires',   icon: '🦟', color: '#E06B3F',
     fields: [{ key: 'produit', label: 'Produit', required: true }, { key: 'date', label: 'Date', type: 'date' }, { key: 'notes', label: 'Notes' }] },
   { table: 'traitements',      label: 'Traitements',        icon: '💊', color: '#0C5C6C',
-    fields: [{ key: 'traitement', label: 'Traitement', required: true }, { key: 'date_debut', label: 'Début', type: 'date' }, { key: 'date_fin', label: 'Fin', type: 'date' }, { key: 'notes', label: 'Notes' }] },
+    fields: [{ key: 'nom', label: 'Traitement', required: true }, { key: 'type', label: 'Type' }, { key: 'date', label: 'Début', type: 'date' }, { key: 'date_fin', label: 'Fin', type: 'date' }, { key: 'notes', label: 'Notes' }] },
   { table: 'chirurgies',       label: 'Chirurgie / Hospitalisation', icon: '🏥', color: '#C2185B',
     fields: [
       { key: 'intitule', label: 'Intervention (ex : stérilisation)', required: true },

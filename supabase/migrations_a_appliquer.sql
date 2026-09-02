@@ -145,3 +145,20 @@ ALTER TABLE traitements
 
 ALTER TABLE traitements
   ADD COLUMN IF NOT EXISTS notes TEXT;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 8. Défaut manquant sur id (carnet de santé) — formulaire vétérinaire
+--    (mes-patients) et association/animaux insèrent une ligne sans jamais
+--    fournir d'id. Sans DEFAULT, id (TEXT PRIMARY KEY, NOT NULL) fait
+--    échouer toute l'insertion, silencieusement dans ces deux pages
+--    (erreur non affichée à l'utilisateur).
+-- ────────────────────────────────────────────────────────────
+
+ALTER TABLE vaccinations      ALTER COLUMN id SET DEFAULT gen_random_uuid()::text;
+ALTER TABLE traitements       ALTER COLUMN id SET DEFAULT gen_random_uuid()::text;
+ALTER TABLE visites           ALTER COLUMN id SET DEFAULT gen_random_uuid()::text;
+ALTER TABLE vermifuges        ALTER COLUMN id SET DEFAULT gen_random_uuid()::text;
+ALTER TABLE antiparasitaires  ALTER COLUMN id SET DEFAULT gen_random_uuid()::text;
+ALTER TABLE allergies         ALTER COLUMN id SET DEFAULT gen_random_uuid()::text;
+ALTER TABLE poids             ALTER COLUMN id SET DEFAULT gen_random_uuid()::text;
