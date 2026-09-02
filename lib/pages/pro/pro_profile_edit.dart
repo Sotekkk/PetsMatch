@@ -64,6 +64,16 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   String _siret = '';
   String _ordreVeterinaire = '';
 
+  // Identité de facturation (mentions obligatoires sur les factures)
+  final _tvaCtrl            = TextEditingController();
+  final _formeJuridiqueCtrl = TextEditingController();
+  final _capitalCtrl        = TextEditingController();
+  final _rcsCtrl            = TextEditingController();
+  final _rmCtrl             = TextEditingController();
+  final _ibanCtrl           = TextEditingController();
+  final _bicCtrl            = TextEditingController();
+  bool _tvaFranchise = false;
+
   // ACACED — obligatoire pour garde (petsitter/promeneur) et éducateur
   final _acacedCtrl = TextEditingController();
   File?   _acacedDocFile;
@@ -161,11 +171,25 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       _nomStructureCtrl, _professionCtrl, _descCtrl, _tarifsCtrl,
       _siteWebCtrl, _instagramCtrl, _facebookCtrl,
       _addressSearchCtrl, _rueCtrl, _villeCtrl, _cpCtrl, _paysCtrl,
+      _tvaCtrl, _formeJuridiqueCtrl, _capitalCtrl, _rcsCtrl, _rmCtrl, _ibanCtrl, _bicCtrl,
     ]) { c.dispose(); }
     super.dispose();
   }
 
   // ── Load ─────────────────────────────────────────────────────────────────────
+
+  // Champs d'identité de facturation, communs aux deux chemins d'enregistrement
+  // (profil principal et profil secondaire → user_profiles).
+  Map<String, dynamic> get _billingFields => {
+        'numero_tva':          _tvaCtrl.text.trim(),
+        'forme_juridique_pro': _formeJuridiqueCtrl.text.trim(),
+        'capital_social_pro':  _capitalCtrl.text.trim(),
+        'rcs_pro':             _rcsCtrl.text.trim(),
+        'rm_pro':              _rmCtrl.text.trim(),
+        'iban_pro':            _ibanCtrl.text.trim(),
+        'bic_pro':             _bicCtrl.text.trim(),
+        'regime_tva_pro':      _tvaFranchise ? 'franchise' : 'normal',
+      };
 
   Future<void> _loadProProfile() async {
     try {
@@ -187,6 +211,14 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
 
       if (row != null) {
         final isSecondary = widget.secondaryProfileId != null;
+        _tvaCtrl.text            = row['numero_tva']         ?? '';
+        _formeJuridiqueCtrl.text = row['forme_juridique_pro'] ?? '';
+        _capitalCtrl.text        = row['capital_social_pro'] ?? '';
+        _rcsCtrl.text            = row['rcs_pro']            ?? '';
+        _rmCtrl.text             = row['rm_pro']             ?? '';
+        _ibanCtrl.text           = row['iban_pro']           ?? '';
+        _bicCtrl.text            = row['bic_pro']            ?? '';
+        _tvaFranchise            = (row['regime_tva_pro'] ?? '') == 'franchise';
         _photoUrl  = isSecondary ? row['avatar_url'] as String? : row['profile_picture_url_pro'] as String?;
         _bannerUrl = row['banner_url'] as String?;
         _nomStructureCtrl.text = (row['nom'] ?? row['name_elevage']) ?? User_Info.nameElevage;
@@ -549,6 +581,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'horaires':           horairesMap,
           'certifications':     _certifications,
           'accept_new_clients': _acceptNewClients,
+          ..._billingFields,
           if (_catPro == 'veterinaire') 'urgences_24h': _urgences24h,
           'cat_pro':            _catPro,
           'is_pro':             true,
@@ -635,6 +668,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'horaires':           horairesMap,
           'certifications':     _certifications,
           'accept_new_clients': _acceptNewClients,
+          ..._billingFields,
           if (_catPro == 'veterinaire') 'urgences_24h': _urgences24h,
           'cat_pro':            _catPro,
           'is_pro':             true,
@@ -809,6 +843,43 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                       ),
                     ]),
                   ],
+
+                  // ── Identité de facturation ───────────────────────────────
+                  const SizedBox(height: 24),
+                  _sectionTitle('Facturation'),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Ces informations figurent sur vos factures (mentions obligatoires). Renseignées ici, elles pré-remplissent chaque nouvelle facture.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 12),
+                  _field(_formeJuridiqueCtrl, 'Forme juridique (EI, EURL, SAS, association…)', Icons.account_balance_outlined),
+                  const SizedBox(height: 12),
+                  _field(_capitalCtrl, 'Capital social (sociétés) — ex. 5 000 €', Icons.savings_outlined),
+                  const SizedBox(height: 12),
+                  _field(_rcsCtrl, 'RCS + ville du greffe (commerçant)', Icons.gavel_outlined),
+                  const SizedBox(height: 12),
+                  _field(_rmCtrl, 'N° au répertoire des métiers (artisan)', Icons.handyman_outlined),
+                  const SizedBox(height: 12),
+                  _field(_tvaCtrl, 'N° TVA intracommunautaire', Icons.receipt_long_outlined),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: _tvaFranchise,
+                    onChanged: (v) => setState(() => _tvaFranchise = v),
+                    title: const Text('Franchise en base de TVA',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                    subtitle: Text(
+                      _tvaFranchise
+                          ? 'Mention « TVA non applicable, art. 293 B du CGI » ajoutée automatiquement.'
+                          : 'TVA facturée normalement.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _field(_ibanCtrl, 'IBAN (pour le règlement par virement)', Icons.account_balance_wallet_outlined),
+                  const SizedBox(height: 12),
+                  _field(_bicCtrl, 'BIC', Icons.badge_outlined),
 
                   // ── Disponibilité & intervention ──────────────────────────
                   const SizedBox(height: 24),

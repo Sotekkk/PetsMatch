@@ -25,6 +25,7 @@ interface Facture {
   uid_eleveur: string;
   profile_id: string | null;
   numero_facture: number | null;
+  numero_affichage: string | null;
   regime_tva: string | null;
   // client
   nom_client: string | null;
@@ -121,7 +122,7 @@ export default function FacturePublicPage({ params }: { params: Promise<{ token:
     const win = window.open('', '_blank', 'width=900,height=1200');
     if (!win) return;
     win.document.write(`<!DOCTYPE html>
-<html lang="fr"><head><meta charset="UTF-8"><title>Facture n° ${facture?.numero_facture ?? ''}</title>
+<html lang="fr"><head><meta charset="UTF-8"><title>Facture n° ${facture?.numero_affichage || facture?.numero_facture || ''}</title>
 <script src="https://cdn.tailwindcss.com"><\/script>
 <style>
   @page { size: A4; margin: 0; }
@@ -179,7 +180,7 @@ export default function FacturePublicPage({ params }: { params: Promise<{ token:
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-[#1F2A2E]">Facture n° {f.numero_facture ?? '—'}</h1>
+        <h1 className="text-xl font-bold text-[#1F2A2E]">Facture n° {f.numero_affichage || f.numero_facture || '—'}</h1>
         <button onClick={handlePrint} className="text-sm border border-gray-200 text-gray-600 px-4 py-2 rounded-xl hover:bg-gray-50">🖨️ PDF</button>
       </div>
 
@@ -201,7 +202,7 @@ export default function FacturePublicPage({ params }: { params: Promise<{ token:
           </div>
           <div className="text-right flex-shrink-0">
             <p className="text-xl font-bold text-[#1F2A2E]">FACTURE</p>
-            <p className="text-sm font-bold">N° {f.numero_facture ?? '—'}</p>
+            <p className="text-sm font-bold">N° {f.numero_affichage || f.numero_facture || '—'}</p>
             <p className="text-xs text-gray-400 mt-2">{STATUT_LABEL[f.statut] ?? f.statut}</p>
             <p className="text-xs text-gray-500">Émise le {fmtDate(f.date_facture)}</p>
             <p className="text-xs text-gray-500">Prestation : {fmtDate(f.date_prestation)}</p>

@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'dart:math';
+import 'package:crypto/crypto.dart';
+import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -51,6 +54,10 @@ String _isoToFr(dynamic v) {
 Map<String, dynamic> _supaToUi(Map<String, dynamic> r) => {
   'id':                 r['id'],
   'numeroFacture':      r['numero_facture'],
+  'numeroAffichage':    r['numero_affichage'],
+  'numeroSeq':          r['numero_seq'],
+  'pdfUrl':             r['pdf_url'],
+  'pdfHash':            r['pdf_hash'],
   'dateFacture':        _isoToFr(r['date_facture']),
   'datePrestation':     _isoToFr(r['date_prestation']),
   'dateEcheance':       _isoToFr(r['date_echeance']),
@@ -90,6 +97,15 @@ Map<String, dynamic> _supaToUi(Map<String, dynamic> r) => {
 };
 
 const _kEscompteDefaut = 'Escompte pour paiement anticipé : néant.';
+
+/// Numéro lisible d'une facture : le numéro d'affichage serveur (AAAA-NNNN)
+/// s'il existe, sinon repli sur l'ancien entier.
+String _numAff(Map<String, dynamic> d) {
+  final a = d['numeroAffichage']?.toString() ?? '';
+  if (a.trim().isNotEmpty) return a;
+  final n = d['numeroFacture'];
+  return n == null ? '—' : n.toString();
+}
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -146,7 +162,7 @@ class _FacturationPageState extends State<FacturationPage> {
     String esc(Object? v) => '"${(v?.toString() ?? '').replaceAll('"', '""')}"';
     final header = ['Numéro', 'Date', 'Client', 'Email', 'Statut', 'Total HT', 'Total TVA', 'Total TTC', 'Échéance'];
     final rows = docs.map((d) => [
-      d['numeroFacture'],
+      _numAff(d),
       d['dateFacture'],
       d['nomClient'],
       d['emailClient'],
@@ -253,7 +269,7 @@ class _FactureCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final total = (data['totalTTC'] ?? 0.0).toStringAsFixed(2);
     final client = data['nomClient'] ?? '';
-    final num = data['numeroFacture']?.toString() ?? '';
+    final num = _numAff(data);
     final date = data['dateFacture'] ?? '';
     return GestureDetector(
       onTap: onTap,
@@ -314,7 +330,7 @@ class FactureDetailPage extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
-        title: Text('Facture n° ${data['numeroFacture']}',
+        title: Text('Facture n° ${_numAff(data)}',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
         actions: [
           IconButton(
@@ -513,7 +529,6 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
   final _tvaClient = TextEditingController();
 
   // Facture
-  final _numeroFacture = TextEditingController();
   String _dateFacture = DateFormat('dd/MM/yyyy').format(DateTime.now());
   String _datePrestation = DateFormat('dd/MM/yyyy').format(DateTime.now());
   String _dateEcheance = DateFormat('dd/MM/yyyy').format(DateTime.now().add(const Duration(days: 30)));
@@ -551,33 +566,33 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
   Future<void> _loadUserData() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    // Profil depuis Firestore (source de vérité pour les infos élevage)
+    final supa = Supabase.instance.client;
+    // Profil depuis Firestore (repli pour les infos élevage historiques)
     final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
     final d = doc.data() ?? {};
-    // Résoudre profile_id
-    final profileData = await Supabase.instance.client.from('user_profiles')
-        .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
-    final profileId = profileData?['id'] as String?;
-    _profileId = profileId;
-    // Dernier numéro de facture depuis Supabase
-    final q = Supabase.instance.client.from('factures').select('numero_facture');
-    final rows = await (profileId != null
-            ? q.eq('profile_id', profileId)
-            : q.eq('uid_eleveur', uid))
-        .order('numero_facture', ascending: false)
-        .limit(1);
-    final last = rows.isEmpty ? 0 : ((rows.first['numero_facture'] as num?) ?? 0).toInt();
 
-    // Identité de facturation : on reprend celle de la dernière facture émise
-    // (le profil ne stocke pas encore forme juridique / capital / RCS…).
+    // Profil actif (pas is_main) : un pro secondaire facture avec sa propre identité.
+    final activePid = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+    Map<String, dynamic>? prof;
+    try {
+      final pq = supa.from('user_profiles').select(
+          'id, nom, rue_pro, code_postal_pro, ville_pro, pays_pro, phone_number, siret, numero_tva, '
+          'forme_juridique_pro, capital_social_pro, rcs_pro, rm_pro, regime_tva_pro, iban_pro, bic_pro');
+      prof = activePid != null
+          ? await pq.eq('id', activePid).maybeSingle()
+          : await pq.eq('uid', uid).eq('is_main', true).maybeSingle();
+    } catch (_) {}
+    _profileId = (prof?['id'] as String?) ?? activePid;
+
+    // Repli : dernière facture émise (si le profil n'a pas encore tout).
     Map<String, dynamic>? lastFact;
     try {
-      final fq = Supabase.instance.client.from('factures').select(
+      final fq = supa.from('factures').select(
           'nom_emetteur, rue_emetteur, cp_emetteur, ville_emetteur, pays_emetteur, tel_emetteur, '
           'siret_emetteur, tva_emetteur, forme_juridique_emetteur, capital_emetteur, rcs_emetteur, '
-          'rm_emetteur, email_emetteur, conditions_escompte');
-      final fr = await (profileId != null
-              ? fq.eq('profile_id', profileId)
+          'rm_emetteur, email_emetteur, conditions_escompte, note_complementaire');
+      final fr = await (_profileId != null
+              ? fq.eq('profile_id', _profileId!)
               : fq.eq('uid_eleveur', uid))
           .order('created_at', ascending: false)
           .limit(1);
@@ -585,28 +600,35 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     } catch (_) {}
 
     if (!mounted) return;
-    String pick(String factKey, String? profileVal) {
+    // Priorité : profil pro → dernière facture → Firestore.
+    String pick(String? profileVal, String factKey, [String? firestoreVal]) {
+      if (profileVal != null && profileVal.trim().isNotEmpty) return profileVal;
       final f = lastFact?[factKey]?.toString();
       if (f != null && f.trim().isNotEmpty) return f;
-      return profileVal ?? '';
+      return firestoreVal ?? '';
     }
     setState(() {
-      _nomEmetteur.text = pick('nom_emetteur', d['nameElevage'] ?? d['firstname'] ?? '');
-      _rueEmetteur.text = pick('rue_emetteur', d['rueElevage'] ?? '');
-      _cpEmetteur.text = pick('cp_emetteur', d['codePostalElevage'] ?? '');
-      _villeEmetteur.text = pick('ville_emetteur', d['villeElevage'] ?? '');
-      _paysEmetteur.text = pick('pays_emetteur', d['paysElevage'] ?? 'France');
-      _telEmetteur.text = pick('tel_emetteur', d['numeroElevage'] ?? d['phone_number'] ?? '');
-      _siretEmetteur.text = pick('siret_emetteur', d['siret'] ?? '');
-      _tvaEmetteur.text = pick('tva_emetteur', d['numeroTVA'] ?? '');
-      _emailEmetteur.text = pick('email_emetteur', d['email'] ?? '');
-      _formeJuridiqueEmetteur.text = pick('forme_juridique_emetteur', '');
-      _capitalEmetteur.text = pick('capital_emetteur', '');
-      _rcsEmetteur.text = pick('rcs_emetteur', d['rcs'] ?? '');
-      _rmEmetteur.text = pick('rm_emetteur', '');
+      _nomEmetteur.text = pick(prof?['nom'] as String?, 'nom_emetteur', d['nameElevage'] ?? d['firstname']);
+      _rueEmetteur.text = pick(prof?['rue_pro'] as String?, 'rue_emetteur', d['rueElevage']);
+      _cpEmetteur.text = pick(prof?['code_postal_pro'] as String?, 'cp_emetteur', d['codePostalElevage']);
+      _villeEmetteur.text = pick(prof?['ville_pro'] as String?, 'ville_emetteur', d['villeElevage']);
+      _paysEmetteur.text = pick(prof?['pays_pro'] as String?, 'pays_emetteur', d['paysElevage'] ?? 'France');
+      _telEmetteur.text = pick(prof?['phone_number'] as String?, 'tel_emetteur', d['numeroElevage'] ?? d['phone_number']);
+      _siretEmetteur.text = pick(prof?['siret'] as String?, 'siret_emetteur', d['siret']);
+      _tvaEmetteur.text = pick(prof?['numero_tva'] as String?, 'tva_emetteur', d['numeroTVA']);
+      _emailEmetteur.text = pick(null, 'email_emetteur', d['email']);
+      _formeJuridiqueEmetteur.text = pick(prof?['forme_juridique_pro'] as String?, 'forme_juridique_emetteur');
+      _capitalEmetteur.text = pick(prof?['capital_social_pro'] as String?, 'capital_emetteur');
+      _rcsEmetteur.text = pick(prof?['rcs_pro'] as String?, 'rcs_emetteur', d['rcs']);
+      _rmEmetteur.text = pick(prof?['rm_pro'] as String?, 'rm_emetteur');
       final esc = lastFact?['conditions_escompte']?.toString();
       _conditionsEscompte.text = (esc != null && esc.trim().isNotEmpty) ? esc : _kEscompteDefaut;
-      _numeroFacture.text = (last + 1).toString();
+      if ((prof?['regime_tva_pro'] as String?) == 'franchise') _franchise = true;
+      final iban = (prof?['iban_pro'] as String?)?.trim() ?? '';
+      final bic = (prof?['bic_pro'] as String?)?.trim() ?? '';
+      if (_noteComplementaire.text.trim().isEmpty && iban.isNotEmpty) {
+        _noteComplementaire.text = 'Règlement par virement — IBAN $iban${bic.isNotEmpty ? ' · BIC $bic' : ''}';
+      }
     });
   }
 
@@ -644,7 +666,8 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     try {
       final uid = FirebaseAuth.instance.currentUser!.uid;
       final d = _buildData();
-      await Supabase.instance.client.from('factures').insert({
+      // Le numéro (AAAA-NNNN, séquence sans rupture) est attribué par le serveur.
+      final inserted = await Supabase.instance.client.from('factures').insert({
         'id':                  _uuid(),
         'uid_eleveur':         uid,
         if (_profileId != null) 'profile_id': _profileId,
@@ -654,7 +677,6 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                 ? User_Info.catPro
                 : 'eleveur',
         if (widget.typeFacture != null) 'type_facture': widget.typeFacture,
-        'numero_facture':      d['numeroFacture'],
         'date_facture':        _frToIso(d['dateFacture']),
         'date_prestation':     _frToIso(d['datePrestation']),
         'date_echeance':       _frToIso(d['dateEcheance']),
@@ -691,9 +713,17 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
         'conditions_escompte': d['conditionsEscompte'],
         'note_complementaire': d['noteComplementaire'],
         'statut':              'emise',
-      });
-      if (!mounted) return;
+      }).select('id, numero_affichage, numero_facture').single();
+      final factureId = inserted['id'] as String;
+      d['numeroAffichage'] = inserted['numero_affichage'];
+      d['numeroFacture'] = inserted['numero_facture'];
+
+      // PDF figé : généré une fois, archivé (bucket privé) avec son empreinte
+      // SHA-256, puis proposé au client par email.
       final bytes = await _buildPdf(d);
+      await _archiverEtEnvoyer(factureId, bytes, d);
+
+      if (!mounted) return;
       await Printing.layoutPdf(onLayout: (_) async => bytes);
       if (mounted) Navigator.pop(context);
     } finally {
@@ -701,8 +731,61 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     }
   }
 
+  Future<void> _archiverEtEnvoyer(String factureId, Uint8List bytes, Map<String, dynamic> d) async {
+    final supa = Supabase.instance.client;
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? 'inconnu';
+    String? pdfUrl;
+    try {
+      final path = 'factures/$uid/$factureId.pdf';
+      await supa.storage.from('media').uploadBinary(
+        path, bytes,
+        fileOptions: const FileOptions(contentType: 'application/pdf', upsert: true),
+      );
+      pdfUrl = supa.storage.from('media').getPublicUrl(path);
+      final hash = sha256.convert(bytes).toString();
+      await supa.from('factures').update({
+        'pdf_url': pdfUrl,
+        'pdf_hash': hash,
+        'pdf_emis_le': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', factureId);
+      d['pdfUrl'] = pdfUrl;
+    } catch (_) {}
+
+    // Envoi au client : email (endpoint site) + notification in-app si compte.
+    final email = (d['emailClient'] as String?)?.trim() ?? '';
+    if (email.isEmpty) return;
+    try {
+      await http.post(
+        Uri.parse('$kSiteBaseUrl/api/facture/notify-email'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': email,
+          'client_nom': '${d['prenomClient'] ?? ''} ${d['nomClient'] ?? ''}'.trim().isEmpty
+              ? 'Client' : '${d['prenomClient'] ?? ''} ${d['nomClient'] ?? ''}'.trim(),
+          'pro_nom': d['nomEmetteur'] ?? 'Votre prestataire',
+          'numero_facture': _numAff(d),
+          'total_ttc': d['totalTTC'],
+          if (pdfUrl != null) 'pdf_url': pdfUrl,
+        }),
+      );
+    } catch (_) {}
+    try {
+      final target = await supa.from('users').select('uid').eq('email', email).maybeSingle();
+      final clientUid = target?['uid'] as String?;
+      if (clientUid != null) {
+        await supa.from('notifications').insert({
+          'uid': clientUid,
+          'type': 'facture_recue',
+          'title': 'Nouvelle facture — ${d['nomEmetteur'] ?? 'votre prestataire'}',
+          'body': 'Facture n° ${_numAff(d)} · ${(d['totalTTC'] as num?)?.toStringAsFixed(2) ?? ''} €',
+          if (pdfUrl != null) 'data': {'url': pdfUrl},
+          'read': false,
+        });
+      }
+    } catch (_) {}
+  }
+
   Map<String, dynamic> _buildData() => {
-    'numeroFacture': int.tryParse(_numeroFacture.text) ?? 0,
     'dateFacture': _dateFacture,
     'datePrestation': _datePrestation,
     'dateEcheance': _dateEcheance,
@@ -802,9 +885,12 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
 
             // ── DÉTAILS FACTURE ──
             _SectionTitle('Détails de la facture'),
-            _Card(child: Column(children: [
-              _Field(ctrl: _numeroFacture, label: 'Numéro de facture', required: true, keyboard: TextInputType.number),
-              const SizedBox(height: 4),
+            _Card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text('Le numéro (AAAA-NNNN) est attribué automatiquement à l\'émission, dans une séquence continue.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+              ),
               _DateRow(label: 'Date de facture', value: _dateFacture, onTap: () => _pickDate('facture')),
               _DateRow(label: 'Date de prestation / livraison', value: _datePrestation, onTap: () => _pickDate('prestation')),
               _DateRow(label: 'Date d\'échéance', value: _dateEcheance, onTap: () => _pickDate('echeance')),
@@ -1076,7 +1162,7 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
           ]),
           pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
             pw.Text('FACTURE', style: pw.TextStyle(font: bold, fontSize: 22, color: tealPdf)),
-            pw.Text('N° ${d['numeroFacture']}', style: pw.TextStyle(font: bold, fontSize: 14)),
+            pw.Text('N° ${_numAff(d)}', style: pw.TextStyle(font: bold, fontSize: 14)),
             pw.SizedBox(height: 6),
             pw.Text('Date : ${d['dateFacture'] ?? ''}', style: pw.TextStyle(font: font, fontSize: 10)),
             pw.Text('Prestation : ${d['datePrestation'] ?? ''}', style: pw.TextStyle(font: font, fontSize: 10)),

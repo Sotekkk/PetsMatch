@@ -21,6 +21,7 @@ interface Ligne {
 interface Facture {
   id: string;
   numero_facture?: number;
+  numero_affichage?: string;
   nom_client?: string;
   prenom_client?: string;
   email_client?: string;
@@ -52,6 +53,9 @@ function today() { return new Date().toISOString().slice(0, 10); }
 function addDays(n: number) {
   const d = new Date(); d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
+}
+function numLabel(f: { numero_affichage?: string; numero_facture?: number }) {
+  return f.numero_affichage || (f.numero_facture != null ? String(f.numero_facture) : '');
 }
 function isoToFr(iso?: string) {
   if (!iso) return '';
@@ -138,7 +142,7 @@ export default function FacturationPage() {
           email: f.email_client,
           client_nom: `${f.prenom_client ?? ''} ${f.nom_client ?? ''}`.trim() || 'Client',
           pro_nom: proNom,
-          numero_facture: f.numero_facture ? `n° ${f.numero_facture}` : undefined,
+          numero_facture: numLabel(f),
           total_ttc: f.total_ttc,
           facture_url: factureUrl,
         }),
@@ -170,14 +174,13 @@ export default function FacturationPage() {
     );
   }
 
-  const nextNum = (factures[0]?.numero_facture ?? 0) + 1;
   const filtered = filtreStatut === 'tous' ? factures : factures.filter((f) => (f.statut ?? 'emise') === filtreStatut);
   const totalEmises = factures.filter((f) => (f.statut ?? 'emise') === 'emise').reduce((s, f) => s + (f.total_ttc ?? 0), 0);
 
   function exportCsv() {
     const header = ['Numéro', 'Date', 'Client', 'Email', 'Statut', 'Total HT', 'Total TVA', 'Total TTC', "Date d'échéance"];
     const rows = filtered.map(f => [
-      f.numero_facture ?? '',
+      numLabel(f) ?? '',
       isoToFr(f.date_facture),
       `${f.prenom_client ?? ''} ${f.nom_client ?? ''}`.trim(),
       f.email_client ?? '',
@@ -245,7 +248,7 @@ export default function FacturationPage() {
               className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 hover:shadow-md transition-shadow cursor-pointer flex items-center gap-4">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  <p className="font-bold text-[#1F2A2E] text-sm">Facture n° {f.numero_facture}</p>
+                  <p className="font-bold text-[#1F2A2E] text-sm">Facture n° {numLabel(f)}</p>
                   <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUT_STYLE[f.statut ?? 'emise']}`}>
                     {STATUT_LABEL[f.statut ?? 'emise']}
                   </span>
@@ -266,7 +269,7 @@ export default function FacturationPage() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4" onClick={() => setSelected(null)}>
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-[#1F2A2E] text-lg">Facture n° {selected.numero_facture}</h3>
+              <h3 className="font-bold text-[#1F2A2E] text-lg">Facture n° {numLabel(selected)}</h3>
               <span className={`text-xs font-semibold px-2 py-1 rounded-full ${STATUT_STYLE[selected.statut ?? 'emise']}`}>
                 {STATUT_LABEL[selected.statut ?? 'emise']}
               </span>
@@ -360,7 +363,6 @@ export default function FacturationPage() {
         <NouvelleFactureForm
           uid={user.uid}
           profileId={activeProfileId}
-          nextNum={nextNum}
           profilSource={profilSource}
           onClose={() => setShowForm(false)}
           onSaved={(f) => { setFactures((prev) => [f, ...prev]); setShowForm(false); }}
@@ -372,10 +374,9 @@ export default function FacturationPage() {
 
 // ── Formulaire nouvelle facture ───────────────────────────────────────────────
 
-function NouvelleFactureForm({ uid, profileId, nextNum, profilSource = 'eleveur', onClose, onSaved }: {
+function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', onClose, onSaved }: {
   uid: string;
   profileId: string;
-  nextNum: number;
   profilSource?: string;
   onClose: () => void;
   onSaved: (f: Facture) => void;
@@ -479,7 +480,6 @@ function NouvelleFactureForm({ uid, profileId, nextNum, profilSource = 'eleveur'
       uid_eleveur:    uid,
       profile_id:     profileId || null,
       profil_source:  profilSource,
-      numero_facture: nextNum,
       regime_tva:     franchise ? 'franchise' : 'normal',
       nom_client:     nomClient,
       prenom_client:  prenomClient || null,
@@ -529,7 +529,7 @@ function NouvelleFactureForm({ uid, profileId, nextNum, profilSource = 'eleveur'
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
-        <h3 className="font-bold text-[#1F2A2E] text-lg mb-4">Facture n° {nextNum}</h3>
+        <h3 className="font-bold text-[#1F2A2E] text-lg mb-4">Nouvelle facture</h3>
         <form onSubmit={handleSave} className="space-y-4">
 
           {/* Émetteur */}

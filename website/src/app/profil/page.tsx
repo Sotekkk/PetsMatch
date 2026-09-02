@@ -815,6 +815,15 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [acceptNewClients, setAcceptNewClients] = useState(true);
   const [urgences24h, setUrgences24h] = useState(false);
   const [siret, setSiret] = useState('');
+  // Identité de facturation
+  const [tvaIntra, setTvaIntra] = useState('');
+  const [formeJuridique, setFormeJuridique] = useState('');
+  const [capitalSocial, setCapitalSocial] = useState('');
+  const [rcsPro, setRcsPro] = useState('');
+  const [rmPro, setRmPro] = useState('');
+  const [ibanPro, setIbanPro] = useState('');
+  const [bicPro, setBicPro] = useState('');
+  const [tvaFranchise, setTvaFranchise] = useState(false);
   const [rue, setRue] = useState('');
   const [ville, setVille] = useState('');
   const [cp, setCp] = useState('');
@@ -873,6 +882,14 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         setAcceptNewClients((r.accept_new_clients as boolean) ?? true);
         setUrgences24h((r.urgences_24h as boolean) ?? false);
         setSiret((r.siret as string) ?? '');
+        setTvaIntra((r.numero_tva as string) ?? '');
+        setFormeJuridique((r.forme_juridique_pro as string) ?? '');
+        setCapitalSocial((r.capital_social_pro as string) ?? '');
+        setRcsPro((r.rcs_pro as string) ?? '');
+        setRmPro((r.rm_pro as string) ?? '');
+        setIbanPro((r.iban_pro as string) ?? '');
+        setBicPro((r.bic_pro as string) ?? '');
+        setTvaFranchise((r.regime_tva_pro as string) === 'franchise');
         setRue((r.rue as string) ?? '');
         setAdresseSearch((r.rue as string) ?? '');
         setVille((r.ville as string) ?? '');
@@ -1029,6 +1046,14 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       accept_new_clients: acceptNewClients,
       ...(data?.profile_type === 'veterinaire' || data?.cat_pro === 'veterinaire' ? { urgences_24h: urgences24h } : {}),
       siret: siret.trim(),
+      numero_tva: tvaIntra.trim(),
+      forme_juridique_pro: formeJuridique.trim(),
+      capital_social_pro: capitalSocial.trim(),
+      rcs_pro: rcsPro.trim(),
+      rm_pro: rmPro.trim(),
+      iban_pro: ibanPro.trim(),
+      bic_pro: bicPro.trim(),
+      regime_tva_pro: tvaFranchise ? 'franchise' : 'normal',
       rue: rue.trim(),
       ville: ville.trim(),
       code_postal: cp.trim(),
@@ -1550,6 +1575,40 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             </div>
           </Card>
         )}
+
+        {/* Facturation */}
+        <Card title="Facturation">
+          <p className="text-xs text-gray-500 mb-3">
+            Ces informations figurent sur vos factures (mentions obligatoires). Renseignées ici, elles pré-remplissent chaque nouvelle facture.
+          </p>
+          <Field label="Forme juridique">
+            <input value={formeJuridique} onChange={e => setFormeJuridique(e.target.value)} className={inputCls} placeholder="EI, EURL, SAS, association…" />
+          </Field>
+          <Field label="Capital social (sociétés)">
+            <input value={capitalSocial} onChange={e => setCapitalSocial(e.target.value)} className={inputCls} placeholder="5 000 €" />
+          </Field>
+          <Field label="RCS + ville du greffe (commerçant)">
+            <input value={rcsPro} onChange={e => setRcsPro(e.target.value)} className={inputCls} placeholder="RCS Lyon 900 123 456" />
+          </Field>
+          <Field label="N° au répertoire des métiers (artisan)">
+            <input value={rmPro} onChange={e => setRmPro(e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="N° TVA intracommunautaire">
+            <input value={tvaIntra} onChange={e => setTvaIntra(e.target.value)} className={inputCls} placeholder="FR..." />
+          </Field>
+          <label className="flex items-start gap-2 text-sm text-gray-700 my-2">
+            <input type="checkbox" checked={tvaFranchise} onChange={e => setTvaFranchise(e.target.checked)} className="mt-0.5" />
+            <span>Franchise en base de TVA
+              <span className="block text-xs text-gray-500">Ajoute « TVA non applicable, art. 293 B du CGI » sur vos factures.</span>
+            </span>
+          </label>
+          <Field label="IBAN (règlement par virement)">
+            <input value={ibanPro} onChange={e => setIbanPro(e.target.value)} className={inputCls} />
+          </Field>
+          <Field label="BIC">
+            <input value={bicPro} onChange={e => setBicPro(e.target.value)} className={inputCls} />
+          </Field>
+        </Card>
 
         {/* Réseaux sociaux */}
         <Card title="Présence en ligne">
