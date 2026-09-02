@@ -1389,16 +1389,22 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
             color: const Color(0xFF9C27B0),
             records: _traitements,
             onAdd: _showTraitementSheet,
-            renderRecord: (r) => _RecordTile(
-              title: r['nom'] ?? r['type'] ?? 'Inconnu',
-              subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
-              trailing: r['posologie'],
-              onDelete: () => _deleteRecord('traitements', r['id'], _traitements),
-              onTap: () => _showRecordDetail('Traitement', r, [
-                ('Nom', 'nom'), ('Type', 'type'), ('Posologie', 'posologie'),
-                ('Date début', 'date'), ('Date fin', 'date_fin'),
-              ]),
-            ),
+            renderRecord: (r) {
+              final traitementTrailing = [
+                if ((r['posologie'] as String?)?.isNotEmpty == true) r['posologie'] as String,
+                if (r['rappel_actif'] == true) 'Rappels actifs',
+              ].join(' · ');
+              return _RecordTile(
+                title: r['nom'] ?? r['type'] ?? 'Inconnu',
+                subtitle: r['date'] != null ? 'Le ${_fmtDate(r['date'])}' : null,
+                trailing: traitementTrailing.isEmpty ? null : traitementTrailing,
+                onDelete: () => _deleteRecord('traitements', r['id'], _traitements),
+                onTap: () => _showRecordDetail('Traitement', r, [
+                  ('Nom', 'nom'), ('Type', 'type'), ('Maladie', 'description_maladie'),
+                  ('Posologie', 'posologie'), ('Date début', 'date'), ('Date fin', 'date_fin'),
+                ]),
+              );
+            },
           ),
           _HealthSection(
             title: 'Visites vétérinaires',
@@ -1585,24 +1591,67 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
 
   void _showTraitementSheet() {
     final nom = TextEditingController(), type = TextEditingController(),
+        descriptionMaladie = TextEditingController(),
         posologie = TextEditingController();
     DateTime? date, dateFin;
+
+    // ── Rappels récurrents (ex: piqûre tous les 3 jours pendant 3 semaines),
+    // même fonctionnalité que côté éleveur.
+    bool rappelActif = false;
+    final rappelFrequenceCtrl = TextEditingController(text: '1');
+    final rappelDureeCtrl = TextEditingController(text: '7');
+    String rappelDureeUnite = 'jours'; // 'jours' | 'semaines'
+    List<String> rappelHeures = [];
+
+    Future<void> addHeure(StateSetter ss) async {
+      final t = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+      if (t == null) return;
+      final s = '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+      if (!rappelHeures.contains(s)) ss(() => rappelHeures = [...rappelHeures, s]..sort());
+    }
+
     _openSheet('Ajouter un traitement', (ss) => [
       _SFld(ctrl: nom, label: 'Nom du traitement', hint: 'Ex: Amoxicilline...'),
       _SFld(ctrl: type, label: 'Type', hint: 'Ex: Antibiotique, Anti-inflammatoire...'),
+      _SFld(ctrl: descriptionMaladie, label: 'Description de la maladie',
+          hint: 'Ex: Otite, gastro-entérite...', maxLines: 3),
       _SFld(ctrl: posologie, label: 'Posologie', hint: 'Ex: 1 comprimé 2x/jour'),
       _SDate(label: 'Date de début', date: date, onPicked: (d) => ss(() => date = d)),
       _SDate(label: 'Date de fin', date: dateFin, onPicked: (d) => ss(() => dateFin = d)),
+      _SRappelRecurrent(
+        actif: rappelActif,
+        onActifChanged: (v) => ss(() => rappelActif = v),
+        frequenceCtrl: rappelFrequenceCtrl,
+        dureeCtrl: rappelDureeCtrl,
+        dureeUnite: rappelDureeUnite,
+        onDureeUniteChanged: (v) => ss(() => rappelDureeUnite = v),
+        heures: rappelHeures,
+        onAddHeure: () => addHeure(ss),
+        onRemoveHeure: (h) => ss(() => rappelHeures = rappelHeures.where((x) => x != h).toList()),
+      ),
     ], () async {
+      if (rappelActif && rappelHeures.isEmpty) {
+        throw 'Ajoute au moins une heure de rappel.';
+      }
+      final frequenceJours = int.tryParse(rappelFrequenceCtrl.text) ?? 1;
+      final dureeValeur = int.tryParse(rappelDureeCtrl.text) ?? 7;
+      final dureeJours = rappelDureeUnite == 'semaines' ? dureeValeur * 7 : dureeValeur;
+      final rappelFin = rappelActif && date != null ? date!.add(Duration(days: dureeJours)) : null;
       await _supa.from('traitements').insert({
         'id': '${DateTime.now().millisecondsSinceEpoch}',
         'animal_id': _animalId!,
         'nom': nom.text.trim(),
         'type': type.text.trim().isEmpty ? null : type.text.trim(),
+        'description_maladie': descriptionMaladie.text.trim().isEmpty ? null : descriptionMaladie.text.trim(),
         'posologie': posologie.text.trim().isEmpty ? null : posologie.text.trim(),
         'date': date?.toIso8601String().substring(0, 10),
         'date_fin': dateFin?.toIso8601String().substring(0, 10),
         'created_at': DateTime.now().toIso8601String(),
+        'rappel_actif': rappelActif,
+        if (rappelActif) 'rappel_frequence_jours': frequenceJours,
+        if (rappelActif) 'rappel_duree_jours': dureeJours,
+        if (rappelFin != null) 'rappel_fin': rappelFin.toIso8601String().substring(0, 10),
+        if (rappelActif) 'rappel_heures': rappelHeures,
       });
       await _loadHealthRecords();
     });
@@ -2159,7 +2208,8 @@ class _SFld extends StatelessWidget {
   final String label;
   final String hint;
   final bool numeric;
-  const _SFld({required this.ctrl, required this.label, required this.hint, this.numeric = false});
+  final int maxLines;
+  const _SFld({required this.ctrl, required this.label, required this.hint, this.numeric = false, this.maxLines = 1});
 
   @override
   Widget build(BuildContext context) {
@@ -2171,6 +2221,7 @@ class _SFld extends StatelessWidget {
         const SizedBox(height: 6),
         TextField(
           controller: ctrl,
+          maxLines: maxLines,
           keyboardType: numeric ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
           style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
           decoration: InputDecoration(
@@ -2319,6 +2370,107 @@ class _SDate extends StatelessWidget {
         ),
         const SizedBox(height: 14),
       ],
+    );
+  }
+}
+
+// Rappels récurrents d'un traitement (ex: piqûre tous les 3 jours pendant 3
+// semaines), même fonctionnalité que côté éleveur.
+class _SRappelRecurrent extends StatelessWidget {
+  final bool actif;
+  final ValueChanged<bool> onActifChanged;
+  final TextEditingController frequenceCtrl;
+  final TextEditingController dureeCtrl;
+  final String dureeUnite;
+  final ValueChanged<String> onDureeUniteChanged;
+  final List<String> heures;
+  final VoidCallback onAddHeure;
+  final ValueChanged<String> onRemoveHeure;
+  const _SRappelRecurrent({
+    required this.actif,
+    required this.onActifChanged,
+    required this.frequenceCtrl,
+    required this.dureeCtrl,
+    required this.dureeUnite,
+    required this.onDureeUniteChanged,
+    required this.heures,
+    required this.onAddHeure,
+    required this.onRemoveHeure,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE4E7E2)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(
+              child: Text('Rappels récurrents',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey.shade800))),
+          Switch(value: actif, activeThumbColor: const Color(0xFF6E9E57), onChanged: onActifChanged),
+        ]),
+        if (actif) ...[
+          const SizedBox(height: 8),
+          Row(children: [
+            const Text('Répéter tous les', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            const SizedBox(width: 8),
+            SizedBox(
+                width: 50,
+                child: TextField(
+                  controller: frequenceCtrl,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  decoration: const InputDecoration(
+                      isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8), border: OutlineInputBorder()),
+                )),
+            const SizedBox(width: 8),
+            const Text('jour(s)', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [
+            const Text('Pendant', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            const SizedBox(width: 8),
+            SizedBox(
+                width: 50,
+                child: TextField(
+                  controller: dureeCtrl,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  decoration: const InputDecoration(
+                      isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 8), border: OutlineInputBorder()),
+                )),
+            const SizedBox(width: 8),
+            DropdownButton<String>(
+              value: dureeUnite,
+              isDense: true,
+              items: const [
+                DropdownMenuItem(value: 'jours', child: Text('jours', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                DropdownMenuItem(value: 'semaines', child: Text('semaines', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+              ],
+              onChanged: (v) { if (v != null) onDureeUniteChanged(v); },
+            ),
+          ]),
+          const SizedBox(height: 10),
+          const Text('Heures de rappel', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          const SizedBox(height: 6),
+          Wrap(spacing: 6, runSpacing: 6, children: [
+            ...heures.map((h) => Chip(
+                label: Text(h, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                onDeleted: () => onRemoveHeure(h),
+                backgroundColor: const Color(0xFF6E9E57).withOpacity(0.12))),
+            ActionChip(
+                avatar: const Icon(Icons.add, size: 16),
+                label: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                onPressed: onAddHeure),
+          ]),
+        ],
+      ]),
     );
   }
 }

@@ -120,3 +120,14 @@ ALTER TABLE user_profiles
 
 CREATE INDEX IF NOT EXISTS idx_animaux_repro_public
   ON animaux(uid_eleveur) WHERE reproducteur_public = TRUE;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 6. Description de la maladie sur un traitement (fiche santé particulier
+--    et éleveur, appli + site web).
+--    Sans cette migration : erreur « couldn't find the description_maladie
+--    column of traitements » à l'ajout d'un traitement avec ce champ rempli.
+-- ────────────────────────────────────────────────────────────
+
+ALTER TABLE traitements
+  ADD COLUMN IF NOT EXISTS description_maladie TEXT;

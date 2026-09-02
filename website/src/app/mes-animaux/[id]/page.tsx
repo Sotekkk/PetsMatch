@@ -2043,7 +2043,8 @@ export default function AnimalFichePage() {
     const rappelActif = data.rappel_actif === 'true';
     const payload: Record<string, unknown> = {
       animal_id: id, id: crypto.randomUUID(),
-      nom: data.nom, type: data.type, posologie: data.posologie,
+      nom: data.nom, type: data.type, description_maladie: data.description_maladie || null,
+      posologie: data.posologie,
       date: data.date || null, date_fin: data.date_fin || null,
       rappel_actif: rappelActif,
     };
@@ -3332,14 +3333,14 @@ export default function AnimalFichePage() {
             addFormOpen={addOpen==='traitements'}
             addForm={<AddHealthForm saving={savingHealth} onCancel={()=>setAddOpen(null)}
               onSave={saveTraitement}
-              fields={[{key:'nom',label:'Nom',required:true},{key:'type',label:'Type'},{key:'posologie',label:'Posologie'},{key:'date',label:'Date début',type:'date'},{key:'date_fin',label:'Date fin',type:'date'},
+              fields={[{key:'nom',label:'Nom',required:true},{key:'type',label:'Type'},{key:'description_maladie',label:'Description de la maladie'},{key:'posologie',label:'Posologie'},{key:'date',label:'Date début',type:'date'},{key:'date_fin',label:'Date fin',type:'date'},
                 {key:'rappel_actif',label:'Activer les rappels récurrents',type:'checkbox'},
                 {key:'rappel_frequence_jours',label:'Répéter tous les X jours',type:'number'},
                 {key:'rappel_duree_jours',label:'Durée du traitement (jours)',type:'number'},
                 {key:'rappel_heures',label:'Heures de rappel (ex: 08:00, 20:00)'}]}/>}>
             {health.traitements.map(r=>(
               <HealthRecord key={r.id} record={r} onDelete={()=>deleteHealthRecord('traitements',r.id)}
-                fields={[{key:'nom',label:'Nom'},{key:'type',label:'Type'},{key:'posologie',label:'Posologie'},{key:'date',label:'Début'},{key:'date_fin',label:'Fin'}]}/>
+                fields={[{key:'nom',label:'Nom'},{key:'type',label:'Type'},{key:'description_maladie',label:'Maladie'},{key:'posologie',label:'Posologie'},{key:'date',label:'Début'},{key:'date_fin',label:'Fin'}]}/>
             ))}
             {health.traitements.length===0 && <p className="p-4 text-sm text-gray-400">Aucun traitement</p>}
           </HealthSection>
