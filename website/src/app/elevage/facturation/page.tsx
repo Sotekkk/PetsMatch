@@ -84,6 +84,7 @@ export default function FacturationPage() {
   const [filtreStatut, setFiltreStatut] = useState('tous');
   const [selected, setSelected] = useState<Facture | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [avoirSource, setAvoirSource] = useState<Facture | null>(null);
   const [sendingEmail, setSendingEmail] = useState(false);
 
   useEffect(() => {
@@ -226,6 +227,13 @@ export default function FacturationPage() {
         </div>
       </div>
 
+      <p className="text-xs text-gray-500 mb-4">
+        Numéros attribués automatiquement (séquence continue). Une facture émise est inaltérable — corrigez-la par un avoir.{' '}
+        <a href="/facturation/attestation" target="_blank" rel="noopener noreferrer" className="text-[#0C5C6C] hover:underline">
+          Attestation de conformité →
+        </a>
+      </p>
+
       <div className="flex gap-2 flex-wrap mb-6">
         {[['tous', 'Toutes'], ['emise', 'Émises'], ['payee', 'Payées'], ['annulee', 'Annulées']].map(([val, label]) => (
           <button key={val} onClick={() => setFiltreStatut(val)}
@@ -337,6 +345,12 @@ export default function FacturationPage() {
                 </button>
               </div>
             )}
+            {selected.statut !== 'annulee' && (selected as { type_facture?: string }).type_facture !== 'avoir' && (
+              <button onClick={() => { setAvoirSource(selected); setSelected(null); }}
+                className="w-full border border-[#0C5C6C]/30 text-[#0C5C6C] font-medium py-2 rounded-xl text-sm hover:bg-[#0C5C6C]/5 transition-colors mb-3">
+                ↩ Créer un avoir (corriger cette facture)
+              </button>
+            )}
             {selected.token && (
               <div className="flex gap-2 mb-3">
                 <a href={`/facture/${selected.token}`} target="_blank" rel="noopener noreferrer"
@@ -359,13 +373,14 @@ export default function FacturationPage() {
         </div>
       )}
 
-      {showForm && (
+      {(showForm || avoirSource) && (
         <NouvelleFactureForm
           uid={user.uid}
           profileId={activeProfileId}
           profilSource={profilSource}
-          onClose={() => setShowForm(false)}
-          onSaved={(f) => { setFactures((prev) => [f, ...prev]); setShowForm(false); }}
+          avoirDe={avoirSource}
+          onClose={() => { setShowForm(false); setAvoirSource(null); }}
+          onSaved={(f) => { setFactures((prev) => [f, ...prev]); setShowForm(false); setAvoirSource(null); }}
         />
       )}
     </div>
@@ -374,13 +389,15 @@ export default function FacturationPage() {
 
 // ── Formulaire nouvelle facture ───────────────────────────────────────────────
 
-function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', onClose, onSaved }: {
+function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe, onClose, onSaved }: {
   uid: string;
   profileId: string;
   profilSource?: string;
+  avoirDe?: Facture | null;
   onClose: () => void;
   onSaved: (f: Facture) => void;
 }) {
+  const isAvoir = !!avoirDe;
   // Émetteur (identité légale) — pré-rempli depuis le profil, éditable, figé sur la facture
   const [emNom, setEmNom] = useState('');
   const [emRue, setEmRue] = useState('');
@@ -396,14 +413,14 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', onClose
   const [emRcs, setEmRcs] = useState('');
   const [emRm, setEmRm] = useState('');
 
-  const [nomClient, setNomClient] = useState('');
-  const [prenomClient, setPrenomClient] = useState('');
-  const [emailClient, setEmailClient] = useState('');
-  const [telClient, setTelClient] = useState('');
-  const [rueClient, setRueClient] = useState('');
-  const [cpClient, setCpClient] = useState('');
-  const [villeClient, setVilleClient] = useState('');
-  const [paysClient, setPaysClient] = useState('France');
+  const [nomClient, setNomClient] = useState(avoirDe?.nom_client ?? '');
+  const [prenomClient, setPrenomClient] = useState(avoirDe?.prenom_client ?? '');
+  const [emailClient, setEmailClient] = useState(avoirDe?.email_client ?? '');
+  const [telClient, setTelClient] = useState(avoirDe?.telephone_client ?? '');
+  const [rueClient, setRueClient] = useState(avoirDe?.rue_client ?? '');
+  const [cpClient, setCpClient] = useState(avoirDe?.cp_client ?? '');
+  const [villeClient, setVilleClient] = useState(avoirDe?.ville_client ?? '');
+  const [paysClient, setPaysClient] = useState(avoirDe?.pays_client ?? 'France');
   const [siretClient, setSiretClient] = useState('');
   const [tvaClient, setTvaClient] = useState('');
   const [dateFacture, setDateFacture] = useState(today());
@@ -413,8 +430,20 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', onClose
   const [modePaiement, setModePaiement] = useState('Virement bancaire');
   const [delaiPaiement, setDelaiPaiement] = useState('30');
   const [escompte, setEscompte] = useState('Escompte pour paiement anticipé : néant.');
-  const [note, setNote] = useState('');
-  const [lignes, setLignes] = useState<Ligne[]>([{ description: '', quantite: 1, prixUnitaire: 0, tva: 20 }]);
+  const [note, setNote] = useState(isAvoir ? `Avoir sur la facture n° ${numLabel(avoirDe!)}.` : '');
+  const [lignes, setLignes] = useState<Ligne[]>(
+    isAvoir && (avoirDe!.lignes ?? []).length > 0
+      ? (avoirDe!.lignes ?? []).map(l => {
+          const ll = l as Ligne & { designation?: string; prixUnitaireHT?: number; tauxTVA?: number };
+          return {
+            description: `Avoir — ${ll.designation || ll.description || ''}`,
+            quantite: Number(ll.quantite ?? 1),
+            prixUnitaire: -(Number(ll.prixUnitaireHT ?? ll.prixUnitaire ?? 0)),
+            tva: Number(ll.tauxTVA ?? ll.tva ?? 20),
+          };
+        })
+      : [{ description: '', quantite: 1, prixUnitaire: 0, tva: 20 }]
+  );
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -481,6 +510,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', onClose
       profile_id:     profileId || null,
       profil_source:  profilSource,
       regime_tva:     franchise ? 'franchise' : 'normal',
+      ...(isAvoir ? { type_facture: 'avoir', facture_parente_id: avoirDe!.id } : {}),
       nom_client:     nomClient,
       prenom_client:  prenomClient || null,
       email_client:   emailClient || null,
@@ -529,7 +559,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', onClose
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
-        <h3 className="font-bold text-[#1F2A2E] text-lg mb-4">Nouvelle facture</h3>
+        <h3 className="font-bold text-[#1F2A2E] text-lg mb-4">{isAvoir ? "Facture d'avoir" : 'Nouvelle facture'}</h3>
         <form onSubmit={handleSave} className="space-y-4">
 
           {/* Émetteur */}

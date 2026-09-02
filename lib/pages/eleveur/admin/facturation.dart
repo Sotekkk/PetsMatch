@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/config.dart';
@@ -56,6 +57,8 @@ Map<String, dynamic> _supaToUi(Map<String, dynamic> r) => {
   'numeroFacture':      r['numero_facture'],
   'numeroAffichage':    r['numero_affichage'],
   'numeroSeq':          r['numero_seq'],
+  'typeFacture':        r['type_facture'],
+  'factureParenteId':   r['facture_parente_id'],
   'pdfUrl':             r['pdf_url'],
   'pdfHash':            r['pdf_hash'],
   'dateFacture':        _isoToFr(r['date_facture']),
@@ -192,6 +195,14 @@ class _FacturationPageState extends State<FacturationPage> {
         title: const Text('Mes Factures',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.verified_user_outlined),
+            tooltip: 'Attestation de conformité',
+            onPressed: () {
+              final uri = Uri.tryParse('$kSiteBaseUrl/facturation/attestation');
+              if (uri != null) launchUrl(uri, mode: LaunchMode.externalApplication);
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.ios_share_outlined),
             tooltip: 'Exporter (CSV)',
@@ -444,9 +455,51 @@ class FactureDetailPage extends StatelessWidget {
               },
             ),
           ),
+          if ((data['typeFacture'] ?? '') != 'avoir' && (data['statut'] ?? 'emise') != 'annulee') ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.undo_outlined, size: 18),
+                label: const Text('Créer un avoir (corriger cette facture)',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _teal,
+                  side: const BorderSide(color: _teal),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () => _creerAvoir(context),
+              ),
+            ),
+          ],
         ]),
       ),
     );
+  }
+
+  Future<void> _creerAvoir(BuildContext context) async {
+    final lignes = List<Map<String, dynamic>>.from(data['lignes'] ?? []);
+    final numRef = _numAff(data);
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => CreerFacturePage(
+        clientNom: data['nomClient'] as String?,
+        clientPrenom: data['prenomClient'] as String?,
+        clientEmail: data['emailClient'] as String?,
+        clientTel: data['telephoneClient'] as String?,
+        typeFacture: 'avoir',
+        factureParenteId: docId,
+        franchiseInitiale: data['regimeTVA'] == 'franchise',
+        noteInitiale: 'Avoir sur la facture n° $numRef.',
+        lignesPrefill: lignes.map((l) => FacturePrefillLigne(
+              designation: 'Avoir — ${l['designation'] ?? ''}',
+              description: (l['description'] ?? '').toString(),
+              prixHT: -((l['prixUnitaireHT'] as num?)?.toDouble() ?? 0),
+              quantite: (l['quantite'] as num?)?.toDouble() ?? 1,
+              tauxTVA: (l['tauxTVA'] as num?)?.toDouble() ?? 20,
+            )).toList(),
+      ),
+    ));
   }
 }
 
@@ -476,7 +529,8 @@ class CreerFacturePage extends StatefulWidget {
   final String? clientTel;
   final List<FacturePrefillLigne> lignesPrefill;
   final String? noteInitiale;
-  final String? typeFacture; // 'acompte' | 'solde' | null
+  final String? typeFacture; // 'acompte' | 'solde' | 'avoir' | null
+  final String? factureParenteId; // facture corrigée (pour un avoir)
   final bool franchiseInitiale;
 
   const CreerFacturePage({
@@ -488,6 +542,7 @@ class CreerFacturePage extends StatefulWidget {
     this.lignesPrefill = const [],
     this.noteInitiale,
     this.typeFacture,
+    this.factureParenteId,
     this.franchiseInitiale = false,
   });
 
@@ -677,6 +732,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                 ? User_Info.catPro
                 : 'eleveur',
         if (widget.typeFacture != null) 'type_facture': widget.typeFacture,
+        if (widget.factureParenteId != null) 'facture_parente_id': widget.factureParenteId,
         'date_facture':        _frToIso(d['dateFacture']),
         'date_prestation':     _frToIso(d['datePrestation']),
         'date_echeance':       _frToIso(d['dateEcheance']),
@@ -786,6 +842,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
   }
 
   Map<String, dynamic> _buildData() => {
+    'typeFacture': widget.typeFacture,
     'dateFacture': _dateFacture,
     'datePrestation': _datePrestation,
     'dateEcheance': _dateEcheance,
@@ -1161,7 +1218,8 @@ Future<Uint8List> _buildPdf(Map<String, dynamic> d) async {
               pw.Text('RM : ${d['rmEmetteur']}', style: pw.TextStyle(font: font, fontSize: 9)),
           ]),
           pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
-            pw.Text('FACTURE', style: pw.TextStyle(font: bold, fontSize: 22, color: tealPdf)),
+            pw.Text(d['typeFacture'] == 'avoir' ? "FACTURE D'AVOIR" : 'FACTURE',
+                style: pw.TextStyle(font: bold, fontSize: d['typeFacture'] == 'avoir' ? 18 : 22, color: tealPdf)),
             pw.Text('N° ${_numAff(d)}', style: pw.TextStyle(font: bold, fontSize: 14)),
             pw.SizedBox(height: 6),
             pw.Text('Date : ${d['dateFacture'] ?? ''}', style: pw.TextStyle(font: font, fontSize: 10)),

@@ -1,9 +1,9 @@
 -- Facturation — Phase 2b : numérotation serveur aussi pour la pension
 -- ============================================================================
--- La table `factures_pension` est distincte de `factures` : même principe de
+-- La table `pension_factures` est distincte de `factures` : même principe de
 -- séquence continue AAAA-NNNN, par (émetteur pension, année).
 
-ALTER TABLE factures_pension
+ALTER TABLE pension_factures
   ADD COLUMN IF NOT EXISTS numero_seq       INTEGER,
   ADD COLUMN IF NOT EXISTS numero_affichage TEXT,
   ADD COLUMN IF NOT EXISTS annee_facture    INTEGER;
@@ -27,7 +27,7 @@ BEGIN
 
   SELECT COALESCE(MAX(numero_seq), 0) + 1
     INTO v_seq
-    FROM factures_pension
+    FROM pension_factures
    WHERE annee_facture = v_annee
      AND COALESCE(pro_profile_id::text, pro_uid, 'inconnu') = v_emetteur;
 
@@ -43,9 +43,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_attribuer_numero_facture_pension ON factures_pension;
+DROP TRIGGER IF EXISTS trg_attribuer_numero_facture_pension ON pension_factures;
 CREATE TRIGGER trg_attribuer_numero_facture_pension
-  BEFORE INSERT ON factures_pension
+  BEFORE INSERT ON pension_factures
   FOR EACH ROW EXECUTE FUNCTION attribuer_numero_facture_pension();
 
 -- Reprise chronologique des factures pension existantes.
@@ -57,10 +57,10 @@ WITH ranked AS (
                         EXTRACT(YEAR FROM COALESCE(date_envoi, created_at))
            ORDER BY COALESCE(date_envoi, created_at), id
          ) AS rn
-    FROM factures_pension
+    FROM pension_factures
    WHERE numero_seq IS NULL
 )
-UPDATE factures_pension f
+UPDATE pension_factures f
    SET numero_seq       = r.rn,
        annee_facture    = r.an,
        numero_affichage = r.an::text || '-' || LPAD(r.rn::text, 4, '0')
