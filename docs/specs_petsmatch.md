@@ -6347,4 +6347,180 @@ pas de changement web dans ce lot.
 
 ---
 
+## 47. Facturation officielle valide & « certifiée » — chantier conformité (sessions 2026-08-27 → 2026-09-03)
+
+**Contexte** : demande de l'utilisatrice — « pour mes différents professionnels
+on puisse avoir une facturation officielle valide certifiée » + vérifier que
+chaque facturation ne manque de rien et que tout est bien stocké pour
+transmission. Audit préalable des 7 implémentations de facture existantes
+(éleveur, association, garde, éducateur, taxi, photographe, toiletteur, pension) →
+plan en 4 phases. Artifact d'audit :
+https://claude.ai/code/artifact/636721f8-8cb6-4057-83c7-cb209c057322
+
+### 47.1 — Phase 1 livrée : gabarit unique conforme + bascule taxi/photo/toilettage
+
+- **Migration `migration_facturation_phase1.sql`** : `factures` +=
+  `tel_emetteur, forme_juridique_emetteur, capital_emetteur, rcs_emetteur,
+  rm_emetteur, siret_client, tva_client, conditions_escompte, type_facture,
+  acompte_pct`.
+- **Gabarit unique** avec toutes les mentions obligatoires (art. L441-9 C. com.,
+  art. 242 nonies A CGI) : identité complète de l'émetteur (forme juridique,
+  capital, tél, SIRET, TVA intracom, RCS, RM), adresse du client, SIRET/TVA
+  client, mention « TVA non applicable, art. 293 B du CGI » si franchise,
+  pénalités de retard « 3 × taux d'intérêt légal » + indemnité forfaitaire de
+  recouvrement de 40 € (art. L441-10 et D441-5 C. com.), conditions d'escompte.
+  Aligné app (`lib/pages/eleveur/admin/facturation.dart`) et site
+  (`website/src/app/facture/[token]/page.tsx` réécrit, `elevage/facturation/page.tsx`).
+- **Taxi / photographe / toiletteur** basculés sur le **moteur commun `factures`**
+  (décision utilisatrice). Avant : `taxi_factures` / `photographe_factures` /
+  `toilettage_factures` = simple suivi d'encaissement (montant + nom), aucune
+  mention légale. `CreerFacturePage` reçoit des paramètres de pré-remplissage
+  (`clientNom/Prenom/Email/Tel`, `lignesPrefill`, `noteInitiale`, `typeFacture`,
+  `franchiseInitiale`) ; `profil_source` calculé depuis `User_Info.catPro`
+  (`taxi_animalier` / `photographe` / `toilettage` / `garde` / `education`, sinon
+  `eleveur` / `association`). `FacturationPage._load` filtre désormais
+  `profil_source.is.null,profil_source.neq.association` (idem web). Anciennes pages
+  `TaxiFacturesPage` / `PhotographeFacturesPage` / `ToilettageFacturesPage`
+  orphelines (fichiers conservés, plus référencées). Tables `taxi_factures` etc.
+  conservées (lues par les dashboards) mais l'historique n'est pas repris dans le
+  nouveau flux (c'était du suivi d'encaissement, pas des factures).
+- **Pension** (`pension-facture-html.ts` + `pension-facture-pdf.ts`) enrichis :
+  interface `PensionFactureEmetteur`, bloc émetteur complet, adresse propriétaire,
+  échéance, escompte, mention 293 B si `!avecTVA`, pénalités + 40 €.
+  `PensionFacturationModal` charge l'identité depuis `user_profiles` + bandeau
+  d'alerte si adresse/SIRET manquants.
+
+### 47.2 — Phase 2 livrée : numérotation serveur + identité pro + PDF archivé
+
+- **Migration `migration_facturation_phase2.sql`** : `factures` +=
+  `numero_seq, numero_affichage` (format `AAAA-NNNN`), `annee_facture`,
+  `pdf_url, pdf_hash, pdf_emis_le`. `user_profiles` +=
+  `forme_juridique_pro, capital_social_pro, rcs_pro, rm_pro, iban_pro, bic_pro,
+  regime_tva_pro`.
+- **Numérotation atomique serveur** : trigger `attribuer_numero_facture()`
+  BEFORE INSERT, sous `pg_advisory_xact_lock` par (émetteur, année,
+  `profil_source`) → séquence continue **sans trou ni collision** (avant :
+  `max+1` côté client, source de trous). Reprise des factures existantes dans le
+  script (`ROW_NUMBER() OVER (PARTITION BY … ORDER BY created_at, numero_facture)`).
+  App : plus de saisie du numéro, `_save` fait `.insert().select('numero_affichage')`
+  puis génère le PDF ; helper `_numAff`. Web : `numLabel()`, suppression de
+  `nextNum`.
+- **Identité de facturation dans le profil** : section « Facturation » ajoutée au
+  profil pro (`pro_profile_edit.dart` — getter `_billingFields` spread dans les 2
+  écritures `user_profiles` ; site `profil/page.tsx` composant pro) et au profil
+  éleveur (`elevage/profil/edit/page.tsx`). `CreerFacturePage._loadUserData`
+  pré-remplit : profil → dernière facture → Firestore.
+- **PDF figé + archivé + envoi (app)** : `_archiverEtEnvoyer()` — upload bucket
+  `media` (`factures/<uid>/<id>.pdf`), empreinte **SHA-256** (`package:crypto`),
+  update `pdf_url/pdf_hash/pdf_emis_le`, email client (`/api/facture/notify-email`),
+  notif in-app `facture_recue` si le client a un compte.
+
+### 47.3 — Phase 2b livrée : numérotation serveur pour la pension
+
+- **Migration `migration_facturation_phase2b.sql`** : la table réelle est
+  **`pension_factures`** (⚠️ pas `factures_pension`). `pension_factures` +=
+  `numero_seq, numero_affichage, annee_facture`. Trigger
+  `attribuer_numero_facture_pension()` par (émetteur pension, année) ;
+  `numero` (TEXT) reçoit le numéro d'affichage si vide. Reprise des factures
+  existantes (`COALESCE(date_envoi, created_at)`).
+- `PensionFacturationModal` : insère d'abord (numéro attribué serveur), puis
+  génère le PDF avec ce numéro et met à jour la ligne (`details` + `pdf_url`).
+  `insertFacture` résilient si la migration n'est pas passée.
+- Lecteurs (`/facture-pension/[token]`, `pension_factures_page.dart` helper
+  `_pnum`) affichent `numero_affichage`.
+- Profil éleveur (site) : section facturation (forme juridique, capital, RCS,
+  franchise TVA, IBAN/BIC) → `user_profiles`.
+
+### 47.4 — Phase 3 livrée : inaltérabilité + facture d'avoir + attestation éditeur
+
+- **Migration `migration_facturation_phase3.sql`** :
+  - `factures` += `facture_parente_id` (rattachement d'un avoir).
+  - Table **`factures_journal`** (journal d'audit) — append only : RLS
+    INSERT/SELECT uniquement, `REVOKE UPDATE, DELETE` pour `anon`/`authenticated`.
+  - Trigger **`factures_garde_fou()`** BEFORE INSERT/UPDATE/DELETE sur `factures` :
+    journalise la création et les changements de statut ; `RAISE EXCEPTION` si on
+    modifie le contenu (lignes, montants, identités, dates, numéro, régime TVA)
+    d'une facture non `brouillon`, ou si on la supprime. L'archivage PDF
+    (`pdf_url/pdf_hash/pdf_emis_le`) et les passages `payee`/`annulee` restent
+    autorisés (colonnes hors du verrou `ROW(...)`).
+- **Facture d'avoir** (app + site) : bouton « Créer un avoir » dans le détail
+  d'une facture (masqué si déjà un avoir ou si annulée) → pré-remplit le client
+  et les lignes en négatif (« Avoir — … »), en-tête PDF « FACTURE D'AVOIR ».
+  App : `FactureDetailPage._creerAvoir()` + param `factureParenteId` sur
+  `CreerFacturePage`. Site : prop `avoirDe` + state `avoirSource` dans
+  `elevage/facturation/page.tsx`.
+- **Attestation individuelle de conformité de l'éditeur** (loi anti-fraude TVA,
+  art. 286-I-3° bis CGI) : nouvelle page imprimable
+  `website/src/app/facturation/attestation/page.tsx` — identité du pro depuis
+  `user_profiles`, 4 points de conformité (inaltérabilité / numérotation /
+  traçabilité via le journal / conservation + archivage SHA-256). Lien depuis
+  l'AppBar de la page facturation de l'app (`Icons.verified_user_outlined` →
+  `launchUrl` vers `/facturation/attestation`) et un bandeau sur la page
+  facturation web.
+
+### 47.5 — Complément livré : archivage PDF web + identité de facturation association
+
+- **Archivage PDF web** (parité avec l'app) : nouveau
+  `website/src/lib/facture-pdf.ts` (jsPDF + autotable) — même contenu que le PDF
+  de l'app et que `/facture/[token]`. `elevage/facturation/page.tsx` : après
+  l'insert, génère le PDF avec le numéro serveur, l'upload dans le bucket `media`
+  (`factures/<uid>/<id>.pdf`, **même emplacement que l'app**), calcule le SHA-256
+  via `crypto.subtle`, met à jour `pdf_url/pdf_hash/pdf_emis_le`. L'échec
+  d'archivage ne bloque pas l'émission. Lien « PDF archivé » dans la modale
+  détail ; `pdf_url` transmis à l'email client.
+- **Identité de facturation de l'association** :
+  `profil/page.tsx` (`AssociationEdit`) — nouvelle carte « Facturation » : forme
+  juridique (défaut « Association loi 1901 »), franchise en base de TVA / activité
+  non lucrative (défaut activé → mention 293 B), n° TVA intracom si assujettie,
+  IBAN/BIC → `user_profiles` (`forme_juridique_pro, regime_tva_pro, numero_tva,
+  iban_pro, bic_pro`). `NouvelleFactureForm.loadEmetteur` rendu
+  association-aware : l'adresse d'une association est dans
+  `rue/ville/code_postal/pays` et le téléphone dans `phone` (pas les colonnes
+  `*_pro`) ; reprend aussi forme juridique / RCS / RM / régime TVA / IBAN depuis
+  le profil.
+
+### 47.6 — Phase 4 (Factur-X + raccordement PDP) — EN PAUSE
+
+Obligation de facturation électronique / e-reporting : réception pour toutes les
+entreprises au **1er septembre 2026**, émission pour les PME/TPE au **1er
+septembre 2027**. Note comparative des PDP + chiffrage de Factur-X :
+https://claude.ai/code/artifact/3ea879e4-b561-4bf2-b462-0b6f45203a20
+
+- **Reco** : un seul PDP partenaire, embarqué via API (PetsMatch = opérateur de
+  dématérialisation), qui **génère le Factur-X à partir de JSON** — ne PAS
+  construire Factur-X en interne. Cible : Iopole (alternatives : Pennylane,
+  Sellsy). Verrouiller l'e-reporting B2C dans le contrat (la majorité des factures
+  des pros vont à des particuliers).
+- **Chiffrage** : scénario PDP ~7 000–15 000 € de dev ; Factur-X maison
+  +9 000–16 000 € pour rien. Coût récurrent PDP à négocier (hypothèse
+  0,15–0,30 € / flux).
+- **Décision utilisatrice (2026-09-03)** : phase 4 mise de côté, à discuter entre
+  cofondateurs. Le raccordement PDP (API payante au flux) sera planifié **au plus
+  près du lancement** pour ne pas payer un abonnement dans le vide. Questions à
+  trancher listées dans la note (part B2B/B2C, refacturation du coût PDP,
+  périmètre émission seule vs réception/archivage, qui signe avec le PDP).
+
+### 47.7 — Migrations & état
+
+**Migrations à exécuter dans Supabase (toutes lancées, confirmé par
+l'utilisatrice)** :
+`migration_facturation_phase1.sql`, `migration_facturation_phase2.sql`,
+`migration_facturation_phase2b.sql`, `migration_facturation_phase3.sql`.
+
+**Vérifié** : `flutter analyze` propre (que des lints de style préexistants) ;
+`tsc --noEmit` — les erreurs restantes sont préexistantes sur `main` (aucune dans
+les fichiers touchés). APK rebuild + install OK.
+
+**Commits** : `38a665a2` (Phase 1), `730dc812` (Phase 2), `3b2379a6` (Phase 2b),
+`54b74e6e` (Phase 3), `02793a44` (archivage PDF web), `b6a165e9` (identité asso).
+
+**Reste / dette** :
+- Envoi email automatique à la création côté web (l'app le fait, le site attend
+  un clic « Envoyer par email » — volontaire).
+- Historique des tables `taxi_factures` / `photographe_factures` /
+  `toilettage_factures` non repris dans le moteur commun.
+- Phase 4 (Factur-X + PDP), volontairement repoussée près du lancement.
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*
