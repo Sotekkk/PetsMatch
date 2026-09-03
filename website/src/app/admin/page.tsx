@@ -81,6 +81,18 @@ const CAT_LABELS: Record<string, string> = {
   referencement: 'Commerce / Animalerie', autre: 'Autre',
 };
 
+// `profile_type` sert de catégorie pro pour les vrais métiers (veterinaire,
+// toilettage…). 'particulier', 'eleveur' et 'association' ne sont PAS des
+// catégories pro : ils ont leurs propres badges / branches. Sans ce filtre, un
+// profil particulier ressort en « Pro » dans l'admin (isPro = !!catPro).
+const NON_PRO_TYPES = new Set(['particulier', 'eleveur', 'association']);
+function proCategory(row: { profile_type?: string | null; cat_pro?: string | null }): string {
+  const raw = row.profile_type ?? row.cat_pro ?? '';
+  if (!NON_PRO_TYPES.has(raw)) return raw;
+  const cp = row.cat_pro ?? '';
+  return NON_PRO_TYPES.has(cp) ? '' : cp;
+}
+
 const STATUT_STYLE: Record<string, { label: string; color: string; bg: string }> = {
   actif:      { label: 'Actif',      color: '#16a34a', bg: '#dcfce7' },
   suspendu:   { label: 'Suspendu',   color: '#ea580c', bg: '#ffedd5' },
@@ -292,7 +304,7 @@ export default function AdminPage() {
           uid: d.id, isSecondary: false, profileTableId: row?.id,
           firstName: fire.firstname ?? '', lastName: fire.lastname ?? '', email: fire.email ?? meta?.email ?? '',
           photoUrl: row?.profile_picture_url_pro ?? row?.avatar_url ?? fire.profilePictureUrl ?? '',
-          catPro: row?.profile_type ?? row?.cat_pro ?? '',
+          catPro: proCategory(row ?? {}),
           statutPro: row?.statut_pro ?? 'actif',
           nameElevage: row?.nom ?? '',
           professionPro: row?.profession_pro ?? '',
@@ -315,7 +327,7 @@ export default function AdminPage() {
           lastName:  (row.lastname  as string) ?? '',
           email:     meta?.email ?? '',
           photoUrl:  row.profile_picture_url_pro ?? row.avatar_url ?? '',
-          catPro:    row.profile_type ?? row.cat_pro ?? '',
+          catPro:    proCategory(row),
           statutPro: row.statut_pro ?? 'actif',
           nameElevage:    row.nom ?? '',
           professionPro:  row.profession_pro ?? '',
@@ -336,7 +348,7 @@ export default function AdminPage() {
           uid: row.uid, isSecondary: true, profileTableId: row.id,
           firstName: (fire as FireUser).firstname ?? '', lastName: (fire as FireUser).lastname ?? '',
           email: (fire as FireUser).email ?? '', photoUrl: row.avatar_url ?? (fire as FireUser).profilePictureUrl ?? '',
-          catPro: row.profile_type ?? row.cat_pro ?? '', statutPro: row.statut_pro ?? 'en_attente',
+          catPro: proCategory(row), statutPro: row.statut_pro ?? 'en_attente',
           nameElevage: row.nom ?? '', professionPro: row.profession_pro ?? '',
           especesAcceptees: (row.especes_acceptees as string[]) ?? [],
           certifications: (row.certifications as { nom?: string; organisme?: string }[]) ?? [],
