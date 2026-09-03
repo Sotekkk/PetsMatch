@@ -21,11 +21,31 @@ immatriculation :
 | Normalisation `factures` → EN 16931 | `src/normalize/from-facture.ts` | ✅ v1 |
 | Validateur pré-émission | `src/validate/en16931.ts` | ✅ v1 |
 | Schéma de données fiscales | `../supabase/migration_pa_01_schema.sql` | ✅ v1 (à exécuter) |
+| XML CII (Factur-X, profil EN 16931) | `src/facturx/cii.ts` | ✅ v1 |
+| Orchestration Factur-X (PDF/A-3) | `src/facturx/build.ts` | ✅ v1 (interface + impl HTTP + XML-only) |
+| Micro-service PDF/A-3 (`factur-x` Python) | `facturx-service/` | ✅ v1 (scaffold) |
 | Ingestion `factures` → `pa.invoices` | `src/ingest/` | à venir |
-| Génération Factur-X (PDF/A-3 + XML CII) | `src/facturx/` | à venir |
 | Machine à états (10 statuts) | `src/lifecycle/` | à venir |
-| Journal de preuve | `src/audit/` | à venir |
+| Journal de preuve complet | `src/audit/` | à venir |
 | E-reporting B2C + paiements | `src/ereporting/` | à venir |
+| Rendu PDF lisible de marque (serveur) | `src/pdf/` | à venir |
+
+### Architecture Factur-X
+
+```
+En16931Invoice ──► buildCii() ──────────► XML CII (Node, src/facturx/cii.ts)
+                          │
+                          ▼
+       FacturxBuilder.build()  ──HTTP──►  facturx-service (Python)
+       (src/facturx/build.ts)             = PDF lisible + XML → PDF/A-3
+                          │
+                          ▼
+       { pdf: PDF/A-3, xml, sha256, profile }
+```
+
+Le XML (logique métier) est en Node ; seul l'emballage PDF/A-3 est délégué au
+micro-service Python (lib de référence `factur-x`), conformément au repli prévu
+§12 du cahier des charges.
 
 ## Lancer
 
