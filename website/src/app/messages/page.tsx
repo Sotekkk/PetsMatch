@@ -34,7 +34,7 @@ const CHAT_THEMES: ChatTheme[] = [
   { id: 'default',  name: 'Classique',          emoji: '💬', bgFrom: '#F5F5F0', bgTo: '#F0F0EB', sentColor: '#0C5C6C', sentText: '#fff', isDark: false },
   { id: 'sunset',   name: 'Coucher de soleil',  emoji: '🌅', bgFrom: '#FFE4CC', bgTo: '#FFB5C8', sentColor: '#D4603A', sentText: '#fff', isDark: false },
   { id: 'forest',   name: 'Forêt',              emoji: '🌿', bgFrom: '#E8F5E9', bgTo: '#C5DFC6', sentColor: '#3D7A32', sentText: '#fff', isDark: false },
-  { id: 'ocean',    name: 'Océan',              emoji: '🌊', bgFrom: '#DCEEF​D', bgTo: '#B3D4F5', sentColor: '#1256A0', sentText: '#fff', isDark: false },
+  { id: 'ocean',    name: 'Océan',              emoji: '🌊', bgFrom: '#DCEEFD', bgTo: '#B3D4F5', sentColor: '#1256A0', sentText: '#fff', isDark: false },
   { id: 'lavender', name: 'Lavande',            emoji: '💜', bgFrom: '#F3E8FA', bgTo: '#DDB8EE', sentColor: '#7B1FA2', sentText: '#fff', isDark: false },
   { id: 'night',    name: 'Nuit',               emoji: '🌙', bgFrom: '#1A1A2E', bgTo: '#0F213E', sentColor: '#2C5F8A', sentText: '#fff', isDark: true  },
 ];
@@ -135,6 +135,13 @@ function MessagesPageInner() {
   const [reportSending, setReportSending] = useState(false);
   // Header menu
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  // Nouveau message — recherche d'un contact PetsMatch
+  const [showNewMsgModal, setShowNewMsgModal] = useState(false);
+  const [newMsgQuery, setNewMsgQuery] = useState('');
+  const [newMsgResults, setNewMsgResults] = useState<{ uid: string; nom: string; avatar?: string }[]>([]);
+  const [newMsgSearching, setNewMsgSearching] = useState(false);
+  const [newMsgSearchDone, setNewMsgSearchDone] = useState(false);
+  const [startingConv, setStartingConv] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const convChannelRef = useRef<RealtimeChannel | null>(null);
@@ -231,6 +238,95 @@ function MessagesPageInner() {
       .subscribe();
     return () => { convChannelRef.current?.unsubscribe(); };
   }, [user, loadConversations]);
+
+  // ── Nouveau message — recherche d'un contact PetsMatch ────────────────────
+  // Même logique que la recherche de contact urgence côté app/particulier :
+  // nom/prénom/nom d'élevage ou email, suggestions live dès 2 caractères.
+  async function searchNewMsgUser() {
+    const q = newMsgQuery.trim();
+    if (!q || !user) return;
+    setNewMsgSearching(true);
+    setNewMsgSearchDone(false);
+    try {
+      type Row = { uid: string; firstname?: string; lastname?: string; nom?: string; profile_type?: string; avatar_url?: string };
+      let rows: Row[] = [];
+      if (q.includes('@')) {
+        const { data: userRow } = await supabase.from('users').select('uid, email')
+            .eq('email', q.toLowerCase()).maybeSingle();
+        if (userRow) {
+          const { data: cp } = await supabase.from('user_profiles')
+              .select('uid, firstname, lastname, nom, profile_type, avatar_url')
+              .eq('uid', userRow.uid).eq('is_main', true).maybeSingle();
+          rows = cp ? [cp] : [];
+        }
+      } else {
+        const { data } = await supabase.from('user_profiles')
+            .select('uid, firstname, lastname, nom, profile_type, avatar_url')
+            .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,nom.ilike.%${q}%`)
+            .eq('is_main', true)
+            .limit(10);
+        rows = data ?? [];
+      }
+      setNewMsgResults(
+        rows.filter(r => r.uid !== user.uid).map(r => {
+          const isElevage = r.profile_type === 'eleveur';
+          const nom = isElevage && r.nom ? r.nom : `${r.firstname ?? ''} ${r.lastname ?? ''}`.trim();
+          return { uid: r.uid, nom: nom || 'Utilisateur PetsMatch', avatar: r.avatar_url };
+        })
+      );
+    } finally {
+      setNewMsgSearching(false);
+      setNewMsgSearchDone(true);
+    }
+  }
+
+  useEffect(() => {
+    if (!showNewMsgModal) return;
+    if (newMsgQuery.trim().length < 2) {
+      setNewMsgResults([]);
+      setNewMsgSearchDone(false);
+      return;
+    }
+    const t = setTimeout(() => { searchNewMsgUser(); }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newMsgQuery, showNewMsgModal]);
+
+  // Trouve ou crée une conversation directe avec cet utilisateur (même
+  // logique que MessagingHelper.openOrCreateConversation côté app, pour ne
+  // pas dupliquer une conversation déjà créée depuis l'appli).
+  async function startConversationWith(otherUid: string) {
+    if (!user || startingConv) return;
+    setStartingConv(true);
+    try {
+      const sorted = [user.uid, otherUid].sort().join('_');
+      const { data: existing } = await supabase.from('conversations')
+          .select('id').eq('participant_ids', sorted).eq('type', 'direct').maybeSingle();
+      let conversationId = existing?.id as string | undefined;
+      if (!conversationId) {
+        const { data: created } = await supabase.from('conversations').insert({
+          type: 'direct',
+          participants: [user.uid, otherUid],
+          participant_ids: sorted,
+          last_message: '',
+          unread_count: { [user.uid]: 0, [otherUid]: 0 },
+          updated_at: new Date().toISOString(),
+        }).select('id').single();
+        conversationId = created?.id as string;
+      }
+      if (conversationId) {
+        setShowNewMsgModal(false);
+        setNewMsgQuery('');
+        setNewMsgResults([]);
+        setNewMsgSearchDone(false);
+        await loadConversations();
+        setSelectedId(conversationId);
+        setMobileView('thread');
+      }
+    } finally {
+      setStartingConv(false);
+    }
+  }
 
   // Charger messages + Realtime
   useEffect(() => {
@@ -461,11 +557,20 @@ function MessagesPageInner() {
         <div className="px-5 py-4 border-b border-gray-100 flex-shrink-0">
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-lg font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Messages</h1>
-            {totalUnread > 0 && (
-              <span className="bg-[#0C5C6C] text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                {totalUnread > 99 ? '99+' : totalUnread}
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {totalUnread > 0 && (
+                <span className="bg-[#0C5C6C] text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                  {totalUnread > 99 ? '99+' : totalUnread}
+                </span>
+              )}
+              <button onClick={() => setShowNewMsgModal(true)} title="Nouveau message"
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C] hover:bg-[#0C5C6C]/20 transition-colors">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                </svg>
+              </button>
+            </div>
           </div>
           <div className="relative">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -921,6 +1026,47 @@ function MessagesPageInner() {
               style={{ background: '#f97316', fontFamily: 'Galey, sans-serif' }}>
               {reportSending ? 'Envoi…' : 'Envoyer le signalement'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal Nouveau message ────────────────────────────────────────────── */}
+      {showNewMsgModal && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center"
+          onClick={() => setShowNewMsgModal(false)}>
+          <div className="bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4 md:hidden" />
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-bold text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>Nouveau message</h2>
+              <button onClick={() => setShowNewMsgModal(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">Nom, prénom ou email d&apos;un utilisateur PetsMatch.</p>
+            <input value={newMsgQuery} onChange={e => setNewMsgQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') searchNewMsgUser(); }}
+              autoFocus placeholder="Nom, prénom ou email…"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30" />
+            <div className="max-h-72 overflow-y-auto space-y-2">
+              {newMsgResults.map(r => (
+                <button key={r.uid} onClick={() => startConversationWith(r.uid)} disabled={startingConv}
+                  className="w-full flex items-center gap-2.5 border border-gray-200 rounded-xl px-3 py-2.5 bg-white text-left hover:bg-gray-50 disabled:opacity-50">
+                  <div className="w-8 h-8 rounded-full bg-[#0C5C6C]/10 flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {r.avatar ? (
+                      <Image src={r.avatar} alt={r.nom} width={32} height={32} className="w-full h-full object-cover" unoptimized />
+                    ) : (
+                      <span className="text-[#0C5C6C] font-bold text-xs">{r.nom[0]?.toUpperCase()}</span>
+                    )}
+                  </div>
+                  <span className="flex-1 text-sm font-semibold text-[#1F2A2E]">{r.nom}</span>
+                  <span className="text-gray-400">›</span>
+                </button>
+              ))}
+              {newMsgSearchDone && newMsgResults.length === 0 && (
+                <p className="text-sm text-gray-400 text-center py-2">Aucun utilisateur trouvé.</p>
+              )}
+              {newMsgSearching && (
+                <p className="text-sm text-gray-400 text-center py-2">Recherche…</p>
+              )}
+            </div>
           </div>
         </div>
       )}

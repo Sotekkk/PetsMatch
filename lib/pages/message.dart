@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:flutter/material.dart';
@@ -98,6 +99,33 @@ class _MessagePageState extends State<MessagePage> {
           .select('blocked_uid').eq('uid', _uid);
       if (mounted) setState(() => _blockedUsers = (rows as List).map((r) => r['blocked_uid'].toString()).toList());
     } catch (_) {}
+  }
+
+  // Rechercher un utilisateur PetsMatch pour démarrer une nouvelle
+  // conversation (aucune conversation n'existe forcément déjà avec lui) —
+  // ouvre/crée la conversation via MessagingHelper puis navigue dessus.
+  Future<void> _openNewMessageSheet() async {
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => const _NewMessageSearchSheet(),
+    );
+    if (result == null || !mounted) return;
+    final otherUid = result['uid'] as String;
+    try {
+      final conversationId = await MessagingHelper.openOrCreateConversation(otherUid: otherUid);
+      if (!mounted) return;
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => ChatScreen(conversationId: conversationId, eleveurId: otherUid),
+      ));
+      _loadConversations();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red));
+    }
   }
 
   Future<void> _loadConversations() async {
@@ -379,6 +407,13 @@ class _MessagePageState extends State<MessagePage> {
         backgroundColor: _teal, elevation: 0, automaticallyImplyLeading: false,
         title: const Text('Messages',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: Colors.white)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_square, color: Colors.white),
+            tooltip: 'Nouveau message',
+            onPressed: _openNewMessageSheet,
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -646,6 +681,160 @@ class _MessagePageState extends State<MessagePage> {
           },
         );
       },
+    );
+  }
+}
+
+// ── Recherche d'un contact PetsMatch (Nouveau message) ─────────────────────────
+// Même logique que la recherche de contact urgence côté particulier
+// (animal_fiche_particulier.dart) : nom/prénom/nom d'élevage, suggestions
+// live dès 2 caractères.
+class _NewMessageSearchSheet extends StatefulWidget {
+  const _NewMessageSearchSheet();
+  @override
+  State<_NewMessageSearchSheet> createState() => _NewMessageSearchSheetState();
+}
+
+class _NewMessageSearchSheetState extends State<_NewMessageSearchSheet> {
+  final _supa = Supabase.instance.client;
+  final _searchCtrl = TextEditingController();
+  bool _searching = false;
+  bool _searchDone = false;
+  List<Map<String, dynamic>> _results = [];
+  Timer? _debounce;
+
+  String get _myUid => FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onQueryChanged(String q) {
+    _debounce?.cancel();
+    if (q.trim().length < 2) {
+      setState(() { _results = []; _searchDone = false; });
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 350), _search);
+  }
+
+  Future<void> _search() async {
+    final q = _searchCtrl.text.trim();
+    if (q.isEmpty) return;
+    setState(() { _searching = true; _searchDone = false; _results = []; });
+    try {
+      List<Map<String, dynamic>> rows;
+      if (q.contains('@')) {
+        final userRow = await _supa.from('users').select('uid, email')
+            .eq('email', q.toLowerCase()).maybeSingle();
+        if (userRow == null) {
+          rows = [];
+        } else {
+          final cp = await _supa.from('user_profiles')
+              .select('uid, firstname, lastname, nom, profile_type, avatar_url')
+              .eq('uid', userRow['uid'] as String).eq('is_main', true).maybeSingle();
+          rows = cp != null ? [Map<String, dynamic>.from(cp)] : [];
+        }
+      } else {
+        final cps = await _supa
+            .from('user_profiles')
+            .select('uid, firstname, lastname, nom, profile_type, avatar_url')
+            .or('firstname.ilike.%$q%,lastname.ilike.%$q%,nom.ilike.%$q%')
+            .eq('is_main', true)
+            .limit(10);
+        rows = (cps as List).map((cp) => Map<String, dynamic>.from(cp)).toList();
+      }
+      final mapped = rows.where((r) => r['uid'] != _myUid).map((r) {
+        final isElevage = r['profile_type'] == 'eleveur';
+        final nomElevage = r['nom'] as String?;
+        final nom = isElevage && nomElevage?.isNotEmpty == true
+            ? nomElevage!
+            : '${r['firstname'] ?? ''} ${r['lastname'] ?? ''}'.trim();
+        return {...r, 'nom': nom.isEmpty ? 'Utilisateur PetsMatch' : nom};
+      }).toList();
+      if (mounted) setState(() => _results = mapped);
+    } finally {
+      if (mounted) setState(() { _searching = false; _searchDone = true; });
+    }
+  }
+
+  void _select(Map<String, dynamic> r) {
+    Navigator.pop(context, {'uid': r['uid'], 'nom': r['nom']});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(left: 20, right: 20, top: 24,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 24),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('Nouveau message',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+        ]),
+        const SizedBox(height: 4),
+        Text('Nom, prénom ou email d\'un utilisateur PetsMatch.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _searchCtrl,
+          autofocus: true,
+          onChanged: _onQueryChanged,
+          onSubmitted: (_) => _search(),
+          decoration: InputDecoration(
+            hintText: 'Nom, prénom ou email…',
+            hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+            prefixIcon: _searching
+                ? const Padding(padding: EdgeInsets.all(14),
+                    child: SizedBox(width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: _teal)))
+                : const Icon(Icons.search, size: 18, color: Colors.grey),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: _teal, width: 2)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (_results.isNotEmpty)
+          ..._results.map((r) => GestureDetector(
+            onTap: () => _select(r),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Row(children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: _teal.withOpacity(0.12),
+                  backgroundImage: (r['avatar_url'] as String?)?.isNotEmpty == true
+                      ? CachedNetworkImageProvider(r['avatar_url'] as String) : null,
+                  child: (r['avatar_url'] as String?)?.isNotEmpty == true
+                      ? null : const Icon(Icons.person, size: 16, color: _teal),
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: Text(r['nom'] as String,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, fontFamily: 'Galey'))),
+                const Icon(Icons.chevron_right, size: 16, color: Colors.grey),
+              ]),
+            ),
+          )),
+        if (_searchDone && _results.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200)),
+            child: const Text('Aucun utilisateur trouvé.', style: TextStyle(fontSize: 13, color: Colors.grey)),
+          ),
+      ]),
     );
   }
 }

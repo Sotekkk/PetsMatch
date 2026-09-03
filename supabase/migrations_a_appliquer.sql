@@ -162,3 +162,15 @@ ALTER TABLE vermifuges        ALTER COLUMN id SET DEFAULT gen_random_uuid()::tex
 ALTER TABLE antiparasitaires  ALTER COLUMN id SET DEFAULT gen_random_uuid()::text;
 ALTER TABLE allergies         ALTER COLUMN id SET DEFAULT gen_random_uuid()::text;
 ALTER TABLE poids             ALTER COLUMN id SET DEFAULT gen_random_uuid()::text;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 9. Messagerie — thèmes de conversation, réactions emoji, signalement
+--    (features livrées début septembre côté app ET site, jamais accompagnées
+--    d'une migration à l'époque). Fichier séparé, trop volumineux pour être
+--    dupliqué ici : voir supabase/migration_messaging_complete.sql
+--    (idempotent, à coller tel quel dans le SQL Editor).
+--    Sans cette migration : conversations.theme_id inexistant (le
+--    sélecteur de thème ne sauvegarde rien), tables message_reactions et
+--    conversation_reports inexistantes (réactions et signalement muets).
+-- ────────────────────────────────────────────────────────────
