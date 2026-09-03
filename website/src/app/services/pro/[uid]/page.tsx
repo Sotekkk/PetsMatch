@@ -832,7 +832,7 @@ function ProDetailContent() {
                 <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line" style={{ fontFamily: 'Galey, sans-serif' }}>{pro.education_bilan_description}</p>
               </div>
             )}
-            {pro.tarifs && (
+            {pro.tarifs && pro.cat_pro !== 'education' && (
               <div className="bg-white rounded-2xl p-4 shadow-sm">
                 <p className="font-bold text-[#1E2025] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Tarifs</p>
                 <p className="text-sm text-gray-600 leading-relaxed" style={{ fontFamily: 'Galey, sans-serif' }}>{pro.tarifs}</p>

@@ -879,8 +879,12 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   ],
                   const SizedBox(height: 12),
                   _field(_descCtrl, 'Description de l\'activité', Icons.description_outlined, maxLines: 4),
-                  const SizedBox(height: 12),
-                  _field(_tarifsCtrl, 'Tarifs (description libre)', Icons.euro_outlined, maxLines: 3),
+                  // L'éducateur a une grille de tarifs structurée (prestations
+                  // fixes + libres + forfaits) — le champ libre ferait doublon.
+                  if (_catPro != 'education') ...[
+                    const SizedBox(height: 12),
+                    _field(_tarifsCtrl, 'Tarifs (description libre)', Icons.euro_outlined, maxLines: 3),
+                  ],
 
                   // ── Adresse & géolocalisation ─────────────────────────────
                   const SizedBox(height: 24),

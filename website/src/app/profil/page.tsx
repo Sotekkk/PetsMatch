@@ -1291,10 +1291,12 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             <textarea value={description} onChange={e => setDescription(e.target.value)}
               rows={4} placeholder="Présentez votre activité…" className={`${inputCls} resize-none`} />
           </Field>
-          <Field label="Tarifs">
-            <textarea value={tarifs} onChange={e => setTarifs(e.target.value)}
-              rows={3} placeholder="Ex : Consultation 60€, Vaccination 35€…" className={`${inputCls} resize-none`} />
-          </Field>
+          {catPro !== 'education' && (
+            <Field label="Tarifs">
+              <textarea value={tarifs} onChange={e => setTarifs(e.target.value)}
+                rows={3} placeholder="Ex : Consultation 60€, Vaccination 35€…" className={`${inputCls} resize-none`} />
+            </Field>
+          )}
           <div className="flex items-center justify-between py-2">
             <div>
               <p className="text-sm font-medium text-[#1F2A2E]">Accepte de nouveaux clients</p>

@@ -825,8 +825,8 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             )),
           ],
 
-          // Tarifs
-          if (_tarifs.isNotEmpty) ...[
+          // Tarifs (texte libre — sauf éducateur, qui a une grille structurée)
+          if (_tarifs.isNotEmpty && _proData?['cat_pro'] != 'education') ...[
             const SizedBox(height: 12),
             _card(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
