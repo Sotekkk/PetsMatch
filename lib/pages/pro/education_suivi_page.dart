@@ -46,13 +46,21 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
   final Map<String, List<Map<String, dynamic>>> _retours = {};
   List<Map<String, dynamic>> _seances = [];
   List<Map<String, dynamic>> _forfaits = [];
+  List<Map<String, dynamic>> _souscrits = [];
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 3, vsync: this);
+    _tab = TabController(length: 4, vsync: this);
     _load();
+  }
+
+  Map<String, dynamic>? get _forfaitActif {
+    for (final f in _souscrits) {
+      if (f['statut'] == 'actif') return f;
+    }
+    return null;
   }
 
   @override
@@ -76,6 +84,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         _supa.from('forfaits_education').select('id, nom, nb_seances, prix')
             .eq('pro_uid', FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid)
             .eq('actif', true).order('created_at'),
+        _supa.from('forfaits_souscrits').select().eq('animal_id', widget.animalId)
+            .order('souscrit_le', ascending: false),
       ]);
       final animal = results[2] as Map<String, dynamic>?;
       final exos = List<Map<String, dynamic>>.from(results[3] as List);
@@ -105,6 +115,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           _seances = List<Map<String, dynamic>>.from(results[1] as List);
           _exercices = exos;
           _forfaits = List<Map<String, dynamic>>.from(results[4] as List);
+          _souscrits = List<Map<String, dynamic>>.from(results[5] as List);
           _ownerUid = animal?['uid_proprietaire']?.toString() ??
               animal?['uid_eleveur']?.toString();
           _loading = false;
@@ -308,6 +319,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
     final nbCtrl = TextEditingController();
     String? forfaitId;
     bool isBilan = false;
+    final fActif = _forfaitActif;
+    bool imputer = fActif != null;
     final List<Map<String, dynamic>> joints = [];
 
     final ok = await showModalBottomSheet<bool>(
@@ -426,6 +439,22 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                     contentPadding: const EdgeInsets.all(12),
                   ),
                 ),
+                if (fActif != null) ...[
+                  const SizedBox(height: 4),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    value: imputer,
+                    activeColor: _kOrange,
+                    onChanged: (v) => setSheet(() => imputer = v ?? false),
+                    title: Text(
+                      'Imputer sur le forfait « ${fActif['nom_snapshot']} » '
+                      '(${((fActif['nb_seances_utilisees'] as num?)?.toInt() ?? 0) + 1}/'
+                      '${(fActif['nb_seances_total'] as num?)?.toInt() ?? 1})',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 10),
               ],
               OutlinedButton.icon(
@@ -473,7 +502,11 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         if (isBilan) 'bilan_recommandation': recoCtrl.text.trim().isEmpty ? null : recoCtrl.text.trim(),
         if (isBilan && int.tryParse(nbCtrl.text.trim()) != null) 'bilan_nb_seances_estime': int.parse(nbCtrl.text.trim()),
         if (isBilan && forfaitId != null) 'bilan_forfait_conseille_id': forfaitId,
+        if (!isBilan && imputer && fActif != null) 'forfait_souscrit_id': fActif['id'],
       }).select('id').single();
+      if (!isBilan && imputer && fActif != null) {
+        await _imputerSeance(fActif);
+      }
       if (joints.isNotEmpty) {
         await _supa.from('exercices_attribues').insert(joints.map((e) => {
           'exercice_id': e['id'],
@@ -840,7 +873,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12),
-          tabs: const [Tab(text: 'Objectifs'), Tab(text: 'Exercices'), Tab(text: 'Séances')],
+          tabs: const [Tab(text: 'Objectifs'), Tab(text: 'Exercices'), Tab(text: 'Séances'), Tab(text: 'Forfait')],
         ),
       ),
       floatingActionButton: AnimatedBuilder(
@@ -851,17 +884,219 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           onPressed: switch (_tab.index) {
             0 => () => _editObjectif(),
             1 => _attribuerExercices,
-            _ => _addSeance,
+            2 => _addSeance,
+            _ => _enregistrerForfait,
           },
           icon: const Icon(Icons.add),
-          label: Text(switch (_tab.index) { 0 => 'Objectif', 1 => 'Attribuer', _ => 'Séance' },
+          label: Text(switch (_tab.index) { 0 => 'Objectif', 1 => 'Attribuer', 2 => 'Séance', _ => 'Forfait' },
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _kOrange))
-          : TabBarView(controller: _tab, children: [_objectifsTab(), _exercicesTab(), _seancesTab()]),
+          : TabBarView(controller: _tab, children: [_objectifsTab(), _exercicesTab(), _seancesTab(), _forfaitTab()]),
     );
+  }
+
+  Widget _forfaitTab() {
+    if (_souscrits.isEmpty) {
+      return _empty('Aucun forfait',
+          'Enregistrez le forfait pris par la famille pour suivre le solde de séances.');
+    }
+    return RefreshIndicator(
+      onRefresh: _load,
+      color: _kOrange,
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+        itemCount: _souscrits.length,
+        itemBuilder: (_, i) {
+          final f = _souscrits[i];
+          final total = (f['nb_seances_total'] as num?)?.toInt() ?? 1;
+          final used = (f['nb_seances_utilisees'] as num?)?.toInt() ?? 0;
+          final actif = f['statut'] == 'actif';
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: actif ? _kOrange : Colors.grey.shade200)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Expanded(child: Text(f['nom_snapshot']?.toString() ?? 'Forfait',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14))),
+                _pill(actif ? '$used / $total séances' : 'Terminé',
+                    actif ? _kOrange : const Color(0xFF6E9E57)),
+              ]),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: total == 0 ? 0 : (used / total).clamp(0, 1),
+                  minHeight: 6,
+                  backgroundColor: Colors.grey.shade200,
+                  valueColor: const AlwaysStoppedAnimation(_kOrange),
+                ),
+              ),
+              if (actif) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => _cloreForfait(f),
+                    child: const Text('Clôturer', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                  ),
+                ),
+              ],
+            ]),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _enregistrerForfait() async {
+    final nomCtrl = TextEditingController();
+    final nbCtrl = TextEditingController(text: '5');
+    final prixCtrl = TextEditingController();
+    String? forfaitId;
+
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 28),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            const Text('Enregistrer un forfait pris',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 14),
+            if (_forfaits.isNotEmpty) ...[
+              DropdownButtonFormField<String?>(
+                initialValue: forfaitId,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: 'Depuis mes forfaits',
+                  labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('Saisie libre', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                  ..._forfaits.map((f) => DropdownMenuItem(
+                    value: f['id'].toString(),
+                    child: Text('${f['nom']} · ${f['nb_seances']}× · ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0}€',
+                        overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                  )),
+                ],
+                onChanged: (v) => setSheet(() {
+                  forfaitId = v;
+                  if (v != null) {
+                    final f = _forfaits.firstWhere((x) => x['id'].toString() == v);
+                    nomCtrl.text = f['nom']?.toString() ?? '';
+                    nbCtrl.text = ((f['nb_seances'] as num?)?.toInt() ?? 5).toString();
+                    prixCtrl.text = ((f['prix'] as num?)?.toStringAsFixed(0) ?? '');
+                  }
+                }),
+              ),
+              const SizedBox(height: 10),
+            ],
+            TextField(
+              controller: nomCtrl,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: InputDecoration(
+                labelText: 'Nom du forfait',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                contentPadding: const EdgeInsets.all(12),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(children: [
+              SizedBox(width: 110, child: TextField(
+                controller: nbCtrl,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                decoration: InputDecoration(
+                  labelText: 'Nb séances',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                ),
+              )),
+              const SizedBox(width: 10),
+              Expanded(child: TextField(
+                controller: prixCtrl,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                decoration: InputDecoration(
+                  labelText: 'Prix (€)',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                ),
+              )),
+            ]),
+            const SizedBox(height: 16),
+            SizedBox(width: double.infinity, child: ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _kOrange, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14), elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            )),
+          ]),
+        ),
+      ),
+    );
+
+    if (ok != true || nomCtrl.text.trim().isEmpty || !mounted) return;
+    final proUid = FirebaseAuth.instance.currentUser?.uid;
+    try {
+      await _supa.from('forfaits_souscrits').insert({
+        if (forfaitId != null) 'forfait_id': forfaitId,
+        'pro_uid': proUid,
+        if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
+        'client_uid': _ownerUid,
+        if (widget.ownerProfileId != null) 'client_profile_id': widget.ownerProfileId,
+        'animal_id': widget.animalId,
+        'nom_snapshot': nomCtrl.text.trim(),
+        'nb_seances_total': int.tryParse(nbCtrl.text.trim()) ?? 1,
+        if (prixCtrl.text.trim().isNotEmpty) 'prix_snapshot': double.tryParse(prixCtrl.text.trim()),
+      });
+      await _load();
+    } catch (e) {
+      _snack('Erreur : $e', err: true);
+    }
+  }
+
+  Future<void> _cloreForfait(Map<String, dynamic> f) async {
+    try {
+      await _supa.from('forfaits_souscrits').update({
+        'statut': 'termine', 'termine_le': DateTime.now().toIso8601String(),
+      }).eq('id', f['id']);
+      await _load();
+    } catch (_) {}
+  }
+
+  Future<void> _imputerSeance(Map<String, dynamic> f) async {
+    final total = (f['nb_seances_total'] as num?)?.toInt() ?? 1;
+    final used = ((f['nb_seances_utilisees'] as num?)?.toInt() ?? 0) + 1;
+    final termine = used >= total;
+    try {
+      await _supa.from('forfaits_souscrits').update({
+        'nb_seances_utilisees': used,
+        if (termine) 'statut': 'termine',
+        if (termine) 'termine_le': DateTime.now().toIso8601String(),
+      }).eq('id', f['id']);
+      if (used == total - 1 || termine) {
+        await _notifyOwner('education_forfait_bas',
+            'Forfait ${termine ? 'terminé' : 'bientôt terminé'} — ${widget.animalNom}',
+            termine
+                ? 'Toutes les séances du forfait « ${f['nom_snapshot']} » ont été utilisées.'
+                : 'Il reste 1 séance sur le forfait « ${f['nom_snapshot']} ».');
+      }
+    } catch (_) {}
   }
 
   Widget _exercicesTab() {

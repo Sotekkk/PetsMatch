@@ -668,6 +668,7 @@ function getNotifUrl(n: Notif): string | null {
     case 'education_exercice_assigne':
     case 'education_exercice_rappel':
     case 'education_bilan':
+    case 'education_forfait_bas':
       return d.url ?? (d.animalId ? `/mes-animaux/${d.animalId}?tab=education` : '/mes-animaux');
     case 'education_retour_exercice':
       return d.url ?? (d.animalId ? `/mes-patients/${d.animalId}` : '/mes-patients');
@@ -1210,6 +1211,7 @@ export default function Header() {
                               : n.type === 'education_retour_exercice' ? '💬'
                               : n.type === 'education_exercice_rappel' ? '⏰'
                               : n.type === 'education_bilan' ? '📋'
+                              : n.type === 'education_forfait_bas' ? '🎫'
                               : n.type === 'cours_collectif_inscription' ? '👥'
                               : n.type === 'devis_recu' ? '📋'
                               : n.type === 'devis_accepte' ? '✅'

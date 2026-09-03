@@ -653,6 +653,33 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         await supabase.from('devis')
           .update({ statut: 'accepte', date_reponse: now, updated_at: now })
           .eq('id', devisId).eq('statut', 'envoye');
+
+        // Devis signé : souscrire automatiquement les forfaits qu'il contient
+        // (une ligne dont la description correspond à un forfait de l'éducateur).
+        try {
+          const { data: dv } = await supabase.from('devis')
+            .select('pro_uid, pro_profile_id, client_uid, client_profile_id, animal_id, lignes').eq('id', devisId).maybeSingle();
+          if (dv?.pro_uid && Array.isArray(dv.lignes)) {
+            const { data: forfaits } = await supabase.from('forfaits_education')
+              .select('id, nom, nb_seances, prix').eq('pro_uid', dv.pro_uid).eq('actif', true);
+            for (const l of dv.lignes as { description?: string }[]) {
+              const desc = (l.description ?? '').toLowerCase();
+              const match = (forfaits ?? []).find(f => desc.includes((f.nom ?? '').toLowerCase()) && (f.nom ?? '').length > 2);
+              if (match) {
+                const { data: exists } = await supabase.from('forfaits_souscrits')
+                  .select('id').eq('devis_id', devisId).eq('forfait_id', match.id).maybeSingle();
+                if (!exists) {
+                  await supabase.from('forfaits_souscrits').insert({
+                    forfait_id: match.id, pro_uid: dv.pro_uid, pro_profile_id: dv.pro_profile_id,
+                    client_uid: dv.client_uid, client_profile_id: dv.client_profile_id, animal_id: dv.animal_id,
+                    nom_snapshot: match.nom, nb_seances_total: match.nb_seances ?? 1, prix_snapshot: match.prix,
+                    devis_id: devisId,
+                  });
+                }
+              }
+            }
+          }
+        } catch { /* la souscription auto est un bonus */ }
       }
     }
 

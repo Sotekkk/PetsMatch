@@ -73,6 +73,7 @@ interface RapportEduP {
   id: string; date_seance: string; contenu: string; exercices_conseilles: string | null;
   type?: string; bilan_motif?: string | null; bilan_recommandation?: string | null; bilan_nb_seances_estime?: number | null;
 }
+interface ForfaitSous { id: string; nom_snapshot: string; nb_seances_total: number; nb_seances_utilisees: number; statut: string; }
 const EDUC_RESSENTI: Record<string, string> = { facile: '😊 Facile', moyen: '😐 Moyen', difficile: '😓 Difficile', bloque: '🚫 Bloqué' };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -140,6 +141,52 @@ function EmptyState({ text }: { text: string }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+function ForfaitSousForm({ proUid, onSave, onCancel }: {
+  proUid: string;
+  onSave: (nom: string, nb: number, prix: number | null, forfaitId: string | null) => void;
+  onCancel: () => void;
+}) {
+  const [nom, setNom] = useState('');
+  const [nb, setNb] = useState('5');
+  const [prix, setPrix] = useState('');
+  const [forfaitId, setForfaitId] = useState('');
+  const [catalog, setCatalog] = useState<{ id: string; nom: string; nb_seances: number; prix: number }[]>([]);
+  useEffect(() => {
+    if (!proUid) return;
+    supabase.from('forfaits_education').select('id, nom, nb_seances, prix').eq('pro_uid', proUid).eq('actif', true).order('created_at')
+      .then(({ data }) => setCatalog((data ?? []) as typeof catalog));
+  }, [proUid]);
+  return (
+    <div className="border border-[#EF6C00]/30 rounded-2xl p-4 mb-4 bg-[#EF6C00]/5 space-y-2">
+      {catalog.length > 0 && (
+        <select value={forfaitId} onChange={e => {
+          const v = e.target.value; setForfaitId(v);
+          const f = catalog.find(x => x.id === v);
+          if (f) { setNom(f.nom); setNb(String(f.nb_seances)); setPrix(String(f.prix)); }
+        }} className="w-full border border-gray-200 rounded-xl px-2 py-2 text-sm">
+          <option value="">Saisie libre…</option>
+          {catalog.map(f => <option key={f.id} value={f.id}>{f.nom} · {f.nb_seances}× · {f.prix}€</option>)}
+        </select>
+      )}
+      <input value={nom} onChange={e => setNom(e.target.value)} placeholder="Nom du forfait"
+        className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+      <div className="flex gap-2">
+        <input type="number" value={nb} onChange={e => setNb(e.target.value)} placeholder="Nb séances"
+          className="w-28 border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+        <input type="number" value={prix} onChange={e => setPrix(e.target.value)} placeholder="Prix (€)"
+          className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+      </div>
+      <div className="flex gap-2">
+        <button onClick={onCancel} className="flex-1 border border-gray-200 rounded-xl py-2 text-sm text-gray-500">Annuler</button>
+        <button onClick={() => onSave(nom, Number(nb), prix ? Number(prix) : null, forfaitId || null)}
+          disabled={!nom.trim()} className="flex-1 text-white rounded-xl py-2 text-sm font-semibold disabled:opacity-50" style={{ background: '#EF6C00' }}>
+          Enregistrer
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function PatientDetailPage() {
   const { user, userData } = useAuth();
   const router = useRouter();
@@ -188,6 +235,9 @@ export default function PatientDetailPage() {
   const [bilanNb, setBilanNb] = useState('');
   const [bilanForfait, setBilanForfait] = useState('');
   const [forfaitsEdu, setForfaitsEdu] = useState<{ id: string; nom: string; nb_seances: number; prix: number }[]>([]);
+  const [forfaitsSous, setForfaitsSous] = useState<ForfaitSous[]>([]);
+  const [showForfaitSousForm, setShowForfaitSousForm] = useState(false);
+  const [imputerForfait, setImputerForfait] = useState(true);
   const [savingRapport, setSavingRapport] = useState(false);
   const [editingRapportId, setEditingRapportId] = useState<string | null>(null);
   const [deleteRapportConfirmId, setDeleteRapportConfirmId] = useState<string | null>(null);
@@ -279,6 +329,7 @@ export default function PatientDetailPage() {
         supabase.from('education_progression').select('id, date_seance, contenu, exercices_conseilles, type, bilan_motif, bilan_recommandation, bilan_nb_seances_estime').eq('animal_id', animalId).order('date_seance', { ascending: false }),
         supabase.from('education_objectifs').select('id, libelle, categorie, statut, note, ordre').eq('animal_id', animalId).order('ordre').order('created_at'),
         supabase.from('exercices_attribues').select('id, titre_snapshot, cadence, echeance, statut, rappels_actifs').eq('animal_id', animalId).order('assigned_at', { ascending: false }),
+        supabase.from('forfaits_souscrits').select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, statut').eq('animal_id', animalId).order('souscrit_le', { ascending: false }),
       ]);
 
       const get = <T,>(i: number): T[] => {
@@ -306,6 +357,7 @@ export default function PatientDetailPage() {
       setObjectifs(get<EducObjectif>(11));
       const attr = get<EducAttribue>(12);
       setAttribues(attr);
+      setForfaitsSous(get<ForfaitSous>(13).filter(f => f.statut !== 'annule'));
       if (attr.length) {
         const { data: rt } = await supabase.from('exercices_retours')
           .select('id, attribution_id, note, media, ressenti, from_pro')
@@ -404,6 +456,7 @@ export default function PatientDetailPage() {
         type: rapportType,
         contenu: rapportContenu.trim(),
         exercices_conseilles: !isBilan ? (rapportExercices.trim() || null) : null,
+        ...(!isBilan && imputerForfait && forfaitActif ? { forfait_souscrit_id: forfaitActif.id } : {}),
         ...(isBilan ? {
           bilan_motif: bilanMotif.trim() || null,
           bilan_observations: rapportContenu.trim(),
@@ -426,6 +479,7 @@ export default function PatientDetailPage() {
           read: false,
         });
       }
+      if (!isBilan && imputerForfait && forfaitActif) await imputerSeanceForfait(forfaitActif);
       const { data } = await supabase.from('education_progression')
         .select('id, date_seance, contenu, exercices_conseilles, type, bilan_motif, bilan_recommandation, bilan_nb_seances_estime').eq('animal_id', animalId).order('date_seance', { ascending: false });
       setRapports((data ?? []) as RapportEduP[]);
@@ -581,6 +635,50 @@ export default function PatientDetailPage() {
   async function retirerAttribue(id: string) {
     await supabase.from('exercices_attribues').delete().eq('id', id);
     setAttribues(prev => prev.filter(a => a.id !== id));
+  }
+
+  const forfaitActif = forfaitsSous.find(f => f.statut === 'actif') ?? null;
+
+  async function reloadForfaitsSous() {
+    const { data } = await supabase.from('forfaits_souscrits')
+      .select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, statut').eq('animal_id', animalId).order('souscrit_le', { ascending: false });
+    setForfaitsSous(((data ?? []) as ForfaitSous[]).filter(f => f.statut !== 'annule'));
+  }
+
+  async function registerForfaitSous(nom: string, nb: number, prix: number | null, forfaitId: string | null) {
+    if (!nom.trim() || !user?.uid) return;
+    const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+    await supabase.from('forfaits_souscrits').insert({
+      ...(forfaitId ? { forfait_id: forfaitId } : {}),
+      pro_uid: user.uid, pro_profile_id: activeProfileId || null,
+      client_uid: ownerUid, animal_id: animalId,
+      nom_snapshot: nom.trim(), nb_seances_total: nb || 1, ...(prix != null ? { prix_snapshot: prix } : {}),
+    });
+    setShowForfaitSousForm(false);
+    await reloadForfaitsSous();
+  }
+
+  async function imputerSeanceForfait(f: ForfaitSous) {
+    const used = f.nb_seances_utilisees + 1;
+    const termine = used >= f.nb_seances_total;
+    await supabase.from('forfaits_souscrits').update({
+      nb_seances_utilisees: used,
+      ...(termine ? { statut: 'termine', termine_le: new Date().toISOString() } : {}),
+    }).eq('id', f.id);
+    if (used === f.nb_seances_total - 1 || termine) {
+      const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+      if (ownerUid) {
+        await supabase.from('notifications').insert({
+          uid: ownerUid, type: 'education_forfait_bas',
+          title: `Forfait ${termine ? 'terminé' : 'bientôt terminé'} — ${animal?.nom ?? 'votre animal'}`,
+          body: termine
+            ? `Toutes les séances du forfait « ${f.nom_snapshot} » ont été utilisées.`
+            : `Il reste 1 séance sur le forfait « ${f.nom_snapshot} ».`,
+          data: { animalId, url: `/mes-animaux/${animalId}?tab=education` },
+        });
+      }
+    }
+    await reloadForfaitsSous();
   }
 
   async function envoyerReponse(attributionId: string) {
@@ -1153,6 +1251,45 @@ export default function PatientDetailPage() {
               </div>
             )}
           </Card>
+          <Card title="🎫 Forfait">
+            {hasReportAccess && (
+              <button onClick={() => setShowForfaitSousForm(v => !v)}
+                className="w-full text-white rounded-2xl py-2.5 font-semibold text-sm flex items-center justify-center gap-2 mb-4"
+                style={{ background: '#EF6C00', fontFamily: 'Galey, sans-serif' }}>
+                <span className="text-lg leading-none">+</span> Enregistrer un forfait pris
+              </button>
+            )}
+            {showForfaitSousForm && (
+              <ForfaitSousForm proUid={user?.uid ?? ''} onSave={registerForfaitSous} onCancel={() => setShowForfaitSousForm(false)} />
+            )}
+            {forfaitsSous.length === 0 ? (
+              <EmptyState text="Aucun forfait" />
+            ) : (
+              <div className="space-y-2">
+                {forfaitsSous.map(f => {
+                  const actif = f.statut === 'actif';
+                  const pct = f.nb_seances_total === 0 ? 0 : Math.min(100, (f.nb_seances_utilisees / f.nb_seances_total) * 100);
+                  return (
+                    <div key={f.id} className="border border-gray-100 rounded-xl p-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-[#1F2A2E]">{f.nom_snapshot}</p>
+                        <p className="text-xs font-bold text-[#EF6C00]">{actif ? `${f.nb_seances_utilisees} / ${f.nb_seances_total}` : 'Terminé'}</p>
+                      </div>
+                      <div className="mt-1.5 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                        <div className="h-full bg-[#EF6C00]" style={{ width: `${pct}%` }} />
+                      </div>
+                      {hasReportAccess && actif && (
+                        <button onClick={async () => {
+                          await supabase.from('forfaits_souscrits').update({ statut: 'termine', termine_le: new Date().toISOString() }).eq('id', f.id);
+                          reloadForfaitsSous();
+                        }} className="text-[11px] text-gray-400 mt-1">Clôturer</button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
           <Card title="🎓 Suivi de progression">
             {hasReportAccess && (
               <button onClick={() => setShowAddRapport(v => !v)}
@@ -1214,6 +1351,12 @@ export default function PatientDetailPage() {
                       placeholder="Exercices à faire à la maison d'ici la prochaine séance…"
                       className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
                   </div>
+                )}
+                {rapportType === 'seance' && forfaitActif && (
+                  <label className="flex items-center gap-2 text-xs text-gray-600">
+                    <input type="checkbox" checked={imputerForfait} onChange={e => setImputerForfait(e.target.checked)} />
+                    Imputer sur le forfait « {forfaitActif.nom_snapshot} » ({forfaitActif.nb_seances_utilisees + 1}/{forfaitActif.nb_seances_total})
+                  </label>
                 )}
                 <button onClick={soumettreRapport} disabled={savingRapport || !rapportContenu.trim()}
                   className="w-full text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"

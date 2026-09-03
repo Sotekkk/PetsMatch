@@ -1150,11 +1150,14 @@ interface EduRetour {
 }
 const RESSENTI: Record<string, string> = { facile: '😊 Facile', moyen: '😐 Moyen', difficile: '😓 Difficile', bloque: '🚫 Bloqué' };
 
+interface EduForfait { id: string; nom_snapshot: string; nb_seances_total: number; nb_seances_utilisees: number; statut: string; }
+
 function EducationRapportsTab({ animalId }: { animalId: string }) {
   const { user } = useAuth();
   const [rapports, setRapports] = useState<RapportEdu[]>([]);
   const [objectifs, setObjectifs] = useState<EduObjectif[]>([]);
   const [exercices, setExercices] = useState<EduExercice[]>([]);
+  const [forfaits, setForfaits] = useState<EduForfait[]>([]);
   const [retours, setRetours] = useState<Record<string, EduRetour[]>>({});
   const [loading, setLoading] = useState(true);
   const [retourFor, setRetourFor] = useState<EduExercice | null>(null);
@@ -1174,7 +1177,11 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
       supabase.from('exercices_attribues')
         .select('id, pro_uid, pro_profile_id, titre_snapshot, description_snapshot, media_snapshot, cadence, echeance, statut, rappels_actifs, rappels_mutes')
         .eq('animal_id', animalId).order('assigned_at', { ascending: false }),
-    ]).then(async ([r, o, e]) => {
+      supabase.from('forfaits_souscrits')
+        .select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, statut')
+        .eq('animal_id', animalId).order('souscrit_le', { ascending: false }),
+    ]).then(async ([r, o, e, fo]) => {
+      setForfaits(((fo.data ?? []) as EduForfait[]).filter(f => f.statut !== 'annule'));
       const exos = (e.data ?? []) as (EduExercice & { pro_uid?: string; pro_profile_id?: string })[];
       setRapports((r.data ?? []) as RapportEdu[]);
       setObjectifs((o.data ?? []) as EduObjectif[]);
@@ -1249,7 +1256,7 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
   }
 
   if (loading) return <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-[#7B5EA7] border-t-transparent rounded-full animate-spin" /></div>;
-  if (rapports.length === 0 && objectifs.length === 0 && exercices.length === 0) return (
+  if (rapports.length === 0 && objectifs.length === 0 && exercices.length === 0 && forfaits.length === 0) return (
     <div className="flex flex-col items-center py-16 text-gray-400 gap-2">
       <span className="text-5xl">🎓</span>
       <p className="font-semibold">Aucun suivi éducatif pour l&apos;instant</p>
@@ -1259,6 +1266,21 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
 
   return (
     <div className="space-y-3 mt-4">
+      {forfaits.map(f => {
+        const actif = f.statut === 'actif';
+        const pct = f.nb_seances_total === 0 ? 0 : Math.min(100, (f.nb_seances_utilisees / f.nb_seances_total) * 100);
+        return (
+          <div key={f.id} className="rounded-2xl border border-[#EF6C00]/30 bg-[#FFF3E9] p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold text-gray-800">🎫 {f.nom_snapshot}</p>
+              <p className="text-xs font-bold text-[#EF6C00]">{actif ? `${f.nb_seances_utilisees} / ${f.nb_seances_total} séances` : 'Terminé'}</p>
+            </div>
+            <div className="mt-1.5 h-1.5 rounded-full bg-[#EF6C00]/15 overflow-hidden">
+              <div className="h-full bg-[#EF6C00]" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        );
+      })}
       {objectifs.length > 0 && (
         <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
           <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Plan de travail</p>
@@ -2543,8 +2565,9 @@ export default function AnimalFichePage() {
       supabase.from('education_progression').select('id').eq('animal_id', id).limit(1),
       supabase.from('education_objectifs').select('id').eq('animal_id', id).limit(1),
       supabase.from('exercices_attribues').select('id').eq('animal_id', id).limit(1),
-    ]).then(([r, o, e]) => setHasEducationRapports(
-      (r.data ?? []).length > 0 || (o.data ?? []).length > 0 || (e.data ?? []).length > 0));
+      supabase.from('forfaits_souscrits').select('id').eq('animal_id', id).limit(1),
+    ]).then(([r, o, e, f]) => setHasEducationRapports(
+      (r.data ?? []).length > 0 || (o.data ?? []).length > 0 || (e.data ?? []).length > 0 || (f.data ?? []).length > 0));
   }, [id, isNew]);
   useEffect(() => {
     if (!user || !isEleveur) return;

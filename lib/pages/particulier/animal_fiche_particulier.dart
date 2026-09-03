@@ -6446,6 +6446,7 @@ class _EducationTabPState extends State<_EducationTabP> {
   List<Map<String, dynamic>> _devis = [];
   List<Map<String, dynamic>> _objectifs = [];
   List<Map<String, dynamic>> _exercices = [];
+  List<Map<String, dynamic>> _forfaits = [];
   final Map<String, List<Map<String, dynamic>>> _retours = {}; // attribution_id -> retours
   bool _loading = true;
 
@@ -6488,6 +6489,12 @@ class _EducationTabPState extends State<_EducationTabP> {
         exercices = await _supa.from('exercices_attribues').select()
             .eq('animal_id', widget.animalId!).order('assigned_at', ascending: false);
       } catch (_) {}
+      List forfaits = const [];
+      try {
+        forfaits = await _supa.from('forfaits_souscrits').select()
+            .eq('animal_id', widget.animalId!).order('souscrit_le', ascending: false);
+      } catch (_) {}
+      _forfaits = List<Map<String, dynamic>>.from(forfaits);
       _retours.clear();
       final exoIds = exercices.map((e) => e['id']?.toString()).whereType<String>().toList();
       if (exoIds.isNotEmpty) {
@@ -6543,6 +6550,7 @@ class _EducationTabPState extends State<_EducationTabP> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
       children: [
+        ..._forfaits.where((f) => f['statut'] != 'annule').map(_forfaitBanner),
         if (_objectifs.isNotEmpty) ...[
           _title('Plan de travail'),
           ..._objectifs.map(_objectifCard),
@@ -6563,6 +6571,40 @@ class _EducationTabPState extends State<_EducationTabP> {
           ..._rapports.map(_rapportCard),
         ],
       ],
+    );
+  }
+
+  Widget _forfaitBanner(Map<String, dynamic> f) {
+    final total = (f['nb_seances_total'] as num?)?.toInt() ?? 1;
+    final used = (f['nb_seances_utilisees'] as num?)?.toInt() ?? 0;
+    final actif = f['statut'] == 'actif';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3E9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFEF6C00).withValues(alpha: 0.3)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Text('🎫 ', style: TextStyle(fontSize: 14)),
+          Expanded(child: Text(f['nom_snapshot']?.toString() ?? 'Forfait',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13))),
+          Text(actif ? '$used / $total séances' : 'Terminé',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFEF6C00))),
+        ]),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: total == 0 ? 0 : (used / total).clamp(0, 1),
+            minHeight: 5,
+            backgroundColor: const Color(0xFFEF6C00).withValues(alpha: 0.15),
+            valueColor: const AlwaysStoppedAnimation(Color(0xFFEF6C00)),
+          ),
+        ),
+      ]),
     );
   }
 
