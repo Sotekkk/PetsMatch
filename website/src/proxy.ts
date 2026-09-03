@@ -3,7 +3,13 @@ import { NextRequest, NextResponse } from 'next/server';
 const WHITELISTED_PATHS = [
   '/beta-login',
   '/api/beta-login',
+  // Webhooks entrants (Stripe, YouSign) — jamais soumis à l'accès bêta.
   '/api/stripe/webhook',
+  '/api/yousign/webhook',
+  // Tâches planifiées appelées par un planificateur externe (auth par
+  // CRON_SECRET dans la route elle-même).
+  '/api/cron/',
+  '/api/contracts/expire',
   // Lien de facture pension envoyé au propriétaire (token UUID) — doit rester
   // consultable même si le destinataire n'a pas l'accès bêta.
   '/facture-pension/',
