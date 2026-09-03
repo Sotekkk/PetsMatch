@@ -570,12 +570,16 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
           SliverAppBar(
             backgroundColor: _teal,
             automaticallyImplyLeading: true,
+            iconTheme: const IconThemeData(color: Colors.white),
             expandedHeight: 100,
             floating: false,
             pinned: true,
             flexibleSpace: FlexibleSpaceBar(
               centerTitle: false,
-              titlePadding: const EdgeInsets.fromLTRB(20, 0, 4, 50),
+              // Marge gauche alignée sur la largeur du bouton retour
+              // (auto-implied par Navigator.push) pour que le titre ne
+              // passe pas dessous.
+              titlePadding: const EdgeInsets.fromLTRB(56, 0, 4, 50),
               title: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
