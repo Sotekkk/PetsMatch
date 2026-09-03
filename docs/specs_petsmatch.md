@@ -6712,4 +6712,42 @@ Site inchangé (`<input type=file accept>` accepte déjà les images).
 
 ---
 
+## 52. Plateforme agréée — facturation électronique (projet lancé, session 2026-09-04)
+
+**Décision stratégique (avec la cofondatrice)** : PetsMatch devient
+**plateforme agréée** (ex-PDP) de facturation électronique — pas un simple
+logiciel. Cahier des charges de référence :
+`docs/PetsMatch_Cahier_des_charges_Plateforme_Agreee.pdf` (37 sections).
+Décision « PA tierce provisoire vs immatriculation propre » = **T1 2027**, selon
+un devis PA tierce attendu en janvier.
+
+Feuille de route :
+https://claude.ai/code/artifact/2201881a-0295-4b3d-87ff-47ce16650c5d
+
+**Architecture (décision A validée)** : service fiscal **séparé**, nouveau
+package `petsmatch-pa/` (Node/TS, monorepo, extractible en dépôt autonome).
+Base = **schéma `pa`** isolé (aucune FK vers `public.*`, destiné à migrer vers
+une infra UE + SecNumCloud), accès `service_role` seul.
+
+**Socle en cours** (T4 2026 → T1 2027, indépendant de la décision) :
+- `src/model/en16931.ts` — modèle sémantique EN 16931 + listes de codes.
+- `src/normalize/from-facture.ts` — `public.factures` → EN 16931.
+- `src/validate/en16931.ts` — validateur pré-émission §13 (messages lisibles).
+- `src/facturx/cii.ts` — XML CII (profil `urn:cen.eu:en16931:2017`).
+- `src/facturx/build.ts` — orchestration ; `facturx-service/` (Python, lib
+  `factur-x`) pour l'emballage PDF/A-3 (repli §12 du cahier).
+- `supabase/migration_pa_01_schema.sql` — schéma `pa` (10 statuts §18, journal
+  de preuve append-only §22).
+- Reste : ingestion, machine à états, journal complet, e-reporting B2C, rendu
+  PDF de marque serveur.
+
+**Migration à exécuter** : `migration_pa_01_schema.sql`.
+
+**Hors périmètre logiciel** (cabinet spécialisé requis) : ISO 27001,
+SecNumCloud, audit de conformité, tests d'interopérabilité officiels, dossier
+DGFiP, CGU/mandat de facturation, gouvernance RGPD. Budget hors dev :
+https://claude.ai/code/artifact/557cb5e6-8b1d-4f28-9708-8705fec8daeb
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*
