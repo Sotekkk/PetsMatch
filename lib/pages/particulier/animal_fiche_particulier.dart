@@ -2381,7 +2381,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'titre':      titre,
         'type':       'medication',
         'date_debut': dateRappel.toIso8601String(),
-        'animal_id':  int.tryParse(_animalId ?? ''),
+        'animal_id':  _animalId,
+        if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
       });
     } catch (_) {}
   }
@@ -5760,7 +5761,7 @@ Future<void> _scheduleDocExpiryReminderP(String animalId, String label, DateTime
       'titre': 'Document à renouveler : $label',
       'type': 'autre',
       'date_debut': at8.toIso8601String(),
-      'animal_id': int.tryParse(animalId),
+      'animal_id': animalId,
       if (User_Info.activeProfileId.isNotEmpty) 'profile_id': User_Info.activeProfileId,
       if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
     });

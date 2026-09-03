@@ -247,6 +247,48 @@ class _AgendaPageState extends State<AgendaPage> {
         if (pid.isNotEmpty) return epid == pid;
         return epid.isEmpty;
       }).toList();
+
+      // Co-propriété : les événements liés à un animal dont je suis
+      // co-propriétaire actif (RDV véto/comportementaliste/ostéo, rappels
+      // vaccins/traitements, mise-bas…) créés par un autre co-propriétaire
+      // apparaissent aussi dans mon agenda.
+      try {
+        final myAnimals = await _supa
+            .from('animaux_proprietes')
+            .select('animal_id')
+            .eq('uid_proprio', _uid)
+            .eq('statut', 'actif')
+            .isFilter('date_fin', null);
+        final animalIds = (myAnimals as List)
+            .map((r) => r['animal_id'].toString())
+            .where((s) => s.isNotEmpty)
+            .toSet()
+            .toList();
+        if (animalIds.isNotEmpty) {
+          final coOwners = await _supa
+              .from('animaux_proprietes')
+              .select('uid_proprio')
+              .inFilter('animal_id', animalIds)
+              .eq('statut', 'actif')
+              .isFilter('date_fin', null);
+          final ownerUids = (coOwners as List)
+              .map((r) => r['uid_proprio'] as String)
+              .toSet()
+              .toList();
+          final shared = await _supa
+              .from('agenda_events')
+              .select()
+              .inFilter('animal_id', animalIds)
+              .inFilter('uid', ownerUids)
+              .gte('date_debut', from.toIso8601String())
+              .lte('date_debut', to.toIso8601String());
+          final seen = filtered.map((e) => e['id']).toSet();
+          for (final e in (shared as List)) {
+            if (seen.add(e['id'])) filtered.add(e);
+          }
+        }
+      } catch (_) {}
+
       if (mounted) {
         setState(() {
           _events = List<Map<String, dynamic>>.from(filtered);

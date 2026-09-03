@@ -6665,6 +6665,31 @@ clôture toutes les lignes ; `components/Header.tsx` routage + emoji des notifs.
 **Migration à exécuter** : `migration_animaux_coproprietaires.sql` (avant de
 déployer le code — la colonne `statut` devient obligatoire dans les requêtes).
 
+### 50.1 — Agenda & notifications partagés entre co-propriétaires (session 2026-09-03)
+
+Demande : tout ce qui est lié à l'animal (RDV véto/comportementaliste/ostéo,
+traitements, vaccins, rappels…) doit être dans l'agenda **des deux**
+co-propriétaires.
+
+- **Agenda partagé (read-union)** : `lib/pages/agenda/agenda_page.dart` `_load()`
+  + `website/src/app/agenda/page.tsx` `load()` chargent, en plus des events du
+  profil, les `agenda_events` où `animal_id ∈ {mes animaux co-possédés actifs}`
+  et `uid ∈ {co-propriétaires actifs}`, mergés/dédupliqués par `id`. Couvre RDV
+  (events `type='rdv'` créés côté client), rappels vaccins/traitements
+  (`type='medication'`), mise-bas, chaleurs, expiration doc.
+- **Notifications** : `migration_coproprietaires_notifs_fanout.sql` — trigger
+  `fanout_notif_coproprietaires()` AFTER INSERT sur `notifications` : recopie
+  toute notif portant `data->>'animal_id'` ou `animalId` pour chaque autre
+  co-propriétaire actif (marqueur `_copro_fanout` anti-récursion ; `coproprio_*`
+  exclus). `pro_agenda.dart` : `rdv_confirme`/`rdv_modifie` enrichis avec
+  `animal_id`. `functions/agenda.js` : `getCoproprietaires` + `pushCoproRdv` sur
+  les 4 rappels RDV client (48h/24h/1h/30min).
+- `_scheduleRappelAgenda` (fiche) : `animal_id` passé en TEXT (était
+  `int.tryParse`, cassé pour les IDs legacy) + `pro_profile_id` renseigné.
+
+**À exécuter** : `migration_coproprietaires_notifs_fanout.sql` +
+`firebase deploy --only functions`.
+
 ---
 
 ## 51. Onglet Documents de la fiche animal — photo + prise de vue (app) (session 2026-09-03)

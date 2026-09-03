@@ -438,6 +438,28 @@ export default function AgendaPage() {
 
     const list = (data ?? []) as AgendaEvent[];
 
+    // Co-propriété : les événements liés à un animal dont je suis
+    // co-propriétaire actif (RDV véto/comportementaliste/ostéo, rappels
+    // vaccins/traitements, mise-bas…) créés par un autre co-propriétaire
+    // apparaissent aussi dans mon agenda.
+    try {
+      const { data: mine } = await supabase.from('animaux_proprietes')
+        .select('animal_id').eq('uid_proprio', uid).eq('statut', 'actif').is('date_fin', null);
+      const animalIds = [...new Set((mine ?? []).map(r => String(r.animal_id)).filter(Boolean))];
+      if (animalIds.length > 0) {
+        const { data: owners } = await supabase.from('animaux_proprietes')
+          .select('uid_proprio').in('animal_id', animalIds).eq('statut', 'actif').is('date_fin', null);
+        const ownerUids = [...new Set((owners ?? []).map(r => r.uid_proprio as string))];
+        const { data: shared } = await supabase.from('agenda_events').select('*')
+          .in('animal_id', animalIds).in('uid', ownerUids)
+          .gte('date_debut', from).lte('date_debut', to);
+        const seen = new Set(list.map(e => e.id));
+        for (const e of (shared ?? []) as AgendaEvent[]) {
+          if (!seen.has(e.id)) { seen.add(e.id); list.push(e); }
+        }
+      }
+    } catch { /* noop */ }
+
     // Enrichir avec infos rdv
     const rdvIds = list.map(e => e.rdv_id).filter(Boolean) as string[];
     if (rdvIds.length > 0) {

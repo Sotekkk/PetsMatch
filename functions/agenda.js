@@ -146,6 +146,40 @@ async function sendPush(uid, title, body, data = {}) {
     }
 }
 
+/**
+ * UID des co-propriétaires ACTIFS d'un animal (hors excludeUid).
+ * @param {string|number|null} animalId
+ * @param {string|null} excludeUid
+ * @return {Promise<string[]>}
+ */
+async function getCoproprietaires(animalId, excludeUid) {
+    if (!animalId) return [];
+    try {
+        const rows = await supabaseSelect("animaux_proprietes",
+            `animal_id=eq.${animalId}&date_fin=is.null&statut=eq.actif`);
+        return rows
+            .map((r) => r.uid_proprio)
+            .filter((u) => u && u !== excludeUid);
+    } catch (_) {
+        return [];
+    }
+}
+
+/**
+ * Envoie la même notif push aux co-propriétaires de l'animal du RDV
+ * (le client destinataire principal est exclu).
+ * @param {object} rdv
+ * @param {string} title
+ * @param {string} body
+ * @param {object} data
+ */
+async function pushCoproRdv(rdv, title, body, data) {
+    const copros = await getCoproprietaires(rdv.animal_id, rdv.client_uid);
+    for (const uid of copros) {
+        await sendPush(uid, title, body, data);
+    }
+}
+
 // ─── Notification nouvelle demande RDV ───────────────────────────────────────
 
 /**
@@ -216,13 +250,15 @@ exports.sendRdvReminders = functions
             const rdvData = {rdvId: String(rdv.id), type: "rdv_confirme"};
             const prestataire = proNom || "votre prestataire";
 
-            // → Client uniquement (rappel 48h)
+            // → Client + co-propriétaires (rappel 48h)
             await sendPush(
                 rdv.client_uid,
                 "📅 Rappel RDV — dans 2 jours",
                 `Votre RDV${animalPart} chez ${prestataire} est prévu le ${dateStr}`,
                 rdvData,
             );
+            await pushCoproRdv(rdv, "📅 Rappel RDV — dans 2 jours",
+                `RDV${animalPart} chez ${prestataire} prévu le ${dateStr}`, rdvData);
             await supabasePatch("rdv", rdv.id, {reminder_48h_sent: true});
             sent48++;
         }
@@ -252,13 +288,15 @@ exports.sendRdvReminders = functions
             const animalPart = animalNom ? ` pour ${animalNom}` : "";
             const rdvData = {rdvId: String(rdv.id)};
 
-            // → Client
+            // → Client + co-propriétaires
             await sendPush(
                 rdv.client_uid,
                 "⏰ Rappel RDV — demain",
                 `Votre RDV${animalPart} chez ${proNom || "votre prestataire"} est prévu le ${dateStr}`,
                 rdvData,
             );
+            await pushCoproRdv(rdv, "⏰ Rappel RDV — demain",
+                `RDV${animalPart} chez ${proNom || "votre prestataire"} prévu le ${dateStr}`, rdvData);
 
             // → Pro
             await sendPush(
@@ -294,11 +332,13 @@ exports.sendRdvReminders = functions
             const animalPart = animalNom ? ` pour ${animalNom}` : "";
             const rdvData = {rdvId: String(rdv.id), type: "rdv_confirme"};
 
-            // → Client
+            // → Client + co-propriétaires
             await sendPush(rdv.client_uid,
                 "⏰ Rappel RDV — dans 1 heure",
                 `Votre RDV${animalPart} chez ${proNom || "votre prestataire"} est à ${timeStr}`,
                 rdvData);
+            await pushCoproRdv(rdv, "⏰ Rappel RDV — dans 1 heure",
+                `RDV${animalPart} chez ${proNom || "votre prestataire"} à ${timeStr}`, rdvData);
             // → Pro
             await sendPush(rdv.pro_uid,
                 "⏰ RDV dans 1 heure",
@@ -335,6 +375,8 @@ exports.sendRdvReminders = functions
                 "⏰ Rappel RDV — dans 30 minutes",
                 `Votre RDV${animalPart} chez ${proNom || "votre prestataire"} commence bientôt (${timeStr})`,
                 rdvData);
+            await pushCoproRdv(rdv, "⏰ Rappel RDV — dans 30 minutes",
+                `RDV${animalPart} chez ${proNom || "votre prestataire"} bientôt (${timeStr})`, rdvData);
             await sendPush(rdv.pro_uid,
                 "⏰ RDV dans 30 minutes",
                 `RDV avec ${clientNom || "un client"}${animalPart} — à ${timeStr}`,

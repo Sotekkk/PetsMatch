@@ -731,7 +731,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           'title': 'RDV confirmé par $proName',
           'body':  'Votre rendez-vous est confirmé pour le ${preciseDh.toLocal().day.toString().padLeft(2,"0")}/${preciseDh.toLocal().month.toString().padLeft(2,"0")} à ${preciseDh.toLocal().hour.toString().padLeft(2,"0")}h${preciseDh.toLocal().minute.toString().padLeft(2,"0")}',
           if ((rdv['client_profile_id'] as String?)?.isNotEmpty == true) 'profile_id': rdv['client_profile_id'],
-          'data':  {'rdv_id': rdv['id']},
+          'data':  {'rdv_id': rdv['id'], if (rdv['animal_id'] != null) 'animal_id': rdv['animal_id'].toString()},
           'read':  false,
         });
       }
@@ -930,7 +930,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           'title': 'RDV modifié par $proName',
           'body': 'Votre rendez-vous a été mis à jour : ${newDh.day.toString().padLeft(2, "0")}/${newDh.month.toString().padLeft(2, "0")} à ${newDh.hour.toString().padLeft(2, "0")}h${newDh.minute.toString().padLeft(2, "0")}${lieu.isNotEmpty ? " — $lieu" : ""}',
           if ((rdv['client_profile_id'] as String?)?.isNotEmpty == true) 'profile_id': rdv['client_profile_id'],
-          'data': {'rdv_id': rdvId}, 'read': false,
+          'data': {'rdv_id': rdvId, if (rdv['animal_id'] != null) 'animal_id': rdv['animal_id'].toString()}, 'read': false,
         });
       }
       if (proUid != null) {
