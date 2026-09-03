@@ -6919,21 +6919,54 @@ class _EducationTabPState extends State<_EducationTabP> {
     final dt = DateTime.tryParse(date);
     final exos = _exerciceLignes(r['exercices_conseilles']?.toString());
     final coches = (r['exercices_coches'] as List?)?.map((e) => e == true).toList() ?? const [];
+    final isBilan = r['type'] == 'bilan';
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFECECEC)),
+        border: Border.all(color: isBilan ? const Color(0xFFEF6C00) : const Color(0xFFECECEC)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(dt != null ? DateFormat('dd/MM/yyyy').format(dt) : date,
-            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _kPurpleEdu)),
+        Row(children: [
+          if (isBilan) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(color: const Color(0xFFEF6C00), borderRadius: BorderRadius.circular(4)),
+              child: const Text('BILAN', style: TextStyle(fontFamily: 'Galey', fontSize: 9, color: Colors.white, fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(width: 6),
+          ],
+          Text(dt != null ? DateFormat('dd/MM/yyyy').format(dt) : date,
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _kPurpleEdu)),
+        ]),
+        if (isBilan && (r['bilan_motif']?.toString() ?? '').isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text('Motif : ${r['bilan_motif']}',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+        ],
         const SizedBox(height: 6),
         if ((r['contenu']?.toString() ?? '').isNotEmpty)
           Text(r['contenu'].toString(),
               style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4, color: Color(0xFF1F2A2E))),
+        if (isBilan && (r['bilan_recommandation']?.toString() ?? '').isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: const Color(0xFFFFF3E9), borderRadius: BorderRadius.circular(10)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('📋 Recommandation',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFFEF6C00))),
+              const SizedBox(height: 3),
+              Text(r['bilan_recommandation'].toString(),
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, height: 1.4)),
+              if (r['bilan_nb_seances_estime'] != null)
+                Text('Estimation : ${r['bilan_nb_seances_estime']} séances',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+            ]),
+          ),
+        ],
         if (exos.isNotEmpty) ...[
           const SizedBox(height: 10),
           Container(

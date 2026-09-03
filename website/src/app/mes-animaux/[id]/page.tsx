@@ -1124,6 +1124,10 @@ interface RapportEdu {
   contenu: string | null;
   exercices_conseilles: string | null;
   exercices_coches: boolean[] | null;
+  type?: string;
+  bilan_motif?: string | null;
+  bilan_recommandation?: string | null;
+  bilan_nb_seances_estime?: number | null;
 }
 
 const EDU_CATEGORIES: Record<string, string> = {
@@ -1162,7 +1166,7 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
   const reload = useCallback(() => {
     Promise.all([
       supabase.from('education_progression')
-        .select('id, date_seance, contenu, exercices_conseilles, exercices_coches')
+        .select('id, date_seance, contenu, exercices_conseilles, exercices_coches, type, bilan_motif, bilan_recommandation, bilan_nb_seances_estime')
         .eq('animal_id', animalId).order('date_seance', { ascending: false }),
       supabase.from('education_objectifs')
         .select('id, libelle, categorie, statut, note')
@@ -1382,12 +1386,22 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
       {rapports.map(r => {
         const exos = lignes(r.exercices_conseilles);
         const coches = r.exercices_coches ?? [];
+        const isBilan = r.type === 'bilan';
         return (
-          <div key={r.id} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-            <p className="text-sm font-bold text-[#7B5EA7]">
+          <div key={r.id} className={`rounded-2xl border bg-white p-4 shadow-sm ${isBilan ? 'border-[#EF6C00]' : 'border-gray-100'}`}>
+            <p className="text-sm font-bold text-[#7B5EA7] flex items-center gap-2">
+              {isBilan && <span className="text-[10px] bg-[#EF6C00] text-white px-1.5 py-0.5 rounded font-bold">BILAN</span>}
               {r.date_seance ? new Date(r.date_seance).toLocaleDateString('fr-FR') : ''}
             </p>
+            {isBilan && r.bilan_motif && <p className="text-xs font-semibold text-gray-700 mt-1">Motif : {r.bilan_motif}</p>}
             {r.contenu && <p className="text-sm text-gray-800 mt-1 whitespace-pre-line">{r.contenu}</p>}
+            {isBilan && r.bilan_recommandation && (
+              <div className="mt-2 rounded-xl bg-[#FFF3E9] p-3">
+                <p className="text-xs font-bold text-[#EF6C00]">📋 Recommandation</p>
+                <p className="text-xs text-gray-800 mt-0.5 whitespace-pre-line">{r.bilan_recommandation}</p>
+                {r.bilan_nb_seances_estime != null && <p className="text-[11px] text-gray-500 mt-0.5">Estimation : {r.bilan_nb_seances_estime} séances</p>}
+              </div>
+            )}
             {exos.length > 0 && (
               <div className="mt-3 rounded-xl bg-[#F3EEFA] p-3">
                 <p className="text-xs font-bold text-[#7B5EA7]">🏋️ Exercices à faire à la maison</p>

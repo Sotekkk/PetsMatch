@@ -69,6 +69,10 @@ interface EducRetour {
   id: string; attribution_id: string; note: string | null;
   media: { type: string; url: string }[] | null; ressenti: string | null; from_pro: boolean;
 }
+interface RapportEduP {
+  id: string; date_seance: string; contenu: string; exercices_conseilles: string | null;
+  type?: string; bilan_motif?: string | null; bilan_recommandation?: string | null; bilan_nb_seances_estime?: number | null;
+}
 const EDUC_RESSENTI: Record<string, string> = { facile: '😊 Facile', moyen: '😐 Moyen', difficile: '😓 Difficile', bloque: '🚫 Bloqué' };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -164,7 +168,7 @@ export default function PatientDetailPage() {
   const [saillies, setSaillies] = useState<Saillie[]>([]);
   const [gestations, setGestations] = useState<Gestation[]>([]);
   // Éducation (rapports de séance + exercices conseillés)
-  const [rapports, setRapports] = useState<{ id: string; date_seance: string; contenu: string; exercices_conseilles: string | null }[]>([]);
+  const [rapports, setRapports] = useState<RapportEduP[]>([]);
   const [objectifs, setObjectifs] = useState<EducObjectif[]>([]);
   const [objForm, setObjForm] = useState<{ id?: string; libelle: string; categorie: string; statut: string; note: string } | null>(null);
   const [savingObj, setSavingObj] = useState(false);
@@ -178,6 +182,12 @@ export default function PatientDetailPage() {
   const [showAddRapport, setShowAddRapport] = useState(false);
   const [rapportContenu, setRapportContenu] = useState('');
   const [rapportExercices, setRapportExercices] = useState('');
+  const [rapportType, setRapportType] = useState<'seance' | 'bilan'>('seance');
+  const [bilanMotif, setBilanMotif] = useState('');
+  const [bilanReco, setBilanReco] = useState('');
+  const [bilanNb, setBilanNb] = useState('');
+  const [bilanForfait, setBilanForfait] = useState('');
+  const [forfaitsEdu, setForfaitsEdu] = useState<{ id: string; nom: string; nb_seances: number; prix: number }[]>([]);
   const [savingRapport, setSavingRapport] = useState(false);
   const [editingRapportId, setEditingRapportId] = useState<string | null>(null);
   const [deleteRapportConfirmId, setDeleteRapportConfirmId] = useState<string | null>(null);
@@ -266,7 +276,7 @@ export default function PatientDetailPage() {
         isFemelle ? supabase.from('chaleurs').select('*').eq('animal_id', animalId).order('date', { ascending: false }) : Promise.resolve({ data: [] }),
         supabase.from('saillies').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
         isFemelle ? supabase.from('gestations').select('*').eq('animal_id', animalId).order('date', { ascending: false }) : Promise.resolve({ data: [] }),
-        supabase.from('education_progression').select('id, date_seance, contenu, exercices_conseilles').eq('animal_id', animalId).order('date_seance', { ascending: false }),
+        supabase.from('education_progression').select('id, date_seance, contenu, exercices_conseilles, type, bilan_motif, bilan_recommandation, bilan_nb_seances_estime').eq('animal_id', animalId).order('date_seance', { ascending: false }),
         supabase.from('education_objectifs').select('id, libelle, categorie, statut, note, ordre').eq('animal_id', animalId).order('ordre').order('created_at'),
         supabase.from('exercices_attribues').select('id, titre_snapshot, cadence, echeance, statut, rappels_actifs').eq('animal_id', animalId).order('assigned_at', { ascending: false }),
       ]);
@@ -292,7 +302,7 @@ export default function PatientDetailPage() {
       setChaleurs(get<Chaleur>(7));
       setSaillies(get<Saillie>(8));
       setGestations(get<Gestation>(9));
-      setRapports(get<{ id: string; date_seance: string; contenu: string; exercices_conseilles: string | null }>(10));
+      setRapports(get<RapportEduP>(10));
       setObjectifs(get<EducObjectif>(11));
       const attr = get<EducAttribue>(12);
       setAttribues(attr);
@@ -385,13 +395,22 @@ export default function PatientDetailPage() {
     setSavingRapport(true);
     try {
       const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+      const isBilan = rapportType === 'bilan';
       await supabase.from('education_progression').insert({
         pro_uid: user.uid,
         animal_id: animalId,
         owner_uid: ownerUid,
         date_seance: new Date().toISOString().slice(0, 10),
+        type: rapportType,
         contenu: rapportContenu.trim(),
-        exercices_conseilles: rapportExercices.trim() || null,
+        exercices_conseilles: !isBilan ? (rapportExercices.trim() || null) : null,
+        ...(isBilan ? {
+          bilan_motif: bilanMotif.trim() || null,
+          bilan_observations: rapportContenu.trim(),
+          bilan_recommandation: bilanReco.trim() || null,
+          bilan_nb_seances_estime: bilanNb.trim() ? Number(bilanNb) : null,
+          bilan_forfait_conseille_id: bilanForfait || null,
+        } : {}),
       });
       if (ownerUid) {
         const proNom = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || 'Votre éducateur';
@@ -399,18 +418,19 @@ export default function PatientDetailPage() {
           .select('profile_id_proprio').eq('animal_id', animalId).is('date_fin', null)
           .order('date_debut', { ascending: false }).limit(1).maybeSingle();
         await supabase.from('notifications').insert({
-          uid: ownerUid, type: 'education_rapport',
-          title: `Rapport de séance — ${animal?.nom ?? 'Animal'}`,
-          body: `${proNom} a envoyé un rapport de séance pour ${animal?.nom ?? 'votre animal'}.`,
+          uid: ownerUid, type: isBilan ? 'education_bilan' : 'education_rapport',
+          title: `${isBilan ? 'Bilan comportemental' : 'Rapport de séance'} — ${animal?.nom ?? 'Animal'}`,
+          body: `${proNom} a envoyé ${isBilan ? 'le bilan' : 'un rapport de séance'} pour ${animal?.nom ?? 'votre animal'}.`,
           ...(propRow?.profile_id_proprio ? { profile_id: propRow.profile_id_proprio } : {}),
-          data: { animalId, animalNom: animal?.nom ?? 'Animal' },
+          data: { animalId, animalNom: animal?.nom ?? 'Animal', url: `/mes-animaux/${animalId}?tab=education` },
           read: false,
         });
       }
       const { data } = await supabase.from('education_progression')
-        .select('id, date_seance, contenu, exercices_conseilles').eq('animal_id', animalId).order('date_seance', { ascending: false });
-      setRapports((data ?? []) as { id: string; date_seance: string; contenu: string; exercices_conseilles: string | null }[]);
+        .select('id, date_seance, contenu, exercices_conseilles, type, bilan_motif, bilan_recommandation, bilan_nb_seances_estime').eq('animal_id', animalId).order('date_seance', { ascending: false });
+      setRapports((data ?? []) as RapportEduP[]);
       setRapportContenu(''); setRapportExercices(''); setShowAddRapport(false);
+      setRapportType('seance'); setBilanMotif(''); setBilanReco(''); setBilanNb(''); setBilanForfait('');
     } finally {
       setSavingRapport(false);
     }
@@ -1144,22 +1164,61 @@ export default function PatientDetailPage() {
             )}
             {showAddRapport && (
               <div className="border border-gray-100 rounded-2xl p-4 mb-4 space-y-3">
+                <div className="flex gap-1.5">
+                  {(['seance', 'bilan'] as const).map(t => (
+                    <button key={t} onClick={async () => {
+                      setRapportType(t);
+                      if (t === 'bilan' && forfaitsEdu.length === 0 && user?.uid) {
+                        const { data } = await supabase.from('forfaits_education')
+                          .select('id, nom, nb_seances, prix').eq('pro_uid', user.uid).eq('actif', true).order('created_at');
+                        setForfaitsEdu((data ?? []) as typeof forfaitsEdu);
+                      }
+                    }}
+                      className={`flex-1 text-xs py-1.5 rounded-lg border ${rapportType === t ? 'bg-gray-100 border-gray-400 font-semibold' : 'border-gray-200 text-gray-500'}`}>
+                      {t === 'seance' ? 'Séance' : 'Bilan'}
+                    </button>
+                  ))}
+                </div>
+                {rapportType === 'bilan' && (
+                  <input value={bilanMotif} onChange={e => setBilanMotif(e.target.value)}
+                    placeholder="Motif de la demande (aboiements, laisse…)"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                )}
                 <div>
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Compte rendu</label>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
+                    {rapportType === 'bilan' ? 'Observations' : 'Compte rendu'}
+                  </label>
                   <textarea value={rapportContenu} onChange={e => setRapportContenu(e.target.value)} rows={3}
-                    placeholder="Déroulé de la séance, observations, progrès…"
+                    placeholder={rapportType === 'bilan' ? 'Comportement observé, contexte de vie…' : 'Déroulé de la séance, observations, progrès…'}
                     className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
                 </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Exercices conseillés</label>
-                  <textarea value={rapportExercices} onChange={e => setRapportExercices(e.target.value)} rows={2}
-                    placeholder="Exercices à faire à la maison d'ici la prochaine séance…"
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
-                </div>
+                {rapportType === 'bilan' ? (
+                  <>
+                    <textarea value={bilanReco} onChange={e => setBilanReco(e.target.value)} rows={2}
+                      placeholder="Recommandation : programme conseillé, priorités…"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                    <div className="flex gap-2">
+                      <input type="number" value={bilanNb} onChange={e => setBilanNb(e.target.value)} placeholder="Nb séances"
+                        className="w-28 border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                      <select value={bilanForfait} onChange={e => setBilanForfait(e.target.value)}
+                        className="flex-1 border border-gray-200 rounded-xl px-2 py-2 text-sm">
+                        <option value="">Forfait conseillé…</option>
+                        {forfaitsEdu.map(f => <option key={f.id} value={f.id}>{f.nom} · {f.nb_seances}× · {f.prix}€</option>)}
+                      </select>
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Exercices conseillés</label>
+                    <textarea value={rapportExercices} onChange={e => setRapportExercices(e.target.value)} rows={2}
+                      placeholder="Exercices à faire à la maison d'ici la prochaine séance…"
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                  </div>
+                )}
                 <button onClick={soumettreRapport} disabled={savingRapport || !rapportContenu.trim()}
                   className="w-full text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
-                  style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
-                  {savingRapport ? '…' : 'Envoyer au propriétaire'}
+                  style={{ background: rapportType === 'bilan' ? '#EF6C00' : TEAL, fontFamily: 'Galey, sans-serif' }}>
+                  {savingRapport ? '…' : rapportType === 'bilan' ? 'Envoyer le bilan' : 'Envoyer au propriétaire'}
                 </button>
               </div>
             )}
@@ -1194,9 +1253,12 @@ export default function PatientDetailPage() {
             ) : (
               <div className="space-y-3">
                 {rapports.map(r => (
-                  <div key={r.id} className="border border-gray-100 rounded-xl p-3">
+                  <div key={r.id} className={`border rounded-xl p-3 ${r.type === 'bilan' ? 'border-[#EF6C00]' : 'border-gray-100'}`}>
                     <div className="flex items-center justify-between mb-1">
-                      <p className="text-xs text-gray-400">{fmtDateShort(r.date_seance)}</p>
+                      <p className="text-xs text-gray-400 flex items-center gap-1.5">
+                        {r.type === 'bilan' && <span className="text-[9px] bg-[#EF6C00] text-white px-1 py-0.5 rounded font-bold">BILAN</span>}
+                        {fmtDateShort(r.date_seance)}
+                      </p>
                       {hasReportAccess && (
                         <div className="flex gap-2">
                           <button onClick={() => startEditRapport(r)} className="text-gray-400 hover:text-[#0C5C6C] text-xs">✏️</button>
@@ -1211,7 +1273,15 @@ export default function PatientDetailPage() {
                         </div>
                       )}
                     </div>
+                    {r.type === 'bilan' && r.bilan_motif && <p className="text-xs font-semibold text-gray-700 mb-0.5">Motif : {r.bilan_motif}</p>}
                     <p className="text-sm text-[#1F2A2E]">{r.contenu}</p>
+                    {r.type === 'bilan' && r.bilan_recommandation && (
+                      <div className="mt-1.5 bg-[#FFF3E9] rounded-lg px-2 py-1.5">
+                        <p className="text-[11px] font-bold text-[#EF6C00]">📋 Recommandation</p>
+                        <p className="text-xs text-gray-800">{r.bilan_recommandation}</p>
+                        {r.bilan_nb_seances_estime != null && <p className="text-[10px] text-gray-500">Estimation : {r.bilan_nb_seances_estime} séances</p>}
+                      </div>
+                    )}
                     {r.exercices_conseilles && (
                       <div className="mt-2 bg-[#EEF5EA] rounded-lg px-2.5 py-1.5">
                         <p className="text-xs font-semibold text-[#4A7A32] mb-0.5">🏋️ Exercices conseillés</p>

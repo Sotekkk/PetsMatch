@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/pro/education_shared.dart';
 import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
+import 'package:PetsMatch/pages/pro/education_devis_page.dart';
 
 /// Hub de suivi d'un animal côté éducateur/comportementaliste :
 /// onglets « Plan de travail » (objectifs), « Exercices » (attribués à la
@@ -44,6 +45,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
   List<Map<String, dynamic>> _exercices = [];
   final Map<String, List<Map<String, dynamic>>> _retours = {};
   List<Map<String, dynamic>> _seances = [];
+  List<Map<String, dynamic>> _forfaits = [];
   bool _loading = true;
 
   @override
@@ -71,6 +73,9 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             .eq('id', widget.animalId).maybeSingle(),
         _supa.from('exercices_attribues').select().eq('animal_id', widget.animalId)
             .order('assigned_at', ascending: false),
+        _supa.from('forfaits_education').select('id, nom, nb_seances, prix')
+            .eq('pro_uid', FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid)
+            .eq('actif', true).order('created_at'),
       ]);
       final animal = results[2] as Map<String, dynamic>?;
       final exos = List<Map<String, dynamic>>.from(results[3] as List);
@@ -99,6 +104,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           _objectifs = List<Map<String, dynamic>>.from(results[0] as List);
           _seances = List<Map<String, dynamic>>.from(results[1] as List);
           _exercices = exos;
+          _forfaits = List<Map<String, dynamic>>.from(results[4] as List);
           _ownerUid = animal?['uid_proprietaire']?.toString() ??
               animal?['uid_eleveur']?.toString();
           _loading = false;
@@ -297,6 +303,11 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
   Future<void> _addSeance() async {
     final contenuCtrl = TextEditingController();
     final exercicesCtrl = TextEditingController();
+    final motifCtrl = TextEditingController();
+    final recoCtrl = TextEditingController();
+    final nbCtrl = TextEditingController();
+    String? forfaitId;
+    bool isBilan = false;
     final List<Map<String, dynamic>> joints = [];
 
     final ok = await showModalBottomSheet<bool>(
@@ -311,34 +322,112 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
               Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
-              Text('Compte rendu de séance — ${widget.animalNom}',
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-              const SizedBox(height: 16),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, label: Text('Séance', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
+                  ButtonSegment(value: true, label: Text('Bilan', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
+                ],
+                selected: {isBilan},
+                onSelectionChanged: (v) => setSheet(() => isBilan = v.first),
+                showSelectedIcon: false,
+              ),
+              const SizedBox(height: 14),
+              if (isBilan) ...[
+                TextField(
+                  controller: motifCtrl,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                  decoration: InputDecoration(
+                    labelText: 'Motif de la demande',
+                    hintText: 'Ex : aboiements, tirage en laisse, réactivité congénères…',
+                    hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               TextField(
                 controller: contenuCtrl,
                 maxLines: 5,
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
                 decoration: InputDecoration(
-                  hintText: 'Déroulé de la séance, exercices réalisés, progrès observés…',
+                  labelText: isBilan ? 'Observations' : null,
+                  hintText: isBilan
+                      ? 'Comportement observé, contexte de vie, relation au maître…'
+                      : 'Déroulé de la séance, exercices réalisés, progrès observés…',
                   hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                   contentPadding: const EdgeInsets.all(12),
                 ),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: exercicesCtrl,
-                maxLines: 2,
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                decoration: InputDecoration(
-                  labelText: 'Exercices conseillés (note rapide)',
-                  hintText: 'À faire à la maison d\'ici la prochaine séance…',
-                  hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  contentPadding: const EdgeInsets.all(12),
+              if (isBilan) ...[
+                TextField(
+                  controller: recoCtrl,
+                  maxLines: 3,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                  decoration: InputDecoration(
+                    labelText: 'Recommandation',
+                    hintText: 'Programme conseillé, priorités de travail…',
+                    hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
+                const SizedBox(height: 12),
+                Row(children: [
+                  SizedBox(
+                    width: 110,
+                    child: TextField(
+                      controller: nbCtrl,
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                      decoration: InputDecoration(
+                        labelText: 'Nb séances',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButtonFormField<String?>(
+                      initialValue: forfaitId,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: 'Forfait conseillé',
+                        labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 11),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      ),
+                      items: [
+                        const DropdownMenuItem(value: null, child: Text('Aucun', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
+                        ..._forfaits.map((f) => DropdownMenuItem(
+                          value: f['id'].toString(),
+                          child: Text('${f['nom']} · ${f['nb_seances']}× · ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0}€',
+                              overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                        )),
+                      ],
+                      onChanged: (v) => setSheet(() => forfaitId = v),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 12),
+              ] else ...[
+                TextField(
+                  controller: exercicesCtrl,
+                  maxLines: 2,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                  decoration: InputDecoration(
+                    labelText: 'Exercices conseillés (note rapide)',
+                    hintText: 'À faire à la maison d\'ici la prochaine séance…',
+                    hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
               OutlinedButton.icon(
                 onPressed: () async {
                   final picked = await Navigator.push<List<Map<String, dynamic>>>(ctx,
@@ -358,8 +447,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                   padding: const EdgeInsets.symmetric(vertical: 14), elevation: 0,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: const Text('Envoyer à la famille',
-                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                child: Text(isBilan ? 'Envoyer le bilan' : 'Envoyer à la famille',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
               )),
             ]),
           ),
@@ -376,8 +465,14 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         'animal_id': widget.animalId,
         'owner_uid': _ownerUid,
         'date_seance': DateTime.now().toIso8601String().substring(0, 10),
-        'contenu': contenuCtrl.text.trim(),
-        if (exercicesCtrl.text.trim().isNotEmpty) 'exercices_conseilles': exercicesCtrl.text.trim(),
+        'type': isBilan ? 'bilan' : 'seance',
+        'contenu': isBilan ? contenuCtrl.text.trim() : contenuCtrl.text.trim(),
+        if (!isBilan && exercicesCtrl.text.trim().isNotEmpty) 'exercices_conseilles': exercicesCtrl.text.trim(),
+        if (isBilan) 'bilan_motif': motifCtrl.text.trim().isEmpty ? null : motifCtrl.text.trim(),
+        if (isBilan) 'bilan_observations': contenuCtrl.text.trim(),
+        if (isBilan) 'bilan_recommandation': recoCtrl.text.trim().isEmpty ? null : recoCtrl.text.trim(),
+        if (isBilan && int.tryParse(nbCtrl.text.trim()) != null) 'bilan_nb_seances_estime': int.parse(nbCtrl.text.trim()),
+        if (isBilan && forfaitId != null) 'bilan_forfait_conseille_id': forfaitId,
       }).select('id').single();
       if (joints.isNotEmpty) {
         await _supa.from('exercices_attribues').insert(joints.map((e) => {
@@ -393,15 +488,51 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           'media_snapshot': e['media'] ?? [],
         }).toList());
       }
-      await _notifyOwner('education_rapport',
-          'Rapport de séance — ${widget.animalNom}',
-          '${_proNom.isNotEmpty ? _proNom : 'Votre éducateur'} a envoyé un rapport de séance'
+      await _notifyOwner(isBilan ? 'education_bilan' : 'education_rapport',
+          isBilan ? 'Bilan comportemental — ${widget.animalNom}' : 'Rapport de séance — ${widget.animalNom}',
+          '${_proNom.isNotEmpty ? _proNom : 'Votre éducateur'} a envoyé ${isBilan ? 'le bilan' : 'un rapport de séance'}'
           '${joints.isNotEmpty ? ' + ${joints.length} exercice${joints.length > 1 ? 's' : ''}' : ''}.');
-      if (mounted) _snack('Rapport envoyé à la famille.');
       await _load();
+      if (mounted && isBilan) {
+        _proposerDevis(recoCtrl.text.trim(),
+            int.tryParse(nbCtrl.text.trim()),
+            forfaitId == null ? null : _forfaits.firstWhere((f) => f['id'].toString() == forfaitId, orElse: () => {}));
+      } else if (mounted) {
+        _snack('Rapport envoyé à la famille.');
+      }
     } catch (e) {
       _snack('Erreur : $e', err: true);
     }
+  }
+
+  void _proposerDevis(String reco, int? nb, Map<String, dynamic>? forfait) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Bilan enregistré', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (nb != null || (forfait != null && forfait.isNotEmpty))
+            Text('Recommandation : ${nb != null ? '$nb séances' : ''}'
+                '${forfait != null && forfait.isNotEmpty ? '${nb != null ? ' — ' : ''}forfait « ${forfait['nom']} » (${(forfait['prix'] as num?)?.toStringAsFixed(0) ?? 0} €)' : ''}',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          const SizedBox(height: 8),
+          const Text('Créer le devis correspondant maintenant ?',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey)),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx),
+              child: const Text('Plus tard', style: TextStyle(fontFamily: 'Galey'))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: _kOrange),
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const DevisPage()));
+            },
+            child: const Text('Créer le devis', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
   }
 
   // ── Exercices attribués ────────────────────────────────────────────────────
@@ -895,16 +1026,48 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         itemCount: _seances.length,
         itemBuilder: (_, i) {
           final s = _seances[i];
+          final isBilan = s['type'] == 'bilan';
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+            decoration: BoxDecoration(
+              color: Colors.white, borderRadius: BorderRadius.circular(14),
+              border: isBilan ? Border.all(color: _kOrange) : null,
+            ),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(s['date_seance']?.toString() ?? '',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+              Row(children: [
+                if (isBilan) ...[
+                  _pill('BILAN', _kOrange),
+                  const SizedBox(width: 6),
+                ],
+                Text(s['date_seance']?.toString() ?? '',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+              ]),
+              if (isBilan && (s['bilan_motif']?.toString() ?? '').isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text('Motif : ${s['bilan_motif']}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+              ],
               const SizedBox(height: 6),
               Text(s['contenu']?.toString() ?? '',
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
+              if (isBilan && (s['bilan_recommandation']?.toString() ?? '').isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: const Color(0xFFFFF3E9), borderRadius: BorderRadius.circular(8)),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('📋 Recommandation',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 11, color: _kOrange)),
+                    const SizedBox(height: 2),
+                    Text(s['bilan_recommandation'].toString(),
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                    if (s['bilan_nb_seances_estime'] != null)
+                      Text('Estimation : ${s['bilan_nb_seances_estime']} séances',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+                  ]),
+                ),
+              ],
               if ((s['exercices_conseilles']?.toString() ?? '').isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Container(
