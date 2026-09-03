@@ -6563,4 +6563,50 @@ rebuild + distribuer l'APK.
 
 ---
 
+## 49. Bugs à la création d'un profil particulier (testeur bêta jenny Naprix, session 2026-09-03)
+
+**Contexte** : une testeuse (version app antérieure aux correctifs) crée un profil
+particulier + 5 animaux. Symptômes : (a) ses animaux n'apparaissent pas dans
+« Mes animaux » ; (b) dans l'admin web elle est affichée « Pro » / « En attente ».
+
+**Causes & correctifs** :
+
+1. **Animaux invisibles** — l'upsert app sur `animaux_proprietes`
+   (`onConflict: 'animal_id,uid_proprio'`) échoue en 42P10 (avalé par un try/catch)
+   tant que la contrainte unique n'existe pas / build ancienne → aucune ligne
+   `animaux_proprietes`, `animaux.profile_id` NULL. « Mes animaux » filtre sur
+   `animaux_proprietes.profile_id_proprio` → rien. Réparation de données par SQL
+   (UPDATE `animaux.profile_id` + INSERT `animaux_proprietes`). Le fix structurel
+   (`migration_fix_animaux_proprietes_unique_constraint.sql`) ne backfille que les
+   animaux d'éleveur, pas ceux d'un particulier.
+
+2. **« Pro » dans l'admin** — `website/src/app/admin/page.tsx` :
+   `isPro = !!entry.catPro` et `catPro` reprenait `row.profile_type`, donc
+   `'particulier'` (non vide) ⇒ `isPro=true` pour **tous** les particuliers.
+   Helper `proCategory()` ajouté (exclut particulier/eleveur/association).
+   Commit `30e12114`.
+
+3. **« En attente » (cause racine)** — `create_main_profile_on_signup()` (trigger
+   `AFTER INSERT ON users`) n'écrivait pas `statut_pro` / `validation_status` /
+   `is_validate` → un nouveau profil particulier héritait des DEFAULT pro
+   (`en_attente` / `pending` / `false`). Les anciens particuliers n'étaient
+   corrects que grâce aux backfills ponctuels des migrations v2_01
+   (`statut_pro='na'`) et v2_07 (`validation_status='auto_validated'`) — rien ne
+   le faisait pour les inscriptions suivantes. **Corrigé** :
+   `migration_fix_particulier_signup_validation.sql` (commit `dd2eb572`) — la
+   fonction pose explicitement `na` / `auto_validated` / `true` pour un
+   particulier, `en_attente` / `pending` / `false` sinon ; + backfill des
+   particuliers déjà mal créés + fermeture des `admin_alerts` ouvertes à tort.
+   Aucun changement d'app nécessaire (le trigger couvre app + site).
+
+4. **Bonus** — `users.profile_id` de jenny pointait sur un profil inexistant
+   (`ee6a1e25…`). Colonne `users.profile_id` non lue par le code actuel (app lit
+   `user_profiles` directement, web lit `localStorage`) → inoffensif, réparable
+   par `UPDATE users SET profile_id=<vrai profil> WHERE uid=…`.
+
+**Migrations à exécuter** : `migration_fix_particulier_signup_validation.sql`
+(+ SQL ponctuel de rattachement des 5 animaux de jenny, fourni séparément).
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*
