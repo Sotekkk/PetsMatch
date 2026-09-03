@@ -2892,11 +2892,24 @@ class _ContactPetsMatchSearchSheetState extends State<_ContactPetsMatchSearchShe
   bool _searching = false;
   bool _searchDone = false;
   List<Map<String, dynamic>> _results = [];
+  Timer? _debounce;
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  // Suggestions dès la saisie (2 caractères), sans attendre le bouton
+  // « Chercher » ou la validation.
+  void _onQueryChanged(String q) {
+    _debounce?.cancel();
+    if (q.trim().length < 2) {
+      setState(() { _results = []; _searchDone = false; });
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 350), _search);
   }
 
   Future<void> _search() async {
@@ -2959,6 +2972,7 @@ class _ContactPetsMatchSearchSheetState extends State<_ContactPetsMatchSearchShe
           Expanded(child: TextField(
             controller: _searchCtrl,
             autofocus: true,
+            onChanged: _onQueryChanged,
             onSubmitted: (_) => _search(),
             decoration: InputDecoration(
               hintText: 'Nom, prénom ou email…',

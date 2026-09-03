@@ -2877,6 +2877,20 @@ export default function AnimalFichePage() {
     setContactSearchDone(false);
   }
 
+  // Suggestions dès la saisie (2 caractères), sans attendre le bouton
+  // « Chercher » ou la touche Entrée.
+  useEffect(() => {
+    if (!showContactSearch) return;
+    if (contactQuery.trim().length < 2) {
+      setContactResults([]);
+      setContactSearchDone(false);
+      return;
+    }
+    const t = setTimeout(() => { searchContactPetsMatch(); }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contactQuery, showContactSearch]);
+
   if (loading) {
     return <div className="flex items-center justify-center py-32"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin"/></div>;
   }
