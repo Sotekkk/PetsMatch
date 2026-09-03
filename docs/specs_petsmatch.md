@@ -6523,4 +6523,44 @@ les fichiers touchés). APK rebuild + install OK.
 
 ---
 
+## 48. Accès privé de l'app pendant les tests — portail mot de passe (session 2026-09-03)
+
+**Contexte** : passage prochain en phase de test, l'app va être mise en ligne.
+L'utilisatrice veut restreindre l'accès aux seuls testeurs invités, « un peu
+comme le site » (qui a déjà un portail `BETA_PASSWORD` via `src/proxy.ts` +
+`/beta-login`).
+
+**Implémenté (app Flutter)** :
+- `lib/pages/beta_gate.dart` — widget `BetaGate` qui enveloppe `AuthWrapper`
+  dans le `home:` de `MyApp` (`lib/main.dart`). Au premier lancement : écran
+  `_BetaGatePage` (logo, champ mot de passe obscurci, bouton « Accéder à
+  l'application »). Une fois validé, l'accès est mémorisé dans
+  `SharedPreferences` (`beta_gate_unlocked_v1`) — plus de demande aux lancements
+  suivants. `BetaGate.reset()` efface l'accès (pour retester le portail).
+- Mot de passe de référence : lu dans Supabase `app_config` → clé
+  `beta_password` (timeout 6 s), pour pouvoir le changer **sans republier
+  l'app**. Repli sur la constante `kBetaPassword` de `lib/config.dart` si
+  Supabase est injoignable / la table absente. Comparaison exacte après `trim()`.
+- `lib/config.dart` : `kBetaGateEnabled` (passer à `false` pour rouvrir l'app à
+  tous), `kBetaPassword` (repli).
+- **Migration `supabase/migration_beta_gate.sql`** : table `app_config`
+  (clé/valeur générique), RLS lecture publique (clé anon), écriture réservée au
+  dashboard / `service_role` (`REVOKE INSERT, UPDATE, DELETE` pour
+  `anon`/`authenticated`). Ligne `beta_password` insérée avec une valeur par
+  défaut à changer avant l'ouverture des tests.
+
+**Limites assumées** (accès de test, pas de la sécurité forte) : le mot de passe
+de repli est dans l'APK et la valeur en base est lisible par la clé anon — comme
+le cookie du site vaut le mot de passe. Suffisant pour un cercle de testeurs ;
+la vraie barrière reste Firebase Auth derrière.
+
+**Vérifié** : `flutter analyze` — 0 nouvelle erreur (lints de style préexistants
+seulement).
+
+**À faire par l'utilisatrice** : exécuter `migration_beta_gate.sql`, changer le
+mot de passe (`UPDATE app_config SET value='…' WHERE key='beta_password'`),
+rebuild + distribuer l'APK.
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

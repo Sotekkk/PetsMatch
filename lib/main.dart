@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:PetsMatch/pages/admin/admin_panel.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
+import 'package:PetsMatch/pages/beta_gate.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/eleveur/verification_page.dart';
@@ -740,7 +741,7 @@ class MyApp extends StatelessWidget {
             ),
           ),
           debugShowCheckedModeBanner: false,
-          home: AuthWrapper(),
+          home: BetaGate(child: AuthWrapper()),
         );
   }
 }
