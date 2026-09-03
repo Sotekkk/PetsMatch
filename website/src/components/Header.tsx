@@ -662,7 +662,8 @@ function getNotifUrl(n: Notif): string | null {
     case 'facture_pension':
       return d.url ?? null;
     case 'education_rapport':
-      return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
+    case 'education_objectif_acquis':
+      return d.url ?? (d.animalId ? `/mes-animaux/${d.animalId}?tab=education` : '/mes-animaux');
     case 'cours_collectif_inscription':
       return '/education/planning';
     case 'devis_recu':
@@ -1197,6 +1198,7 @@ export default function Header() {
                               : n.type === 'pension_acces' || n.type === 'pension_acces_reponse' ? '🏡'
                               : n.type === 'pension_journal' || n.type === 'pension_journal_reply' ? '📸'
                               : n.type === 'education_rapport' ? '🐾'
+                              : n.type === 'education_objectif_acquis' ? '🎯'
                               : n.type === 'cours_collectif_inscription' ? '👥'
                               : n.type === 'devis_recu' ? '📋'
                               : n.type === 'devis_accepte' ? '✅'

@@ -240,6 +240,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       final rapports = await _supa.from('education_progression').select('id').eq('animal_id', _animalId!).limit(1);
       hasRap = (rapports as List).isNotEmpty;
     } catch (_) {}
+    if (!hasRap) {
+      try {
+        final objs = await _supa.from('education_objectifs').select('id').eq('animal_id', _animalId!).limit(1);
+        hasRap = (objs as List).isNotEmpty;
+      } catch (_) {}
+    }
     try {
       final devis = await _supa.from('devis').select('id').eq('animal_id', _animalId!).limit(1);
       hasDev = (devis as List).isNotEmpty;
@@ -6432,7 +6438,24 @@ class _EducationTabPState extends State<_EducationTabP> {
   final _supa = Supabase.instance.client;
   List<Map<String, dynamic>> _rapports = [];
   List<Map<String, dynamic>> _devis = [];
+  List<Map<String, dynamic>> _objectifs = [];
   bool _loading = true;
+
+  static const _kEduCategories = <String, String>{
+    'rappel': 'Rappel', 'laisse': 'Marche en laisse', 'proprete': 'Propreté',
+    'aboiements': 'Aboiements', 'destruction': 'Destruction',
+    'socialisation_chien': 'Socialisation chiens', 'socialisation_humain': 'Socialisation humains',
+    'manipulation': 'Manipulation / soins', 'solitude': 'Solitude',
+    'agressivite': 'Agressivité', 'peurs': 'Peurs', 'autre': 'Autre',
+  };
+  static const _kEduStatutLabels = {
+    'a_travailler': 'À travailler', 'en_cours': 'En cours', 'acquis': 'Acquis',
+  };
+  Color _eduStatutColor(String s) => switch (s) {
+        'acquis' => const Color(0xFF6E9E57),
+        'en_cours' => const Color(0xFFEFA100),
+        _ => const Color(0xFFD5573B),
+      };
 
   @override
   void initState() {
@@ -6447,9 +6470,15 @@ class _EducationTabPState extends State<_EducationTabP> {
           .eq('animal_id', widget.animalId!).order('date_seance', ascending: false);
       final d = await _supa.from('devis').select()
           .eq('animal_id', widget.animalId!).order('created_at', ascending: false);
+      List objectifs = const [];
+      try {
+        objectifs = await _supa.from('education_objectifs').select()
+            .eq('animal_id', widget.animalId!).order('ordre').order('created_at');
+      } catch (_) {}
       if (mounted) setState(() {
         _rapports = List<Map<String, dynamic>>.from(r as List);
         _devis = List<Map<String, dynamic>>.from(d as List);
+        _objectifs = List<Map<String, dynamic>>.from(objectifs);
         _loading = false;
       });
     } catch (_) {
@@ -6478,14 +6507,19 @@ class _EducationTabPState extends State<_EducationTabP> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: _kPurpleEdu));
-    if (_rapports.isEmpty && _devis.isEmpty) {
+    if (_rapports.isEmpty && _devis.isEmpty && _objectifs.isEmpty) {
       return const _TabEmptyState(
           icon: Icons.school_outlined,
-          text: 'Aucun suivi éducatif pour l\'instant.\nLes comptes rendus de votre éducateur apparaîtront ici.');
+          text: 'Aucun suivi éducatif pour l\'instant.\nLe plan de travail et les comptes rendus de votre éducateur apparaîtront ici.');
     }
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
       children: [
+        if (_objectifs.isNotEmpty) ...[
+          _title('Plan de travail'),
+          ..._objectifs.map(_objectifCard),
+          const SizedBox(height: 18),
+        ],
         if (_devis.isNotEmpty) ...[
           _title('Devis reçus'),
           ..._devis.map(_devisCard),
@@ -6496,6 +6530,38 @@ class _EducationTabPState extends State<_EducationTabP> {
           ..._rapports.map(_rapportCard),
         ],
       ],
+    );
+  }
+
+  Widget _objectifCard(Map<String, dynamic> o) {
+    final statut = o['statut']?.toString() ?? 'a_travailler';
+    final cat = o['categorie']?.toString();
+    final color = _eduStatutColor(statut);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 8),
+          Expanded(child: Text(o['libelle']?.toString() ?? '',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13))),
+          Text(_kEduStatutLabels[statut] ?? statut,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600, color: color)),
+        ]),
+        if (cat != null && _kEduCategories[cat] != null) ...[
+          const SizedBox(height: 4),
+          Text(_kEduCategories[cat]!,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+        ],
+        if ((o['note']?.toString() ?? '').isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(o['note'].toString(),
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+        ],
+      ]),
     );
   }
 

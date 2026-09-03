@@ -317,8 +317,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
       }
       return;
     }
-    // Rapport de séance éducateur/comportementaliste reçu par le propriétaire
-    if (type == 'education_rapport') {
+    // Suivi éducatif (rapport de séance, objectif atteint) reçu par le propriétaire
+    if (type == 'education_rapport' || type == 'education_objectif_acquis') {
       final animalId  = data is Map ? data['animalId']  as String? : null;
       final animalNom = data is Map ? data['animalNom'] as String? : null;
       if (animalId != null) {
@@ -828,6 +828,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'pension_journal':
       case 'pension_journal_reply': return Icons.photo_camera_back_outlined;
       case 'education_rapport':     return Icons.school_outlined;
+      case 'education_objectif_acquis': return Icons.flag_outlined;
       case 'cours_collectif_inscription': return Icons.groups_outlined;
       case 'devis_recu':             return Icons.request_quote_outlined;
       case 'devis_accepte':          return Icons.check_circle_outline;
@@ -890,6 +891,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'pension_journal':
       case 'pension_journal_reply': return const Color(0xFF6E9E57);
       case 'education_rapport':     return const Color(0xFF7B5EA7);
+      case 'education_objectif_acquis': return const Color(0xFF6E9E57);
       case 'cours_collectif_inscription': return const Color(0xFF7B5EA7);
       case 'devis_recu':             return const Color(0xFF0C5C6C);
       case 'devis_accepte':          return const Color(0xFF6E9E57);

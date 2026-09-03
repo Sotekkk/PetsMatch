@@ -58,8 +58,20 @@ interface Gestation {
   id: string; date: string | null; date_prevue: string | null; date_naissance: string | null;
   nb_attendu: number | null; nb_nes: number | null; notes: string | null; gestation_confirmee: boolean | null;
 }
+interface EducObjectif {
+  id: string; libelle: string; categorie: string | null; statut: string; note: string | null; ordre: number;
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
+
+const EDUC_CATEGORIES: Record<string, string> = {
+  rappel: 'Rappel', laisse: 'Marche en laisse', proprete: 'Propreté', aboiements: 'Aboiements',
+  destruction: 'Destruction', socialisation_chien: 'Socialisation chiens', socialisation_humain: 'Socialisation humains',
+  manipulation: 'Manipulation / soins', solitude: 'Solitude', agressivite: 'Agressivité', peurs: 'Peurs', autre: 'Autre',
+};
+const EDUC_STATUTS = ['a_travailler', 'en_cours', 'acquis'] as const;
+const EDUC_STATUT_LABEL: Record<string, string> = { a_travailler: 'À travailler', en_cours: 'En cours', acquis: 'Acquis' };
+const educStatutColor = (s: string) => s === 'acquis' ? '#6E9E57' : s === 'en_cours' ? '#EFA100' : '#D5573B';
 
 const ESPECE_EMOJI: Record<string, string> = {
   chien: '🐕', chat: '🐈', cheval: '🐴', lapin: '🐰',
@@ -144,6 +156,9 @@ export default function PatientDetailPage() {
   const [gestations, setGestations] = useState<Gestation[]>([]);
   // Éducation (rapports de séance + exercices conseillés)
   const [rapports, setRapports] = useState<{ id: string; date_seance: string; contenu: string; exercices_conseilles: string | null }[]>([]);
+  const [objectifs, setObjectifs] = useState<EducObjectif[]>([]);
+  const [objForm, setObjForm] = useState<{ id?: string; libelle: string; categorie: string; statut: string; note: string } | null>(null);
+  const [savingObj, setSavingObj] = useState(false);
   const [showAddRapport, setShowAddRapport] = useState(false);
   const [rapportContenu, setRapportContenu] = useState('');
   const [rapportExercices, setRapportExercices] = useState('');
@@ -236,6 +251,7 @@ export default function PatientDetailPage() {
         supabase.from('saillies').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
         isFemelle ? supabase.from('gestations').select('*').eq('animal_id', animalId).order('date', { ascending: false }) : Promise.resolve({ data: [] }),
         supabase.from('education_progression').select('id, date_seance, contenu, exercices_conseilles').eq('animal_id', animalId).order('date_seance', { ascending: false }),
+        supabase.from('education_objectifs').select('id, libelle, categorie, statut, note, ordre').eq('animal_id', animalId).order('ordre').order('created_at'),
       ]);
 
       const get = <T,>(i: number): T[] => {
@@ -260,6 +276,7 @@ export default function PatientDetailPage() {
       setSaillies(get<Saillie>(8));
       setGestations(get<Gestation>(9));
       setRapports(get<{ id: string; date_seance: string; contenu: string; exercices_conseilles: string | null }>(10));
+      setObjectifs(get<EducObjectif>(11));
       setLoading(false);
     }
     load();
@@ -398,6 +415,74 @@ export default function PatientDetailPage() {
     await supabase.from('education_progression').delete().eq('id', id);
     setRapports(prev => prev.filter(r => r.id !== id));
     setDeleteRapportConfirmId(null);
+  }
+
+  // ── Objectifs (plan de travail) ──
+  async function reloadObjectifs() {
+    const { data } = await supabase.from('education_objectifs')
+      .select('id, libelle, categorie, statut, note, ordre').eq('animal_id', animalId).order('ordre').order('created_at');
+    setObjectifs((data ?? []) as EducObjectif[]);
+  }
+
+  async function notifyOwnerObjectif(libelle: string) {
+    const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+    if (!ownerUid) return;
+    const proNom = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || 'Votre éducateur';
+    const { data: propRow } = await supabase.from('animaux_proprietes')
+      .select('profile_id_proprio').eq('animal_id', animalId).is('date_fin', null).limit(1).maybeSingle();
+    await supabase.from('notifications').insert({
+      uid: ownerUid, type: 'education_objectif_acquis',
+      title: `Objectif atteint — ${animal?.nom ?? 'votre animal'} 🎉`,
+      body: `${proNom} a validé « ${libelle} ».`,
+      ...(propRow?.profile_id_proprio ? { profile_id: propRow.profile_id_proprio } : {}),
+      data: { animalId, animalNom: animal?.nom ?? 'Animal', url: `/mes-animaux/${animalId}?tab=education` },
+    });
+  }
+
+  async function saveObjectif() {
+    if (!objForm || !objForm.libelle.trim() || !user?.uid) return;
+    setSavingObj(true);
+    try {
+      const wasAcquis = objForm.id ? objectifs.find(o => o.id === objForm.id)?.statut === 'acquis' : false;
+      const now = new Date().toISOString();
+      const payload: Record<string, unknown> = {
+        libelle: objForm.libelle.trim(),
+        categorie: objForm.categorie || null,
+        statut: objForm.statut,
+        note: objForm.note.trim() || null,
+        updated_at: now,
+        acquis_le: objForm.statut === 'acquis' ? (wasAcquis ? undefined : now) : null,
+      };
+      if (objForm.id) {
+        await supabase.from('education_objectifs').update(payload).eq('id', objForm.id);
+      } else {
+        const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+        await supabase.from('education_objectifs').insert({
+          ...payload, pro_uid: user.uid, pro_profile_id: activeProfileId || null,
+          animal_id: animalId, owner_uid: ownerUid, ordre: objectifs.length,
+        });
+      }
+      if (objForm.statut === 'acquis' && !wasAcquis) await notifyOwnerObjectif(objForm.libelle.trim());
+      setObjForm(null);
+      await reloadObjectifs();
+    } finally {
+      setSavingObj(false);
+    }
+  }
+
+  async function setObjectifStatut(o: EducObjectif, statut: string) {
+    const wasAcquis = o.statut === 'acquis';
+    setObjectifs(prev => prev.map(x => x.id === o.id ? { ...x, statut } : x));
+    const now = new Date().toISOString();
+    await supabase.from('education_objectifs').update({
+      statut, updated_at: now, acquis_le: statut === 'acquis' ? (wasAcquis ? undefined : now) : null,
+    }).eq('id', o.id);
+    if (statut === 'acquis' && !wasAcquis) await notifyOwnerObjectif(o.libelle);
+  }
+
+  async function deleteObjectif(id: string) {
+    await supabase.from('education_objectifs').delete().eq('id', id);
+    setObjectifs(prev => prev.filter(o => o.id !== id));
   }
 
   async function requestWriteAccess() {
@@ -758,8 +843,86 @@ export default function PatientDetailPage() {
           </Card>
         )}
 
-        {/* ── Éducation (rapports de séance + exercices conseillés) ── */}
+        {/* ── Éducation (plan de travail + rapports de séance) ── */}
         {tab === 'Éducation' && (
+          <>
+          <Card title="🎯 Plan de travail">
+            {hasReportAccess && (
+              <button onClick={() => setObjForm({ libelle: '', categorie: '', statut: 'a_travailler', note: '' })}
+                className="w-full text-white rounded-2xl py-2.5 font-semibold text-sm flex items-center justify-center gap-2 mb-4"
+                style={{ background: '#EF6C00', fontFamily: 'Galey, sans-serif' }}>
+                <span className="text-lg leading-none">+</span> Ajouter un objectif
+              </button>
+            )}
+            {objForm && (
+              <div className="border border-[#EF6C00]/30 rounded-2xl p-4 mb-4 space-y-3 bg-[#EF6C00]/5">
+                <input value={objForm.libelle} onChange={e => setObjForm({ ...objForm, libelle: e.target.value })}
+                  placeholder="Ex : Revient au rappel en extérieur"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(EDUC_CATEGORIES).map(([k, v]) => (
+                    <button key={k} type="button"
+                      onClick={() => setObjForm({ ...objForm, categorie: objForm.categorie === k ? '' : k })}
+                      className={`text-xs px-2.5 py-1 rounded-full border ${objForm.categorie === k ? 'bg-[#EF6C00]/15 border-[#EF6C00] text-[#EF6C00]' : 'border-gray-200 text-gray-500'}`}>
+                      {v}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-1.5">
+                  {EDUC_STATUTS.map(s => (
+                    <button key={s} type="button" onClick={() => setObjForm({ ...objForm, statut: s })}
+                      className={`flex-1 text-xs py-1.5 rounded-lg border ${objForm.statut === s ? 'bg-gray-100 border-gray-400 font-semibold' : 'border-gray-200 text-gray-500'}`}>
+                      {EDUC_STATUT_LABEL[s]}
+                    </button>
+                  ))}
+                </div>
+                <textarea value={objForm.note} onChange={e => setObjForm({ ...objForm, note: e.target.value })}
+                  rows={2} placeholder="Note (facultatif)"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                <div className="flex gap-2">
+                  <button onClick={() => setObjForm(null)}
+                    className="flex-1 border border-gray-200 rounded-xl py-2 text-sm text-gray-500">Annuler</button>
+                  <button onClick={saveObjectif} disabled={savingObj || !objForm.libelle.trim()}
+                    className="flex-1 text-white rounded-xl py-2 text-sm font-semibold disabled:opacity-50"
+                    style={{ background: '#EF6C00' }}>Enregistrer</button>
+                </div>
+              </div>
+            )}
+            {objectifs.length === 0 ? (
+              <EmptyState text="Aucun objectif défini" />
+            ) : (
+              <div className="space-y-2">
+                {objectifs.map(o => (
+                  <div key={o.id} className="border border-gray-100 rounded-xl p-3">
+                    <div className="flex items-start gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full mt-1 shrink-0" style={{ background: educStatutColor(o.statut) }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-[#1F2A2E]">{o.libelle}</p>
+                        <p className="text-xs" style={{ color: educStatutColor(o.statut) }}>{EDUC_STATUT_LABEL[o.statut]}
+                          {o.categorie && EDUC_CATEGORIES[o.categorie] ? ` · ${EDUC_CATEGORIES[o.categorie]}` : ''}</p>
+                        {o.note && <p className="text-xs text-gray-500 mt-0.5">{o.note}</p>}
+                      </div>
+                      {hasReportAccess && (
+                        <div className="flex gap-1 shrink-0">
+                          {EDUC_STATUTS.filter(s => s !== o.statut).map(s => (
+                            <button key={s} onClick={() => setObjectifStatut(o, s)}
+                              title={`→ ${EDUC_STATUT_LABEL[s]}`}
+                              className="text-[10px] px-1.5 py-0.5 rounded border border-gray-200 text-gray-500">
+                              {EDUC_STATUT_LABEL[s]}
+                            </button>
+                          ))}
+                          <button onClick={() => setObjForm({ id: o.id, libelle: o.libelle, categorie: o.categorie ?? '', statut: o.statut, note: o.note ?? '' })}
+                            className="text-gray-300 hover:text-gray-500 text-xs">✏️</button>
+                          <button onClick={() => deleteObjectif(o.id)}
+                            className="text-gray-300 hover:text-red-400 text-xs">🗑</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
           <Card title="🎓 Suivi de progression">
             {hasReportAccess && (
               <button onClick={() => setShowAddRapport(v => !v)}
@@ -850,6 +1013,7 @@ export default function PatientDetailPage() {
               </div>
             )}
           </Card>
+          </>
         )}
 
         {/* ── Propriétaire ── */}

@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
+import 'package:PetsMatch/pages/pro/education_suivi_page.dart';
 import 'package:PetsMatch/widgets/pro_day_timeline.dart';
 
 /// Tableau de bord commun pour les pros non-vétérinaires :
@@ -362,7 +363,7 @@ class _ProClientsPageState extends State<ProClientsPage>
                     onTap: () => _openAnimal(filtered[i]),
                     onCompteRendu: () => _openCompteRendu(filtered[i]),
                     onProgression: User_Info.catPro == 'education'
-                        ? () => _addProgression(filtered[i])
+                        ? () => _openSuivi(filtered[i])
                         : null,
                   ),
                 ),
@@ -413,119 +414,16 @@ class _ProClientsPageState extends State<ProClientsPage>
     ));
   }
 
-  Future<void> _addProgression(Map<String, dynamic> animal) async {
-    final animalNom = animal['nom']?.toString() ?? 'Animal';
-    final contenuCtrl = TextEditingController();
-    final exercicesCtrl = TextEditingController();
-
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
-          Text('Rapport de séance — $animalNom',
-              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 16),
-          TextField(
-            controller: contenuCtrl,
-            maxLines: 5,
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Compte rendu de la séance, exercices réalisés, progrès observés…',
-              hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.all(12),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: exercicesCtrl,
-            maxLines: 2,
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-            decoration: InputDecoration(
-              labelText: 'Exercices conseillés',
-              hintText: 'Exercices à faire à la maison…',
-              hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              contentPadding: const EdgeInsets.all(12),
-            ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _color, foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                elevation: 0,
-              ),
-              child: const Text('Enregistrer',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
-            ),
-          ),
-        ]),
+  Future<void> _openSuivi(Map<String, dynamic> animal) async {
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => EducationSuiviPage(
+        animalId: animal['id']?.toString() ?? '',
+        animalNom: animal['nom']?.toString() ?? 'Animal',
+        ownerProfileId: animal['_owner_profile_id']?.toString(),
+        ownerName: animal['_owner_name']?.toString() ?? 'La famille',
       ),
-    );
-
-    if (ok != true || !mounted) return;
-
-    final proUid = FirebaseAuth.instance.currentUser?.uid;
-    if (proUid == null) return;
-
-    try {
-      await Supabase.instance.client.from('education_progression').insert({
-        'pro_uid':    proUid,
-        'animal_id':  animal['id']?.toString() ?? '',
-        'owner_uid':  animal['_owner_uid']?.toString(),
-        'date_seance': DateTime.now().toIso8601String().substring(0, 10),
-        'contenu':    contenuCtrl.text.trim(),
-        if (exercicesCtrl.text.trim().isNotEmpty) 'exercices_conseilles': exercicesCtrl.text.trim(),
-      });
-      // Envoi du rapport au propriétaire — notification in-app en 1 clic
-      final ownerUid = animal['_owner_uid']?.toString();
-      if (ownerUid != null && ownerUid.isNotEmpty) {
-        final proNom = User_Info.nameElevage.isNotEmpty
-            ? User_Info.nameElevage
-            : '${User_Info.firstname} ${User_Info.lastname}'.trim();
-        try {
-          await Supabase.instance.client.from('notifications').insert({
-            'uid':   ownerUid,
-            'type':  'education_rapport',
-            'title': 'Rapport de séance — $animalNom',
-            'body':  '${proNom.isNotEmpty ? proNom : 'Votre éducateur'} a envoyé un rapport de séance pour $animalNom.',
-            if (animal['_owner_profile_id'] != null) 'profile_id': animal['_owner_profile_id'],
-            'data':  <String, dynamic>{
-              'animalId': animal['id']?.toString() ?? '',
-              'animalNom': animalNom,
-            },
-            'read':  false,
-          });
-        } catch (_) {}
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Rapport de séance envoyé au propriétaire.',
-              style: TextStyle(fontFamily: 'Galey')),
-          backgroundColor: Color(0xFF6E9E57),
-          behavior: SnackBarBehavior.floating,
-        ));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ));
-      }
-    }
+    ));
+    _loadAnimals();
   }
 
   // ── Onglet agenda ────────────────────────────────────────────────────────────

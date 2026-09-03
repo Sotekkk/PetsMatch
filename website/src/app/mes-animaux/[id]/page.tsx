@@ -1126,15 +1126,33 @@ interface RapportEdu {
   exercices_coches: boolean[] | null;
 }
 
+const EDU_CATEGORIES: Record<string, string> = {
+  rappel: 'Rappel', laisse: 'Marche en laisse', proprete: 'Propreté', aboiements: 'Aboiements',
+  destruction: 'Destruction', socialisation_chien: 'Socialisation chiens', socialisation_humain: 'Socialisation humains',
+  manipulation: 'Manipulation / soins', solitude: 'Solitude', agressivite: 'Agressivité', peurs: 'Peurs', autre: 'Autre',
+};
+const EDU_STATUT_LABEL: Record<string, string> = { a_travailler: 'À travailler', en_cours: 'En cours', acquis: 'Acquis' };
+const eduStatutColor = (s: string) => s === 'acquis' ? '#6E9E57' : s === 'en_cours' ? '#EFA100' : '#D5573B';
+interface EduObjectif { id: string; libelle: string; categorie: string | null; statut: string; note: string | null; }
+
 function EducationRapportsTab({ animalId }: { animalId: string }) {
   const [rapports, setRapports] = useState<RapportEdu[]>([]);
+  const [objectifs, setObjectifs] = useState<EduObjectif[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from('education_progression')
-      .select('id, date_seance, contenu, exercices_conseilles, exercices_coches')
-      .eq('animal_id', animalId).order('date_seance', { ascending: false })
-      .then(({ data }) => { setRapports((data ?? []) as RapportEdu[]); setLoading(false); });
+    Promise.all([
+      supabase.from('education_progression')
+        .select('id, date_seance, contenu, exercices_conseilles, exercices_coches')
+        .eq('animal_id', animalId).order('date_seance', { ascending: false }),
+      supabase.from('education_objectifs')
+        .select('id, libelle, categorie, statut, note')
+        .eq('animal_id', animalId).order('ordre').order('created_at'),
+    ]).then(([r, o]) => {
+      setRapports((r.data ?? []) as RapportEdu[]);
+      setObjectifs((o.data ?? []) as EduObjectif[]);
+      setLoading(false);
+    });
   }, [animalId]);
 
   const lignes = (raw: string | null) => (raw ?? '')
@@ -1149,16 +1167,36 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
   }
 
   if (loading) return <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-[#7B5EA7] border-t-transparent rounded-full animate-spin" /></div>;
-  if (rapports.length === 0) return (
+  if (rapports.length === 0 && objectifs.length === 0) return (
     <div className="flex flex-col items-center py-16 text-gray-400 gap-2">
       <span className="text-5xl">🎓</span>
       <p className="font-semibold">Aucun suivi éducatif pour l&apos;instant</p>
-      <p className="text-sm">Les comptes rendus de votre éducateur apparaîtront ici.</p>
+      <p className="text-sm">Le plan de travail et les comptes rendus de votre éducateur apparaîtront ici.</p>
     </div>
   );
 
   return (
     <div className="space-y-3 mt-4">
+      {objectifs.length > 0 && (
+        <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Plan de travail</p>
+          <div className="space-y-2">
+            {objectifs.map(o => (
+              <div key={o.id} className="flex items-start gap-2">
+                <span className="w-2.5 h-2.5 rounded-full mt-1 shrink-0" style={{ background: eduStatutColor(o.statut) }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800">{o.libelle}</p>
+                  <p className="text-xs" style={{ color: eduStatutColor(o.statut) }}>
+                    {EDU_STATUT_LABEL[o.statut] ?? o.statut}
+                    {o.categorie && EDU_CATEGORIES[o.categorie] ? ` · ${EDU_CATEGORIES[o.categorie]}` : ''}
+                  </p>
+                  {o.note && <p className="text-xs text-gray-500 mt-0.5">{o.note}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {rapports.map(r => {
         const exos = lignes(r.exercices_conseilles);
         const coches = r.exercices_coches ?? [];
@@ -1926,7 +1964,8 @@ export default function AnimalFichePage() {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(isNew);
   const [tab, setTab] = useState<'identite'|'sante'|'repro'|'alimentation'|'consultations'|'documents'|'education'|'pension'>(
-    tabParam === 'sante' ? 'sante' : 'identite'
+    (['sante', 'education', 'pension', 'documents'] as const).includes(tabParam as never)
+      ? (tabParam as 'sante') : 'identite'
   );
 
   const [animal, setAnimal] = useState<Animal>({ id:'', espece:'chien', sexe:'male' });
@@ -2304,8 +2343,10 @@ export default function AnimalFichePage() {
     if (!id || isNew) return;
     supabase.from('pension_updates').select('id').eq('animal_id', id).limit(1)
       .then(({ data }) => setHasPensionUpdates((data ?? []).length > 0));
-    supabase.from('education_progression').select('id').eq('animal_id', id).limit(1)
-      .then(({ data }) => setHasEducationRapports((data ?? []).length > 0));
+    Promise.all([
+      supabase.from('education_progression').select('id').eq('animal_id', id).limit(1),
+      supabase.from('education_objectifs').select('id').eq('animal_id', id).limit(1),
+    ]).then(([r, o]) => setHasEducationRapports((r.data ?? []).length > 0 || (o.data ?? []).length > 0));
   }, [id, isNew]);
   useEffect(() => {
     if (!user || !isEleveur) return;
