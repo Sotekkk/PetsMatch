@@ -18,6 +18,7 @@ import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
+import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_reminder_banner.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
@@ -161,7 +162,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
             onEditTap: () {
               Navigator.pop(context);
               Navigator.push(context, MaterialPageRoute(
-                builder: (_) => const UserParticulierFeed(initialTab: 0),
+                builder: (_) => const InfoUserSettings(),
               ));
             },
           ),
@@ -187,8 +188,12 @@ class _ParticulierNavState extends State<ParticulierNav> {
                       icon: Icons.edit_outlined,
                       onTap: () {
                         Navigator.pop(context);
+                        // Gestion d'identité complète (nom, prénom, adresse,
+                        // téléphone, email) — pas le UserParticulierFeed
+                        // tabbé qui mélange ça avec Mes Animaux/Perdus,
+                        // déjà accessibles depuis leurs propres entrées.
                         Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const UserParticulierFeed(initialTab: 0),
+                          builder: (_) => const InfoUserSettings(),
                         ));
                       },
                     ),

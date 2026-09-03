@@ -193,7 +193,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
                             children: [
                               GestureDetector(
                                 onTap: () => Navigator.push(context,
-                                    MaterialPageRoute(builder: (_) => const UserParticulierFeed(initialTab: 0))),
+                                    MaterialPageRoute(builder: (_) => const InfoUserSettings())),
                                 child: CircleAvatar(
                                   radius: 24,
                                   backgroundColor: const Color(0xFF5B9EAA),

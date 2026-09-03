@@ -13,6 +13,7 @@ import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
+import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/marketplace/marketplace_page.dart';
@@ -317,10 +318,10 @@ List<QuickAction> _all(BuildContext ctx) => [
   ),
   QuickAction(
     label: 'Modifier mon profil',
-    keywords: ['éditer profil', 'photo', 'adresse', 'coordonnées', 'bio'],
+    keywords: ['éditer profil', 'nom', 'prénom', 'adresse', 'téléphone', 'email', 'coordonnées'],
     icon: Icons.edit_outlined, group: 'Mon profil',
     visible: () => _particulier,
-    open: (c) => _push(c, const UserParticulierFeed(initialTab: 0)),
+    open: (c) => _push(c, const InfoUserSettings()),
   ),
 
   // ── Annonces / adoption (recherche) — commun particulier & pros ─────────────
