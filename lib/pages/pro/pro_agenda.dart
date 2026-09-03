@@ -1102,6 +1102,26 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     ));
   }
 
+  // Santé animale (ostéo / paramédical), vétérinaire, maréchal-ferrant —
+  // facture de consultation via le moteur commun `factures`.
+  Future<void> _facturerConsultation(Map<String, dynamic> rdv) async {
+    final prix = (rdv['prix'] as num?)?.toDouble() ??
+        (rdv['prix_calcule'] as num?)?.toDouble() ?? 0;
+    final libelle = User_Info.catPro == 'marechal_ferrant'
+        ? 'Intervention maréchalerie'
+        : User_Info.catPro == 'veterinaire'
+            ? 'Consultation vétérinaire'
+            : 'Séance ${User_Info.professionPro.isNotEmpty ? User_Info.professionPro.toLowerCase() : 'de soin'}';
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => CreerFacturePage(
+        clientNom: rdv['_client_name']?.toString(),
+        lignesPrefill: [
+          FacturePrefillLigne(designation: libelle, prixHT: prix, tauxTVA: 20),
+        ],
+      ),
+    ));
+  }
+
   Future<void> _updateStatut(String rdvId, String statut,
       {int? dureeMinutes, String? motifAnnulation}) async {
     try {
@@ -2792,8 +2812,20 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               ? () => _genererContratPhoto(rdv)
               : null,
           onFacturer: (showProTools && rdv['statut'] == 'termine' &&
-                  (User_Info.catPro == 'photographe' || User_Info.catPro == 'toilettage'))
-              ? () => User_Info.catPro == 'toilettage' ? _facturerToilettage(rdv) : _facturerPhoto(rdv)
+                  const {
+                    'photographe', 'toilettage',
+                    'sante', 'veterinaire', 'marechal_ferrant',
+                  }.contains(User_Info.catPro))
+              ? () {
+                  switch (User_Info.catPro) {
+                    case 'toilettage':
+                      _facturerToilettage(rdv);
+                    case 'photographe':
+                      _facturerPhoto(rdv);
+                    default:
+                      _facturerConsultation(rdv);
+                  }
+                }
               : null,
           onAlbum: (showProTools && User_Info.catPro == 'photographe')
               ? () => Navigator.push(context, MaterialPageRoute(

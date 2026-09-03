@@ -160,6 +160,13 @@ const MENU_VET = [
     ],
   },
   {
+    section: 'Administratif',
+    icon: '🗂️',
+    items: [
+      { href: '/elevage/facturation', label: 'Mes Factures', icon: '🧾' },
+    ],
+  },
+  {
     section: 'Mon Profil',
     icon: '👤',
     items: [
@@ -187,6 +194,13 @@ const MENU_PRO = [
       { href: '/agenda',       label: 'Mon agenda',      icon: '📅' },
       { href: '/mes-rdv',      label: 'Gérer mes RDV',   icon: '🗓️' },
       { href: '/pro/creneaux', label: 'Mes créneaux',    icon: '⏰' },
+    ],
+  },
+  {
+    section: 'Administratif',
+    icon: '🗂️',
+    items: [
+      { href: '/elevage/facturation', label: 'Mes Factures', icon: '🧾' },
     ],
   },
   {

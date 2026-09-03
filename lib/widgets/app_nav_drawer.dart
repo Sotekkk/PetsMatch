@@ -510,6 +510,17 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
             label: 'Mon agenda RDV',
             onTap: () => _push(const ProAgendaPage()),
           ),
+          // Facturation : moteur commun `factures` (la pension a son propre
+          // circuit — table `pension_factures` + PensionFacturesPage).
+          if (const {
+            'garde', 'education', 'sante', 'veterinaire',
+            'marechal_ferrant', 'taxi_animalier', 'photographe', 'toilettage',
+          }.contains(User_Info.catPro))
+            _DrawerItem(
+              icon: Icons.receipt_long_outlined,
+              label: 'Mes factures',
+              onTap: () => _push(const FacturationPage()),
+            ),
           if (User_Info.catPro == 'garde' || User_Info.catPro == 'pension')
             _DrawerItem(
               icon: Icons.home_work_outlined,

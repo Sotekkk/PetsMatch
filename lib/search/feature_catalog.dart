@@ -575,9 +575,10 @@ List<QuickAction> _all(BuildContext ctx) => [
   ),
   QuickAction(
     label: 'Mes factures',
-    keywords: ['facturation', 'comptabilité', 'tva', 'export'],
+    keywords: ['facturation', 'comptabilité', 'tva', 'export', 'facture électronique'],
     icon: Icons.receipt_long_outlined, group: 'Administratif',
-    visible: () => _catPro == 'education' || _catPro == 'garde',
+    visible: () => _catPro == 'education' || _catPro == 'garde' ||
+        _catPro == 'sante' || _catPro == 'veterinaire' || _catPro == 'marechal_ferrant',
     open: (c) => _push(c, const FacturationPage()),
   ),
   QuickAction(
