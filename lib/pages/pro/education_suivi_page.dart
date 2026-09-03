@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/pro/education_shared.dart';
@@ -41,6 +42,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
   String? _ownerUid;
   List<Map<String, dynamic>> _objectifs = [];
   List<Map<String, dynamic>> _exercices = [];
+  final Map<String, List<Map<String, dynamic>>> _retours = {};
   List<Map<String, dynamic>> _seances = [];
   bool _loading = true;
 
@@ -71,11 +73,32 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             .order('assigned_at', ascending: false),
       ]);
       final animal = results[2] as Map<String, dynamic>?;
+      final exos = List<Map<String, dynamic>>.from(results[3] as List);
+      _retours.clear();
+      final exoIds = exos.map((e) => e['id']?.toString()).whereType<String>().toList();
+      if (exoIds.isNotEmpty) {
+        try {
+          final rr = await _supa.from('exercices_retours').select()
+              .inFilter('attribution_id', exoIds).order('created_at');
+          for (final row in (rr as List)) {
+            (_retours[row['attribution_id']?.toString() ?? ''] ??= []).add(Map<String, dynamic>.from(row));
+          }
+          // marquer les retours famille non vus comme vus
+          final unseen = [
+            for (final list in _retours.values)
+              for (final r in list)
+                if (r['from_pro'] != true && r['vu_par_pro'] != true) r['id'],
+          ];
+          if (unseen.isNotEmpty) {
+            await _supa.from('exercices_retours').update({'vu_par_pro': true}).inFilter('id', unseen);
+          }
+        } catch (_) {}
+      }
       if (mounted) {
         setState(() {
           _objectifs = List<Map<String, dynamic>>.from(results[0] as List);
           _seances = List<Map<String, dynamic>>.from(results[1] as List);
-          _exercices = List<Map<String, dynamic>>.from(results[3] as List);
+          _exercices = exos;
           _ownerUid = animal?['uid_proprietaire']?.toString() ??
               animal?['uid_eleveur']?.toString();
           _loading = false;
@@ -505,6 +528,127 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
     } catch (_) {}
   }
 
+  static const _kRessenti = {
+    'facile': ('😊', 'Facile'), 'moyen': ('😐', 'Moyen'),
+    'difficile': ('😓', 'Difficile'), 'bloque': ('🚫', 'Bloqué'),
+  };
+
+  Widget _retourBubble(Map<String, dynamic> r) {
+    final fromPro = r['from_pro'] == true;
+    final ressenti = r['ressenti']?.toString();
+    final media = (r['media'] is List) ? (r['media'] as List).whereType<Map>().toList() : const [];
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: fromPro ? const Color(0xFFFFF3E9) : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text(fromPro ? '🎓 Vous' : '👪 Famille',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700,
+                  color: fromPro ? _kOrange : Colors.grey.shade600)),
+          if (ressenti != null && _kRessenti[ressenti] != null) ...[
+            const SizedBox(width: 6),
+            Text('${_kRessenti[ressenti]!.$1} ${_kRessenti[ressenti]!.$2}',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade600)),
+          ],
+        ]),
+        if ((r['note']?.toString() ?? '').isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(r['note'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+        ],
+        if (media.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          SizedBox(
+            height: 52,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal, itemCount: media.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 4),
+              itemBuilder: (_, i) {
+                final url = media[i]['url']?.toString() ?? '';
+                final isVideo = media[i]['type'] == 'video';
+                return GestureDetector(
+                  onTap: () => isVideo
+                      ? launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)
+                      : showDialog(context: context, builder: (_) => Dialog(
+                          backgroundColor: Colors.black,
+                          child: InteractiveViewer(child: CachedNetworkImage(imageUrl: url)))),
+                  child: Container(
+                    width: 52, height: 52,
+                    decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(6)),
+                    clipBehavior: Clip.antiAlias,
+                    child: isVideo
+                        ? const Icon(Icons.play_circle_outline, size: 18, color: Colors.grey)
+                        : CachedNetworkImage(imageUrl: url, fit: BoxFit.cover),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ]),
+    );
+  }
+
+  Future<void> _repondreRetour(Map<String, dynamic> ex) async {
+    final ctrl = TextEditingController();
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 28),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+          Text('Répondre — ${ex['titre_snapshot'] ?? 'exercice'}',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: ctrl, maxLines: 3,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Un conseil, un ajustement de l\'exercice…',
+              hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              contentPadding: const EdgeInsets.all(12),
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(width: double.infinity, child: ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _kOrange, foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 13), elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Envoyer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          )),
+        ]),
+      ),
+    );
+    if (ok != true || ctrl.text.trim().isEmpty || !mounted) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    try {
+      await _supa.from('exercices_retours').insert({
+        'attribution_id': ex['id'],
+        'author_uid': uid,
+        if (User_Info.activeProfileId.isNotEmpty) 'author_profile_id': User_Info.activeProfileId,
+        'note': ctrl.text.trim(),
+        'from_pro': true,
+        'vu_par_pro': true,
+      });
+      await _notifyOwner('education_rapport',
+          'Message de l\'éducateur — ${widget.animalNom}',
+          'À propos de l\'exercice « ${ex['titre_snapshot']} ».');
+      await _load();
+    } catch (e) {
+      _snack('Erreur : $e', err: true);
+    }
+  }
+
   void _snack(String msg, {bool err = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -619,6 +763,16 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                 Text(ex['description_snapshot'].toString(),
                     style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
               ],
+              ...(_retours[ex['id']?.toString() ?? ''] ?? const []).map(_retourBubble),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => _repondreRetour(ex),
+                  icon: const Icon(Icons.reply_outlined, size: 15),
+                  label: const Text('Répondre', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  style: TextButton.styleFrom(foregroundColor: _kOrange, padding: EdgeInsets.zero, minimumSize: const Size(0, 30)),
+                ),
+              ),
             ]),
           );
         },

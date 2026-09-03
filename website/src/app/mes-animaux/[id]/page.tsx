@@ -1139,14 +1139,26 @@ interface EduExercice {
   media_snapshot: { type: string; url: string }[] | null;
   cadence: string | null; echeance: string | null; statut: string;
 }
+interface EduRetour {
+  id: string; attribution_id: string; note: string | null;
+  media: { type: string; url: string }[] | null; ressenti: string | null; from_pro: boolean;
+}
+const RESSENTI: Record<string, string> = { facile: '😊 Facile', moyen: '😐 Moyen', difficile: '😓 Difficile', bloque: '🚫 Bloqué' };
 
 function EducationRapportsTab({ animalId }: { animalId: string }) {
+  const { user } = useAuth();
   const [rapports, setRapports] = useState<RapportEdu[]>([]);
   const [objectifs, setObjectifs] = useState<EduObjectif[]>([]);
   const [exercices, setExercices] = useState<EduExercice[]>([]);
+  const [retours, setRetours] = useState<Record<string, EduRetour[]>>({});
   const [loading, setLoading] = useState(true);
+  const [retourFor, setRetourFor] = useState<EduExercice | null>(null);
+  const [retourNote, setRetourNote] = useState('');
+  const [retourRessenti, setRetourRessenti] = useState('');
+  const [retourImgs, setRetourImgs] = useState<string[]>([]);
+  const [sendingRetour, setSendingRetour] = useState(false);
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     Promise.all([
       supabase.from('education_progression')
         .select('id, date_seance, contenu, exercices_conseilles, exercices_coches')
@@ -1155,21 +1167,69 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
         .select('id, libelle, categorie, statut, note')
         .eq('animal_id', animalId).order('ordre').order('created_at'),
       supabase.from('exercices_attribues')
-        .select('id, titre_snapshot, description_snapshot, media_snapshot, cadence, echeance, statut')
+        .select('id, pro_uid, pro_profile_id, titre_snapshot, description_snapshot, media_snapshot, cadence, echeance, statut')
         .eq('animal_id', animalId).order('assigned_at', { ascending: false }),
-    ]).then(([r, o, e]) => {
+    ]).then(async ([r, o, e]) => {
+      const exos = (e.data ?? []) as (EduExercice & { pro_uid?: string; pro_profile_id?: string })[];
       setRapports((r.data ?? []) as RapportEdu[]);
       setObjectifs((o.data ?? []) as EduObjectif[]);
-      setExercices((e.data ?? []) as EduExercice[]);
+      setExercices(exos);
+      const ids = exos.map(x => x.id);
+      if (ids.length) {
+        const { data: rt } = await supabase.from('exercices_retours')
+          .select('id, attribution_id, note, media, ressenti, from_pro')
+          .in('attribution_id', ids).order('created_at');
+        const grouped: Record<string, EduRetour[]> = {};
+        for (const row of (rt ?? []) as EduRetour[]) (grouped[row.attribution_id] ??= []).push(row);
+        setRetours(grouped);
+      }
       setLoading(false);
     });
   }, [animalId]);
+
+  useEffect(() => { reload(); }, [reload]);
 
   async function toggleExerciceFait(ex: EduExercice) {
     const next = ex.statut === 'fait' ? 'a_faire' : 'fait';
     setExercices(prev => prev.map(x => x.id === ex.id ? { ...x, statut: next } : x));
     await supabase.from('exercices_attribues')
       .update({ statut: next, updated_at: new Date().toISOString() }).eq('id', ex.id);
+  }
+
+  async function uploadRetourImg(file: File) {
+    const ext = file.name.split('.').pop() ?? 'jpg';
+    const path = `exercices_retours/${user?.uid ?? 'x'}/${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from('petsmatch').upload(path, file, { upsert: true });
+    if (!error) {
+      const { data: pub } = supabase.storage.from('petsmatch').getPublicUrl(path);
+      setRetourImgs(prev => [...prev, pub.publicUrl]);
+    }
+  }
+
+  async function sendRetour() {
+    if (!retourFor || (!retourNote.trim() && !retourRessenti && retourImgs.length === 0)) return;
+    setSendingRetour(true);
+    try {
+      const ex = retourFor as EduExercice & { pro_uid?: string; pro_profile_id?: string };
+      await supabase.from('exercices_retours').insert({
+        attribution_id: ex.id, author_uid: user?.uid,
+        note: retourNote.trim() || null,
+        media: retourImgs.map(u => ({ type: 'image', url: u })),
+        ressenti: retourRessenti || null, from_pro: false,
+      });
+      if (ex.pro_uid) {
+        await supabase.from('notifications').insert({
+          uid: ex.pro_uid, type: 'education_retour_exercice',
+          title: 'Retour famille', body: `La famille a répondu sur « ${ex.titre_snapshot} ».`,
+          ...(ex.pro_profile_id ? { profile_id: ex.pro_profile_id } : {}),
+          data: { animalId, url: `/mes-patients/${animalId}` },
+        });
+      }
+      setRetourFor(null); setRetourNote(''); setRetourRessenti(''); setRetourImgs([]);
+      reload();
+    } finally {
+      setSendingRetour(false);
+    }
   }
 
   const lignes = (raw: string | null) => (raw ?? '')
@@ -1248,9 +1308,62 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
                       ))}
                     </div>
                   )}
+                  {(retours[ex.id] ?? []).map(rt => (
+                    <div key={rt.id} className={`mt-2 rounded-lg p-2 ${rt.from_pro ? 'bg-[#F3EEFA]' : 'bg-gray-100'}`}>
+                      <p className="text-[10px] font-bold text-gray-500">
+                        {rt.from_pro ? '🎓 Éducateur' : '👪 Famille'}
+                        {rt.ressenti && RESSENTI[rt.ressenti] ? ` · ${RESSENTI[rt.ressenti]}` : ''}
+                      </p>
+                      {rt.note && <p className="text-xs text-gray-800 mt-0.5">{rt.note}</p>}
+                      {(rt.media ?? []).length > 0 && (
+                        <div className="flex gap-1.5 mt-1 overflow-x-auto">
+                          {(rt.media ?? []).map((m, i) => (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <a key={i} href={m.url} target="_blank" rel="noopener noreferrer">
+                              <img src={m.url} alt="" className="w-12 h-12 rounded object-cover" />
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  <button onClick={() => { setRetourFor(ex); setRetourNote(''); setRetourRessenti(''); setRetourImgs([]); }}
+                    className="text-xs text-[#7B5EA7] font-semibold mt-2">+ Donner un retour</button>
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+      {retourFor && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4" onClick={() => setRetourFor(null)}>
+          <div className="bg-white rounded-2xl p-4 w-full max-w-md space-y-3" onClick={e => e.stopPropagation()}>
+            <p className="font-bold text-[#1F2A2E]">Retour — {retourFor.titre_snapshot}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {Object.entries(RESSENTI).map(([k, v]) => (
+                <button key={k} onClick={() => setRetourRessenti(retourRessenti === k ? '' : k)}
+                  className={`text-xs px-2.5 py-1 rounded-full border ${retourRessenti === k ? 'bg-[#7B5EA7]/15 border-[#7B5EA7] text-[#7B5EA7]' : 'border-gray-200 text-gray-500'}`}>{v}</button>
+              ))}
+            </div>
+            <textarea value={retourNote} onChange={e => setRetourNote(e.target.value)} rows={3}
+              placeholder="Comment ça s'est passé ? Ce qui bloque…"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+            <div className="flex flex-wrap gap-2">
+              {retourImgs.map((u, i) => (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img key={i} src={u} alt="" className="w-14 h-14 rounded-lg object-cover" />
+              ))}
+              <label className="w-14 h-14 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center text-gray-400 cursor-pointer text-xl">
+                +
+                <input type="file" accept="image/*" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadRetourImg(f); e.target.value = ''; }} />
+              </label>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setRetourFor(null)} className="flex-1 border border-gray-200 rounded-xl py-2 text-sm text-gray-500">Annuler</button>
+              <button onClick={sendRetour} disabled={sendingRetour}
+                className="flex-1 bg-[#7B5EA7] text-white rounded-xl py-2 text-sm font-semibold disabled:opacity-50">Envoyer</button>
+            </div>
           </div>
         </div>
       )}

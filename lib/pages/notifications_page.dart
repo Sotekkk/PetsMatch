@@ -16,6 +16,7 @@ import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/pages/pro/education_rapports_page.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
+import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
@@ -336,6 +337,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (type == 'cours_collectif_inscription') {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => const EducationPlanningPage(),
+      ));
+      return;
+    }
+    // Retour d'une famille sur un exercice — reçu par l'éducateur
+    if (type == 'education_retour_exercice') {
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => const ProClientsPage(),
       ));
       return;
     }
@@ -831,6 +839,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'education_rapport':     return Icons.school_outlined;
       case 'education_objectif_acquis': return Icons.flag_outlined;
       case 'education_exercice_assigne': return Icons.fitness_center_outlined;
+      case 'education_retour_exercice': return Icons.forum_outlined;
       case 'cours_collectif_inscription': return Icons.groups_outlined;
       case 'devis_recu':             return Icons.request_quote_outlined;
       case 'devis_accepte':          return Icons.check_circle_outline;
@@ -895,6 +904,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'education_rapport':     return const Color(0xFF7B5EA7);
       case 'education_objectif_acquis': return const Color(0xFF6E9E57);
       case 'education_exercice_assigne': return const Color(0xFFEF6C00);
+      case 'education_retour_exercice': return const Color(0xFFEF6C00);
       case 'cours_collectif_inscription': return const Color(0xFF7B5EA7);
       case 'devis_recu':             return const Color(0xFF0C5C6C);
       case 'devis_accepte':          return const Color(0xFF6E9E57);

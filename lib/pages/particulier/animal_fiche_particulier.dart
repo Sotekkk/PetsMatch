@@ -6446,6 +6446,7 @@ class _EducationTabPState extends State<_EducationTabP> {
   List<Map<String, dynamic>> _devis = [];
   List<Map<String, dynamic>> _objectifs = [];
   List<Map<String, dynamic>> _exercices = [];
+  final Map<String, List<Map<String, dynamic>>> _retours = {}; // attribution_id -> retours
   bool _loading = true;
 
   static const _kEduCategories = <String, String>{
@@ -6487,13 +6488,27 @@ class _EducationTabPState extends State<_EducationTabP> {
         exercices = await _supa.from('exercices_attribues').select()
             .eq('animal_id', widget.animalId!).order('assigned_at', ascending: false);
       } catch (_) {}
-      if (mounted) setState(() {
-        _rapports = List<Map<String, dynamic>>.from(r as List);
-        _devis = List<Map<String, dynamic>>.from(d as List);
-        _objectifs = List<Map<String, dynamic>>.from(objectifs);
-        _exercices = List<Map<String, dynamic>>.from(exercices);
-        _loading = false;
-      });
+      _retours.clear();
+      final exoIds = exercices.map((e) => e['id']?.toString()).whereType<String>().toList();
+      if (exoIds.isNotEmpty) {
+        try {
+          final rr = await _supa.from('exercices_retours').select()
+              .inFilter('attribution_id', exoIds).order('created_at');
+          for (final row in (rr as List)) {
+            final aid = row['attribution_id']?.toString() ?? '';
+            (_retours[aid] ??= []).add(Map<String, dynamic>.from(row));
+          }
+        } catch (_) {}
+      }
+      if (mounted) {
+        setState(() {
+          _rapports = List<Map<String, dynamic>>.from(r as List);
+          _devis = List<Map<String, dynamic>>.from(d as List);
+          _objectifs = List<Map<String, dynamic>>.from(objectifs);
+          _exercices = List<Map<String, dynamic>>.from(exercices);
+          _loading = false;
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -6655,8 +6670,202 @@ class _EducationTabPState extends State<_EducationTabP> {
             ),
           ),
         ],
+        // ── Fil de retours ──
+        ..._retoursOf(ex['id']?.toString() ?? '').map(_retourBubble),
+        const SizedBox(height: 4),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => _donnerRetour(ex),
+            icon: const Icon(Icons.add_comment_outlined, size: 15),
+            label: const Text('Donner un retour', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+            style: TextButton.styleFrom(foregroundColor: _kPurpleEdu, padding: EdgeInsets.zero, minimumSize: const Size(0, 32)),
+          ),
+        ),
       ]),
     );
+  }
+
+  List<Map<String, dynamic>> _retoursOf(String attributionId) => _retours[attributionId] ?? const [];
+
+  static const _kRessenti = {
+    'facile': ('😊', 'Facile'), 'moyen': ('😐', 'Moyen'),
+    'difficile': ('😓', 'Difficile'), 'bloque': ('🚫', 'Bloqué'),
+  };
+
+  Widget _retourBubble(Map<String, dynamic> r) {
+    final fromPro = r['from_pro'] == true;
+    final media = (r['media'] is List) ? (r['media'] as List).whereType<Map>().toList() : const [];
+    final ressenti = r['ressenti']?.toString();
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: fromPro ? const Color(0xFFF3EEFA) : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text(fromPro ? '🎓 Éducateur' : '👪 Famille',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700,
+                  color: fromPro ? _kPurpleEdu : Colors.grey.shade600)),
+          if (ressenti != null && _kRessenti[ressenti] != null) ...[
+            const SizedBox(width: 6),
+            Text('${_kRessenti[ressenti]!.$1} ${_kRessenti[ressenti]!.$2}',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade600)),
+          ],
+        ]),
+        if ((r['note']?.toString() ?? '').isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(r['note'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+        ],
+        if (media.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          SizedBox(
+            height: 52,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal, itemCount: media.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 4),
+              itemBuilder: (_, i) {
+                final url = media[i]['url']?.toString() ?? '';
+                final isVideo = media[i]['type'] == 'video';
+                return GestureDetector(
+                  onTap: () => isVideo
+                      ? launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)
+                      : _openImage(url),
+                  child: Container(
+                    width: 52, height: 52,
+                    decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(6)),
+                    clipBehavior: Clip.antiAlias,
+                    child: isVideo
+                        ? const Icon(Icons.play_circle_outline, size: 18, color: Colors.grey)
+                        : CachedNetworkImage(imageUrl: url, fit: BoxFit.cover),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ]),
+    );
+  }
+
+  Future<void> _donnerRetour(Map<String, dynamic> ex) async {
+    final noteCtrl = TextEditingController();
+    String? ressenti;
+    final images = <String>[]; // urls déjà uploadées
+    bool busy = false;
+
+    final sent = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 28),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            Text('Retour — ${ex['titre_snapshot'] ?? 'exercice'}',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+            const SizedBox(height: 12),
+            Wrap(spacing: 6, children: _kRessenti.entries.map((e) {
+              final sel = ressenti == e.key;
+              return ChoiceChip(
+                label: Text('${e.value.$1} ${e.value.$2}', style: const TextStyle(fontFamily: 'Galey', fontSize: 11)),
+                selected: sel,
+                onSelected: (_) => setSheet(() => ressenti = sel ? null : e.key),
+                selectedColor: _kPurpleEdu.withValues(alpha: 0.18),
+                showCheckmark: false,
+              );
+            }).toList()),
+            const SizedBox(height: 10),
+            TextField(
+              controller: noteCtrl,
+              maxLines: 3,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Comment ça s\'est passé ? Ce qui bloque…',
+                hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                contentPadding: const EdgeInsets.all(12),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(spacing: 8, children: [
+              for (final u in images)
+                Container(width: 56, height: 56, decoration: BoxDecoration(
+                    color: Colors.grey.shade200, borderRadius: BorderRadius.circular(8)),
+                  clipBehavior: Clip.antiAlias,
+                  child: CachedNetworkImage(imageUrl: u, fit: BoxFit.cover)),
+              GestureDetector(
+                onTap: busy ? null : () async {
+                  final f = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 82);
+                  if (f == null) return;
+                  setSheet(() => busy = true);
+                  try {
+                    final uid = FirebaseAuth.instance.currentUser?.uid ?? 'x';
+                    final url = await uploadPhoto(File(f.path),
+                        'exercices_retours/$uid/${DateTime.now().microsecondsSinceEpoch}.jpg', quality: 78);
+                    setSheet(() { images.add(url); busy = false; });
+                  } catch (_) { setSheet(() => busy = false); }
+                },
+                child: Container(
+                  width: 56, height: 56,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(8)),
+                  child: busy
+                      ? const Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
+                      : Icon(Icons.add_a_photo_outlined, size: 18, color: Colors.grey.shade500),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 14),
+            SizedBox(width: double.infinity, child: ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _kPurpleEdu, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 13), elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('Envoyer à l\'éducateur',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            )),
+          ]),
+        ),
+      ),
+    );
+
+    if (sent != true || !mounted) return;
+    if (noteCtrl.text.trim().isEmpty && ressenti == null && images.isEmpty) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    try {
+      await _supa.from('exercices_retours').insert({
+        'attribution_id': ex['id'],
+        'author_uid': uid,
+        if (User_Info.activeProfileId.isNotEmpty) 'author_profile_id': User_Info.activeProfileId,
+        if (noteCtrl.text.trim().isNotEmpty) 'note': noteCtrl.text.trim(),
+        'media': images.map((u) => {'type': 'image', 'url': u}).toList(),
+        if (ressenti != null) 'ressenti': ressenti,
+        'from_pro': false,
+      });
+      final proUid = ex['pro_uid']?.toString();
+      if (proUid != null && proUid.isNotEmpty) {
+        try {
+          await _supa.from('notifications').insert({
+            'uid': proUid,
+            'type': 'education_retour_exercice',
+            'title': 'Retour famille — ${widget.animalNom}',
+            'body': 'La famille a répondu sur « ${ex['titre_snapshot']} ».',
+            if (ex['pro_profile_id'] != null) 'profile_id': ex['pro_profile_id'],
+            'data': {'animalId': widget.animalId, 'url': '/mes-patients/${widget.animalId}'},
+            'read': false,
+          });
+        } catch (_) {}
+      }
+      await _load();
+    } catch (_) {}
   }
 
   Widget _exoPill(String label, Color color) => Container(

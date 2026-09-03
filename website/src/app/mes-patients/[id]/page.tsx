@@ -65,6 +65,11 @@ interface EducExercice { id: string; titre: string; description: string | null; 
 interface EducAttribue {
   id: string; titre_snapshot: string; cadence: string | null; echeance: string | null; statut: string;
 }
+interface EducRetour {
+  id: string; attribution_id: string; note: string | null;
+  media: { type: string; url: string }[] | null; ressenti: string | null; from_pro: boolean;
+}
+const EDUC_RESSENTI: Record<string, string> = { facile: '😊 Facile', moyen: '😐 Moyen', difficile: '😓 Difficile', bloque: '🚫 Bloqué' };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -165,6 +170,9 @@ export default function PatientDetailPage() {
   const [savingObj, setSavingObj] = useState(false);
   const [biblio, setBiblio] = useState<EducExercice[]>([]);
   const [attribues, setAttribues] = useState<EducAttribue[]>([]);
+  const [retours, setRetours] = useState<Record<string, EducRetour[]>>({});
+  const [replyFor, setReplyFor] = useState<string | null>(null);
+  const [replyNote, setReplyNote] = useState('');
   const [attrPicker, setAttrPicker] = useState<{ ids: Set<string>; cadence: string; echeance: string } | null>(null);
   const [savingAttr, setSavingAttr] = useState(false);
   const [showAddRapport, setShowAddRapport] = useState(false);
@@ -286,7 +294,18 @@ export default function PatientDetailPage() {
       setGestations(get<Gestation>(9));
       setRapports(get<{ id: string; date_seance: string; contenu: string; exercices_conseilles: string | null }>(10));
       setObjectifs(get<EducObjectif>(11));
-      setAttribues(get<EducAttribue>(12));
+      const attr = get<EducAttribue>(12);
+      setAttribues(attr);
+      if (attr.length) {
+        const { data: rt } = await supabase.from('exercices_retours')
+          .select('id, attribution_id, note, media, ressenti, from_pro')
+          .in('attribution_id', attr.map(a => a.id)).order('created_at');
+        const grouped: Record<string, EducRetour[]> = {};
+        for (const row of (rt ?? []) as EducRetour[]) (grouped[row.attribution_id] ??= []).push(row);
+        setRetours(grouped);
+        const unseen = ((rt ?? []) as EducRetour[]).filter(r => !r.from_pro).map(r => r.id);
+        if (unseen.length) supabase.from('exercices_retours').update({ vu_par_pro: true }).in('id', unseen);
+      }
       setLoading(false);
     }
     load();
@@ -541,6 +560,30 @@ export default function PatientDetailPage() {
   async function retirerAttribue(id: string) {
     await supabase.from('exercices_attribues').delete().eq('id', id);
     setAttribues(prev => prev.filter(a => a.id !== id));
+  }
+
+  async function envoyerReponse(attributionId: string) {
+    if (!replyNote.trim() || !user?.uid) return;
+    await supabase.from('exercices_retours').insert({
+      attribution_id: attributionId, author_uid: user.uid, author_profile_id: activeProfileId || null,
+      note: replyNote.trim(), from_pro: true, vu_par_pro: true,
+    });
+    const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+    if (ownerUid) {
+      await supabase.from('notifications').insert({
+        uid: ownerUid, type: 'education_rapport',
+        title: `Message de l'éducateur — ${animal?.nom ?? 'votre animal'}`,
+        body: 'À propos d\'un exercice.',
+        data: { animalId, url: `/mes-animaux/${animalId}?tab=education` },
+      });
+    }
+    setReplyFor(null); setReplyNote('');
+    const { data: rt } = await supabase.from('exercices_retours')
+      .select('id, attribution_id, note, media, ressenti, from_pro')
+      .in('attribution_id', attribues.map(a => a.id)).order('created_at');
+    const grouped: Record<string, EducRetour[]> = {};
+    for (const row of (rt ?? []) as EducRetour[]) (grouped[row.attribution_id] ??= []).push(row);
+    setRetours(grouped);
   }
 
   async function requestWriteAccess() {
@@ -1025,18 +1068,49 @@ export default function PatientDetailPage() {
             ) : (
               <div className="space-y-2">
                 {attribues.map(a => (
-                  <div key={a.id} className="border border-gray-100 rounded-xl p-3 flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className={`text-sm font-semibold ${a.statut === 'fait' ? 'line-through text-gray-400' : 'text-[#1F2A2E]'}`}>{a.titre_snapshot}</p>
-                      <p className="text-xs text-gray-500">
-                        {a.statut === 'fait' ? '✓ Fait par la famille' : 'En attente'}
-                        {a.cadence ? ` · ${a.cadence}` : ''}
-                        {a.echeance ? ` · avant le ${new Date(a.echeance).toLocaleDateString('fr-FR')}` : ''}
-                      </p>
+                  <div key={a.id} className="border border-gray-100 rounded-xl p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className={`text-sm font-semibold ${a.statut === 'fait' ? 'line-through text-gray-400' : 'text-[#1F2A2E]'}`}>{a.titre_snapshot}</p>
+                        <p className="text-xs text-gray-500">
+                          {a.statut === 'fait' ? '✓ Fait par la famille' : 'En attente'}
+                          {a.cadence ? ` · ${a.cadence}` : ''}
+                          {a.echeance ? ` · avant le ${new Date(a.echeance).toLocaleDateString('fr-FR')}` : ''}
+                        </p>
+                      </div>
+                      {hasReportAccess && (
+                        <button onClick={() => retirerAttribue(a.id)} className="text-gray-300 hover:text-red-400 text-sm shrink-0">🗑</button>
+                      )}
                     </div>
-                    {hasReportAccess && (
-                      <button onClick={() => retirerAttribue(a.id)} className="text-gray-300 hover:text-red-400 text-sm shrink-0">🗑</button>
-                    )}
+                    {(retours[a.id] ?? []).map(rt => (
+                      <div key={rt.id} className={`mt-2 rounded-lg p-2 ${rt.from_pro ? 'bg-[#EF6C00]/10' : 'bg-gray-100'}`}>
+                        <p className="text-[10px] font-bold text-gray-500">
+                          {rt.from_pro ? '🎓 Vous' : '👪 Famille'}
+                          {rt.ressenti && EDUC_RESSENTI[rt.ressenti] ? ` · ${EDUC_RESSENTI[rt.ressenti]}` : ''}
+                        </p>
+                        {rt.note && <p className="text-xs text-gray-800 mt-0.5">{rt.note}</p>}
+                        {(rt.media ?? []).length > 0 && (
+                          <div className="flex gap-1.5 mt-1 overflow-x-auto">
+                            {(rt.media ?? []).map((m, i) => (
+                              /* eslint-disable-next-line @next/next/no-img-element */
+                              <a key={i} href={m.url} target="_blank" rel="noopener noreferrer">
+                                <img src={m.url} alt="" className="w-12 h-12 rounded object-cover" />
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {hasReportAccess && (replyFor === a.id ? (
+                      <div className="mt-2 flex gap-2">
+                        <input value={replyNote} onChange={e => setReplyNote(e.target.value)} autoFocus
+                          placeholder="Votre réponse…" className="flex-1 border border-gray-200 rounded-lg px-2 py-1 text-xs" />
+                        <button onClick={() => envoyerReponse(a.id)} className="text-xs text-white bg-[#EF6C00] rounded-lg px-2 py-1 font-semibold">Envoyer</button>
+                        <button onClick={() => { setReplyFor(null); setReplyNote(''); }} className="text-xs text-gray-400">×</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => { setReplyFor(a.id); setReplyNote(''); }} className="text-xs text-[#EF6C00] font-semibold mt-2">↩ Répondre</button>
+                    ))}
                   </div>
                 ))}
               </div>
