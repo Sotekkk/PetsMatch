@@ -45,6 +45,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   final _professionCtrl      = TextEditingController();
   final _descCtrl            = TextEditingController();
   final _tarifsCtrl          = TextEditingController();
+  final _phoneCtrl           = TextEditingController();
   final _siteWebCtrl         = TextEditingController();
   final _instagramCtrl       = TextEditingController();
   final _facebookCtrl        = TextEditingController();
@@ -175,7 +176,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     _places.dispose();
     for (final c in [
       _nomStructureCtrl, _professionCtrl, _descCtrl, _tarifsCtrl,
-      _siteWebCtrl, _instagramCtrl, _facebookCtrl,
+      _phoneCtrl, _siteWebCtrl, _instagramCtrl, _facebookCtrl,
       _addressSearchCtrl, _rueCtrl, _villeCtrl, _cpCtrl, _paysCtrl,
       _tvaCtrl, _formeJuridiqueCtrl, _capitalCtrl, _rcsCtrl, _rmCtrl, _ibanCtrl, _bicCtrl,
       _educationBilanDescCtrl,
@@ -234,6 +235,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
             ? (row['desc_entreprise'] ?? row['description'] ?? User_Info.descEntreprise)
             : (row['desc_entreprise'] ?? User_Info.descEntreprise);
         _tarifsCtrl.text       = row['tarifs']          ?? '';
+        _phoneCtrl.text        = (row['phone_number'] ?? row['phone'] ?? row['numero_elevage'] ?? '').toString();
         _siteWebCtrl.text      = row['site_web']        ?? '';
         _instagramCtrl.text    = row['instagram']       ?? '';
         _facebookCtrl.text     = row['facebook']        ?? '';
@@ -624,6 +626,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'profession_pro':     _professionCtrl.text.trim(),
           'desc_entreprise':    _descCtrl.text.trim(),
           'tarifs':             _tarifsCtrl.text.trim(),
+          'phone_number':       _phoneCtrl.text.trim(),
           'site_web':           _siteWebCtrl.text.trim(),
           'instagram':          _instagramCtrl.text.trim(),
           'facebook':           _facebookCtrl.text.trim(),
@@ -717,6 +720,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           'profession_pro':     _professionCtrl.text.trim(),
           'desc_entreprise':    _descCtrl.text.trim(),
           'tarifs':             _tarifsCtrl.text.trim(),
+          'phone_number':       _phoneCtrl.text.trim(),
           'site_web':           _siteWebCtrl.text.trim(),
           'instagram':          _instagramCtrl.text.trim(),
           'facebook':           _facebookCtrl.text.trim(),
@@ -879,6 +883,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   ],
                   const SizedBox(height: 12),
                   _field(_descCtrl, 'Description de l\'activité', Icons.description_outlined, maxLines: 4),
+                  const SizedBox(height: 12),
+                  _field(_phoneCtrl, 'Téléphone (visible sur votre fiche : appel + WhatsApp)',
+                      Icons.call_outlined, inputType: TextInputType.phone),
                   // L'éducateur a une grille de tarifs structurée (prestations
                   // fixes + libres + forfaits) — le champ libre ferait doublon.
                   if (_catPro != 'education') ...[

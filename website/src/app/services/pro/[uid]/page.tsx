@@ -21,6 +21,13 @@ function normGalerie(raw: unknown): { url: string; legende: string }[] {
 }
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 
+/** Téléphone FR → format international sans « + » pour wa.me. */
+function waPhone(raw: string): string {
+  let d = raw.replace(/[^0-9]/g, '');
+  if (d.startsWith('0')) d = `33${d.slice(1)}`;
+  return d;
+}
+
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 interface ProData {
@@ -30,7 +37,7 @@ interface ProData {
   especes: string[]; horaires: Record<string, string>;
   certifications: { nom: string; numero?: string }[];
   photos_galerie: { url: string; legende: string }[];
-  tarifs: string; site_web: string; instagram: string; facebook: string;
+  tarifs: string; site_web: string; instagram: string; facebook: string; phone: string;
   rayon: number; cat_pro: string; profileTableId?: string;
   statut_pro?: string; siret?: string; is_premium?: boolean;
   tarifs_education?: Record<string, number>;
@@ -262,6 +269,7 @@ function ProDetailContent() {
           photos_galerie: normGalerie(data.photos_galerie),
           tarifs: data.tarifs || '', site_web: data.site_web || '',
           instagram: data.instagram || '', facebook: data.facebook || '',
+          phone: (data.phone_number || data.numero_elevage || data.phone || '') as string,
           rayon: data.rayon_intervention || 0,
           cat_pro: data.profile_type || data.cat_pro || '',
           tarifs_education: (data.tarifs_education as Record<string, number>) ?? {},
@@ -291,6 +299,7 @@ function ProDetailContent() {
           photos_galerie: normGalerie(data.photos_galerie),
           tarifs: data.tarifs || '', site_web: data.site_web || '',
           instagram: data.instagram || '', facebook: data.facebook || '',
+          phone: (data.phone_number || data.numero_elevage || data.phone || '') as string,
           rayon: data.rayon_intervention || 0, cat_pro: data.cat_pro || '',
           tarifs_education: (data.tarifs_education as Record<string, number>) ?? {},
           education_bilan_requis: (data.education_bilan_requis as boolean) ?? true,
@@ -673,9 +682,23 @@ function ProDetailContent() {
           </div>
         )}
 
-        {/* Réseaux sociaux */}
-        {(pro.site_web || pro.instagram || pro.facebook) && (
+        {/* Contact & réseaux */}
+        {(pro.phone || pro.site_web || pro.instagram || pro.facebook) && (
           <div className="flex gap-2 mt-3 flex-wrap">
+            {pro.phone && (
+              <a href={`tel:${pro.phone.replace(/[^0-9+]/g, '')}`}
+                className="text-xs border border-[#6E9E57]/40 rounded-full px-3 py-1 text-[#5A8A45] hover:bg-[#6E9E57]/10"
+                style={{ fontFamily: 'Galey, sans-serif' }}>
+                📞 Appeler
+              </a>
+            )}
+            {pro.phone && (
+              <a href={`https://wa.me/${waPhone(pro.phone)}`} target="_blank" rel="noopener noreferrer"
+                className="text-xs border border-[#25D366]/40 rounded-full px-3 py-1 text-[#1a9e4b] hover:bg-[#25D366]/10"
+                style={{ fontFamily: 'Galey, sans-serif' }}>
+                💬 WhatsApp
+              </a>
+            )}
             {pro.site_web && (
               <a href={pro.site_web.startsWith('http') ? pro.site_web : `https://${pro.site_web}`}
                 target="_blank" rel="noopener noreferrer"

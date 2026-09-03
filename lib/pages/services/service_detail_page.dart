@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
@@ -426,6 +427,22 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
     if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
+  String get _telephone =>
+      (_proData?['phone_number'] ?? _proData?['numero_elevage'] ?? _proData?['phone'] ?? '')
+          .toString()
+          .trim();
+
+  /// Téléphone au format international sans « + » pour wa.me (France par défaut).
+  String _waPhone(String raw) {
+    var d = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    if (d.startsWith('0')) d = '33${d.substring(1)}';
+    return d;
+  }
+
+  Future<void> _openExt(Uri uri) async {
+    if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────────
 
   @override
@@ -596,9 +613,27 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             )).toList(),
           ),
         ],
-        if (_siteWeb.isNotEmpty || _instagram.isNotEmpty || _facebook.isNotEmpty) ...[
+        if (_telephone.isNotEmpty || _siteWeb.isNotEmpty || _instagram.isNotEmpty || _facebook.isNotEmpty) ...[
           const SizedBox(height: 12),
-          Row(children: [
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            if (_telephone.isNotEmpty)
+              _socialBtn(Icons.call_outlined, 'Appeler',
+                  () => _openExt(Uri(scheme: 'tel', path: _telephone.replaceAll(RegExp(r'[^0-9+]'), ''))),
+                  color: const Color(0xFF6E9E57)),
+            if (_telephone.isNotEmpty)
+              OutlinedButton.icon(
+                onPressed: () => _openExt(Uri.parse('https://wa.me/${_waPhone(_telephone)}')),
+                icon: const FaIcon(FontAwesomeIcons.whatsapp, size: 13),
+                label: const Text('WhatsApp', style: TextStyle(fontFamily: 'Galey', fontSize: 11)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF25D366),
+                  side: const BorderSide(color: Color(0xFF25D366)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
             if (_siteWeb.isNotEmpty)
               _socialBtn(Icons.language_outlined, 'Site web', () => _launch(_siteWeb)),
             if (_instagram.isNotEmpty)
@@ -637,21 +672,18 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
     );
   }
 
-  Widget _socialBtn(IconData icon, String label, VoidCallback onTap) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: OutlinedButton.icon(
-        onPressed: onTap,
-        icon: Icon(icon, size: 14),
-        label: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 11)),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: const Color(0xFF1E2025),
-          side: const BorderSide(color: Color(0xFFDDDDDD)),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          minimumSize: Size.zero,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
+  Widget _socialBtn(IconData icon, String label, VoidCallback onTap, {Color? color}) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 14),
+      label: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 11)),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: color ?? const Color(0xFF1E2025),
+        side: BorderSide(color: color ?? const Color(0xFFDDDDDD)),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
     );
   }
