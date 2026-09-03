@@ -42,6 +42,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   Map<String, int> _participantsCount = {};
   bool _inscrivant = false;
   List<Map<String, dynamic>> _prestations = [];
+  List<Map<String, dynamic>> _forfaitsPublics = []; // éducateur : forfaits affiche_public
 
   @override
   void initState() {
@@ -126,11 +127,25 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
         }
       }
       if (mounted) setState(() { _proData = row; _loading = false; });
-      if (row?['cat_pro'] == 'education') await _loadCoursCollectifs();
+      if (row?['cat_pro'] == 'education') {
+        await _loadCoursCollectifs();
+        if (row?['tarifs_education_visibles'] == true) await _loadForfaitsPublics();
+      }
       if (row?['cat_pro'] == 'photographe' || row?['cat_pro'] == 'toilettage') await _loadPrestations();
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _loadForfaitsPublics() async {
+    final proUid = _proData?['uid']?.toString();
+    if (proUid == null) return;
+    try {
+      final rows = await _supa.from('forfaits_education').select()
+          .eq('pro_uid', proUid).eq('actif', true).eq('affiche_public', true)
+          .order('created_at');
+      if (mounted) setState(() => _forfaitsPublics = List<Map<String, dynamic>>.from(rows as List));
+    } catch (_) {}
   }
 
   Future<void> _loadCoursCollectifs() async {
@@ -339,6 +354,44 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
     }
     return out;
   }
+  /// Éducateur : tarifs à afficher publiquement (label, prix formaté), si le pro
+  /// a activé `tarifs_education_visibles`. Prestations fixes non nulles +
+  /// prestations libres.
+  List<(String, String)> get _tarifsEducationPublics {
+    if (_proData?['cat_pro'] != 'education' || _proData?['tarifs_education_visibles'] != true) {
+      return [];
+    }
+    const labels = {
+      'cours_individuel': 'Cours individuel',
+      'cours_collectif': 'Cours collectif (par participant)',
+      'evaluation': 'Évaluation comportementale',
+      'domicile_supplement': 'Supplément à domicile',
+    };
+    final out = <(String, String)>[];
+    final fixes = _proData?['tarifs_education'];
+    if (fixes is Map) {
+      for (final entry in labels.entries) {
+        final v = (fixes[entry.key] as num?)?.toDouble() ?? 0;
+        if (v > 0) out.add((entry.value, '${v.toStringAsFixed(0)} €'));
+      }
+    }
+    final extra = _proData?['tarifs_education_extra'];
+    if (extra is List) {
+      for (final e in extra) {
+        if (e is! Map) continue;
+        final label = e['label']?.toString().trim() ?? '';
+        if (label.isEmpty) continue;
+        final v = (e['prix'] as num?)?.toDouble() ?? 0;
+        final desc = e['description']?.toString().trim() ?? '';
+        out.add((desc.isEmpty ? label : '$label — $desc', v > 0 ? '${v.toStringAsFixed(0)} €' : '—'));
+      }
+    }
+    return out;
+  }
+
+  String get _educationBilanDescription =>
+      (_proData?['education_bilan_description'] ?? '').toString().trim();
+
   String get _siteWeb => _proData?['site_web'] ?? '';
   String get _instagram => _proData?['instagram'] ?? '';
   String get _facebook => _proData?['facebook'] ?? '';
@@ -713,6 +766,61 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                         fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
                   ]),
                 )),
+              ],
+            )),
+          ],
+
+          // Tarifs éducateur (grille + forfaits publics), si le pro les expose
+          if (_tarifsEducationPublics.isNotEmpty || _forfaitsPublics.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _card(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionTitle('Tarifs'),
+                const SizedBox(height: 8),
+                ..._tarifsEducationPublics.map((t) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(child: Text(t.$1,
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                            fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
+                    const SizedBox(width: 8),
+                    Text(t.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                        fontWeight: FontWeight.w700, color: Color(0xFF7B5EA7))),
+                  ]),
+                )),
+                if (_forfaitsPublics.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('Forfaits', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
+                  const SizedBox(height: 4),
+                  ..._forfaitsPublics.map((f) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(children: [
+                      Expanded(child: Text(
+                          '${f['nom']} · ${f['nb_seances']} séances',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
+                              fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
+                      Text('${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} €',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
+                              fontWeight: FontWeight.w700, color: Color(0xFF7B5EA7))),
+                    ]),
+                  )),
+                ],
+              ],
+            )),
+          ],
+
+          // Bilan préalable (éducateur)
+          if (_proData?['cat_pro'] == 'education' && _educationBilanDescription.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _card(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionTitle('Le bilan préalable'),
+                const SizedBox(height: 8),
+                Text(_educationBilanDescription,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5, color: Color(0xFF444444))),
               ],
             )),
           ],

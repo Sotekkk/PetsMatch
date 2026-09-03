@@ -35,6 +35,10 @@ interface ProData {
   statut_pro?: string; siret?: string; is_premium?: boolean;
   tarifs_education?: Record<string, number>;
   education_bilan_requis?: boolean;
+  tarifs_education_visibles?: boolean;
+  tarifs_education_extra?: { label: string; prix: number; description?: string }[];
+  education_bilan_description?: string;
+  forfaits_education?: { id: string; nom: string; nb_seances: number; prix: number }[];
   tarifs_taxi?: { prise_en_charge?: number; prix_km?: number; minimum?: number };
   tarifs_pension?: {
     especes?: { espece: string; prix_seul: number; prix_partage?: number }[];
@@ -228,6 +232,7 @@ function ProDetailContent() {
   // Cours collectifs (éducateur/comportementaliste)
   const [coursCollectifs, setCoursCollectifs] = useState<CoursCollectif[]>([]);
   const [participantsCount, setParticipantsCount] = useState<Record<string, number>>({});
+  const [forfaitsPublics, setForfaitsPublics] = useState<{ id: string; nom: string; nb_seances: number; prix: number }[]>([]);
   const [inscriptionCours, setInscriptionCours] = useState<CoursCollectif | null>(null);
   const [inscriptionAnimalId, setInscriptionAnimalId] = useState<number | null>(null);
   const [inscrivant, setInscrivant] = useState(false);
@@ -261,6 +266,9 @@ function ProDetailContent() {
           cat_pro: data.profile_type || data.cat_pro || '',
           tarifs_education: (data.tarifs_education as Record<string, number>) ?? {},
           education_bilan_requis: (data.education_bilan_requis as boolean) ?? true,
+          tarifs_education_visibles: (data.tarifs_education_visibles as boolean) ?? false,
+          tarifs_education_extra: Array.isArray(data.tarifs_education_extra) ? data.tarifs_education_extra : [],
+          education_bilan_description: (data.education_bilan_description as string) ?? '',
           tarifs_taxi: (data.tarifs_taxi as ProData['tarifs_taxi']) ?? {},
           tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
@@ -284,13 +292,27 @@ function ProDetailContent() {
           tarifs: data.tarifs || '', site_web: data.site_web || '',
           instagram: data.instagram || '', facebook: data.facebook || '',
           rayon: data.rayon_intervention || 0, cat_pro: data.cat_pro || '',
+          tarifs_education: (data.tarifs_education as Record<string, number>) ?? {},
+          education_bilan_requis: (data.education_bilan_requis as boolean) ?? true,
+          tarifs_education_visibles: (data.tarifs_education_visibles as boolean) ?? false,
+          tarifs_education_extra: Array.isArray(data.tarifs_education_extra) ? data.tarifs_education_extra : [],
+          education_bilan_description: (data.education_bilan_description as string) ?? '',
           tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
         };
       }
       if (row) setPro({ ...(row as unknown as ProData), profileTableId });
       const proRow = row as unknown as ProData | null;
-      if (proRow && proRow.cat_pro === 'education') await loadCoursCollectifs(proRow.uid);
+      if (proRow && proRow.cat_pro === 'education') {
+        await loadCoursCollectifs(proRow.uid);
+        if (proRow.tarifs_education_visibles) {
+          const { data: fRows } = await supabase.from('forfaits_education')
+            .select('id, nom, nb_seances, prix')
+            .eq('pro_uid', proRow.uid).eq('actif', true).eq('affiche_public', true)
+            .order('created_at');
+          setForfaitsPublics((fRows ?? []) as { id: string; nom: string; nb_seances: number; prix: number }[]);
+        }
+      }
       if (proRow && (proRow.cat_pro === 'photographe' || proRow.cat_pro === 'toilettage')) {
         await loadPrestations(proRow.uid, proRow.cat_pro);
       }
@@ -536,6 +558,27 @@ function ProDetailContent() {
   const availableDates = Object.keys(slotsByDate).sort();
 
   const requiresBilanFirst = pro?.cat_pro === 'education' && pro.education_bilan_requis !== false && isFirstTimeEducationClient;
+
+  const EDUCATION_TARIF_LABELS: Record<string, string> = {
+    cours_individuel: 'Cours individuel',
+    cours_collectif: 'Cours collectif (par participant)',
+    evaluation: 'Évaluation comportementale',
+    domicile_supplement: 'Supplément à domicile',
+  };
+  const educationTarifs: { label: string; prix: string }[] =
+    pro?.cat_pro === 'education' && pro.tarifs_education_visibles
+      ? [
+          ...Object.entries(EDUCATION_TARIF_LABELS)
+            .filter(([k]) => (pro.tarifs_education?.[k] ?? 0) > 0)
+            .map(([k, label]) => ({ label, prix: `${pro.tarifs_education![k]} €` })),
+          ...(pro.tarifs_education_extra ?? [])
+            .filter(e => e.label?.trim())
+            .map(e => ({
+              label: e.description?.trim() ? `${e.label.trim()} — ${e.description.trim()}` : e.label.trim(),
+              prix: (e.prix ?? 0) > 0 ? `${e.prix} €` : '—',
+            })),
+        ]
+      : [];
   const motifs = requiresBilanFirst
     ? (MOTIFS_BY_CAT.education ?? []).filter(m => m.key === 'evaluation')
     : MOTIFS_BY_CAT[pro?.cat_pro ?? ''] ?? DEFAULT_MOTIFS;
@@ -755,6 +798,38 @@ function ProDetailContent() {
                     );
                   })}
                 </div>
+              </div>
+            )}
+            {(educationTarifs.length > 0 || forfaitsPublics.length > 0) && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <p className="font-bold text-[#1E2025] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Tarifs</p>
+                <div className="space-y-1.5">
+                  {educationTarifs.map((t, i) => (
+                    <div key={i} className="flex items-start justify-between gap-3 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      <span className="text-[#1E2025] font-medium">{t.label}</span>
+                      <span className="text-[#7B5EA7] font-bold whitespace-nowrap">{t.prix}</span>
+                    </div>
+                  ))}
+                </div>
+                {forfaitsPublics.length > 0 && (
+                  <>
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mt-3 mb-1.5" style={{ fontFamily: 'Galey, sans-serif' }}>Forfaits</p>
+                    <div className="space-y-1.5">
+                      {forfaitsPublics.map(f => (
+                        <div key={f.id} className="flex items-center justify-between gap-3 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          <span className="text-[#1E2025] font-medium">{f.nom} · {f.nb_seances} séances</span>
+                          <span className="text-[#7B5EA7] font-bold whitespace-nowrap">{f.prix} €</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            {pro.cat_pro === 'education' && (pro.education_bilan_description ?? '').trim() && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <p className="font-bold text-[#1E2025] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Le bilan préalable</p>
+                <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line" style={{ fontFamily: 'Galey, sans-serif' }}>{pro.education_bilan_description}</p>
               </div>
             )}
             {pro.tarifs && (

@@ -130,6 +130,12 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   bool _loadingForfaits = false;
   bool _educationBilanRequis = true;
 
+  // Éducateur : vitrine publique
+  bool _tarifsEducationVisibles = false;
+  // Prestations libres nommées par l'éducateur : [{label, prix, description}]
+  List<Map<String, dynamic>> _tarifsEducationExtra = [];
+  final _educationBilanDescCtrl = TextEditingController();
+
   static const _defaultDureesByCatPro = <String, Map<String, int>>{
     'veterinaire': {'consultation': 30, 'vaccination': 20, 'bilan': 45, 'urgence': 60, 'chirurgie': 120, 'autre': 30},
     'pension':     {'visite': 30, 'arrivee': 60, 'depart': 30, 'autre': 30},
@@ -172,6 +178,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       _siteWebCtrl, _instagramCtrl, _facebookCtrl,
       _addressSearchCtrl, _rueCtrl, _villeCtrl, _cpCtrl, _paysCtrl,
       _tvaCtrl, _formeJuridiqueCtrl, _capitalCtrl, _rcsCtrl, _rmCtrl, _ibanCtrl, _bicCtrl,
+      _educationBilanDescCtrl,
     ]) { c.dispose(); }
     super.dispose();
   }
@@ -313,6 +320,19 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                 MapEntry(k.toString(), (v as num?)?.toDouble() ?? 0)));
         }
         _educationBilanRequis = row['education_bilan_requis'] as bool? ?? true;
+        _tarifsEducationVisibles = row['tarifs_education_visibles'] as bool? ?? false;
+        _educationBilanDescCtrl.text = row['education_bilan_description']?.toString() ?? '';
+        if (row['tarifs_education_extra'] is List) {
+          _tarifsEducationExtra = [
+            for (final e in (row['tarifs_education_extra'] as List))
+              if (e is Map)
+                {
+                  'label': e['label']?.toString() ?? '',
+                  'prix': (e['prix'] as num?)?.toInt() ?? 0,
+                  'description': e['description']?.toString() ?? '',
+                },
+          ];
+        }
         _arrhesPourcentage = (row['arrhes_pourcentage'] as num?)?.toInt() ?? 0;
         if (row['horaires'] is Map) {
           for (final j in _jours) {
@@ -341,6 +361,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
 
   String get _forfaitsTable => _catPro == 'garde' ? 'forfaits_garde' : 'forfaits_education';
   String get _forfaitsCountCol => _catPro == 'garde' ? 'nb_visites' : 'nb_seances';
+
+  // Pros disposant d'une galerie / portfolio public sur leur fiche.
+  bool get _hasGalerie =>
+      _catPro == 'photographe' || _catPro == 'pension' || _catPro == 'education';
 
   Future<void> _loadForfaits() async {
     setState(() => _loadingForfaits = true);
@@ -414,6 +438,33 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   Future<void> _supprimerForfait(String id) async {
     await _supa.from(_forfaitsTable).update({'actif': false}).eq('id', id);
     await _loadForfaits();
+  }
+
+  // Prestations libres : on ne garde que les lignes avec un libellé.
+  List<Map<String, dynamic>> _cleanTarifsExtra() => [
+        for (final e in _tarifsEducationExtra)
+          if ((e['label']?.toString().trim() ?? '').isNotEmpty)
+            {
+              'label': e['label'].toString().trim(),
+              'prix': (e['prix'] as num?)?.toInt() ?? 0,
+              if ((e['description']?.toString().trim() ?? '').isNotEmpty)
+                'description': e['description'].toString().trim(),
+            },
+      ];
+
+  // Éducateur : afficher ou non ce forfait sur la fiche publique.
+  Future<void> _toggleForfaitPublic(String id, bool value) async {
+    setState(() {
+      _forfaits = [
+        for (final f in _forfaits)
+          if (f['id'] == id) {...f, 'affiche_public': value} else f,
+      ];
+    });
+    try {
+      await _supa.from(_forfaitsTable).update({'affiche_public': value}).eq('id', id);
+    } catch (_) {
+      await _loadForfaits();
+    }
   }
 
   // ── Geocoding ─────────────────────────────────────────────────────────────────
@@ -592,11 +643,14 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
+          if (_catPro == 'education') 'tarifs_education_visibles': _tarifsEducationVisibles,
+          if (_catPro == 'education') 'tarifs_education_extra': _cleanTarifsExtra(),
+          if (_catPro == 'education') 'education_bilan_description': _educationBilanDescCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
           if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
             'acaced_doc_url': acacedDocUrl,
-          if (_catPro == 'photographe' || _catPro == 'pension') 'photos_galerie': galerieItems,
+          if (_hasGalerie) 'photos_galerie': galerieItems,
           'rue':                _rueCtrl.text.trim(),
           'ville':              _villeCtrl.text.trim(),
           'code_postal':        _cpCtrl.text.trim(),
@@ -639,6 +693,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
+          if (_catPro == 'education') 'tarifs_education_visibles': _tarifsEducationVisibles,
+          if (_catPro == 'education') 'tarifs_education_extra': _cleanTarifsExtra(),
+          if (_catPro == 'education') 'education_bilan_description': _educationBilanDescCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
             'acaced_doc_url': acacedDocUrl,
@@ -679,10 +736,14 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
+          if (_catPro == 'education') 'tarifs_education_visibles': _tarifsEducationVisibles,
+          if (_catPro == 'education') 'tarifs_education_extra': _cleanTarifsExtra(),
+          if (_catPro == 'education') 'education_bilan_description': _educationBilanDescCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
           if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
             'acaced_doc_url': acacedDocUrl,
+          if (_hasGalerie) 'photos_galerie': galerieItems,
           'rue_pro':            _rueCtrl.text.trim(),
           'ville_pro':          _villeCtrl.text.trim(),
           'code_postal_pro':    _cpCtrl.text.trim(),
@@ -723,7 +784,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       }
       if (bannerUrl != null) setState(() { _bannerUrl = bannerUrl; _bannerFile = null; });
       if (photoUrl  != null) setState(() { _photoUrl  = photoUrl;  _photoFile  = null; });
-      if (_catPro == 'photographe' || _catPro == 'pension') {
+      if (_hasGalerie) {
         setState(() {
           _photosGalerie = galerieItems.map((m) => m['url']!).toList();
           _photosGalerieLegendes = galerieItems.map((m) => m['legende'] ?? '').toList();
@@ -1177,6 +1238,17 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                       'Laissez à 0 les prestations que vous ne proposez pas.',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
                     ),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      Expanded(child: Text('Afficher mes tarifs sur ma fiche publique',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
+                              fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
+                      Switch(
+                        value: _tarifsEducationVisibles,
+                        activeThumbColor: const Color(0xFF7B5EA7),
+                        onChanged: (v) => setState(() => _tarifsEducationVisibles = v),
+                      ),
+                    ]),
                     const SizedBox(height: 12),
                     ..._prestationsEducation.map((t) => Padding(
                       padding: const EdgeInsets.only(bottom: 10),
@@ -1214,6 +1286,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                         ),
                       ]),
                     )),
+                    const SizedBox(height: 4),
+                    _tarifsExtraEditor(),
                   ],
 
                   // ── Bilan préalable obligatoire (éducateur) ───────────────
@@ -1232,6 +1306,24 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                         onChanged: (v) => setState(() => _educationBilanRequis = v),
                       ),
                     ]),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: _educationBilanDescCtrl,
+                      maxLines: 3,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                      decoration: InputDecoration(
+                        labelText: 'Décrivez ce bilan (déroulé, durée, tarif)',
+                        labelStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600),
+                        alignLabelWithHint: true,
+                        filled: true, fillColor: Colors.white,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
+                      ),
+                    ),
                   ],
 
                   // ── Forfaits éducateur/comportementaliste ou garde ────────
@@ -1256,16 +1348,35 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                         margin: const EdgeInsets.only(bottom: 8),
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(color: const Color(0xFFF8F8F6), borderRadius: BorderRadius.circular(12)),
-                        child: Row(children: [
-                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text(f['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
-                            Text('${f[_forfaitsCountCol]} ${_catPro == 'garde' ? 'visites' : 'séances'} — ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} €',
-                                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
-                          ])),
-                          IconButton(
-                            onPressed: () => _supprimerForfait(f['id'] as String),
-                            icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
-                          ),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Row(children: [
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(f['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+                              Text('${f[_forfaitsCountCol]} ${_catPro == 'garde' ? 'visites' : 'séances'} — ${(f['prix'] as num?)?.toStringAsFixed(0) ?? 0} €',
+                                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+                            ])),
+                            IconButton(
+                              onPressed: () => _supprimerForfait(f['id'] as String),
+                              icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
+                            ),
+                          ]),
+                          if (_catPro == 'education')
+                            InkWell(
+                              onTap: () => _toggleForfaitPublic(
+                                  f['id'] as String, !(f['affiche_public'] as bool? ?? false)),
+                              child: Row(children: [
+                                SizedBox(
+                                  width: 34, height: 34,
+                                  child: Checkbox(
+                                    value: f['affiche_public'] as bool? ?? false,
+                                    activeColor: const Color(0xFF7B5EA7),
+                                    onChanged: (v) => _toggleForfaitPublic(f['id'] as String, v ?? false),
+                                  ),
+                                ),
+                                Text('Afficher sur ma fiche publique',
+                                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
+                              ]),
+                            ),
                         ]),
                       )),
                   ],
@@ -1299,17 +1410,21 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   const SizedBox(height: 12),
                   _certificationsEditor(),
 
-                  // ── Galerie / portfolio public (photographe, pension) ─────
-                  if (_catPro == 'photographe' || _catPro == 'pension') ...[
+                  // ── Galerie / portfolio public ────────────────────────────
+                  if (_hasGalerie) ...[
                     const SizedBox(height: 24),
                     _sectionTitle(_catPro == 'pension'
                         ? 'Photos de la pension et des logements'
-                        : 'Galerie / portfolio'),
+                        : _catPro == 'education'
+                            ? 'Photos'
+                            : 'Galerie / portfolio'),
                     const SizedBox(height: 4),
                     Text(
                       _catPro == 'pension'
                           ? 'Montrez vos logements (box, parc, enclos…) et vos installations. Visibles par les clients sur votre fiche publique.'
-                          : 'Ces photos sont visibles par les clients sur votre fiche publique.',
+                          : _catPro == 'education'
+                              ? 'Montrez votre lieu de travail, vos cours, votre matériel. Visibles sur votre fiche publique.'
+                              : 'Ces photos sont visibles par les clients sur votre fiche publique.',
                       style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
                     ),
                     const SizedBox(height: 12),
@@ -1477,6 +1592,81 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   Future<void> _pickPhoto() async {
     final file = await pickAndCropSquare();
     if (file != null && mounted) setState(() => _photoFile = file);
+  }
+
+  // ── Prestations libres (éducateur) ─────────────────────────────────────────
+
+  Widget _tarifsExtraEditor() {
+    void update(int i, String key, Object value) {
+      setState(() {
+        final next = [..._tarifsEducationExtra];
+        next[i] = {...next[i], key: value};
+        _tarifsEducationExtra = next;
+      });
+    }
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      for (int i = 0; i < _tarifsEducationExtra.length; i++)
+        Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: const Color(0xFFF8F8F6), borderRadius: BorderRadius.circular(12)),
+          child: Column(children: [
+            Row(children: [
+              Expanded(
+                child: TextFormField(
+                  initialValue: _tarifsEducationExtra[i]['label']?.toString() ?? '',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                  decoration: const InputDecoration(
+                    isDense: true, hintText: 'Nom de la prestation',
+                    hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13),
+                    border: InputBorder.none,
+                  ),
+                  onChanged: (v) => update(i, 'label', v),
+                ),
+              ),
+              SizedBox(
+                width: 74,
+                child: TextFormField(
+                  initialValue: (_tarifsEducationExtra[i]['prix'] as num?)?.toString() ?? '0',
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                  decoration: const InputDecoration(isDense: true, suffixText: '€', border: InputBorder.none),
+                  onChanged: (v) => update(i, 'prix', int.tryParse(v) ?? 0),
+                ),
+              ),
+              IconButton(
+                onPressed: () => setState(() {
+                  _tarifsEducationExtra = [..._tarifsEducationExtra]..removeAt(i);
+                }),
+                icon: const Icon(Icons.close, size: 18, color: Colors.redAccent),
+              ),
+            ]),
+            TextFormField(
+              initialValue: _tarifsEducationExtra[i]['description']?.toString() ?? '',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700),
+              decoration: const InputDecoration(
+                isDense: true, hintText: 'Description (facultatif)',
+                hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 12),
+                border: InputBorder.none,
+              ),
+              onChanged: (v) => update(i, 'description', v),
+            ),
+          ]),
+        ),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: () => setState(() {
+            _tarifsEducationExtra = [..._tarifsEducationExtra, {'label': '', 'prix': 0, 'description': ''}];
+          }),
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('Ajouter une prestation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+          style: TextButton.styleFrom(foregroundColor: const Color(0xFF7B5EA7)),
+        ),
+      ),
+    ]);
   }
 
   // ── Galerie / portfolio public ──────────────────────────────────────────────

@@ -882,7 +882,10 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [tarifsGarde, setTarifsGarde] = useState<Record<string, number>>({});
   const [tarifsTaxi, setTarifsTaxi] = useState<Record<string, number>>({});
   const [educationBilanRequis, setEducationBilanRequis] = useState(true);
-  const [forfaits, setForfaits] = useState<{ id: string; nom: string; nb_seances: number; prix: number }[]>([]);
+  const [tarifsEducationVisibles, setTarifsEducationVisibles] = useState(false);
+  const [tarifsEducationExtra, setTarifsEducationExtra] = useState<{ label: string; prix: number; description: string }[]>([]);
+  const [educationBilanDescription, setEducationBilanDescription] = useState('');
+  const [forfaits, setForfaits] = useState<{ id: string; nom: string; nb_seances: number; prix: number; affiche_public: boolean }[]>([]);
   const [loadingForfaits, setLoadingForfaits] = useState(false);
   const [showForfaitModal, setShowForfaitModal] = useState(false);
   const [arrhesPourcentage, setArrhesPourcentage] = useState(0);
@@ -981,6 +984,17 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           setTarifsTaxi(r.tarifs_taxi as Record<string, number>);
         }
         setEducationBilanRequis((r.education_bilan_requis as boolean) ?? true);
+        setTarifsEducationVisibles((r.tarifs_education_visibles as boolean) ?? false);
+        setEducationBilanDescription((r.education_bilan_description as string) ?? '');
+        if (Array.isArray(r.tarifs_education_extra)) {
+          setTarifsEducationExtra((r.tarifs_education_extra as unknown[])
+            .filter((e): e is Record<string, unknown> => !!e && typeof e === 'object')
+            .map(e => ({
+              label: String(e.label ?? ''),
+              prix: Number(e.prix ?? 0),
+              description: String(e.description ?? ''),
+            })));
+        }
         setArrhesPourcentage(((r.arrhes_pourcentage as number) ?? 0));
         setAcacedNum(((r.acaced_numero ?? r.acaced) as string) ?? '');
         setAcacedDocUrl((r.acaced_doc_url as string) ?? null);
@@ -1053,10 +1067,11 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   async function loadForfaits() {
     setLoadingForfaits(true);
     const { data: rows } = await supabase.from(forfaitsTable())
-      .select(`id, nom, ${forfaitsCountCol()}, prix`).eq('pro_uid', uid).eq('actif', true).order('created_at');
+      .select(`id, nom, ${forfaitsCountCol()}, prix, affiche_public`).eq('pro_uid', uid).eq('actif', true).order('created_at');
     setForfaits(((rows ?? []) as Record<string, unknown>[]).map(r => ({
       id: r.id as string, nom: r.nom as string, prix: r.prix as number,
       nb_seances: (r[forfaitsCountCol()] as number) ?? 1,
+      affiche_public: (r.affiche_public as boolean) ?? false,
     })));
     setLoadingForfaits(false);
   }
@@ -1073,6 +1088,11 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   async function supprimerForfait(id: string) {
     await supabase.from(forfaitsTable()).update({ actif: false }).eq('id', id);
     loadForfaits();
+  }
+
+  async function toggleForfaitPublic(id: string, value: boolean) {
+    setForfaits(prev => prev.map(f => f.id === id ? { ...f, affiche_public: value } : f));
+    await supabase.from(forfaitsTable()).update({ affiche_public: value }).eq('id', id);
   }
 
   async function handleSave() {
@@ -1110,7 +1130,19 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         ? { tarifs_logements: tarifsLogements, arrhes_pourcentage: arrhesPourcentage }
         : {}),
       ...((data?.profile_type ?? data?.cat_pro) === 'education'
-        ? { tarifs_education: tarifsEducation, education_bilan_requis: educationBilanRequis }
+        ? {
+            tarifs_education: tarifsEducation,
+            education_bilan_requis: educationBilanRequis,
+            tarifs_education_visibles: tarifsEducationVisibles,
+            education_bilan_description: educationBilanDescription.trim(),
+            tarifs_education_extra: tarifsEducationExtra
+              .filter(e => e.label.trim())
+              .map(e => ({
+                label: e.label.trim(),
+                prix: Number(e.prix) || 0,
+                ...(e.description.trim() ? { description: e.description.trim() } : {}),
+              })),
+          }
         : {}),
       ...((data?.profile_type ?? data?.cat_pro) === 'garde'
         ? { tarifs_garde: tarifsGarde }
@@ -1141,7 +1173,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
       }
     }
 
-    if (catPro === 'photographe' || catPro === 'pension') {
+    if (catPro === 'photographe' || catPro === 'pension' || catPro === 'education') {
       const items = [...galeriePhotos];
       for (let i = 0; i < newGaleriePhotos.length; i++) {
         const path = `profiles/${uid}/pro_${profileId}_galerie_${i}_${Date.now()}.jpg`;
@@ -1455,6 +1487,15 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         {catPro === 'education' && (
           <Card title="Tarifs par type de prestation (€)">
             <p className="text-xs text-gray-400 mb-3">Laissez à 0 les prestations que vous ne proposez pas.</p>
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <p className="text-xs font-medium text-gray-600 flex-1">Afficher mes tarifs sur ma fiche publique</p>
+              <button type="button" onClick={() => setTarifsEducationVisibles(v => !v)}
+                className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
+                style={{ backgroundColor: tarifsEducationVisibles ? '#7B5EA7' : '#D1D5DB' }}>
+                <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform"
+                  style={{ transform: tarifsEducationVisibles ? 'translateX(20px)' : 'translateX(0)' }} />
+              </button>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               {PRESTATIONS_EDUCATION.map(({ value, label }) => (
                 <div key={value}>
@@ -1465,6 +1506,29 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                     className={inputCls} />
                 </div>
               ))}
+            </div>
+            <p className="text-xs font-medium text-gray-600 mt-4 mb-2">Autres prestations</p>
+            <div className="space-y-2">
+              {tarifsEducationExtra.map((e, i) => (
+                <div key={i} className="bg-gray-50 rounded-xl p-2 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <input placeholder="Nom de la prestation" value={e.label}
+                      onChange={ev => setTarifsEducationExtra(prev => prev.map((x, j) => j === i ? { ...x, label: ev.target.value } : x))}
+                      className={`${inputCls} flex-1`} />
+                    <input type="number" min={0} step={1} value={e.prix}
+                      onChange={ev => setTarifsEducationExtra(prev => prev.map((x, j) => j === i ? { ...x, prix: Number(ev.target.value) } : x))}
+                      className={`${inputCls} w-20`} />
+                    <button type="button" onClick={() => setTarifsEducationExtra(prev => prev.filter((_, j) => j !== i))}
+                      className="text-red-400 hover:text-red-600 text-lg px-1">×</button>
+                  </div>
+                  <input placeholder="Description (facultatif)" value={e.description}
+                    onChange={ev => setTarifsEducationExtra(prev => prev.map((x, j) => j === i ? { ...x, description: ev.target.value } : x))}
+                    className={`${inputCls} w-full text-xs`} />
+                </div>
+              ))}
+              <button type="button"
+                onClick={() => setTarifsEducationExtra(prev => [...prev, { label: '', prix: 0, description: '' }])}
+                className="text-sm font-semibold text-[#7B5EA7] hover:underline">+ Ajouter une prestation</button>
             </div>
           </Card>
         )}
@@ -1519,6 +1583,10 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                   style={{ transform: educationBilanRequis ? 'translateX(20px)' : 'translateX(0)' }} />
               </button>
             </div>
+            <label className="text-xs font-medium text-gray-500 block mt-4 mb-1">Décrivez ce bilan (déroulé, durée, tarif)</label>
+            <textarea rows={3} value={educationBilanDescription}
+              onChange={e => setEducationBilanDescription(e.target.value)}
+              className={`${inputCls} w-full`} />
           </Card>
         )}
 
@@ -1532,14 +1600,23 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             ) : (
               <div className="space-y-2 mb-3">
                 {forfaits.map(f => (
-                  <div key={f.id} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
-                    <div>
-                      <p className="text-sm font-semibold text-[#1E2025]">{f.nom}</p>
-                      <p className="text-xs text-gray-500">{f.nb_seances} {catPro === 'garde' ? 'visites' : 'séances'} — {f.prix} €</p>
+                  <div key={f.id} className="bg-gray-50 rounded-xl px-3 py-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-[#1E2025]">{f.nom}</p>
+                        <p className="text-xs text-gray-500">{f.nb_seances} {catPro === 'garde' ? 'visites' : 'séances'} — {f.prix} €</p>
+                      </div>
+                      <button onClick={() => supprimerForfait(f.id)} className="text-red-400 hover:text-red-600 text-sm">
+                        Supprimer
+                      </button>
                     </div>
-                    <button onClick={() => supprimerForfait(f.id)} className="text-red-400 hover:text-red-600 text-sm">
-                      Supprimer
-                    </button>
+                    {catPro === 'education' && (
+                      <label className="flex items-center gap-2 mt-1 text-xs text-gray-600 cursor-pointer">
+                        <input type="checkbox" checked={f.affiche_public}
+                          onChange={e => toggleForfaitPublic(f.id, e.target.checked)} />
+                        Afficher sur ma fiche publique
+                      </label>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1569,12 +1646,14 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           </button>
         </Card>
 
-        {/* Galerie — photographe (portfolio) et pension (photos des logements) */}
-        {(catPro === 'photographe' || catPro === 'pension') && (
-          <Card title={catPro === 'pension' ? 'Photos de la pension et des logements' : 'Galerie / portfolio'}>
+        {/* Galerie — photographe (portfolio), pension (logements), éducateur */}
+        {(catPro === 'photographe' || catPro === 'pension' || catPro === 'education') && (
+          <Card title={catPro === 'pension' ? 'Photos de la pension et des logements' : catPro === 'education' ? 'Photos' : 'Galerie / portfolio'}>
             <p className="text-xs text-gray-400 mb-3">
               {catPro === 'pension'
                 ? 'Montrez vos logements (box, parc, enclos…) et vos installations. Visibles par les clients sur votre fiche publique.'
+                : catPro === 'education'
+                ? 'Montrez votre lieu de travail, vos cours, votre matériel. Visibles sur votre fiche publique.'
                 : 'Ces photos sont visibles par les clients sur votre fiche publique.'}
             </p>
             <input ref={galerieRef} type="file" accept="image/*" multiple className="hidden"

@@ -98,6 +98,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   // cette exigence dans son profil).
   bool _educationBilanRequis = true;
   bool _isFirstTimeEducationClient = false;
+  String _educationBilanDescription = '';
 
   // Taxi animalier : trajet départ/arrivée + animaux transportés
   final _adresseDepartCtrl = TextEditingController();
@@ -293,7 +294,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       final row = (widget.proProfileId != null && widget.proProfileId!.isNotEmpty)
           ? await Supabase.instance.client
               .from('user_profiles')
-              .select('durees_motifs, profile_type, cat_pro, education_bilan_requis')
+              .select('durees_motifs, profile_type, cat_pro, education_bilan_requis, education_bilan_description')
               .eq('id', widget.proProfileId!)
               .maybeSingle()
           : await Supabase.instance.client
@@ -316,6 +317,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
               _defaultDureesByCatPro[cat] ?? {'consultation': 30, 'autre': 30});
         }
         _educationBilanRequis = row['education_bilan_requis'] as bool? ?? true;
+        _educationBilanDescription = (row['education_bilan_description'] ?? '').toString().trim();
         if (_catPro == 'education') await _checkFirstTimeEducationClient();
       }
     } catch (_) {}
@@ -1269,6 +1271,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         const SizedBox(height: 6),
         Text('Premier rendez-vous avec ce professionnel : un bilan est requis avant de réserver un cours.',
             style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+        if (_educationBilanDescription.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(_educationBilanDescription,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, height: 1.4, color: Colors.grey.shade600)),
+        ],
       ],
       const SizedBox(height: 10),
       Wrap(

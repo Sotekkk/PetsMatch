@@ -64,6 +64,7 @@ export default function DevisPage() {
   const [tarifs, setTarifs] = useState<Record<string, number>>({});
   const [tarifsBase, setTarifsBase] = useState<Record<string, number>>({});
   const [forfaits, setForfaits] = useState<{ id: string; nom: string; prix: number }[]>([]);
+  const [tarifsExtra, setTarifsExtra] = useState<{ label: string; prix: number }[]>([]);
   const [newLink, setNewLink] = useState<string | null>(null);
   // devisId -> token du contrat (documents_animaux) rattaché, pour construire
   // les liens /signer-contrat/<token> (même système que les contrats éleveur).
@@ -102,7 +103,7 @@ export default function DevisPage() {
       : supabase.from('devis').select('*').eq('pro_uid', user.uid).order('created_at', { ascending: false });
     Promise.all([
       devisQ,
-      supabase.from('user_profiles').select('tarifs_education, tarifs_garde, profile_type, cat_pro').eq('id', activeProfileId).maybeSingle(),
+      supabase.from('user_profiles').select('tarifs_education, tarifs_education_extra, tarifs_garde, profile_type, cat_pro').eq('id', activeProfileId).maybeSingle(),
       activeProfileId
         ? supabase.from('animal_access').select('animal_id').eq('pro_profile_id', activeProfileId).in('statut', ['active', 'active_write'])
         : Promise.resolve({ data: [] }),
@@ -124,6 +125,13 @@ export default function DevisPage() {
       const base = (pt === 'garde' ? t.data?.tarifs_garde : t.data?.tarifs_education) ?? {};
       setTarifsBase(base as Record<string, number>);
       setTarifs(base as Record<string, number>);
+      setTarifsExtra(
+        Array.isArray(t.data?.tarifs_education_extra)
+          ? (t.data.tarifs_education_extra as { label?: string; prix?: number }[])
+              .filter(e => e.label?.trim())
+              .map(e => ({ label: e.label!.trim(), prix: Number(e.prix) || 0 }))
+          : [],
+      );
       const forfaitsTable = pt === 'garde' ? 'forfaits_garde' : 'forfaits_education';
       const { data: forfaitsData } = await supabase.from(forfaitsTable).select('id,nom,prix').eq('pro_uid', user.uid).eq('actif', true);
       setForfaits((forfaitsData ?? []) as { id: string; nom: string; prix: number }[]);
@@ -478,6 +486,18 @@ export default function DevisPage() {
                         + Évaluation ({tarifs.evaluation} €)
                       </button>
                     )}
+                    {catPro === 'education' && !!tarifs.domicile_supplement && (
+                      <button onClick={() => addLigne('Supplément à domicile', tarifs.domicile_supplement)}
+                        className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">
+                        + Supplément à domicile ({tarifs.domicile_supplement} €)
+                      </button>
+                    )}
+                    {catPro === 'education' && tarifsExtra.map((e, i) => (
+                      <button key={`x${i}`} onClick={() => addLigne(e.label, e.prix)}
+                        className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">
+                        + {e.label} ({e.prix} €)
+                      </button>
+                    ))}
                     {catPro === 'garde' && !!tarifs.promenade_30min && (
                       <button onClick={() => addLigne('Promenade (30 min)', tarifs.promenade_30min)}
                         className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-2.5 py-1 rounded-lg hover:bg-[#E8F4F6]">

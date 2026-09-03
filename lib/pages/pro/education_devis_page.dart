@@ -305,6 +305,7 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
 
   Map<String, dynamic> _tarifs = {};
   Map<String, dynamic> _tarifsBase = {};
+  List<Map<String, dynamic>> _tarifsExtra = []; // éducateur : prestations libres
   List<Map<String, dynamic>> _forfaits = [];
   List<Map<String, dynamic>> _animaux = [];
   String? _animalId;
@@ -349,8 +350,10 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
     final pid = User_Info.activeProfileId;
     try {
       final forfaitsTable = User_Info.catPro == 'garde' ? 'forfaits_garde' : 'forfaits_education';
+      final isEducation = User_Info.catPro == 'education';
+      final selectCols = isEducation ? '$_tarifsCol,tarifs_education_extra' : _tarifsCol;
       final tarifsRow = pid.isNotEmpty
-          ? await _supa.from('user_profiles').select(_tarifsCol).eq('id', pid).maybeSingle()
+          ? await _supa.from('user_profiles').select(selectCols).eq('id', pid).maybeSingle()
           : null;
       final forfaitsRows = await _supa.from(forfaitsTable)
           .select('id,nom,prix').eq('pro_uid', uid).eq('actif', true);
@@ -358,6 +361,11 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
         setState(() {
           _tarifsBase = (tarifsRow?[_tarifsCol] as Map?)?.cast<String, dynamic>() ?? {};
           _tarifs = _tarifsBase;
+          _tarifsExtra = [
+            for (final e in (tarifsRow?['tarifs_education_extra'] as List? ?? []))
+              if (e is Map && (e['label']?.toString().trim() ?? '').isNotEmpty)
+                {'label': e['label'].toString().trim(), 'prix': (e['prix'] as num?)?.toDouble() ?? 0},
+          ];
           _forfaits = List<Map<String, dynamic>>.from(forfaitsRows);
         });
       }
@@ -569,6 +577,11 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
               _quickAddChip('Cours collectif', _tarifs['cours_collectif'] as num),
             if (User_Info.catPro == 'education' && _tarifs['evaluation'] != null)
               _quickAddChip('Évaluation', _tarifs['evaluation'] as num),
+            if (User_Info.catPro == 'education' && (_tarifs['domicile_supplement'] as num? ?? 0) > 0)
+              _quickAddChip('Supplément à domicile', _tarifs['domicile_supplement'] as num),
+            if (User_Info.catPro == 'education')
+              for (final e in _tarifsExtra)
+                _quickAddChip(e['label'] as String, (e['prix'] as num?) ?? 0),
             if (User_Info.catPro == 'garde' && (_tarifs['promenade_30min'] as num? ?? 0) > 0)
               _quickAddChip('Promenade (30 min)', _tarifs['promenade_30min'] as num),
             if (User_Info.catPro == 'garde' && (_tarifs['promenade_1h'] as num? ?? 0) > 0)
