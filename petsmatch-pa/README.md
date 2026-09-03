@@ -24,11 +24,13 @@ immatriculation :
 | XML CII (Factur-X, profil EN 16931) | `src/facturx/cii.ts` | ✅ v1 |
 | Orchestration Factur-X (PDF/A-3) | `src/facturx/build.ts` | ✅ v1 (interface + impl HTTP + XML-only) |
 | Micro-service PDF/A-3 (`factur-x` Python) | `facturx-service/` | ✅ v1 (scaffold) |
-| Ingestion `factures` → `pa.invoices` | `src/ingest/` | à venir |
-| Machine à états (10 statuts) | `src/lifecycle/` | à venir |
-| Journal de preuve complet | `src/audit/` | à venir |
-| E-reporting B2C + paiements | `src/ereporting/` | à venir |
+| Accès base fiscale (`service_role`, schéma `pa`) | `src/db/client.ts` | ✅ v1 |
+| Ingestion `factures` → `pa.invoices` (+ lignes + ventilation) | `src/ingest/from-facture.ts` | ✅ v1 |
+| Machine à états (11 statuts) + garde optimiste | `src/lifecycle/state-machine.ts`, `src/lifecycle/transition.ts` | ✅ v1 |
+| Journal de preuve (append-only `pa.invoice_events`) | `src/audit/journal.ts` | ✅ v1 |
+| E-reporting B2C + paiements (capture en file) | `src/ereporting/capture.ts` | ✅ v1 |
 | Rendu PDF lisible de marque (serveur) | `src/pdf/` | à venir |
+| Transmission (PDP tierce / annuaire / immatriculation) | `src/transmit/` | à venir (décision T1 2027) |
 
 ### Architecture Factur-X
 
@@ -63,9 +65,25 @@ npm test
   à ajouter dans la capture fiscale.
 - **Adresse électronique de routage** de l'acheteur (annuaire) inconnue → bloque
   l'émission B2B tant qu'on n'a pas l'annuaire ou une PA tierce.
-- **Référence facture d'origine** (BT-25) : on n'a que l'`id` interne, pas le
-  numéro — à résoudre à l'ingestion.
+- **Référence facture d'origine** (BT-25) : résolue à l'ingestion
+  (`ingestFacture` lit `numero_affichage` de la facture parente).
 - **Devise** non stockée → défaut `EUR`.
+
+## Cycle de vie d'une facture
+
+```
+ingestFacture()  ─►  pa.invoices (statut « brouillon », lignes + ventilation + validation)
+                                 │  journal : creation/update, validation
+transitionInvoice(id, …)  ─────► brouillon → validee → emise → transmise
+                                 → mise_a_disposition → acceptee → payee
+                                 (+ rejetee / refusee / erreur_technique / annulee)
+                                 chaque pas : contrôlé (state-machine) puis journalisé
+captureB2cTransaction(id) ─────► pa.ereporting_queue (kind « transaction »)
+capturePayment(id, {…})   ─────► pa.ereporting_queue (kind « paiement »)
+```
+
+Une facture figée (statut ≠ `brouillon`) n'est plus jamais réécrite par
+l'ingestion — le contenu est inaltérable dès la validation.
 
 ## Base de données
 
