@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
@@ -5812,15 +5813,59 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
   }
 
   Future<void> _pickAndAdd() async {
-    final res = await FilePicker.pickFiles(
-        type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp']);
-    final path = res?.files.single.path;
-    if (path == null) return;
-    final file = File(path);
+    final source = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(height: 8),
+          Container(width: 36, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 12),
+          ListTile(
+            leading: const Icon(Icons.photo_camera_outlined, color: _kTealDoc),
+            title: const Text('Prendre une photo', style: TextStyle(fontFamily: 'Galey')),
+            onTap: () => Navigator.pop(ctx, 'camera'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined, color: _kTealDoc),
+            title: const Text('Photo depuis la galerie', style: TextStyle(fontFamily: 'Galey')),
+            onTap: () => Navigator.pop(ctx, 'gallery'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.picture_as_pdf_outlined, color: _kTealDoc),
+            title: const Text('Fichier / PDF', style: TextStyle(fontFamily: 'Galey')),
+            onTap: () => Navigator.pop(ctx, 'file'),
+          ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    File file;
+    if (source == 'file') {
+      final res = await FilePicker.pickFiles(
+          type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp']);
+      final path = res?.files.single.path;
+      if (path == null) return;
+      file = File(path);
+    } else {
+      final picked = await ImagePicker().pickImage(
+        source: source == 'camera' ? ImageSource.camera : ImageSource.gallery,
+        imageQuality: 80,
+        maxWidth: 2400,
+      );
+      if (picked == null) return;
+      file = File(picked.path);
+    }
 
     if (!mounted) return;
     String categorie = 'contrat';
-    final nomCtrl = TextEditingController(text: file.path.split(Platform.pathSeparator).last);
+    final nomCtrl = TextEditingController(
+        text: source == 'file' ? file.path.split(Platform.pathSeparator).last : '');
     DateTime? expiration;
 
     final ok = await showModalBottomSheet<bool>(
@@ -6052,10 +6097,19 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
       decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        leading: CircleAvatar(
-          backgroundColor: _kTealDoc.withValues(alpha: 0.1),
-          child: Icon(_docCatIcon(doc['categorie']?.toString()), color: _kTealDoc, size: 20),
-        ),
+        leading: (doc['type']?.toString().startsWith('image/') ?? false) && (doc['url']?.toString().isNotEmpty ?? false)
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: CachedNetworkImage(
+                  imageUrl: doc['url'].toString(),
+                  width: 40, height: 40, fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => Icon(_docCatIcon(doc['categorie']?.toString()), color: _kTealDoc, size: 20),
+                ),
+              )
+            : CircleAvatar(
+                backgroundColor: _kTealDoc.withValues(alpha: 0.1),
+                child: Icon(_docCatIcon(doc['categorie']?.toString()), color: _kTealDoc, size: 20),
+              ),
         title: Text(doc['nom']?.toString() ?? 'Document',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

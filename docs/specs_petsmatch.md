@@ -6667,4 +6667,24 @@ déployer le code — la colonne `statut` devient obligatoire dans les requêtes
 
 ---
 
+## 51. Onglet Documents de la fiche animal — photo + prise de vue (app) (session 2026-09-03)
+
+**Contexte** : l'onglet Documents ne permettait d'ajouter qu'un fichier via
+`FilePicker` (PDF/image, mais l'UX ouvrait le navigateur de fichiers). Besoin :
+pouvoir joindre une **photo depuis la galerie** et **prendre une photo** avec
+l'appareil.
+
+**Implémenté (app, `animal_fiche_particulier.dart` `_DocumentsTabPState._pickAndAdd`)** :
+feuille de choix de source en amont — « Prendre une photo » (`ImagePicker`
+`ImageSource.camera`), « Photo depuis la galerie » (`ImageSource.gallery`),
+« Fichier / PDF » (`FilePicker` inchangé). `imageQuality: 80`, `maxWidth: 2400`.
+La suite (feuille métadonnées nom/catégorie/expiration, upload `uploadDocument`,
+entrée `animaux.documents`, rappel agenda) est commune. Les documents `image/*`
+affichent une **miniature** `CachedNetworkImage` dans la liste (repli sur l'icône
+de catégorie). `image_picker` + permission CAMERA déjà présents.
+
+Site inchangé (`<input type=file accept>` accepte déjà les images).
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*
