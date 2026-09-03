@@ -870,9 +870,11 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             )),
           ],
 
-          // Avis (taxi animalier — système générique avis_pro, réutilisable
-          // par les futurs modules photographe/toiletteur)
-          if (_proData?['cat_pro'] == 'taxi_animalier') ...[
+          // Avis — système générique avis_pro (tous les pros de service).
+          if (const {
+            'taxi_animalier', 'education', 'sante', 'garde',
+            'toilettage', 'photographe', 'marechal_ferrant', 'veterinaire',
+          }.contains(_proData?['cat_pro'])) ...[
             const SizedBox(height: 12),
             _card(child: AvisProSection(proUid: widget.proUid, proProfileId: widget.profileTableId)),
           ],

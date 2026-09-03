@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, Suspense } from 'react';
+import { useEffect, useState, useRef, useCallback, Suspense } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -911,6 +911,9 @@ function ProDetailContent() {
                 </div>
               </div>
             )}
+            {['taxi_animalier', 'education', 'sante', 'garde', 'toilettage', 'photographe', 'marechal_ferrant', 'veterinaire'].includes(pro.cat_pro) && (
+              <AvisPro proUid={pro.uid} proProfileId={pro.profileTableId} clientUid={user?.uid ?? null} />
+            )}
           </>
         )}
 
@@ -1310,6 +1313,85 @@ function ProDetailContent() {
               )}
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Avis (système générique avis_pro) ───────────────────────────────────────
+function AvisPro({ proUid, proProfileId, clientUid }: { proUid: string; proProfileId?: string; clientUid: string | null }) {
+  const [avis, setAvis] = useState<{ id: string; note: number; commentaire: string | null; created_at: string; client_uid: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [note, setNote] = useState(0);
+  const [comment, setComment] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const reload = useCallback(async () => {
+    let q = supabase.from('avis_pro').select('id, note, commentaire, created_at, client_uid').eq('pro_uid', proUid);
+    if (proProfileId) q = q.eq('pro_profile_id', proProfileId);
+    const { data } = await q.order('created_at', { ascending: false });
+    setAvis((data ?? []) as typeof avis);
+    setLoading(false);
+  }, [proUid, proProfileId]);
+  useEffect(() => { reload(); }, [reload]);
+
+  const dejaNote = clientUid != null && avis.some(a => a.client_uid === clientUid);
+  const moyenne = avis.length ? avis.reduce((s, a) => s + a.note, 0) / avis.length : 0;
+
+  async function submit() {
+    if (note === 0 || !clientUid) return;
+    setSaving(true);
+    try {
+      const { data: prof } = await supabase.from('user_profiles').select('id').eq('uid', clientUid).eq('profile_type', 'particulier').maybeSingle();
+      await supabase.from('avis_pro').insert({
+        pro_uid: proUid, ...(proProfileId ? { pro_profile_id: proProfileId } : {}),
+        client_uid: clientUid, ...(prof?.id ? { client_profile_id: prof.id } : {}),
+        note, commentaire: comment.trim() || null,
+      });
+      setShowForm(false); setNote(0); setComment('');
+      reload();
+    } finally { setSaving(false); }
+  }
+
+  if (loading) return null;
+  return (
+    <div className="bg-white rounded-2xl p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-2">
+        <p className="font-bold text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Avis {avis.length > 0 && <span className="text-sm text-gray-500 font-normal">⭐ {moyenne.toFixed(1)} ({avis.length})</span>}
+        </p>
+        {clientUid && !dejaNote && (
+          <button onClick={() => setShowForm(v => !v)} className="text-xs font-semibold text-[#0C5C6C]">Laisser un avis</button>
+        )}
+      </div>
+      {showForm && (
+        <div className="border border-gray-100 rounded-xl p-3 mb-3 space-y-2">
+          <div className="flex gap-1">
+            {[1, 2, 3, 4, 5].map(n => (
+              <button key={n} onClick={() => setNote(n)} className="text-2xl leading-none">{n <= note ? '★' : '☆'}</button>
+            ))}
+          </div>
+          <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3} maxLength={500}
+            placeholder="Votre commentaire (optionnel)…" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+          <button onClick={submit} disabled={saving || note === 0}
+            className="w-full bg-[#0C5C6C] text-white rounded-xl py-2 text-sm font-semibold disabled:opacity-50">Publier l&apos;avis</button>
+        </div>
+      )}
+      {avis.length === 0 ? (
+        <p className="text-sm text-gray-400">Aucun avis pour l&apos;instant.</p>
+      ) : (
+        <div className="space-y-2">
+          {avis.map(a => (
+            <div key={a.id} className="border border-gray-100 rounded-xl p-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[#FFA000] text-sm">{'★'.repeat(a.note)}<span className="text-gray-200">{'★'.repeat(5 - a.note)}</span></span>
+                <span className="text-[11px] text-gray-400">{new Date(a.created_at).toLocaleDateString('fr-FR')}</span>
+              </div>
+              {a.commentaire && <p className="text-sm text-gray-700 mt-1">{a.commentaire}</p>}
+            </div>
+          ))}
         </div>
       )}
     </div>
