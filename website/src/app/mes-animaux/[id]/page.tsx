@@ -1138,6 +1138,7 @@ interface EduExercice {
   id: string; titre_snapshot: string; description_snapshot: string | null;
   media_snapshot: { type: string; url: string }[] | null;
   cadence: string | null; echeance: string | null; statut: string;
+  rappels_actifs?: boolean; rappels_mutes?: boolean;
 }
 interface EduRetour {
   id: string; attribution_id: string; note: string | null;
@@ -1167,7 +1168,7 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
         .select('id, libelle, categorie, statut, note')
         .eq('animal_id', animalId).order('ordre').order('created_at'),
       supabase.from('exercices_attribues')
-        .select('id, pro_uid, pro_profile_id, titre_snapshot, description_snapshot, media_snapshot, cadence, echeance, statut')
+        .select('id, pro_uid, pro_profile_id, titre_snapshot, description_snapshot, media_snapshot, cadence, echeance, statut, rappels_actifs, rappels_mutes')
         .eq('animal_id', animalId).order('assigned_at', { ascending: false }),
     ]).then(async ([r, o, e]) => {
       const exos = (e.data ?? []) as (EduExercice & { pro_uid?: string; pro_profile_id?: string })[];
@@ -1285,10 +1286,21 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
                 <div key={ex.id} className={`rounded-xl border p-3 ${done ? 'border-[#6E9E57]' : 'border-gray-100'}`}>
                   <div className="flex items-start justify-between gap-2">
                     <p className={`text-sm font-semibold ${done ? 'line-through text-gray-400' : 'text-gray-800'}`}>{ex.titre_snapshot}</p>
-                    <button onClick={() => toggleExerciceFait(ex)}
-                      className={`text-xs font-semibold shrink-0 ${done ? 'text-[#6E9E57]' : 'text-[#7B5EA7]'}`}>
-                      {done ? '✓ Fait' : 'Marquer fait'}
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {ex.rappels_actifs && (
+                        <button title={ex.rappels_mutes ? 'Réactiver les rappels' : 'Mettre les rappels en pause'}
+                          onClick={async () => {
+                            const next = !ex.rappels_mutes;
+                            setExercices(prev => prev.map(x => x.id === ex.id ? { ...x, rappels_mutes: next } : x));
+                            await supabase.from('exercices_attribues').update({ rappels_mutes: next }).eq('id', ex.id);
+                          }}
+                          className="text-sm">{ex.rappels_mutes ? '🔕' : '🔔'}</button>
+                      )}
+                      <button onClick={() => toggleExerciceFait(ex)}
+                        className={`text-xs font-semibold ${done ? 'text-[#6E9E57]' : 'text-[#7B5EA7]'}`}>
+                        {done ? '✓ Fait' : 'Marquer fait'}
+                      </button>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-1.5 mt-1">
                     {ex.cadence && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">{ex.cadence}</span>}

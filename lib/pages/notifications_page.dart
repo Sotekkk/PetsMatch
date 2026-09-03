@@ -320,7 +320,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
     // Suivi éducatif (rapport de séance, objectif atteint, exercices) — propriétaire
     if (type == 'education_rapport' || type == 'education_objectif_acquis' ||
-        type == 'education_exercice_assigne') {
+        type == 'education_exercice_assigne' || type == 'education_exercice_rappel') {
       final animalId  = data is Map ? data['animalId']  as String? : null;
       final animalNom = data is Map ? data['animalNom'] as String? : null;
       if (animalId != null) {
@@ -840,6 +840,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'education_objectif_acquis': return Icons.flag_outlined;
       case 'education_exercice_assigne': return Icons.fitness_center_outlined;
       case 'education_retour_exercice': return Icons.forum_outlined;
+      case 'education_exercice_rappel': return Icons.alarm_outlined;
       case 'cours_collectif_inscription': return Icons.groups_outlined;
       case 'devis_recu':             return Icons.request_quote_outlined;
       case 'devis_accepte':          return Icons.check_circle_outline;
@@ -905,6 +906,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'education_objectif_acquis': return const Color(0xFF6E9E57);
       case 'education_exercice_assigne': return const Color(0xFFEF6C00);
       case 'education_retour_exercice': return const Color(0xFFEF6C00);
+      case 'education_exercice_rappel': return const Color(0xFFEF6C00);
       case 'cours_collectif_inscription': return const Color(0xFF7B5EA7);
       case 'devis_recu':             return const Color(0xFF0C5C6C);
       case 'devis_accepte':          return const Color(0xFF6E9E57);

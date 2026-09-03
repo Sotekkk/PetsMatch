@@ -416,6 +416,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
     final cadenceCtrl = TextEditingController();
     DateTime? echeance;
     String? objectifId;
+    bool rappels = false;
 
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
@@ -477,7 +478,18 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                 onChanged: (v) => setSheet(() => objectifId = v),
               ),
             ],
-            const SizedBox(height: 16),
+            const SizedBox(height: 4),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: rappels,
+              activeThumbColor: _kOrange,
+              onChanged: (v) => setSheet(() => rappels = v),
+              title: const Text('Rappel quotidien à la famille',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+              subtitle: Text('Une notif chaque matin tant que l\'exercice n\'est pas fait',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+            ),
+            const SizedBox(height: 8),
             SizedBox(width: double.infinity, child: ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: ElevatedButton.styleFrom(
@@ -509,6 +521,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         'media_snapshot': e['media'] ?? [],
         if (cadenceCtrl.text.trim().isNotEmpty) 'cadence': cadenceCtrl.text.trim(),
         if (echeance != null) 'echeance': echeance!.toIso8601String().substring(0, 10),
+        'rappels_actifs': rappels,
       }).toList();
       await _supa.from('exercices_attribues').insert(rows);
       await _notifyOwner('education_exercice_assigne',
@@ -526,6 +539,18 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
       await _supa.from('exercices_attribues').delete().eq('id', ex['id']);
       await _load();
     } catch (_) {}
+  }
+
+  Future<void> _toggleRappel(Map<String, dynamic> ex) async {
+    final next = ex['rappels_actifs'] != true;
+    setState(() => ex['rappels_actifs'] = next);
+    try {
+      await _supa.from('exercices_attribues')
+          .update({'rappels_actifs': next, 'updated_at': DateTime.now().toIso8601String()})
+          .eq('id', ex['id']);
+    } catch (_) {
+      _load();
+    }
   }
 
   static const _kRessenti = {
@@ -753,6 +778,15 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                       _pill('avant le ${_frDate(ex['echeance'].toString())}', const Color(0xFFD5573B)),
                   ]),
                 ])),
+                IconButton(
+                  icon: Icon(
+                    ex['rappels_actifs'] == true ? Icons.notifications_active : Icons.notifications_none,
+                    size: 18,
+                    color: ex['rappels_actifs'] == true ? _kOrange : Colors.grey,
+                  ),
+                  tooltip: 'Rappel quotidien',
+                  onPressed: () => _toggleRappel(ex),
+                ),
                 IconButton(
                   icon: const Icon(Icons.close, size: 18, color: Colors.grey),
                   onPressed: () => _retirerExercice(ex),

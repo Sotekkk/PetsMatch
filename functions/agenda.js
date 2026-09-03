@@ -588,3 +588,84 @@ async function sendOverdueMiseBasReminders() {
 
     return sent;
 }
+
+/**
+ * Rappel quotidien (8h Paris) à la famille pour chaque exercice d'éducation
+ * attribué avec rappels actifs, tant qu'il n'est pas fait/abandonné et que
+ * l'échéance n'est pas dépassée. Dédupe par jour (notifs_sent :
+ * exo_reminder_<id>_<AAAA-MM-JJ>) ; coupe si exo_reminder_muted_<id> existe.
+ */
+exports.sendExerciceReminders = functions
+    .region("europe-west1")
+    .pubsub.schedule("0 8 * * *")
+    .timeZone("Europe/Paris")
+    .onRun(async () => {
+        const parisNow = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Paris"}));
+        const y = parisNow.getFullYear();
+        const mo = String(parisNow.getMonth() + 1).padStart(2, "0");
+        const da = String(parisNow.getDate()).padStart(2, "0");
+        const todayStr = `${y}-${mo}-${da}`;
+        let sent = 0;
+
+        const exos = await supabaseSelect("exercices_attribues",
+            "rappels_actifs=eq.true&rappels_mutes=eq.false&" +
+            "statut=in.(a_faire,en_cours)&" +
+            `or=(echeance.is.null,echeance.gte.${todayStr})`);
+
+        for (const ex of exos) {
+            const dedupKey = `exo_reminder_${ex.id}_${todayStr}`;
+            const existing = await supabaseSelect("notifs_sent",
+                `key=eq.${encodeURIComponent(dedupKey)}`);
+            if (Array.isArray(existing) && existing.length > 0) continue;
+
+            let ownerUid = ex.owner_uid;
+            let animalNom = null;
+            const animals = await supabaseSelect("animaux", `id=eq.${ex.animal_id}`);
+            if (animals[0]) {
+                animalNom = animals[0].nom;
+                if (!ownerUid) {
+                    ownerUid = animals[0].uid_proprietaire || animals[0].uid_eleveur;
+                }
+            }
+            if (!ownerUid) continue;
+
+            const titreExo = ex.titre_snapshot || "un exercice";
+            const title = `🏋️ Exercice — ${animalNom || "votre animal"}`;
+            const body = `Pense à faire « ${titreExo} » aujourd'hui` +
+                (ex.cadence ? ` (${ex.cadence}).` : ".");
+
+            const pushed = await sendPush(ownerUid, title, body, {
+                type: "education_exercice_rappel",
+                animalId: String(ex.animal_id),
+                url: `/mes-animaux/${ex.animal_id}?tab=education`,
+            });
+            if (pushed) sent++;
+
+            try {
+                await supabaseInsert("notifications", [{
+                    uid: ownerUid,
+                    type: "education_exercice_rappel",
+                    title,
+                    body,
+                    data: {
+                        animalId: String(ex.animal_id),
+                        animalNom: animalNom || "",
+                        url: `/mes-animaux/${ex.animal_id}?tab=education`,
+                    },
+                    read: false,
+                    ...(ex.owner_profile_id ? {profile_id: ex.owner_profile_id} : {}),
+                }]);
+            } catch (e) {
+                console.error(`notifications insert error (exo ${ex.id}):`, e.message);
+            }
+            try {
+                await supabaseInsert("notifs_sent",
+                    [{key: dedupKey, sent_at: new Date().toISOString()}]);
+            } catch (e) {
+                console.error(`notifs_sent insert error (${dedupKey}):`, e.message);
+            }
+        }
+
+        console.log(`sendExerciceReminders: ${sent} rappels envoyés`);
+        return null;
+    });

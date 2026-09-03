@@ -38,6 +38,7 @@ exports.notifyOwnerVetEntry = vetNotifFunctions.notifyOwnerVetEntry;
 exports.sendRdvReminders = rdvRemindersFunctions.sendRdvReminders;
 exports.notifyProNewRdv = agendaFunctions.notifyProNewRdv;
 exports.sendMiseBasReminders = agendaFunctions.sendMiseBasReminders;
+exports.sendExerciceReminders = agendaFunctions.sendExerciceReminders;
 
 // Chaleurs — alertes quotidiennes éleveurs
 exports.sendChaleursNotifications = chaleursFunctions.sendChaleursNotifications;

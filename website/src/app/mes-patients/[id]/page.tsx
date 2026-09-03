@@ -63,7 +63,7 @@ interface EducObjectif {
 }
 interface EducExercice { id: string; titre: string; description: string | null; media: unknown; }
 interface EducAttribue {
-  id: string; titre_snapshot: string; cadence: string | null; echeance: string | null; statut: string;
+  id: string; titre_snapshot: string; cadence: string | null; echeance: string | null; statut: string; rappels_actifs: boolean;
 }
 interface EducRetour {
   id: string; attribution_id: string; note: string | null;
@@ -173,7 +173,7 @@ export default function PatientDetailPage() {
   const [retours, setRetours] = useState<Record<string, EducRetour[]>>({});
   const [replyFor, setReplyFor] = useState<string | null>(null);
   const [replyNote, setReplyNote] = useState('');
-  const [attrPicker, setAttrPicker] = useState<{ ids: Set<string>; cadence: string; echeance: string } | null>(null);
+  const [attrPicker, setAttrPicker] = useState<{ ids: Set<string>; cadence: string; echeance: string; rappels: boolean } | null>(null);
   const [savingAttr, setSavingAttr] = useState(false);
   const [showAddRapport, setShowAddRapport] = useState(false);
   const [rapportContenu, setRapportContenu] = useState('');
@@ -268,7 +268,7 @@ export default function PatientDetailPage() {
         isFemelle ? supabase.from('gestations').select('*').eq('animal_id', animalId).order('date', { ascending: false }) : Promise.resolve({ data: [] }),
         supabase.from('education_progression').select('id, date_seance, contenu, exercices_conseilles').eq('animal_id', animalId).order('date_seance', { ascending: false }),
         supabase.from('education_objectifs').select('id, libelle, categorie, statut, note, ordre').eq('animal_id', animalId).order('ordre').order('created_at'),
-        supabase.from('exercices_attribues').select('id, titre_snapshot, cadence, echeance, statut').eq('animal_id', animalId).order('assigned_at', { ascending: false }),
+        supabase.from('exercices_attribues').select('id, titre_snapshot, cadence, echeance, statut, rappels_actifs').eq('animal_id', animalId).order('assigned_at', { ascending: false }),
       ]);
 
       const get = <T,>(i: number): T[] => {
@@ -520,7 +520,7 @@ export default function PatientDetailPage() {
     const { data } = await supabase.from('exercices_bibliotheque')
       .select('id, titre, description, media').eq('pro_uid', user.uid).eq('actif', true).order('created_at', { ascending: false });
     setBiblio((data ?? []) as EducExercice[]);
-    setAttrPicker({ ids: new Set(), cadence: '', echeance: '' });
+    setAttrPicker({ ids: new Set(), cadence: '', echeance: '', rappels: false });
   }
 
   async function attribuerExercices() {
@@ -535,6 +535,7 @@ export default function PatientDetailPage() {
         titre_snapshot: b.titre, description_snapshot: b.description, media_snapshot: b.media ?? [],
         cadence: attrPicker.cadence.trim() || null,
         echeance: attrPicker.echeance || null,
+        rappels_actifs: attrPicker.rappels,
       })));
       if (ownerUid) {
         const proNom = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || 'Votre éducateur';
@@ -550,7 +551,7 @@ export default function PatientDetailPage() {
       }
       setAttrPicker(null);
       const { data } = await supabase.from('exercices_attribues')
-        .select('id, titre_snapshot, cadence, echeance, statut').eq('animal_id', animalId).order('assigned_at', { ascending: false });
+        .select('id, titre_snapshot, cadence, echeance, statut, rappels_actifs').eq('animal_id', animalId).order('assigned_at', { ascending: false });
       setAttribues((data ?? []) as EducAttribue[]);
     } finally {
       setSavingAttr(false);
@@ -1054,6 +1055,11 @@ export default function PatientDetailPage() {
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mt-1" />
                 <input type="date" value={attrPicker.echeance} onChange={e => setAttrPicker(p => p ? { ...p, echeance: e.target.value } : p)}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                <label className="flex items-center gap-2 text-sm text-gray-600">
+                  <input type="checkbox" checked={attrPicker.rappels}
+                    onChange={e => setAttrPicker(p => p ? { ...p, rappels: e.target.checked } : p)} />
+                  Rappel quotidien à la famille tant que non fait
+                </label>
                 <div className="flex gap-2 pt-1">
                   <button onClick={() => setAttrPicker(null)} className="flex-1 border border-gray-200 rounded-xl py-2 text-sm text-gray-500">Annuler</button>
                   <button onClick={attribuerExercices} disabled={savingAttr || attrPicker.ids.size === 0}
@@ -1079,7 +1085,18 @@ export default function PatientDetailPage() {
                         </p>
                       </div>
                       {hasReportAccess && (
-                        <button onClick={() => retirerAttribue(a.id)} className="text-gray-300 hover:text-red-400 text-sm shrink-0">🗑</button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button title="Rappel quotidien"
+                            onClick={async () => {
+                              const next = !a.rappels_actifs;
+                              setAttribues(prev => prev.map(x => x.id === a.id ? { ...x, rappels_actifs: next } : x));
+                              await supabase.from('exercices_attribues').update({ rappels_actifs: next }).eq('id', a.id);
+                            }}
+                            className={`text-sm ${a.rappels_actifs ? 'text-[#EF6C00]' : 'text-gray-300'}`}>
+                            {a.rappels_actifs ? '🔔' : '🔕'}
+                          </button>
+                          <button onClick={() => retirerAttribue(a.id)} className="text-gray-300 hover:text-red-400 text-sm">🗑</button>
+                        </div>
                       )}
                     </div>
                     {(retours[a.id] ?? []).map(rt => (

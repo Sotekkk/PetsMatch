@@ -6608,6 +6608,14 @@ class _EducationTabPState extends State<_EducationTabP> {
     } catch (_) {}
   }
 
+  Future<void> _toggleRappelMute(Map<String, dynamic> ex) async {
+    final next = ex['rappels_mutes'] != true;
+    setState(() => ex['rappels_mutes'] = next);
+    try {
+      await _supa.from('exercices_attribues').update({'rappels_mutes': next}).eq('id', ex['id']);
+    } catch (_) {}
+  }
+
   Widget _exerciceCard(Map<String, dynamic> ex) {
     final media = (ex['media_snapshot'] is List)
         ? (ex['media_snapshot'] as List).whereType<Map>().toList() : const [];
@@ -6623,6 +6631,14 @@ class _EducationTabPState extends State<_EducationTabP> {
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13,
                   decoration: done ? TextDecoration.lineThrough : null,
                   color: done ? Colors.grey.shade500 : const Color(0xFF1F2A2E)))),
+          if (ex['rappels_actifs'] == true)
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              icon: Icon(ex['rappels_mutes'] == true ? Icons.notifications_off : Icons.notifications_active,
+                  size: 17, color: ex['rappels_mutes'] == true ? Colors.grey : _kPurpleEdu),
+              tooltip: ex['rappels_mutes'] == true ? 'Réactiver les rappels' : 'Mettre les rappels en pause',
+              onPressed: () => _toggleRappelMute(ex),
+            ),
           TextButton(
             onPressed: () => _toggleExerciceFait(ex),
             child: Text(done ? '✓ Fait' : 'Marquer fait',
