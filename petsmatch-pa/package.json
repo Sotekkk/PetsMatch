@@ -1,0 +1,23 @@
+{
+  "name": "petsmatch-pa",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Service de facturation électronique PetsMatch (plateforme agréée)",
+  "type": "module",
+  "engines": {
+    "node": "20.x"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.106.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.6.0"
+  }
+}
