@@ -1930,6 +1930,12 @@ export default function AnimalFichePage() {
   );
 
   const [animal, setAnimal] = useState<Animal>({ id:'', espece:'chien', sexe:'male' });
+  // Recherche d'un contact PetsMatch pour Contacts urgence
+  const [showContactSearch, setShowContactSearch] = useState(false);
+  const [contactQuery, setContactQuery] = useState('');
+  const [contactResults, setContactResults] = useState<{ nom: string; tel: string }[]>([]);
+  const [contactSearching, setContactSearching] = useState(false);
+  const [contactSearchDone, setContactSearchDone] = useState(false);
   // Propriétaire courant selon animaux_proprietes (date_fin IS NULL) — source
   // de vérité pour la propriété (voir migration_fix_animaux_proprietes_
   // unique_constraint.sql), contrairement à animaux.uid_eleveur/uid_
@@ -2825,6 +2831,52 @@ export default function AnimalFichePage() {
 
   const set = (k: keyof Animal, v: unknown) => setAnimal(p => ({ ...p, [k]: v }));
 
+  // Recherche d'un contact PetsMatch (Contacts urgence) — alternative à la
+  // saisie manuelle, pas un remplacement : le contact ajouté (nom + tel)
+  // reste ensuite modifiable comme n'importe quel contact saisi à la main.
+  async function searchContactPetsMatch() {
+    const q = contactQuery.trim();
+    if (!q) return;
+    setContactSearching(true);
+    setContactSearchDone(false);
+    try {
+      const isEmail = q.includes('@');
+      let rows: { firstname?: string; lastname?: string; phone_number?: string }[] = [];
+      if (isEmail) {
+        const { data: userRow } = await supabase.from('users').select('uid, email')
+            .eq('email', q.toLowerCase()).maybeSingle();
+        if (userRow) {
+          const { data: cp } = await supabase.from('user_profiles')
+              .select('firstname, lastname, phone_number')
+              .eq('uid', userRow.uid).eq('is_main', true).maybeSingle();
+          rows = cp ? [cp] : [];
+        }
+      } else {
+        const { data } = await supabase.from('user_profiles')
+            .select('firstname, lastname, phone_number')
+            .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%`)
+            .eq('is_main', true)
+            .limit(8);
+        rows = data ?? [];
+      }
+      setContactResults(rows.map(r => ({
+        nom: `${r.firstname ?? ''} ${r.lastname ?? ''}`.trim() || 'Utilisateur PetsMatch',
+        tel: r.phone_number ?? '',
+      })));
+    } finally {
+      setContactSearching(false);
+      setContactSearchDone(true);
+    }
+  }
+
+  function addContactFromSearch(c: { nom: string; tel: string }) {
+    set('contacts_urgence', [...(animal.contacts_urgence ?? []), c]);
+    setShowContactSearch(false);
+    setContactQuery('');
+    setContactResults([]);
+    setContactSearchDone(false);
+  }
+
   if (loading) {
     return <div className="flex items-center justify-center py-32"><div className="w-8 h-8 border-2 border-[#0C5C6C] border-t-transparent rounded-full animate-spin"/></div>;
   }
@@ -3439,10 +3491,43 @@ export default function AnimalFichePage() {
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-[#1F2A2E] text-sm uppercase tracking-wide" style={{ fontFamily:'Galey,sans-serif' }}>Contacts urgence</h3>
                 {editing && (
-                  <button onClick={()=>set('contacts_urgence', [...(animal.contacts_urgence??[]), {nom:'',tel:''}])}
-                    className="text-xs text-[#0C5C6C] font-semibold">+ Ajouter</button>
+                  <div className="flex items-center gap-3">
+                    <button onClick={()=>{ setShowContactSearch(v=>!v); setContactResults([]); setContactSearchDone(false); }}
+                      className="text-xs text-[#0C5C6C] font-semibold">🔍 Rechercher</button>
+                    <button onClick={()=>set('contacts_urgence', [...(animal.contacts_urgence??[]), {nom:'',tel:''}])}
+                      className="text-xs text-[#0C5C6C] font-semibold">+ Ajouter</button>
+                  </div>
                 )}
               </div>
+              {editing && showContactSearch && (
+                <div className="border border-gray-200 rounded-xl p-3 space-y-2 bg-gray-50">
+                  <p className="text-xs text-gray-500">Nom, prénom ou email d&apos;un utilisateur PetsMatch.</p>
+                  <div className="flex gap-2">
+                    <input value={contactQuery} onChange={e=>setContactQuery(e.target.value)}
+                      onKeyDown={e=>{ if (e.key==='Enter') searchContactPetsMatch(); }}
+                      placeholder="Nom, prénom ou email…"
+                      className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white" />
+                    <button onClick={searchContactPetsMatch} disabled={contactSearching}
+                      className="px-3 py-2 rounded-xl bg-[#0C5C6C] text-white text-sm font-semibold disabled:opacity-50">
+                      {contactSearching ? '…' : 'Chercher'}
+                    </button>
+                  </div>
+                  {contactResults.map((r,i) => (
+                    <button key={i} onClick={()=>addContactFromSearch(r)}
+                      className="w-full flex items-center gap-2 border border-gray-200 rounded-xl px-3 py-2 bg-white text-left hover:bg-gray-50">
+                      <span className="text-[#0C5C6C]">👤</span>
+                      <span className="flex-1">
+                        <span className="block text-sm font-semibold text-[#1F2A2E]">{r.nom}</span>
+                        {r.tel && <span className="block text-xs text-gray-400">{r.tel}</span>}
+                      </span>
+                      <span className="text-gray-400">›</span>
+                    </button>
+                  ))}
+                  {contactSearchDone && contactResults.length === 0 && (
+                    <p className="text-sm text-gray-400">Aucun utilisateur trouvé.</p>
+                  )}
+                </div>
+              )}
               {(animal.contacts_urgence ?? []).map((c,i) => (
                 <div key={i} className="flex gap-2 items-center">
                   {editing ? (

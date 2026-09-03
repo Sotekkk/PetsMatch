@@ -1519,13 +1519,23 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           const Text('Contacts urgence',
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
                   fontSize: 14, color: Color(0xFF1F2A2E))),
-          TextButton.icon(
-            onPressed: () => setState(() => _contactsUrgence.add(_ContactUrgenceP())),
-            icon: const Icon(Icons.add, size: 16, color: _green),
-            label: const Text('Ajouter',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _green)),
-            style: TextButton.styleFrom(padding: EdgeInsets.zero),
-          ),
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            TextButton.icon(
+              onPressed: _searchAndAddContactPetsMatch,
+              icon: const Icon(Icons.search, size: 16, color: _teal),
+              label: const Text('Rechercher',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal)),
+              style: TextButton.styleFrom(padding: EdgeInsets.zero),
+            ),
+            const SizedBox(width: 12),
+            TextButton.icon(
+              onPressed: () => setState(() => _contactsUrgence.add(_ContactUrgenceP())),
+              icon: const Icon(Icons.add, size: 16, color: _green),
+              label: const Text('Ajouter',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _green)),
+              style: TextButton.styleFrom(padding: EdgeInsets.zero),
+            ),
+          ]),
         ]),
         if (_contactsUrgence.isEmpty)
           const Padding(
@@ -1585,6 +1595,28 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         }),
       ]),
     );
+  }
+
+  // Recherche un utilisateur PetsMatch (nom/prénom ou email) à ajouter comme
+  // contact urgence — alternative à la saisie manuelle, pas un remplacement :
+  // le contact ajouté (nom + téléphone) reste ensuite modifiable comme
+  // n'importe quel contact saisi à la main.
+  Future<void> _searchAndAddContactPetsMatch() async {
+    final result = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => const _ContactPetsMatchSearchSheet(),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _contactsUrgence.add(_ContactUrgenceP(
+        nomVal: result['nom'] as String? ?? '',
+        telVal: result['tel'] as String? ?? '',
+      ));
+    });
   }
 
   Future<void> _openRaceBreedPicker(List<String> breeds) async {
@@ -2838,6 +2870,149 @@ class _SRappelRecurrent extends StatelessWidget {
                 onPressed: onAddHeure),
           ]),
         ],
+      ]),
+    );
+  }
+}
+
+// ── Recherche d'un contact PetsMatch (Contacts urgence) ────────────────────────
+// Alternative à la saisie manuelle : cherche un utilisateur PetsMatch par
+// nom/prénom ou email (même logique que reservation_sheet.dart / cession_sheet.dart
+// côté éleveur) et retourne {nom, tel} à ajouter comme contact.
+class _ContactPetsMatchSearchSheet extends StatefulWidget {
+  const _ContactPetsMatchSearchSheet();
+  @override
+  State<_ContactPetsMatchSearchSheet> createState() => _ContactPetsMatchSearchSheetState();
+}
+
+class _ContactPetsMatchSearchSheetState extends State<_ContactPetsMatchSearchSheet> {
+  static const _teal = Color(0xFF0C5C6C);
+  final _supa = Supabase.instance.client;
+  final _searchCtrl = TextEditingController();
+  bool _searching = false;
+  bool _searchDone = false;
+  List<Map<String, dynamic>> _results = [];
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _search() async {
+    final q = _searchCtrl.text.trim();
+    if (q.isEmpty) return;
+    setState(() { _searching = true; _searchDone = false; _results = []; });
+    try {
+      final isEmail = q.contains('@');
+      List<Map<String, dynamic>> rows;
+      if (isEmail) {
+        final userRow = await _supa.from('users').select('uid, email')
+            .eq('email', q.toLowerCase()).maybeSingle();
+        if (userRow == null) {
+          rows = [];
+        } else {
+          final cp = await _supa.from('user_profiles')
+              .select('uid, firstname, lastname, phone_number')
+              .eq('uid', userRow['uid'] as String).eq('is_main', true).maybeSingle();
+          rows = cp != null ? [Map<String, dynamic>.from(cp)] : [];
+        }
+      } else {
+        final cps = await _supa
+            .from('user_profiles')
+            .select('uid, firstname, lastname, phone_number')
+            .or('firstname.ilike.%$q%,lastname.ilike.%$q%')
+            .eq('is_main', true)
+            .limit(8);
+        rows = (cps as List).map((cp) => Map<String, dynamic>.from(cp)).toList();
+      }
+      final mapped = rows.map((r) {
+        final nom = '${r['firstname'] ?? ''} ${r['lastname'] ?? ''}'.trim();
+        return {...r, 'nom': nom.isEmpty ? 'Utilisateur PetsMatch' : nom};
+      }).toList();
+      if (mounted) setState(() => _results = mapped);
+    } finally {
+      if (mounted) setState(() { _searching = false; _searchDone = true; });
+    }
+  }
+
+  void _select(Map<String, dynamic> r) {
+    Navigator.pop(context, {'nom': r['nom'], 'tel': (r['phone_number'] as String?) ?? ''});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(left: 20, right: 20, top: 24,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 24),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('Rechercher un contact PetsMatch',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+        ]),
+        const SizedBox(height: 4),
+        Text('Nom, prénom ou email d\'un utilisateur PetsMatch.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: TextField(
+            controller: _searchCtrl,
+            autofocus: true,
+            onSubmitted: (_) => _search(),
+            decoration: InputDecoration(
+              hintText: 'Nom, prénom ou email…',
+              hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+              prefixIcon: const Icon(Icons.search, size: 18, color: Colors.grey),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: _teal, width: 2)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            ),
+          )),
+          const SizedBox(width: 8),
+          ElevatedButton(
+            onPressed: _searching ? null : _search,
+            style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            child: _searching
+                ? const SizedBox(width: 16, height: 16,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Text('Chercher'),
+          ),
+        ]),
+        const SizedBox(height: 12),
+        if (_results.isNotEmpty)
+          ..._results.map((r) => GestureDetector(
+            onTap: () => _select(r),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Row(children: [
+                const Icon(Icons.person_outline, color: _teal, size: 16),
+                const SizedBox(width: 8),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(r['nom'] as String,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, fontFamily: 'Galey')),
+                  if ((r['phone_number'] as String?)?.isNotEmpty == true)
+                    Text(r['phone_number'] as String, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                ])),
+                const Icon(Icons.chevron_right, size: 16, color: Colors.grey),
+              ]),
+            ),
+          )),
+        if (_searchDone && _results.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200)),
+            child: const Text('Aucun utilisateur trouvé.', style: TextStyle(fontSize: 13, color: Colors.grey)),
+          ),
       ]),
     );
   }
