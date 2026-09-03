@@ -10,6 +10,7 @@
 
 import { createHash } from 'node:crypto';
 import { buildCii } from './cii.js';
+import { renderInvoicePdf } from '../pdf/invoice-pdf.js';
 import type { En16931Invoice } from '../model/en16931.js';
 
 export type FacturxLevel = 'en16931' | 'basic' | 'minimum';
@@ -26,8 +27,13 @@ export interface FacturxBuilder {
 }
 
 export interface BuildOptions {
-  /** PDF lisible source (le rendu de marque PetsMatch). Sinon rendu minimal. */
+  /**
+   * PDF lisible source. Si absent, `HttpFacturxBuilder` génère le rendu de
+   * marque PetsMatch (`renderInvoicePdf`) ; passer `brandedPdf: false` pour
+   * laisser le micro-service produire son rendu minimal de repli.
+   */
   sourcePdf?: Uint8Array;
+  brandedPdf?: boolean;
   level?: FacturxLevel;
   parentInvoiceNumber?: string;
 }
@@ -42,11 +48,14 @@ export class HttpFacturxBuilder implements FacturxBuilder {
     const level = opts.level ?? 'en16931';
     const xml = buildCii(inv);
 
+    const sourcePdf =
+      opts.sourcePdf ?? (opts.brandedPdf === false ? undefined : await renderInvoicePdf(inv));
+
     const form = new FormData();
     form.append('xml', new Blob([xml], { type: 'application/xml' }), 'factur-x.xml');
     form.append('level', level);
-    if (opts.sourcePdf) {
-      form.append('pdf', new Blob([opts.sourcePdf], { type: 'application/pdf' }), 'source.pdf');
+    if (sourcePdf) {
+      form.append('pdf', new Blob([sourcePdf], { type: 'application/pdf' }), 'source.pdf');
     }
 
     const res = await fetch(new URL('/facturx', this.serviceUrl), { method: 'POST', body: form });

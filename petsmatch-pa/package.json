@@ -13,7 +13,9 @@
     "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.106.1"
+    "@supabase/supabase-js": "^2.106.1",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8"
   },
   "devDependencies": {
     "@types/node": "^20.19.0",

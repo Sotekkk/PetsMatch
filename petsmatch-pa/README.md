@@ -29,25 +29,28 @@ immatriculation :
 | Machine à états (11 statuts) + garde optimiste | `src/lifecycle/state-machine.ts`, `src/lifecycle/transition.ts` | ✅ v1 |
 | Journal de preuve (append-only `pa.invoice_events`) | `src/audit/journal.ts` | ✅ v1 |
 | E-reporting B2C + paiements (capture en file) | `src/ereporting/capture.ts` | ✅ v1 |
-| Rendu PDF lisible de marque (serveur) | `src/pdf/` | à venir |
+| Rendu PDF lisible de marque (serveur) | `src/pdf/invoice-pdf.ts` | ✅ v1 (jsPDF, alimenté par le modèle normalisé) |
 | Transmission (PDP tierce / annuaire / immatriculation) | `src/transmit/` | à venir (décision T1 2027) |
+| MFA comptes pro (§7) | — | à venir |
 
 ### Architecture Factur-X
 
 ```
-En16931Invoice ──► buildCii() ──────────► XML CII (Node, src/facturx/cii.ts)
+En16931Invoice ─┬─► buildCii() ──────────► XML CII       (Node, src/facturx/cii.ts)
+                └─► renderInvoicePdf() ──► PDF lisible   (Node, src/pdf/invoice-pdf.ts)
                           │
                           ▼
        FacturxBuilder.build()  ──HTTP──►  facturx-service (Python)
-       (src/facturx/build.ts)             = PDF lisible + XML → PDF/A-3
+       (src/facturx/build.ts)             PDF lisible + XML → PDF/A-3
                           │
                           ▼
        { pdf: PDF/A-3, xml, sha256, profile }
 ```
 
-Le XML (logique métier) est en Node ; seul l'emballage PDF/A-3 est délégué au
-micro-service Python (lib de référence `factur-x`), conformément au repli prévu
-§12 du cahier des charges.
+Le XML **et** le PDF lisible (même source : le modèle normalisé) sont produits en
+Node ; seul l'emballage PDF/A-3 est délégué au micro-service Python (lib de
+référence `factur-x`), conformément au repli prévu §12. Sans PDF source, le
+micro-service produit un rendu minimal de repli.
 
 ## Lancer
 
@@ -95,10 +98,10 @@ existant (`../supabase/migration_pa_*.sql`). Aucune clé étrangère vers
 
 ## Stack
 
-Node / TypeScript (aligné sur `website/`). Génération PDF/A-3 : `pdf-lib` +
-gabarit XML CII construit à la main contre EN 16931. Repli possible sur un
-micro-service Python (`factur-x`) si la conformité PDF/A-3 se révèle trop
-coûteuse en Node.
+Node / TypeScript (aligné sur `website/`). XML CII construit à la main contre
+EN 16931 ; PDF lisible via `jsPDF` (+ `jspdf-autotable`), même gabarit que l'app
+Flutter et `/facture/[token]`. Emballage PDF/A-3 délégué au micro-service Python
+`factur-x` (`facturx-service/`).
 
 ## Extraction
 
