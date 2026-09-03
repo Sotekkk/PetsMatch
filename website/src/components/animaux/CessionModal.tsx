@@ -546,10 +546,14 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
       // la liste alors que la fiche permet encore d'annuler/recéder.
       const acqProfile: { id: string } | null = acqProfileId ? { id: acqProfileId } : null;
 
-      // Cession directe (aucun document) → transfert de propriété immédiat
+      // Cession directe (aucun document) → transfert de propriété immédiat.
+      // Met fin à TOUTE la copropriété (principal + secondaires) et supprime
+      // les invitations en attente.
       if (finaliseNow && acqUid) {
         await supabase.from('animaux_proprietes').update({ date_fin: dateCession })
-          .eq('animal_id', animal.id).eq('uid_proprio', uid).is('date_fin', null);
+          .eq('animal_id', animal.id).eq('statut', 'actif').is('date_fin', null);
+        await supabase.from('animaux_proprietes').delete()
+          .eq('animal_id', animal.id).eq('statut', 'invite');
         await supabase.from('animaux_proprietes').upsert({
           animal_id:          animal.id,
           uid_proprio:        acqUid,

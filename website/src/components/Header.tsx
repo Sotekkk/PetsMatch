@@ -605,6 +605,16 @@ function getNotifUrl(n: Notif): string | null {
       return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
     case 'cession_revoquee':
       return null;
+    case 'coproprio_invitation':
+    case 'coproprio_invitation_acceptee':
+    case 'coproprio_invitation_refusee':
+    case 'coproprio_retire':
+    case 'coproprio_quitte':
+    case 'coproprio_transfert_propose':
+    case 'coproprio_transfert_accepte': {
+      const aid = d.animal_id ?? d.animalId;
+      return aid ? `/mes-animaux/${aid}` : '/mes-animaux';
+    }
     case 'sterilisation_declaree':
     case 'sterilisation_a_valider':
     case 'sterilisation_rappel':
@@ -1165,6 +1175,7 @@ export default function Header() {
                           onClick={handleClick}>
                           <div className="w-9 h-9 rounded-full bg-amber-50 flex items-center justify-center text-lg flex-shrink-0">
                             {n.type === 'alerte_perdu' ? '🔍'
+                              : n.type?.startsWith('coproprio_') ? '👥'
                               : n.type === 'like' ? '❤️'
                               : n.type === 'chaleur' ? '🌸'
                               : n.type === 'rappel_vaccin' ? '💉'

@@ -65,6 +65,9 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
   bool _loadingAnimaux = false;
   Map<String, String> _cedantNames = {};
 
+  // Invitations de co-propriété reçues (statut='invite')
+  List<Map<String, dynamic>> _invitationsCoproprio = [];
+
   // Perdus tab
   List<Map<String, dynamic>> _alertes = [];
   bool _loadingAlertes = false;
@@ -287,20 +290,23 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
         if ((check as List).isNotEmpty) {
           ownRows = await _supa
               .from('animaux_proprietes')
-              .select('animal_id, date_fin')
+              .select('animal_id, date_fin, role_proprio')
               .eq('uid_proprio', uid)
-              .eq('profile_id_proprio', activeProfileId);
+              .eq('profile_id_proprio', activeProfileId)
+              .eq('statut', 'actif');
         } else {
           ownRows = await _supa
               .from('animaux_proprietes')
-              .select('animal_id, date_fin')
-              .eq('uid_proprio', uid);
+              .select('animal_id, date_fin, role_proprio')
+              .eq('uid_proprio', uid)
+              .eq('statut', 'actif');
         }
       } else {
         ownRows = await _supa
             .from('animaux_proprietes')
-            .select('animal_id, date_fin')
-            .eq('uid_proprio', uid);
+            .select('animal_id, date_fin, role_proprio')
+            .eq('uid_proprio', uid)
+            .eq('statut', 'actif');
       }
       // Auto-réparation : animaux ajoutés par ce particulier mais sans ligne
       // animaux_proprietes (ancien bug — un animal invisible partout). On crée
@@ -361,9 +367,43 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
         _cedantNames = names;
         _loadingAnimaux = false;
       });
+      _loadInvitationsCoproprio();
     } catch (_) {
       setState(() => _loadingAnimaux = false);
     }
+  }
+
+  /// Invitations de co-propriété reçues et pas encore acceptées/refusées.
+  Future<void> _loadInvitationsCoproprio() async {
+    final uid = User_Info.uid;
+    if (uid.isEmpty) return;
+    try {
+      final rows = await _supa
+          .from('animaux_proprietes')
+          .select('animal_id, invite_par_profile_id')
+          .eq('uid_proprio', uid)
+          .eq('statut', 'invite')
+          .isFilter('date_fin', null);
+      final list = List<Map<String, dynamic>>.from(rows as List);
+      if (list.isEmpty) {
+        if (mounted && _invitationsCoproprio.isNotEmpty) {
+          setState(() => _invitationsCoproprio = []);
+        }
+        return;
+      }
+      final animalIds = list.map((r) => r['animal_id'] as String).toList();
+      final animaux = await _supa
+          .from('animaux')
+          .select('id, nom, photo_url')
+          .inFilter('id', animalIds);
+      final byId = {for (final a in (animaux as List)) a['id'] as String: a};
+      for (final r in list) {
+        final a = byId[r['animal_id']];
+        r['_nom'] = a?['nom'] ?? 'un animal';
+        r['_photo'] = a?['photo_url'];
+      }
+      if (mounted) setState(() => _invitationsCoproprio = list);
+    } catch (_) {}
   }
 
   Future<void> _fetchAlertes() async {
@@ -687,6 +727,43 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
               ),
             ),
           const SizedBox(height: 24),
+
+          // Invitations de co-propriété reçues
+          if (_invitationsCoproprio.isNotEmpty) ...[
+            ..._invitationsCoproprio.map((inv) => Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAF2F4),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: _teal.withValues(alpha: 0.25)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.people_alt_outlined, color: _teal, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                            'Invitation à co-gérer la fiche de ${inv['_nom']}',
+                            style: const TextStyle(
+                                fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => AnimalFicheParticulierPage(
+                                      animalId: inv['animal_id'] as String)));
+                          _loadInvitationsCoproprio();
+                          _fetchAnimaux();
+                        },
+                        child: const Text('Voir', style: TextStyle(fontFamily: 'Galey')),
+                      ),
+                    ],
+                  ),
+                )),
+          ],
 
           // Stats animaux
           if (_animaux.isNotEmpty) ...[

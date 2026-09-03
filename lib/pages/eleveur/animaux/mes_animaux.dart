@@ -144,19 +144,22 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         if ((check as List).isNotEmpty) {
           // Migration faite → filtre strict par profil (liste vide = normal pour ce profil)
           ownRows = await supa.from('animaux_proprietes')
-              .select('animal_id, date_fin')
+              .select('animal_id, date_fin, role_proprio')
               .eq('uid_proprio', _uid!)
-              .eq('profile_id_proprio', activeProfileId);
+              .eq('profile_id_proprio', activeProfileId)
+              .eq('statut', 'actif');
         } else {
           // Migration pas encore jouée → tous les animaux de l'uid
           ownRows = await supa.from('animaux_proprietes')
-              .select('animal_id, date_fin')
-              .eq('uid_proprio', _uid!);
+              .select('animal_id, date_fin, role_proprio')
+              .eq('uid_proprio', _uid!)
+              .eq('statut', 'actif');
         }
       } else {
         ownRows = await supa.from('animaux_proprietes')
-            .select('animal_id, date_fin')
-            .eq('uid_proprio', _uid!);
+            .select('animal_id, date_fin, role_proprio')
+            .eq('uid_proprio', _uid!)
+            .eq('statut', 'actif');
       }
 
       final currentIds = <String>{};

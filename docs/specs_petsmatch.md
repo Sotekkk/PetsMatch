@@ -6609,4 +6609,62 @@ particulier + 5 animaux. Symptômes : (a) ses animaux n'apparaissent pas dans
 
 ---
 
+## 50. Co-propriétaires d'un animal (profils particuliers) (session 2026-09-03)
+
+**Contexte** : un animal de famille est souvent géré par plusieurs personnes. Il
+faut 1 **propriétaire principal** (référent I-CAD) + N **propriétaires
+secondaires** en accès complet lecture/écriture sur toute la fiche. Distinct du
+partage lien lecture seule (`partage_animal`) et du partage à un pro
+(`animal_access`, permissions granulaires).
+
+**Décisions** : ajout d'un co-proprio = **sur invitation à accepter** ; transfert
+du rôle principal = **le nouveau confirme** + rappel I-CAD ; recherche de la
+personne = **email exact d'abord, nom en secours**.
+
+**Modèle — `migration_animaux_coproprietaires.sql`** : on étend
+`animaux_proprietes` (l'historique de propriété) :
+- `role_proprio` ('principal'|'secondaire', défaut 'principal')
+- `statut` ('actif'|'invite'|'refuse', défaut 'actif')
+- `transfert_principal_propose` (bool), `invite_par_profile_id`, `invite_le`,
+  `accepte_le`
+- Index unique partiel : un seul principal `actif` courant par animal
+  (`date_fin IS NULL AND role_proprio='principal' AND statut='actif'`).
+- RLS `firebase_allow_all` (les policies `auth.uid()` de
+  `migration_animaux_proprietes.sql` bloquaient tout).
+- Fonction `transferer_proprietaire_principal(p_animal_id, p_nouveau_profile_id)` :
+  démote/promeut atomiquement + met à jour le miroir `animaux.uid_proprietaire`
+  / `animaux.profile_id`.
+- Rétrocompat : lignes existantes → `principal`/`actif`.
+- **Sémantique** : propriétaires courants = `date_fin IS NULL AND statut='actif'`.
+
+**App** :
+- `lib/pages/particulier/proprietaires_animal_sheet.dart` (nouveau) — bottom
+  sheet de gestion (liste, inviter par email/nom, retirer, proposer principal,
+  quitter, accepter/refuser un transfert). Ouvert depuis l'AppBar de la fiche
+  (`Icons.people_alt_outlined`).
+- `animal_fiche_particulier.dart` : `_loadProprietaires()`, bandeau
+  d'invitation (`_invitationCoproprioBanner`) au-dessus des onglets pour
+  l'invité (Accepter/Refuser), ligne récap « Propriétaires : … » dans la vue
+  identité, bouton AppBar. Le garde-écriture est inchangé (un secondaire qui
+  accepte voit l'animal dans « Mes animaux » → fiche éditable).
+- `user_feed.dart` + `mes_animaux.dart` : les requêtes `animaux_proprietes` du
+  propriétaire courant filtrent `.eq('statut','actif')` (sinon les invitations
+  en attente feraient apparaître l'animal prématurément).
+- `cession_sheet.dart` : une cession définitive met fin à **toutes** les lignes
+  `actif` (`date_fin`) + supprime les `invite` restantes.
+- `notifications_page.dart` : nouveaux types `coproprio_invitation`,
+  `coproprio_invitation_acceptee`/`_refusee`, `coproprio_retire`,
+  `coproprio_quitte`, `coproprio_transfert_propose`, `coproprio_transfert_accepte`
+  → ouvrent `AnimalFicheParticulierPage` ; icônes ajoutées.
+
+**Site** : `website/src/app/mes-animaux/[id]/page.tsx` composant
+`CoproprietairesSection` (même logique) rendu avant « Accès vétérinaires » ;
+`mes-animaux/page.tsx` filtre `statut='actif'` ; `components/animaux/CessionModal.tsx`
+clôture toutes les lignes ; `components/Header.tsx` routage + emoji des notifs.
+
+**Migration à exécuter** : `migration_animaux_coproprietaires.sql` (avant de
+déployer le code — la colonne `statut` devient obligatoire dans les requêtes).
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*

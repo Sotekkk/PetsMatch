@@ -743,11 +743,17 @@ class _CessionSheetState extends State<CessionSheet> {
         // Cession directe : transfert de propriété tout de suite.
         final acqUid = _foundUser!['uid'] as String;
         try {
+          // Cession définitive : met fin à TOUTE la copropriété (principal +
+          // secondaires) et supprime les invitations en attente.
           await _supa.from('animaux_proprietes')
               .update({'date_fin': dateCessionStr})
               .eq('animal_id', widget.animal['id'])
-              .eq('uid_proprio', widget.uid)
+              .eq('statut', 'actif')
               .isFilter('date_fin', null);
+          await _supa.from('animaux_proprietes')
+              .delete()
+              .eq('animal_id', widget.animal['id'])
+              .eq('statut', 'invite');
           await _supa.from('animaux_proprietes').upsert({
             'animal_id':   widget.animal['id'],
             'uid_proprio': acqUid,

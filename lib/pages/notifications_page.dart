@@ -23,6 +23,7 @@ import 'package:PetsMatch/pages/nature/natural_place_detail_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
+import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
@@ -472,6 +473,25 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
     // Cession révoquée → juste marquer lue (déjà fait)
     if (type == 'cession_revoquee') return;
+    // Co-propriétaires d'un animal → ouvre la fiche particulier (invitation,
+    // transfert de propriété principal, retrait…). La fiche affiche le bandeau
+    // d'invitation ou le sheet « Propriétaires » selon le cas.
+    if (type == 'coproprio_invitation' ||
+        type == 'coproprio_invitation_acceptee' ||
+        type == 'coproprio_invitation_refusee' ||
+        type == 'coproprio_retire' ||
+        type == 'coproprio_quitte' ||
+        type == 'coproprio_transfert_propose' ||
+        type == 'coproprio_transfert_accepte') {
+      final animalId = data is Map ? data['animal_id'] as String? : null;
+      if (!mounted) return;
+      if (animalId != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => AnimalFicheParticulierPage(animalId: animalId),
+        ));
+      }
+      return;
+    }
     // Suivi stérilisation / anniversaires côté éleveur → onglet « Suivi »
     if (type == 'sterilisation_declaree' || type == 'sterilisation_a_valider' ||
         type == 'sterilisation_rappel' || type == 'cession_anniversaire') {
@@ -786,6 +806,13 @@ class _NotificationsPageState extends State<NotificationsPage> {
   IconData _iconFor(String? type) {
     switch (type) {
       case 'alerte_perdu':  return Icons.location_searching;
+      case 'coproprio_invitation':
+      case 'coproprio_transfert_propose':   return Icons.people_alt_outlined;
+      case 'coproprio_invitation_acceptee':
+      case 'coproprio_transfert_accepte':   return Icons.check_circle_outline;
+      case 'coproprio_invitation_refusee':
+      case 'coproprio_retire':
+      case 'coproprio_quitte':              return Icons.person_remove_outlined;
       case 'message':       return Icons.chat_bubble_outline;
       case 'like':          return Icons.favorite;
       case 'chaleur':       return Icons.spa;

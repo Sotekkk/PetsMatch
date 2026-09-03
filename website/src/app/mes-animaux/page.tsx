@@ -308,6 +308,7 @@ export default function MesAnimauxPage() {
   const [gestanteFlags, setGestanteFlags] = useState<Record<string, boolean>>({});
   const [tab, setTab] = useState<'presents' | 'anciens' | 'suivi'>(initialTab);
   const [cederAnimal, setCederAnimal] = useState<Animal | null>(null);
+  const [invitesCopro, setInvitesCopro] = useState<{ animal_id: string; nom: string }[]>([]);
   const [nomElevage, setNomElevage] = useState('');
   const [adresseElevage, setAdresseElevage] = useState('');
   const [presentsSubTab, setPresentsSubTab] = useState<'tous' | 'repro' | 'bebes'>(initialSubTab);
@@ -368,6 +369,21 @@ export default function MesAnimauxPage() {
     if (!loading && !user) router.push('/connexion');
   }, [loading, user, router]);
 
+  // Invitations de co-propriété reçues (statut='invite')
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('animaux_proprietes')
+        .select('animal_id').eq('uid_proprio', user.uid).eq('statut', 'invite').is('date_fin', null);
+      const ids = (data ?? []).map(r => r.animal_id as string);
+      if (ids.length === 0) { if (!cancelled) setInvitesCopro([]); return; }
+      const { data: an } = await supabase.from('animaux').select('id, nom').in('id', ids);
+      if (!cancelled) setInvitesCopro((an ?? []).map(a => ({ animal_id: a.id as string, nom: (a.nom as string) || 'un animal' })));
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
+
   useEffect(() => {
     if (!user || !isEleveur) return;
     supabase.from('user_profiles').select('nom, rue_pro, ville_pro').eq('uid', user.uid).eq('is_main', true).maybeSingle()
@@ -391,7 +407,7 @@ export default function MesAnimauxPage() {
 
       // Source : animaux_proprietes — filtré par profile_id_proprio (post-migration V2.05)
       // Vérifie d'abord si la migration a été jouée, sinon retombe sur uid_proprio
-      let ownRows: { animal_id: string; date_fin: string | null }[] = [];
+      let ownRows: { animal_id: string; date_fin: string | null; role_proprio?: string | null }[] = [];
       if (activeProfileId) {
         const { data: check } = await supabase
           .from('animaux_proprietes')
@@ -403,23 +419,26 @@ export default function MesAnimauxPage() {
           // Migration faite → filtre strict par profil (vide = correct pour ce profil)
           const { data: byProfile } = await supabase
             .from('animaux_proprietes')
-            .select('animal_id, date_fin')
+            .select('animal_id, date_fin, role_proprio')
             .eq('uid_proprio', uid)
-            .eq('profile_id_proprio', activeProfileId);
+            .eq('profile_id_proprio', activeProfileId)
+            .eq('statut', 'actif');
           ownRows = (byProfile ?? []) as typeof ownRows;
         } else {
           // Migration pas encore jouée → tous les animaux de l'uid
           const { data: fallback } = await supabase
             .from('animaux_proprietes')
-            .select('animal_id, date_fin')
-            .eq('uid_proprio', uid);
+            .select('animal_id, date_fin, role_proprio')
+            .eq('uid_proprio', uid)
+            .eq('statut', 'actif');
           ownRows = (fallback ?? []) as typeof ownRows;
         }
       } else {
         const { data } = await supabase
           .from('animaux_proprietes')
-          .select('animal_id, date_fin')
-          .eq('uid_proprio', uid);
+          .select('animal_id, date_fin, role_proprio')
+          .eq('uid_proprio', uid)
+          .eq('statut', 'actif');
         ownRows = (data ?? []) as typeof ownRows;
       }
 
@@ -676,6 +695,22 @@ export default function MesAnimauxPage() {
           )}
         </div>
       </div>
+
+      {/* Invitations de co-propriété reçues */}
+      {invitesCopro.length > 0 && (
+        <div className="space-y-2 mb-5">
+          {invitesCopro.map(inv => (
+            <Link key={inv.animal_id} href={`/mes-animaux/${inv.animal_id}`}
+              className="flex items-center gap-3 rounded-xl bg-[#EAF2F4] border border-[#0C5C6C]/25 px-4 py-3 hover:bg-[#dde9ec] transition-colors">
+              <span className="text-lg">👥</span>
+              <span className="text-sm font-medium text-[#1F2A2E] flex-1">
+                Invitation à co-gérer la fiche de {inv.nom}
+              </span>
+              <span className="text-xs font-semibold text-[#0C5C6C]">Voir →</span>
+            </Link>
+          ))}
+        </div>
+      )}
 
       {/* Tabs (éleveur uniquement) */}
       {isEleveur && (

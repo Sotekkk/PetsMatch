@@ -18,6 +18,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/data/vaccin_types.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/particulier/partage_animal_sheet.dart';
+import 'package:PetsMatch/pages/particulier/proprietaires_animal_sheet.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -96,6 +97,10 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   bool _hasEducationRapports = false;
   bool _hasDevis = false;
 
+  // Co-propriétaires (animaux_proprietes, statut actif/invite, date_fin NULL)
+  List<Map<String, dynamic>> _proprietaires = [];
+  Map<String, dynamic>? _monInvitationProprio; // ma ligne si statut='invite'
+
   // Documents libres attachés par le propriétaire (colonne animaux.documents)
   List<Map<String, dynamic>> _documentsLibres = [];
 
@@ -152,6 +157,65 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       if (mounted) setState(() => _fillFromData(Map<String, dynamic>.from(data)));
     } catch (_) {}
     _loadPensionAcces();
+    _loadProprietaires();
+  }
+
+  Future<void> _loadProprietaires() async {
+    if (_animalId == null) return;
+    try {
+      final rows = await _supa
+          .from('animaux_proprietes')
+          .select('uid_proprio, profile_id_proprio, role_proprio, statut, transfert_principal_propose')
+          .eq('animal_id', _animalId!)
+          .isFilter('date_fin', null)
+          .inFilter('statut', ['actif', 'invite']);
+      final list = List<Map<String, dynamic>>.from(rows as List);
+      final ids = list
+          .where((r) => r['statut'] == 'actif' && r['profile_id_proprio'] != null)
+          .map((r) => r['profile_id_proprio'] as String)
+          .toSet()
+          .toList();
+      final Map<String, String> nameById = {};
+      if (ids.isNotEmpty) {
+        final profs = await _supa
+            .from('user_profiles')
+            .select('id, firstname, lastname, nom')
+            .inFilter('id', ids);
+        for (final p in (profs as List)) {
+          final n = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+          nameById[p['id'] as String] =
+              n.isNotEmpty ? n : ((p['nom'] as String?)?.trim() ?? 'Propriétaire');
+        }
+      }
+      for (final r in list) {
+        r['_name'] = nameById[r['profile_id_proprio']] ?? '';
+      }
+      final myUid = User_Info.uid;
+      final invit = list.firstWhere(
+          (r) => r['uid_proprio'] == myUid && r['statut'] == 'invite',
+          orElse: () => {});
+      if (mounted) {
+        setState(() {
+          _proprietaires = list;
+          _monInvitationProprio = invit.isEmpty ? null : invit;
+        });
+      }
+    } catch (_) {}
+  }
+
+  /// Ligne récap « Propriétaires : X (principal), Y » ; null s'il n'y a qu'un
+  /// seul propriétaire (pas de copropriété).
+  String? _coproprietairesLabel() {
+    final actifs = _proprietaires.where((r) => r['statut'] == 'actif').toList();
+    if (actifs.length < 2) return null;
+    actifs.sort((a, b) => (a['role_proprio'] == 'principal' ? 0 : 1)
+        .compareTo(b['role_proprio'] == 'principal' ? 0 : 1));
+    final noms = actifs.map((r) {
+      final n = (r['_name'] as String?)?.trim();
+      final base = (n == null || n.isEmpty) ? 'Propriétaire' : n;
+      return r['role_proprio'] == 'principal' ? '$base (principal)' : base;
+    }).join(', ');
+    return 'Propriétaires : $noms';
   }
 
   Future<void> _loadPensionAcces() async {
@@ -543,6 +607,15 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         actions: [
           if (_animalId != null) ...[
             IconButton(
+              icon: const Icon(Icons.people_alt_outlined, size: 20),
+              tooltip: 'Propriétaires',
+              onPressed: () async {
+                await showProprietairesAnimalSheet(
+                    context, _animalId!, _nomCtrl.text.isEmpty ? 'Animal' : _nomCtrl.text);
+                _loadProprietaires();
+              },
+            ),
+            IconButton(
               icon: const Icon(Icons.link, size: 20),
               tooltip: 'Partager la fiche',
               onPressed: () => showPartageAnimalSheet(
@@ -600,18 +673,107 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabs,
+      body: Column(
         children: [
-          _buildIdentiteTab(),
-          _buildSanteTab(),
-          _buildAlimentationTab(),
-          _buildDocumentsTab(),
-          if (_showEducationTab) _buildEducationTab(),
-          if (_showPensionTab) _buildPensionTab(),
+          if (_monInvitationProprio != null) _invitationCoproprioBanner(),
+          Expanded(
+            child: TabBarView(
+              controller: _tabs,
+              children: [
+                _buildIdentiteTab(),
+                _buildSanteTab(),
+                _buildAlimentationTab(),
+                _buildDocumentsTab(),
+                if (_showEducationTab) _buildEducationTab(),
+                if (_showPensionTab) _buildPensionTab(),
+              ],
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Widget _invitationCoproprioBanner() {
+    return Container(
+      width: double.infinity,
+      color: const Color(0xFFEAF2F4),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Vous êtes invité·e à co-gérer cette fiche',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5)),
+          const SizedBox(height: 3),
+          const Text('En acceptant, vous aurez un accès complet en lecture et écriture.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.black54)),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _repondreInvitationCoproprio(true),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: _teal, foregroundColor: Colors.white),
+                child: const Text('Accepter', style: TextStyle(fontFamily: 'Galey')),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _repondreInvitationCoproprio(false),
+                child: const Text('Refuser', style: TextStyle(fontFamily: 'Galey')),
+              ),
+            ),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  VoidCallback? _repondreInvitationCoproprio(bool accepte) {
+    final invit = _monInvitationProprio;
+    if (invit == null) return null;
+    return () async {
+      try {
+        await _supa.from('animaux_proprietes').update({
+          'statut': accepte ? 'actif' : 'refuse',
+          if (accepte) 'accepte_le': DateTime.now().toUtc().toIso8601String(),
+        }).eq('animal_id', _animalId!).eq('uid_proprio', User_Info.uid);
+        // Notifie l'inviteur
+        final inviteurProfileId = invit['invite_par_profile_id'] as String?;
+        if (inviteurProfileId != null) {
+          final inviteur = await _supa
+              .from('user_profiles')
+              .select('uid')
+              .eq('id', inviteurProfileId)
+              .maybeSingle();
+          final inviteurUid = inviteur?['uid'] as String?;
+          if (inviteurUid != null) {
+            await _supa.from('notifications').insert({
+              'uid': inviteurUid,
+              'type': accepte ? 'coproprio_invitation_acceptee' : 'coproprio_invitation_refusee',
+              'title': accepte ? 'Invitation acceptée' : 'Invitation refusée',
+              'body': accepte
+                  ? '${User_Info.firstname} co-gère désormais la fiche de ${_nomCtrl.text}.'
+                  : '${User_Info.firstname} a refusé de co-gérer ${_nomCtrl.text}.',
+              'profile_id': inviteurProfileId,
+              'recipient_profile_id': inviteurProfileId,
+              'data': {'animal_id': _animalId, 'animal_nom': _nomCtrl.text},
+              'read': false,
+              'created_at': DateTime.now().toIso8601String(),
+            });
+          }
+        }
+      } catch (_) {}
+      if (mounted) {
+        setState(() => _monInvitationProprio = null);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(accepte
+                ? 'Vous êtes maintenant co-propriétaire.'
+                : 'Invitation refusée.')));
+        if (accepte) _loadProprietaires();
+      }
+    };
   }
 
   // ── Identité ──────────────────────────────────────────────────────────────────
@@ -658,6 +820,24 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           const SizedBox(height: 4),
           Center(child: Text(ageStr,
               style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade500))),
+        ],
+        if (_coproprietairesLabel() != null) ...[
+          const SizedBox(height: 8),
+          Center(
+            child: GestureDetector(
+              onTap: _animalId == null
+                  ? null
+                  : () async {
+                      await showProprietairesAnimalSheet(context, _animalId!,
+                          _nomCtrl.text.isEmpty ? 'Animal' : _nomCtrl.text);
+                      _loadProprietaires();
+                    },
+              child: Text('👥 ${_coproprietairesLabel()}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontFamily: 'Galey', fontSize: 12.5, color: _teal, fontWeight: FontWeight.w600)),
+            ),
+          ),
         ],
         const SizedBox(height: 16),
 

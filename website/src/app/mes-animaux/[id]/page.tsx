@@ -1645,6 +1645,262 @@ function WeightChartSVG({ data, isJuvenile, dateNaissance }: {
   );
 }
 
+// ─── Co-propriétaires (profils particuliers) ──────────────────────────────────
+
+interface CoproRow {
+  id: string; uid_proprio: string; profile_id_proprio: string | null;
+  role_proprio: string; statut: string; transfert_principal_propose: boolean;
+  invite_par_profile_id: string | null; _name?: string;
+}
+
+function CoproprietairesSection({ animalId, animalNom, userUid }: {
+  animalId: string; animalNom: string; userUid?: string;
+}) {
+  const [myProfileId, setMyProfileId] = useState<string | null>(null);
+  const [myName, setMyName] = useState('Un propriétaire');
+  const [rows, setRows] = useState<CoproRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [q, setQ] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchDone, setSearchDone] = useState(false);
+  const [results, setResults] = useState<{ uid: string; profileId: string; name: string; email: string }[]>([]);
+
+  const load = useCallback(async () => {
+    if (!userUid) return;
+    setLoading(true);
+    let pid = myProfileId;
+    if (!pid) {
+      const { data: me } = await supabase.from('user_profiles')
+        .select('id, firstname, lastname, nom').eq('uid', userUid).eq('profile_type', 'particulier').maybeSingle();
+      pid = (me?.id as string) ?? null;
+      setMyProfileId(pid);
+      const n = `${me?.firstname ?? ''} ${me?.lastname ?? ''}`.trim() || (me?.nom as string) || '';
+      if (n) setMyName(n);
+    }
+    const { data } = await supabase.from('animaux_proprietes')
+      .select('id, uid_proprio, profile_id_proprio, role_proprio, statut, transfert_principal_propose, invite_par_profile_id')
+      .eq('animal_id', animalId).is('date_fin', null).in('statut', ['actif', 'invite']);
+    const list = (data ?? []) as CoproRow[];
+    const ids = [...new Set(list.filter(r => r.statut === 'actif' && r.profile_id_proprio).map(r => r.profile_id_proprio as string))];
+    if (ids.length) {
+      const { data: profs } = await supabase.from('user_profiles').select('id, firstname, lastname, nom').in('id', ids);
+      const byId = new Map((profs ?? []).map(p => [p.id as string, `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim() || (p.nom as string) || 'Propriétaire']));
+      list.forEach(r => { r._name = byId.get(r.profile_id_proprio ?? '') ?? 'Propriétaire'; });
+    }
+    list.sort((a, b) => (a.role_proprio === 'principal' ? 0 : a.statut === 'actif' ? 1 : 2) - (b.role_proprio === 'principal' ? 0 : b.statut === 'actif' ? 1 : 2));
+    setRows(list);
+    setLoading(false);
+  }, [animalId, userUid, myProfileId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const myRow = rows.find(r => r.profile_id_proprio === myProfileId);
+  const amPrincipal = myRow?.role_proprio === 'principal' && myRow?.statut === 'actif';
+  const myInvite = rows.find(r => r.uid_proprio === userUid && r.statut === 'invite');
+  const transfertPourMoi = myRow?.transfert_principal_propose === true && myRow?.statut === 'actif';
+
+  async function notify(uid: string, profileId: string | null, type: string, title: string, body: string) {
+    try {
+      await supabase.from('notifications').insert({
+        uid, type, title, body,
+        ...(profileId ? { profile_id: profileId, recipient_profile_id: profileId } : {}),
+        data: { animal_id: animalId, animal_nom: animalNom }, read: false, created_at: new Date().toISOString(),
+      });
+    } catch { /* noop */ }
+  }
+
+  async function run(fn: () => Promise<void>) {
+    if (busy) return;
+    setBusy(true);
+    try { await fn(); await load(); } catch (e) { alert(`Erreur : ${e instanceof Error ? e.message : e}`); }
+    finally { setBusy(false); }
+  }
+
+  async function search() {
+    const term = q.trim();
+    if (term.length < 3) return;
+    setSearching(true); setSearchDone(true);
+    let users: { uid: string; firstname: string; lastname: string; email: string }[] = [];
+    if (term.includes('@')) {
+      const { data } = await supabase.from('users').select('uid, firstname, lastname, email').eq('email', term.toLowerCase()).limit(5);
+      users = (data ?? []) as typeof users;
+    } else {
+      const { data } = await supabase.from('users').select('uid, firstname, lastname, email').or(`firstname.ilike.%${term}%,lastname.ilike.%${term}%`).limit(15);
+      users = (data ?? []) as typeof users;
+    }
+    users = users.filter(u => u.uid !== userUid);
+    const uids = users.map(u => u.uid);
+    const profByUid = new Map<string, string>();
+    if (uids.length) {
+      const { data: profs } = await supabase.from('user_profiles').select('uid, id').in('uid', uids).eq('profile_type', 'particulier');
+      (profs ?? []).forEach(p => profByUid.set(p.uid as string, p.id as string));
+    }
+    setResults(users.filter(u => profByUid.has(u.uid)).map(u => ({
+      uid: u.uid, profileId: profByUid.get(u.uid)!, email: u.email,
+      name: `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim() || 'Utilisateur PetsMatch',
+    })));
+    setSearching(false);
+  }
+
+  function invite(picked: { uid: string; profileId: string; name: string }) {
+    if (rows.some(r => r.uid_proprio === picked.uid)) {
+      alert('Cette personne est déjà propriétaire ou invitée.');
+      return;
+    }
+    return run(async () => {
+      await supabase.from('animaux_proprietes').upsert({
+        animal_id: animalId, uid_proprio: picked.uid, profile_id_proprio: picked.profileId,
+        role_proprio: 'secondaire', statut: 'invite', transfert_principal_propose: false,
+        date_debut: new Date().toISOString().slice(0, 10), date_fin: null,
+        invite_par_profile_id: myProfileId, invite_le: new Date().toISOString(), accepte_le: null,
+      }, { onConflict: 'animal_id,uid_proprio' });
+      await notify(picked.uid, picked.profileId, 'coproprio_invitation', 'Invitation de co-propriété',
+        `${myName} vous invite à co-gérer la fiche de ${animalNom}.`);
+      setShowSearch(false); setQ(''); setResults([]); setSearchDone(false);
+    });
+  }
+
+  const repondreInvite = (accepte: boolean) => run(async () => {
+    if (!myInvite) return;
+    await supabase.from('animaux_proprietes').update({
+      statut: accepte ? 'actif' : 'refuse', ...(accepte ? { accepte_le: new Date().toISOString() } : {}),
+    }).eq('id', myInvite.id);
+    if (myInvite.invite_par_profile_id) {
+      const { data: inv } = await supabase.from('user_profiles').select('uid').eq('id', myInvite.invite_par_profile_id).maybeSingle();
+      if (inv?.uid) await notify(inv.uid as string, myInvite.invite_par_profile_id,
+        accepte ? 'coproprio_invitation_acceptee' : 'coproprio_invitation_refusee',
+        accepte ? 'Invitation acceptée' : 'Invitation refusée',
+        accepte ? `${myName} co-gère désormais ${animalNom}.` : `${myName} a refusé de co-gérer ${animalNom}.`);
+    }
+  });
+
+  const principalRow = rows.find(r => r.role_proprio === 'principal');
+
+  return (
+    <div className="rounded-2xl border border-[#6E9E57]/20 bg-[#6E9E57]/5 p-4">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-base">👥</span>
+        <p className="font-bold text-sm text-[#4a7a37]" style={{ fontFamily: 'Galey, sans-serif' }}>Propriétaires</p>
+      </div>
+      <p className="text-xs text-gray-500 mb-3">
+        Les co-propriétaires ont accès à toute la fiche, en lecture et écriture. Le principal est le référent I-CAD.
+      </p>
+
+      {myInvite && (
+        <div className="rounded-xl bg-[#EAF2F4] border border-[#0C5C6C]/25 p-3 mb-3">
+          <p className="text-sm font-bold text-[#1F2A2E]">Vous êtes invité·e à co-gérer cette fiche</p>
+          <p className="text-xs text-gray-600 mb-2">En acceptant, vous aurez un accès complet en lecture et écriture.</p>
+          <div className="flex gap-2">
+            <button disabled={busy} onClick={() => repondreInvite(true)} className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-[#0C5C6C] text-white disabled:opacity-50">Accepter</button>
+            <button disabled={busy} onClick={() => repondreInvite(false)} className="text-xs font-semibold px-3 py-1.5 rounded-xl border border-gray-300 text-gray-600 disabled:opacity-50">Refuser</button>
+          </div>
+        </div>
+      )}
+
+      {transfertPourMoi && (
+        <div className="rounded-xl bg-[#EAF2F4] border border-[#0C5C6C]/25 p-3 mb-3">
+          <p className="text-sm font-bold text-[#1F2A2E]">On vous propose de devenir propriétaire principal</p>
+          <p className="text-xs text-gray-600 mb-2">Vous deviendrez le référent I-CAD de cet animal.</p>
+          <div className="flex gap-2">
+            <button disabled={busy} onClick={() => run(async () => {
+              await supabase.rpc('transferer_proprietaire_principal', { p_animal_id: animalId, p_nouveau_profile_id: myProfileId });
+              if (principalRow?.uid_proprio) await notify(principalRow.uid_proprio, principalRow.profile_id_proprio, 'coproprio_transfert_accepte', 'Transfert de propriété accepté', `${myName} est maintenant le propriétaire principal de ${animalNom}.`);
+              alert('Vous êtes propriétaire principal. Pensez à mettre à jour la déclaration I-CAD : PetsMatch ne modifie pas le fichier national automatiquement.');
+            })} className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-[#0C5C6C] text-white disabled:opacity-50">Accepter</button>
+            <button disabled={busy} onClick={() => run(async () => {
+              await supabase.from('animaux_proprietes').update({ transfert_principal_propose: false }).eq('id', myRow!.id);
+              if (principalRow?.uid_proprio) await notify(principalRow.uid_proprio, principalRow.profile_id_proprio, 'coproprio_transfert_accepte', 'Transfert de propriété refusé', `${myName} préfère rester co-propriétaire de ${animalNom}.`);
+            })} className="text-xs font-semibold px-3 py-1.5 rounded-xl border border-gray-300 text-gray-600 disabled:opacity-50">Refuser</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-xs text-gray-400 py-3">Chargement…</p>
+      ) : (
+        <div className="space-y-2">
+          {rows.map(r => {
+            const isPrincipal = r.role_proprio === 'principal';
+            const isInvite = r.statut === 'invite';
+            const isMe = r.profile_id_proprio === myProfileId;
+            return (
+              <div key={r.id} className="flex items-center justify-between bg-white rounded-xl px-3 py-2 shadow-sm">
+                <div>
+                  <p className="text-sm font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                    {isInvite ? 'Invitation envoyée' : r._name}{isMe ? ' (vous)' : ''}
+                  </p>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    isInvite ? 'bg-amber-100 text-amber-700' : isPrincipal ? 'bg-[#EAF2F4] text-[#0C5C6C]' : 'bg-[#EFF4EA] text-[#4a7a37]'
+                  }`}>
+                    {isInvite ? 'En attente' : isPrincipal ? 'Principal · I-CAD' : 'Co-propriétaire'}
+                  </span>
+                </div>
+                {amPrincipal && !isPrincipal && (
+                  <div className="flex gap-2">
+                    {isInvite ? (
+                      <button disabled={busy} onClick={() => run(async () => { await supabase.from('animaux_proprietes').delete().eq('id', r.id); })}
+                        className="text-xs font-semibold px-3 py-1.5 rounded-xl border border-red-200 text-red-500 disabled:opacity-50">Annuler</button>
+                    ) : (
+                      <>
+                        {!r.transfert_principal_propose && (
+                          <button disabled={busy} onClick={() => run(async () => {
+                            await supabase.from('animaux_proprietes').update({ transfert_principal_propose: true }).eq('id', r.id);
+                            await notify(r.uid_proprio, r.profile_id_proprio, 'coproprio_transfert_propose', 'Proposition : devenir propriétaire principal', `${myName} vous propose de devenir le propriétaire principal de ${animalNom}.`);
+                          })} className="text-xs font-semibold px-3 py-1.5 rounded-xl border border-[#0C5C6C]/30 text-[#0C5C6C] disabled:opacity-50">Rendre principal</button>
+                        )}
+                        <button disabled={busy} onClick={() => run(async () => {
+                          await supabase.from('animaux_proprietes').delete().eq('id', r.id);
+                          await notify(r.uid_proprio, r.profile_id_proprio, 'coproprio_retire', 'Co-propriété retirée', `Vous n'êtes plus co-propriétaire de ${animalNom}.`);
+                        })} className="text-xs font-semibold px-3 py-1.5 rounded-xl border border-red-200 text-red-500 disabled:opacity-50">Retirer</button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {amPrincipal && (
+            showSearch ? (
+              <div className="bg-white rounded-xl p-3 shadow-sm">
+                <div className="flex gap-2">
+                  <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && search()}
+                    placeholder="E-mail exact ou nom" className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
+                  <button disabled={searching} onClick={search} className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#6E9E57] text-white disabled:opacity-50">OK</button>
+                </div>
+                {searching && <p className="text-xs text-gray-400 mt-2">Recherche…</p>}
+                {searchDone && !searching && results.length === 0 && <p className="text-xs text-gray-400 mt-2">Aucun compte trouvé.</p>}
+                {results.map(u => (
+                  <button key={u.uid} onClick={() => invite(u)} className="w-full text-left mt-2 flex items-center justify-between hover:bg-gray-50 rounded-lg px-2 py-1.5">
+                    <span><span className="text-sm font-medium text-[#1F2A2E]">{u.name}</span><span className="block text-xs text-gray-400">{u.email}</span></span>
+                    <span className="text-[#6E9E57] text-lg">＋</span>
+                  </button>
+                ))}
+                <button onClick={() => { setShowSearch(false); setQ(''); setResults([]); setSearchDone(false); }} className="text-xs text-gray-400 mt-2">Annuler</button>
+              </div>
+            ) : (
+              <button onClick={() => setShowSearch(true)} className="w-full text-sm font-semibold py-2 rounded-xl bg-[#6E9E57] text-white" style={{ fontFamily: 'Galey, sans-serif' }}>
+                + Inviter un co-propriétaire
+              </button>
+            )
+          )}
+
+          {!amPrincipal && myRow?.statut === 'actif' && (
+            <button disabled={busy} onClick={() => run(async () => {
+              await supabase.from('animaux_proprietes').delete().eq('id', myRow!.id);
+              if (principalRow?.uid_proprio) await notify(principalRow.uid_proprio, principalRow.profile_id_proprio, 'coproprio_quitte', 'Un co-propriétaire a quitté', `${myName} ne co-gère plus la fiche de ${animalNom}.`);
+            })} className="w-full text-sm font-medium py-2 rounded-xl border border-red-200 text-red-500 disabled:opacity-50">
+              Quitter la copropriété
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 export default function AnimalFichePage() {
@@ -3484,6 +3740,10 @@ export default function AnimalFichePage() {
               </div>
             </div>
           </div>
+        )}
+        {/* ── Co-propriétaires ─────────────────────────────────────────────── */}
+        {!isNew && (
+          <CoproprietairesSection animalId={id} animalNom={animal.nom || 'Animal'} userUid={user?.uid} />
         )}
         {/* ── Accès vétérinaires ───────────────────────────────────────────── */}
         {!isNew && vetAcces.length > 0 && (
