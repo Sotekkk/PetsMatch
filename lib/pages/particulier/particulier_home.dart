@@ -398,8 +398,11 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
                       fontSize: 16, color: Color(0xFF1F2A2E))),
             ]),
             TextButton(
-              onPressed: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const UserParticulierFeed(initialTab: 1))),
+              onPressed: () async {
+                await Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const UserParticulierFeed(initialTab: 1)));
+                if (mounted) _load();
+              },
               child: Text('Voir tout',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal)),
             ),
@@ -416,12 +419,20 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
               final a = _animaux[i];
               return _AnimalMiniCard(
                 animal: a,
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => AnimalFicheParticulierPage(
-                    animalId: a['id'] as String?,
-                    initialData: a,
-                  ),
-                )),
+                onTap: () async {
+                  // Sans ce rechargement, la page d'accueil garde
+                  // l'instantané chargé à l'ouverture : une photo ajoutée/
+                  // changée depuis la fiche (ou un animal tout juste créé)
+                  // ne s'affiche pas tant qu'on ne quitte pas l'onglet
+                  // Accueil et qu'on n'y revient pas.
+                  await Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => AnimalFicheParticulierPage(
+                      animalId: a['id'] as String?,
+                      initialData: a,
+                    ),
+                  ));
+                  if (mounted) _load();
+                },
               );
             },
           ),
