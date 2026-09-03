@@ -57,6 +57,7 @@ import 'package:PetsMatch/pages/pro/toilettage_planning_employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_dashboard_page.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_contrats_page.dart';
+import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
 import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
@@ -273,6 +274,16 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => const ProClientsPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Bibliothèque d\'exercices',
+                        icon: Icons.fitness_center_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const EducationBibliothequePage(),
                           ));
                         },
                       ),

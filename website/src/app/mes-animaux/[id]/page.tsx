@@ -1134,10 +1134,16 @@ const EDU_CATEGORIES: Record<string, string> = {
 const EDU_STATUT_LABEL: Record<string, string> = { a_travailler: 'À travailler', en_cours: 'En cours', acquis: 'Acquis' };
 const eduStatutColor = (s: string) => s === 'acquis' ? '#6E9E57' : s === 'en_cours' ? '#EFA100' : '#D5573B';
 interface EduObjectif { id: string; libelle: string; categorie: string | null; statut: string; note: string | null; }
+interface EduExercice {
+  id: string; titre_snapshot: string; description_snapshot: string | null;
+  media_snapshot: { type: string; url: string }[] | null;
+  cadence: string | null; echeance: string | null; statut: string;
+}
 
 function EducationRapportsTab({ animalId }: { animalId: string }) {
   const [rapports, setRapports] = useState<RapportEdu[]>([]);
   const [objectifs, setObjectifs] = useState<EduObjectif[]>([]);
+  const [exercices, setExercices] = useState<EduExercice[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -1148,12 +1154,23 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
       supabase.from('education_objectifs')
         .select('id, libelle, categorie, statut, note')
         .eq('animal_id', animalId).order('ordre').order('created_at'),
-    ]).then(([r, o]) => {
+      supabase.from('exercices_attribues')
+        .select('id, titre_snapshot, description_snapshot, media_snapshot, cadence, echeance, statut')
+        .eq('animal_id', animalId).order('assigned_at', { ascending: false }),
+    ]).then(([r, o, e]) => {
       setRapports((r.data ?? []) as RapportEdu[]);
       setObjectifs((o.data ?? []) as EduObjectif[]);
+      setExercices((e.data ?? []) as EduExercice[]);
       setLoading(false);
     });
   }, [animalId]);
+
+  async function toggleExerciceFait(ex: EduExercice) {
+    const next = ex.statut === 'fait' ? 'a_faire' : 'fait';
+    setExercices(prev => prev.map(x => x.id === ex.id ? { ...x, statut: next } : x));
+    await supabase.from('exercices_attribues')
+      .update({ statut: next, updated_at: new Date().toISOString() }).eq('id', ex.id);
+  }
 
   const lignes = (raw: string | null) => (raw ?? '')
     .split(/[\n;]/).map(s => s.trim()).filter(Boolean);
@@ -1167,7 +1184,7 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
   }
 
   if (loading) return <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-[#7B5EA7] border-t-transparent rounded-full animate-spin" /></div>;
-  if (rapports.length === 0 && objectifs.length === 0) return (
+  if (rapports.length === 0 && objectifs.length === 0 && exercices.length === 0) return (
     <div className="flex flex-col items-center py-16 text-gray-400 gap-2">
       <span className="text-5xl">🎓</span>
       <p className="font-semibold">Aucun suivi éducatif pour l&apos;instant</p>
@@ -1194,6 +1211,46 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+      {exercices.length > 0 && (
+        <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Exercices à faire</p>
+          <div className="space-y-3">
+            {exercices.map(ex => {
+              const done = ex.statut === 'fait';
+              const media = ex.media_snapshot ?? [];
+              return (
+                <div key={ex.id} className={`rounded-xl border p-3 ${done ? 'border-[#6E9E57]' : 'border-gray-100'}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className={`text-sm font-semibold ${done ? 'line-through text-gray-400' : 'text-gray-800'}`}>{ex.titre_snapshot}</p>
+                    <button onClick={() => toggleExerciceFait(ex)}
+                      className={`text-xs font-semibold shrink-0 ${done ? 'text-[#6E9E57]' : 'text-[#7B5EA7]'}`}>
+                      {done ? '✓ Fait' : 'Marquer fait'}
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {ex.cadence && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">{ex.cadence}</span>}
+                    {ex.echeance && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#D5573B]/10 text-[#D5573B]">avant le {new Date(ex.echeance).toLocaleDateString('fr-FR')}</span>}
+                  </div>
+                  {ex.description_snapshot && <p className="text-xs text-gray-600 mt-1.5 whitespace-pre-line">{ex.description_snapshot}</p>}
+                  {media.length > 0 && (
+                    <div className="flex gap-2 mt-2 overflow-x-auto">
+                      {media.map((m, i) => m.type === 'video' ? (
+                        <a key={i} href={m.url} target="_blank" rel="noopener noreferrer"
+                          className="w-16 h-16 shrink-0 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400">▶</a>
+                      ) : (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <a key={i} href={m.url} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                          <img src={m.url} alt="" className="w-16 h-16 rounded-lg object-cover" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -2346,7 +2403,9 @@ export default function AnimalFichePage() {
     Promise.all([
       supabase.from('education_progression').select('id').eq('animal_id', id).limit(1),
       supabase.from('education_objectifs').select('id').eq('animal_id', id).limit(1),
-    ]).then(([r, o]) => setHasEducationRapports((r.data ?? []).length > 0 || (o.data ?? []).length > 0));
+      supabase.from('exercices_attribues').select('id').eq('animal_id', id).limit(1),
+    ]).then(([r, o, e]) => setHasEducationRapports(
+      (r.data ?? []).length > 0 || (o.data ?? []).length > 0 || (e.data ?? []).length > 0));
   }, [id, isNew]);
   useEffect(() => {
     if (!user || !isEleveur) return;

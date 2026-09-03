@@ -325,6 +325,7 @@ const MENU_EDUCATION = [
       { href: '/mes-rdv',            label: 'Mon agenda RDV',     icon: '🗓️' },
       { href: '/pro/creneaux',       label: 'Mes créneaux',       icon: '⏰' },
       { href: '/mes-patients',       label: 'Mes animaux suivis', icon: '🐾' },
+      { href: '/education/bibliotheque', label: 'Bibliothèque d\'exercices', icon: '🏋️' },
       { href: '/elevage/employes',   label: 'Mes employés',       icon: '👥' },
       { href: '/education/abonnement', label: 'Mon abonnement',   icon: '💳' },
     ],
@@ -522,6 +523,7 @@ const SEARCH_KEYWORDS: Record<string, string[]> = {
   '/garde/abonnement': ['abonnement garde', 'formule garde'],
   // Éducation
   '/education/planning': ['planning des cours', 'cours collectifs', 'seances'],
+  '/education/bibliotheque': ['bibliotheque exercices', 'exercices', 'catalogue exercices', 'fiches exercices'],
   '/education/devis': ['devis', 'nouveau devis'],
   '/education/contrat': ['contrats education', 'contrat signable', 'mes contrats educateur'],
   '/education/abonnement': ['abonnement educateur', 'formule', 'ma formule'],
@@ -663,6 +665,7 @@ function getNotifUrl(n: Notif): string | null {
       return d.url ?? null;
     case 'education_rapport':
     case 'education_objectif_acquis':
+    case 'education_exercice_assigne':
       return d.url ?? (d.animalId ? `/mes-animaux/${d.animalId}?tab=education` : '/mes-animaux');
     case 'cours_collectif_inscription':
       return '/education/planning';
@@ -1199,6 +1202,7 @@ export default function Header() {
                               : n.type === 'pension_journal' || n.type === 'pension_journal_reply' ? '📸'
                               : n.type === 'education_rapport' ? '🐾'
                               : n.type === 'education_objectif_acquis' ? '🎯'
+                              : n.type === 'education_exercice_assigne' ? '🏋️'
                               : n.type === 'cours_collectif_inscription' ? '👥'
                               : n.type === 'devis_recu' ? '📋'
                               : n.type === 'devis_accepte' ? '✅'

@@ -246,6 +246,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         hasRap = (objs as List).isNotEmpty;
       } catch (_) {}
     }
+    if (!hasRap) {
+      try {
+        final exos = await _supa.from('exercices_attribues').select('id').eq('animal_id', _animalId!).limit(1);
+        hasRap = (exos as List).isNotEmpty;
+      } catch (_) {}
+    }
     try {
       final devis = await _supa.from('devis').select('id').eq('animal_id', _animalId!).limit(1);
       hasDev = (devis as List).isNotEmpty;
@@ -6439,6 +6445,7 @@ class _EducationTabPState extends State<_EducationTabP> {
   List<Map<String, dynamic>> _rapports = [];
   List<Map<String, dynamic>> _devis = [];
   List<Map<String, dynamic>> _objectifs = [];
+  List<Map<String, dynamic>> _exercices = [];
   bool _loading = true;
 
   static const _kEduCategories = <String, String>{
@@ -6471,14 +6478,20 @@ class _EducationTabPState extends State<_EducationTabP> {
       final d = await _supa.from('devis').select()
           .eq('animal_id', widget.animalId!).order('created_at', ascending: false);
       List objectifs = const [];
+      List exercices = const [];
       try {
         objectifs = await _supa.from('education_objectifs').select()
             .eq('animal_id', widget.animalId!).order('ordre').order('created_at');
+      } catch (_) {}
+      try {
+        exercices = await _supa.from('exercices_attribues').select()
+            .eq('animal_id', widget.animalId!).order('assigned_at', ascending: false);
       } catch (_) {}
       if (mounted) setState(() {
         _rapports = List<Map<String, dynamic>>.from(r as List);
         _devis = List<Map<String, dynamic>>.from(d as List);
         _objectifs = List<Map<String, dynamic>>.from(objectifs);
+        _exercices = List<Map<String, dynamic>>.from(exercices);
         _loading = false;
       });
     } catch (_) {
@@ -6507,7 +6520,7 @@ class _EducationTabPState extends State<_EducationTabP> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: _kPurpleEdu));
-    if (_rapports.isEmpty && _devis.isEmpty && _objectifs.isEmpty) {
+    if (_rapports.isEmpty && _devis.isEmpty && _objectifs.isEmpty && _exercices.isEmpty) {
       return const _TabEmptyState(
           icon: Icons.school_outlined,
           text: 'Aucun suivi éducatif pour l\'instant.\nLe plan de travail et les comptes rendus de votre éducateur apparaîtront ici.');
@@ -6518,6 +6531,11 @@ class _EducationTabPState extends State<_EducationTabP> {
         if (_objectifs.isNotEmpty) ...[
           _title('Plan de travail'),
           ..._objectifs.map(_objectifCard),
+          const SizedBox(height: 18),
+        ],
+        if (_exercices.isNotEmpty) ...[
+          _title('Exercices à faire'),
+          ..._exercices.map(_exerciceCard),
           const SizedBox(height: 18),
         ],
         if (_devis.isNotEmpty) ...[
@@ -6562,6 +6580,105 @@ class _EducationTabPState extends State<_EducationTabP> {
               style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
         ],
       ]),
+    );
+  }
+
+  Future<void> _toggleExerciceFait(Map<String, dynamic> ex) async {
+    final next = ex['statut'] == 'fait' ? 'a_faire' : 'fait';
+    setState(() => ex['statut'] = next);
+    try {
+      await _supa.from('exercices_attribues')
+          .update({'statut': next, 'updated_at': DateTime.now().toIso8601String()})
+          .eq('id', ex['id']);
+    } catch (_) {}
+  }
+
+  Widget _exerciceCard(Map<String, dynamic> ex) {
+    final media = (ex['media_snapshot'] is List)
+        ? (ex['media_snapshot'] as List).whereType<Map>().toList() : const [];
+    final done = ex['statut']?.toString() == 'fait';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: done ? const Color(0xFF6E9E57) : Colors.grey.shade200)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: Text(ex['titre_snapshot']?.toString() ?? '',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13,
+                  decoration: done ? TextDecoration.lineThrough : null,
+                  color: done ? Colors.grey.shade500 : const Color(0xFF1F2A2E)))),
+          TextButton(
+            onPressed: () => _toggleExerciceFait(ex),
+            child: Text(done ? '✓ Fait' : 'Marquer fait',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                    color: done ? const Color(0xFF6E9E57) : _kPurpleEdu, fontWeight: FontWeight.w600)),
+          ),
+        ]),
+        Wrap(spacing: 6, children: [
+          if ((ex['cadence']?.toString() ?? '').isNotEmpty)
+            _exoPill(ex['cadence'].toString(), Colors.grey.shade500),
+          if (ex['echeance'] != null)
+            _exoPill('avant le ${_frShort(ex['echeance'].toString())}', const Color(0xFFD5573B)),
+        ]),
+        if ((ex['description_snapshot']?.toString() ?? '').isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(ex['description_snapshot'].toString(),
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, height: 1.4, color: Colors.grey.shade700)),
+        ],
+        if (media.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 64,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: media.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 6),
+              itemBuilder: (_, i) {
+                final m = media[i];
+                final url = m['url']?.toString() ?? '';
+                final isVideo = m['type'] == 'video';
+                return GestureDetector(
+                  onTap: () => isVideo
+                      ? launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)
+                      : _openImage(url),
+                  child: Container(
+                    width: 64, height: 64,
+                    decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(8)),
+                    clipBehavior: Clip.antiAlias,
+                    child: isVideo
+                        ? const Icon(Icons.play_circle_outline, color: Colors.grey)
+                        : CachedNetworkImage(imageUrl: url, fit: BoxFit.cover),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ]),
+    );
+  }
+
+  Widget _exoPill(String label, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+        child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: color, fontWeight: FontWeight.w600)),
+      );
+
+  String _frShort(String iso) {
+    final m = RegExp(r'^(\d{4})-(\d{2})-(\d{2})').firstMatch(iso);
+    return m == null ? iso : '${m[3]}/${m[2]}';
+  }
+
+  void _openImage(String url) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.black,
+        child: InteractiveViewer(
+          child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain),
+        ),
+      ),
     );
   }
 

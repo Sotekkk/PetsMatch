@@ -61,6 +61,10 @@ interface Gestation {
 interface EducObjectif {
   id: string; libelle: string; categorie: string | null; statut: string; note: string | null; ordre: number;
 }
+interface EducExercice { id: string; titre: string; description: string | null; media: unknown; }
+interface EducAttribue {
+  id: string; titre_snapshot: string; cadence: string | null; echeance: string | null; statut: string;
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -159,6 +163,10 @@ export default function PatientDetailPage() {
   const [objectifs, setObjectifs] = useState<EducObjectif[]>([]);
   const [objForm, setObjForm] = useState<{ id?: string; libelle: string; categorie: string; statut: string; note: string } | null>(null);
   const [savingObj, setSavingObj] = useState(false);
+  const [biblio, setBiblio] = useState<EducExercice[]>([]);
+  const [attribues, setAttribues] = useState<EducAttribue[]>([]);
+  const [attrPicker, setAttrPicker] = useState<{ ids: Set<string>; cadence: string; echeance: string } | null>(null);
+  const [savingAttr, setSavingAttr] = useState(false);
   const [showAddRapport, setShowAddRapport] = useState(false);
   const [rapportContenu, setRapportContenu] = useState('');
   const [rapportExercices, setRapportExercices] = useState('');
@@ -252,6 +260,7 @@ export default function PatientDetailPage() {
         isFemelle ? supabase.from('gestations').select('*').eq('animal_id', animalId).order('date', { ascending: false }) : Promise.resolve({ data: [] }),
         supabase.from('education_progression').select('id, date_seance, contenu, exercices_conseilles').eq('animal_id', animalId).order('date_seance', { ascending: false }),
         supabase.from('education_objectifs').select('id, libelle, categorie, statut, note, ordre').eq('animal_id', animalId).order('ordre').order('created_at'),
+        supabase.from('exercices_attribues').select('id, titre_snapshot, cadence, echeance, statut').eq('animal_id', animalId).order('assigned_at', { ascending: false }),
       ]);
 
       const get = <T,>(i: number): T[] => {
@@ -277,6 +286,7 @@ export default function PatientDetailPage() {
       setGestations(get<Gestation>(9));
       setRapports(get<{ id: string; date_seance: string; contenu: string; exercices_conseilles: string | null }>(10));
       setObjectifs(get<EducObjectif>(11));
+      setAttribues(get<EducAttribue>(12));
       setLoading(false);
     }
     load();
@@ -483,6 +493,54 @@ export default function PatientDetailPage() {
   async function deleteObjectif(id: string) {
     await supabase.from('education_objectifs').delete().eq('id', id);
     setObjectifs(prev => prev.filter(o => o.id !== id));
+  }
+
+  // ── Exercices attribués ──
+  async function openAttrPicker() {
+    if (!user?.uid) return;
+    const { data } = await supabase.from('exercices_bibliotheque')
+      .select('id, titre, description, media').eq('pro_uid', user.uid).eq('actif', true).order('created_at', { ascending: false });
+    setBiblio((data ?? []) as EducExercice[]);
+    setAttrPicker({ ids: new Set(), cadence: '', echeance: '' });
+  }
+
+  async function attribuerExercices() {
+    if (!attrPicker || attrPicker.ids.size === 0 || !user?.uid) return;
+    setSavingAttr(true);
+    try {
+      const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+      const chosen = biblio.filter(b => attrPicker.ids.has(b.id));
+      await supabase.from('exercices_attribues').insert(chosen.map(b => ({
+        exercice_id: b.id, pro_uid: user.uid, pro_profile_id: activeProfileId || null,
+        animal_id: animalId, owner_uid: ownerUid,
+        titre_snapshot: b.titre, description_snapshot: b.description, media_snapshot: b.media ?? [],
+        cadence: attrPicker.cadence.trim() || null,
+        echeance: attrPicker.echeance || null,
+      })));
+      if (ownerUid) {
+        const proNom = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || 'Votre éducateur';
+        const { data: propRow } = await supabase.from('animaux_proprietes')
+          .select('profile_id_proprio').eq('animal_id', animalId).is('date_fin', null).limit(1).maybeSingle();
+        await supabase.from('notifications').insert({
+          uid: ownerUid, type: 'education_exercice_assigne',
+          title: `Nouveaux exercices — ${animal?.nom ?? 'votre animal'}`,
+          body: `${proNom} a ajouté ${chosen.length} exercice${chosen.length > 1 ? 's' : ''} à faire.`,
+          ...(propRow?.profile_id_proprio ? { profile_id: propRow.profile_id_proprio } : {}),
+          data: { animalId, animalNom: animal?.nom ?? 'Animal', url: `/mes-animaux/${animalId}?tab=education` },
+        });
+      }
+      setAttrPicker(null);
+      const { data } = await supabase.from('exercices_attribues')
+        .select('id, titre_snapshot, cadence, echeance, statut').eq('animal_id', animalId).order('assigned_at', { ascending: false });
+      setAttribues((data ?? []) as EducAttribue[]);
+    } finally {
+      setSavingAttr(false);
+    }
+  }
+
+  async function retirerAttribue(id: string) {
+    await supabase.from('exercices_attribues').delete().eq('id', id);
+    setAttribues(prev => prev.filter(a => a.id !== id));
   }
 
   async function requestWriteAccess() {
@@ -918,6 +976,67 @@ export default function PatientDetailPage() {
                         </div>
                       )}
                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+          <Card title="🏋️ Exercices attribués">
+            {hasReportAccess && (
+              <button onClick={openAttrPicker}
+                className="w-full text-white rounded-2xl py-2.5 font-semibold text-sm flex items-center justify-center gap-2 mb-4"
+                style={{ background: '#EF6C00', fontFamily: 'Galey, sans-serif' }}>
+                <span className="text-lg leading-none">+</span> Attribuer des exercices
+              </button>
+            )}
+            {attrPicker && (
+              <div className="border border-[#EF6C00]/30 rounded-2xl p-4 mb-4 bg-[#EF6C00]/5 space-y-2">
+                <p className="text-xs font-semibold text-gray-500">Choisir dans la bibliothèque</p>
+                {biblio.length === 0 ? (
+                  <p className="text-xs text-gray-400">Bibliothèque vide — créez des exercices dans « Bibliothèque d&apos;exercices ».</p>
+                ) : biblio.map(b => (
+                  <label key={b.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" checked={attrPicker.ids.has(b.id)}
+                      onChange={e => setAttrPicker(p => {
+                        if (!p) return p;
+                        const ids = new Set(p.ids);
+                        if (e.target.checked) ids.add(b.id); else ids.delete(b.id);
+                        return { ...p, ids };
+                      })} />
+                    {b.titre}
+                  </label>
+                ))}
+                <input value={attrPicker.cadence} onChange={e => setAttrPicker(p => p ? { ...p, cadence: e.target.value } : p)}
+                  placeholder="Cadence (facultatif) — ex : 2 fois par jour"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm mt-1" />
+                <input type="date" value={attrPicker.echeance} onChange={e => setAttrPicker(p => p ? { ...p, echeance: e.target.value } : p)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                <div className="flex gap-2 pt-1">
+                  <button onClick={() => setAttrPicker(null)} className="flex-1 border border-gray-200 rounded-xl py-2 text-sm text-gray-500">Annuler</button>
+                  <button onClick={attribuerExercices} disabled={savingAttr || attrPicker.ids.size === 0}
+                    className="flex-1 text-white rounded-xl py-2 text-sm font-semibold disabled:opacity-50" style={{ background: '#EF6C00' }}>
+                    Envoyer à la famille
+                  </button>
+                </div>
+              </div>
+            )}
+            {attribues.length === 0 ? (
+              <EmptyState text="Aucun exercice attribué" />
+            ) : (
+              <div className="space-y-2">
+                {attribues.map(a => (
+                  <div key={a.id} className="border border-gray-100 rounded-xl p-3 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className={`text-sm font-semibold ${a.statut === 'fait' ? 'line-through text-gray-400' : 'text-[#1F2A2E]'}`}>{a.titre_snapshot}</p>
+                      <p className="text-xs text-gray-500">
+                        {a.statut === 'fait' ? '✓ Fait par la famille' : 'En attente'}
+                        {a.cadence ? ` · ${a.cadence}` : ''}
+                        {a.echeance ? ` · avant le ${new Date(a.echeance).toLocaleDateString('fr-FR')}` : ''}
+                      </p>
+                    </div>
+                    {hasReportAccess && (
+                      <button onClick={() => retirerAttribue(a.id)} className="text-gray-300 hover:text-red-400 text-sm shrink-0">🗑</button>
+                    )}
                   </div>
                 ))}
               </div>
