@@ -7,6 +7,7 @@ import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'fire
 import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { RichText, RichTextEditor, richTextIsEmpty, richTextToPlain } from '@/lib/rich-text';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { AnatomieSeances } from '@/components/AnatomiePoints';
 
@@ -445,7 +446,7 @@ export default function PatientDetailPage() {
   }
 
   async function soumettreRapport() {
-    if (!user?.uid || !animalId || !rapportContenu.trim()) return;
+    if (!user?.uid || !animalId || richTextIsEmpty(rapportContenu)) return;
     setSavingRapport(true);
     try {
       const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
@@ -503,7 +504,8 @@ export default function PatientDetailPage() {
         }
         const objLibelles = objectifs.map(o => o.libelle).filter(Boolean);
         const noteParts: string[] = [];
-        if (bilanReco.trim()) noteParts.push(bilanReco.trim());
+        const recoPlain = richTextToPlain(bilanReco).trim();
+        if (recoPlain) noteParts.push(recoPlain);
         if (objLibelles.length) noteParts.push(`Objectifs de travail : ${objLibelles.join(', ')}.`);
         if (noteParts.length) params.set('note', noteParts.join('\n\n'));
         setDevisPrefillUrl(`/education/devis?${params.toString()}`);
@@ -523,7 +525,7 @@ export default function PatientDetailPage() {
   }
 
   async function saveEditRapport() {
-    if (!editingRapportId || !rapportContenu.trim()) return;
+    if (!editingRapportId || richTextIsEmpty(rapportContenu)) return;
     setSavingRapport(true);
     try {
       await supabase.from('education_progression').update({
@@ -577,7 +579,7 @@ export default function PatientDetailPage() {
         libelle: objForm.libelle.trim(),
         categorie: objForm.categorie || null,
         statut: objForm.statut,
-        note: objForm.note.trim() || null,
+        note: richTextIsEmpty(objForm.note) ? null : objForm.note.trim(),
         updated_at: now,
         acquis_le: objForm.statut === 'acquis' ? (wasAcquis ? undefined : now) : null,
       };
@@ -1166,15 +1168,11 @@ export default function PatientDetailPage() {
                 <input value={objForm.libelle} onChange={e => setObjForm({ ...objForm, libelle: e.target.value })}
                   placeholder="Ex : Revient au rappel en extérieur"
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
-                <div className="flex flex-wrap gap-1.5">
-                  {Object.entries(EDUC_CATEGORIES).map(([k, v]) => (
-                    <button key={k} type="button"
-                      onClick={() => setObjForm({ ...objForm, categorie: objForm.categorie === k ? '' : k })}
-                      className={`text-xs px-2.5 py-1 rounded-full border ${objForm.categorie === k ? 'bg-[#EF6C00]/15 border-[#EF6C00] text-[#EF6C00]' : 'border-gray-200 text-gray-500'}`}>
-                      {v}
-                    </button>
-                  ))}
-                </div>
+                <select value={objForm.categorie} onChange={e => setObjForm({ ...objForm, categorie: e.target.value })}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white">
+                  <option value="">Catégorie (optionnel)…</option>
+                  {Object.entries(EDUC_CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
                 <div className="flex gap-1.5">
                   {EDUC_STATUTS.map(s => (
                     <button key={s} type="button" onClick={() => setObjForm({ ...objForm, statut: s })}
@@ -1183,9 +1181,8 @@ export default function PatientDetailPage() {
                     </button>
                   ))}
                 </div>
-                <textarea value={objForm.note} onChange={e => setObjForm({ ...objForm, note: e.target.value })}
-                  rows={2} placeholder="Note (facultatif)"
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                <RichTextEditor value={objForm.note} onChange={html => setObjForm(f => f ? { ...f, note: html } : f)}
+                  minHeight={90} placeholder="Note (facultatif)" />
                 <div className="flex gap-2">
                   <button onClick={() => setObjForm(null)}
                     className="flex-1 border border-gray-200 rounded-xl py-2 text-sm text-gray-500">Annuler</button>
@@ -1207,7 +1204,7 @@ export default function PatientDetailPage() {
                         <p className="text-sm font-semibold text-[#1F2A2E]">{o.libelle}</p>
                         <p className="text-xs" style={{ color: educStatutColor(o.statut) }}>{EDUC_STATUT_LABEL[o.statut]}
                           {o.categorie && EDUC_CATEGORIES[o.categorie] ? ` · ${EDUC_CATEGORIES[o.categorie]}` : ''}</p>
-                        {o.note && <p className="text-xs text-gray-500 mt-0.5">{o.note}</p>}
+                        {o.note && <div className="text-xs text-gray-500 mt-0.5"><RichText value={o.note} /></div>}
                       </div>
                       {hasReportAccess && (
                         <div className="flex gap-1 shrink-0">
@@ -1430,15 +1427,13 @@ export default function PatientDetailPage() {
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">
                     {rapportType === 'bilan' ? 'Observations' : 'Compte rendu'}
                   </label>
-                  <textarea value={rapportContenu} onChange={e => setRapportContenu(e.target.value)} rows={3}
-                    placeholder={rapportType === 'bilan' ? 'Comportement observé, contexte de vie…' : 'Déroulé de la séance, observations, progrès…'}
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                  <RichTextEditor value={rapportContenu} onChange={setRapportContenu} minHeight={150}
+                    placeholder={rapportType === 'bilan' ? 'Comportement observé, contexte de vie…' : 'Déroulé de la séance, observations, progrès…'} />
                 </div>
                 {rapportType === 'bilan' ? (
                   <>
-                    <textarea value={bilanReco} onChange={e => setBilanReco(e.target.value)} rows={2}
-                      placeholder="Recommandation : programme conseillé, priorités…"
-                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                    <RichTextEditor value={bilanReco} onChange={setBilanReco} minHeight={110}
+                      placeholder="Recommandation : programme conseillé, priorités…" />
                     <div className="flex gap-2">
                       <input type="number" value={bilanNb} onChange={e => setBilanNb(e.target.value)} placeholder="Nb séances"
                         className="w-28 border border-gray-200 rounded-xl px-3 py-2 text-sm" />
@@ -1463,7 +1458,7 @@ export default function PatientDetailPage() {
                     Imputer sur le forfait « {forfaitActif.nom_snapshot} » ({forfaitActif.nb_seances_utilisees + 1}/{forfaitActif.nb_seances_total})
                   </label>
                 )}
-                <button onClick={soumettreRapport} disabled={savingRapport || !rapportContenu.trim()}
+                <button onClick={soumettreRapport} disabled={savingRapport || richTextIsEmpty(rapportContenu)}
                   className="w-full text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
                   style={{ background: rapportType === 'bilan' ? '#EF6C00' : TEAL, fontFamily: 'Galey, sans-serif' }}>
                   {savingRapport ? '…' : rapportType === 'bilan' ? 'Envoyer le bilan' : 'Envoyer au propriétaire'}
@@ -1475,8 +1470,7 @@ export default function PatientDetailPage() {
                 <p className="text-xs font-semibold text-[#0C5C6C] uppercase tracking-wide">Modifier le rapport</p>
                 <div>
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Compte rendu</label>
-                  <textarea value={rapportContenu} onChange={e => setRapportContenu(e.target.value)} rows={3}
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+                  <RichTextEditor value={rapportContenu} onChange={setRapportContenu} minHeight={140} />
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1">Exercices conseillés</label>
@@ -1488,7 +1482,7 @@ export default function PatientDetailPage() {
                     className="flex-1 border border-gray-200 text-gray-600 rounded-xl py-2.5 text-sm font-semibold">
                     Annuler
                   </button>
-                  <button onClick={saveEditRapport} disabled={savingRapport || !rapportContenu.trim()}
+                  <button onClick={saveEditRapport} disabled={savingRapport || richTextIsEmpty(rapportContenu)}
                     className="flex-1 text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
                     style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
                     {savingRapport ? '…' : 'Enregistrer'}
@@ -1522,11 +1516,11 @@ export default function PatientDetailPage() {
                       )}
                     </div>
                     {r.type === 'bilan' && r.bilan_motif && <p className="text-xs font-semibold text-gray-700 mb-0.5">Motif : {r.bilan_motif}</p>}
-                    <p className="text-sm text-[#1F2A2E]">{r.contenu}</p>
+                    <div className="text-sm text-[#1F2A2E]"><RichText value={r.contenu} /></div>
                     {r.type === 'bilan' && r.bilan_recommandation && (
                       <div className="mt-1.5 bg-[#FFF3E9] rounded-lg px-2 py-1.5">
                         <p className="text-[11px] font-bold text-[#EF6C00]">📋 Recommandation</p>
-                        <p className="text-xs text-gray-800">{r.bilan_recommandation}</p>
+                        <div className="text-xs text-gray-800"><RichText value={r.bilan_recommandation} /></div>
                         {r.bilan_nb_seances_estime != null && <p className="text-[10px] text-gray-500">Estimation : {r.bilan_nb_seances_estime} séances</p>}
                       </div>
                     )}

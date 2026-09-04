@@ -8,6 +8,7 @@ import 'package:PetsMatch/pages/pro/education_shared.dart';
 import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
 import 'package:PetsMatch/pages/pro/education_attestation.dart';
+import 'package:PetsMatch/widgets/rich_text_view.dart';
 
 /// Hub de suivi d'un animal côté éducateur/comportementaliste :
 /// onglets « Plan de travail » (objectifs), « Exercices » (attribués à la
@@ -199,16 +200,24 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
               ),
             ),
             const SizedBox(height: 12),
-            Wrap(spacing: 6, runSpacing: 6, children: _kCategories.entries.map((e) {
-              final sel = categorie == e.key;
-              return ChoiceChip(
-                label: Text(e.value, style: const TextStyle(fontFamily: 'Galey', fontSize: 11)),
-                selected: sel,
-                onSelected: (_) => setSheet(() => categorie = sel ? null : e.key),
-                selectedColor: _kOrange.withValues(alpha: 0.18),
-                showCheckmark: false,
-              );
-            }).toList()),
+            DropdownButtonFormField<String?>(
+              initialValue: categorie,
+              isExpanded: true,
+              decoration: InputDecoration(
+                labelText: 'Catégorie',
+                labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              items: [
+                const DropdownMenuItem(value: null, child: Text('Aucune', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                ..._kCategories.entries.map((e) => DropdownMenuItem(
+                      value: e.key,
+                      child: Text(e.value, style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                    )),
+              ],
+              onChanged: (v) => setSheet(() => categorie = v),
+            ),
             const SizedBox(height: 12),
             SegmentedButton<String>(
               segments: _kStatuts.map((s) => ButtonSegment(
@@ -222,7 +231,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             const SizedBox(height: 12),
             TextField(
               controller: noteCtrl,
-              maxLines: 2,
+              minLines: 3,
+              maxLines: 8,
               style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
               decoration: InputDecoration(
                 labelText: 'Note (facultatif)',
@@ -377,7 +387,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
               ],
               TextField(
                 controller: contenuCtrl,
-                maxLines: 5,
+                minLines: 6,
+                maxLines: 16,
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
                 decoration: InputDecoration(
                   labelText: isBilan ? 'Observations' : null,
@@ -389,11 +400,15 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                   contentPadding: const EdgeInsets.all(12),
                 ),
               ),
+              const SizedBox(height: 4),
+              const Text('Mise en forme (gras, couleurs, listes…) disponible sur le site.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
               const SizedBox(height: 12),
               if (isBilan) ...[
                 TextField(
                   controller: recoCtrl,
-                  maxLines: 3,
+                  minLines: 3,
+                  maxLines: 8,
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
                   decoration: InputDecoration(
                     labelText: 'Recommandation',
@@ -1259,7 +1274,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
               ]),
               if ((ex['description_snapshot']?.toString() ?? '').isNotEmpty) ...[
                 const SizedBox(height: 6),
-                Text(ex['description_snapshot'].toString(),
+                RichTextView(ex['description_snapshot'].toString(),
                     style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
               ],
               ...(_retours[ex['id']?.toString() ?? ''] ?? const []).map(_retourBubble),
@@ -1338,7 +1353,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
               ]),
               if ((o['note']?.toString() ?? '').isNotEmpty) ...[
                 const SizedBox(height: 6),
-                Text(o['note'].toString(),
+                RichTextView(o['note'].toString(),
                     style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
               ],
             ]),
@@ -1383,8 +1398,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
               ],
               const SizedBox(height: 6),
-              Text(s['contenu']?.toString() ?? '',
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
+              RichTextView(s['contenu']?.toString() ?? '',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4, color: Color(0xFF1F2A2E))),
               if (isBilan && (s['bilan_recommandation']?.toString() ?? '').isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Container(
@@ -1394,8 +1409,8 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
                     const Text('📋 Recommandation',
                         style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 11, color: _kOrange)),
                     const SizedBox(height: 2),
-                    Text(s['bilan_recommandation'].toString(),
-                        style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                    RichTextView(s['bilan_recommandation'].toString(),
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF1F2A2E))),
                     if (s['bilan_nb_seances_estime'] != null)
                       Text('Estimation : ${s['bilan_nb_seances_estime']} séances',
                           style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),

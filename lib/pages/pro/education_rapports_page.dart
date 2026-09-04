@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/widgets/rich_text_view.dart';
 
 /// Vue lecture seule côté propriétaire du suivi éducatif : plan de travail
 /// (objectifs, `education_objectifs`) + rapports de séance (`education_progression`,
@@ -126,7 +127,7 @@ class _EducationRapportsPageState extends State<EducationRapportsPage> {
         ],
         if ((o['note']?.toString() ?? '').isNotEmpty) ...[
           const SizedBox(height: 4),
-          Text(o['note'].toString(), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+          RichTextView(o['note'].toString(), style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
         ],
       ]),
     );
@@ -141,8 +142,8 @@ class _EducationRapportsPageState extends State<EducationRapportsPage> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(date, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
         const SizedBox(height: 6),
-        Text(r['contenu']?.toString() ?? '',
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
+        RichTextView(r['contenu']?.toString() ?? '',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4, color: Color(0xFF1F2A2E))),
         if ((r['exercices_conseilles']?.toString() ?? '').isNotEmpty) ...[
           const SizedBox(height: 8),
           Container(

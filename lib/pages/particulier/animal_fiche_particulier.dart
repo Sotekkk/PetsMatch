@@ -22,6 +22,7 @@ import 'package:PetsMatch/pages/particulier/partage_animal_sheet.dart';
 import 'package:PetsMatch/pages/particulier/proprietaires_animal_sheet.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
+import 'package:PetsMatch/widgets/rich_text_view.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class _ContactUrgenceP {
@@ -6758,7 +6759,7 @@ class _EducationTabPState extends State<_EducationTabP> {
         ],
         if ((o['note']?.toString() ?? '').isNotEmpty) ...[
           const SizedBox(height: 4),
-          Text(o['note'].toString(),
+          RichTextView(o['note'].toString(),
               style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
         ],
       ]),
@@ -6821,7 +6822,7 @@ class _EducationTabPState extends State<_EducationTabP> {
         ]),
         if ((ex['description_snapshot']?.toString() ?? '').isNotEmpty) ...[
           const SizedBox(height: 6),
-          Text(ex['description_snapshot'].toString(),
+          RichTextView(ex['description_snapshot'].toString(),
               style: TextStyle(fontFamily: 'Galey', fontSize: 12, height: 1.4, color: Colors.grey.shade700)),
         ],
         if (media.isNotEmpty) ...[
@@ -7115,7 +7116,7 @@ class _EducationTabPState extends State<_EducationTabP> {
         ],
         const SizedBox(height: 6),
         if ((r['contenu']?.toString() ?? '').isNotEmpty)
-          Text(r['contenu'].toString(),
+          RichTextView(r['contenu'].toString(),
               style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4, color: Color(0xFF1F2A2E))),
         if (isBilan && (r['bilan_recommandation']?.toString() ?? '').isNotEmpty) ...[
           const SizedBox(height: 8),
@@ -7126,8 +7127,8 @@ class _EducationTabPState extends State<_EducationTabP> {
               const Text('📋 Recommandation',
                   style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFFEF6C00))),
               const SizedBox(height: 3),
-              Text(r['bilan_recommandation'].toString(),
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, height: 1.4)),
+              RichTextView(r['bilan_recommandation'].toString(),
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, height: 1.4, color: Color(0xFF1F2A2E))),
               if (r['bilan_nb_seances_estime'] != null)
                 Text('Estimation : ${r['bilan_nb_seances_estime']} séances',
                     style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),

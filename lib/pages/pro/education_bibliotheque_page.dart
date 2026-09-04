@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 import 'package:PetsMatch/pages/pro/education_shared.dart';
+import 'package:PetsMatch/widgets/rich_text_view.dart';
 
 /// Bibliothèque d'exercices de l'éducateur : catalogue réutilisable
 /// (titre + déroulé + photos/vidéos) qu'il attribue ensuite aux familles.
@@ -90,7 +91,8 @@ class _EducationBibliothequePageState extends State<EducationBibliothequePage> {
               const SizedBox(height: 12),
               TextField(
                 controller: descCtrl,
-                maxLines: 4,
+                minLines: 6,
+                maxLines: 14,
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
                 decoration: InputDecoration(
                   hintText: 'Déroulé : comment faire l\'exercice, matériel, durée, points d\'attention…',
@@ -99,17 +101,28 @@ class _EducationBibliothequePageState extends State<EducationBibliothequePage> {
                   contentPadding: const EdgeInsets.all(12),
                 ),
               ),
+              const SizedBox(height: 4),
+              const Text('Mise en forme (gras, couleurs, listes…) disponible sur le site.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
               const SizedBox(height: 12),
-              Wrap(spacing: 6, runSpacing: 6, children: kEduCategories.entries.map((e) {
-                final sel = categorie == e.key;
-                return ChoiceChip(
-                  label: Text(e.value, style: const TextStyle(fontFamily: 'Galey', fontSize: 11)),
-                  selected: sel,
-                  onSelected: (_) => setSheet(() => categorie = sel ? null : e.key),
-                  selectedColor: kEduOrange.withValues(alpha: 0.18),
-                  showCheckmark: false,
-                );
-              }).toList()),
+              DropdownButtonFormField<String?>(
+                initialValue: categorie,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: 'Catégorie',
+                  labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('Aucune', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                  ...kEduCategories.entries.map((e) => DropdownMenuItem(
+                        value: e.key,
+                        child: Text(e.value, style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                      )),
+                ],
+                onChanged: (v) => setSheet(() => categorie = v),
+              ),
               const SizedBox(height: 12),
               // Médias
               Wrap(spacing: 8, runSpacing: 8, children: [
@@ -335,7 +348,7 @@ class _EducationBibliothequePageState extends State<EducationBibliothequePage> {
                                   style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
                             if ((e['description']?.toString() ?? '').isNotEmpty) ...[
                               const SizedBox(height: 4),
-                              Text(e['description'].toString(), maxLines: 2, overflow: TextOverflow.ellipsis,
+                              RichTextView(e['description'].toString(), maxLines: 2, overflow: TextOverflow.ellipsis,
                                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                             ],
                           ])),

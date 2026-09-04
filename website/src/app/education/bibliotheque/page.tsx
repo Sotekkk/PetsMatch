@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { RichText, RichTextEditor } from '@/lib/rich-text';
 
 const CATEGORIES: Record<string, string> = {
   rappel: 'Rappel', laisse: 'Marche en laisse', proprete: 'Propreté', aboiements: 'Aboiements',
@@ -98,16 +99,16 @@ export default function BibliothequeExercicesPage() {
           <input value={form.titre} onChange={e => setForm({ ...form, titre: e.target.value })}
             placeholder="Titre — ex : Le rappel au sifflet"
             className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
-          <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
-            rows={4} placeholder="Déroulé : comment faire l'exercice, matériel, durée, points d'attention…"
-            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
-          <div className="flex flex-wrap gap-1.5">
-            {Object.entries(CATEGORIES).map(([k, v]) => (
-              <button key={k} type="button" onClick={() => setForm({ ...form, categorie: form.categorie === k ? '' : k })}
-                className={`text-xs px-2.5 py-1 rounded-full border ${form.categorie === k ? 'text-white' : 'border-gray-200 text-gray-500'}`}
-                style={form.categorie === k ? { background: ORANGE, borderColor: ORANGE } : {}}>{v}</button>
-            ))}
-          </div>
+          <RichTextEditor
+            value={form.description}
+            onChange={html => setForm(f => f ? { ...f, description: html } : f)}
+            minHeight={200}
+            placeholder="Déroulé : comment faire l'exercice, matériel, durée, points d'attention…" />
+          <select value={form.categorie} onChange={e => setForm({ ...form, categorie: e.target.value })}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white">
+            <option value="">Catégorie (optionnel)…</option>
+            {Object.entries(CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
           <div className="flex flex-wrap gap-2">
             {form.media.map((m, i) => (
               <div key={i} className="relative w-16 h-16 rounded-lg bg-gray-100 overflow-hidden">
@@ -159,7 +160,7 @@ export default function BibliothequeExercicesPage() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-[#1F2A2E]">{e.titre}</p>
                 {e.categorie && CATEGORIES[e.categorie] && <p className="text-xs text-gray-500">{CATEGORIES[e.categorie]}</p>}
-                {e.description && <p className="text-xs text-gray-600 mt-0.5 line-clamp-2">{e.description}</p>}
+                {e.description && <div className="text-xs text-gray-600 mt-0.5 line-clamp-2"><RichText value={e.description} /></div>}
               </div>
               <div className="flex gap-1 shrink-0">
                 <button onClick={() => setForm({ id: e.id, titre: e.titre, description: e.description ?? '', categorie: e.categorie ?? '', media: e.media })}

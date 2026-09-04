@@ -45,3 +45,14 @@ h1, h2, h3, h4 {
   from { opacity: 0; transform: scale(0.8); }
   to   { opacity: 1; transform: scale(1); }
 }
+
+/* Rendu des textes mis en forme du module éducateur (Tailwind preflight
+   supprime les styles de liste par défaut). */
+.rich-text { white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+.rich-text ul { list-style: disc; padding-left: 1.25rem; margin: 0.25rem 0; white-space: normal; }
+.rich-text ol { list-style: decimal; padding-left: 1.25rem; margin: 0.25rem 0; white-space: normal; }
+.rich-text li { margin: 0.1rem 0; }
+.rich-text b, .rich-text strong { font-weight: 700; }
+.rich-text i, .rich-text em { font-style: italic; }
+.rich-text u { text-decoration: underline; }
+.rich-text p { margin: 0.2rem 0; }

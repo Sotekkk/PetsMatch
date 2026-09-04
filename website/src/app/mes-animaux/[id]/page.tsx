@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { RichText } from '@/lib/rich-text';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { loadBreeds } from '@/lib/breeds';
 import HealthSection from '@/components/animaux/HealthSection';
@@ -1346,7 +1347,7 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
                     {EDU_STATUT_LABEL[o.statut] ?? o.statut}
                     {o.categorie && EDU_CATEGORIES[o.categorie] ? ` · ${EDU_CATEGORIES[o.categorie]}` : ''}
                   </p>
-                  {o.note && <p className="text-xs text-gray-500 mt-0.5">{o.note}</p>}
+                  {o.note && <div className="text-xs text-gray-500 mt-0.5"><RichText value={o.note} /></div>}
                 </div>
               </div>
             ))}
@@ -1384,7 +1385,7 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
                     {ex.cadence && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">{ex.cadence}</span>}
                     {ex.echeance && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#D5573B]/10 text-[#D5573B]">avant le {new Date(ex.echeance).toLocaleDateString('fr-FR')}</span>}
                   </div>
-                  {ex.description_snapshot && <p className="text-xs text-gray-600 mt-1.5 whitespace-pre-line">{ex.description_snapshot}</p>}
+                  {ex.description_snapshot && <div className="text-xs text-gray-600 mt-1.5"><RichText value={ex.description_snapshot} /></div>}
                   {media.length > 0 && (
                     <div className="flex gap-2 mt-2 overflow-x-auto">
                       {media.map((m, i) => m.type === 'video' ? (
@@ -1468,11 +1469,11 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
               {r.date_seance ? new Date(r.date_seance).toLocaleDateString('fr-FR') : ''}
             </p>
             {isBilan && r.bilan_motif && <p className="text-xs font-semibold text-gray-700 mt-1">Motif : {r.bilan_motif}</p>}
-            {r.contenu && <p className="text-sm text-gray-800 mt-1 whitespace-pre-line">{r.contenu}</p>}
+            {r.contenu && <div className="text-sm text-gray-800 mt-1"><RichText value={r.contenu} /></div>}
             {isBilan && r.bilan_recommandation && (
               <div className="mt-2 rounded-xl bg-[#FFF3E9] p-3">
                 <p className="text-xs font-bold text-[#EF6C00]">📋 Recommandation</p>
-                <p className="text-xs text-gray-800 mt-0.5 whitespace-pre-line">{r.bilan_recommandation}</p>
+                <div className="text-xs text-gray-800 mt-0.5"><RichText value={r.bilan_recommandation} /></div>
                 {r.bilan_nb_seances_estime != null && <p className="text-[11px] text-gray-500 mt-0.5">Estimation : {r.bilan_nb_seances_estime} séances</p>}
               </div>
             )}
