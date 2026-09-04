@@ -681,6 +681,68 @@ export default function PatientDetailPage() {
     await reloadForfaitsSous();
   }
 
+  const [genAttest, setGenAttest] = useState(false);
+  async function genererAttestation() {
+    if (!user?.uid || (rapports.length === 0 && objectifs.length === 0)) return;
+    setGenAttest(true);
+    try {
+      const { jsPDF } = await import('jspdf');
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const proNom = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || 'Éducateur canin';
+      const acquis = objectifs.filter(o => o.statut === 'acquis');
+      const autres = objectifs.filter(o => o.statut !== 'acquis');
+      const dates = rapports.map(r => r.date_seance).filter(Boolean).sort();
+      const periode = dates.length ? ` du ${new Date(dates[0]).toLocaleDateString('fr-FR')} au ${new Date(dates[dates.length - 1]).toLocaleDateString('fr-FR')}` : '';
+      let y = 60;
+      doc.setFillColor(239, 108, 0); doc.rect(40, 40, 515, 54, 'F');
+      doc.setTextColor(255).setFont('helvetica', 'bold').setFontSize(17);
+      doc.text('Attestation de fin de programme', 54, 68);
+      doc.setFontSize(10).setFont('helvetica', 'normal');
+      doc.text(`Suivi comportemental — ${animal?.nom ?? ''}`, 54, 84);
+      y = 130;
+      doc.setTextColor(30).setFontSize(11);
+      const intro = doc.splitTextToSize(
+        `Je soussigné(e) ${proNom}, atteste avoir accompagné ${animal?.nom ?? 'cet animal'} dans un programme d'éducation${periode}, à raison de ${rapports.length} séance${rapports.length > 1 ? 's' : ''}.`, 515);
+      doc.text(intro, 40, y); y += intro.length * 15 + 14;
+      if (acquis.length) {
+        doc.setFont('helvetica', 'bold').setTextColor(239, 108, 0).text('Objectifs atteints', 40, y); y += 16;
+        doc.setFont('helvetica', 'normal').setTextColor(30).setFontSize(10);
+        acquis.forEach(o => { doc.text(`•  ${o.libelle}`, 48, y); y += 14; });
+        y += 8;
+      }
+      if (autres.length) {
+        doc.setFont('helvetica', 'bold').setTextColor(110).setFontSize(11).text('Axes de travail à poursuivre', 40, y); y += 16;
+        doc.setFont('helvetica', 'normal').setTextColor(30).setFontSize(10);
+        autres.forEach(o => { doc.text(`•  ${o.libelle}`, 48, y); y += 14; });
+      }
+      doc.setFontSize(10).setTextColor(30);
+      doc.text(`Fait le ${new Date().toLocaleDateString('fr-FR')}`, 40, 760);
+      doc.text(proNom, 515, 760, { align: 'right' });
+      const blob = doc.output('blob');
+      const path = `attestations/${user.uid}/${animalId}_${Date.now()}.pdf`;
+      const { error } = await supabase.storage.from('media').upload(path, blob, { upsert: true, contentType: 'application/pdf' });
+      if (error) throw error;
+      const { data: pub } = supabase.storage.from('media').getPublicUrl(path);
+      const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
+      await supabase.from('education_attestations').insert({
+        animal_id: animalId, pro_uid: user.uid, pro_profile_id: activeProfileId || null,
+        owner_uid: ownerUid, pdf_url: pub.publicUrl,
+        contenu: { objectifs_atteints: acquis.map(o => o.libelle), nb_seances: rapports.length },
+      });
+      if (ownerUid) {
+        await supabase.from('notifications').insert({
+          uid: ownerUid, type: 'education_attestation',
+          title: `Attestation de fin de programme — ${animal?.nom ?? 'votre animal'}`,
+          body: `${proNom} vous a remis l'attestation.`,
+          data: { animalId, url: `/mes-animaux/${animalId}?tab=education` },
+        });
+      }
+      window.open(pub.publicUrl, '_blank');
+    } finally {
+      setGenAttest(false);
+    }
+  }
+
   async function envoyerReponse(attributionId: string) {
     if (!replyNote.trim() || !user?.uid) return;
     await supabase.from('exercices_retours').insert({
@@ -1293,10 +1355,16 @@ export default function PatientDetailPage() {
           <Card title="🎓 Suivi de progression">
             {hasReportAccess && (
               <button onClick={() => setShowAddRapport(v => !v)}
-                className="w-full text-white rounded-2xl py-3 font-semibold text-sm transition-colors flex items-center justify-center gap-2 mb-4"
+                className="w-full text-white rounded-2xl py-3 font-semibold text-sm transition-colors flex items-center justify-center gap-2 mb-2"
                 style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
                 <span className="text-lg leading-none">+</span>
                 Ajouter un rapport de séance
+              </button>
+            )}
+            {hasReportAccess && (rapports.length > 0 || objectifs.length > 0) && (
+              <button onClick={genererAttestation} disabled={genAttest}
+                className="w-full border border-[#6E9E57] text-[#4A7A32] rounded-2xl py-2.5 font-semibold text-sm mb-4 disabled:opacity-50">
+                🎓 {genAttest ? 'Génération…' : 'Générer l\'attestation de fin de programme'}
               </button>
             )}
             {showAddRapport && (

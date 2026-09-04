@@ -7,6 +7,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/pro/education_shared.dart';
 import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
+import 'package:PetsMatch/pages/pro/education_attestation.dart';
 
 /// Hub de suivi d'un animal côté éducateur/comportementaliste :
 /// onglets « Plan de travail » (objectifs), « Exercices » (attribués à la
@@ -866,6 +867,15 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             onPressed: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const EducationBibliothequePage())),
           ),
+          PopupMenuButton<String>(
+            onSelected: (v) {
+              if (v == 'attestation') _genererAttestation();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'attestation',
+                  child: Text('Générer l\'attestation de fin', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+            ],
+          ),
         ],
         bottom: TabBar(
           controller: _tab,
@@ -1067,6 +1077,51 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
       await _load();
     } catch (e) {
       _snack('Erreur : $e', err: true);
+    }
+  }
+
+  Future<void> _genererAttestation() async {
+    if (_seances.isEmpty && _objectifs.isEmpty) {
+      _snack('Ajoutez au moins une séance ou un objectif d\'abord.', err: true);
+      return;
+    }
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Générer l\'attestation ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text(
+          'Un PDF récapitulant le programme de ${widget.animalNom} '
+          '(${_seances.length} séance${_seances.length > 1 ? 's' : ''}, '
+          '${_objectifs.where((o) => o['statut'] == 'acquis').length} objectif(s) atteint(s)) '
+          'sera envoyé à la famille.',
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: _kOrange),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Générer', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    _snack('Génération en cours…');
+    final url = await genererAttestationEducation(
+      animalId: widget.animalId,
+      animalNom: widget.animalNom,
+      ownerUid: _ownerUid,
+      ownerProfileId: widget.ownerProfileId,
+      objectifs: _objectifs,
+      seances: _seances,
+    );
+    if (!mounted) return;
+    if (url == null) {
+      _snack('Erreur lors de la génération.', err: true);
+    } else {
+      _snack('Attestation envoyée à la famille.');
+      launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     }
   }
 

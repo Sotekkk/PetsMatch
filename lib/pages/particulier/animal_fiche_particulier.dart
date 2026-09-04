@@ -252,6 +252,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         hasRap = (exos as List).isNotEmpty;
       } catch (_) {}
     }
+    if (!hasRap) {
+      try {
+        final att = await _supa.from('education_attestations').select('id').eq('animal_id', _animalId!).limit(1);
+        hasRap = (att as List).isNotEmpty;
+      } catch (_) {}
+    }
     try {
       final devis = await _supa.from('devis').select('id').eq('animal_id', _animalId!).limit(1);
       hasDev = (devis as List).isNotEmpty;
@@ -6447,6 +6453,7 @@ class _EducationTabPState extends State<_EducationTabP> {
   List<Map<String, dynamic>> _objectifs = [];
   List<Map<String, dynamic>> _exercices = [];
   List<Map<String, dynamic>> _forfaits = [];
+  List<Map<String, dynamic>> _attestations = [];
   final Map<String, List<Map<String, dynamic>>> _retours = {}; // attribution_id -> retours
   bool _loading = true;
 
@@ -6495,6 +6502,12 @@ class _EducationTabPState extends State<_EducationTabP> {
             .eq('animal_id', widget.animalId!).order('souscrit_le', ascending: false);
       } catch (_) {}
       _forfaits = List<Map<String, dynamic>>.from(forfaits);
+      List attestations = const [];
+      try {
+        attestations = await _supa.from('education_attestations').select()
+            .eq('animal_id', widget.animalId!).order('emise_le', ascending: false);
+      } catch (_) {}
+      _attestations = List<Map<String, dynamic>>.from(attestations);
       _retours.clear();
       final exoIds = exercices.map((e) => e['id']?.toString()).whereType<String>().toList();
       if (exoIds.isNotEmpty) {
@@ -6550,6 +6563,7 @@ class _EducationTabPState extends State<_EducationTabP> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
       children: [
+        ..._attestations.map(_attestationBanner),
         ..._forfaits.where((f) => f['statut'] != 'annule').map(_forfaitBanner),
         if (_objectifs.isNotEmpty || _rapports.isNotEmpty) ...[
           _progressionSection(),
@@ -6653,6 +6667,34 @@ class _EducationTabPState extends State<_EducationTabP> {
               ]),
             ),
         ],
+      ]),
+    );
+  }
+
+  Widget _attestationBanner(Map<String, dynamic> a) {
+    final url = a['pdf_url']?.toString() ?? '';
+    final d = DateTime.tryParse(a['emise_le']?.toString() ?? '');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF5EA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF6E9E57).withValues(alpha: 0.3)),
+      ),
+      child: Row(children: [
+        const Text('🎓 ', style: TextStyle(fontSize: 16)),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Attestation de fin de programme',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+          if (d != null)
+            Text('Émise le ${d.day}/${d.month}/${d.year}',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+        ])),
+        TextButton(
+          onPressed: url.isEmpty ? null : () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+          child: const Text('Ouvrir', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Color(0xFF4A7A32))),
+        ),
       ]),
     );
   }
