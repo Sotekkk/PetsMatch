@@ -120,6 +120,11 @@ async function supabaseInsertReturning(table, rows) {
  * son propre calendrier — la tâche d'origine reste chez le propriétaire.
  * Quand la pension valide sa copie (voir mes-taches / pension_mes_taches),
  * l'originale est marquée faite et le propriétaire est notifié.
+ *
+ * `animal_access` est la table d'accès UNIFIÉE (véto, éducateur, garde,
+ * toilettage, pension…) : sans filtre sur `profile_type`, ce miroir spammait
+ * chaque jour TOUT pro ayant un accès actif (ex. un véto avec write_health),
+ * pas seulement les pensions. Filtré ici via `user_profiles.profile_type`.
  */
 async function notifyAndMirrorPension({
     animalId, ownerUid, ownerProfileId, title, body,
@@ -134,10 +139,13 @@ async function notifyAndMirrorPension({
             const proProfileId = acces.pro_profile_id;
             if (!proProfileId) continue;
             const proProfile = await supabaseGet(
-                `user_profiles?id=eq.${proProfileId}&select=uid`,
+                `user_profiles?id=eq.${proProfileId}&select=uid,profile_type`,
             );
-            const proUid = Array.isArray(proProfile) && proProfile[0] ? proProfile[0].uid : null;
-            if (!proUid) continue;
+            const proRow = Array.isArray(proProfile) && proProfile[0] ? proProfile[0] : null;
+            if (!proRow || !proRow.uid || proRow.profile_type !== "pension") continue;
+            const proUid = proRow.uid;
+            // Garde-fou : ne jamais re-notifier le propriétaire lui-même.
+            if (proUid === ownerUid) continue;
 
             await sendPush(proUid, title, body, {animalId: String(animalId)});
             try {
