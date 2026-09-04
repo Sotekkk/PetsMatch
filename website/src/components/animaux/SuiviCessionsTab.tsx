@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { fetchContactAcquereur } from '@/lib/contact-acquereur';
 import ContactAcquereurButton from '@/components/animaux/ContactAcquereurButton';
@@ -48,13 +47,14 @@ function waPhone(raw: string): string {
 }
 
 export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLocalUpdate }: Props) {
-  const router = useRouter();
   const [nonFaitesOnly, setNonFaitesOnly] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [annivAuto, setAnnivAuto] = useState(false);
   const [annivLoaded, setAnnivLoaded] = useState(false);
   const [relance, setRelance] = useState<{ a: AnimalLite; contact: Contact } | null>(null);
   const [relanceMsg, setRelanceMsg] = useState('');
+  const [voeux, setVoeux] = useState<{ a: AnimalLite; contact: Contact } | null>(null);
+  const [voeuxMsg, setVoeuxMsg] = useState('');
 
   useEffect(() => {
     supabase.from('user_profiles').select('cession_anniv_auto')
@@ -128,19 +128,18 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
     }
   }
 
-  async function envoyerVoeux(a: AnimalLite) {
-    if (!a.uid_acquereur) return;
-    const nom = a.nom ?? 'votre compagnon';
-    const texte = window.prompt(
-      'Message d\'anniversaire à envoyer à l\'acquéreur :',
-      `Joyeux anniversaire ${nom} ! 🎂 Toute l'équipe pense à lui aujourd'hui.`,
-    );
-    if (!texte || !texte.trim()) return;
+  /// Vœux d'anniversaire — mêmes canaux que « Relancer la famille » :
+  /// Application, WhatsApp, Email. Fonctionne même sans compte PetsMatch (les
+  /// coordonnées viennent du contrat / de la fiche cession / de la correction
+  /// manuelle, cf. [[project_cession_sterilisation]]).
+  async function openVoeux(a: AnimalLite) {
     setBusy(a.id);
     try {
-      const convId = await openOrCreateConv(a.uid_acquereur, a);
-      await postToConv(convId, texte.trim());
-      router.push(`/messages?conv=${convId}`);
+      const { contact: c } = await fetchContactAcquereur(a);
+      const nom = a.nom ?? 'votre compagnon';
+      const salut = c.prenom ? `Bonjour ${c.prenom},\n\n` : '';
+      setVoeuxMsg(`${salut}Joyeux anniversaire ${nom} ! 🎂 Toute l'équipe pense à lui aujourd'hui.`);
+      setVoeux({ a, contact: c });
     } finally {
       setBusy(null);
     }
@@ -245,10 +244,12 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
     }
   }
 
-  async function relanceInApp(a: AnimalLite, texte: string) {
+  /// Envoi in-app générique (message dans la conversation élevage + notif),
+  /// réutilisé par le canal « Application » de la relance et des vœux.
+  async function envoyerInApp(a: AnimalLite, texte: string, notifType: string, notifTitre: string, onDone: () => void) {
     if (!a.uid_acquereur || !texte) return;
     if (a.uid_acquereur === uid) {
-      alert("L'acquéreur est votre propre compte : la relance in-app ne peut pas s'afficher. "
+      alert("L'acquéreur est votre propre compte : le message in-app ne peut pas s'afficher. "
         + 'Testez avec un autre compte, ou par WhatsApp / Email.');
       return;
     }
@@ -259,15 +260,15 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
       await postToConv(convId, texte);
       await supabase.from('notifications').insert({
         uid: a.uid_acquereur,
-        type: 'sterilisation_relance',
-        title: `✂️ Rappel stérilisation — ${a.nom ?? 'votre animal'}`,
+        type: notifType,
+        title: notifTitre,
         body: texte.length > 140 ? texte.slice(0, 137) + '…' : texte,
         ...(consumer ? { profile_id: consumer } : {}),
         data: { animalId: a.id },
         read: false,
       });
-      setRelance(null);
-      alert('Relance envoyée dans l\'application ✅');
+      onDone();
+      alert('Message envoyé dans l\'application ✅');
     } finally {
       setBusy(null);
     }
@@ -387,12 +388,10 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
                     </p>
                   </div>
                   <ContactAcquereurButton animal={a} />
-                  {a.uid_acquereur && (
-                    <button onClick={() => envoyerVoeux(a)} disabled={busy === a.id}
-                      className="text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C]/30 px-3 py-1.5 rounded-lg hover:bg-[#0C5C6C]/5 transition-colors disabled:opacity-50">
-                      {busy === a.id ? '…' : '🎂 Vœux'}
-                    </button>
-                  )}
+                  <button onClick={() => openVoeux(a)} disabled={busy === a.id}
+                    className="text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C]/30 px-3 py-1.5 rounded-lg hover:bg-[#0C5C6C]/5 transition-colors disabled:opacity-50">
+                    {busy === a.id ? '…' : '🎂 Vœux'}
+                  </button>
                 </div>
               );
             })}
@@ -425,7 +424,9 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
               <p className="text-[11px] font-bold text-gray-400 tracking-wide mt-3 mb-2">ENVOYER VIA</p>
               <div className="flex flex-wrap gap-2">
                 {a.uid_acquereur && (
-                  <button onClick={() => relanceInApp(a, relanceMsg.trim())} disabled={busy === a.id}
+                  <button onClick={() => envoyerInApp(a, relanceMsg.trim(), 'sterilisation_relance',
+                      `✂️ Rappel stérilisation — ${a.nom ?? 'votre animal'}`, () => setRelance(null))}
+                    disabled={busy === a.id}
                     className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#0C5C6C] bg-[#0C5C6C]/10 border border-[#0C5C6C]/30 disabled:opacity-50">
                     🔔 Application
                   </button>
@@ -446,6 +447,63 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
                 )}
               </div>
               <button onClick={() => setRelance(null)} className="mt-4 w-full text-xs text-gray-500 py-2">Fermer</button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Modale « Vœux d'anniversaire » ── */}
+      {voeux && (() => {
+        const c = voeux.contact;
+        const a = voeux.a;
+        const aucune = !c.prenom && !c.nom && !c.tel && !c.email && !c.adresse;
+        return (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 sm:p-4"
+            onClick={() => setVoeux(null)}>
+            <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 max-h-[90vh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}>
+              <h3 className="font-bold text-[#1F2A2E] text-base mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>
+                🎂 Envoyer mes vœux — {a.nom ?? 'Animal'}
+              </h3>
+              <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 text-xs space-y-1 mb-3">
+                {(c.prenom || c.nom) && <p>👤 {[c.prenom, c.nom].filter(Boolean).join(' ')}</p>}
+                {c.tel && <p>📞 <a href={`tel:${c.tel}`} className="text-[#0C5C6C] font-medium">{c.tel}</a></p>}
+                {c.email && <p>✉️ {c.email}</p>}
+                {c.adresse && <p>🏠 {c.adresse}</p>}
+                {aucune && <p className="text-gray-500">Aucune coordonnée connue pour cet animal.</p>}
+              </div>
+              <textarea value={voeuxMsg} onChange={e => setVoeuxMsg(e.target.value)} rows={6}
+                className="w-full border border-gray-300 rounded-xl p-3 text-sm resize-none focus:outline-none focus:border-[#0C5C6C]" />
+              <p className="text-[11px] font-bold text-gray-400 tracking-wide mt-3 mb-2">ENVOYER VIA</p>
+              <div className="flex flex-wrap gap-2">
+                {a.uid_acquereur && (
+                  <button onClick={async () => {
+                      const { data: me } = await supabase.from('user_profiles')
+                        .select('firstname, lastname, nom').eq('uid', uid).eq('is_main', true).maybeSingle();
+                      const myName = (me?.nom || `${me?.firstname ?? ''} ${me?.lastname ?? ''}`.trim()) || 'Votre éleveur';
+                      envoyerInApp(a, voeuxMsg.trim(), 'message', `💬 ${myName}`, () => setVoeux(null));
+                    }}
+                    disabled={busy === a.id}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#0C5C6C] bg-[#0C5C6C]/10 border border-[#0C5C6C]/30 disabled:opacity-50">
+                    🔔 Application
+                  </button>
+                )}
+                {c.tel && (
+                  <a href={`https://wa.me/${waPhone(c.tel)}?text=${encodeURIComponent(voeuxMsg.trim())}`}
+                    target="_blank" rel="noopener noreferrer" onClick={() => setVoeux(null)}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#1a9e4b] bg-[#25D366]/10 border border-[#25D366]/40">
+                    WhatsApp
+                  </a>
+                )}
+                {c.email && (
+                  <a href={`mailto:${c.email}?subject=${encodeURIComponent(`Joyeux anniversaire ${a.nom ?? ''} 🎂`)}&body=${encodeURIComponent(voeuxMsg.trim())}`}
+                    onClick={() => setVoeux(null)}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#EA4335] bg-[#EA4335]/10 border border-[#EA4335]/30">
+                    Email
+                  </a>
+                )}
+              </div>
+              <button onClick={() => setVoeux(null)} className="mt-4 w-full text-xs text-gray-500 py-2">Fermer</button>
             </div>
           </div>
         );

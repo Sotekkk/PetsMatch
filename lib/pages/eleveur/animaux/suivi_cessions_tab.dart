@@ -1,4 +1,4 @@
-import 'package:PetsMatch/pages/petfriends/petfriend_chat_page.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/animaux/acquereur_contact.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -200,84 +200,112 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
     }
   }
 
+  /// Envoi des vœux d'anniversaire — mêmes canaux que « Relancer la famille » :
+  /// Application, WhatsApp, SMS, Email. Fonctionne même sans compte PetsMatch
+  /// (les coordonnées viennent du contrat / de la fiche cession / de la
+  /// correction manuelle, cf. [[project_cession_sterilisation]]).
   Future<void> _envoyerVoeux(Map<String, dynamic> a) async {
-    final acqUid = a['uid_acquereur'] as String?;
-    if (acqUid == null || acqUid.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('L\'acquéreur n\'a pas de compte PetsMatch.')));
-      return;
-    }
-    final nom = a['nom'] as String? ?? 'votre compagnon';
-    final ctrl = TextEditingController(
-        text: 'Joyeux anniversaire $nom ! 🎂 Toute l\'équipe pense à lui aujourd\'hui.');
-    final envoyer = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('🎂 Envoyer mes vœux',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-        content: TextField(
-          controller: ctrl,
-          maxLines: 4,
-          decoration: InputDecoration(
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false),
-              child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
-          TextButton(onPressed: () => Navigator.pop(context, true),
-              child: const Text('Envoyer', style: TextStyle(color: _teal, fontFamily: 'Galey'))),
-        ],
-      ),
-    );
-    if (envoyer != true) return;
     setState(() => _wishing = a['id'] as String);
+    Map<String, String> c;
     try {
-      final convId = await MessagingHelper.openOrCreateConversation(
-        otherUid: acqUid,
-        categorie: 'contact-elevage',
-      );
-      await _taguerConversation(convId, acqUid, await _profilAcquereur(a, acqUid));
-      await _supa.from('messages').insert({
-        'conversation_id': convId,
-        'sender_id':       widget.uid,
-        'text':            ctrl.text.trim(),
-        'msg_type':        'text',
-        'is_read':         false,
-      });
-      final conv = await _supa.from('conversations')
-          .select('participants, unread_count')
-          .eq('id', convId).maybeSingle();
-      if (conv != null) {
-        final members = List<String>.from(
-            (conv['participants'] as List?)?.map((e) => e.toString()) ?? []);
-        final unread = Map<String, dynamic>.from(conv['unread_count'] as Map? ?? {});
-        for (final u in members) {
-          if (u != widget.uid) unread[u] = (unread[u] as int? ?? 0) + 1;
-        }
-        await _supa.from('conversations').update({
-          'last_message': ctrl.text.trim(),
-          'unread_count': unread,
-          'updated_at':   DateTime.now().toIso8601String(),
-          'deleted_for':  {},
-        }).eq('id', convId);
-      }
-      if (!mounted) return;
-      Navigator.push(context, MaterialPageRoute(
-        builder: (_) => PetFriendChatPage(
-          conversationId: convId,
-          convNom: a['destinataire_nom'] as String? ?? 'Message',
-        ),
-      ));
+      c = (await fetchContactAcquereur(_supa, a)).data;
     } catch (e) {
       if (mounted) {
+        setState(() => _wishing = null);
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red));
       }
-    } finally {
-      if (mounted) setState(() => _wishing = null);
+      return;
     }
+    if (mounted) setState(() => _wishing = null);
+    if (!mounted) return;
+
+    final nom = a['nom'] as String? ?? 'votre compagnon';
+    final prenom = c['prenom'] ?? '';
+    final salut = prenom.isNotEmpty ? 'Bonjour $prenom,\n\n' : '';
+    final ctrl = TextEditingController(
+        text: '${salut}Joyeux anniversaire $nom ! 🎂 Toute l\'équipe pense à lui aujourd\'hui.');
+
+    final acqUid = (a['uid_acquereur'] ?? '').toString();
+    final tel = c['tel'] ?? '';
+    final email = c['email'] ?? '';
+    final nomComplet = [c['prenom'], c['nom']]
+        .where((e) => (e ?? '').isNotEmpty).join(' ');
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 18, right: 18, top: 12,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+        ),
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            Text('🎂 Envoyer mes vœux — $nom',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15, color: _dark)),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (nomComplet.isNotEmpty) _contactLine(Icons.person_outline, nomComplet),
+                if (tel.isNotEmpty)
+                  _contactLine(Icons.phone_outlined, tel, onTap: () => _openUri(Uri(scheme: 'tel', path: _telDigits(tel)))),
+                if (email.isNotEmpty) _contactLine(Icons.mail_outline, email),
+                if ((c['adresse'] ?? '').isNotEmpty) _contactLine(Icons.home_outlined, c['adresse']!),
+                if (nomComplet.isEmpty && tel.isEmpty && email.isEmpty && (c['adresse'] ?? '').isEmpty)
+                  Text('Aucune coordonnée connue pour cet animal.', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+              ]),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl, maxLines: 6, minLines: 4,
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                contentPadding: const EdgeInsets.all(12),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text('ENVOYER VIA',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 11, letterSpacing: 0.5, color: Colors.grey.shade500)),
+            const SizedBox(height: 8),
+            Wrap(spacing: 10, runSpacing: 10, children: [
+              if (acqUid.isNotEmpty)
+                _canalBtn('Application', const Icon(Icons.notifications_active_outlined, size: 16, color: _teal), _teal, () {
+                  Navigator.pop(ctx);
+                  _envoyerInApp(a, acqUid, ctrl.text.trim(),
+                      notifType: 'message',
+                      notifTitre: '💬 ${User_Info.nameElevage.isNotEmpty ? User_Info.nameElevage : "Votre éleveur"}');
+                }),
+              if (tel.isNotEmpty)
+                _canalBtn('WhatsApp', const FaIcon(FontAwesomeIcons.whatsapp, size: 15, color: Color(0xFF25D366)), const Color(0xFF25D366), () {
+                  Navigator.pop(ctx);
+                  _openUri(Uri.parse('https://wa.me/${_waPhone(tel)}?text=${Uri.encodeComponent(ctrl.text.trim())}'));
+                }),
+              if (tel.isNotEmpty)
+                _canalBtn('SMS', const Icon(Icons.sms_outlined, size: 16, color: Color(0xFF6E9E57)), const Color(0xFF6E9E57), () {
+                  Navigator.pop(ctx);
+                  _openUri(Uri.parse('sms:${_telDigits(tel)}?body=${Uri.encodeComponent(ctrl.text.trim())}'));
+                }),
+              if (email.isNotEmpty)
+                _canalBtn('Email', const Icon(Icons.email_outlined, size: 16, color: Color(0xFFEA4335)), const Color(0xFFEA4335), () {
+                  Navigator.pop(ctx);
+                  final subj = Uri.encodeComponent('Joyeux anniversaire $nom 🎂');
+                  final body = Uri.encodeComponent(ctrl.text.trim());
+                  _openUri(Uri.parse('mailto:$email?subject=$subj&body=$body'));
+                }),
+            ]),
+          ]),
+        ),
+      ),
+    );
   }
 
   // ── Relance famille (stérilisation) ─────────────────────────────────────────
@@ -354,11 +382,19 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
   }
 
   /// Relance « in-app » : message dans la conversation + notification.
-  Future<void> _relanceInApp(Map<String, dynamic> a, String acqUid, String texte) async {
+  /// Envoi in-app générique (message dans la conversation élevage + notif),
+  /// réutilisé par le canal « Application » de `_relancer` et `_envoyerVoeux`.
+  Future<void> _envoyerInApp(
+    Map<String, dynamic> a,
+    String acqUid,
+    String texte, {
+    required String notifType,
+    required String notifTitre,
+  }) async {
     if (acqUid == (widget.uid ?? '')) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('L\'acquéreur est votre propre compte : la relance in-app '
+          content: Text('L\'acquéreur est votre propre compte : le message in-app '
               'ne peut pas s\'afficher. Testez avec un autre compte, ou par '
               'WhatsApp / SMS / Email.'),
           duration: Duration(seconds: 6),
@@ -399,8 +435,8 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
       }
       await _supa.from('notifications').insert({
         'uid':   acqUid,
-        'type':  'sterilisation_relance',
-        'title': '✂️ Rappel stérilisation — ${a['nom'] ?? 'votre animal'}',
+        'type':  notifType,
+        'title': notifTitre,
         'body':  texte.length > 140 ? '${texte.substring(0, 137)}…' : texte,
         if (acqProfileId != null) 'profile_id': acqProfileId,
         'data':  {'animalId': a['id']},
@@ -408,7 +444,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Relance envoyée dans l\'application ✅'), backgroundColor: _green));
+            content: Text('Message envoyé dans l\'application ✅'), backgroundColor: _green));
       }
     } catch (e) {
       if (mounted) {
@@ -504,7 +540,9 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
               if (acqUid.isNotEmpty)
                 _canalBtn('Application', const Icon(Icons.notifications_active_outlined, size: 16, color: _teal), _teal, () {
                   Navigator.pop(ctx);
-                  _relanceInApp(a, acqUid, ctrl.text.trim());
+                  _envoyerInApp(a, acqUid, ctrl.text.trim(),
+                      notifType: 'sterilisation_relance',
+                      notifTitre: '✂️ Rappel stérilisation — ${a['nom'] ?? 'votre animal'}');
                 }),
               if (tel.isNotEmpty)
                 _canalBtn('WhatsApp', const FaIcon(FontAwesomeIcons.whatsapp, size: 15, color: Color(0xFF25D366)), const Color(0xFF25D366), () {
