@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth-context';
 import { RichText, RichTextEditor, richTextIsEmpty, richTextToPlain } from '@/lib/rich-text';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { AnatomieSeances } from '@/components/AnatomiePoints';
+import OwnerContactButton from '@/components/pro/OwnerContactButton';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -64,7 +65,8 @@ interface EducObjectif {
 }
 interface EducExercice { id: string; titre: string; description: string | null; media: unknown; }
 interface EducAttribue {
-  id: string; titre_snapshot: string; cadence: string | null; echeance: string | null; statut: string; rappels_actifs: boolean;
+  id: string; titre_snapshot: string; description_snapshot?: string | null;
+  cadence: string | null; echeance: string | null; statut: string; rappels_actifs: boolean;
 }
 interface EducRetour {
   id: string; attribution_id: string; note: string | null;
@@ -331,7 +333,7 @@ export default function PatientDetailPage() {
         isFemelle ? supabase.from('gestations').select('*').eq('animal_id', animalId).order('date', { ascending: false }) : Promise.resolve({ data: [] }),
         supabase.from('education_progression').select('id, date_seance, contenu, exercices_conseilles, type, bilan_motif, bilan_recommandation, bilan_nb_seances_estime').eq('animal_id', animalId).order('date_seance', { ascending: false }),
         supabase.from('education_objectifs').select('id, libelle, categorie, statut, note, ordre').eq('animal_id', animalId).order('ordre').order('created_at'),
-        supabase.from('exercices_attribues').select('id, titre_snapshot, cadence, echeance, statut, rappels_actifs').eq('animal_id', animalId).order('assigned_at', { ascending: false }),
+        supabase.from('exercices_attribues').select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs').eq('animal_id', animalId).order('assigned_at', { ascending: false }),
         supabase.from('forfaits_souscrits').select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, statut').eq('animal_id', animalId).order('souscrit_le', { ascending: false }),
       ]);
 
@@ -652,7 +654,7 @@ export default function PatientDetailPage() {
       }
       setAttrPicker(null);
       const { data } = await supabase.from('exercices_attribues')
-        .select('id, titre_snapshot, cadence, echeance, statut, rappels_actifs').eq('animal_id', animalId).order('assigned_at', { ascending: false });
+        .select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs').eq('animal_id', animalId).order('assigned_at', { ascending: false });
       setAttribues((data ?? []) as EducAttribue[]);
     } finally {
       setSavingAttr(false);
@@ -770,6 +772,72 @@ export default function PatientDetailPage() {
     }
   }
 
+  // ── Exercices en PDF (famille sans compte) ────────────────────────────────
+  const [genExosPdf, setGenExosPdf] = useState(false);
+  async function envoyerExercicesPdf() {
+    if (!user?.uid || attribues.length === 0) return;
+    setGenExosPdf(true);
+    try {
+      const { jsPDF } = await import('jspdf');
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      let y = 60;
+      doc.setFillColor(239, 108, 0); doc.rect(40, 40, 515, 54, 'F');
+      doc.setTextColor(255).setFont('helvetica', 'bold').setFontSize(17);
+      doc.text('Programme d\'éducation', 54, 68);
+      doc.setFontSize(10).setFont('helvetica', 'normal');
+      doc.text(animal?.nom ?? '', 54, 84);
+      y = 130;
+      for (const e of attribues) {
+        if (y > 720) { doc.addPage(); y = 60; }
+        doc.setTextColor(30).setFont('helvetica', 'bold').setFontSize(12);
+        doc.text(e.titre_snapshot, 40, y); y += 16;
+        if (e.cadence || e.echeance) {
+          doc.setFont('helvetica', 'normal').setTextColor(110).setFontSize(9);
+          doc.text([e.cadence ? `Fréquence : ${e.cadence}` : null, e.echeance ? `À faire avant le : ${e.echeance}` : null]
+            .filter(Boolean).join('  ·  '), 40, y);
+          y += 14;
+        }
+        if (e.description_snapshot) {
+          doc.setFont('helvetica', 'normal').setTextColor(30).setFontSize(10);
+          const lines = doc.splitTextToSize(richTextToPlain(e.description_snapshot), 515);
+          doc.text(lines, 40, y); y += lines.length * 13 + 18;
+        } else {
+          y += 10;
+        }
+      }
+      const blob = doc.output('blob');
+      const path = `exercices_pdf/${user.uid}/${animalId}_${Date.now()}.pdf`;
+      const { error } = await supabase.storage.from('media').upload(path, blob, { upsert: true, contentType: 'application/pdf' });
+      if (error) throw error;
+      const { data: pub } = supabase.storage.from('media').getPublicUrl(path);
+      window.open(pub.publicUrl, '_blank');
+    } finally {
+      setGenExosPdf(false);
+    }
+  }
+
+  // ── Lien de suivi (famille sans compte) ────────────────────────────────────
+  const [showSuiviLien, setShowSuiviLien] = useState(false);
+  const [suiviLien, setSuiviLien] = useState<string | null>(null);
+  const [genSuiviLien, setGenSuiviLien] = useState(false);
+  async function genererSuiviLien() {
+    if (!user?.uid) return;
+    setGenSuiviLien(true);
+    try {
+      const expireAt = new Date(); expireAt.setDate(expireAt.getDate() + 30);
+      const { data, error } = await supabase.from('partage_suivi_education').insert({
+        animal_id: animalId, pro_uid: user.uid,
+        ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}),
+        expire_at: expireAt.toISOString(), actif: true,
+      }).select('token').single();
+      if (error) throw error;
+      setSuiviLien(`${window.location.origin}/suivi/${data.token}`);
+      setShowSuiviLien(true);
+    } finally {
+      setGenSuiviLien(false);
+    }
+  }
+
   async function envoyerReponse(attributionId: string) {
     if (!replyNote.trim() || !user?.uid) return;
     await supabase.from('exercices_retours').insert({
@@ -866,6 +934,16 @@ export default function PatientDetailPage() {
         <div className="max-w-3xl mx-auto px-4 pt-4 pb-2 flex items-center gap-3">
           <button onClick={() => router.back()} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors">←</button>
           <span className="font-bold text-base flex-1" style={{ fontFamily: 'Galey, sans-serif' }}>Fiche patient</span>
+          {catPro === 'education' && user && (
+            <OwnerContactButton
+              animalId={animalId}
+              animalNom={animal.nom ?? 'Animal'}
+              ownerUid={animal.uid_proprietaire ?? animal.uid_eleveur ?? null}
+              myUid={user.uid}
+              myProfileId={activeProfileId ?? null}
+              className="bg-white/10 hover:bg-white/20 !text-white"
+            />
+          )}
           {hasWriteAccess && (
             <span className="text-[10px] font-bold bg-green-400/30 text-green-100 px-2 py-0.5 rounded-full">✏️ Écriture</span>
           )}
@@ -1385,9 +1463,21 @@ export default function PatientDetailPage() {
             )}
             {hasReportAccess && (rapports.length > 0 || objectifs.length > 0) && (
               <button onClick={genererAttestation} disabled={genAttest}
-                className="w-full border border-[#6E9E57] text-[#4A7A32] rounded-2xl py-2.5 font-semibold text-sm mb-4 disabled:opacity-50">
+                className="w-full border border-[#6E9E57] text-[#4A7A32] rounded-2xl py-2.5 font-semibold text-sm mb-2 disabled:opacity-50">
                 🎓 {genAttest ? 'Génération…' : 'Générer l\'attestation de fin de programme'}
               </button>
+            )}
+            {hasReportAccess && (
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                <button onClick={envoyerExercicesPdf} disabled={genExosPdf || attribues.length === 0}
+                  className="border border-[#EF6C00]/40 text-[#EF6C00] rounded-2xl py-2.5 font-semibold text-xs disabled:opacity-40">
+                  📄 {genExosPdf ? '…' : 'Exercices en PDF'}
+                </button>
+                <button onClick={genererSuiviLien} disabled={genSuiviLien}
+                  className="border border-[#0C5C6C]/40 text-[#0C5C6C] rounded-2xl py-2.5 font-semibold text-xs disabled:opacity-40">
+                  🔗 {genSuiviLien ? '…' : 'Lien pour la famille'}
+                </button>
+              </div>
             )}
             {devisPrefillUrl && (
               <div className="bg-[#FFF3E9] border border-[#EF6C00]/40 rounded-2xl p-3 mb-4 flex items-center justify-between gap-3">
@@ -1945,6 +2035,33 @@ export default function PatientDetailPage() {
                 {savingForm ? 'Enregistrement…' : 'Enregistrer'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showSuiviLien && suiviLien && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 sm:p-4"
+          onClick={() => setShowSuiviLien(false)}>
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm p-5" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-[#1F2A2E] text-base mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+              🔗 Lien pour la famille
+            </h3>
+            <p className="text-xs text-gray-500 mb-3">Lecture seule, valable 30 jours — plan de travail, exercices, comptes rendus.</p>
+            <div className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-xs text-gray-700 break-all mb-3">
+              {suiviLien}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => { navigator.clipboard?.writeText(suiviLien); }}
+                className="flex-1 border border-gray-200 text-gray-600 text-sm font-semibold py-2 rounded-xl">
+                Copier
+              </button>
+              <a href={`https://wa.me/?text=${encodeURIComponent(`Suivi éducatif de ${animal?.nom ?? 'votre animal'} : ${suiviLien}`)}`}
+                target="_blank" rel="noopener noreferrer"
+                className="flex-1 text-center bg-[#25D366] text-white text-sm font-semibold py-2 rounded-xl">
+                WhatsApp
+              </a>
+            </div>
+            <button onClick={() => setShowSuiviLien(false)} className="mt-3 w-full text-xs text-gray-400 py-1">Fermer</button>
           </div>
         </div>
       )}

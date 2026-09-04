@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import OwnerContactButton from '@/components/pro/OwnerContactButton';
 
 function clientsPageTitle(catPro: string): string {
   if (catPro === 'veterinaire' || catPro === 'sante') return 'Mes patients';
@@ -22,6 +23,7 @@ interface Animal {
   race: string;
   date_naissance: string | null;
   photo_url: string | null;
+  uid_proprietaire: string | null;
 }
 
 interface Grant {
@@ -109,7 +111,7 @@ export default function MesPatientsPage() {
       const animalIds = allGrants.map(g => g.animal_id).filter(Boolean);
       const { data: animalRows, error: animalErr } = await supabase
         .from('animaux')
-        .select('id, nom, espece, race, date_naissance, photo_url')
+        .select('id, nom, espece, race, date_naissance, photo_url, uid_proprietaire')
         .in('id', animalIds);
 
       if (animalErr) console.error('[mes-patients] animaux error:', animalErr);
@@ -185,23 +187,37 @@ export default function MesPatientsPage() {
               const a = g.animal;
               if (!a) return null;
               return (
-                <Link key={g.id} href={`/mes-patients/${a.id}`}
-                  className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex items-center gap-4 hover:shadow-md transition-shadow">
-                  <div className="w-14 h-14 rounded-2xl overflow-hidden bg-[#E3F2FD] flex-shrink-0 flex items-center justify-center">
-                    {a.photo_url
-                      ? <Image src={a.photo_url} alt="" width={56} height={56} className="object-cover w-full h-full" />
-                      : <span className="text-2xl">{ESPECE_EMOJI[a.espece?.toLowerCase()] ?? '🐾'}</span>
-                    }
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-sm text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{a.nom}</p>
-                    <p className="text-xs text-gray-500">{a.race || a.espece}{a.date_naissance ? ` · ${age(a.date_naissance)}` : ''}</p>
-                    <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
-                      Accès accordé
-                    </span>
-                  </div>
-                  <span className="text-gray-300 text-lg">›</span>
-                </Link>
+                <div key={g.id} className="relative">
+                  <Link href={`/mes-patients/${a.id}`}
+                    className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex items-center gap-4 hover:shadow-md transition-shadow">
+                    <div className="w-14 h-14 rounded-2xl overflow-hidden bg-[#E3F2FD] flex-shrink-0 flex items-center justify-center">
+                      {a.photo_url
+                        ? <Image src={a.photo_url} alt="" width={56} height={56} className="object-cover w-full h-full" />
+                        : <span className="text-2xl">{ESPECE_EMOJI[a.espece?.toLowerCase()] ?? '🐾'}</span>
+                      }
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-sm text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{a.nom}</p>
+                      <p className="text-xs text-gray-500">{a.race || a.espece}{a.date_naissance ? ` · ${age(a.date_naissance)}` : ''}</p>
+                      <span className="text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
+                        Accès accordé
+                      </span>
+                    </div>
+                    {catPro === 'education' && <span className="w-7" />}
+                    <span className="text-gray-300 text-lg">›</span>
+                  </Link>
+                  {catPro === 'education' && user && (
+                    <div className="absolute top-1/2 -translate-y-1/2 right-9">
+                      <OwnerContactButton
+                        animalId={String(a.id)}
+                        animalNom={a.nom}
+                        ownerUid={a.uid_proprietaire}
+                        myUid={user.uid}
+                        myProfileId={activeProfileId ?? null}
+                      />
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>

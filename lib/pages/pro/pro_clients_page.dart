@@ -6,6 +6,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/pro/education_suivi_page.dart';
+import 'package:PetsMatch/pages/pro/owner_contact.dart';
 import 'package:PetsMatch/widgets/pro_day_timeline.dart';
 
 /// Tableau de bord commun pour les pros non-vétérinaires :
@@ -154,7 +155,7 @@ class _ProClientsPageState extends State<ProClientsPage>
       final animalIds = seen.keys.toList();
       final animals = await supa
           .from('animaux')
-          .select('id, nom, espece, race, sexe, photo_url, date_naissance, uid_eleveur')
+          .select('id, nom, espece, race, sexe, photo_url, date_naissance, uid_eleveur, uid_proprietaire')
           .inFilter('id', animalIds);
 
       // Noms des propriétaires depuis user_profiles (granted_by_profile_id)
@@ -590,6 +591,15 @@ class _AnimalCard extends StatelessWidget {
             ])),
             // Actions
             Column(mainAxisSize: MainAxisSize.min, children: [
+              if (catPro == 'education') ...[
+                OwnerContactButton(
+                  animalId: animal['id']?.toString() ?? '',
+                  animalNom: nom,
+                  ownerUid: animal['uid_proprietaire']?.toString(),
+                  color: color,
+                ),
+                const SizedBox(height: 6),
+              ],
               // Carnet santé (sante et maréchal-ferrant)
               if (catPro == 'sante' || catPro == 'marechal_ferrant') ...[
                 _ActionBtn(

@@ -8,7 +8,11 @@ import 'package:PetsMatch/pages/pro/education_shared.dart';
 import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
 import 'package:PetsMatch/pages/pro/education_attestation.dart';
+import 'package:PetsMatch/pages/pro/education_exercices_pdf.dart';
+import 'package:PetsMatch/pages/pro/suivi_partage_sheet.dart';
+import 'package:PetsMatch/pages/pro/owner_contact.dart';
 import 'package:PetsMatch/widgets/rich_text_view.dart';
+import 'package:share_plus/share_plus.dart';
 
 /// Hub de suivi d'un animal côté éducateur/comportementaliste :
 /// onglets « Plan de travail » (objectifs), « Exercices » (attribués à la
@@ -923,6 +927,12 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
         title: Text('Suivi — ${widget.animalNom}',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         actions: [
+          OwnerContactButton(
+            animalId: widget.animalId,
+            animalNom: widget.animalNom,
+            ownerUid: _ownerUid,
+            color: Colors.white,
+          ),
           IconButton(
             tooltip: 'Bibliothèque d\'exercices',
             icon: const Icon(Icons.fitness_center_outlined),
@@ -932,8 +942,14 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'attestation') _genererAttestation();
+              if (v == 'pdf_exercices') _envoyerExercicesPdf();
+              if (v == 'lien_suivi') _partagerSuiviLien();
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(value: 'pdf_exercices',
+                  child: Text('Envoyer les exercices en PDF', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+              PopupMenuItem(value: 'lien_suivi',
+                  child: Text('Partager un lien (famille sans compte)', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
               PopupMenuItem(value: 'attestation',
                   child: Text('Générer l\'attestation de fin', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
             ],
@@ -1185,6 +1201,35 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
       _snack('Attestation envoyée à la famille.');
       launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     }
+  }
+
+  /// PDF des exercices attribués — utile pour une famille sans compte
+  /// PetsMatch : le lien peut ensuite être envoyé par n'importe quel canal
+  /// (le sélecteur natif propose WhatsApp/SMS/Email/tout).
+  Future<void> _envoyerExercicesPdf() async {
+    if (_exercices.isEmpty) {
+      _snack('Aucun exercice attribué pour l\'instant.', err: true);
+      return;
+    }
+    _snack('Génération du PDF…');
+    final url = await genererExercicesPdf(
+      animalId: widget.animalId,
+      animalNom: widget.animalNom,
+      exercices: _exercices,
+    );
+    if (!mounted) return;
+    if (url == null) {
+      _snack('Erreur lors de la génération.', err: true);
+      return;
+    }
+    await Share.share(
+      'Programme d\'éducation de ${widget.animalNom} : $url',
+      subject: 'Exercices — ${widget.animalNom}',
+    );
+  }
+
+  Future<void> _partagerSuiviLien() async {
+    await showSuiviPartageSheet(context, animalId: widget.animalId, animalNom: widget.animalNom);
   }
 
   Future<void> _cloreForfait(Map<String, dynamic> f) async {
