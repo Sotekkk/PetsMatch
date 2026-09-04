@@ -1079,6 +1079,38 @@ export default function MesRdvPage() {
 
   async function marquerTermine(rdv: Rdv) {
     await supabase.from('rdv').update({ statut: 'termine' }).eq('id', rdv.id);
+    // Séance terminée → invite la famille à laisser un avis (une seule fois :
+    // pas de relance si un avis existe déjà ou si la notif a déjà été postée).
+    try {
+      if (user && rdv.client_uid) {
+        let avisQ = supabase.from('avis_pro').select('id')
+          .eq('pro_uid', user.uid).eq('client_uid', rdv.client_uid);
+        if (rdv.pro_profile_id) avisQ = avisQ.eq('pro_profile_id', rdv.pro_profile_id);
+        const [{ data: existingAvis }, { data: dupNotif }] = await Promise.all([
+          avisQ.limit(1).maybeSingle(),
+          supabase.from('notifications').select('id')
+            .eq('uid', rdv.client_uid).eq('type', 'avis_demande')
+            .contains('data', { rdv_id: rdv.id }).limit(1).maybeSingle(),
+        ]);
+        if (!existingAvis && !dupNotif) {
+          const proNom = (userData?.nameElevage
+            ?? `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim()) || 'votre professionnel';
+          await supabase.from('notifications').insert({
+            uid: rdv.client_uid, type: 'avis_demande',
+            title: 'Votre avis compte',
+            body: `Comment s'est passée votre séance avec ${proNom} ? Laissez un avis.`,
+            ...(rdv.client_profile_id ? { profile_id: rdv.client_profile_id } : {}),
+            data: {
+              rdv_id: rdv.id, pro_uid: user.uid,
+              ...(rdv.pro_profile_id ? { pro_profile_id: rdv.pro_profile_id } : {}),
+              pro_nom: proNom,
+              url: `/services/pro/${user.uid}?avis=1${rdv.pro_profile_id ? `&profileId=${rdv.pro_profile_id}` : ''}`,
+            },
+            read: false,
+          });
+        }
+      }
+    } catch { /* ignore */ }
     fetchRdvs();
   }
 

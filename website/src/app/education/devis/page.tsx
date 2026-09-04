@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -136,6 +136,8 @@ export default function DevisPage() {
       const { data: forfaitsData } = await supabase.from(forfaitsTable).select('id,nom,prix').eq('pro_uid', user.uid).eq('actif', true);
       setForfaits((forfaitsData ?? []) as { id: string; nom: string; prix: number }[]);
       const animalIds = [...new Set(((acc.data ?? []) as { animal_id: string }[]).map(a => a.animal_id))];
+      const preAnimal = prefillRef.current?.animalId;
+      if (preAnimal && !animalIds.includes(preAnimal)) animalIds.push(preAnimal);
       if (animalIds.length > 0) {
         const { data: anims } = await supabase.from('animaux').select('id,nom,espece').in('id', animalIds);
         setAnimaux((anims ?? []) as AnimalOption[]);
@@ -143,6 +145,31 @@ export default function DevisPage() {
       setFetching(false);
     });
   }, [user, activeProfileId]);
+
+  // ── Pré-remplissage depuis un bilan (query params, une seule fois) ──
+  const searchParams = useSearchParams();
+  const prefillRef = useRef<{ animalId?: string } | null>(null);
+  const prefillDone = useRef(false);
+  useEffect(() => {
+    if (prefillDone.current || searchParams.get('prefill') !== '1') return;
+    prefillDone.current = true;
+    const animalId = searchParams.get('animal') ?? undefined;
+    prefillRef.current = { animalId };
+    if (animalId) setAnimalId(animalId);
+    setClientUid(searchParams.get('clientUid') || null);
+    setClientProfileId(searchParams.get('clientProfileId') || null);
+    setNomClient(searchParams.get('nom') ?? '');
+    setPrenomClient(searchParams.get('prenom') ?? '');
+    setEmailClient(searchParams.get('email') ?? '');
+    setNote(searchParams.get('note') ?? '');
+    const ld = searchParams.get('ligneDesc');
+    if (ld) {
+      const q = Number(searchParams.get('ligneQte') ?? 1) || 1;
+      const p = Number(searchParams.get('lignePrix') ?? 0) || 0;
+      setLignes([{ description: ld, quantite: q, prix_unitaire: p, total: q * p }]);
+    }
+    setShowForm(true);
+  }, [searchParams]);
 
   // Surcharge tarifs personnalisés pour le client sélectionné (garde uniquement) —
   // fusionne au-dessus du catalogue de base pour les chips de saisie rapide.

@@ -1178,6 +1178,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         }
         // A60 — accès carnet santé automatique
         await _autoGrantAccess(rdv);
+      } else if (statut == 'termine' && clientUid != null) {
+        // Séance terminée → invite la famille à laisser un avis sur le pro
+        // (réutilise le flux avis_pro / la vitrine publique). Une seule fois :
+        // pas de relance si un avis existe déjà, ni si la notif a déjà été posée.
+        await _demanderAvis(rdv, clientUid);
       } else if ((statut == 'annule' || statut == 'refuse') && rdv.isNotEmpty) {
         await supa.from('agenda_events').delete().eq('rdv_id', rdv['id']); // client
         final proUidDel = FirebaseAuth.instance.currentUser?.uid;
@@ -1218,6 +1223,54 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         ));
       }
     }
+  }
+
+  /// Après une séance terminée : notif « Donnez votre avis » à la famille,
+  /// une seule fois (pas de relance si un avis existe déjà ou si la notif a
+  /// déjà été envoyée pour ce RDV).
+  Future<void> _demanderAvis(Map<String, dynamic> rdv, String clientUid) async {
+    try {
+      final supa = Supabase.instance.client;
+      final proUid = FirebaseAuth.instance.currentUser?.uid;
+      if (proUid == null) return;
+      final proProfileId = rdv['pro_profile_id']?.toString();
+      final rdvId = rdv['id']?.toString();
+
+      // Déjà un avis de ce client pour ce pro ?
+      var avisQ = supa.from('avis_pro').select('id').eq('pro_uid', proUid).eq('client_uid', clientUid);
+      if (proProfileId != null && proProfileId.isNotEmpty) {
+        avisQ = avisQ.eq('pro_profile_id', proProfileId);
+      }
+      final existingAvis = await avisQ.limit(1).maybeSingle();
+      if (existingAvis != null) return;
+
+      // Notif déjà postée pour ce RDV ?
+      if (rdvId != null) {
+        final dup = await supa.from('notifications').select('id')
+            .eq('uid', clientUid).eq('type', 'avis_demande')
+            .contains('data', {'rdv_id': rdvId}).limit(1).maybeSingle();
+        if (dup != null) return;
+      }
+
+      final proName = User_Info.nameElevage.isNotEmpty
+          ? User_Info.nameElevage
+          : User_Info.professionPro.isNotEmpty ? User_Info.professionPro : 'votre professionnel';
+      await supa.from('notifications').insert({
+        'uid': clientUid,
+        'type': 'avis_demande',
+        'title': 'Votre avis compte',
+        'body': 'Comment s\'est passée votre séance avec $proName ? Laissez un avis.',
+        if ((rdv['client_profile_id'] as String?)?.isNotEmpty == true) 'profile_id': rdv['client_profile_id'],
+        'data': {
+          'rdv_id': rdvId,
+          'pro_uid': proUid,
+          if (proProfileId != null && proProfileId.isNotEmpty) 'pro_profile_id': proProfileId,
+          'pro_nom': proName,
+          'url': '/services/pro/$proUid?avis=1${proProfileId != null && proProfileId.isNotEmpty ? '&profileId=$proProfileId' : ''}',
+        },
+        'read': false,
+      });
+    } catch (_) {}
   }
 
   Future<void> _showCancelDialog(Map<String, dynamic> rdv, {bool isRefus = false}) async {

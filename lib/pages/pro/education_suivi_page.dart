@@ -42,6 +42,7 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
   late final TabController _tab;
 
   String? _ownerUid;
+  Map<String, dynamic>? _ownerInfo; // firstname/lastname/email/nom
   List<Map<String, dynamic>> _objectifs = [];
   List<Map<String, dynamic>> _exercices = [];
   final Map<String, List<Map<String, dynamic>>> _retours = {};
@@ -89,6 +90,20 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             .order('souscrit_le', ascending: false),
       ]);
       final animal = results[2] as Map<String, dynamic>?;
+      final ownerUid = animal?['uid_proprietaire']?.toString() ?? animal?['uid_eleveur']?.toString();
+      if (ownerUid != null) {
+        try {
+          _ownerInfo = await _supa.from('user_profiles')
+              .select('firstname, lastname, email_contact')
+              .eq('uid', ownerUid).eq('is_main', true).maybeSingle();
+          if (_ownerInfo?['email_contact'] == null || '${_ownerInfo?['email_contact']}'.isEmpty) {
+            final u = await _supa.from('users').select('email').eq('uid', ownerUid).maybeSingle();
+            if (u?['email'] != null) {
+              _ownerInfo = {...?_ownerInfo, 'email_contact': u!['email']};
+            }
+          }
+        } catch (_) {}
+      }
       final exos = List<Map<String, dynamic>>.from(results[3] as List);
       _retours.clear();
       final exoIds = exos.map((e) => e['id']?.toString()).whereType<String>().toList();
@@ -540,14 +555,15 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
   }
 
   void _proposerDevis(String reco, int? nb, Map<String, dynamic>? forfait) {
+    final hasForfait = forfait != null && forfait.isNotEmpty;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Bilan enregistré', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (nb != null || (forfait != null && forfait.isNotEmpty))
+          if (nb != null || hasForfait)
             Text('Recommandation : ${nb != null ? '$nb séances' : ''}'
-                '${forfait != null && forfait.isNotEmpty ? '${nb != null ? ' — ' : ''}forfait « ${forfait['nom']} » (${(forfait['prix'] as num?)?.toStringAsFixed(0) ?? 0} €)' : ''}',
+                '${hasForfait ? '${nb != null ? ' — ' : ''}forfait « ${forfait['nom']} » (${(forfait['prix'] as num?)?.toStringAsFixed(0) ?? 0} €)' : ''}',
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
           const SizedBox(height: 8),
           const Text('Créer le devis correspondant maintenant ?',
@@ -560,7 +576,35 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
             style: FilledButton.styleFrom(backgroundColor: _kOrange),
             onPressed: () {
               Navigator.pop(ctx);
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const DevisPage()));
+              final objs = _objectifs.map((o) => o['libelle']?.toString() ?? '').where((s) => s.isNotEmpty).toList();
+              final note = [
+                if (reco.isNotEmpty) reco,
+                if (objs.isNotEmpty) 'Objectifs de travail : ${objs.join(', ')}.',
+              ].join('\n\n');
+              final ligne = hasForfait
+                  ? {
+                      'description': 'Forfait ${forfait['nom']}'
+                          '${forfait['nb_seances'] != null ? ' (${forfait['nb_seances']} séances)' : ''}',
+                      'quantite': 1,
+                      'prix_unitaire': (forfait['prix'] as num?)?.toDouble() ?? 0,
+                    }
+                  : {
+                      'description': 'Programme d\'éducation — ${widget.animalNom}',
+                      'quantite': nb ?? 1,
+                      'prix_unitaire': 0,
+                    };
+              Navigator.push(context, MaterialPageRoute(builder: (_) => DevisPage(
+                prefill: DevisPrefill(
+                  animalId: widget.animalId,
+                  clientUid: _ownerUid,
+                  clientProfileId: widget.ownerProfileId,
+                  clientNom: _ownerInfo?['lastname']?.toString(),
+                  clientPrenom: _ownerInfo?['firstname']?.toString(),
+                  clientEmail: _ownerInfo?['email_contact']?.toString(),
+                  lignes: [ligne],
+                  note: note.isEmpty ? null : note,
+                ),
+              )));
             },
             child: const Text('Créer le devis', style: TextStyle(fontFamily: 'Galey')),
           ),

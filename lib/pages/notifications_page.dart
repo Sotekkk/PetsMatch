@@ -21,6 +21,7 @@ import 'package:PetsMatch/pages/pro/education_devis_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/pages/nature/natural_place_detail_page.dart';
+import 'package:PetsMatch/pages/services/service_detail_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
@@ -330,6 +331,24 @@ class _NotificationsPageState extends State<NotificationsPage> {
           builder: (_) => EducationRapportsPage(
             animalId: animalId,
             animalNom: animalNom ?? 'Animal',
+          ),
+        ));
+      }
+      return;
+    }
+    // « Donnez votre avis » après une séance terminée — ouvre la vitrine
+    // publique du pro (section avis en bas de page).
+    if (type == 'avis_demande') {
+      final proUid = data is Map ? data['pro_uid'] as String? : null;
+      final proProfileId = data is Map ? data['pro_profile_id'] as String? : null;
+      final proNom = data is Map ? data['pro_nom'] as String? : null;
+      if (proUid != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ServiceDetailPage(
+            proUid: proUid,
+            profileTableId: (proProfileId != null && proProfileId.isNotEmpty) ? proProfileId : null,
+            categoryLabel: proNom ?? 'Professionnel',
+            categoryColor: _teal,
           ),
         ));
       }
@@ -846,6 +865,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'education_bilan': return Icons.assignment_outlined;
       case 'education_forfait_bas': return Icons.confirmation_number_outlined;
       case 'education_attestation': return Icons.workspace_premium_outlined;
+      case 'avis_demande':          return Icons.star_outline;
       case 'cours_collectif_inscription': return Icons.groups_outlined;
       case 'devis_recu':             return Icons.request_quote_outlined;
       case 'devis_accepte':          return Icons.check_circle_outline;
@@ -915,6 +935,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'education_bilan': return const Color(0xFFEF6C00);
       case 'education_forfait_bas': return const Color(0xFFEF6C00);
       case 'education_attestation': return const Color(0xFF6E9E57);
+      case 'avis_demande':          return const Color(0xFFF5A623);
       case 'cours_collectif_inscription': return const Color(0xFF7B5EA7);
       case 'devis_recu':             return const Color(0xFF0C5C6C);
       case 'devis_accepte':          return const Color(0xFF6E9E57);

@@ -58,8 +58,26 @@ Future<String?> _syncContratDocument(Map<String, dynamic> devisRow, String devis
   }
 }
 
+/// Pré-remplissage d'un nouveau devis (ex. depuis un bilan comportemental).
+class DevisPrefill {
+  final String? animalId;
+  final String? clientUid;
+  final String? clientProfileId;
+  final String? clientNom;
+  final String? clientPrenom;
+  final String? clientEmail;
+  final List<Map<String, dynamic>> lignes; // {description, quantite, prix_unitaire}
+  final String? note;
+  const DevisPrefill({
+    this.animalId, this.clientUid, this.clientProfileId,
+    this.clientNom, this.clientPrenom, this.clientEmail,
+    this.lignes = const [], this.note,
+  });
+}
+
 class DevisPage extends StatefulWidget {
-  const DevisPage({super.key});
+  final DevisPrefill? prefill;
+  const DevisPage({super.key, this.prefill});
   @override
   State<DevisPage> createState() => _DevisPageState();
 }
@@ -74,6 +92,9 @@ class _DevisPageState extends State<DevisPage> {
   void initState() {
     super.initState();
     _load();
+    if (widget.prefill != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openCreate(widget.prefill));
+    }
   }
 
   Future<void> _load() async {
@@ -114,12 +135,12 @@ class _DevisPageState extends State<DevisPage> {
     }
   }
 
-  Future<void> _openCreate() async {
+  Future<void> _openCreate([DevisPrefill? prefill]) async {
     final created = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => const _DevisFormSheet(),
+      builder: (_) => _DevisFormSheet(prefill: prefill),
     );
     if (created == true) _load();
   }
@@ -284,7 +305,8 @@ class _Ligne {
 }
 
 class _DevisFormSheet extends StatefulWidget {
-  const _DevisFormSheet();
+  final DevisPrefill? prefill;
+  const _DevisFormSheet({this.prefill});
   @override
   State<_DevisFormSheet> createState() => _DevisFormSheetState();
 }
@@ -318,6 +340,29 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
     super.initState();
     _loadTarifsForfaits();
     _loadAnimaux();
+    final p = widget.prefill;
+    if (p != null) {
+      _animalId = p.animalId;
+      _clientUid = p.clientUid;
+      _clientProfileId = p.clientProfileId;
+      _nomCtrl.text = p.clientNom ?? '';
+      _prenomCtrl.text = p.clientPrenom ?? '';
+      _emailCtrl.text = p.clientEmail ?? '';
+      if ((p.clientNom ?? '').isNotEmpty) {
+        _searchCtrl.text = '${p.clientPrenom ?? ''} ${p.clientNom ?? ''}'.trim();
+      }
+      _noteCtrl.text = p.note ?? '';
+      if (p.lignes.isNotEmpty) {
+        _lignes.clear();
+        for (final l in p.lignes) {
+          _lignes.add(_Ligne(
+            description: l['description']?.toString() ?? '',
+            quantite: (l['quantite'] as num?)?.toInt() ?? 1,
+            prixUnitaire: (l['prix_unitaire'] as num?)?.toDouble() ?? 0,
+          ));
+        }
+      }
+    }
   }
 
   Future<void> _loadAnimaux() async {
@@ -328,6 +373,9 @@ class _DevisFormSheetState extends State<_DevisFormSheet> {
           .eq('pro_profile_id', pid).inFilter('statut', ['active', 'active_write']);
       final ids = List<Map<String, dynamic>>.from(access)
           .map((a) => a['animal_id'] as String).toSet().toList();
+      // Inclure l'animal pré-rempli même s'il n'a pas de partage explicite (RDV).
+      final pre = widget.prefill?.animalId;
+      if (pre != null && !ids.contains(pre)) ids.add(pre);
       if (ids.isEmpty) return;
       final animaux = await _supa.from('animaux').select('id,nom,espece').inFilter('id', ids);
       if (mounted) setState(() => _animaux = List<Map<String, dynamic>>.from(animaux));

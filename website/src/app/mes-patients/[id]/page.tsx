@@ -235,6 +235,8 @@ export default function PatientDetailPage() {
   const [bilanNb, setBilanNb] = useState('');
   const [bilanForfait, setBilanForfait] = useState('');
   const [forfaitsEdu, setForfaitsEdu] = useState<{ id: string; nom: string; nb_seances: number; prix: number }[]>([]);
+  // Après l'envoi d'un bilan : lien vers le devis pré-rempli (forfait conseillé + objectifs en note).
+  const [devisPrefillUrl, setDevisPrefillUrl] = useState<string | null>(null);
   const [forfaitsSous, setForfaitsSous] = useState<ForfaitSous[]>([]);
   const [showForfaitSousForm, setShowForfaitSousForm] = useState(false);
   const [imputerForfait, setImputerForfait] = useState(true);
@@ -483,6 +485,29 @@ export default function PatientDetailPage() {
       const { data } = await supabase.from('education_progression')
         .select('id, date_seance, contenu, exercices_conseilles, type, bilan_motif, bilan_recommandation, bilan_nb_seances_estime').eq('animal_id', animalId).order('date_seance', { ascending: false });
       setRapports((data ?? []) as RapportEduP[]);
+      if (isBilan) {
+        const params = new URLSearchParams({ prefill: '1', animal: animalId });
+        if (ownerUid) params.set('clientUid', ownerUid);
+        const { data: pp } = await supabase.from('animaux_proprietes')
+          .select('profile_id_proprio').eq('animal_id', animalId).is('date_fin', null)
+          .order('date_debut', { ascending: false }).limit(1).maybeSingle();
+        if (pp?.profile_id_proprio) params.set('clientProfileId', pp.profile_id_proprio);
+        if (owner?.lastname) params.set('nom', owner.lastname);
+        if (owner?.firstname) params.set('prenom', owner.firstname);
+        if (owner?.email) params.set('email', owner.email);
+        const f = forfaitsEdu.find(x => x.id === bilanForfait);
+        if (f) {
+          params.set('ligneDesc', `Forfait ${f.nom} (${f.nb_seances} séances)`);
+          params.set('ligneQte', '1');
+          params.set('lignePrix', String(f.prix));
+        }
+        const objLibelles = objectifs.map(o => o.libelle).filter(Boolean);
+        const noteParts: string[] = [];
+        if (bilanReco.trim()) noteParts.push(bilanReco.trim());
+        if (objLibelles.length) noteParts.push(`Objectifs de travail : ${objLibelles.join(', ')}.`);
+        if (noteParts.length) params.set('note', noteParts.join('\n\n'));
+        setDevisPrefillUrl(`/education/devis?${params.toString()}`);
+      }
       setRapportContenu(''); setRapportExercices(''); setShowAddRapport(false);
       setRapportType('seance'); setBilanMotif(''); setBilanReco(''); setBilanNb(''); setBilanForfait('');
     } finally {
@@ -1366,6 +1391,18 @@ export default function PatientDetailPage() {
                 className="w-full border border-[#6E9E57] text-[#4A7A32] rounded-2xl py-2.5 font-semibold text-sm mb-4 disabled:opacity-50">
                 🎓 {genAttest ? 'Génération…' : 'Générer l\'attestation de fin de programme'}
               </button>
+            )}
+            {devisPrefillUrl && (
+              <div className="bg-[#FFF3E9] border border-[#EF6C00]/40 rounded-2xl p-3 mb-4 flex items-center justify-between gap-3">
+                <p className="text-xs text-gray-700">Bilan envoyé. Proposez le programme conseillé à la famille.</p>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => router.push(devisPrefillUrl)}
+                    className="text-white text-xs font-semibold px-3 py-1.5 rounded-lg" style={{ background: '#EF6C00' }}>
+                    Créer le devis
+                  </button>
+                  <button onClick={() => setDevisPrefillUrl(null)} className="text-gray-400 text-xs">✕</button>
+                </div>
+              </div>
             )}
             {showAddRapport && (
               <div className="border border-gray-100 rounded-2xl p-4 mb-4 space-y-3">

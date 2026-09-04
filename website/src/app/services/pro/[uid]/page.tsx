@@ -912,7 +912,7 @@ function ProDetailContent() {
               </div>
             )}
             {['taxi_animalier', 'education', 'sante', 'garde', 'toilettage', 'photographe', 'marechal_ferrant', 'veterinaire'].includes(pro.cat_pro) && (
-              <AvisPro proUid={pro.uid} proProfileId={pro.profileTableId} clientUid={user?.uid ?? null} />
+              <AvisPro proUid={pro.uid} proProfileId={pro.profileTableId} clientUid={user?.uid ?? null} autoOpen={searchParams.get('avis') === '1'} />
             )}
           </>
         )}
@@ -1320,10 +1320,12 @@ function ProDetailContent() {
 }
 
 // ─── Avis (système générique avis_pro) ───────────────────────────────────────
-function AvisPro({ proUid, proProfileId, clientUid }: { proUid: string; proProfileId?: string; clientUid: string | null }) {
+function AvisPro({ proUid, proProfileId, clientUid, autoOpen = false }: { proUid: string; proProfileId?: string; clientUid: string | null; autoOpen?: boolean }) {
   const [avis, setAvis] = useState<{ id: string; note: number; commentaire: string | null; created_at: string; client_uid: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const autoOpenDone = useRef(false);
   const [note, setNote] = useState(0);
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
@@ -1338,6 +1340,14 @@ function AvisPro({ proUid, proProfileId, clientUid }: { proUid: string; proProfi
   useEffect(() => { reload(); }, [reload]);
 
   const dejaNote = clientUid != null && avis.some(a => a.client_uid === clientUid);
+
+  // Arrivée depuis la notif « Donnez votre avis » : ouvre le formulaire + scroll.
+  useEffect(() => {
+    if (!autoOpen || autoOpenDone.current || loading) return;
+    autoOpenDone.current = true;
+    if (clientUid && !dejaNote) setShowForm(true);
+    sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [autoOpen, loading, clientUid, dejaNote]);
   const moyenne = avis.length ? avis.reduce((s, a) => s + a.note, 0) / avis.length : 0;
 
   async function submit() {
@@ -1357,7 +1367,7 @@ function AvisPro({ proUid, proProfileId, clientUid }: { proUid: string; proProfi
 
   if (loading) return null;
   return (
-    <div className="bg-white rounded-2xl p-4 shadow-sm">
+    <div ref={sectionRef} className="bg-white rounded-2xl p-4 shadow-sm">
       <div className="flex items-center justify-between mb-2">
         <p className="font-bold text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>
           Avis {avis.length > 0 && <span className="text-sm text-gray-500 font-normal">⭐ {moyenne.toFixed(1)} ({avis.length})</span>}
