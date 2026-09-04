@@ -31,8 +31,11 @@ class RichTextView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = raw ?? '';
-    final base = style ??
-        const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF444444));
+    // Galey n'a qu'une graisse (semibold) → gras/italique invisibles. Le contenu
+    // éducateur est rendu en NotoSans (vrai gras + italique), quel que soit le
+    // style passé par l'appelant.
+    final base = (style ?? const TextStyle(fontSize: 13, color: Color(0xFF444444)))
+        .copyWith(fontFamily: 'NotoSans');
     if (!looksLikeHtml(text)) {
       return Text(text,
           style: base,

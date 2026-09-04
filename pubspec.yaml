@@ -133,6 +133,15 @@ flutter:
       fonts:
         # - asset: fonts/galey_rounded.ttf
         - asset: assets/font/galeysemibold.ttf
+    # Police du contenu éducateur mis en forme (a un vrai gras / italique,
+    # ce que Galey — semibold unique — n'a pas). Voir widgets/rich_text_view.dart.
+    - family: NotoSans
+      fonts:
+        - asset: assets/font/NotoSans-Regular.ttf
+        - asset: assets/font/NotoSans-Bold.ttf
+          weight: 700
+        - asset: assets/font/NotoSans-Italic.ttf
+          style: italic
     # - family: Trajan Pro
     #   fonts:
     #     - asset: fonts/TrajanPro.ttf
