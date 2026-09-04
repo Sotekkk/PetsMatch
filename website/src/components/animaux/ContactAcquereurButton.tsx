@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { fetchContactAcquereur, waPhone, type ContactAcquereur } from '@/lib/contact-acquereur';
+import { fetchContactAcquereur, saveContactAcquereurManuel, waPhone, type ContactAcquereur } from '@/lib/contact-acquereur';
 
 interface AnimalRef {
   id: string;
@@ -15,20 +15,46 @@ interface AnimalRef {
  * du nouveau propriétaire d'un animal cédé (nom, téléphone, email, adresse) +
  * actions rapides (appeler, WhatsApp, email). On sait jamais si on a besoin
  * de recontacter la famille — à poser sur toute carte animal cédé.
+ *
+ * Si l'acquéreur n'a pas (ou plus) de compte PetsMatch actif, les coordonnées
+ * sont modifiables (info reçue autrement que par l'appli).
  */
 export default function ContactAcquereurButton({ animal, className = '' }: { animal: AnimalRef; className?: string }) {
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [contact, setContact] = useState<ContactAcquereur | null>(null);
+  const [editable, setEditable] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<ContactAcquereur>({});
+  const [saving, setSaving] = useState(false);
 
   async function handleOpen() {
     setLoading(true);
     try {
-      const c = await fetchContactAcquereur(animal);
+      const { contact: c, editable: e } = await fetchContactAcquereur(animal);
       setContact(c);
+      setEditable(e);
+      setForm(c);
+      setEditing(false);
       setOpen(true);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const cleaned: ContactAcquereur = {};
+      (Object.keys(form) as (keyof ContactAcquereur)[]).forEach(k => {
+        const v = (form[k] ?? '').trim();
+        if (v) cleaned[k] = v;
+      });
+      await saveContactAcquereurManuel(animal.id, cleaned);
+      setContact(cleaned);
+      setEditing(false);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -48,11 +74,51 @@ export default function ContactAcquereurButton({ animal, className = '' }: { ani
           onClick={() => setOpen(false)}>
           <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm p-5 max-h-[85vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-[#1F2A2E] text-base mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>
-              Coordonnées — {animal.nom ?? 'Animal'}
-            </h3>
-            {aucune ? (
-              <p className="text-sm text-gray-500">Aucune coordonnée enregistrée pour cet animal.</p>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-bold text-[#1F2A2E] text-base" style={{ fontFamily: 'Galey, sans-serif' }}>
+                Coordonnées — {animal.nom ?? 'Animal'}
+              </h3>
+              {editable && !editing && (
+                <button onClick={() => setEditing(true)} className="text-xs font-semibold text-[#0C5C6C] shrink-0">
+                  ✏️ Modifier
+                </button>
+              )}
+            </div>
+            {editable && (
+              <p className="text-[11px] text-gray-400 mb-3">
+                {editing
+                  ? "Le propriétaire n'a pas (ou plus) de compte actif — corrigez si vous avez une info plus récente."
+                  : 'Propriétaire sans compte actif : coordonnées modifiables si besoin.'}
+              </p>
+            )}
+
+            {editing ? (
+              <div className="space-y-2 mb-4">
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={form.prenom ?? ''} onChange={e => setForm(f => ({ ...f, prenom: e.target.value }))}
+                    placeholder="Prénom" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                  <input value={form.nom ?? ''} onChange={e => setForm(f => ({ ...f, nom: e.target.value }))}
+                    placeholder="Nom" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                </div>
+                <input value={form.tel ?? ''} onChange={e => setForm(f => ({ ...f, tel: e.target.value }))}
+                  placeholder="Téléphone" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                <input value={form.email ?? ''} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                  placeholder="Email" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                <input value={form.adresse ?? ''} onChange={e => setForm(f => ({ ...f, adresse: e.target.value }))}
+                  placeholder="Adresse" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                <div className="flex gap-2 pt-1">
+                  <button onClick={() => { setForm(contact); setEditing(false); }} disabled={saving}
+                    className="flex-1 border border-gray-200 text-gray-600 text-sm font-semibold py-2 rounded-xl disabled:opacity-50">
+                    Annuler
+                  </button>
+                  <button onClick={handleSave} disabled={saving}
+                    className="flex-1 bg-[#0C5C6C] text-white text-sm font-semibold py-2 rounded-xl disabled:opacity-50">
+                    {saving ? '…' : 'Enregistrer'}
+                  </button>
+                </div>
+              </div>
+            ) : aucune ? (
+              <p className="text-sm text-gray-500 mb-4">Aucune coordonnée enregistrée pour cet animal.</p>
             ) : (
               <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 text-sm space-y-1 mb-4">
                 {nomComplet && <p>👤 {nomComplet}</p>}
@@ -61,26 +127,29 @@ export default function ContactAcquereurButton({ animal, className = '' }: { ani
                 {contact.adresse && <p>🏠 {contact.adresse}</p>}
               </div>
             )}
-            <div className="flex flex-wrap gap-2">
-              {contact.tel && (
-                <a href={`tel:${contact.tel}`}
-                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#0C5C6C] bg-[#0C5C6C]/10 border border-[#0C5C6C]/30">
-                  📞 Appeler
-                </a>
-              )}
-              {contact.tel && (
-                <a href={`https://wa.me/${waPhone(contact.tel)}`} target="_blank" rel="noopener noreferrer"
-                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#1a9e4b] bg-[#25D366]/10 border border-[#25D366]/40">
-                  WhatsApp
-                </a>
-              )}
-              {contact.email && (
-                <a href={`mailto:${contact.email}`}
-                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#EA4335] bg-[#EA4335]/10 border border-[#EA4335]/30">
-                  Email
-                </a>
-              )}
-            </div>
+
+            {!editing && (
+              <div className="flex flex-wrap gap-2">
+                {contact.tel && (
+                  <a href={`tel:${contact.tel}`}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#0C5C6C] bg-[#0C5C6C]/10 border border-[#0C5C6C]/30">
+                    📞 Appeler
+                  </a>
+                )}
+                {contact.tel && (
+                  <a href={`https://wa.me/${waPhone(contact.tel)}`} target="_blank" rel="noopener noreferrer"
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#1a9e4b] bg-[#25D366]/10 border border-[#25D366]/40">
+                    WhatsApp
+                  </a>
+                )}
+                {contact.email && (
+                  <a href={`mailto:${contact.email}`}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#EA4335] bg-[#EA4335]/10 border border-[#EA4335]/30">
+                    Email
+                  </a>
+                )}
+              </div>
+            )}
             <button onClick={() => setOpen(false)} className="mt-4 w-full text-xs text-gray-500 py-2">Fermer</button>
           </div>
         </div>

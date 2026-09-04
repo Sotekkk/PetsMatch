@@ -8,6 +8,13 @@ export interface ContactAcquereur {
   adresse?: string;
 }
 
+export interface ContactAcquereurResult {
+  contact: ContactAcquereur;
+  /** true si l'acquéreur n'a pas (ou plus) de compte PetsMatch actif : les
+   * coordonnées peuvent alors être corrigées à la main par l'éleveur. */
+  editable: boolean;
+}
+
 interface AnimalRef {
   id: string;
   uid_acquereur?: string | null;
@@ -15,27 +22,43 @@ interface AnimalRef {
 }
 
 /**
- * Coordonnées de l'acquéreur d'un animal cédé. Priorité : **profil
- * particulier** PetsMatch de l'acquéreur (à jour, qu'il maîtrise) → contrat
- * signé (`documents_animaux`) → ligne `cessions` → `destinataire_nom` de
- * secours. Factorisé depuis `SuiviCessionsTab` (même logique que l'app,
- * `lib/pages/eleveur/animaux/acquereur_contact.dart`).
+ * Coordonnées de l'acquéreur d'un animal cédé + indique si elles sont
+ * modifiables. Priorité : **profil particulier** PetsMatch de l'acquéreur (à
+ * jour, qu'il maîtrise) → **saisie manuelle de l'éleveur**
+ * (`animaux.acquereur_contact_manuel`, uniquement si pas de profil actif) →
+ * contrat signé (`documents_animaux`) → ligne `cessions` → `destinataire_nom`
+ * de secours. Même logique que l'app,
+ * `lib/pages/eleveur/animaux/acquereur_contact.dart`.
  */
-export async function fetchContactAcquereur(a: AnimalRef): Promise<ContactAcquereur> {
+export async function fetchContactAcquereur(a: AnimalRef): Promise<ContactAcquereurResult> {
   const c: ContactAcquereur = {};
   const put = (k: keyof ContactAcquereur, v: unknown) => {
     const s = (v ?? '').toString().trim();
     if (s && !c[k]) c[k] = s;
   };
 
+  let hasLiveProfile = false;
   if (a.uid_acquereur) {
     const { data: p } = await supabase.from('user_profiles')
       .select('firstname, lastname, phone_number, email_contact, adresse, rue, code_postal, ville')
       .eq('uid', a.uid_acquereur).eq('profile_type', 'particulier').maybeSingle();
     if (p) {
+      hasLiveProfile = true;
       put('prenom', p.firstname); put('nom', p.lastname);
       put('tel', p.phone_number); put('email', p.email_contact);
       put('adresse', p.adresse ?? [p.rue, p.code_postal, p.ville].filter(Boolean).join(' '));
+    }
+  }
+
+  // Pas de compte PetsMatch actif derrière l'acquéreur → priorité à la
+  // correction manuelle de l'éleveur (info reçue par tél./mail hors appli).
+  if (!hasLiveProfile) {
+    const { data: row } = await supabase.from('animaux')
+      .select('acquereur_contact_manuel').eq('id', a.id).maybeSingle();
+    const manuel = row?.acquereur_contact_manuel as ContactAcquereur | null;
+    if (manuel) {
+      put('prenom', manuel.prenom); put('nom', manuel.nom);
+      put('tel', manuel.tel); put('email', manuel.email); put('adresse', manuel.adresse);
     }
   }
 
@@ -62,7 +85,13 @@ export async function fetchContactAcquereur(a: AnimalRef): Promise<ContactAcquer
   }
   put('nom', a.destinataire_nom);
 
-  return c;
+  return { contact: c, editable: !hasLiveProfile };
+}
+
+/** Enregistre la correction manuelle de l'éleveur (pertinent seulement quand
+ * l'acquéreur n'a pas de compte PetsMatch actif). */
+export async function saveContactAcquereurManuel(animalId: string, data: ContactAcquereur) {
+  await supabase.from('animaux').update({ acquereur_contact_manuel: data }).eq('id', animalId);
 }
 
 /** Téléphone au format international sans « + » pour wa.me (France par défaut). */

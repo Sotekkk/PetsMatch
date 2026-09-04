@@ -229,7 +229,7 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
   async function openRelance(a: AnimalLite) {
     setBusy(a.id);
     try {
-      const c: Contact = await fetchContactAcquereur(a);
+      const { contact: c } = await fetchContactAcquereur(a);
 
       const nomA = a.nom ?? "l'animal";
       const ech = parseDate(a.sterilisation_echeance);

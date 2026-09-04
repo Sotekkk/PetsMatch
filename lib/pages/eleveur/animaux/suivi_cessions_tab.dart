@@ -292,77 +292,6 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
 
   String _telDigits(String raw) => raw.replaceAll(RegExp(r'[^0-9+]'), '');
 
-  /// Coordonnées de l'acquéreur. Priorité : **profil particulier** de l'acquéreur
-  /// s'il est utilisateur PetsMatch (données à jour, qu'il maîtrise) → contrat
-  /// signé → ligne `cessions`. `put` conserve la 1re valeur non vide.
-  /// Retourne { prenom, nom, tel, email, adresse }.
-  Future<Map<String, String>> _contactAcquereur(Map<String, dynamic> a) async {
-    final out = <String, String>{};
-    void put(String k, dynamic v) {
-      final s = (v ?? '').toString().trim();
-      if (s.isNotEmpty && (out[k] == null || out[k]!.isEmpty)) out[k] = s;
-    }
-    String joinNonEmpty(Iterable parts, String sep) => parts
-        .where((e) => (e ?? '').toString().trim().isNotEmpty)
-        .map((e) => e.toString().trim())
-        .join(sep);
-
-    final acqUid = (a['uid_acquereur'] ?? '').toString();
-    if (acqUid.isNotEmpty) {
-      try {
-        final p = await _supa.from('user_profiles')
-            .select('firstname, lastname, phone_number, email_contact, adresse, rue, code_postal, ville')
-            .eq('uid', acqUid)
-            .eq('profile_type', 'particulier')
-            .maybeSingle();
-        if (p != null) {
-          put('prenom', p['firstname']);
-          put('nom', p['lastname']);
-          put('tel', p['phone_number']);
-          put('email', p['email_contact']);
-          put('adresse', p['adresse'] ??
-              joinNonEmpty([p['rue'], p['code_postal'], p['ville']], ' '));
-        }
-      } catch (_) {}
-    }
-
-    try {
-      final doc = await _supa.from('documents_animaux')
-          .select('metadata')
-          .eq('animal_id', a['id'])
-          .inFilter('type', ['contrat_vente', 'certificat_cession'])
-          .order('created_at', ascending: false)
-          .limit(1).maybeSingle();
-      final m = (doc?['metadata'] as Map?)?.cast<String, dynamic>() ?? {};
-      put('prenom', m['acquereur_prenom']);
-      put('nom', m['acquereur_nom_famille'] ?? m['acquereur_nom']);
-      put('tel', m['acquereur_tel']);
-      put('email', m['acquereur_email']);
-      put('adresse', joinNonEmpty([
-        m['acquereur_adresse'],
-        joinNonEmpty([m['acquereur_cp'], m['acquereur_ville']], ' '),
-      ], ', '));
-    } catch (_) {}
-
-    try {
-      final c = await _supa.from('cessions')
-          .select('prenom_acquereur, nom_acquereur, tel_acquereur, email_acquereur, adresse_acquereur')
-          .eq('animal_id', a['id'])
-          .order('created_at', ascending: false)
-          .limit(1).maybeSingle();
-      if (c != null) {
-        put('prenom', c['prenom_acquereur']);
-        put('nom', c['nom_acquereur']);
-        put('tel', c['tel_acquereur']);
-        put('email', c['email_acquereur']);
-        put('adresse', c['adresse_acquereur']);
-      }
-    } catch (_) {}
-
-    put('nom', a['destinataire_nom']);
-    return out;
-  }
-
   Future<void> _openUri(Uri uri) async {
     try {
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -493,7 +422,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
     setState(() => _relancing = a['id'] as String);
     Map<String, String> c;
     try {
-      c = await _contactAcquereur(a);
+      c = (await fetchContactAcquereur(_supa, a)).data;
     } catch (e) {
       if (mounted) {
         setState(() => _relancing = null);
