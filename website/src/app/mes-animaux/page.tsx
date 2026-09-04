@@ -12,6 +12,7 @@ import PorteePoidsModal from '@/components/animaux/PorteePoidsModal';
 import PorteeSoinModal from '@/components/animaux/PorteeSoinModal';
 import EditPorteeModal from '@/components/animaux/EditPorteeModal';
 import SuiviCessionsTab from '@/components/animaux/SuiviCessionsTab';
+import ContactAcquereurButton from '@/components/animaux/ContactAcquereurButton';
 
 interface Animal {
   id: string;
@@ -256,6 +257,11 @@ function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, rep
           title="Supprimer">
           ✕
         </button>
+      )}
+      {!selectMode && tab === 'anciens' && a.statut === 'sorti' && (
+        <div className="absolute bottom-2 right-2">
+          <ContactAcquereurButton animal={a} className="bg-white shadow-md" />
+        </div>
       )}
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setConfirmDelete(false)}>

@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { fetchContactAcquereur } from '@/lib/contact-acquereur';
+import ContactAcquereurButton from '@/components/animaux/ContactAcquereurButton';
 
 interface AnimalLite {
   id: string;
@@ -227,46 +229,7 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
   async function openRelance(a: AnimalLite) {
     setBusy(a.id);
     try {
-      const c: Contact = {};
-      const put = (k: keyof Contact, v: unknown) => {
-        const s = (v ?? '').toString().trim();
-        if (s && !c[k]) c[k] = s;
-      };
-      // Priorité : profil particulier de l'acquéreur (s'il est utilisateur, ses
-      // coordonnées sont à jour) → contrat signé → ligne cessions.
-      if (a.uid_acquereur) {
-        const { data: p } = await supabase.from('user_profiles')
-          .select('firstname, lastname, phone_number, email_contact, adresse, rue, code_postal, ville')
-          .eq('uid', a.uid_acquereur).eq('profile_type', 'particulier').maybeSingle();
-        if (p) {
-          put('prenom', p.firstname); put('nom', p.lastname);
-          put('tel', p.phone_number); put('email', p.email_contact);
-          put('adresse', p.adresse ?? [p.rue, p.code_postal, p.ville].filter(Boolean).join(' '));
-        }
-      }
-
-      const { data: doc } = await supabase.from('documents_animaux')
-        .select('metadata')
-        .eq('animal_id', a.id)
-        .in('type', ['contrat_vente', 'certificat_cession'])
-        .order('created_at', { ascending: false })
-        .limit(1).maybeSingle();
-      const m = (doc?.metadata ?? {}) as Record<string, unknown>;
-      put('prenom', m.acquereur_prenom);
-      put('nom', m.acquereur_nom_famille ?? m.acquereur_nom);
-      put('tel', m.acquereur_tel);
-      put('email', m.acquereur_email);
-      put('adresse', [m.acquereur_adresse, [m.acquereur_cp, m.acquereur_ville].filter(Boolean).join(' ')]
-        .filter((x) => x && String(x).trim()).join(', '));
-
-      const { data: cs } = await supabase.from('cessions')
-        .select('prenom_acquereur, nom_acquereur, tel_acquereur, email_acquereur, adresse_acquereur')
-        .eq('animal_id', a.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
-      if (cs) {
-        put('prenom', cs.prenom_acquereur); put('nom', cs.nom_acquereur);
-        put('tel', cs.tel_acquereur); put('email', cs.email_acquereur); put('adresse', cs.adresse_acquereur);
-      }
-      put('nom', a.destinataire_nom);
+      const c: Contact = await fetchContactAcquereur(a);
 
       const nomA = a.nom ?? "l'animal";
       const ech = parseDate(a.sterilisation_echeance);
@@ -364,7 +327,10 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
                         {[a.destinataire_nom, a.race].filter(Boolean).join(' · ')}
                       </p>
                     </div>
-                    <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${chip.cls}`}>{chip.label}</span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${chip.cls}`}>{chip.label}</span>
+                      <ContactAcquereurButton animal={a} />
+                    </div>
                   </div>
                   <p className={`text-xs mt-2 ${enRetard ? 'text-red-700' : 'text-gray-600'}`}>
                     {ech
@@ -420,6 +386,7 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
                       {aujourdhui ? `🎉 Aujourd'hui · ${age} an${age > 1 ? 's' : ''}` : `Dans ${days} j · aura ${age} an${age > 1 ? 's' : ''}`}
                     </p>
                   </div>
+                  <ContactAcquereurButton animal={a} />
                   {a.uid_acquereur && (
                     <button onClick={() => envoyerVoeux(a)} disabled={busy === a.id}
                       className="text-xs font-semibold text-[#0C5C6C] border border-[#0C5C6C]/30 px-3 py-1.5 rounded-lg hover:bg-[#0C5C6C]/5 transition-colors disabled:opacity-50">
