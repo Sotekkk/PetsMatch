@@ -8,6 +8,14 @@
 -- (y compris des notifs internes pro→pro comme le miroir pension/véto) vers
 -- l'éleveur lui-même, avec un profile_type toujours forcé à 'particulier' —
 -- d'où des doublons « flag particulier » sur des animaux 100% élevage.
+--
+-- 2e garde-fou : le fanout ne doit jouer QUE quand la notif d'origine allait
+-- déjà à un des propriétaires actifs de l'animal (partage entre co-proprios).
+-- Sans ça, une notif adressée à un pro (véto, pension…) à propos d'un animal
+-- particulier à propriétaire UNIQUE se recopiait quand même vers ce seul
+-- propriétaire (son uid ≠ celui du pro) → doublon même sans copropriété.
+-- Avec ce garde-fou : un animal à propriétaire unique n'a jamais de doublon,
+-- quel que soit l'émetteur de la notif d'origine.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION fanout_notif_coproprietaires() RETURNS TRIGGER AS $$
@@ -27,6 +35,18 @@ BEGIN
     NEW.data ->> 'animalID'
   );
   IF v_animal_id IS NULL OR v_animal_id = '' THEN
+    RETURN NEW;
+  END IF;
+
+  -- La notif d'origine ne va pas à un propriétaire actif de cet animal
+  -- (ex : notif interne pro→pro) → rien à partager entre co-propriétaires.
+  IF NOT EXISTS (
+    SELECT 1 FROM animaux_proprietes ap0
+    WHERE ap0.animal_id = v_animal_id
+      AND ap0.uid_proprio = NEW.uid
+      AND ap0.date_fin IS NULL
+      AND ap0.statut = 'actif'
+  ) THEN
     RETURN NEW;
   END IF;
 
