@@ -75,8 +75,13 @@ String _structureLabelFor(String catPro) => _structureLabels[catPro] ?? 'un éle
 /// un employé ajouté depuis le profil association se retrouvait rattaché au
 /// profil éleveur du même compte car activeProfileId n'avait pas encore été
 /// mis à jour après le dernier switch de profil).
-Future<String?> _resolveOwnerProfileId(SupabaseClient supa, String uid, bool isAssociation) =>
-    _resolveProfileIdByType(supa, uid, isAssociation ? 'association' : 'eleveur');
+/// [profileType] (explicite, fourni par l'appelant selon le menu d'où il
+/// vient — pas déduit de `User_Info.activeProfileId`, cf. commentaire plus
+/// bas) a priorité sur [isAssociation] quand fourni : couvre les catégories
+/// pro autres qu'éleveur/association (éducation, pension, garde…) sans casser
+/// le comportement historique des appelants qui ne le passent pas.
+Future<String?> _resolveOwnerProfileId(SupabaseClient supa, String uid, bool isAssociation, {String? profileType}) =>
+    _resolveProfileIdByType(supa, uid, profileType ?? (isAssociation ? 'association' : 'eleveur'));
 
 Future<String?> _resolveProfileIdByType(SupabaseClient supa, String uid, String profileType) async {
   final data = await supa.from('user_profiles')
@@ -91,7 +96,13 @@ Future<String?> _resolveProfileIdByType(SupabaseClient supa, String uid, String 
 
 class EmployesPage extends StatefulWidget {
   final bool isAssociation;
-  const EmployesPage({super.key, this.isAssociation = false});
+  /// Type de profil explicite (`education`, `pension`, `garde`…) — quand
+  /// fourni, prend le pas sur [isAssociation] pour résoudre le profil
+  /// employeur. Sans lui, la page suppose toujours « éleveur », d'où la fuite
+  /// corrigée ici : un éducateur/pension/garde voyait les employés de son
+  /// profil éleveur du même compte.
+  final String? profileType;
+  const EmployesPage({super.key, this.isAssociation = false, this.profileType});
   @override
   State<EmployesPage> createState() => _EmployesPageState();
 }
@@ -148,9 +159,9 @@ class _EmployesPageState extends State<EmployesPage> with SingleTickerProviderSt
         controller: _tab,
         children: [
           _EmployesTab(green: _green, teal: _teal, dark: _dark, bg: _bg,
-              isAssociation: widget.isAssociation),
+              isAssociation: widget.isAssociation, profileType: widget.profileType),
           _TachesTab(green: _green, teal: _teal, dark: _dark, bg: _bg,
-              isAssociation: widget.isAssociation),
+              isAssociation: widget.isAssociation, profileType: widget.profileType),
         ],
       ),
     );
@@ -162,8 +173,9 @@ class _EmployesPageState extends State<EmployesPage> with SingleTickerProviderSt
 class _EmployesTab extends StatefulWidget {
   final Color green, teal, dark, bg;
   final bool isAssociation;
+  final String? profileType;
   const _EmployesTab({required this.green, required this.teal, required this.dark, required this.bg,
-      this.isAssociation = false});
+      this.isAssociation = false, this.profileType});
   @override
   State<_EmployesTab> createState() => _EmployesTabState();
 }
@@ -174,6 +186,10 @@ class _EmployesTabState extends State<_EmployesTab> {
   bool _loading = true;
   List<Map<String, dynamic>> _employes = [];
   String _nomElevage = '';
+
+  /// Type de profil résolu pour ce tab : explicite (`education`, `pension`…)
+  /// si fourni, sinon le binaire historique éleveur/association.
+  String get _profileType => widget.profileType ?? (widget.isAssociation ? 'association' : 'eleveur');
 
   @override
   void initState() {
@@ -196,26 +212,19 @@ class _EmployesTabState extends State<_EmployesTab> {
           : '${profile?['firstname'] ?? ''} ${profile?['lastname'] ?? ''}'.trim();
 
       // Résoudre le profile_id de l'employeur à partir du contexte de la page
-      // (widget.isAssociation), pas de User_Info.activeProfileId qui peut être
-      // périmé — voir _resolveOwnerProfileId.
-      final eleveurProfileId = await _resolveOwnerProfileId(_supa, _uid, widget.isAssociation);
+      // (widget.profileType / widget.isAssociation), pas de
+      // User_Info.activeProfileId qui peut être périmé — voir _resolveOwnerProfileId.
+      final eleveurProfileId = await _resolveOwnerProfileId(_supa, _uid, widget.isAssociation, profileType: widget.profileType);
+      final type = _profileType;
 
       dynamic rows;
       if (eleveurProfileId != null) {
         var q = _supa.from('employes').select().eq('eleveur_profile_id', eleveurProfileId).eq('actif', true);
-        if (widget.isAssociation) {
-          q = q.eq('profil_source', 'association');
-        } else {
-          q = q.or('profil_source.is.null,profil_source.eq.eleveur');
-        }
+        q = type == 'eleveur' ? q.or('profil_source.is.null,profil_source.eq.eleveur') : q.eq('profil_source', type);
         rows = await q.order('created_at');
       } else {
         var q = _supa.from('employes').select().eq('uid_eleveur', _uid).eq('actif', true);
-        if (widget.isAssociation) {
-          q = q.eq('profil_source', 'association');
-        } else {
-          q = q.or('profil_source.is.null,profil_source.eq.eleveur');
-        }
+        q = type == 'eleveur' ? q.or('profil_source.is.null,profil_source.eq.eleveur') : q.eq('profil_source', type);
         rows = await q.order('created_at');
       }
 
@@ -289,7 +298,7 @@ class _EmployesTabState extends State<_EmployesTab> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _AddEmployeSheet(uid: _uid, nomElevage: _nomElevage, teal: widget.teal, dark: widget.dark,
-          isAssociation: widget.isAssociation),
+          isAssociation: widget.isAssociation, profileType: widget.profileType),
     );
     _load();
   }
@@ -301,7 +310,7 @@ class _EmployesTabState extends State<_EmployesTab> {
       backgroundColor: Colors.transparent,
       builder: (_) => AddEmployeManuelSheet(
         uid: _uid, teal: widget.teal,
-        profilSource: widget.isAssociation ? 'association' : 'eleveur',
+        profilSource: _profileType,
       ),
     );
     _load();
@@ -396,7 +405,7 @@ class _EmployesTabState extends State<_EmployesTab> {
                       onTap: (employeUid == null && employeProfileId == null) ? null : () => Navigator.push(context, MaterialPageRoute(
                         builder: (_) => _EmployeAgendaPage(
                           nom: nom, teal: widget.teal, dark: widget.dark, bg: widget.bg,
-                          isAssociation: widget.isAssociation,
+                          isAssociation: widget.isAssociation, profileType: widget.profileType,
                           employeUid: employeUid, employeProfileId: employeProfileId,
                         ),
                       )),
@@ -492,11 +501,12 @@ class _EmployeAgendaPage extends StatelessWidget {
   final String nom;
   final Color teal, dark, bg;
   final bool isAssociation;
+  final String? profileType;
   final String? employeUid;
   final String? employeProfileId;
   const _EmployeAgendaPage({
     required this.nom, required this.teal, required this.dark, required this.bg,
-    required this.isAssociation, this.employeUid, this.employeProfileId,
+    required this.isAssociation, this.profileType, this.employeUid, this.employeProfileId,
   });
 
   @override
@@ -510,7 +520,7 @@ class _EmployeAgendaPage extends StatelessWidget {
       ),
       body: _TachesTab(
         green: teal, teal: teal, dark: dark, bg: bg,
-        isAssociation: isAssociation,
+        isAssociation: isAssociation, profileType: profileType,
         filterEmployeUid: employeUid,
         filterEmployeProfileId: employeProfileId,
       ),
@@ -889,8 +899,9 @@ class _AddEmployeSheet extends StatefulWidget {
   final String nomElevage;
   final Color teal, dark;
   final bool isAssociation;
+  final String? profileType;
   const _AddEmployeSheet({required this.uid, required this.nomElevage, required this.teal, required this.dark,
-      this.isAssociation = false});
+      this.isAssociation = false, this.profileType});
   @override
   State<_AddEmployeSheet> createState() => _AddEmployeSheetState();
 }
@@ -899,6 +910,7 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
   final _supa = Supabase.instance.client;
   final _ctrl = TextEditingController();
   List<Map<String, dynamic>> _allUsers = [];
+  String get _profileType => widget.profileType ?? (widget.isAssociation ? 'association' : 'eleveur');
   List<Map<String, dynamic>> _results  = [];
   bool _loading = true;
 
@@ -951,22 +963,18 @@ class _AddEmployeSheetState extends State<_AddEmployeSheet> {
   Future<void> _ajouter(Map<String, dynamic> user) async {
     final uid = user['uid'] as String;
     final employeProfileId = user['_profile_id'] as String?;
-    final profilSource = widget.isAssociation ? 'association' : 'eleveur';
+    final profilSource = _profileType;
 
     // Résoudre le profile_id de l'employeur à partir du contexte de la page
-    // (widget.isAssociation), pas de User_Info.activeProfileId qui peut être
-    // périmé — voir _resolveOwnerProfileId.
-    final eleveurProfileId = await _resolveOwnerProfileId(_supa, widget.uid, widget.isAssociation) ?? '';
+    // (widget.profileType / widget.isAssociation), pas de
+    // User_Info.activeProfileId qui peut être périmé — voir _resolveOwnerProfileId.
+    final eleveurProfileId = await _resolveOwnerProfileId(_supa, widget.uid, widget.isAssociation, profileType: widget.profileType) ?? '';
 
-    // Cherche uniquement dans le profil courant (élevage OU association, pas les deux)
+    // Cherche uniquement dans le profil courant (pas les autres profils du même compte)
     var q = _supa.from('employes').select()
         .eq('uid_eleveur', widget.uid)
         .eq('uid_employe', uid);
-    if (widget.isAssociation) {
-      q = q.eq('profil_source', 'association');
-    } else {
-      q = q.or('profil_source.is.null,profil_source.eq.eleveur');
-    }
+    q = profilSource == 'eleveur' ? q.or('profil_source.is.null,profil_source.eq.eleveur') : q.eq('profil_source', profilSource);
     q = q.eq('eleveur_profile_id', eleveurProfileId);
     final existing = await q.maybeSingle();
 
@@ -1256,12 +1264,13 @@ class _AddEmployeManuelSheetState extends State<AddEmployeManuelSheet> {
 class _TachesTab extends StatefulWidget {
   final Color green, teal, dark, bg;
   final bool isAssociation;
+  final String? profileType;
   // Filtre optionnel : n'affiche que les tâches attribuées à cet employé
   // précis (vue "planning de l'employé" depuis la fiche employeur).
   final String? filterEmployeUid;
   final String? filterEmployeProfileId;
   const _TachesTab({required this.green, required this.teal, required this.dark, required this.bg,
-      this.isAssociation = false, this.filterEmployeUid, this.filterEmployeProfileId});
+      this.isAssociation = false, this.profileType, this.filterEmployeUid, this.filterEmployeProfileId});
   @override
   State<_TachesTab> createState() => _TachesTabState();
 }
@@ -1275,6 +1284,7 @@ class _TachesTabState extends State<_TachesTab> {
   List<Map<String, dynamic>> _employes    = [];
   List<Map<String, dynamic>> _animaux     = [];
   bool _showDone = false;
+  String get _profileType => widget.profileType ?? (widget.isAssociation ? 'association' : 'eleveur');
 
   // Groupe les plan_taches par (etape_id, date_prevue) pour afficher une carte par groupe
   List<Map<String, dynamic>> get _protocoleGroupes {
@@ -1333,10 +1343,11 @@ class _TachesTabState extends State<_TachesTab> {
     setState(() => _loading = true);
     try {
       // Résoudre le profile_id de l'employeur à partir du contexte de la page
-      // (widget.isAssociation), pas de User_Info.activeProfileId qui peut être
-      // périmé — voir _resolveOwnerProfileId.
-      final eleveurProfileId = await _resolveOwnerProfileId(_supa, _uid, widget.isAssociation);
-      debugPrint('DEBUG_TACHES uid=$_uid isAssociation=${widget.isAssociation} '
+      // (widget.profileType / widget.isAssociation), pas de
+      // User_Info.activeProfileId qui peut être périmé — voir _resolveOwnerProfileId.
+      final eleveurProfileId = await _resolveOwnerProfileId(_supa, _uid, widget.isAssociation, profileType: widget.profileType);
+      final type = _profileType;
+      debugPrint('DEBUG_TACHES uid=$_uid profileType=$type '
           'filterEmployeUid=${widget.filterEmployeUid} filterEmployeProfileId=${widget.filterEmployeProfileId} '
           'eleveurProfileId=$eleveurProfileId');
 
@@ -1344,11 +1355,9 @@ class _TachesTabState extends State<_TachesTab> {
       tachesQ = eleveurProfileId != null
           ? tachesQ.eq('eleveur_profile_id', eleveurProfileId)
           : tachesQ.eq('uid_eleveur', _uid);
-      if (widget.isAssociation) {
-        tachesQ = tachesQ.eq('profil_source', 'association');
-      } else {
-        tachesQ = tachesQ.or('profil_source.is.null,profil_source.eq.eleveur');
-      }
+      tachesQ = type == 'eleveur'
+          ? tachesQ.or('profil_source.is.null,profil_source.eq.eleveur')
+          : tachesQ.eq('profil_source', type);
       if (widget.filterEmployeProfileId != null) {
         tachesQ = tachesQ.eq('assigne_profile_id', widget.filterEmployeProfileId!);
       } else if (widget.filterEmployeUid != null) {
@@ -1361,11 +1370,9 @@ class _TachesTabState extends State<_TachesTab> {
       empsQ = eleveurProfileId != null
           ? empsQ.eq('eleveur_profile_id', eleveurProfileId)
           : empsQ.eq('uid_eleveur', _uid);
-      if (widget.isAssociation) {
-        empsQ = empsQ.eq('profil_source', 'association');
-      } else {
-        empsQ = empsQ.or('profil_source.is.null,profil_source.eq.eleveur');
-      }
+      empsQ = type == 'eleveur'
+          ? empsQ.or('profil_source.is.null,profil_source.eq.eleveur')
+          : empsQ.eq('profil_source', type);
       final empsRaw = (await empsQ) as List<dynamic>;
 
       final animauxRaw = await _supa
@@ -1429,7 +1436,7 @@ class _TachesTabState extends State<_TachesTab> {
             .toIso8601String()
             .substring(0, 10);
 
-        final profilFilter = widget.isAssociation ? 'association' : 'eleveur';
+        final profilFilter = type;
 
         dynamic aFaireQ = _supa
             .from('plan_taches')

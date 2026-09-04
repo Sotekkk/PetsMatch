@@ -83,7 +83,7 @@ class _ToilettageEmployesPageState extends State<ToilettageEmployesPage> {
           IconButton(
             icon: const Icon(Icons.person_add_outlined),
             tooltip: 'Inviter un employé',
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmployesPage())),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmployesPage(profileType: 'toilettage'))),
           ),
         ],
       ),

@@ -1448,7 +1448,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                   const SizedBox(height: 12),
                   GestureDetector(
                     onTap: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const EmployesPage())),
+                        MaterialPageRoute(builder: (_) => EmployesPage(profileType: _catPro))),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                       decoration: BoxDecoration(

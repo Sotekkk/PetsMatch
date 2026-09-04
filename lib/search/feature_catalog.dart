@@ -551,7 +551,7 @@ List<QuickAction> _all(BuildContext ctx) => [
     label: 'Mes employés (pension)',
     keywords: ['équipe', 'salariés', 'droits', 'accès'],
     icon: Icons.groups_outlined, group: 'Ma pension',
-    visible: () => _catPro == 'pension', open: (c) => _push(c, const EmployesPage()),
+    visible: () => _catPro == 'pension', open: (c) => _push(c, const EmployesPage(profileType: 'pension')),
   ),
 
   // ── Éducateur ──────────────────────────────────────────────────────────────
@@ -597,7 +597,7 @@ List<QuickAction> _all(BuildContext ctx) => [
     label: 'Mes employés (éducateur)',
     keywords: ['équipe', 'moniteurs', 'salariés'],
     icon: Icons.groups_outlined, group: 'Mon espace pro',
-    visible: () => _catPro == 'education', open: (c) => _push(c, const EmployesPage()),
+    visible: () => _catPro == 'education', open: (c) => _push(c, const EmployesPage(profileType: 'education')),
   ),
 
   // ── Vétérinaire / santé ────────────────────────────────────────────────────
@@ -668,7 +668,7 @@ List<QuickAction> _all(BuildContext ctx) => [
     label: 'Mes employés (garde)',
     keywords: ['équipe', 'salariés'],
     icon: Icons.groups_outlined, group: 'Mon espace pro',
-    visible: () => _catPro == 'garde', open: (c) => _push(c, const EmployesPage()),
+    visible: () => _catPro == 'garde', open: (c) => _push(c, const EmployesPage(profileType: 'garde')),
   ),
 
   // ── Taxi animalier ─────────────────────────────────────────────────────────

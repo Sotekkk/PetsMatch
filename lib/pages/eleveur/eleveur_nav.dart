@@ -296,7 +296,7 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => _educationPlanCode == 'free'
                                 ? const EducationAbonnementPage()
-                                : const EmployesPage(),
+                                : const EmployesPage(profileType: 'education'),
                           ));
                         },
                       ),
@@ -482,7 +482,7 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => _pensionPlanCode == 'free'
                                 ? const PensionAbonnementPage()
-                                : const EmployesPage(),
+                                : const EmployesPage(profileType: 'pension'),
                           ));
                         },
                       ),
@@ -1030,7 +1030,7 @@ class _EleveurNavState extends State<EleveurNav> {
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => _gardePlanCode == 'free'
                               ? const GardeAbonnementPage()
-                              : const EmployesPage(),
+                              : const EmployesPage(profileType: 'garde'),
                         ));
                       },
                     ),
