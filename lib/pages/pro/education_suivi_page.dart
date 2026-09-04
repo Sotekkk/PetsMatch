@@ -171,7 +171,9 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
 
   Future<void> _editObjectif([Map<String, dynamic>? existing]) async {
     final libelleCtrl = TextEditingController(text: existing?['libelle']?.toString() ?? '');
-    final noteCtrl = TextEditingController(text: existing?['note']?.toString() ?? '');
+    final noteOriginal = existing?['note']?.toString() ?? '';
+    final notePlain = richTextToPlain(noteOriginal);
+    final noteCtrl = TextEditingController(text: notePlain);
     String? categorie = existing?['categorie']?.toString();
     String statut = existing?['statut']?.toString() ?? 'a_travailler';
 
@@ -261,11 +263,12 @@ class _EducationSuiviPageState extends State<EducationSuiviPage>
     final proUid = FirebaseAuth.instance.currentUser?.uid;
     final wasAcquis = existing?['statut'] == 'acquis';
     final now = DateTime.now().toIso8601String();
+    final noteOut = noteCtrl.text.trim() == notePlain.trim() ? noteOriginal : noteCtrl.text.trim();
     final payload = {
       'libelle': libelleCtrl.text.trim(),
       'categorie': categorie,
       'statut': statut,
-      'note': noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
+      'note': noteOut.isEmpty ? null : noteOut,
       'updated_at': now,
       if (statut == 'acquis' && !wasAcquis) 'acquis_le': now,
       if (statut != 'acquis') 'acquis_le': null,

@@ -49,6 +49,17 @@ class RichTextView extends StatelessWidget {
   }
 }
 
+/// Texte nu d'un fragment HTML simple (pour pré-remplir un éditeur brut).
+String richTextToPlain(String? input) {
+  final s = input ?? '';
+  if (!RichTextView.looksLikeHtml(s)) return s;
+  var out = s
+      .replaceAll(RegExp(r'<\s*br\s*/?\s*>', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'</\s*(p|div|li)\s*>', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'<[^>]+>'), '');
+  return _unescape(out).replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+}
+
 /// Convertit un fragment HTML simple en `InlineSpan`s.
 List<InlineSpan> parseRichText(String input, TextStyle baseStyle) {
   // 1. Normalise les balises de bloc en sauts de ligne / puces.
@@ -96,6 +107,15 @@ List<InlineSpan> parseRichText(String input, TextStyle baseStyle) {
         case 'span':
           final col = _colorFromStyle(attrs);
           if (col != null) next = next.copyWith(color: col);
+          if (RegExp(r'font-weight\s*:\s*(bold|[6-9]00)', caseSensitive: false).hasMatch(attrs)) {
+            next = next.copyWith(fontWeight: FontWeight.w700);
+          }
+          if (RegExp(r'font-style\s*:\s*italic', caseSensitive: false).hasMatch(attrs)) {
+            next = next.copyWith(fontStyle: FontStyle.italic);
+          }
+          if (RegExp(r'text-decoration[^;"]*underline', caseSensitive: false).hasMatch(attrs)) {
+            next = next.copyWith(decoration: TextDecoration.underline);
+          }
           break;
         case 'font':
           final col = _colorFromStyle(attrs) ?? _colorFromFontAttr(attrs);

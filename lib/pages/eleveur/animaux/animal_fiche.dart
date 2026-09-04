@@ -11273,7 +11273,10 @@ class _EducationTabState extends State<_EducationTab> {
   }
 
   Future<void> _editRapport(Map<String, dynamic> r) async {
-    final contenuCtrl = TextEditingController(text: r['contenu']?.toString() ?? '');
+    // Édition brute : texte sans balises ; inchangé → on garde le HTML du site.
+    final contenuOriginal = r['contenu']?.toString() ?? '';
+    final contenuPlain = richTextToPlain(contenuOriginal);
+    final contenuCtrl = TextEditingController(text: contenuPlain);
     final exercicesCtrl = TextEditingController(text: r['exercices_conseilles']?.toString() ?? '');
     final ok = await showModalBottomSheet<bool>(
       context: context,
@@ -11304,8 +11307,11 @@ class _EducationTabState extends State<_EducationTab> {
     );
     if (ok != true || !mounted) return;
     try {
+      final contenuOut = contenuCtrl.text.trim() == contenuPlain.trim()
+          ? contenuOriginal
+          : contenuCtrl.text.trim();
       await _supa.from('education_progression').update({
-        'contenu': contenuCtrl.text.trim(),
+        'contenu': contenuOut,
         'exercices_conseilles': exercicesCtrl.text.trim().isEmpty ? null : exercicesCtrl.text.trim(),
       }).eq('id', r['id']);
       await _load();

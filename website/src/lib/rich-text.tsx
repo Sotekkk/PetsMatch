@@ -41,6 +41,8 @@ function safeStyle(raw: string | null): string {
   if (align) out.push(`text-align:${align[1]}`);
   const weight = /font-weight\s*:\s*(bold|[5-9]00)/i.exec(raw);
   if (weight) out.push('font-weight:bold');
+  if (/font-style\s*:\s*italic/i.test(raw)) out.push('font-style:italic');
+  if (/text-decoration[^;]*underline/i.test(raw)) out.push('text-decoration:underline');
   return out.join(';');
 }
 
@@ -138,8 +140,9 @@ export function RichTextEditor({
 
   function exec(cmd: string, arg?: string) {
     ref.current?.focus();
-    // Émettre <span style="color:…"> plutôt que <font color> (assaini à l'affichage).
-    try { document.execCommand('styleWithCSS', false, 'true'); } catch { /* Safari */ }
+    // Couleur → <span style="color:…"> (styleWithCSS). Gras/italique/souligné →
+    // vraies balises <b>/<i>/<u> (plus simples à rendre et à assainir).
+    try { document.execCommand('styleWithCSS', false, cmd === 'foreColor' ? 'true' : 'false'); } catch { /* Safari */ }
     document.execCommand(cmd, false, arg);
     if (ref.current) onChange(ref.current.innerHTML);
   }

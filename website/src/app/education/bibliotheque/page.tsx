@@ -26,6 +26,7 @@ export default function BibliothequeExercicesPage() {
   const [exercices, setExercices] = useState<Exercice[]>([]);
   const [busy, setBusy] = useState(true);
   const [form, setForm] = useState<{ id?: string; titre: string; description: string; categorie: string; media: { type: string; url: string }[] } | null>(null);
+  const [viewing, setViewing] = useState<Exercice | null>(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -157,11 +158,11 @@ export default function BibliothequeExercicesPage() {
                     : <img src={e.media[0].url} alt="" className="w-full h-full object-cover" />}
                 </div>
               )}
-              <div className="flex-1 min-w-0">
+              <button type="button" onClick={() => setViewing(e)} className="flex-1 min-w-0 text-left">
                 <p className="text-sm font-semibold text-[#1F2A2E]">{e.titre}</p>
                 {e.categorie && CATEGORIES[e.categorie] && <p className="text-xs text-gray-500">{CATEGORIES[e.categorie]}</p>}
                 {e.description && <div className="text-xs text-gray-600 mt-0.5 line-clamp-2"><RichText value={e.description} /></div>}
-              </div>
+              </button>
               <div className="flex gap-1 shrink-0">
                 <button onClick={() => setForm({ id: e.id, titre: e.titre, description: e.description ?? '', categorie: e.categorie ?? '', media: e.media })}
                   className="text-gray-300 hover:text-gray-500">✏️</button>
@@ -169,6 +170,44 @@ export default function BibliothequeExercicesPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {viewing && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-4"
+          onClick={() => setViewing(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 p-4 border-b border-gray-100">
+              <div>
+                <h3 className="font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>{viewing.titre}</h3>
+                {viewing.categorie && CATEGORIES[viewing.categorie] && (
+                  <p className="text-xs text-gray-500">{CATEGORIES[viewing.categorie]}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button onClick={() => { setForm({ id: viewing.id, titre: viewing.titre, description: viewing.description ?? '', categorie: viewing.categorie ?? '', media: viewing.media }); setViewing(null); }}
+                  className="text-xs font-semibold text-[#EF6C00]">Modifier</button>
+                <button onClick={() => setViewing(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+              </div>
+            </div>
+            <div className="overflow-y-auto p-4 space-y-4">
+              {viewing.description
+                ? <div className="text-sm text-[#1F2A2E]"><RichText value={viewing.description} /></div>
+                : <p className="text-sm text-gray-400">Pas de déroulé.</p>}
+              {viewing.media.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {viewing.media.map((m, i) => (
+                    <div key={i} className="w-28 h-28 rounded-lg bg-gray-100 overflow-hidden flex items-center justify-center">
+                      {m.type === 'video'
+                        ? <a href={m.url} target="_blank" rel="noreferrer" className="text-gray-400 text-2xl">▶</a>
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        : <img src={m.url} alt="" className="w-full h-full object-cover" />}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

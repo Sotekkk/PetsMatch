@@ -57,7 +57,11 @@ class _EducationBibliothequePageState extends State<EducationBibliothequePage> {
 
   Future<void> _edit([Map<String, dynamic>? existing]) async {
     final titreCtrl = TextEditingController(text: existing?['titre']?.toString() ?? '');
-    final descCtrl = TextEditingController(text: existing?['description']?.toString() ?? '');
+    // Édition en texte brut : on affiche le texte sans balises. Si le déroulé
+    // n'est pas retouché, on garde le HTML d'origine (mise en forme du site).
+    final descOriginal = existing?['description']?.toString() ?? '';
+    final descPlain = richTextToPlain(descOriginal);
+    final descCtrl = TextEditingController(text: descPlain);
     String? categorie = existing?['categorie']?.toString();
     final media = existing != null ? _mediaOf(existing) : <Map<String, dynamic>>[];
     final newImages = <File>[];
@@ -174,9 +178,13 @@ class _EducationBibliothequePageState extends State<EducationBibliothequePage> {
                           'exercices/$uid/${DateTime.now().microsecondsSinceEpoch}.$ext');
                       media.add({'type': 'video', 'url': url});
                     }
+                    // Déroulé inchangé → on conserve le HTML d'origine.
+                    final descOut = descCtrl.text.trim() == descPlain.trim()
+                        ? descOriginal
+                        : descCtrl.text.trim();
                     final payload = {
                       'titre': titreCtrl.text.trim(),
-                      'description': descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+                      'description': descOut.isEmpty ? null : descOut,
                       'categorie': categorie,
                       'media': media,
                     };
