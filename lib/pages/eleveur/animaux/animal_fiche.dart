@@ -32,6 +32,7 @@ import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/pro/anatomie_points_page.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
+import 'package:PetsMatch/widgets/rich_text_view.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/data/vaccin_types.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -11285,7 +11286,7 @@ class _EducationTabState extends State<_EducationTab> {
               decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
           const Text('Modifier le rapport', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
           const SizedBox(height: 16),
-          TextField(controller: contenuCtrl, maxLines: 5, style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+          TextField(controller: contenuCtrl, minLines: 6, maxLines: 16, style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
               decoration: InputDecoration(border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)), contentPadding: const EdgeInsets.all(12))),
           const SizedBox(height: 12),
           TextField(controller: exercicesCtrl, maxLines: 2, style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
@@ -11357,8 +11358,11 @@ class _EducationTabState extends State<_EducationTab> {
         ),
         if (_showAdd) ...[
           const SizedBox(height: 12),
-          TextField(controller: _contenuCtrl, maxLines: 3, decoration: const InputDecoration(
+          TextField(controller: _contenuCtrl, minLines: 6, maxLines: 16, decoration: const InputDecoration(
               labelText: 'Compte rendu', hintText: 'Déroulé de la séance, observations, progrès…', border: OutlineInputBorder())),
+          const SizedBox(height: 4),
+          const Text('Mise en forme (gras, couleurs, listes…) disponible sur le site.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
           const SizedBox(height: 10),
           TextField(controller: _exercicesCtrl, maxLines: 2, decoration: const InputDecoration(
               labelText: 'Exercices conseillés', hintText: 'Exercices à faire à la maison…', border: OutlineInputBorder())),
@@ -11398,7 +11402,8 @@ class _EducationTabState extends State<_EducationTab> {
                 ),
               ]),
               const SizedBox(height: 6),
-              Text(r['contenu']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
+              RichTextView(r['contenu']?.toString() ?? '',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4, color: Color(0xFF1F2A2E))),
               if ((r['exercices_conseilles']?.toString() ?? '').isNotEmpty) ...[
                 const SizedBox(height: 8),
                 Container(

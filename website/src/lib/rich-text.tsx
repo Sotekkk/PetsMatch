@@ -104,7 +104,10 @@ export function RichText({ value, className = '' }: { value: string | null | und
   );
 }
 
-const COLORS = ['#EF6C00', '#0C5C6C', '#C62828', '#2E7D32', '#6A1B9A', '#1F2A2E'];
+const COLORS = [
+  '#1F2A2E', '#6B7280', '#EF6C00', '#F5A623', '#C62828', '#E11D48',
+  '#2E7D32', '#0C5C6C', '#1D4ED8', '#6A1B9A', '#9D174D', '#7C4A21',
+];
 
 /**
  * Éditeur visuel minimaliste (contentEditable + execCommand). Produit un
@@ -123,6 +126,7 @@ export function RichTextEditor({
 }) {
   const ref = React.useRef<HTMLDivElement>(null);
   const [showColors, setShowColors] = React.useState(false);
+  const [customColor, setCustomColor] = React.useState('#EF6C00');
 
   // Initialise le contenu une seule fois (évite de casser le curseur en frappe).
   React.useEffect(() => {
@@ -155,15 +159,30 @@ export function RichTextEditor({
             <span className="inline-block w-3.5 h-3.5 rounded-sm align-middle" style={{ background: 'linear-gradient(135deg,#EF6C00,#0C5C6C)' }} />
           </button>
           {showColors && (
-            <div className="absolute z-10 mt-1 flex gap-1 bg-white border border-gray-200 rounded-lg p-1.5 shadow-sm">
-              {COLORS.map(c => (
-                <button key={c} type="button" title={c}
-                  onClick={() => { exec('foreColor', c); setShowColors(false); }}
-                  className="w-5 h-5 rounded-full border border-gray-200" style={{ background: c }} />
-              ))}
-              <button type="button" title="Noir par défaut"
+            <div className="absolute z-10 mt-1 w-40 bg-white border border-gray-200 rounded-lg p-2 shadow-sm">
+              <div className="grid grid-cols-6 gap-1.5">
+                {COLORS.map(c => (
+                  <button key={c} type="button" title={c}
+                    onClick={() => { exec('foreColor', c); setShowColors(false); }}
+                    className="w-5 h-5 rounded-full border border-gray-200" style={{ background: c }} />
+                ))}
+              </div>
+              <label className="mt-2 flex items-center gap-1.5 text-[11px] text-gray-500 cursor-pointer">
+                <input type="color" value={customColor}
+                  onChange={e => setCustomColor(e.target.value)}
+                  className="w-5 h-5 rounded border border-gray-200 bg-transparent p-0 cursor-pointer" />
+                Couleur personnalisée
+              </label>
+              <button type="button"
+                onClick={() => { exec('foreColor', customColor); setShowColors(false); }}
+                className="mt-1.5 w-full text-[11px] text-white rounded py-1" style={{ background: customColor }}>
+                Appliquer
+              </button>
+              <button type="button"
                 onClick={() => { exec('foreColor', '#1F2A2E'); setShowColors(false); }}
-                className="w-5 h-5 rounded-full border border-gray-300 bg-white text-[10px]">✕</button>
+                className="mt-1 w-full text-[11px] text-gray-500 rounded py-1 border border-gray-200">
+                Couleur par défaut
+              </button>
             </div>
           )}
         </div>
