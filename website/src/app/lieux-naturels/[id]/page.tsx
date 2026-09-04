@@ -101,6 +101,8 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [pendingAmenityFields, setPendingAmenityFields] = useState<Set<string>>(new Set());
   const [amenityUploading, setAmenityUploading] = useState<string | null>(null);
+  const [showNavMenu, setShowNavMenu] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState(false);
 
   async function loadPlace() {
     setLoading(true);
@@ -284,9 +286,17 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
   const color = CAT_COLOR[cat] ?? '#0C5C6C';
   const cyano = place.alerte_cyano === true;
   const photoUrl = place.photo_url || CAT_PHOTO[cat];
-  const mapsUrl = place.lat != null && place.lng != null
-    ? `https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}`
-    : null;
+  const hasCoords = place.lat != null && place.lng != null;
+  const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
+  const shareText = `📍 ${place.nom}${place.description ? '\n\n' + place.description : ''}`;
+
+  async function handleShare() {
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try { await navigator.share({ title: place!.nom, text: shareText, url: shareUrl }); } catch { /* annulé par l'utilisateur */ }
+    } else {
+      setShowShareMenu(v => !v);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-[#F5F5F0]">
@@ -379,16 +389,38 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
 
         {/* Actions */}
         <div className="flex gap-2.5 mb-6">
-          {mapsUrl && (
-            <a
-              href={mapsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 text-center py-3 rounded-xl text-sm font-semibold border transition-colors"
-              style={{ borderColor: '#0C5C6C66', color: '#0C5C6C', backgroundColor: '#0C5C6C0F', fontFamily: 'Galey, sans-serif' }}
-            >
-              🧭 Itinéraire
-            </a>
+          {hasCoords && (
+            <div className="relative flex-1">
+              <button
+                onClick={() => setShowNavMenu(v => !v)}
+                className="w-full text-center py-3 rounded-xl text-sm font-semibold border transition-colors"
+                style={{ borderColor: '#0C5C6C66', color: '#0C5C6C', backgroundColor: '#0C5C6C0F', fontFamily: 'Galey, sans-serif' }}
+              >
+                🧭 Itinéraire
+              </button>
+              {showNavMenu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowNavMenu(false)} />
+                  <div className="absolute z-20 mt-1 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                    <a href={`https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}`}
+                      target="_blank" rel="noopener noreferrer" onClick={() => setShowNavMenu(false)}
+                      className="block px-4 py-2.5 text-sm text-gray-800 hover:bg-gray-50" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      🗺️ Google Maps
+                    </a>
+                    <a href={`https://waze.com/ul?ll=${place.lat},${place.lng}&navigate=yes`}
+                      target="_blank" rel="noopener noreferrer" onClick={() => setShowNavMenu(false)}
+                      className="block px-4 py-2.5 text-sm text-gray-800 hover:bg-gray-50 border-t border-gray-100" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      🚗 Waze
+                    </a>
+                    <a href={`https://maps.apple.com/?daddr=${place.lat},${place.lng}&dirflg=d`}
+                      target="_blank" rel="noopener noreferrer" onClick={() => setShowNavMenu(false)}
+                      className="block px-4 py-2.5 text-sm text-gray-800 hover:bg-gray-50 border-t border-gray-100" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      🍎 Plans (Apple)
+                    </a>
+                  </div>
+                </>
+              )}
+            </div>
           )}
           {!cyano && (
             <button
@@ -400,6 +432,43 @@ export default function NaturalPlaceDetailPage({ params }: { params: Promise<{ i
               ⚠️ Signaler cyano
             </button>
           )}
+          <div className="relative">
+            <button
+              onClick={handleShare}
+              title="Partager"
+              className="h-full px-4 py-3 rounded-xl text-sm font-semibold border transition-colors"
+              style={{ borderColor: '#6F767B44', color: '#6F767B', backgroundColor: '#F9FAFB' }}
+            >
+              📤
+            </button>
+            {showShareMenu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setShowShareMenu(false)} />
+                <div className="absolute z-20 mt-1 right-0 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden w-52">
+                  <a href={`https://wa.me/?text=${encodeURIComponent(shareText + '\n\n' + shareUrl)}`}
+                    target="_blank" rel="noopener noreferrer" onClick={() => setShowShareMenu(false)}
+                    className="block px-4 py-2.5 text-sm text-gray-800 hover:bg-gray-50" style={{ fontFamily: 'Galey, sans-serif' }}>
+                    💬 WhatsApp
+                  </a>
+                  <a href={`sms:?body=${encodeURIComponent(shareText + '\n\n' + shareUrl)}`}
+                    onClick={() => setShowShareMenu(false)}
+                    className="block px-4 py-2.5 text-sm text-gray-800 hover:bg-gray-50 border-t border-gray-100" style={{ fontFamily: 'Galey, sans-serif' }}>
+                    ✉️ SMS
+                  </a>
+                  <a href={`mailto:?subject=${encodeURIComponent(place.nom)}&body=${encodeURIComponent(shareText + '\n\n' + shareUrl)}`}
+                    onClick={() => setShowShareMenu(false)}
+                    className="block px-4 py-2.5 text-sm text-gray-800 hover:bg-gray-50 border-t border-gray-100" style={{ fontFamily: 'Galey, sans-serif' }}>
+                    📧 Email
+                  </a>
+                  <button
+                    onClick={() => { navigator.clipboard?.writeText(shareUrl); setShowShareMenu(false); }}
+                    className="block w-full text-left px-4 py-2.5 text-sm text-gray-800 hover:bg-gray-50 border-t border-gray-100" style={{ fontFamily: 'Galey, sans-serif' }}>
+                    🔗 Copier le lien
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Équipements */}

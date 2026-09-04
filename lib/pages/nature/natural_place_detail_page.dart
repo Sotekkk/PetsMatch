@@ -2,8 +2,10 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:image_picker/image_picker.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
@@ -497,14 +499,72 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
     }
   }
 
+  /// Laisse choisir l'appli de navigation (Google Maps, Waze, Plans, ou toute
+  /// autre appli GPS installée via l'intent générique `geo:`).
   Future<void> _openNavigation() async {
     final lat = (_place['lat'] as num?)?.toDouble();
     final lng = (_place['lng'] as num?)?.toDouble();
     if (lat == null || lng == null) return;
-    final uri = Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng');
+    final nom = _place['nom'] as String? ?? 'Destination';
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            const Text('Ouvrir l\'itinéraire avec',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+            const SizedBox(height: 6),
+            _navOption('Google Maps', Icons.map_outlined, const Color(0xFF4285F4),
+                () => _launchNav(Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng'))),
+            _navOption('Waze', Icons.navigation_outlined, const Color(0xFF33CCFF),
+                () => _launchNav(Uri.parse('https://waze.com/ul?ll=$lat,$lng&navigate=yes'))),
+            if (Platform.isIOS)
+              _navOption('Plans', Icons.map_outlined, Colors.grey.shade700,
+                  () => _launchNav(Uri.parse('https://maps.apple.com/?daddr=$lat,$lng&dirflg=d'))),
+            _navOption('Autre application GPS', Icons.apps, Colors.grey.shade600,
+                () => _launchNav(Uri.parse('geo:$lat,$lng?q=$lat,$lng(${Uri.encodeComponent(nom)})'))),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _navOption(String label, IconData icon, Color color, VoidCallback onTap) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: CircleAvatar(backgroundColor: color.withValues(alpha: 0.12), child: Icon(icon, color: color)),
+      title: Text(label, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+      onTap: () { Navigator.pop(context); onTap(); },
+    );
+  }
+
+  Future<void> _launchNav(Uri uri) async {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Impossible d\'ouvrir cette application.', style: TextStyle(fontFamily: 'Galey'))));
     }
+  }
+
+  /// Partage le lieu — ouvre le sélecteur natif (WhatsApp, SMS, Email et
+  /// toute autre appli installée capable de recevoir du texte).
+  Future<void> _partagerLieu() async {
+    final id = _place['id']?.toString();
+    final nom = _place['nom'] as String? ?? 'ce lieu';
+    final desc = (_place['description'] as String? ?? '').trim();
+    final lignes = <String>[
+      '📍 $nom',
+      if (desc.isNotEmpty) desc,
+      if (id != null) '$kSiteBaseUrl/lieux-naturels/$id',
+    ];
+    await Share.share(lignes.join('\n\n'), subject: nom);
   }
 
   @override
@@ -528,6 +588,13 @@ class _NaturalPlaceDetailPageState extends State<NaturalPlaceDetailPage> {
             pinned: true,
             backgroundColor: color,
             foregroundColor: Colors.white,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.ios_share_rounded),
+                tooltip: 'Partager',
+                onPressed: _partagerLieu,
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               title: Text(nom,
                   style: const TextStyle(
