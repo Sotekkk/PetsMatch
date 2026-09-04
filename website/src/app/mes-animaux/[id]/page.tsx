@@ -1137,7 +1137,7 @@ const EDU_CATEGORIES: Record<string, string> = {
 };
 const EDU_STATUT_LABEL: Record<string, string> = { a_travailler: 'À travailler', en_cours: 'En cours', acquis: 'Acquis' };
 const eduStatutColor = (s: string) => s === 'acquis' ? '#6E9E57' : s === 'en_cours' ? '#EFA100' : '#D5573B';
-interface EduObjectif { id: string; libelle: string; categorie: string | null; statut: string; note: string | null; }
+interface EduObjectif { id: string; libelle: string; categorie: string | null; statut: string; note: string | null; acquis_le?: string | null; }
 interface EduExercice {
   id: string; titre_snapshot: string; description_snapshot: string | null;
   media_snapshot: { type: string; url: string }[] | null;
@@ -1172,7 +1172,7 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
         .select('id, date_seance, contenu, exercices_conseilles, exercices_coches, type, bilan_motif, bilan_recommandation, bilan_nb_seances_estime')
         .eq('animal_id', animalId).order('date_seance', { ascending: false }),
       supabase.from('education_objectifs')
-        .select('id, libelle, categorie, statut, note')
+        .select('id, libelle, categorie, statut, note, acquis_le')
         .eq('animal_id', animalId).order('ordre').order('created_at'),
       supabase.from('exercices_attribues')
         .select('id, pro_uid, pro_profile_id, titre_snapshot, description_snapshot, media_snapshot, cadence, echeance, statut, rappels_actifs, rappels_mutes')
@@ -1281,6 +1281,43 @@ function EducationRapportsTab({ animalId }: { animalId: string }) {
           </div>
         );
       })}
+      {(objectifs.length > 0 || rapports.length > 0) && (() => {
+        type Ev = { date: string; label: string; emoji: string };
+        const events: Ev[] = [];
+        for (const r of rapports) {
+          if (!r.date_seance) continue;
+          events.push({ date: r.date_seance, label: r.type === 'bilan' ? 'Bilan comportemental' : 'Séance', emoji: r.type === 'bilan' ? '📋' : '🎓' });
+        }
+        for (const o of objectifs) {
+          if (o.statut === 'acquis' && o.acquis_le) events.push({ date: o.acquis_le, label: `Objectif atteint : ${o.libelle}`, emoji: '✅' });
+        }
+        events.sort((a, b) => b.date.localeCompare(a.date));
+        return (
+          <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Progression</p>
+            {objectifs.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {objectifs.map(o => (
+                  <span key={o.id} className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: `${eduStatutColor(o.statut)}18`, color: eduStatutColor(o.statut) }}>
+                    {o.statut === 'acquis' ? '✅' : o.statut === 'en_cours' ? '🟡' : '🔴'} {o.libelle}
+                  </span>
+                ))}
+              </div>
+            )}
+            {events.length > 0 && (
+              <div className="space-y-2">
+                {events.map((e, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <span>{e.emoji}</span>
+                    <span className="font-medium text-gray-800">{e.label}</span>
+                    <span className="text-gray-400">· {new Date(e.date).toLocaleDateString('fr-FR')}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
       {objectifs.length > 0 && (
         <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
           <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Plan de travail</p>

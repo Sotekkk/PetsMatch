@@ -6551,6 +6551,10 @@ class _EducationTabPState extends State<_EducationTabP> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
       children: [
         ..._forfaits.where((f) => f['statut'] != 'annule').map(_forfaitBanner),
+        if (_objectifs.isNotEmpty || _rapports.isNotEmpty) ...[
+          _progressionSection(),
+          const SizedBox(height: 18),
+        ],
         if (_objectifs.isNotEmpty) ...[
           _title('Plan de travail'),
           ..._objectifs.map(_objectifCard),
@@ -6571,6 +6575,85 @@ class _EducationTabPState extends State<_EducationTabP> {
           ..._rapports.map(_rapportCard),
         ],
       ],
+    );
+  }
+
+  Widget _progressionSection() {
+    // Frise : bilan + séances (par date_seance) + objectifs atteints (acquis_le).
+    final events = <({DateTime date, String label, IconData icon, Color color})>[];
+    for (final r in _rapports) {
+      final d = DateTime.tryParse(r['date_seance']?.toString() ?? '');
+      if (d == null) continue;
+      final bilan = r['type'] == 'bilan';
+      events.add((
+        date: d,
+        label: bilan ? 'Bilan comportemental' : 'Séance',
+        icon: bilan ? Icons.assignment_outlined : Icons.school_outlined,
+        color: bilan ? const Color(0xFFEF6C00) : _kPurpleEdu,
+      ));
+    }
+    for (final o in _objectifs) {
+      final d = DateTime.tryParse(o['acquis_le']?.toString() ?? '');
+      if (o['statut'] == 'acquis' && d != null) {
+        events.add((
+          date: d,
+          label: 'Objectif atteint : ${o['libelle']}',
+          icon: Icons.flag_outlined,
+          color: const Color(0xFF6E9E57),
+        ));
+      }
+    }
+    events.sort((a, b) => b.date.compareTo(a.date));
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFECECEC)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('PROGRESSION',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 11,
+                letterSpacing: 0.5, color: Colors.grey)),
+        if (_objectifs.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(spacing: 6, runSpacing: 6, children: _objectifs.map((o) {
+            final st = o['statut']?.toString() ?? 'a_travailler';
+            final c = _eduStatutColor(st);
+            final emoji = st == 'acquis' ? '✅' : st == 'en_cours' ? '🟡' : '🔴';
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(color: c.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)),
+              child: Text('$emoji ${o['libelle']}',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: c, fontWeight: FontWeight.w600)),
+            );
+          }).toList()),
+        ],
+        if (events.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          for (int i = 0; i < events.length; i++)
+            IntrinsicHeight(
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Column(children: [
+                  Icon(events[i].icon, size: 16, color: events[i].color),
+                  if (i < events.length - 1)
+                    Expanded(child: Container(width: 1.5, color: Colors.grey.shade200, margin: const EdgeInsets.symmetric(vertical: 2))),
+                ]),
+                const SizedBox(width: 10),
+                Expanded(child: Padding(
+                  padding: EdgeInsets.only(bottom: i < events.length - 1 ? 12 : 0),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(events[i].label,
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600)),
+                    Text('${events[i].date.day}/${events[i].date.month}/${events[i].date.year}',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey.shade500)),
+                  ]),
+                )),
+              ]),
+            ),
+        ],
+      ]),
     );
   }
 
