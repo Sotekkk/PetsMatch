@@ -31,6 +31,8 @@ import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
+import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/utils.dart';
@@ -278,6 +280,10 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
                         _buildStatsRow(),
+                        if (User_Info.catPro == 'education') ...[
+                          const SizedBox(height: 12),
+                          _buildEducationShortcuts(context),
+                        ],
                         if (User_Info.catPro == 'pension' && _logementsTotal > 0) ...[
                           const SizedBox(height: 12),
                           _buildDisponibiliteBanner(context),
@@ -548,6 +554,23 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
       const SizedBox(width: 12),
       _StatCard(value: _proLabel(), label: 'Statut', icon: Icons.verified_outlined),
     ]);
+  }
+
+  Widget _buildEducationShortcuts(BuildContext context) {
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 1.6,
+      children: [
+        _QuickTile(icon: Icons.pets, label: 'Mes\nélèves', color: const Color(0xFF7B5EA7),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProClientsPage()))),
+        _QuickTile(icon: Icons.fitness_center_outlined, label: 'Bibliothèque\nd\'exercices', color: const Color(0xFFEF6C00),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EducationBibliothequePage()))),
+      ],
+    );
   }
 
   Widget _buildSectionTitle(String title) {

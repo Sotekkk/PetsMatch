@@ -134,22 +134,39 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
       setUpcomingRdvs((upRes.data ?? []) as UpcomingRdv[]);
       setLostAnimals((lostRes.data ?? []) as LostAnimal[]);
 
-      // Accès animaux clients — table animal_access unifiée
+      // Accès animaux clients — même logique que /mes-patients : tout accès non
+      // révoqué + les animaux des RDV confirmés/terminés sans accès explicite.
       if (profileId) {
         const { data: grantRows } = await supabase
           .from('animal_access')
-          .select('id, animal_id, statut')
+          .select('id, animal_id, statut, granted_at')
           .eq('pro_profile_id', profileId)
-          .eq('statut', 'active')
-          .limit(6);
-        if (grantRows && grantRows.length > 0) {
-          const ids = grantRows.map((g: { animal_id: string }) => g.animal_id).filter(Boolean);
+          .neq('statut', 'revoked')
+          .order('granted_at', { ascending: false });
+        const seen = new Set((grantRows ?? []).map((g: { animal_id: string }) => g.animal_id));
+        const { data: rdvRows } = await supabase
+          .from('rdv')
+          .select('animal_id')
+          .eq('pro_uid', uid)
+          .eq('pro_profile_id', profileId)
+          .in('statut', ['confirme', 'termine'])
+          .not('animal_id', 'is', null);
+        const extra = [...new Set((rdvRows ?? [])
+          .map((r: { animal_id: string }) => r.animal_id)
+          .filter((id: string) => id && !seen.has(id)))]
+          .map(id => ({ id: `rdv-${id}`, animal_id: id, statut: 'active' as string }));
+        const allGrants = [...(grantRows ?? []), ...extra].slice(0, 6);
+        if (allGrants.length > 0) {
+          const ids = allGrants.map(g => g.animal_id).filter(Boolean);
           const { data: animalRows } = await supabase
             .from('animaux')
             .select('id, nom, espece, race, photo_url')
             .in('id', ids);
           const animalMap = new Map((animalRows ?? []).map((a: { id: string }) => [a.id, a]));
-          setPatients(grantRows.map((g: { id: string; animal_id: string; statut: string }) => ({ ...g, animal: animalMap.get(g.animal_id) ?? null })) as unknown as Patient[]);
+          setPatients(allGrants.map(g => ({
+            id: g.id, animal_id: g.animal_id, status: g.statut,
+            animal: animalMap.get(g.animal_id) ?? null,
+          })) as unknown as Patient[]);
         }
       }
 
@@ -365,6 +382,18 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
               <div className="text-2xl mb-1">💬</div>
               <p className="text-xs font-semibold text-[#1F2A2E]">Messages</p>
             </Link>
+            {isEducation && (
+              <>
+                <Link href="/mes-patients" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
+                  <div className="text-2xl mb-1">🐾</div>
+                  <p className="text-xs font-semibold text-[#1F2A2E]">Mes élèves</p>
+                </Link>
+                <Link href="/education/bibliotheque" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
+                  <div className="text-2xl mb-1">🏋️</div>
+                  <p className="text-xs font-semibold text-[#1F2A2E]">Bibliothèque d&apos;exercices</p>
+                </Link>
+              </>
+            )}
           </div>
         </div>
 
