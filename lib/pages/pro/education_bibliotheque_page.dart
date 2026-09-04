@@ -215,6 +215,66 @@ class _EducationBibliothequePageState extends State<EducationBibliothequePage> {
     );
   }
 
+  /// Aperçu lecture seule d'un exercice (mise en forme rendue) + bouton Modifier.
+  Future<void> _view(Map<String, dynamic> e) async {
+    final media = _mediaOf(e);
+    final cat = e['categorie']?.toString();
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        maxChildSize: 0.92,
+        minChildSize: 0.4,
+        builder: (ctx, scroll) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: ListView(controller: scroll, children: [
+            Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            Row(children: [
+              Expanded(child: Text(e['titre']?.toString() ?? '',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17))),
+              TextButton.icon(
+                onPressed: () { Navigator.pop(ctx); _edit(e); },
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('Modifier', style: TextStyle(fontFamily: 'Galey')),
+                style: TextButton.styleFrom(foregroundColor: kEduOrange),
+              ),
+            ]),
+            if (cat != null && kEduCategories[cat] != null) ...[
+              const SizedBox(height: 2),
+              Text(kEduCategories[cat]!,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+            ],
+            const SizedBox(height: 14),
+            if ((e['description']?.toString() ?? '').isNotEmpty)
+              RichTextView(e['description'].toString(),
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.45, color: Color(0xFF1F2A2E)))
+            else
+              Text('Pas de déroulé.', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400)),
+            if (media.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (final m in media)
+                  Container(
+                    width: 100, height: 100,
+                    decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(10)),
+                    clipBehavior: Clip.antiAlias,
+                    child: m['type'] == 'video'
+                        ? const Icon(Icons.play_circle_outline, color: Colors.grey, size: 32)
+                        : CachedNetworkImage(imageUrl: m['url']?.toString() ?? '', fit: BoxFit.cover),
+                  ),
+              ]),
+            ],
+          ]),
+        ),
+      ),
+    );
+  }
+
   Widget _mediaThumb({Widget? imageWidget, bool isVideo = false, required VoidCallback onRemove}) {
     return Stack(children: [
       Container(
@@ -322,7 +382,7 @@ class _EducationBibliothequePageState extends State<EducationBibliothequePage> {
                     return GestureDetector(
                       onTap: widget.pickMode
                           ? () => setState(() => picked ? _selected.remove(id) : _selected.add(id))
-                          : () => _edit(e),
+                          : () => _view(e),
                       child: Container(
                         margin: const EdgeInsets.only(bottom: 10),
                         padding: const EdgeInsets.all(12),
