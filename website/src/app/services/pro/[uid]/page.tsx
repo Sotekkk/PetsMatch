@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
 import { PENSION_ESPECES } from '@/lib/pension-especes';
+import EducationReservationModal from '@/components/education/EducationReservationModal';
 
 // photos_galerie (jsonb) : liste de string (URL) OU {url, legende}
 function normGalerie(raw: unknown): { url: string; legende: string }[] {
@@ -148,6 +149,7 @@ function ProDetailContent() {
 
   // RDV
   const [showRdv, setShowRdv] = useState(false);
+  const [showEducationReservation, setShowEducationReservation] = useState(false);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState('');
@@ -794,11 +796,11 @@ function ProDetailContent() {
             💬 Contacter
           </Link>
           <button
-            onClick={openRdv}
+            onClick={() => { if (pro.cat_pro === 'education') { if (!user) { router.push('/connexion'); return; } setShowEducationReservation(true); } else { openRdv(); } }}
             disabled={!pro.accept_new_clients}
             className="flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold text-white transition-colors disabled:opacity-50"
             style={{ backgroundColor: catColor, fontFamily: 'Galey, sans-serif' }}>
-            📅 {pro.accept_new_clients ? 'Prendre RDV' : 'Complet'}
+            📅 {pro.accept_new_clients ? (pro.cat_pro === 'education' ? 'Réserver un cours' : 'Prendre RDV') : 'Complet'}
           </button>
         </div>
       </div>
@@ -1051,6 +1053,16 @@ function ProDetailContent() {
       </div>
 
       {/* ── Modal RDV ── */}
+      {showEducationReservation && (
+        <EducationReservationModal
+          proUid={pro.uid}
+          proProfileId={pro.profileTableId ?? null}
+          proName={pro.name}
+          catColor={catColor}
+          onClose={() => setShowEducationReservation(false)}
+        />
+      )}
+
       {showRdv && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center"
           onClick={e => { if (e.target === e.currentTarget) setShowRdv(false); }}>

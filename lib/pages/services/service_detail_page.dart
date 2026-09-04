@@ -7,6 +7,7 @@ import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
+import 'package:PetsMatch/pages/pro/education_reservation_page.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/widgets/avis_pro_widget.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
@@ -1163,7 +1164,14 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
           child: ElevatedButton.icon(
             onPressed: _acceptNewClients
                 ? () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => RdvBookingPage(
+                    builder: (_) => _proData?['cat_pro'] == 'education'
+                        ? EducationReservationPage(
+                            proUid: widget.proUid,
+                            proName: _nomStructure,
+                            categoryColor: widget.categoryColor,
+                            proProfileId: widget.profileTableId,
+                          )
+                        : RdvBookingPage(
                       proUid: widget.proUid,
                       proName: _nomStructure,
                       categoryColor: widget.categoryColor,
@@ -1178,7 +1186,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                 : null,
             icon: const Icon(Icons.calendar_month_outlined, size: 18),
             label: Text(
-              _acceptNewClients ? 'Prendre RDV' : 'Complet',
+              _acceptNewClients ? (_proData?['cat_pro'] == 'education' ? 'Réserver un cours' : 'Prendre RDV') : 'Complet',
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600),
             ),
             style: ElevatedButton.styleFrom(

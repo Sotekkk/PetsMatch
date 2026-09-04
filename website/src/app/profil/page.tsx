@@ -15,6 +15,7 @@ import ReactCrop, { type Crop, type PixelCrop, centerCrop, makeAspectCrop } from
 import 'react-image-crop/dist/ReactCrop.css';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { fromPostalCode } from '@/lib/french-geo';
+import { geocodeAddress } from '@/lib/geocoding';
 
 // ── Species config ────────────────────────────────────────────────────────────
 
@@ -885,6 +886,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [tarifsEducationVisibles, setTarifsEducationVisibles] = useState(false);
   const [tarifsEducationExtra, setTarifsEducationExtra] = useState<{ label: string; prix: number; description: string }[]>([]);
   const [educationBilanDescription, setEducationBilanDescription] = useState('');
+  const [trajetOrigineDefaut, setTrajetOrigineDefaut] = useState('cabinet');
+  const [autreDomicileAdresse, setAutreDomicileAdresse] = useState('');
+  const [autreDomicileLatLng, setAutreDomicileLatLng] = useState<{ lat: number; lng: number } | null>(null);
   const [forfaits, setForfaits] = useState<{ id: string; nom: string; nb_seances: number; prix: number; affiche_public: boolean }[]>([]);
   const [loadingForfaits, setLoadingForfaits] = useState(false);
   const [showForfaitModal, setShowForfaitModal] = useState(false);
@@ -984,6 +988,11 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           setTarifsTaxi(r.tarifs_taxi as Record<string, number>);
         }
         setEducationBilanRequis((r.education_bilan_requis as boolean) ?? true);
+        setTrajetOrigineDefaut((r.trajet_origine_defaut as string) ?? 'cabinet');
+        setAutreDomicileAdresse((r.autre_domicile_adresse as string) ?? '');
+        if (r.autre_domicile_lat != null && r.autre_domicile_lng != null) {
+          setAutreDomicileLatLng({ lat: r.autre_domicile_lat as number, lng: r.autre_domicile_lng as number });
+        }
         setTarifsEducationVisibles((r.tarifs_education_visibles as boolean) ?? false);
         setEducationBilanDescription((r.education_bilan_description as string) ?? '');
         if (Array.isArray(r.tarifs_education_extra)) {
@@ -1097,6 +1106,15 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
 
   async function handleSave() {
     setSaving(true);
+    // Géocode "l'autre domicile" (éducateur, trajet à domicile) si une
+    // adresse est saisie — refait à chaque save pour rester à jour. Variable
+    // locale car setAutreDomicileLatLng() ne serait pas reflété à temps dans
+    // le payload construit juste après (state React asynchrone).
+    let autreDomicileGeo = autreDomicileLatLng;
+    if ((data?.profile_type ?? data?.cat_pro) === 'education' && autreDomicileAdresse.trim()) {
+      const geo = await geocodeAddress(autreDomicileAdresse.trim());
+      if (geo) { autreDomicileGeo = geo; setAutreDomicileLatLng(geo); }
+    }
     const payload: Record<string, unknown> = {
       nom:           nomStructure.trim(),
       profile_label: profileLabel.trim(),
@@ -1135,6 +1153,10 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             education_bilan_requis: educationBilanRequis,
             tarifs_education_visibles: tarifsEducationVisibles,
             education_bilan_description: educationBilanDescription.trim(),
+            trajet_origine_defaut: trajetOrigineDefaut,
+            autre_domicile_adresse: autreDomicileAdresse.trim(),
+            autre_domicile_lat: autreDomicileGeo?.lat ?? null,
+            autre_domicile_lng: autreDomicileGeo?.lng ?? null,
             tarifs_education_extra: tarifsEducationExtra
               .filter(e => e.label.trim())
               .map(e => ({
@@ -1589,6 +1611,42 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             <textarea rows={3} value={educationBilanDescription}
               onChange={e => setEducationBilanDescription(e.target.value)}
               className={`${inputCls} w-full`} />
+          </Card>
+        )}
+
+        {/* Trajet à domicile (éducateur) */}
+        {catPro === 'education' && (
+          <Card title="Trajet à domicile">
+            <p className="text-xs text-gray-500 mb-3">
+              Adresse de départ utilisée pour estimer le temps de trajet des cours à domicile.
+              Vous pourrez changer l&apos;origine pour un créneau précis depuis &laquo;&nbsp;Mes créneaux&nbsp;&raquo;.
+            </p>
+            <label className="text-xs font-medium text-gray-500 block mb-1">Autre domicile (optionnel)</label>
+            <input value={autreDomicileAdresse} onChange={e => setAutreDomicileAdresse(e.target.value)}
+              placeholder="Ex : 12 rue des Lilas, 75011 Paris" className={`${inputCls} w-full`} />
+            <label className="text-xs font-medium text-gray-500 block mt-4 mb-1">Départ par défaut</label>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setTrajetOrigineDefaut('cabinet')}
+                className="flex-1 py-2 rounded-xl border text-sm font-semibold"
+                style={{
+                  borderColor: trajetOrigineDefaut === 'cabinet' ? '#7B5EA7' : '#E5E7EB',
+                  backgroundColor: trajetOrigineDefaut === 'cabinet' ? '#7B5EA715' : 'white',
+                  color: trajetOrigineDefaut === 'cabinet' ? '#7B5EA7' : '#6B7280',
+                }}>
+                Cabinet
+              </button>
+              <button type="button"
+                disabled={!autreDomicileAdresse.trim()}
+                onClick={() => setTrajetOrigineDefaut('autre_domicile')}
+                className="flex-1 py-2 rounded-xl border text-sm font-semibold disabled:opacity-40"
+                style={{
+                  borderColor: trajetOrigineDefaut === 'autre_domicile' ? '#7B5EA7' : '#E5E7EB',
+                  backgroundColor: trajetOrigineDefaut === 'autre_domicile' ? '#7B5EA715' : 'white',
+                  color: trajetOrigineDefaut === 'autre_domicile' ? '#7B5EA7' : '#6B7280',
+                }}>
+                Autre domicile
+              </button>
+            </div>
           </Card>
         )}
 

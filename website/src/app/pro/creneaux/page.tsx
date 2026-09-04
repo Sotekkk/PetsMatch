@@ -37,9 +37,9 @@ function snapTo15(t: string): string {
 
 type SlotStatus = 'disponible' | 'bloque';
 type TypePrestation = 'individuel' | 'collectif' | null;
-interface SlotRange { start: string; end: string; statut: SlotStatus; type?: TypePrestation; }
+interface SlotRange { start: string; end: string; statut: SlotStatus; type?: TypePrestation; domicile?: boolean; }
 
-function groupRanges(slotsForDate: { time: string; statut: SlotStatus; type?: TypePrestation }[]): SlotRange[] {
+function groupRanges(slotsForDate: { time: string; statut: SlotStatus; type?: TypePrestation; domicile?: boolean }[]): SlotRange[] {
   const sorted = [...slotsForDate].sort((a, b) => a.time.localeCompare(b.time));
   if (!sorted.length) return [];
   const ranges: SlotRange[] = [];
@@ -47,17 +47,19 @@ function groupRanges(slotsForDate: { time: string; statut: SlotStatus; type?: Ty
   let prevMins = timeToMins(sorted[0].time);
   let curStatut = sorted[0].statut;
   let curType = sorted[0].type ?? null;
+  let curDomicile = sorted[0].domicile ?? false;
   for (let i = 1; i < sorted.length; i++) {
     const curMins = timeToMins(sorted[i].time);
     const t = sorted[i].type ?? null;
-    if (sorted[i].statut === curStatut && t === curType && curMins === prevMins + 15) {
+    const d = sorted[i].domicile ?? false;
+    if (sorted[i].statut === curStatut && t === curType && d === curDomicile && curMins === prevMins + 15) {
       prevMins = curMins;
     } else {
-      ranges.push({ start: rStart, end: minsToTime(prevMins + 15), statut: curStatut, type: curType });
-      rStart = sorted[i].time; prevMins = curMins; curStatut = sorted[i].statut; curType = t;
+      ranges.push({ start: rStart, end: minsToTime(prevMins + 15), statut: curStatut, type: curType, domicile: curDomicile });
+      rStart = sorted[i].time; prevMins = curMins; curStatut = sorted[i].statut; curType = t; curDomicile = d;
     }
   }
-  ranges.push({ start: rStart, end: minsToTime(prevMins + 15), statut: curStatut, type: curType });
+  ranges.push({ start: rStart, end: minsToTime(prevMins + 15), statut: curStatut, type: curType, domicile: curDomicile });
   return ranges;
 }
 
@@ -80,7 +82,9 @@ export default function ProCreneauxPage() {
   const [addStart, setAddStart]             = useState('09:00');
   const [addEnd, setAddEnd]                 = useState('10:00');
   const [addType, setAddType]               = useState<TypePrestation>(null);
+  const [addDomicile, setAddDomicile]       = useState(false);
   const [slotTypes, setSlotTypes]           = useState<Record<string, TypePrestation>>({});
+  const [slotDomicile, setSlotDomicile]     = useState<Record<string, boolean>>({});
   const [catPro, setCatPro]                 = useState('');
 
   useEffect(() => {
@@ -101,7 +105,7 @@ export default function ProCreneauxPage() {
     try {
       const { data } = await supabase
         .from('creneaux_pro')
-        .select('date, heure_debut, statut, type_prestation')
+        .select('date, heure_debut, statut, type_prestation, domicile_ok')
         .eq('pro_uid', user.uid)
         .eq('pro_profile_id', activeProfileId)
         .in('statut', ['disponible', 'bloque'])
@@ -109,14 +113,17 @@ export default function ProCreneauxPage() {
         .lte('date', toDateStr(end));
       const map: Record<string, SlotStatus> = {};
       const typeMap: Record<string, TypePrestation> = {};
-      for (const r of (data ?? []) as { date: string; heure_debut: string; statut: SlotStatus; type_prestation: TypePrestation }[]) {
+      const domicileMap: Record<string, boolean> = {};
+      for (const r of (data ?? []) as { date: string; heure_debut: string; statut: SlotStatus; type_prestation: TypePrestation; domicile_ok: boolean }[]) {
         const hhmm = r.heure_debut.substring(0, 5);
         const key = `${r.date}_${hhmm}`;
         map[key] = r.statut;
         if (r.type_prestation) typeMap[key] = r.type_prestation;
+        if (r.domicile_ok) domicileMap[key] = true;
       }
       setSlots(map);
       setSlotTypes(typeMap);
+      setSlotDomicile(domicileMap);
     } catch { /* ignore */ }
     setLoadingSlots(false);
   }, [user, activeProfileId, weekStart]);
@@ -129,7 +136,7 @@ export default function ProCreneauxPage() {
 
   const slotsForDay = Object.entries(slots)
     .filter(([k]) => k.startsWith(`${dateStr}_`))
-    .map(([k, statut]) => ({ time: k.slice(dateStr.length + 1), statut, type: slotTypes[k] ?? null }));
+    .map(([k, statut]) => ({ time: k.slice(dateStr.length + 1), statut, type: slotTypes[k] ?? null, domicile: slotDomicile[k] ?? false }));
   const ranges = groupRanges(slotsForDay);
 
   // Recalcule le résumé "Horaires" (page profil) à partir des créneaux
@@ -152,13 +159,14 @@ export default function ProCreneauxPage() {
     } catch { /* ignore — résumé informatif, pas bloquant */ }
   }
 
-  async function applyRange(start: string, end: string, statut: SlotStatus, type: TypePrestation = null) {
+  async function applyRange(start: string, end: string, statut: SlotStatus, type: TypePrestation = null, domicile = false) {
     if (!user || saving) return;
     setSaving(true);
     let cur = timeToMins(start);
     const endM = timeToMins(end);
     const newSlots: Record<string, SlotStatus> = {};
     const newTypes: Record<string, TypePrestation> = {};
+    const newDomicile: Record<string, boolean> = {};
     const rows: Record<string, unknown>[] = [];
     while (cur < endM) {
       const hhmm = minsToTime(cur);
@@ -166,13 +174,15 @@ export default function ProCreneauxPage() {
       const key = `${dateStr}_${hhmm}`;
       newSlots[key] = statut;
       if (type) newTypes[key] = type;
+      newDomicile[key] = domicile;
       rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, date: dateStr,
-        heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut, type_prestation: type });
+        heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut, type_prestation: type, domicile_ok: domicile });
       cur += 15;
     }
     const merged = { ...slots, ...newSlots };
     setSlots(merged);
     setSlotTypes(prev => ({ ...prev, ...newTypes }));
+    setSlotDomicile(prev => ({ ...prev, ...newDomicile }));
     try {
       await supabase.from('creneaux_pro').upsert(rows, { onConflict: 'pro_uid,pro_profile_id,date,heure_debut' });
       await syncHorairesSummary(merged);
@@ -197,6 +207,7 @@ export default function ProCreneauxPage() {
     const merged = { ...slots };
     keyList.forEach(k => delete merged[k]);
     setSlots(merged);
+    setSlotDomicile(prev => { const n = { ...prev }; keyList.forEach(k => delete n[k]); return n; });
     try {
       await supabase.from('creneaux_pro').delete()
         .eq('pro_uid', user.uid).eq('pro_profile_id', activeProfileId)
@@ -351,6 +362,12 @@ export default function ProCreneauxPage() {
                       {r.type === 'individuel' ? '🎓 Individuel' : '👥 Collectif'}
                     </span>
                   )}
+                  {r.domicile && (
+                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full mt-1 ml-1.5 inline-block"
+                      style={{ background: '#7B5EA722', color: '#7B5EA7' }}>
+                      🏠 Domicile
+                    </span>
+                  )}
                 </div>
                 <button onClick={() => deleteRange(r)}
                   className="p-2.5 rounded-xl hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors">
@@ -437,6 +454,20 @@ export default function ProCreneauxPage() {
               </div>
             )}
 
+            {catPro === 'education' && addMode === 'disponible' && (
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-xs font-semibold text-gray-500" style={{ fontFamily: 'Galey, sans-serif' }}>
+                  Disponible à domicile
+                </span>
+                <button type="button" onClick={() => setAddDomicile(v => !v)}
+                  className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
+                  style={{ backgroundColor: addDomicile ? '#7B5EA7' : '#D1D5DB' }}>
+                  <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform"
+                    style={{ transform: addDomicile ? 'translateX(20px)' : 'translateX(0)' }} />
+                </button>
+              </div>
+            )}
+
             <div className="flex gap-3">
               <button onClick={() => setShowAddModal(false)}
                 className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500">
@@ -446,8 +477,9 @@ export default function ProCreneauxPage() {
                 onClick={async () => {
                   if (timeToMins(addEnd) <= timeToMins(addStart)) return;
                   setShowAddModal(false);
-                  await applyRange(addStart, addEnd, addMode, addMode === 'disponible' ? addType : null);
+                  await applyRange(addStart, addEnd, addMode, addMode === 'disponible' ? addType : null, addMode === 'disponible' && addDomicile);
                   setAddType(null);
+                  setAddDomicile(false);
                 }}
                 disabled={saving || timeToMins(addEnd) <= timeToMins(addStart)}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"

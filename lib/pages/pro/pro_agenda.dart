@@ -43,6 +43,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // Type de prestation par créneau (éducateur uniquement) : 'individuel' /
   // 'collectif' / absent = les deux.
   final Map<String, String> _slotTypes = {};
+  // Créneau autorisé à domicile (éducateur uniquement) — utilisé par le
+  // calcul de disponibilité de education_reservation_page.dart.
+  final Set<String> _slotDomicile = {};
 
   // VET07 — retard
   bool _retardDeclare = false;
@@ -2084,6 +2087,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       setState(() {
         _blockedSlots.clear();
         _slotTypes.clear();
+        _slotDomicile.clear();
         for (final row in rows) {
           final date = row['date'] as String;
           final heureDebut = row['heure_debut'] as String; // 'HH:MM:SS'
@@ -2093,6 +2097,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           _blockedSlots[key] = row['statut'] as String? ?? 'disponible';
           final type = row['type_prestation'] as String?;
           if (type != null) _slotTypes[key] = type;
+          if (row['domicile_ok'] == true) _slotDomicile.add(key);
         }
       });
     } catch (_) {}
@@ -2108,40 +2113,41 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   String _fmtTime(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-  List<({TimeOfDay start, TimeOfDay end, String statut, String? type})> _groupedRanges(String date) {
+  List<({TimeOfDay start, TimeOfDay end, String statut, String? type, bool domicile})> _groupedRanges(String date) {
     final entries = _blockedSlots.entries
         .where((e) => e.key.startsWith('${date}_'))
         .map((e) {
           final tp = e.key.substring(date.length + 1).split(':');
           return (time: TimeOfDay(hour: int.parse(tp[0]), minute: int.parse(tp[1])),
-              statut: e.value, type: _slotTypes[e.key]);
+              statut: e.value, type: _slotTypes[e.key], domicile: _slotDomicile.contains(e.key));
         })
         .toList()
       ..sort((a, b) => (a.time.hour * 60 + a.time.minute).compareTo(b.time.hour * 60 + b.time.minute));
 
     if (entries.isEmpty) return [];
-    final ranges = <({TimeOfDay start, TimeOfDay end, String statut, String? type})>[];
+    final ranges = <({TimeOfDay start, TimeOfDay end, String statut, String? type, bool domicile})>[];
     var rStart = entries.first.time;
     var prevMins = rStart.hour * 60 + rStart.minute;
     var curStatut = entries.first.statut;
     var curType = entries.first.type;
+    var curDomicile = entries.first.domicile;
 
     for (var i = 1; i < entries.length; i++) {
       final curMins = entries[i].time.hour * 60 + entries[i].time.minute;
-      if (entries[i].statut == curStatut && entries[i].type == curType && curMins == prevMins + 15) {
+      if (entries[i].statut == curStatut && entries[i].type == curType && entries[i].domicile == curDomicile && curMins == prevMins + 15) {
         prevMins = curMins;
       } else {
         final endM = prevMins + 15;
-        ranges.add((start: rStart, end: TimeOfDay(hour: endM ~/ 60, minute: endM % 60), statut: curStatut, type: curType));
-        rStart = entries[i].time; prevMins = curMins; curStatut = entries[i].statut; curType = entries[i].type;
+        ranges.add((start: rStart, end: TimeOfDay(hour: endM ~/ 60, minute: endM % 60), statut: curStatut, type: curType, domicile: curDomicile));
+        rStart = entries[i].time; prevMins = curMins; curStatut = entries[i].statut; curType = entries[i].type; curDomicile = entries[i].domicile;
       }
     }
     final endM = prevMins + 15;
-    ranges.add((start: rStart, end: TimeOfDay(hour: endM ~/ 60, minute: endM % 60), statut: curStatut, type: curType));
+    ranges.add((start: rStart, end: TimeOfDay(hour: endM ~/ 60, minute: endM % 60), statut: curStatut, type: curType, domicile: curDomicile));
     return ranges;
   }
 
-  Future<void> _applyRange(String date, TimeOfDay start, TimeOfDay end, String statut, {String? type}) async {
+  Future<void> _applyRange(String date, TimeOfDay start, TimeOfDay end, String statut, {String? type, bool domicileOk = false}) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final pid = User_Info.activeProfileId;
@@ -2158,9 +2164,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       if (mounted) setState(() {
         _blockedSlots[key] = statut;
         if (type != null) { _slotTypes[key] = type; } else { _slotTypes.remove(key); }
+        if (domicileOk) { _slotDomicile.add(key); } else { _slotDomicile.remove(key); }
       });
       slots.add({'pro_uid': uid, 'pro_profile_id': pid, 'date': date,
-          'heure_debut': hd, 'heure_fin': hf, 'statut': statut, 'type_prestation': type});
+          'heure_debut': hd, 'heure_fin': hf, 'statut': statut, 'type_prestation': type,
+          'domicile_ok': domicileOk});
       curMins = finMins;
     }
     try {
@@ -2171,7 +2179,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         final hd = s['heure_debut'] as String;
         return '${date}_${hd.substring(0, 5)}';
       });
-      if (mounted) setState(() { for (final k in keys) { _blockedSlots.remove(k); _slotTypes.remove(k); } });
+      if (mounted) setState(() { for (final k in keys) { _blockedSlots.remove(k); _slotTypes.remove(k); _slotDomicile.remove(k); } });
       if (mounted) _showErr(e);
     }
   }
@@ -2189,7 +2197,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       keyList.add('${date}_${(curMins ~/ 60).toString().padLeft(2, '0')}:${(curMins % 60).toString().padLeft(2, '0')}');
       curMins += 15;
     }
-    if (mounted) setState(() { for (final k in keyList) { _blockedSlots.remove(k); _slotTypes.remove(k); } });
+    if (mounted) setState(() { for (final k in keyList) { _blockedSlots.remove(k); _slotTypes.remove(k); _slotDomicile.remove(k); } });
     try {
       await Supabase.instance.client.from('creneaux_pro').delete()
           .eq('pro_uid', uid).eq('pro_profile_id', pid).eq('date', date)
@@ -2207,6 +2215,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     TimeOfDay endTime   = const TimeOfDay(hour: 10, minute: 0);
     String statut = 'disponible';
     String? type; // 'individuel' / 'collectif' / null = les deux (éducateur uniquement)
+    bool domicileOk = false; // créneau proposable à domicile (éducateur uniquement)
 
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
@@ -2334,6 +2343,16 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       ),
                     )),
                 ]),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(child: Text('Disponible à domicile', style: TextStyle(
+                      fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700))),
+                  Switch(
+                    value: domicileOk,
+                    activeThumbColor: const Color(0xFF7B5EA7),
+                    onChanged: (v) => setS(() => domicileOk = v),
+                  ),
+                ]),
               ],
               const SizedBox(height: 20),
               SizedBox(width: double.infinity, child: ElevatedButton(
@@ -2353,12 +2372,14 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       ),
     );
     if (confirmed == true && mounted) {
-      await _applyRange(dateStr, startTime, endTime, statut, type: statut == 'disponible' ? type : null);
+      await _applyRange(dateStr, startTime, endTime, statut,
+          type: statut == 'disponible' ? type : null,
+          domicileOk: statut == 'disponible' && domicileOk);
     }
   }
 
   Future<void> _confirmDeleteRange(String date,
-      ({TimeOfDay start, TimeOfDay end, String statut, String? type}) r) async {
+      ({TimeOfDay start, TimeOfDay end, String statut, String? type, bool domicile}) r) async {
     final label = '${_fmtTime(r.start)} — ${_fmtTime(r.end)}';
     final ok = await showDialog<bool>(
       context: context,
@@ -2763,6 +2784,19 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                         ),
                         child: Text(r.type == 'individuel' ? '🎓 Individuel' : '👥 Collectif',
                             style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
+                                fontWeight: FontWeight.w600, color: Color(0xFF7B5EA7))),
+                      ),
+                    ],
+                    if (r.domicile) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0x1A7B5EA7),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text('🏠 Domicile',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 11,
                                 fontWeight: FontWeight.w600, color: Color(0xFF7B5EA7))),
                       ),
                     ],

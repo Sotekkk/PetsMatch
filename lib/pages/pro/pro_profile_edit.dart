@@ -137,6 +137,13 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   List<Map<String, dynamic>> _tarifsEducationExtra = [];
   final _educationBilanDescCtrl = TextEditingController();
 
+  // Éducateur : trajet à domicile — origine par défaut (cabinet ou "autre
+  // domicile") utilisée pour calculer le temps de trajet des créneaux à
+  // domicile ; l'origine peut être changée créneau par créneau (pro_agenda.dart).
+  String _trajetOrigineDefaut = 'cabinet';
+  final _autreDomicileCtrl = TextEditingController();
+  double? _autreDomicileLat, _autreDomicileLng;
+
   static const _defaultDureesByCatPro = <String, Map<String, int>>{
     'veterinaire': {'consultation': 30, 'vaccination': 20, 'bilan': 45, 'urgence': 60, 'chirurgie': 120, 'autre': 30},
     'pension':     {'visite': 30, 'arrivee': 60, 'depart': 30, 'autre': 30},
@@ -322,6 +329,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                 MapEntry(k.toString(), (v as num?)?.toDouble() ?? 0)));
         }
         _educationBilanRequis = row['education_bilan_requis'] as bool? ?? true;
+        _trajetOrigineDefaut = row['trajet_origine_defaut']?.toString() ?? 'cabinet';
+        _autreDomicileCtrl.text = row['autre_domicile_adresse']?.toString() ?? '';
+        _autreDomicileLat = (row['autre_domicile_lat'] as num?)?.toDouble();
+        _autreDomicileLng = (row['autre_domicile_lng'] as num?)?.toDouble();
         _tarifsEducationVisibles = row['tarifs_education_visibles'] as bool? ?? false;
         _educationBilanDescCtrl.text = row['education_bilan_description']?.toString() ?? '';
         if (row['tarifs_education_extra'] is List) {
@@ -578,6 +589,19 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid;
 
+      // Géocode "l'autre domicile" (éducateur, trajet à domicile) si une
+      // adresse est saisie — refait à chaque save pour rester à jour si le
+      // pro modifie le texte.
+      if (_catPro == 'education' && _autreDomicileCtrl.text.trim().isNotEmpty) {
+        try {
+          final locs = await geo.locationFromAddress(_autreDomicileCtrl.text.trim());
+          if (locs.isNotEmpty) {
+            _autreDomicileLat = locs.first.latitude;
+            _autreDomicileLng = locs.first.longitude;
+          }
+        } catch (_) {}
+      }
+
       String? photoUrl = _photoUrl;
       if (_photoFile != null) {
         photoUrl = await uploadPhoto(_photoFile!, 'profiles/$uid/photo.jpg');
@@ -649,6 +673,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'education') 'tarifs_education_visibles': _tarifsEducationVisibles,
           if (_catPro == 'education') 'tarifs_education_extra': _cleanTarifsExtra(),
           if (_catPro == 'education') 'education_bilan_description': _educationBilanDescCtrl.text.trim(),
+          if (_catPro == 'education') 'trajet_origine_defaut': _trajetOrigineDefaut,
+          if (_catPro == 'education') 'autre_domicile_adresse': _autreDomicileCtrl.text.trim(),
+          if (_catPro == 'education') 'autre_domicile_lat': _autreDomicileLat,
+          if (_catPro == 'education') 'autre_domicile_lng': _autreDomicileLng,
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
           if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
@@ -743,6 +771,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'education') 'tarifs_education_visibles': _tarifsEducationVisibles,
           if (_catPro == 'education') 'tarifs_education_extra': _cleanTarifsExtra(),
           if (_catPro == 'education') 'education_bilan_description': _educationBilanDescCtrl.text.trim(),
+          if (_catPro == 'education') 'trajet_origine_defaut': _trajetOrigineDefaut,
+          if (_catPro == 'education') 'autre_domicile_adresse': _autreDomicileCtrl.text.trim(),
+          if (_catPro == 'education') 'autre_domicile_lat': _autreDomicileLat,
+          if (_catPro == 'education') 'autre_domicile_lng': _autreDomicileLng,
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
           if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
@@ -1335,6 +1367,47 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                             borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
                       ),
                     ),
+                    const SizedBox(height: 20),
+                    _sectionTitle('Trajet à domicile'),
+                    const SizedBox(height: 4),
+                    Text('Adresse de départ utilisée pour estimer le temps de trajet des cours à domicile. '
+                        'Vous pourrez changer l\'origine pour un créneau précis depuis "Mes créneaux".',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+                    const SizedBox(height: 10),
+                    TextFormField(
+                      controller: _autreDomicileCtrl,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                      decoration: InputDecoration(
+                        labelText: 'Autre domicile (optionnel)',
+                        hintText: 'Ex : 12 rue des Lilas, 75011 Paris',
+                        labelStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600),
+                        filled: true, fillColor: Colors.white,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text('Départ par défaut', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      Expanded(child: ChoiceChip(
+                        label: const Text('Cabinet', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                        selected: _trajetOrigineDefaut == 'cabinet',
+                        onSelected: (_) => setState(() => _trajetOrigineDefaut = 'cabinet'),
+                      )),
+                      const SizedBox(width: 8),
+                      Expanded(child: ChoiceChip(
+                        label: const Text('Autre domicile', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                        selected: _trajetOrigineDefaut == 'autre_domicile',
+                        onSelected: _autreDomicileCtrl.text.trim().isEmpty
+                            ? null
+                            : (_) => setState(() => _trajetOrigineDefaut = 'autre_domicile'),
+                      )),
+                    ]),
                   ],
 
                   // ── Forfaits éducateur/comportementaliste ou garde ────────

@@ -73,6 +73,7 @@ import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_contrats_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
 import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/education_prestations_page.dart';
 import 'package:PetsMatch/pages/pro/registre_visites_page.dart';
 import 'package:PetsMatch/pages/pro/tournee_page.dart';
 import 'package:PetsMatch/pages/pro/cles_clients_page.dart';
@@ -555,6 +556,12 @@ List<QuickAction> _all(BuildContext ctx) => [
   ),
 
   // ── Éducateur ──────────────────────────────────────────────────────────────
+  QuickAction(
+    label: 'Mes cours',
+    keywords: ['catalogue cours', 'prestations éducateur', 'types de cours', 'tarifs cours', 'durée cours'],
+    icon: Icons.menu_book_outlined, group: 'Mon espace pro',
+    visible: () => _catPro == 'education', open: (c) => _push(c, const EducationPrestationsPage()),
+  ),
   QuickAction(
     label: 'Planning des cours',
     keywords: ['cours collectifs', 'séances', 'balade éducative', 'agenda cours', 'planning éducateur'],
