@@ -4141,7 +4141,7 @@ export default function AnimalFichePage() {
                     {educationRapports.map(r => (
                       <div key={r.id} className="rounded-xl border border-gray-100 p-3">
                         <p className="text-xs font-galey text-gray-400 mb-1">{r.date_seance}</p>
-                        <p className="text-sm font-galey text-gray-800">{r.contenu}</p>
+                        <div className="text-sm font-galey text-gray-800"><RichText value={r.contenu} /></div>
                         {r.exercices_conseilles && (
                           <div className="mt-2 bg-[#EEF5EA] rounded-lg px-2.5 py-1.5">
                             <p className="text-xs font-semibold font-galey text-[#4A7A32] mb-0.5">🏋️ Exercices conseillés</p>
