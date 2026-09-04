@@ -1,3 +1,4 @@
+import 'package:PetsMatch/pages/eleveur/animaux/acquereur_contact.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_form_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
@@ -2075,6 +2076,10 @@ class _AnimalCard extends StatelessWidget {
                   if (sexe.isNotEmpty) ...[
                     const SizedBox(width: 4),
                     _Chip(sexe == 'male' ? '♂' : '♀', const Color(0xFF5F9EAA)),
+                  ],
+                  if (showStatut && statut == 'sorti') ...[
+                    const Spacer(),
+                    ContactAcquereurButton(animal: data, size: 16),
                   ],
                 ]),
               ]),

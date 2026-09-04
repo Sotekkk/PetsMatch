@@ -1,4 +1,5 @@
 import 'package:PetsMatch/pages/petfriends/petfriend_chat_page.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/acquereur_contact.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -765,11 +766,14 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
               if ((a['race'] as String?)?.isNotEmpty == true) a['race'],
             ].join(' · '), style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
           ])),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(color: chipColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
-            child: Text(chipLabel, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: chipColor)),
-          ),
+          Column(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(color: chipColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+              child: Text(chipLabel, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: chipColor)),
+            ),
+            ContactAcquereurButton(animal: a),
+          ]),
         ]),
         const SizedBox(height: 8),
         Row(children: [
@@ -855,6 +859,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
                 fontWeight: aujourdHui ? FontWeight.w700 : FontWeight.w400),
           ),
         ])),
+        ContactAcquereurButton(animal: a),
         if ((a['uid_acquereur'] as String?)?.isNotEmpty == true)
           TextButton.icon(
             onPressed: _wishing == a['id'] ? null : () => _envoyerVoeux(a),
