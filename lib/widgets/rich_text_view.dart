@@ -24,7 +24,7 @@ class RichTextView extends StatelessWidget {
   });
 
   static bool looksLikeHtml(String? s) =>
-      s != null && RegExp(r'<(/?)(b|strong|i|em|u|span|p|div|br|ul|ol|li)\b',
+      s != null && RegExp(r'<(/?)(b|strong|i|em|u|span|font|p|div|br|ul|ol|li)\b',
               caseSensitive: false)
           .hasMatch(s);
 
@@ -63,7 +63,7 @@ List<InlineSpan> parseRichText(String input, TextStyle baseStyle) {
   final spans = <InlineSpan>[];
   final styleStack = <TextStyle>[baseStyle];
   final tagRe = RegExp(
-      r'<(/?)(b|strong|i|em|u|span)((?:\s+[^>]*?)?)\s*>',
+      r'<(/?)(b|strong|i|em|u|span|font)((?:\s+[^>]*?)?)\s*>',
       caseSensitive: false);
 
   var cursor = 0;
@@ -97,6 +97,10 @@ List<InlineSpan> parseRichText(String input, TextStyle baseStyle) {
           final col = _colorFromStyle(attrs);
           if (col != null) next = next.copyWith(color: col);
           break;
+        case 'font':
+          final col = _colorFromStyle(attrs) ?? _colorFromFontAttr(attrs);
+          if (col != null) next = next.copyWith(color: col);
+          break;
       }
       styleStack.add(next);
     }
@@ -109,12 +113,21 @@ List<InlineSpan> parseRichText(String input, TextStyle baseStyle) {
   return spans;
 }
 
+Color? _colorFromFontAttr(String attrs) {
+  final m = RegExp(r'''color\s*=\s*["']?(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\))''',
+          caseSensitive: false)
+      .firstMatch(attrs);
+  return m == null ? null : _parseCssColor(m.group(1)!.trim());
+}
+
 Color? _colorFromStyle(String attrs) {
   final m = RegExp(r'color\s*:\s*(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\))',
           caseSensitive: false)
       .firstMatch(attrs);
-  if (m == null) return null;
-  final v = m.group(1)!.trim();
+  return m == null ? null : _parseCssColor(m.group(1)!.trim());
+}
+
+Color? _parseCssColor(String v) {
   if (v.startsWith('#')) {
     var hex = v.substring(1);
     if (hex.length == 3) hex = hex.split('').map((c) => '$c$c').join();

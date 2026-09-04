@@ -9,10 +9,10 @@ import React from 'react';
  * stricte de balises / styles). Un texte brut sans balise reste rendu tel quel.
  */
 
-const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'BR', 'P', 'DIV', 'SPAN', 'UL', 'OL', 'LI']);
+const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'BR', 'P', 'DIV', 'SPAN', 'UL', 'OL', 'LI', 'FONT']);
 
 export function isRichText(s: string | null | undefined): boolean {
-  return !!s && /<(\/?)(b|strong|i|em|u|span|p|div|br|ul|ol|li)\b/i.test(s);
+  return !!s && /<(\/?)(b|strong|i|em|u|span|p|div|br|ul|ol|li|font)\b/i.test(s);
 }
 
 /** Texte nu d'un fragment (pour les gardes de formulaire / aperçus). */
@@ -59,8 +59,14 @@ function sanitizeNode(node: Node, out: Document): Node | null {
     });
     return frag;
   }
-  const clean = out.createElement(el.tagName.toLowerCase());
-  const style = safeStyle(el.getAttribute('style'));
+  // <font color="…"> (execCommand hérité) → <span style="color:…">
+  const tagName = el.tagName === 'FONT' ? 'span' : el.tagName.toLowerCase();
+  const clean = out.createElement(tagName);
+  let style = safeStyle(el.getAttribute('style'));
+  const fontColor = el.tagName === 'FONT' ? el.getAttribute('color') : null;
+  if (fontColor && /^#[0-9a-fA-F]{3,8}$|^rgb/.test(fontColor)) {
+    style = style ? `${style};color:${fontColor}` : `color:${fontColor}`;
+  }
   if (style) clean.setAttribute('style', style);
   el.childNodes.forEach(child => {
     const c = sanitizeNode(child, out);
@@ -128,6 +134,8 @@ export function RichTextEditor({
 
   function exec(cmd: string, arg?: string) {
     ref.current?.focus();
+    // Émettre <span style="color:…"> plutôt que <font color> (assaini à l'affichage).
+    try { document.execCommand('styleWithCSS', false, 'true'); } catch { /* Safari */ }
     document.execCommand(cmd, false, arg);
     if (ref.current) onChange(ref.current.innerHTML);
   }
