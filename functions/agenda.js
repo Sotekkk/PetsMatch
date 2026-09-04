@@ -17,7 +17,7 @@ const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" +
  * @param {object|null} body - Corps JSON optionnel.
  * @return {Promise<Array|object>}
  */
-function supabaseRequest(method, path, body) {
+function supabaseRequest(method, path, body, preferOverride) {
     return new Promise((resolve, reject) => {
         const bodyStr = body ? JSON.stringify(body) : null;
         const fullPath = `${SUPABASE_URL}/rest/v1/${path}`;
@@ -30,7 +30,7 @@ function supabaseRequest(method, path, body) {
                 "Content-Type": "application/json",
                 "apikey": SUPABASE_SERVICE_KEY,
                 "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
-                "Prefer": method === "GET" ? "" : "return=minimal",
+                "Prefer": method === "GET" ? "" : (preferOverride || "return=minimal"),
             },
         };
         if (bodyStr) options.headers["Content-Length"] = Buffer.byteLength(bodyStr);
@@ -65,6 +65,17 @@ async function supabasePatch(table, id, update) {
 
 async function supabaseInsert(table, rows) {
     await supabaseRequest("POST", table, rows);
+}
+
+/**
+ * Insère des lignes et renvoie les lignes créées (Prefer: return=representation).
+ * @param {string} table - Nom de la table.
+ * @param {Array<object>} rows - Lignes à insérer.
+ * @return {Promise<Array>}
+ */
+async function supabaseInsertReturning(table, rows) {
+    const res = await supabaseRequest("POST", table, rows, "return=representation");
+    return Array.isArray(res) ? res : [];
 }
 
 /**
@@ -667,5 +678,147 @@ exports.sendExerciceReminders = functions
         }
 
         console.log(`sendExerciceReminders: ${sent} rappels envoyés`);
+        return null;
+    });
+
+// ─── Cours collectifs récurrents ───────────────────────────────────────────
+// Migration SQL requise (une fois) :
+//   supabase/migration_cours_collectifs_recurrence.sql
+// Entretient un horizon glissant d'occurrences hebdomadaires pour chaque
+// série active, et reconduit automatiquement les inscriptions "à la série"
+// (cours_collectifs_participants.serie_id) sur chaque nouvelle occurrence.
+
+const COURS_HORIZON_WEEKS = 8;
+
+/**
+ * Formate une Date en "AAAA-MM-JJ" (heure locale déjà appliquée par l'appelant).
+ * @param {Date} d
+ * @return {string}
+ */
+function toDateStr(d) {
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, "0");
+    const da = String(d.getDate()).padStart(2, "0");
+    return `${y}-${mo}-${da}`;
+}
+
+/**
+ * Génère les occurrences manquantes d'une série jusqu'à l'horizon (ou sa
+ * date de fin si plus tôt), et reconduit les inscriptions "série" de proche
+ * en proche sur les occurrences nouvellement créées.
+ * @param {object} serie - Ligne cours_collectifs_series.
+ * @param {Date} horizonEnd - Borne haute de génération (Date, incluse).
+ * @return {Promise<number>} Nombre d'occurrences créées.
+ */
+async function generateOccurrencesForSerie(serie, horizonEnd) {
+    let effectiveEnd = horizonEnd;
+    if (serie.date_fin) {
+        const finJour = new Date(`${serie.date_fin}T23:59:59`);
+        if (finJour < effectiveEnd) effectiveEnd = finJour;
+    }
+
+    const existing = await supabaseSelect("cours_collectifs",
+        `serie_id=eq.${serie.id}&order=date_heure.desc&limit=1`);
+    let nextDate;
+    let baseParticipants = [];
+    if (existing[0]) {
+        nextDate = new Date(existing[0].date_heure);
+        nextDate.setDate(nextDate.getDate() + 7);
+        const parts = await supabaseSelect("cours_collectifs_participants",
+            `cours_id=eq.${existing[0].id}&serie_id=eq.${serie.id}&statut=eq.inscrit`);
+        baseParticipants = parts;
+    } else {
+        nextDate = new Date(serie.date_debut);
+    }
+
+    let created = 0;
+    while (nextDate <= effectiveEnd) {
+        const dateHeureIso = nextDate.toISOString();
+        const inserted = await supabaseInsertReturning("cours_collectifs", [{
+            pro_uid: serie.pro_uid,
+            pro_profile_id: serie.pro_profile_id || null,
+            titre: serie.titre,
+            date_heure: dateHeureIso,
+            duree_minutes: serie.duree_minutes,
+            capacite_max: serie.capacite_max,
+            lieu: serie.lieu || null,
+            notes: serie.notes || null,
+            instructeur_profile_id: serie.instructeur_profile_id || null,
+            serie_id: serie.id,
+        }]);
+        const cours = inserted[0];
+        if (!cours) break; // échec d'insertion : on arrête cette série pour ce run, retentée au prochain passage.
+        created++;
+
+        try {
+            await supabaseInsert("agenda_events", [{
+                uid: serie.pro_uid,
+                titre: `👥 ${serie.titre}`,
+                type: "cours_collectif",
+                date_debut: dateHeureIso,
+                duree_minutes: serie.duree_minutes,
+                couleur: `cours:${cours.id}`,
+                pro_profile_id: serie.pro_profile_id || null,
+            }]);
+        } catch (e) {
+            console.error(`generateOccurrencesForSerie: agenda_events insert (${cours.id}):`, e.message);
+        }
+
+        // Reconduction des inscriptions "série" sur cette nouvelle occurrence.
+        const nextBase = [];
+        for (const p of baseParticipants) {
+            const currentCount = await supabaseSelect("cours_collectifs_participants",
+                `cours_id=eq.${cours.id}&statut=neq.annule`);
+            const statut = currentCount.length < serie.capacite_max ? "inscrit" : "en_attente";
+            try {
+                await supabaseInsert("cours_collectifs_participants", [{
+                    cours_id: cours.id,
+                    client_uid: p.client_uid,
+                    client_profile_id: p.client_profile_id || null,
+                    animal_id: p.animal_id || null,
+                    serie_id: serie.id,
+                    statut,
+                    prix: p.prix ?? null,
+                }]);
+                if (statut === "inscrit") nextBase.push(p);
+            } catch (e) {
+                console.error(`generateOccurrencesForSerie: participant carry-over (${cours.id}):`, e.message);
+            }
+        }
+        baseParticipants = nextBase;
+
+        nextDate = new Date(nextDate);
+        nextDate.setDate(nextDate.getDate() + 7);
+    }
+
+    return created;
+}
+
+/**
+ * Schedulée quotidiennement à 8h (Paris). Pour chaque série de cours
+ * collectifs active, complète les occurrences manquantes jusqu'à un horizon
+ * glissant de 8 semaines (ou jusqu'à sa date de fin si plus tôt).
+ */
+exports.generateCoursCollectifsOccurrences = functions
+    .region("europe-west1")
+    .pubsub.schedule("0 8 * * *")
+    .timeZone("Europe/Paris")
+    .onRun(async () => {
+        const parisNow = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Paris"}));
+        const horizonEnd = new Date(parisNow);
+        horizonEnd.setDate(horizonEnd.getDate() + COURS_HORIZON_WEEKS * 7);
+
+        const series = await supabaseSelect("cours_collectifs_series", "statut=eq.actif");
+        let totalCreated = 0;
+        for (const serie of series) {
+            try {
+                totalCreated += await generateOccurrencesForSerie(serie, horizonEnd);
+            } catch (e) {
+                console.error(`generateCoursCollectifsOccurrences: série ${serie.id}:`, e.message);
+            }
+        }
+
+        console.log(`generateCoursCollectifsOccurrences: ${totalCreated} occurrence(s) créée(s) ` +
+            `pour ${series.length} série(s) active(s) (${toDateStr(parisNow)})`);
         return null;
     });

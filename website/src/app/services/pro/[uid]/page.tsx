@@ -60,7 +60,7 @@ interface Slot { date: string; heureDebut: string; heureFin: string; }
 interface Animal { id: number; nom: string; espece: string; }
 interface CoursCollectif {
   id: string; titre: string; date_heure: string; capacite_max: number; lieu?: string | null;
-  pro_profile_id?: string | null;
+  pro_profile_id?: string | null; serie_id?: string | null;
 }
 
 // ─── Données statiques ─────────────────────────────────────────────────────────
@@ -241,6 +241,8 @@ function ProDetailContent() {
   const [participantsCount, setParticipantsCount] = useState<Record<string, number>>({});
   const [forfaitsPublics, setForfaitsPublics] = useState<{ id: string; nom: string; nb_seances: number; prix: number }[]>([]);
   const [inscriptionCours, setInscriptionCours] = useState<CoursCollectif | null>(null);
+  const [inscriptionSerie, setInscriptionSerie] = useState(false);
+  const [myParticipation, setMyParticipation] = useState<Record<string, { id: string; statut: string }>>({});
   const [inscriptionAnimalId, setInscriptionAnimalId] = useState<number | null>(null);
   const [inscrivant, setInscrivant] = useState(false);
   const [isFirstTimeEducationClient, setIsFirstTimeEducationClient] = useState(false);
@@ -332,19 +334,24 @@ function ProDetailContent() {
 
   async function loadCoursCollectifs(proUid: string) {
     const { data: cours } = await supabase.from('cours_collectifs')
-      .select('id, titre, date_heure, capacite_max, lieu, pro_profile_id')
+      .select('id, titre, date_heure, capacite_max, lieu, pro_profile_id, serie_id')
       .eq('pro_uid', proUid).eq('statut', 'planifie')
       .gte('date_heure', new Date().toISOString())
       .order('date_heure');
     const list = (cours ?? []) as CoursCollectif[];
     setCoursCollectifs(list);
     const coursIds = list.map(c => c.id);
-    if (coursIds.length === 0) { setParticipantsCount({}); return; }
+    if (coursIds.length === 0) { setParticipantsCount({}); setMyParticipation({}); return; }
     const { data: parts } = await supabase.from('cours_collectifs_participants')
-      .select('cours_id').in('cours_id', coursIds).neq('statut', 'annule');
+      .select('cours_id, id, statut, client_uid').in('cours_id', coursIds).neq('statut', 'annule');
     const counts: Record<string, number> = {};
-    for (const p of parts ?? []) counts[p.cours_id] = (counts[p.cours_id] ?? 0) + 1;
+    const mine: Record<string, { id: string; statut: string }> = {};
+    for (const p of parts ?? []) {
+      counts[p.cours_id] = (counts[p.cours_id] ?? 0) + 1;
+      if (user && p.client_uid === user.uid) mine[p.cours_id] = { id: p.id, statut: p.statut };
+    }
     setParticipantsCount(counts);
+    setMyParticipation(mine);
   }
 
   async function loadPrestations(proUid: string, catPro: string) {
@@ -368,6 +375,7 @@ function ProDetailContent() {
     if (!user) { router.push('/connexion'); return; }
     setInscriptionCours(cours);
     setInscriptionAnimalId(null);
+    setInscriptionSerie(false);
     if (animaux.length === 0) {
       let q = supabase.from('animaux').select('id, nom, espece')
         .or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`).order('nom');
@@ -381,22 +389,36 @@ function ProDetailContent() {
     if (!inscriptionCours || !user || !pro) return;
     setInscrivant(true);
     try {
-      const { data: current } = await supabase.from('cours_collectifs_participants')
-        .select('id').eq('cours_id', inscriptionCours.id).neq('statut', 'annule');
-      if ((current ?? []).length >= inscriptionCours.capacite_max) {
-        alert('Ce cours est complet.');
-        await loadCoursCollectifs(pro.uid);
-        setInscriptionCours(null);
-        return;
-      }
       const prixCours = pro.tarifs_education?.cours_collectif;
-      await supabase.from('cours_collectifs_participants').insert({
-        cours_id: inscriptionCours.id,
-        client_uid: user.uid,
-        ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
-        animal_id: inscriptionAnimalId || null,
-        ...(prixCours ? { prix: prixCours } : {}),
-      });
+
+      // Cible : cette occurrence seule, ou toutes les occurrences à venir
+      // déjà générées de la série (les vagues futures sont prises en charge
+      // par generateCoursCollectifsOccurrences côté Cloud Function).
+      let occurrences: { id: string; capacite_max: number }[] = [inscriptionCours];
+      if (inscriptionSerie && inscriptionCours.serie_id) {
+        const { data: rows } = await supabase.from('cours_collectifs')
+          .select('id, capacite_max').eq('serie_id', inscriptionCours.serie_id).eq('statut', 'planifie')
+          .gte('date_heure', new Date().toISOString()).order('date_heure');
+        occurrences = (rows ?? []) as { id: string; capacite_max: number }[];
+      }
+
+      let uneEnAttente = false;
+      for (const occ of occurrences) {
+        const { data: current } = await supabase.from('cours_collectifs_participants')
+          .select('id').eq('cours_id', occ.id).neq('statut', 'annule');
+        const complet = (current ?? []).length >= occ.capacite_max;
+        if (complet) uneEnAttente = true;
+        await supabase.from('cours_collectifs_participants').insert({
+          cours_id: occ.id,
+          client_uid: user.uid,
+          ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
+          animal_id: inscriptionAnimalId || null,
+          ...(inscriptionSerie && inscriptionCours.serie_id ? { serie_id: inscriptionCours.serie_id } : {}),
+          ...(prixCours ? { prix: prixCours } : {}),
+          statut: complet ? 'en_attente' : 'inscrit',
+        });
+      }
+
       const animalNom = animaux.find(a => a.id === inscriptionAnimalId)?.nom ?? 'son animal';
       const { data: userData } = await supabase.from('user_profiles').select('firstname, lastname').eq('uid', user.uid).eq('is_main', true).maybeSingle();
       const clientName = userData ? `${userData.firstname ?? ''} ${userData.lastname ?? ''}`.trim() : 'Un client';
@@ -404,13 +426,51 @@ function ProDetailContent() {
       await supabase.from('notifications').insert({
         uid: pro.uid, type: 'cours_collectif_inscription',
         title: `Nouvelle inscription — ${inscriptionCours.titre}`,
-        body: `${clientName || 'Un client'} a inscrit ${animalNom} au cours du ${dateStr}.`,
+        body: inscriptionSerie
+          ? `${clientName || 'Un client'} a inscrit ${animalNom} à toute la série "${inscriptionCours.titre}".`
+          : `${clientName || 'Un client'} a inscrit ${animalNom} au cours du ${dateStr}.`,
         ...(inscriptionCours.pro_profile_id ? { profile_id: inscriptionCours.pro_profile_id } : {}),
         data: { coursId: inscriptionCours.id },
         read: false,
       });
       await loadCoursCollectifs(pro.uid);
       setInscriptionCours(null);
+      if (uneEnAttente) alert('Inscription enregistrée — en liste d\'attente pour une ou plusieurs séances complètes.');
+    } finally {
+      setInscrivant(false);
+    }
+  }
+
+  // Promeut le plus ancien participant en liste d'attente d'un cours quand
+  // une place se libère.
+  async function promouvoirListeAttente(coursId: string) {
+    const { data: attente } = await supabase.from('cours_collectifs_participants')
+      .select('id, client_uid, client_profile_id').eq('cours_id', coursId).eq('statut', 'en_attente')
+      .order('created_at').limit(1);
+    const row = attente?.[0];
+    if (!row) return;
+    await supabase.from('cours_collectifs_participants').update({ statut: 'inscrit' }).eq('id', row.id);
+    const cours = coursCollectifs.find(c => c.id === coursId);
+    if (!cours) return;
+    const dateStr = new Date(cours.date_heure).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Paris' });
+    await supabase.from('notifications').insert({
+      uid: row.client_uid, type: 'cours_collectif_place_liberee',
+      title: 'Une place s\'est libérée !',
+      body: `Vous êtes maintenant inscrit au cours "${cours.titre}" du ${dateStr}.`,
+      ...(row.client_profile_id ? { profile_id: row.client_profile_id } : {}),
+      data: { coursId }, read: false,
+    });
+  }
+
+  async function seDesinscrire(cours: CoursCollectif) {
+    const participation = myParticipation[cours.id];
+    if (!participation || !pro) return;
+    setInscrivant(true);
+    try {
+      const etaisInscrit = participation.statut === 'inscrit';
+      await supabase.from('cours_collectifs_participants').update({ statut: 'annule' }).eq('id', participation.id);
+      if (etaisInscrit) await promouvoirListeAttente(cours.id);
+      await loadCoursCollectifs(pro.uid);
     } finally {
       setInscrivant(false);
     }
@@ -868,15 +928,23 @@ function ProDetailContent() {
                   {coursCollectifs.map(c => {
                     const inscrits = participantsCount[c.id] ?? 0;
                     const complet = inscrits >= c.capacite_max;
+                    const moi = myParticipation[c.id];
                     return (
                       <div key={c.id} className="flex items-center gap-3 rounded-xl border border-[#7B5EA7]/25 bg-[#7B5EA7]/5 p-3">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-[#1E2025] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{c.titre}</p>
+                          <p className="text-sm font-bold text-[#1E2025] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>
+                            {c.serie_id && '🔁 '}{c.titre}
+                          </p>
                           <p className="text-xs text-gray-500">
                             {new Date(c.date_heure).toLocaleString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}
                           </p>
-                          <p className={`text-xs ${complet ? 'text-orange-600' : 'text-gray-400'}`}>
-                            {complet ? 'Complet' : `${inscrits} / ${c.capacite_max} places`}
+                          <p className={`text-xs font-semibold ${
+                            moi?.statut === 'inscrit' ? 'text-[#6E9E57]' : (complet || moi?.statut === 'en_attente') ? 'text-orange-600' : 'text-gray-400 font-normal'
+                          }`}>
+                            {moi?.statut === 'inscrit' ? 'Vous êtes inscrit·e ✓'
+                              : moi?.statut === 'en_attente' ? 'Vous êtes en liste d\'attente'
+                              : complet ? `Complet — ${inscrits} / ${c.capacite_max} places`
+                              : `${inscrits} / ${c.capacite_max} places`}
                           </p>
                           {!!pro.tarifs_education?.cours_collectif && (
                             <p className="text-xs font-bold" style={{ color: '#7B5EA7' }}>
@@ -884,11 +952,18 @@ function ProDetailContent() {
                             </p>
                           )}
                         </div>
-                        <button onClick={() => openInscription(c)} disabled={complet}
-                          className="px-3.5 py-2 rounded-full text-xs font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-                          style={{ background: '#7B5EA7' }}>
-                          {complet ? 'Complet' : "S'inscrire"}
-                        </button>
+                        {moi ? (
+                          <button onClick={() => seDesinscrire(c)} disabled={inscrivant}
+                            className="px-3.5 py-2 rounded-full text-xs font-semibold text-red-500 border border-red-200 disabled:opacity-50 flex-shrink-0">
+                            Se désinscrire
+                          </button>
+                        ) : (
+                          <button onClick={() => openInscription(c)}
+                            className="px-3.5 py-2 rounded-full text-xs font-semibold text-white flex-shrink-0"
+                            style={{ background: complet ? '#EA580C' : '#7B5EA7' }}>
+                            {complet ? "File d'attente" : "S'inscrire"}
+                          </button>
+                        )}
                       </div>
                     );
                   })}
@@ -934,6 +1009,12 @@ function ProDetailContent() {
                   <option key={a.id} value={a.id}>{a.nom} ({a.espece})</option>
                 ))}
               </select>
+              {inscriptionCours.serie_id && (
+                <label className="flex items-start gap-2 text-xs text-gray-600 mb-4">
+                  <input type="checkbox" checked={inscriptionSerie} onChange={e => setInscriptionSerie(e.target.checked)} className="mt-0.5" />
+                  <span>Ce cours est récurrent — s&apos;inscrire à toutes les prochaines séances plutôt qu&apos;à celle-ci seulement.</span>
+                </label>
+              )}
               <div className="flex gap-3">
                 <button onClick={() => setInscriptionCours(null)}
                   className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500">

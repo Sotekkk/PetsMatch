@@ -26,11 +26,13 @@ interface Cours {
   lieu?: string | null;
   notes?: string | null;
   statut: string;
+  serie_id?: string | null;
 }
 
 interface Participant {
   id: string;
   client_uid: string;
+  client_profile_id?: string | null;
   animal_id?: string | null;
   statut: string;
   client_nom?: string;
@@ -70,7 +72,7 @@ export default function EducationPlanningPage() {
         .eq('pro_uid', user.uid).neq('statut', 'refuse')
         .gte('date_heure', windowStart.toISOString()).lt('date_heure', windowEnd.toISOString())
         .order('date_heure'),
-      supabase.from('cours_collectifs').select('id, titre, date_heure, duree_minutes, capacite_max, lieu, notes, statut')
+      supabase.from('cours_collectifs').select('id, titre, date_heure, duree_minutes, capacite_max, lieu, notes, statut, serie_id')
         .eq('pro_uid', user.uid).neq('statut', 'annule')
         .gte('date_heure', windowStart.toISOString()).lt('date_heure', windowEnd.toISOString())
         .order('date_heure'),
@@ -145,6 +147,7 @@ export default function EducationPlanningPage() {
                     const isCours = s.kind === 'cours';
                     const d = new Date(s.data.date_heure);
                     const titre = isCours ? (s.data as Cours).titre : (s.data as Rdv).motif;
+                    const recurrent = isCours && !!(s.data as Cours).serie_id;
                     const sousTitre = isCours
                       ? `${participantsCount[s.data.id] ?? 0} / ${(s.data as Cours).capacite_max} inscrits`
                       : `Individuel — ${(s.data as Rdv).duree_minutes ?? 60} min`;
@@ -156,7 +159,7 @@ export default function EducationPlanningPage() {
                         <div className="w-1 h-9 rounded" style={{ backgroundColor: isCours ? PURPLE : TEAL }} />
                         <span className="w-12 text-sm font-galey font-bold">{HOUR_FMT.format(d)}</span>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-galey font-semibold truncate">{titre}</p>
+                          <p className="text-sm font-galey font-semibold truncate">{recurrent && '🔁 '}{titre}</p>
                           <p className="text-xs font-galey text-gray-500">{sousTitre}</p>
                         </div>
                         {isCours && <span className="text-gray-300">›</span>}
@@ -196,8 +199,12 @@ function CreateCoursModal({ proUid, proProfileId, onClose, onSaved }: {
   const [capacite, setCapacite] = useState('6');
   const [lieu, setLieu] = useState('');
   const [notes, setNotes] = useState('');
+  const [recurrent, setRecurrent] = useState(false);
+  const [dateFin, setDateFin] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const HORIZON_SEMAINES = 8;
 
   async function save() {
     if (!titre.trim()) { setError('Le titre est obligatoire.'); return; }
@@ -205,29 +212,73 @@ function CreateCoursModal({ proUid, proProfileId, onClose, onSaved }: {
     setError('');
     const dateHeure = new Date(`${date}T${heure}:00`);
     const dureeMinutes = parseInt(duree, 10) || 90;
-    const { data: inserted, error: err } = await supabase.from('cours_collectifs').insert({
-      pro_uid: proUid,
-      pro_profile_id: proProfileId,
-      titre: titre.trim(),
-      date_heure: dateHeure.toISOString(),
-      duree_minutes: dureeMinutes,
-      capacite_max: parseInt(capacite, 10) || 6,
-      lieu: lieu.trim() || null,
-      notes: notes.trim() || null,
-    }).select('id').single();
-    if (err) { setError(err.message); setSaving(false); return; }
-    // Visible dans "Mon agenda" (même mécanisme que les RDV confirmés).
-    try {
-      await supabase.from('agenda_events').insert({
-        uid: proUid,
-        titre: `👥 ${titre.trim()}`,
-        type: 'cours_collectif',
+    const capaciteMax = parseInt(capacite, 10) || 6;
+    const lieuVal = lieu.trim() || null;
+    const notesVal = notes.trim() || null;
+
+    let serieId: string | null = null;
+    if (recurrent) {
+      const { data: serie, error: serieErr } = await supabase.from('cours_collectifs_series').insert({
+        pro_uid: proUid,
+        pro_profile_id: proProfileId,
+        titre: titre.trim(),
         date_debut: dateHeure.toISOString(),
         duree_minutes: dureeMinutes,
-        couleur: `cours:${inserted?.id}`,
+        capacite_max: capaciteMax,
+        lieu: lieuVal,
+        notes: notesVal,
+        date_fin: dateFin || null,
+      }).select('id').single();
+      if (serieErr) { setError(serieErr.message); setSaving(false); return; }
+      serieId = serie.id as string;
+    }
+
+    // Horizon de génération : jusqu'à la date de fin choisie si plus proche,
+    // sinon HORIZON_SEMAINES (le reste est repris par la Cloud Function
+    // generateCoursCollectifsOccurrences chaque jour).
+    let horizonFin = new Date(dateHeure);
+    horizonFin.setDate(horizonFin.getDate() + 7 * (HORIZON_SEMAINES - 1));
+    if (recurrent && dateFin) {
+      const finJour = new Date(`${dateFin}T23:59:59`);
+      if (finJour < horizonFin) horizonFin = finJour;
+    }
+    const occurrences = [new Date(dateHeure)];
+    if (recurrent) {
+      let next = new Date(dateHeure);
+      next.setDate(next.getDate() + 7);
+      while (next <= horizonFin) {
+        occurrences.push(new Date(next));
+        next = new Date(next);
+        next.setDate(next.getDate() + 7);
+      }
+    }
+
+    for (const occDate of occurrences) {
+      const { data: inserted, error: err } = await supabase.from('cours_collectifs').insert({
+        pro_uid: proUid,
         pro_profile_id: proProfileId,
-      });
-    } catch { /* ignore */ }
+        titre: titre.trim(),
+        date_heure: occDate.toISOString(),
+        duree_minutes: dureeMinutes,
+        capacite_max: capaciteMax,
+        lieu: lieuVal,
+        notes: notesVal,
+        ...(serieId ? { serie_id: serieId } : {}),
+      }).select('id').single();
+      if (err) { setError(err.message); setSaving(false); return; }
+      // Visible dans "Mon agenda" (même mécanisme que les RDV confirmés).
+      try {
+        await supabase.from('agenda_events').insert({
+          uid: proUid,
+          titre: `👥 ${titre.trim()}`,
+          type: 'cours_collectif',
+          date_debut: occDate.toISOString(),
+          duree_minutes: dureeMinutes,
+          couleur: `cours:${inserted?.id}`,
+          pro_profile_id: proProfileId,
+        });
+      } catch { /* ignore */ }
+    }
     onSaved();
   }
 
@@ -254,6 +305,22 @@ function CreateCoursModal({ proUid, proProfileId, onClose, onSaved }: {
             className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-galey" />
           <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optionnel)" rows={2}
             className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-galey resize-none" />
+          <label className="flex items-center gap-2 text-sm font-galey">
+            <input type="checkbox" checked={recurrent} onChange={e => setRecurrent(e.target.checked)} />
+            Cours récurrent (chaque semaine)
+          </label>
+          {recurrent && (
+            <div className="flex items-center gap-2">
+              <input type="date" value={dateFin} onChange={e => setDateFin(e.target.value)}
+                min={date} placeholder="Date de fin (optionnel)"
+                className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm font-galey" />
+              {dateFin && (
+                <button type="button" onClick={() => setDateFin('')} className="text-xs font-galey text-gray-400 hover:text-gray-600">
+                  Retirer
+                </button>
+              )}
+            </div>
+          )}
         </div>
         {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
         <div className="flex gap-3 mt-4">
@@ -300,14 +367,47 @@ function CoursDetailModal({ cours, onClose, onChanged }: { cours: Cours; onClose
 
   useEffect(() => { load(); }, [load]);
 
+  // Promeut le plus ancien participant en liste d'attente quand une place se
+  // libère (même logique que la Cloud Function generateCoursCollectifsOccurrences
+  // et l'auto-désinscription famille).
+  async function promouvoirListeAttente() {
+    const { data: attente } = await supabase.from('cours_collectifs_participants')
+      .select('id, client_uid, client_profile_id').eq('cours_id', cours.id).eq('statut', 'en_attente')
+      .order('created_at').limit(1);
+    const row = attente?.[0];
+    if (!row) return;
+    await supabase.from('cours_collectifs_participants').update({ statut: 'inscrit' }).eq('id', row.id);
+    const dateStr = new Date(cours.date_heure).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Paris' });
+    await supabase.from('notifications').insert({
+      uid: row.client_uid, type: 'cours_collectif_place_liberee',
+      title: 'Une place s\'est libérée !',
+      body: `Vous êtes maintenant inscrit au cours "${cours.titre}" du ${dateStr}.`,
+      ...(row.client_profile_id ? { profile_id: row.client_profile_id } : {}),
+      data: { coursId: cours.id }, read: false,
+    });
+  }
+
   async function updateStatut(id: string, statut: string) {
+    const ancien = participants.find(p => p.id === id)?.statut;
     await supabase.from('cours_collectifs_participants').update({ statut }).eq('id', id);
+    if (statut === 'annule' && ancien === 'inscrit') await promouvoirListeAttente();
     load();
   }
 
   async function cancelCours() {
     if (!window.confirm('Annuler ce cours ? Les participants ne seront pas notifiés automatiquement.')) return;
     await supabase.from('cours_collectifs').update({ statut: 'annule' }).eq('id', cours.id);
+    onChanged();
+    onClose();
+  }
+
+  async function cancelSerie() {
+    if (!cours.serie_id) return;
+    if (!window.confirm('Annuler toute la série ? Toutes les séances à venir seront annulées ' +
+      '(les séances passées restent inchangées). Les participants ne seront pas notifiés automatiquement.')) return;
+    await supabase.from('cours_collectifs_series').update({ statut: 'annule' }).eq('id', cours.serie_id);
+    await supabase.from('cours_collectifs').update({ statut: 'annule' })
+      .eq('serie_id', cours.serie_id).gt('date_heure', new Date().toISOString());
     onChanged();
     onClose();
   }
@@ -321,7 +421,9 @@ function CoursDetailModal({ cours, onClose, onChanged }: { cours: Cours; onClose
         </div>
         <div className="p-4 overflow-y-auto flex-1">
           <p className="text-sm font-galey font-semibold mb-3">
-            {participants.length} / {cours.capacite_max} inscrits
+            {participants.filter(p => p.statut !== 'en_attente').length} / {cours.capacite_max} inscrits
+            {participants.some(p => p.statut === 'en_attente') &&
+              ` · ${participants.filter(p => p.statut === 'en_attente').length} en liste d'attente`}
           </p>
           {loading ? (
             <div className="flex justify-center py-6"><div className="animate-spin rounded-full h-6 w-6 border-b-2" style={{ borderColor: PURPLE }} /></div>
@@ -345,6 +447,7 @@ function CoursDetailModal({ cours, onClose, onChanged }: { cours: Cours; onClose
                     <select value={p.statut} onChange={e => updateStatut(p.id, e.target.value)}
                       className="text-xs font-galey border border-gray-200 rounded-lg px-2 py-1">
                       <option value="inscrit">Inscrit</option>
+                      <option value="en_attente">En liste d&apos;attente</option>
                       <option value="present">Présent</option>
                       <option value="absent">Absent</option>
                       <option value="annule">Retirer</option>
@@ -355,10 +458,15 @@ function CoursDetailModal({ cours, onClose, onChanged }: { cours: Cours; onClose
             </div>
           )}
         </div>
-        <div className="p-4 border-t border-gray-100">
-          <button onClick={cancelCours} className="w-full text-sm font-galey font-semibold text-red-500 border border-red-200 rounded-xl py-2">
+        <div className="p-4 border-t border-gray-100 flex gap-2">
+          <button onClick={cancelCours} className="flex-1 text-sm font-galey font-semibold text-red-500 border border-red-200 rounded-xl py-2">
             Annuler ce cours
           </button>
+          {cours.serie_id && (
+            <button onClick={cancelSerie} className="flex-1 text-sm font-galey font-semibold text-red-500 border border-red-200 rounded-xl py-2">
+              Annuler la série
+            </button>
+          )}
         </div>
       </div>
     </div>

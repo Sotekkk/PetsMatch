@@ -17,6 +17,8 @@ class EducationPlanningPage extends StatefulWidget {
 class _EducationPlanningPageState extends State<EducationPlanningPage> {
   final _supa = Supabase.instance.client;
 
+  static const List<String> _jours = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+
   List<Map<String, dynamic>> _rdvs = [];
   List<Map<String, dynamic>> _cours = [];
   Map<String, int> _participantsCount = {};
@@ -186,8 +188,10 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
     final titre = isCours
         ? (s['titre']?.toString() ?? 'Cours collectif')
         : (s['motif']?.toString() ?? 'RDV');
+    final estRecurrent = isCours && s['serie_id'] != null;
     final sousTitre = isCours
         ? '${_participantsCount[s['id']] ?? 0} / ${s['capacite_max']} inscrits'
+            '${estRecurrent && d != null ? ' · chaque ${_jours[d.weekday - 1]}' : ''}'
         : 'Individuel — ${s['duree_minutes'] ?? 60} min';
 
     return GestureDetector(
@@ -211,7 +215,14 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
           const SizedBox(width: 10),
           SizedBox(width: 48, child: Text(heure, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13))),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+            Row(children: [
+              if (estRecurrent) const Padding(
+                padding: EdgeInsets.only(right: 4),
+                child: Icon(Icons.repeat, size: 13, color: _kEducationPurple),
+              ),
+              Flexible(child: Text(titre, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13))),
+            ]),
             Text(sousTitre, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
           ])),
           if (isCours) Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 20),
@@ -239,6 +250,9 @@ class _CoursCollectifSheetState extends State<_CoursCollectifSheet> {
   DateTime _date = DateTime.now().add(const Duration(days: 1));
   TimeOfDay _heure = const TimeOfDay(hour: 18, minute: 0);
   bool _saving = false;
+  bool _recurrent = false;
+  DateTime? _dateFin;
+  static const int _horizonSemaines = 8;
 
   @override
   void dispose() {
@@ -254,29 +268,69 @@ class _CoursCollectifSheetState extends State<_CoursCollectifSheet> {
     try {
       final dateHeure = DateTime(_date.year, _date.month, _date.day, _heure.hour, _heure.minute);
       final dureeMinutes = int.tryParse(_dureeCtrl.text.trim()) ?? 90;
+      final capaciteMax = int.tryParse(_capaciteCtrl.text.trim()) ?? 6;
       final titre = _titreCtrl.text.trim();
-      final inserted = await _supa.from('cours_collectifs').insert({
-        'pro_uid': uid,
-        'pro_profile_id': User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
-        'titre': titre,
-        'date_heure': dateHeure.toIso8601String(),
-        'duree_minutes': dureeMinutes,
-        'capacite_max': int.tryParse(_capaciteCtrl.text.trim()) ?? 6,
-        'lieu': _lieuCtrl.text.trim().isEmpty ? null : _lieuCtrl.text.trim(),
-        'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
-      }).select('id').single();
-      // Visible dans "Mon agenda" (même mécanisme que les RDV confirmés).
-      try {
-        await _supa.from('agenda_events').insert({
-          'uid': uid,
-          'titre': '👥 $titre',
-          'type': 'cours_collectif',
+      final lieu = _lieuCtrl.text.trim().isEmpty ? null : _lieuCtrl.text.trim();
+      final notes = _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim();
+      final profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+
+      String? serieId;
+      if (_recurrent) {
+        final serie = await _supa.from('cours_collectifs_series').insert({
+          'pro_uid': uid,
+          'pro_profile_id': profileId,
+          'titre': titre,
           'date_debut': dateHeure.toIso8601String(),
           'duree_minutes': dureeMinutes,
-          'couleur': 'cours:${inserted['id']}',
-          'pro_profile_id': User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
-        });
-      } catch (_) {}
+          'capacite_max': capaciteMax,
+          'lieu': lieu,
+          'notes': notes,
+          if (_dateFin != null) 'date_fin': _dateFin!.toIso8601String().substring(0, 10),
+        }).select('id').single();
+        serieId = serie['id'] as String;
+      }
+
+      // Horizon de génération : jusqu'à la date de fin choisie si elle est
+      // plus proche, sinon _horizonSemaines (le reste est pris en charge par
+      // la Cloud Function generateCoursCollectifsOccurrences chaque jour).
+      var horizonFin = dateHeure.add(Duration(days: 7 * (_horizonSemaines - 1)));
+      if (_recurrent && _dateFin != null && _dateFin!.isBefore(horizonFin)) {
+        horizonFin = DateTime(_dateFin!.year, _dateFin!.month, _dateFin!.day, 23, 59);
+      }
+      final occurrences = <DateTime>[dateHeure];
+      if (_recurrent) {
+        var next = dateHeure.add(const Duration(days: 7));
+        while (!next.isAfter(horizonFin)) {
+          occurrences.add(next);
+          next = next.add(const Duration(days: 7));
+        }
+      }
+
+      for (final occDate in occurrences) {
+        final inserted = await _supa.from('cours_collectifs').insert({
+          'pro_uid': uid,
+          'pro_profile_id': profileId,
+          'titre': titre,
+          'date_heure': occDate.toIso8601String(),
+          'duree_minutes': dureeMinutes,
+          'capacite_max': capaciteMax,
+          'lieu': lieu,
+          'notes': notes,
+          if (serieId != null) 'serie_id': serieId,
+        }).select('id').single();
+        // Visible dans "Mon agenda" (même mécanisme que les RDV confirmés).
+        try {
+          await _supa.from('agenda_events').insert({
+            'uid': uid,
+            'titre': '👥 $titre',
+            'type': 'cours_collectif',
+            'date_debut': occDate.toIso8601String(),
+            'duree_minutes': dureeMinutes,
+            'couleur': 'cours:${inserted['id']}',
+            'pro_profile_id': profileId,
+          });
+        } catch (_) {}
+      }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
@@ -334,6 +388,45 @@ class _CoursCollectifSheetState extends State<_CoursCollectifSheet> {
             const SizedBox(height: 12),
             TextField(controller: _notesCtrl, maxLines: 3, decoration: const InputDecoration(
                 labelText: 'Notes (optionnel)', border: OutlineInputBorder())),
+            const SizedBox(height: 12),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              activeThumbColor: _kEducationPurple,
+              value: _recurrent,
+              onChanged: (v) => setState(() => _recurrent = v),
+              title: const Text('Cours récurrent (chaque semaine)',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+              subtitle: Text(
+                _recurrent
+                    ? 'Se répète chaque ${DateFormat('EEEE', 'fr_FR').format(_date)} à ${_heure.format(context)}'
+                    : 'Une seule séance, ponctuelle',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500),
+              ),
+            ),
+            if (_recurrent) ...[
+              const SizedBox(height: 4),
+              Row(children: [
+                Expanded(child: OutlinedButton(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _dateFin ?? _date.add(const Duration(days: 56)),
+                      firstDate: _date.add(const Duration(days: 7)),
+                      lastDate: DateTime.now().add(const Duration(days: 730)),
+                    );
+                    if (picked != null) setState(() => _dateFin = picked);
+                  },
+                  child: Text(_dateFin == null
+                      ? 'Pas de date de fin'
+                      : 'Jusqu\'au ${DateFormat('dd/MM/yyyy').format(_dateFin!)}'),
+                )),
+                if (_dateFin != null) IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: 'Retirer la date de fin',
+                  onPressed: () => setState(() => _dateFin = null),
+                ),
+              ]),
+            ],
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -407,8 +500,35 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
   }
 
   Future<void> _updateStatut(String participantId, String statut) async {
+    final ancien = _participants.firstWhere((p) => p['id'] == participantId, orElse: () => {})['statut'];
     await _supa.from('cours_collectifs_participants').update({'statut': statut}).eq('id', participantId);
+    if (statut == 'annule' && ancien == 'inscrit') await _promouvoirListeAttente();
     _load();
+  }
+
+  /// Promeut le plus ancien participant en liste d'attente de ce cours quand
+  /// une place se libère (retrait ou absence gérée en amont par le pro).
+  Future<void> _promouvoirListeAttente() async {
+    try {
+      final attente = await _supa.from('cours_collectifs_participants')
+          .select().eq('cours_id', widget.coursId).eq('statut', 'en_attente')
+          .order('created_at').limit(1);
+      if (attente.isEmpty) return;
+      final row = attente.first;
+      await _supa.from('cours_collectifs_participants').update({'statut': 'inscrit'}).eq('id', row['id']);
+      final titre = _cours?['titre']?.toString() ?? 'un cours';
+      final d = DateTime.tryParse(_cours?['date_heure']?.toString() ?? '');
+      final dateStr = d != null ? DateFormat('dd/MM à HH:mm').format(d) : '';
+      await _supa.from('notifications').insert({
+        'uid': row['client_uid'],
+        'type': 'cours_collectif_place_liberee',
+        'title': 'Une place s\'est libérée !',
+        'body': 'Vous êtes maintenant inscrit au cours "$titre"${dateStr.isNotEmpty ? ' du $dateStr' : ''}.',
+        if (row['client_profile_id'] != null) 'profile_id': row['client_profile_id'],
+        'data': <String, dynamic>{'coursId': widget.coursId},
+        'read': false,
+      });
+    } catch (_) {}
   }
 
   Future<void> _cancelCours() async {
@@ -428,6 +548,30 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
     if (mounted) Navigator.pop(context);
   }
 
+  Future<void> _cancelSerie() async {
+    final serieId = _cours?['serie_id']?.toString();
+    if (serieId == null) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Annuler toute la série ?'),
+        content: const Text('Toutes les séances à venir de ce cours récurrent seront annulées. '
+            'Les séances passées restent inchangées. Les participants ne seront pas notifiés automatiquement.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Non')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Oui, tout annuler')),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    await _supa.from('cours_collectifs_series').update({'statut': 'annule'}).eq('id', serieId);
+    await _supa.from('cours_collectifs')
+        .update({'statut': 'annule'})
+        .eq('serie_id', serieId)
+        .gt('date_heure', DateTime.now().toIso8601String());
+    if (mounted) Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final titre = _cours?['titre']?.toString() ?? 'Cours collectif';
@@ -439,7 +583,17 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
         foregroundColor: Colors.white,
         title: Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         actions: [
-          IconButton(icon: const Icon(Icons.cancel_outlined), tooltip: 'Annuler le cours', onPressed: _cancelCours),
+          if (_cours?['serie_id'] != null)
+            PopupMenuButton<String>(
+              onSelected: (v) => v == 'serie' ? _cancelSerie() : _cancelCours(),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'cours', child: Text('Annuler ce cours')),
+                PopupMenuItem(value: 'serie', child: Text('Annuler toute la série')),
+              ],
+              icon: const Icon(Icons.cancel_outlined),
+            )
+          else
+            IconButton(icon: const Icon(Icons.cancel_outlined), tooltip: 'Annuler le cours', onPressed: _cancelCours),
         ],
       ),
       body: _loading
@@ -447,8 +601,14 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Text('${_participants.length} / $capacite inscrits',
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                Builder(builder: (_) {
+                  final enAttente = _participants.where((p) => p['statut'] == 'en_attente').length;
+                  final inscrits = _participants.length - enAttente;
+                  return Text(
+                    '$inscrits / $capacite inscrits${enAttente > 0 ? ' · $enAttente en liste d\'attente' : ''}',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15),
+                  );
+                }),
                 const SizedBox(height: 12),
                 if (_participants.isEmpty)
                   Text('Aucun participant inscrit pour l\'instant.',
@@ -489,10 +649,11 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
                               color: p['statut'] == 'present' ? const Color(0xFFEEF5EA)
-                                  : p['statut'] == 'absent' ? Colors.red.shade50 : Colors.grey.shade100,
+                                  : p['statut'] == 'absent' ? Colors.red.shade50
+                                  : p['statut'] == 'en_attente' ? Colors.orange.shade50 : Colors.grey.shade100,
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: Text(p['statut'] as String? ?? 'inscrit',
+                            child: Text(p['statut'] == 'en_attente' ? 'en attente' : (p['statut'] as String? ?? 'inscrit'),
                                 style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
                           ),
                         ),

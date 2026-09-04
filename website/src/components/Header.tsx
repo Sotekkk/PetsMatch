@@ -694,6 +694,7 @@ function getNotifUrl(n: Notif): string | null {
     case 'rdv_rappel':
       return '/agenda';
     case 'cours_collectif_rappel':
+    case 'cours_collectif_place_liberee':
       return '/education/planning';
     case 'promenade_join':
     case 'promenade_accepte':
@@ -1236,6 +1237,7 @@ export default function Header() {
                               : n.type === 'rdv_confirme' ? '✅'
                               : n.type === 'rdv_modifie' ? '✏️'
                               : n.type === 'rdv_rappel' || n.type === 'cours_collectif_rappel' ? '⏰'
+                              : n.type === 'cours_collectif_place_liberee' ? '🎉'
                               : n.type === 'rdv_refuse' || n.type?.includes('annule') ? '❌'
                               : n.type?.startsWith('rdv') ? '📅'
                               : n.type === 'employee_invite' ? '🤝'

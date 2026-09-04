@@ -41,6 +41,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   late TabController _tabController;
   List<Map<String, dynamic>> _coursCollectifs = [];
   Map<String, int> _participantsCount = {};
+  Map<String, Map<String, dynamic>> _monInscription = {}; // cours_id -> {id, statut}
   bool _inscrivant = false;
   List<Map<String, dynamic>> _prestations = [];
   List<Map<String, dynamic>> _forfaitsPublics = []; // éducateur : forfaits affiche_public
@@ -161,16 +162,75 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
       final cours = List<Map<String, dynamic>>.from(rows as List);
       final coursIds = cours.map((c) => c['id'] as String).toList();
       final counts = <String, int>{};
+      final mine = <String, Map<String, dynamic>>{};
+      final uid = FirebaseAuth.instance.currentUser?.uid;
       if (coursIds.isNotEmpty) {
         final participants = await _supa.from('cours_collectifs_participants')
-            .select('cours_id').inFilter('cours_id', coursIds).neq('statut', 'annule');
+            .select('cours_id, id, statut, client_uid').inFilter('cours_id', coursIds).neq('statut', 'annule');
         for (final p in participants as List) {
           final cid = p['cours_id'] as String;
           counts[cid] = (counts[cid] ?? 0) + 1;
+          if (uid != null && p['client_uid'] == uid) mine[cid] = p;
         }
       }
-      if (mounted) setState(() { _coursCollectifs = cours; _participantsCount = counts; });
+      if (mounted) setState(() { _coursCollectifs = cours; _participantsCount = counts; _monInscription = mine; });
     } catch (_) {}
+  }
+
+  /// Promeut le plus ancien inscrit en liste d'attente d'un cours quand une
+  /// place se libère (annulation/désinscription) — reconduit le principe déjà
+  /// utilisé pour la génération de série côté Cloud Function.
+  Future<void> _promouvoirListeAttente(String coursId) async {
+    try {
+      final attente = await _supa.from('cours_collectifs_participants')
+          .select().eq('cours_id', coursId).eq('statut', 'en_attente')
+          .order('created_at').limit(1);
+      final row = attente.isNotEmpty ? attente.first : null;
+      if (row == null) return;
+      await _supa.from('cours_collectifs_participants').update({'statut': 'inscrit'}).eq('id', row['id']);
+      final cours = await _supa.from('cours_collectifs').select('titre, date_heure, pro_profile_id')
+          .eq('id', coursId).maybeSingle();
+      if (cours != null) {
+        final dateStr = DateFormat('dd/MM à HH:mm').format(DateTime.tryParse(cours['date_heure']?.toString() ?? '') ?? DateTime.now());
+        await _supa.from('notifications').insert({
+          'uid': row['client_uid'],
+          'type': 'cours_collectif_place_liberee',
+          'title': 'Une place s\'est libérée !',
+          'body': 'Vous êtes maintenant inscrit au cours "${cours['titre']}" du $dateStr.',
+          if (row['client_profile_id'] != null) 'profile_id': row['client_profile_id'],
+          'data': <String, dynamic>{'coursId': coursId},
+          'read': false,
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _seDesinscrire(Map<String, dynamic> cours) async {
+    final coursId = cours['id'] as String;
+    final participation = _monInscription[coursId];
+    if (participation == null || _inscrivant) return;
+    setState(() => _inscrivant = true);
+    try {
+      final etaisInscrit = participation['statut'] == 'inscrit';
+      await _supa.from('cours_collectifs_participants').update({'statut': 'annule'}).eq('id', participation['id']);
+      if (etaisInscrit) await _promouvoirListeAttente(coursId);
+      await _loadCoursCollectifs();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Désinscription confirmée.', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.black87, behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red, behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _inscrivant = false);
+    }
   }
 
   Future<void> _loadPrestations() async {
@@ -202,6 +262,41 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   Future<void> _inscrireAuCours(Map<String, dynamic> cours) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null || _inscrivant) return;
+
+    // Cours récurrent : proposer de s'inscrire à cette séance seule ou à
+    // toutes les séances à venir de la série.
+    var touteLaSerie = false;
+    final serieId = cours['serie_id']?.toString();
+    if (serieId != null && mounted) {
+      final choix = await showModalBottomSheet<bool>(
+        context: context,
+        builder: (ctx) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Ce cours est récurrent', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+              const SizedBox(height: 4),
+              Text('Vous pouvez vous inscrire à cette séance seule, ou à toutes les prochaines séances de la série.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+              const SizedBox(height: 16),
+              SizedBox(width: double.infinity, child: OutlinedButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cette séance seulement', style: TextStyle(fontFamily: 'Galey')),
+              )),
+              const SizedBox(height: 8),
+              SizedBox(width: double.infinity, child: ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7B5EA7)),
+                child: const Text('Toute la série', style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
+              )),
+            ]),
+          ),
+        ),
+      );
+      if (choix == null || !mounted) return;
+      touteLaSerie = choix;
+    }
+
     final animal = await AnimalPickerSheet.pickOne(
       context,
       uid: uid,
@@ -211,28 +306,43 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
     if (animal == null || !mounted) return;
     setState(() => _inscrivant = true);
     try {
-      final coursId = cours['id'] as String;
-      final current = await _supa.from('cours_collectifs_participants')
-          .select('id').eq('cours_id', coursId).neq('statut', 'annule');
-      final capacite = cours['capacite_max'] as int? ?? 0;
-      if ((current as List).length >= capacite) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Ce cours est complet.', style: TextStyle(fontFamily: 'Galey')),
-            backgroundColor: Colors.orange, behavior: SnackBarBehavior.floating,
-          ));
-        }
-        return;
-      }
       final tarifs = _proData?['tarifs_education'];
       final prix = tarifs is Map ? (tarifs['cours_collectif'] as num?) : null;
-      await _supa.from('cours_collectifs_participants').insert({
-        'cours_id': coursId,
-        'client_uid': uid,
-        if (User_Info.activeProfileId.isNotEmpty) 'client_profile_id': User_Info.activeProfileId,
-        'animal_id': animal['id']?.toString(),
-        if (prix != null) 'prix': prix,
-      });
+      final clientProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+      final animalId = animal['id']?.toString();
+
+      // Cible : cette occurrence seule, ou toutes les occurrences à venir déjà
+      // générées de la série (les vagues futures sont prises en charge par
+      // generateCoursCollectifsOccurrences côté Cloud Function).
+      List<Map<String, dynamic>> occurrences;
+      if (touteLaSerie && serieId != null) {
+        final rows = await _supa.from('cours_collectifs').select('id, capacite_max, titre, date_heure, pro_profile_id')
+            .eq('serie_id', serieId).eq('statut', 'planifie')
+            .gte('date_heure', DateTime.now().toIso8601String()).order('date_heure');
+        occurrences = List<Map<String, dynamic>>.from(rows as List);
+      } else {
+        occurrences = [cours];
+      }
+
+      var uneEnAttente = false;
+      for (final occ in occurrences) {
+        final occId = occ['id'] as String;
+        final current = await _supa.from('cours_collectifs_participants')
+            .select('id').eq('cours_id', occId).neq('statut', 'annule');
+        final capacite = occ['capacite_max'] as int? ?? cours['capacite_max'] as int? ?? 0;
+        final complet = (current as List).length >= capacite;
+        if (complet) uneEnAttente = true;
+        await _supa.from('cours_collectifs_participants').insert({
+          'cours_id': occId,
+          'client_uid': uid,
+          if (clientProfileId != null) 'client_profile_id': clientProfileId,
+          'animal_id': animalId,
+          if (touteLaSerie && serieId != null) 'serie_id': serieId,
+          if (prix != null) 'prix': prix,
+          'statut': complet ? 'en_attente' : 'inscrit',
+        });
+      }
+
       final clientName = FirebaseAuth.instance.currentUser?.displayName?.isNotEmpty == true
           ? FirebaseAuth.instance.currentUser!.displayName!
           : 'Un client';
@@ -243,17 +353,20 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
           'uid': proUid,
           'type': 'cours_collectif_inscription',
           'title': 'Nouvelle inscription — ${cours['titre']}',
-          'body': '$clientName a inscrit ${animal['nom'] ?? 'son animal'} au cours du $dateStr.',
+          'body': touteLaSerie
+              ? '$clientName a inscrit ${animal['nom'] ?? 'son animal'} à toute la série "${cours['titre']}".'
+              : '$clientName a inscrit ${animal['nom'] ?? 'son animal'} au cours du $dateStr.',
           if (cours['pro_profile_id'] != null) 'profile_id': cours['pro_profile_id'],
-          'data': <String, dynamic>{'coursId': coursId},
+          'data': <String, dynamic>{'coursId': cours['id']},
           'read': false,
         });
       }
       await _loadCoursCollectifs();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Inscription confirmée !', style: TextStyle(fontFamily: 'Galey')),
-          backgroundColor: Color(0xFF6E9E57), behavior: SnackBarBehavior.floating,
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(uneEnAttente ? 'Inscrit·e — en liste d\'attente pour une ou plusieurs séances complètes.' : 'Inscription confirmée !',
+              style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: uneEnAttente ? Colors.orange : const Color(0xFF6E9E57), behavior: SnackBarBehavior.floating,
         ));
       }
     } catch (e) {
@@ -892,6 +1005,9 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                   final inscrits = _participantsCount[c['id']] ?? 0;
                   final capacite = c['capacite_max'] as int? ?? 0;
                   final complet = inscrits >= capacite;
+                  final recurrent = c['serie_id'] != null;
+                  final moi = _monInscription[c['id']];
+                  final statutMoi = moi?['statut'] as String?;
                   final tarifs = _proData?['tarifs_education'];
                   final prixCours = tarifs is Map ? (tarifs['cours_collectif'] as num?) : null;
                   return Container(
@@ -904,30 +1020,54 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                     ),
                     child: Row(children: [
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(c['titre']?.toString() ?? 'Cours collectif',
-                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+                        Row(children: [
+                          if (recurrent) const Padding(
+                            padding: EdgeInsets.only(right: 4),
+                            child: Icon(Icons.repeat, size: 13, color: Color(0xFF7B5EA7)),
+                          ),
+                          Flexible(child: Text(c['titre']?.toString() ?? 'Cours collectif', overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13))),
+                        ]),
                         if (d != null)
                           Text(DateFormat('EEEE d MMMM à HH:mm', 'fr_FR').format(d),
                               style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
-                        Text(complet ? 'Complet' : '$inscrits / $capacite places',
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                                color: complet ? Colors.orange.shade700 : Colors.grey.shade500)),
+                        Text(
+                          statutMoi == 'inscrit' ? 'Vous êtes inscrit·e ✓'
+                              : statutMoi == 'en_attente' ? 'Vous êtes en liste d\'attente'
+                              : complet ? 'Complet — $inscrits / $capacite places'
+                              : '$inscrits / $capacite places',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: statutMoi != null ? FontWeight.w700 : FontWeight.normal,
+                              color: statutMoi == 'inscrit' ? const Color(0xFF6E9E57)
+                                  : (complet || statutMoi == 'en_attente') ? Colors.orange.shade700 : Colors.grey.shade500),
+                        ),
                         if (prixCours != null && prixCours > 0)
                           Text('${prixCours.toStringAsFixed(0)} €',
                               style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF7B5EA7))),
                       ])),
                       const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: (complet || _inscrivant) ? null : () => _inscrireAuCours(c),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF7B5EA7),
-                          disabledBackgroundColor: Colors.grey.shade300,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      if (statutMoi != null)
+                        OutlinedButton(
+                          onPressed: _inscrivant ? null : () => _seDesinscrire(c),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red.shade400,
+                            side: BorderSide(color: Colors.red.shade200),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          ),
+                          child: const Text('Se désinscrire', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
+                        )
+                      else
+                        ElevatedButton(
+                          onPressed: _inscrivant ? null : () => _inscrireAuCours(c),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: complet ? Colors.orange.shade700 : const Color(0xFF7B5EA7),
+                            disabledBackgroundColor: Colors.grey.shade300,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          ),
+                          child: Text(complet ? 'File d\'attente' : 'S\'inscrire',
+                              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: Colors.white)),
                         ),
-                        child: Text(complet ? 'Complet' : 'S\'inscrire',
-                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: Colors.white)),
-                      ),
                     ]),
                   );
                 }),
