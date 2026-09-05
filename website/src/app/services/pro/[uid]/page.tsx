@@ -578,13 +578,14 @@ function ProDetailContent() {
       for (const slot of targetSlots) {
         const dateDebut = new Date(`${slot.date}T${slot.heureDebut}`);
         const dateFin   = new Date(`${slot.date}T${slot.heureFin}`);
+        const dureeMinutes = Math.round((dateFin.getTime() - dateDebut.getTime()) / 60000);
         await supabase.from('rdv').insert({
           pro_uid: pro.uid, client_uid: user.uid,
           animal_id: isTaxi ? (animauxTaxiIds[0] ?? null) : (selectedAnimalId || null),
-          date_debut: dateDebut.toISOString(), date_fin: dateFin.toISOString(),
-          statut: 'en_attente',
+          date_heure: dateDebut.toISOString(), duree_minutes: dureeMinutes,
+          statut: 'demande',
           motif: premiereVisite !== null ? `${motifLabel}${premiereVisite ? ' (1ère visite)' : ''}` : motifLabel,
-          notes: notes || null,
+          notes_client: notes || null,
           pro_profile_id: pro.profileTableId || null,
           ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
           ...(isTaxi ? {
