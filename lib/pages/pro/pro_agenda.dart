@@ -3189,6 +3189,23 @@ class _RdvCard extends StatelessWidget {
                   const SizedBox(width: 6),
                   Expanded(child: Text(lieu, style: const TextStyle(fontFamily: 'Galey',
                       fontSize: 13, color: Color(0xFF0C5C6C)))),
+                  GestureDetector(
+                    onTap: () {
+                      final lat = rdv['lieu_lat'], lng = rdv['lieu_lng'];
+                      final q = (lat != null && lng != null) ? '$lat,$lng' : Uri.encodeComponent(lieu);
+                      launchUrl(Uri.parse('https://www.google.com/maps/search/?api=1&query=$q'),
+                          mode: LaunchMode.externalApplication);
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.only(left: 6),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.directions_outlined, size: 14, color: Color(0xFF0C5C6C)),
+                        SizedBox(width: 3),
+                        Text('Itinéraire', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                            fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
+                      ]),
+                    ),
+                  ),
                 ]),
               ],
               const SizedBox(height: 4),

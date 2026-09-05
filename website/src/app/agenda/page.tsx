@@ -20,6 +20,7 @@ interface RdvInfo {
   lieu?: string | null;
   lieu_lat?: number | null;
   lieu_lng?: number | null;
+  annulation_limite_h?: number | null; // limite d'annulation choisie par le pro
 }
 
 interface AgendaEvent {
@@ -470,6 +471,24 @@ export default function AgendaPage() {
         const rec = r as RdvInfo;
         rdvMap[rec.id] = rec;
       }
+      // Limite d'annulation du pro (par pro_profile_id, sinon uid + is_main).
+      try {
+        const ppids = [...new Set(Object.values(rdvMap).map(r => r.pro_profile_id).filter(Boolean) as string[])];
+        const uids = [...new Set(Object.values(rdvMap).filter(r => !r.pro_profile_id).map(r => r.pro_uid))];
+        const byPpid: Record<string, number> = {};
+        const byUid: Record<string, number> = {};
+        if (ppids.length) {
+          const { data } = await supabase.from('user_profiles').select('id, annulation_limite_h').in('id', ppids);
+          for (const p of data ?? []) byPpid[p.id] = Number(p.annulation_limite_h) || 0;
+        }
+        if (uids.length) {
+          const { data } = await supabase.from('user_profiles').select('uid, annulation_limite_h').in('uid', uids).eq('is_main', true);
+          for (const p of data ?? []) byUid[p.uid] = Number(p.annulation_limite_h) || 0;
+        }
+        for (const r of Object.values(rdvMap)) {
+          r.annulation_limite_h = r.pro_profile_id ? (byPpid[r.pro_profile_id] ?? 0) : (byUid[r.pro_uid] ?? 0);
+        }
+      } catch { /* noop */ }
       setEvents(list.map(e => ({ ...e, rdv: e.rdv_id ? rdvMap[e.rdv_id] ?? null : null })));
     } else {
       setEvents(list);
@@ -1401,7 +1420,11 @@ function EventCard({ event: e, onDelete, onAnnuler, onModifier, onNavigateToAnim
 }) {
   const color  = colorFor(e);
   const isRdv  = !!e.rdv_id;
-  const plus24h = isRdv && new Date(e.date_debut).getTime() - Date.now() > 24 * 3600 * 1000;
+  // Le client peut annuler/modifier tant qu'on est à plus de `limite` heures
+  // du RDV (limite 0 = toujours possible, choisi par le pro).
+  const annulLimiteH = Number(e.rdv?.annulation_limite_h) || 0;
+  const plus24h = isRdv && (annulLimiteH <= 0
+    || new Date(e.date_debut).getTime() - Date.now() > annulLimiteH * 3600 * 1000);
   const animalId = e.animal_id ?? e.rdv?.animal_id;
   const lieu = e.rdv?.lieu;
   const lieuLat = e.rdv?.lieu_lat;
@@ -1460,7 +1483,7 @@ function EventCard({ event: e, onDelete, onAnnuler, onModifier, onNavigateToAnim
       )}
       {isRdv && !plus24h && (
         <p className="text-[10px] text-gray-400 flex items-center gap-1">
-          <span>🔒</span> Annulation impossible moins de 24h avant
+          <span>🔒</span> Annulation impossible moins de {annulLimiteH}h avant — contactez le professionnel
         </p>
       )}
     </div>

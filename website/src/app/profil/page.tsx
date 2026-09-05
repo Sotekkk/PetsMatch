@@ -890,6 +890,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [tarifsTaxi, setTarifsTaxi] = useState<Record<string, number>>({});
   const [educationBilanRequis, setEducationBilanRequis] = useState(true);
   const [delaiMinReservationH, setDelaiMinReservationH] = useState(0);
+  const [annulationLimiteH, setAnnulationLimiteH] = useState(0);
   const [tarifsEducationVisibles, setTarifsEducationVisibles] = useState(false);
   const [tarifsEducationExtra, setTarifsEducationExtra] = useState<{ label: string; prix: number; description: string }[]>([]);
   const [educationBilanDescription, setEducationBilanDescription] = useState('');
@@ -996,6 +997,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         }
         setEducationBilanRequis((r.education_bilan_requis as boolean) ?? true);
         setDelaiMinReservationH((r.delai_min_reservation_h as number | null) ?? 0);
+        setAnnulationLimiteH((r.annulation_limite_h as number | null) ?? 0);
         setTrajetOrigineDefaut((r.trajet_origine_defaut as string) ?? 'cabinet');
         setAutreDomicileAdresse((r.autre_domicile_adresse as string) ?? '');
         if (r.autre_domicile_lat != null && r.autre_domicile_lng != null) {
@@ -1184,7 +1186,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         ? { acaced: acacedNum.trim(), acaced_numero: acacedNum.trim() }
         : {}),
       ...(CAT_PRO_AVEC_RDV.has((data?.profile_type ?? data?.cat_pro) ?? '')
-        ? { delai_min_reservation_h: delaiMinReservationH }
+        ? { delai_min_reservation_h: delaiMinReservationH, annulation_limite_h: annulationLimiteH }
         : {}),
     };
 
@@ -1532,6 +1534,18 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                 <option value={24}>24 h à l&apos;avance</option>
                 <option value={48}>48 h à l&apos;avance</option>
                 <option value={72}>72 h à l&apos;avance</option>
+              </select>
+            </Field>
+            <p className="text-xs text-gray-400 mt-4 mb-2">
+              Jusqu&apos;à quand un client peut annuler ou modifier son RDV lui-même.
+              Au-delà, il devra vous contacter. Vous pouvez toujours annuler de votre côté.
+            </p>
+            <Field label="Annulation par le client">
+              <select value={annulationLimiteH} onChange={e => setAnnulationLimiteH(Number(e.target.value))} className={inputCls}>
+                <option value={0}>Toujours possible</option>
+                <option value={24}>Jusqu&apos;à 24 h avant</option>
+                <option value={48}>Jusqu&apos;à 48 h avant</option>
+                <option value={72}>Jusqu&apos;à 72 h avant</option>
               </select>
             </Field>
           </Card>

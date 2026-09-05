@@ -23,6 +23,7 @@ const MARGE_TRAJET_MIN = 15;
 interface Prestation {
   id: string; nom: string; description?: string | null;
   duree_minutes: number; prix?: number | null; bilan_requis: boolean; domicile_ok: boolean;
+  lieu_adresse?: string | null; lieu_lat?: number | null; lieu_lng?: number | null;
 }
 interface Animal { id: number | string; nom: string; espece: string; }
 interface Props {
@@ -120,7 +121,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
       const firstTime = (priorRdv ?? []).length === 0;
       setIsFirstTime(firstTime);
 
-      let pQ = supabase.from('prestations_education').select('id, nom, description, duree_minutes, prix, bilan_requis, domicile_ok')
+      let pQ = supabase.from('prestations_education').select('id, nom, description, duree_minutes, prix, bilan_requis, domicile_ok, lieu_adresse, lieu_lat, lieu_lng')
         .eq('pro_uid', proUid).eq('actif', true);
       if (profileId) pQ = pQ.eq('pro_profile_id', profileId);
       const { data: pRows } = await pQ.order('ordre').order('created_at');
@@ -292,6 +293,10 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
         ...(notes.trim() ? { notes_client: notes.trim() } : {}),
         ...(domicile && adresseDomicile.trim() ? { lieu: adresseDomicile.trim() } : {}),
         ...(domicile && domicileLatLng ? { lieu_lat: domicileLatLng.lat, lieu_lng: domicileLatLng.lng } : {}),
+        ...(!domicile && selectedPrestation.lieu_adresse ? {
+          lieu: selectedPrestation.lieu_adresse,
+          ...(selectedPrestation.lieu_lat != null ? { lieu_lat: selectedPrestation.lieu_lat, lieu_lng: selectedPrestation.lieu_lng } : {}),
+        } : {}),
         statut: 'demande',
       });
       const { data: userData } = await supabase.from('user_profiles').select('firstname, lastname').eq('uid', user.uid).eq('is_main', true).maybeSingle();

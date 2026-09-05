@@ -523,7 +523,15 @@ function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnule
             <p className="text-xs text-gray-400">⏱ {rdv.duree_minutes} min</p>
           )}
           {rdv.motif && <p className="text-xs text-gray-400 mt-0.5 truncate">Motif : {rdv.motif}</p>}
-          {rdv.lieu && <p className="text-xs text-gray-400 mt-0.5 truncate">📍 {rdv.lieu}</p>}
+          {rdv.lieu && (
+            <p className="text-xs text-gray-400 mt-0.5">
+              📍 {rdv.lieu}
+              {' · '}
+              <a target="_blank" rel="noopener"
+                href={`https://www.google.com/maps/search/?api=1&query=${rdv.lieu_lat != null && rdv.lieu_lng != null ? `${rdv.lieu_lat},${rdv.lieu_lng}` : encodeURIComponent(rdv.lieu)}`}
+                className="font-semibold" style={{ color: TEAL }}>Itinéraire</a>
+            </p>
+          )}
           {rdv.notes_annulation && <p className="text-xs text-red-400 mt-0.5">Note : {rdv.notes_annulation}</p>}
           {rdv.notes_client && rdv.notes_client.trim() && (
             <div className="mt-2 rounded-lg border px-2.5 py-2" style={{ borderColor: '#0C5C6C26', background: '#0C5C6C0C' }}>

@@ -865,6 +865,22 @@ class _RdvDetailSheet extends StatelessWidget {
             Text(animalNom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF6E9E57))),
           ]),
         ],
+        if ((rdv['lieu']?.toString().trim().isNotEmpty ?? false)) ...[
+          const SizedBox(height: 6),
+          Row(children: [
+            const Icon(Icons.place_outlined, size: 15, color: _kEducationTeal),
+            const SizedBox(width: 8),
+            Expanded(child: Text(rdv['lieu'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+            GestureDetector(
+              onTap: () {
+                final lat = rdv['lieu_lat'], lng = rdv['lieu_lng'];
+                final q = (lat != null && lng != null) ? '$lat,$lng' : Uri.encodeComponent(rdv['lieu'].toString());
+                launchUrl(Uri.parse('https://www.google.com/maps/search/?api=1&query=$q'), mode: LaunchMode.externalApplication);
+              },
+              child: const Text('Itinéraire', style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: _kEducationTeal)),
+            ),
+          ]),
+        ],
         if (message.isNotEmpty) ...[
           const SizedBox(height: 12),
           Container(

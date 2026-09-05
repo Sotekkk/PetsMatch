@@ -14,6 +14,30 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY ||
     (functions.config().supabase || {}).service_key ||
     "";
 
+// Site pour l'email de rappel des clients sans compte PetsMatch.
+const SITE_URL = process.env.SITE_URL ||
+    (functions.config().site || {}).url ||
+    "https://petsmatchapp.com";
+
+/** POST JSON vers une route du site (ex. /api/rdv/reminder-email). */
+function sitePost(path, payload) {
+    return new Promise((resolve) => {
+        try {
+            const body = JSON.stringify(payload);
+            const u = new URL(`${SITE_URL}${path}`);
+            const req = https.request({
+                hostname: u.hostname,
+                path: u.pathname + u.search,
+                method: "POST",
+                headers: {"Content-Type": "application/json", "Content-Length": Buffer.byteLength(body)},
+            }, (res) => { res.on("data", () => {}); res.on("end", resolve); });
+            req.on("error", () => resolve());
+            req.write(body);
+            req.end();
+        } catch (e) { resolve(); }
+    });
+}
+
 /** GET from Supabase via REST */
 async function supabaseGet(path) {
     return new Promise((resolve, reject) => {
@@ -116,10 +140,21 @@ exports.sendRdvReminders = functions
         const now = new Date();
         const fmtISO = (d) => d.toISOString();
 
-        // Fenêtres de rappel
+        // Fenêtres de rappel : 24 h, 1 h, 30 min avant le RDV.
         const windows = [
             {
+                label: "24h",
+                echeance: "24h",
+                from: fmtISO(new Date(now.getTime() + (24 * 60 - 5) * 60 * 1000)),
+                to: fmtISO(new Date(now.getTime() + (24 * 60 + 5) * 60 * 1000)),
+                sentField: "reminder_24h_sent",
+                title: "RDV demain",
+                body: (proName, motif) =>
+                    `Rappel : votre RDV avec ${proName} est demain${motif ? ` — ${motif}` : ""}.`,
+            },
+            {
                 label: "1h",
+                echeance: "1h",
                 from: fmtISO(new Date(now.getTime() + 55 * 60 * 1000)),
                 to: fmtISO(new Date(now.getTime() + 65 * 60 * 1000)),
                 sentField: "reminder_1h_sent",
@@ -128,13 +163,14 @@ exports.sendRdvReminders = functions
                     `Votre RDV avec ${proName} est dans 1 heure${motif ? ` — ${motif}` : ""}.`,
             },
             {
-                label: "15min",
-                from: fmtISO(new Date(now.getTime() + 10 * 60 * 1000)),
-                to: fmtISO(new Date(now.getTime() + 20 * 60 * 1000)),
-                sentField: "reminder_15min_sent",
-                title: "RDV dans 15 minutes",
+                label: "30min",
+                echeance: "30min",
+                from: fmtISO(new Date(now.getTime() + 25 * 60 * 1000)),
+                to: fmtISO(new Date(now.getTime() + 35 * 60 * 1000)),
+                sentField: "reminder_30min_sent",
+                title: "RDV dans 30 minutes",
                 body: (proName, motif) =>
-                    `Votre RDV avec ${proName} commence dans 15 minutes${motif ? ` — ${motif}` : ""}.`,
+                    `Votre RDV avec ${proName} commence dans 30 minutes${motif ? ` — ${motif}` : ""}.`,
             },
         ];
 
@@ -145,7 +181,7 @@ exports.sendRdvReminders = functions
                     `&date_heure=gte.${encodeURIComponent(win.from)}` +
                     `&date_heure=lte.${encodeURIComponent(win.to)}` +
                     `&${win.sentField}=eq.false` +
-                    `&select=id,client_uid,client_profile_id,pro_uid,motif,date_heure`;
+                    `&select=id,client_uid,client_profile_id,client_email_manuel,client_nom_manuel,pro_uid,motif,date_heure,duree_minutes,lieu`;
                 rdvs = await supabaseGet(`rdv?${qs}`);
             } catch (e) {
                 console.error(`sendRdvReminders [${win.label}] fetch error:`, e);
@@ -160,44 +196,54 @@ exports.sendRdvReminders = functions
                     const proData = proDoc.exists ? proDoc.data() : {};
                     const proName = proData.nameElevage || proData.professionPro || "votre praticien";
 
-                    // FCM token du client
-                    const clientDoc = await admin.firestore()
-                        .collection("users").doc(rdv.client_uid).get();
-                    const fcmToken = clientDoc.exists ? clientDoc.data()?.fcmToken : null;
-
                     const title = win.title;
                     const body = win.body(proName, rdv.motif);
 
-                    // Notification in-app
-                    await supabaseInsert("notifications", [{
-                        uid: rdv.client_uid,
-                        type: `rdv_rappel_${win.label.replace("min", "m")}`,
-                        title: title,
-                        body: body,
-                        data: {rdv_id: rdv.id},
-                        read: false,
-                        ...(rdv.client_profile_id ? {profile_id: rdv.client_profile_id} : {}),
-                    }]);
+                    if (rdv.client_uid) {
+                        // Client avec compte : notif in-app + push FCM
+                        const clientDoc = await admin.firestore()
+                            .collection("users").doc(rdv.client_uid).get();
+                        const fcmToken = clientDoc.exists ? clientDoc.data()?.fcmToken : null;
 
-                    // Push FCM
-                    if (fcmToken) {
-                        await admin.messaging().send({
-                            token: fcmToken,
-                            data: {type: "rdv_rappel", title, body, rdv_id: rdv.id},
-                            android: {
-                                priority: "high",
-                            },
-                            apns: {
-                                headers: {"apns-priority": "10"},
-                                payload: {aps: {alert: {title, body}, sound: "default"}},
-                            },
+                        await supabaseInsert("notifications", [{
+                            uid: rdv.client_uid,
+                            type: `rdv_rappel_${win.label.replace("min", "m")}`,
+                            title: title,
+                            body: body,
+                            data: {rdv_id: rdv.id},
+                            read: false,
+                            ...(rdv.client_profile_id ? {profile_id: rdv.client_profile_id} : {}),
+                        }]);
+
+                        if (fcmToken) {
+                            await admin.messaging().send({
+                                token: fcmToken,
+                                data: {type: "rdv_rappel", title, body, rdv_id: rdv.id},
+                                android: {priority: "high"},
+                                apns: {
+                                    headers: {"apns-priority": "10"},
+                                    payload: {aps: {alert: {title, body}, sound: "default"}},
+                                },
+                            });
+                        }
+                    } else if (rdv.client_email_manuel) {
+                        // Client sans compte : email de rappel
+                        await sitePost("/api/rdv/reminder-email", {
+                            email: rdv.client_email_manuel,
+                            client_nom: rdv.client_nom_manuel || "",
+                            pro_nom: proName,
+                            date_heure: rdv.date_heure,
+                            motif: rdv.motif || null,
+                            duree_minutes: rdv.duree_minutes || null,
+                            lieu: rdv.lieu || null,
+                            echeance: win.echeance,
                         });
                     }
 
                     // Marquer comme envoyé (évite les doublons)
                     await supabasePatch("rdv", rdv.id, {[win.sentField]: true});
 
-                    console.log(`Rappel ${win.label} envoyé → RDV ${rdv.id} (client ${rdv.client_uid})`);
+                    console.log(`Rappel ${win.label} → RDV ${rdv.id} (${rdv.client_uid || rdv.client_email_manuel || "?"})`);
                 } catch (e) {
                     console.error(`sendRdvReminders [${win.label}] error for RDV ${rdv.id}:`, e);
                 }

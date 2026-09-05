@@ -289,6 +289,52 @@ class _AgendaPageState extends State<AgendaPage> {
         }
       } catch (_) {}
 
+      // Limite d'annulation choisie par le pro : annotée sur chaque event RDV
+      // (utilisée par _EventTile._canCancelRdv).
+      try {
+        final rdvIds = filtered
+            .where((e) => e['type'] == 'rdv' && (e['rdv_id']?.toString().isNotEmpty ?? false))
+            .map((e) => e['rdv_id'].toString()).toSet().toList();
+        if (rdvIds.isNotEmpty) {
+          final rdvRows = await _supa.from('rdv')
+              .select('id, pro_uid, pro_profile_id').inFilter('id', rdvIds);
+          final proProfileIds = <String>{};
+          final proUids = <String>{};
+          final byRdv = <String, Map<String, dynamic>>{};
+          for (final r in rdvRows as List) {
+            byRdv[r['id'].toString()] = Map<String, dynamic>.from(r);
+            final ppid = r['pro_profile_id']?.toString();
+            if (ppid != null && ppid.isNotEmpty) proProfileIds.add(ppid);
+            else if ((r['pro_uid']?.toString() ?? '').isNotEmpty) proUids.add(r['pro_uid'].toString());
+          }
+          final limiteByProfileId = <String, int>{};
+          final limiteByUid = <String, int>{};
+          if (proProfileIds.isNotEmpty) {
+            final rows = await _supa.from('user_profiles')
+                .select('id, annulation_limite_h').inFilter('id', proProfileIds.toList());
+            for (final p in rows as List) {
+              limiteByProfileId[p['id'].toString()] = (p['annulation_limite_h'] as num?)?.toInt() ?? 0;
+            }
+          }
+          if (proUids.isNotEmpty) {
+            final rows = await _supa.from('user_profiles')
+                .select('uid, annulation_limite_h').inFilter('uid', proUids.toList()).eq('is_main', true);
+            for (final p in rows as List) {
+              limiteByUid[p['uid'].toString()] = (p['annulation_limite_h'] as num?)?.toInt() ?? 0;
+            }
+          }
+          for (final e in filtered) {
+            if (e['type'] != 'rdv') continue;
+            final r = byRdv[e['rdv_id']?.toString()];
+            if (r == null) continue;
+            final ppid = r['pro_profile_id']?.toString();
+            e['_annulation_limite_h'] = (ppid != null && limiteByProfileId.containsKey(ppid))
+                ? limiteByProfileId[ppid]
+                : (limiteByUid[r['pro_uid']?.toString()] ?? 0);
+          }
+        }
+      } catch (_) {}
+
       if (mounted) {
         setState(() {
           _events = List<Map<String, dynamic>>.from(filtered);
@@ -1606,10 +1652,13 @@ class _EventTile extends StatelessWidget {
 
   bool get _isRdv => event['type'] == 'rdv';
   String? get _rdvId => event['rdv_id']?.toString().let((v) => v.isNotEmpty ? v : null);
+  // Limite d'annulation choisie par le pro (0 = toujours possible).
+  int get _annulationLimiteH => (event['_annulation_limite_h'] as num?)?.toInt() ?? 0;
   bool get _canCancelRdv {
     if (_rdvId == null) return false;
+    if (_annulationLimiteH <= 0) return true;
     final d = _parseDate(event['date_debut'] as String);
-    return d.isAfter(DateTime.now().add(const Duration(hours: 24)));
+    return d.isAfter(DateTime.now().add(Duration(hours: _annulationLimiteH)));
   }
 
   Future<void> _showCancelOrModify(BuildContext context) async {
@@ -1986,9 +2035,9 @@ class _EventTile extends StatelessWidget {
           onPressed: () => _showCancelOrModify(context),
         );
       } else {
-        trailing = const Tooltip(
-          message: 'Annulation impossible (< 24h)',
-          child: Icon(Icons.lock_outline, size: 18, color: Colors.grey),
+        trailing = Tooltip(
+          message: 'Annulation impossible moins de ${_annulationLimiteH}h avant — contactez le professionnel',
+          child: const Icon(Icons.lock_outline, size: 18, color: Colors.grey),
         );
       }
     } else {

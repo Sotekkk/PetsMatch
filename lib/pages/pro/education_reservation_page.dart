@@ -462,6 +462,11 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
         if (_domicile && _adresseDomicileCtrl.text.trim().isNotEmpty) 'lieu': _adresseDomicileCtrl.text.trim(),
         if (_domicile && _domicileLat != null) 'lieu_lat': _domicileLat,
         if (_domicile && _domicileLng != null) 'lieu_lng': _domicileLng,
+        // Lieu propre au cours (parc…) si pas à domicile
+        if (!_domicile && (_selectedPrestation?['lieu_adresse']?.toString().trim().isNotEmpty ?? false))
+          'lieu': _selectedPrestation!['lieu_adresse'],
+        if (!_domicile && _selectedPrestation?['lieu_lat'] != null) 'lieu_lat': _selectedPrestation!['lieu_lat'],
+        if (!_domicile && _selectedPrestation?['lieu_lng'] != null) 'lieu_lng': _selectedPrestation!['lieu_lng'],
         'statut': 'demande',
       });
 

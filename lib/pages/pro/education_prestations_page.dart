@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/utils/geocoding_helper.dart';
 
 // ── Catalogue de cours (éducateur/comportementaliste) — remplace la liste
 // fixe (cours individuel/évaluation/autre) : le pro définit ses propres
@@ -151,6 +152,8 @@ class _PrestationFormState extends State<_PrestationForm> {
   late final TextEditingController _prixCtrl;
   late final TextEditingController _descCtrl;
   late final TextEditingController _capaciteCtrl;
+  late final TextEditingController _lieuCtrl;
+  double? _lieuLat, _lieuLng;
   late bool _bilanRequis;
   late bool _domicileOk;
   late String _type;
@@ -165,6 +168,9 @@ class _PrestationFormState extends State<_PrestationForm> {
     _prixCtrl = TextEditingController(text: (e?['prix'] as num?)?.toString() ?? '');
     _descCtrl = TextEditingController(text: e?['description']?.toString() ?? '');
     _capaciteCtrl = TextEditingController(text: (e?['capacite_max'] as num?)?.toString() ?? '6');
+    _lieuCtrl = TextEditingController(text: e?['lieu_adresse']?.toString() ?? '');
+    _lieuLat = (e?['lieu_lat'] as num?)?.toDouble();
+    _lieuLng = (e?['lieu_lng'] as num?)?.toDouble();
     _bilanRequis = e?['bilan_requis'] == true;
     _domicileOk = e?['domicile_ok'] != false;
     _type = e?['type']?.toString() ?? 'individuel';
@@ -172,7 +178,7 @@ class _PrestationFormState extends State<_PrestationForm> {
 
   @override
   void dispose() {
-    for (final c in [_nomCtrl, _dureeCtrl, _prixCtrl, _descCtrl, _capaciteCtrl]) {
+    for (final c in [_nomCtrl, _dureeCtrl, _prixCtrl, _descCtrl, _capaciteCtrl, _lieuCtrl]) {
       c.dispose();
     }
     super.dispose();
@@ -190,6 +196,15 @@ class _PrestationFormState extends State<_PrestationForm> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) { setState(() => _saving = false); return; }
     try {
+      // Géocode l'adresse du cours si elle a changé.
+      final lieu = _lieuCtrl.text.trim();
+      if (lieu.isEmpty) {
+        _lieuLat = null; _lieuLng = null;
+      } else if (lieu != (widget.existing?['lieu_adresse']?.toString() ?? '') || _lieuLat == null) {
+        final geo = await GeocodingHelper.geocode(lieu);
+        _lieuLat = geo?.lat;
+        _lieuLng = geo?.lng;
+      }
       final data = {
         'pro_uid': uid,
         if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
@@ -201,6 +216,9 @@ class _PrestationFormState extends State<_PrestationForm> {
         'domicile_ok': _domicileOk,
         if (_type == 'collectif') 'capacite_max': int.tryParse(_capaciteCtrl.text.trim()) ?? 6,
         if (_descCtrl.text.trim().isNotEmpty) 'description': _descCtrl.text.trim(),
+        'lieu_adresse': lieu.isEmpty ? null : lieu,
+        'lieu_lat': _lieuLat,
+        'lieu_lng': _lieuLng,
       };
       if (widget.existing != null) {
         await _supa.from('prestations_education').update(data).eq('id', widget.existing!['id']);
@@ -289,6 +307,14 @@ class _PrestationFormState extends State<_PrestationForm> {
           const SizedBox(height: 12),
           TextField(controller: _descCtrl, maxLines: 2, style: const TextStyle(fontFamily: 'Galey'),
               decoration: const InputDecoration(labelText: 'Description (optionnel)', border: OutlineInputBorder())),
+          const SizedBox(height: 12),
+          TextField(controller: _lieuCtrl, style: const TextStyle(fontFamily: 'Galey'),
+              decoration: const InputDecoration(
+                labelText: 'Lieu du cours (adresse, optionnel)',
+                helperText: 'Ex. « Parc de la Tête d\'Or, Lyon ». Laissez vide = à votre cabinet.',
+                helperMaxLines: 2,
+                border: OutlineInputBorder(),
+              )),
           const SizedBox(height: 10),
           _toggleCard(
             value: _bilanRequis,

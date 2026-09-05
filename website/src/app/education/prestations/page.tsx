@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { geocodeAddress } from '@/lib/geocoding';
 
 const PURPLE = '#7B5EA7';
 
@@ -13,6 +14,7 @@ interface Prestation {
   duree_minutes: number; prix: number | null;
   bilan_requis: boolean; domicile_ok: boolean;
   type: 'individuel' | 'collectif'; capacite_max: number | null;
+  lieu_adresse?: string | null; lieu_lat?: number | null; lieu_lng?: number | null;
 }
 
 // Interrupteur toujours visible (fond coloré à l'état actif) — remplace les
@@ -50,14 +52,14 @@ export default function EducationPrestationsPage() {
   const activeProfileId = useActiveProfile();
   const [prestations, setPrestations] = useState<Prestation[]>([]);
   const [busy, setBusy] = useState(true);
-  const [form, setForm] = useState<{ id?: string; nom: string; description: string; duree_minutes: string; prix: string; bilan_requis: boolean; domicile_ok: boolean; type: 'individuel' | 'collectif'; capacite_max: string } | null>(null);
+  const [form, setForm] = useState<{ id?: string; nom: string; description: string; duree_minutes: string; prix: string; bilan_requis: boolean; domicile_ok: boolean; type: 'individuel' | 'collectif'; capacite_max: string; lieu_adresse: string; lieu_lat: number | null; lieu_lng: number | null } | null>(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     if (!user?.uid) return;
     setBusy(true);
     let q = supabase.from('prestations_education')
-      .select('id, nom, description, duree_minutes, prix, bilan_requis, domicile_ok, type, capacite_max')
+      .select('id, nom, description, duree_minutes, prix, bilan_requis, domicile_ok, type, capacite_max, lieu_adresse, lieu_lat, lieu_lng')
       .eq('pro_uid', user.uid).eq('actif', true);
     if (activeProfileId) q = q.eq('pro_profile_id', activeProfileId);
     const { data } = await q.order('ordre').order('created_at');
@@ -72,6 +74,12 @@ export default function EducationPrestationsPage() {
     if (!form || !form.nom.trim() || !user?.uid) return;
     setSaving(true);
     try {
+      const lieu = form.lieu_adresse.trim();
+      let lat = form.lieu_lat, lng = form.lieu_lng;
+      if (lieu && lat == null) {
+        const geo = await geocodeAddress(lieu);
+        lat = geo?.lat ?? null; lng = geo?.lng ?? null;
+      }
       const payload = {
         nom: form.nom.trim(),
         type: form.type,
@@ -80,6 +88,9 @@ export default function EducationPrestationsPage() {
         prix: form.prix.trim() ? Number(form.prix) : null,
         bilan_requis: form.bilan_requis,
         domicile_ok: form.domicile_ok,
+        lieu_adresse: lieu || null,
+        lieu_lat: lieu ? lat : null,
+        lieu_lng: lieu ? lng : null,
         ...(form.type === 'collectif' ? { capacite_max: parseInt(form.capacite_max, 10) || 6 } : {}),
       };
       if (form.id) {
@@ -105,7 +116,7 @@ export default function EducationPrestationsPage() {
     <div className="max-w-2xl mx-auto px-4 py-6">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Mes cours</h1>
-        <button onClick={() => setForm({ nom: '', description: '', duree_minutes: '60', prix: '', bilan_requis: false, domicile_ok: true, type: 'individuel', capacite_max: '6' })}
+        <button onClick={() => setForm({ nom: '', description: '', duree_minutes: '60', prix: '', bilan_requis: false, domicile_ok: true, type: 'individuel', capacite_max: '6', lieu_adresse: '', lieu_lat: null, lieu_lng: null })}
           className="text-white rounded-xl px-3 py-2 text-sm font-semibold" style={{ background: PURPLE }}>+ Cours</button>
       </div>
       <p className="text-sm text-gray-500 mb-4">
@@ -143,6 +154,13 @@ export default function EducationPrestationsPage() {
           <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
             rows={2} placeholder="Description (optionnel)"
             className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
+          <div>
+            <input value={form.lieu_adresse}
+              onChange={e => setForm({ ...form, lieu_adresse: e.target.value, lieu_lat: null, lieu_lng: null })}
+              placeholder="Lieu du cours (adresse, optionnel)"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+            <p className="text-[11px] text-gray-400 mt-1">Ex. « Parc de la Tête d&apos;Or, Lyon ». Vide = à votre cabinet.</p>
+          </div>
           <Toggle checked={form.bilan_requis} onChange={v => setForm({ ...form, bilan_requis: v })}
             label="Nécessite un bilan préalable"
             hint="Proposé en priorité aux nouvelles familles si l'option « Bilan obligatoire » est activée" />
@@ -172,6 +190,7 @@ export default function EducationPrestationsPage() {
                   id: p.id, nom: p.nom, description: p.description ?? '',
                   duree_minutes: String(p.duree_minutes), prix: p.prix != null ? String(p.prix) : '',
                   bilan_requis: p.bilan_requis, domicile_ok: p.domicile_ok,
+                  lieu_adresse: p.lieu_adresse ?? '', lieu_lat: p.lieu_lat ?? null, lieu_lng: p.lieu_lng ?? null,
                   type: p.type ?? 'individuel', capacite_max: p.capacite_max != null ? String(p.capacite_max) : '6',
                 })}
                 className="flex-1 min-w-0 text-left">
