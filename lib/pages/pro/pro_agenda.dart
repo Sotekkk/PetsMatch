@@ -11,6 +11,7 @@ import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/utils/geocoding_helper.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
+import 'package:PetsMatch/pages/pro/creneaux_week_grid.dart';
 
 class ProAgendaPage extends StatefulWidget {
   // Index de l'onglet initial (0=Demandes, 1=À venir, 2=Historique,
@@ -27,7 +28,6 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     with SingleTickerProviderStateMixin {
   static const _teal = Color(0xFF0C5C6C);
   static const _bg = Color(0xFFF8F8F8);
-  static const _jours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
   static const _mois = ['jan.', 'fév.', 'mar.', 'avr.', 'mai', 'juin',
       'juil.', 'août', 'sep.', 'oct.', 'nov.', 'déc.'];
 
@@ -38,7 +38,6 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   // AG08 — créneaux
   late DateTime _weekStart;
-  int _selectedDayIdx = 0;
   final Map<String, String> _blockedSlots = {};
   // Type de prestation par créneau (éducateur uniquement) : 'individuel' /
   // 'collectif' / absent = les deux.
@@ -69,7 +68,6 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     _tabCtrl = TabController(length: 4, vsync: this, initialIndex: widget.initialTabIndex);
     final now = DateTime.now();
     _weekStart = now.subtract(Duration(days: now.weekday - 1));
-    _selectedDayIdx = now.weekday - 1;
     _loadRdvs();
     _loadCreneaux();
     _loadDureesMotifs();
@@ -2210,9 +2208,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     backgroundColor: Colors.red, behavior: SnackBarBehavior.floating,
   ));
 
-  Future<void> _showRangeDialog(String dateStr) async {
-    TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
-    TimeOfDay endTime   = const TimeOfDay(hour: 10, minute: 0);
+  Future<void> _showRangeDialog(String dateStr, {TimeOfDay? initialStart, TimeOfDay? initialEnd}) async {
+    // Pré-rempli par le glisser sur la grille semaine (creneaux_week_grid.dart)
+    // si fourni, sinon valeurs par défaut pour une saisie manuelle.
+    TimeOfDay startTime = initialStart ?? const TimeOfDay(hour: 9, minute: 0);
+    TimeOfDay endTime   = initialEnd ?? const TimeOfDay(hour: 10, minute: 0);
     String statut = 'disponible';
     String? type; // 'individuel' / 'collectif' / null = les deux (éducateur uniquement)
     bool domicileOk = false; // créneau proposable à domicile (éducateur uniquement)
@@ -2598,8 +2598,20 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   Widget _buildCreneauxTab() {
     final days = List.generate(7, (i) => _weekStart.add(Duration(days: i)));
-    final selectedDay = days[_selectedDayIdx];
-    final dateStr = selectedDay.toIso8601String().substring(0, 10);
+
+    // Plages + RDV groupés par jour pour la grille semaine (creneaux_week_grid.dart).
+    final rangesByDay = <String, List<CreneauRange>>{};
+    final rdvsByDay = <String, List<Map<String, dynamic>>>{};
+    for (final day in days) {
+      final key = CreneauxWeekGrid.dateKey(day);
+      rangesByDay[key] = _groupedRanges(key);
+      rdvsByDay[key] = _rdvs.where((r) {
+        final s = r['statut'] as String? ?? '';
+        if (s != 'confirme' && s != 'demande') return false;
+        final dh = DateTime.tryParse(r['date_heure'] ?? '')?.toLocal();
+        return dh != null && _sameDay(dh, day);
+      }).toList();
+    }
 
     return Column(children: [
       // Navigation semaine
@@ -2636,45 +2648,6 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           ),
         ]),
       ),
-      // Sélecteur de jour
-      SizedBox(
-        height: 62,
-        child: ListView.builder(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          itemCount: 7,
-          itemBuilder: (_, i) {
-            final day = days[i];
-            final sel = i == _selectedDayIdx;
-            final isToday = _sameDay(day, DateTime.now());
-            return GestureDetector(
-              onTap: () => setState(() => _selectedDayIdx = i),
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: sel ? _teal : (isToday ? const Color(0x1A0C5C6C) : Colors.white),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: sel ? _teal : (isToday ? _teal : const Color(0xFFE4E7E2)),
-                  ),
-                ),
-                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Text(_jours[day.weekday - 1],
-                      style: TextStyle(
-                          fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600,
-                          color: sel ? Colors.white : Colors.grey)),
-                  const SizedBox(height: 2),
-                  Text('${day.day}',
-                      style: TextStyle(
-                          fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w700,
-                          color: sel ? Colors.white : (isToday ? _teal : Colors.black87))),
-                ]),
-              ),
-            );
-          },
-        ),
-      ),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
         child: Row(children: [
@@ -2690,7 +2663,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           )),
           const SizedBox(width: 8),
           Expanded(child: ElevatedButton.icon(
-            onPressed: () => _showRangeDialog(dateStr),
+            onPressed: () => _showRangeDialog(CreneauxWeekGrid.dateKey(DateTime.now().isBefore(_weekStart) ? _weekStart : DateTime.now())),
             icon: const Icon(Icons.add, size: 16),
             label: const Text('Ajouter une plage', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
             style: ElevatedButton.styleFrom(
@@ -2701,147 +2674,25 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           )),
         ]),
       ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+        child: Text('Glissez sur une plage horaire libre pour créer un créneau.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+      ),
       const Divider(height: 1),
-      Expanded(child: Builder(builder: (ctx) {
-        final rdvsJour = _rdvs.where((r) {
-          final s = r['statut'] as String? ?? '';
-          if (s != 'confirme' && s != 'demande') return false;
-          final dh = DateTime.tryParse(r['date_heure'] ?? '')?.toLocal();
-          return dh != null && _sameDay(dh, selectedDay);
-        }).toList();
-        final ranges = _groupedRanges(dateStr);
-
-        if (rdvsJour.isEmpty && ranges.isEmpty) {
-          return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.schedule_outlined, size: 52, color: Colors.grey.shade300),
-            const SizedBox(height: 10),
-            Text('Aucun créneau ce jour',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade400)),
-            const SizedBox(height: 6),
-            Text('Appuyez sur « Ajouter une plage »',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400)),
-          ]));
-        }
-        return ListView(padding: const EdgeInsets.fromLTRB(16, 10, 16, 16), children: [
-          if (rdvsJour.isNotEmpty) ...[
-            Text('Rendez-vous', style: TextStyle(fontFamily: 'Galey',
-                fontWeight: FontWeight.w600, fontSize: 12,
-                color: Colors.grey.shade500, letterSpacing: 0.5)),
-            const SizedBox(height: 6),
-            for (final rdv in rdvsJour) Builder(builder: (_) {
-              final dh = DateTime.tryParse(rdv['date_heure'] ?? '')?.toLocal();
-              final dur = (rdv['duree_minutes'] as num?)?.toInt() ?? 60;
-              final endDh = dh?.add(Duration(minutes: dur));
-              final label = dh != null
-                  ? '${dh.hour.toString().padLeft(2,'0')}:${dh.minute.toString().padLeft(2,'0')}'
-                    ' — ${endDh!.hour.toString().padLeft(2,'0')}:${endDh.minute.toString().padLeft(2,'0')}'
-                  : '—';
-              return Container(
-                margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(color: const Color(0x1A0C5C6C),
-                    borderRadius: BorderRadius.circular(12), border: Border.all(color: _teal)),
-                child: Row(children: [
-                  const Icon(Icons.event, size: 16, color: _teal),
-                  const SizedBox(width: 8),
-                  Text(label, style: const TextStyle(fontFamily: 'Galey',
-                      fontWeight: FontWeight.w600, fontSize: 14, color: _teal)),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(rdv['motif']?.toString() ?? '',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600),
-                      overflow: TextOverflow.ellipsis)),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(color: const Color(0x260C5C6C),
-                        borderRadius: BorderRadius.circular(8)),
-                    child: const Text('RDV', style: TextStyle(fontFamily: 'Galey',
-                        fontSize: 11, fontWeight: FontWeight.w600, color: _teal)),
-                  ),
-                ]),
-              );
-            }),
-            const SizedBox(height: 12),
-          ],
-          if (ranges.isNotEmpty) ...[
-            Text('Créneaux', style: TextStyle(fontFamily: 'Galey',
-                fontWeight: FontWeight.w600, fontSize: 12,
-                color: Colors.grey.shade500, letterSpacing: 0.5)),
-            const SizedBox(height: 6),
-            for (final r in ranges)
-              GestureDetector(
-                onTap: () => _confirmDeleteRange(dateStr, r),
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: r.statut == 'disponible'
-                        ? const Color(0xFF6E9E57).withValues(alpha: 0.10)
-                        : const Color(0xFFFFF3E0),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: r.statut == 'disponible'
-                        ? const Color(0xFF6E9E57) : const Color(0xFFFF9800)),
-                  ),
-                  child: Row(children: [
-                    Icon(r.statut == 'disponible'
-                        ? Icons.check_circle_outline : Icons.block_outlined,
-                        size: 16,
-                        color: r.statut == 'disponible'
-                            ? const Color(0xFF4A7A32) : const Color(0xFFE65100)),
-                    const SizedBox(width: 8),
-                    Text('${_fmtTime(r.start)} — ${_fmtTime(r.end)}',
-                        style: TextStyle(fontFamily: 'Galey',
-                            fontWeight: FontWeight.w600, fontSize: 14,
-                            color: r.statut == 'disponible'
-                                ? const Color(0xFF4A7A32) : const Color(0xFFE65100))),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: r.statut == 'disponible'
-                            ? const Color(0xFF6E9E57).withValues(alpha: 0.15)
-                            : const Color(0x33FF9800),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(r.statut == 'disponible' ? 'Disponible' : 'Bloqué',
-                          style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: r.statut == 'disponible'
-                                  ? const Color(0xFF4A7A32) : const Color(0xFFE65100))),
-                    ),
-                    if (r.type != null) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: const Color(0x1A7B5EA7),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(r.type == 'individuel' ? '🎓 Individuel' : '👥 Collectif',
-                            style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
-                                fontWeight: FontWeight.w600, color: Color(0xFF7B5EA7))),
-                      ),
-                    ],
-                    if (r.domicile) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: const Color(0x1A7B5EA7),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text('🏠 Domicile',
-                            style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                                fontWeight: FontWeight.w600, color: Color(0xFF7B5EA7))),
-                      ),
-                    ],
-                    const SizedBox(width: 8),
-                    Icon(Icons.delete_outline, size: 16, color: Colors.grey.shade400),
-                  ]),
-                ),
-              ),
-          ],
-        ]);
-      })),
+      Expanded(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: CreneauxWeekGrid(
+            days: days,
+            rangesByDay: rangesByDay,
+            rdvsByDay: rdvsByDay,
+            onCreateRange: (day, start, end) => _showRangeDialog(
+                CreneauxWeekGrid.dateKey(day), initialStart: start, initialEnd: end),
+            onTapRange: (day, range) => _confirmDeleteRange(CreneauxWeekGrid.dateKey(day), range),
+          ),
+        ),
+      ),
     ]);
   }
 

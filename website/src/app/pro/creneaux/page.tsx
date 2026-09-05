@@ -5,12 +5,12 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import CreneauxWeekGrid from '@/components/pro/CreneauxWeekGrid';
 
 const TEAL   = '#0C5C6C';
 const GREEN  = '#6E9E57';
 const ORANGE = '#FF9800';
 
-const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const JOURS_FULL = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const MOIS  = ['jan', 'fév', 'mar', 'avr', 'mai', 'jun', 'jul', 'aoû', 'sep', 'oct', 'nov', 'déc'];
 
@@ -69,7 +69,6 @@ export default function ProCreneauxPage() {
   const activeProfileId   = useActiveProfile();
 
   const [weekStart, setWeekStart]           = useState(() => getMonday(new Date()));
-  const [selectedDayIdx, setSelectedDayIdx] = useState(0);
   const [slots, setSlots]                   = useState<Record<string, SlotStatus>>({});
   const [loadingSlots, setLoadingSlots]     = useState(false);
   const [saving, setSaving]                 = useState(false);
@@ -78,6 +77,7 @@ export default function ProCreneauxPage() {
   const [repChoice, setRepChoice]           = useState<'4sem' | 'annee' | 'perso'>('4sem');
   const [repEndDate, setRepEndDate]         = useState('');
   const [showAddModal, setShowAddModal]     = useState(false);
+  const [addDate, setAddDate]               = useState(() => toDateStr(new Date()));
   const [addMode, setAddMode]               = useState<SlotStatus>('disponible');
   const [addStart, setAddStart]             = useState('09:00');
   const [addEnd, setAddEnd]                 = useState('10:00');
@@ -88,6 +88,7 @@ export default function ProCreneauxPage() {
   const [slotTypes, setSlotTypes]           = useState<Record<string, TypePrestation>>({});
   const [slotDomicile, setSlotDomicile]     = useState<Record<string, boolean>>({});
   const [catPro, setCatPro]                 = useState('');
+  const [rdvs, setRdvs]                     = useState<{ date_heure: string; duree_minutes: number | null; motif: string | null }[]>([]);
 
   useEffect(() => {
     if (!loading && !user) router.push('/connexion');
@@ -134,20 +135,33 @@ export default function ProCreneauxPage() {
       setSlots(map);
       setSlotTypes(typeMap);
       setSlotDomicile(domicileMap);
+
+      const { data: rdvRows } = await supabase.from('rdv')
+        .select('date_heure, duree_minutes, motif')
+        .eq('pro_uid', user.uid).eq('pro_profile_id', activeProfileId)
+        .in('statut', ['confirme', 'demande'])
+        .gte('date_heure', weekStart.toISOString())
+        .lte('date_heure', new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59).toISOString());
+      setRdvs((rdvRows ?? []) as typeof rdvs);
     } catch { /* ignore */ }
     setLoadingSlots(false);
   }, [user, activeProfileId, weekStart]);
 
   useEffect(() => { loadSlots(); }, [loadSlots]);
 
-  const days        = Array.from({ length: 7 }, (_, i) => { const d = new Date(weekStart); d.setDate(weekStart.getDate() + i); return d; });
-  const selectedDay = days[selectedDayIdx];
-  const dateStr     = toDateStr(selectedDay);
+  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(weekStart); d.setDate(weekStart.getDate() + i); return d; });
 
-  const slotsForDay = Object.entries(slots)
-    .filter(([k]) => k.startsWith(`${dateStr}_`))
-    .map(([k, statut]) => ({ time: k.slice(dateStr.length + 1), statut, type: slotTypes[k] ?? null, domicile: slotDomicile[k] ?? false }));
-  const ranges = groupRanges(slotsForDay);
+  // Plages + RDV groupés par jour pour la grille semaine (CreneauxWeekGrid).
+  const rangesByDay: Record<string, ReturnType<typeof groupRanges>> = {};
+  const rdvsByDay: Record<string, typeof rdvs> = {};
+  for (const day of days) {
+    const key = toDateStr(day);
+    const slotsForThatDay = Object.entries(slots)
+      .filter(([k]) => k.startsWith(`${key}_`))
+      .map(([k, statut]) => ({ time: k.slice(key.length + 1), statut, type: slotTypes[k] ?? null, domicile: slotDomicile[k] ?? false }));
+    rangesByDay[key] = groupRanges(slotsForThatDay);
+    rdvsByDay[key] = rdvs.filter(r => toDateStr(new Date(r.date_heure)) === key);
+  }
 
   // Recalcule le résumé "Horaires" (page profil) à partir des créneaux
   // disponibles de la semaine affichée — l'utilisateur ne saisit plus les
@@ -169,7 +183,7 @@ export default function ProCreneauxPage() {
     } catch { /* ignore — résumé informatif, pas bloquant */ }
   }
 
-  async function applyRange(start: string, end: string, statut: SlotStatus, type: TypePrestation = null, domicile = false, prestationId: string | null = null) {
+  async function applyRange(date: string, start: string, end: string, statut: SlotStatus, type: TypePrestation = null, domicile = false, prestationId: string | null = null) {
     if (!user || saving) return;
     setSaving(true);
     let cur = timeToMins(start);
@@ -181,11 +195,11 @@ export default function ProCreneauxPage() {
     while (cur < endM) {
       const hhmm = minsToTime(cur);
       const fin  = minsToTime(cur + 15);
-      const key = `${dateStr}_${hhmm}`;
+      const key = `${date}_${hhmm}`;
       newSlots[key] = statut;
       if (type) newTypes[key] = type;
       newDomicile[key] = domicile;
-      rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, date: dateStr,
+      rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, date,
         heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut, type_prestation: type, domicile_ok: domicile,
         prestation_id: prestationId });
       cur += 15;
@@ -203,7 +217,7 @@ export default function ProCreneauxPage() {
     setSaving(false);
   }
 
-  async function deleteRange(r: SlotRange) {
+  async function deleteRange(date: string, r: SlotRange) {
     if (!user) return;
     let cur = timeToMins(r.start);
     const endM = timeToMins(r.end);
@@ -212,7 +226,7 @@ export default function ProCreneauxPage() {
     while (cur < endM) {
       const hhmm = minsToTime(cur);
       hdList.push(`${hhmm}:00`);
-      keyList.push(`${dateStr}_${hhmm}`);
+      keyList.push(`${date}_${hhmm}`);
       cur += 15;
     }
     const merged = { ...slots };
@@ -222,7 +236,7 @@ export default function ProCreneauxPage() {
     try {
       await supabase.from('creneaux_pro').delete()
         .eq('pro_uid', user.uid).eq('pro_profile_id', activeProfileId)
-        .eq('date', dateStr).in('heure_debut', hdList);
+        .eq('date', date).in('heure_debut', hdList);
       await syncHorairesSummary(merged);
     } catch { loadSlots(); }
   }
@@ -298,38 +312,11 @@ export default function ProCreneauxPage() {
           <button onClick={() => { setSlots({}); setWeekStart(d => { const n = new Date(d); n.setDate(d.getDate() + 7); return n; }); }}
             className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-lg font-bold" style={{ color: TEAL }}>›</button>
         </div>
-        <div className="flex gap-1.5 overflow-x-auto pb-1">
-          {days.map((day, i) => {
-            const sel     = i === selectedDayIdx;
-            const isToday = toDateStr(day) === toDateStr(new Date());
-            const daySlots = Object.entries(slots).filter(([k]) => k.startsWith(`${toDateStr(day)}_`));
-            return (
-              <button key={i} onClick={() => setSelectedDayIdx(i)}
-                className="flex-shrink-0 flex-1 py-2 rounded-xl text-center border transition-colors"
-                style={{ background: sel ? TEAL : isToday ? `${TEAL}15` : 'white', borderColor: sel ? TEAL : isToday ? TEAL : '#e5e7eb' }}>
-                <div className="text-[10px] font-semibold" style={{ color: sel ? 'white' : '#6B7280' }}>
-                  {JOURS[day.getDay() === 0 ? 6 : day.getDay() - 1]}
-                </div>
-                <div className="text-sm font-bold" style={{ color: sel ? 'white' : isToday ? TEAL : '#1F2937' }}>
-                  {day.getDate()}
-                </div>
-                {daySlots.length > 0 && (
-                  <div className="mt-1 flex justify-center gap-0.5">
-                    {daySlots.slice(0, 3).map((_, j) => (
-                      <div key={j} className="w-1 h-1 rounded-full"
-                        style={{ background: sel ? 'rgba(255,255,255,0.7)' : GREEN }} />
-                    ))}
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2 mb-4">
-        <button onClick={() => setShowAddModal(true)}
+      <div className="flex gap-2 mb-2">
+        <button onClick={() => { setAddDate(toDateStr(days[0] && days[0] > new Date() ? days[0] : new Date())); setShowAddModal(true); }}
           className="flex-1 py-3 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
           style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
           + Nouvelle plage
@@ -340,53 +327,22 @@ export default function ProCreneauxPage() {
           🔁 Répliquer
         </button>
       </div>
+      <p className="text-xs text-gray-400 mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>
+        Glissez sur une plage horaire libre pour créer un créneau.
+      </p>
 
-      {/* Plages du jour */}
+      {/* Grille semaine */}
       {loadingSlots ? (
         <div className="flex justify-center py-12 text-sm text-gray-400">Chargement…</div>
-      ) : ranges.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center">
-          <p className="text-3xl mb-2">🗓</p>
-          <p className="text-sm font-semibold text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
-            Aucune plage configurée ce jour
-          </p>
-          <p className="text-xs text-gray-300 mt-1">Appuyez sur « + Nouvelle plage » pour ajouter</p>
-        </div>
       ) : (
-        <div className="flex flex-col gap-2">
-          {ranges.map((r, i) => {
-            const isDisp = r.statut === 'disponible';
-            return (
-              <div key={i} className="bg-white rounded-2xl px-4 py-4 shadow-sm border-2 flex items-center gap-3"
-                style={{ borderColor: isDisp ? GREEN : ORANGE }}>
-                <div className="flex-1">
-                  <p className="text-xl font-bold" style={{ fontFamily: 'Galey, sans-serif', color: isDisp ? '#4A7A32' : '#E65100' }}>
-                    {r.start} → {r.end}
-                  </p>
-                  <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full mt-1 inline-block"
-                    style={{ background: isDisp ? `${GREEN}22` : '#FFF3E0', color: isDisp ? '#4A7A32' : '#E65100' }}>
-                    {isDisp ? '✓ Disponible' : '🚫 Bloqué'}
-                  </span>
-                  {r.type && (
-                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full mt-1 ml-1.5 inline-block"
-                      style={{ background: '#7B5EA722', color: '#7B5EA7' }}>
-                      {r.type === 'individuel' ? '🎓 Individuel' : '👥 Collectif'}
-                    </span>
-                  )}
-                  {r.domicile && (
-                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full mt-1 ml-1.5 inline-block"
-                      style={{ background: '#7B5EA722', color: '#7B5EA7' }}>
-                      🏠 Domicile
-                    </span>
-                  )}
-                </div>
-                <button onClick={() => deleteRange(r)}
-                  className="p-2.5 rounded-xl hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors">
-                  🗑
-                </button>
-              </div>
-            );
-          })}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-3">
+          <CreneauxWeekGrid
+            days={days}
+            rangesByDay={rangesByDay}
+            rdvsByDay={rdvsByDay}
+            onCreateRange={(day, start, end) => { setAddDate(toDateStr(day)); setAddStart(start); setAddEnd(end); setShowAddModal(true); }}
+            onTapRange={(day, r) => deleteRange(toDateStr(day), r as SlotRange)}
+          />
         </div>
       )}
 
@@ -501,7 +457,7 @@ export default function ProCreneauxPage() {
                 onClick={async () => {
                   if (timeToMins(addEnd) <= timeToMins(addStart)) return;
                   setShowAddModal(false);
-                  await applyRange(addStart, addEnd, addMode, addMode === 'disponible' ? addType : null, addMode === 'disponible' && addDomicile,
+                  await applyRange(addDate, addStart, addEnd, addMode, addMode === 'disponible' ? addType : null, addMode === 'disponible' && addDomicile,
                     addMode === 'disponible' && addType === 'collectif' ? addPrestationId : null);
                   setAddType(null);
                   setAddDomicile(false);
