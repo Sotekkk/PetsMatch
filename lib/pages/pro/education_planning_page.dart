@@ -389,19 +389,29 @@ class _CoursCollectifSheetState extends State<_CoursCollectifSheet> {
             TextField(controller: _notesCtrl, maxLines: 3, decoration: const InputDecoration(
                 labelText: 'Notes (optionnel)', border: OutlineInputBorder())),
             const SizedBox(height: 12),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              activeThumbColor: _kEducationPurple,
-              value: _recurrent,
-              onChanged: (v) => setState(() => _recurrent = v),
-              title: const Text('Cours récurrent (chaque semaine)',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
-              subtitle: Text(
-                _recurrent
-                    ? 'Se répète chaque ${DateFormat('EEEE', 'fr_FR').format(_date)} à ${_heure.format(context)}'
-                    : 'Une seule séance, ponctuelle',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _recurrent ? _kEducationPurple.withValues(alpha: 0.06) : Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _recurrent ? _kEducationPurple : Colors.grey.shade300),
               ),
+              child: Row(children: [
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Cours récurrent (chaque semaine)',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13,
+                          color: _recurrent ? _kEducationPurple : Colors.black87)),
+                  const SizedBox(height: 2),
+                  Text(
+                    _recurrent
+                        ? 'Se répète chaque ${DateFormat('EEEE', 'fr_FR').format(_date)} à ${_heure.format(context)}'
+                        : 'Une seule séance, ponctuelle',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600),
+                  ),
+                ])),
+                const SizedBox(width: 8),
+                Switch(value: _recurrent, activeThumbColor: _kEducationPurple, onChanged: (v) => setState(() => _recurrent = v)),
+              ]),
             ),
             if (_recurrent) ...[
               const SizedBox(height: 4),

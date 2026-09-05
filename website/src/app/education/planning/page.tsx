@@ -305,10 +305,18 @@ function CreateCoursModal({ proUid, proProfileId, onClose, onSaved }: {
             className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-galey" />
           <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes (optionnel)" rows={2}
             className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-galey resize-none" />
-          <label className="flex items-center gap-2 text-sm font-galey">
-            <input type="checkbox" checked={recurrent} onChange={e => setRecurrent(e.target.checked)} />
-            Cours récurrent (chaque semaine)
-          </label>
+          <div className="flex items-center justify-between gap-4 rounded-xl border p-3"
+            style={{ borderColor: recurrent ? PURPLE : '#E5E7EB', background: recurrent ? `${PURPLE}0D` : 'white' }}>
+            <span className="text-sm font-galey font-semibold" style={{ color: recurrent ? PURPLE : '#374151' }}>
+              Cours récurrent (chaque semaine)
+            </span>
+            <button type="button" onClick={() => setRecurrent(v => !v)}
+              className="relative w-12 h-7 rounded-full transition-colors flex-shrink-0"
+              style={{ backgroundColor: recurrent ? PURPLE : '#D1D5DB' }}>
+              <span className="absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform"
+                style={{ transform: recurrent ? 'translateX(20px)' : 'translateX(0)' }} />
+            </button>
+          </div>
           {recurrent && (
             <div className="flex items-center gap-2">
               <input type="date" value={dateFin} onChange={e => setDateFin(e.target.value)}

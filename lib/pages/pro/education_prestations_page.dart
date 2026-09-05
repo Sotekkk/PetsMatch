@@ -98,12 +98,13 @@ class _EducationPrestationsPageState extends State<EducationPrestationsPage> {
                         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text('${p['duree_minutes']} min${prix != null ? ' · ${prix.toStringAsFixed(0)} €' : ''}',
                               style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
-                          Wrap(spacing: 6, children: [
-                            if (bilan) _tag('Nécessite un bilan', Colors.orange),
-                            if (domicile) _tag('À domicile possible', Colors.green),
+                          const SizedBox(height: 4),
+                          Wrap(spacing: 6, runSpacing: 4, children: [
+                            _tag(bilan ? 'Bilan requis' : 'Sans bilan', bilan),
+                            _tag(domicile ? 'À domicile possible' : 'Chez le pro uniquement', domicile),
                           ]),
                         ]),
-                        isThreeLine: bilan || domicile,
+                        isThreeLine: true,
                         trailing: IconButton(
                           icon: const Icon(Icons.delete_outline, color: Colors.red),
                           onPressed: () => _supprimer(p['id'].toString()),
@@ -115,11 +116,14 @@ class _EducationPrestationsPageState extends State<EducationPrestationsPage> {
     );
   }
 
-  Widget _tag(String label, Color color) => Container(
-    margin: const EdgeInsets.only(top: 4),
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-    decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-    child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: color, fontWeight: FontWeight.w600)),
+  Widget _tag(String label, bool active) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: active ? _purple.withValues(alpha: 0.1) : Colors.grey.shade100,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600,
+        color: active ? _purple : Colors.grey.shade500)),
   );
 }
 
@@ -164,7 +168,13 @@ class _PrestationFormState extends State<_PrestationForm> {
   }
 
   Future<void> _submit() async {
-    if (_nomCtrl.text.trim().isEmpty) return;
+    if (_nomCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Donnez un nom à ce cours.', style: TextStyle(fontFamily: 'Galey')),
+        backgroundColor: Colors.orange, behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
     setState(() => _saving = true);
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) { setState(() => _saving = false); return; }
@@ -193,6 +203,29 @@ class _PrestationFormState extends State<_PrestationForm> {
     }
   }
 
+  // Interrupteur toujours visible (fond + bordure colorés à l'état actif) —
+  // un Switch seul se voit mal sur fond blanc quand il est désactivé.
+  Widget _toggleCard({required bool value, required ValueChanged<bool> onChanged, required String label, required String hint}) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: value ? _purple.withValues(alpha: 0.06) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: value ? _purple : Colors.grey.shade300),
+      ),
+      child: Row(children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+              color: value ? _purple : Colors.black87)),
+          const SizedBox(height: 2),
+          Text(hint, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+        ])),
+        const SizedBox(width: 8),
+        Switch(value: value, activeThumbColor: _purple, onChanged: onChanged),
+      ]),
+    );
+  }
+
   Widget _field(TextEditingController ctrl, String label, {TextInputType? type}) => TextField(
     controller: ctrl,
     keyboardType: type,
@@ -219,24 +252,19 @@ class _PrestationFormState extends State<_PrestationForm> {
           const SizedBox(height: 12),
           TextField(controller: _descCtrl, maxLines: 2, style: const TextStyle(fontFamily: 'Galey'),
               decoration: const InputDecoration(labelText: 'Description (optionnel)', border: OutlineInputBorder())),
-          const SizedBox(height: 8),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            activeThumbColor: _purple,
+          const SizedBox(height: 10),
+          _toggleCard(
             value: _bilanRequis,
             onChanged: (v) => setState(() => _bilanRequis = v),
-            title: const Text('Nécessite un bilan préalable', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-            subtitle: const Text('Proposé en priorité aux nouvelles familles si l\'option "Bilan obligatoire" est activée',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+            label: 'Nécessite un bilan préalable',
+            hint: 'Proposé en priorité aux nouvelles familles si l\'option "Bilan obligatoire" est activée',
           ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            activeThumbColor: _purple,
+          const SizedBox(height: 8),
+          _toggleCard(
             value: _domicileOk,
             onChanged: (v) => setState(() => _domicileOk = v),
-            title: const Text('Peut être proposé à domicile', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
-            subtitle: const Text('La famille pourra le demander à domicile sur les créneaux que vous autorisez',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+            label: 'Peut être proposé à domicile',
+            hint: 'La famille pourra le demander à domicile sur les créneaux que vous autorisez',
           ),
           const SizedBox(height: 12),
           SizedBox(width: double.infinity, child: ElevatedButton(

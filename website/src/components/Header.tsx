@@ -321,6 +321,7 @@ const MENU_EDUCATION = [
     section: 'Mon espace pro',
     icon: '💼',
     items: [
+      { href: '/education/prestations', label: 'Mes cours',       icon: '📖' },
       { href: '/education/planning', label: 'Planning des cours', icon: '📅' },
       { href: '/mes-rdv',            label: 'Mon agenda RDV',     icon: '🗓️' },
       { href: '/pro/creneaux',       label: 'Mes créneaux',       icon: '⏰' },
