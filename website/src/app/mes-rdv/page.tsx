@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import OwnerContactButton from '@/components/pro/OwnerContactButton';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,9 @@ interface Rdv {
   statut: string;
   notes_annulation?: string | null;
   notes_pro?: string | null;
+  notes_client?: string | null;
+  client_nom_manuel?: string | null;
+  client_telephone_manuel?: string | null;
   duree_minutes?: number | null;
   premiere_visite?: boolean | null;
   lieu?: string | null;
@@ -479,10 +483,11 @@ function RefuserModal({ rdv, label, type, onClose, onDone }: {
 
 // ── Carte RDV ──────────────────────────────────────────────────────────────────
 
-function RdvCard({ rdv, tab, isVet, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal, onModifier }: {
+function RdvCard({ rdv, tab, myUid, myProfileId, onAccepter, onRefuser, onAnnuler, onTerminer, onDelete, onOpenAnimal, onModifier }: {
   rdv: Rdv;
   tab: 'demandes' | 'a_venir' | 'historique';
-  isVet: boolean;
+  myUid: string;
+  myProfileId: string | null;
   onAccepter?: () => void;
   onRefuser?: () => void;
   onAnnuler?: () => void;
@@ -520,12 +525,47 @@ function RdvCard({ rdv, tab, isVet, onAccepter, onRefuser, onAnnuler, onTerminer
           {rdv.motif && <p className="text-xs text-gray-400 mt-0.5 truncate">Motif : {rdv.motif}</p>}
           {rdv.lieu && <p className="text-xs text-gray-400 mt-0.5 truncate">📍 {rdv.lieu}</p>}
           {rdv.notes_annulation && <p className="text-xs text-red-400 mt-0.5">Note : {rdv.notes_annulation}</p>}
+          {rdv.notes_client && rdv.notes_client.trim() && (
+            <div className="mt-2 rounded-lg border px-2.5 py-2" style={{ borderColor: '#0C5C6C26', background: '#0C5C6C0C' }}>
+              <p className="text-[11px] font-bold" style={{ color: TEAL, fontFamily: 'Galey, sans-serif' }}>💬 Message du client</p>
+              <p className="text-xs text-gray-600 mt-0.5" style={{ fontFamily: 'Galey, sans-serif' }}>{rdv.notes_client}</p>
+            </div>
+          )}
         </div>
         <span className="text-xs px-2 py-0.5 rounded-full font-semibold flex-shrink-0"
           style={{ background: st.bg, color: st.color, fontFamily: 'Galey, sans-serif' }}>
           {st.label}
         </span>
       </div>
+
+      {/* Infos client — dispo sur tous les onglets, y compris une demande en attente */}
+      {(rdv.animal_id || rdv.client_uid || rdv.client_telephone_manuel) && (
+        <div className="flex gap-2 flex-wrap items-center">
+          {rdv.animal_id && rdv.client_uid && (
+            <OwnerContactButton
+              animalId={String(rdv.animal_id)}
+              animalNom={rdv.animalNom ?? rdv.clientName ?? 'Animal'}
+              ownerUid={rdv.client_uid}
+              myUid={myUid}
+              myProfileId={myProfileId}
+            />
+          )}
+          {!rdv.client_uid && rdv.client_telephone_manuel && (
+            <a href={`tel:${rdv.client_telephone_manuel.replace(/[^0-9+]/g, '')}`}
+              className="text-xs font-semibold px-3 py-1.5 rounded-xl border"
+              style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
+              📞 {rdv.client_telephone_manuel}
+            </a>
+          )}
+          {rdv.animal_id && (
+            <button onClick={() => onOpenAnimal?.(String(rdv.animal_id))}
+              className="text-xs font-semibold px-3 py-1.5 rounded-xl border"
+              style={{ borderColor: '#6E9E57', color: '#6E9E57', fontFamily: 'Galey, sans-serif' }}>
+              🐾 Fiche de l&apos;animal
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex gap-2 flex-wrap">
         {tab === 'demandes' && (
@@ -544,13 +584,6 @@ function RdvCard({ rdv, tab, isVet, onAccepter, onRefuser, onAnnuler, onTerminer
         )}
         {tab === 'a_venir' && (
           <>
-            {isVet && rdv.animal_id && (
-              <button onClick={() => onOpenAnimal?.(rdv.animal_id!)}
-                className="text-xs font-semibold px-3 py-2 rounded-xl border"
-                style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
-                🐾 Fiche animal
-              </button>
-            )}
             <button onClick={onModifier}
               className="text-xs font-semibold px-3 py-2 rounded-xl border"
               style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
@@ -570,13 +603,6 @@ function RdvCard({ rdv, tab, isVet, onAccepter, onRefuser, onAnnuler, onTerminer
         )}
         {tab === 'historique' && (
           <>
-            {isVet && rdv.animal_id && (
-              <button onClick={() => onOpenAnimal?.(rdv.animal_id!)}
-                className="text-xs font-semibold px-3 py-2 rounded-xl border"
-                style={{ borderColor: TEAL, color: TEAL, fontFamily: 'Galey, sans-serif' }}>
-                🐾 Fiche animal
-              </button>
-            )}
             {confirmDel ? (
               <div className="flex gap-2 items-center flex-1">
                 <span className="text-xs text-gray-500 flex-1">Supprimer définitivement ?</span>
@@ -1002,7 +1028,6 @@ export default function MesRdvPage() {
     resolveCatPro();
   }, [activeProfileId, userData]);
 
-  const isVet  = catPro === 'veterinaire' || catPro === 'sante';
   const proName = userData?.nameElevage ?? userData?.firstname ?? 'Le professionnel';
 
   const fetchRdvs = useCallback(async () => {
@@ -1011,7 +1036,7 @@ export default function MesRdvPage() {
     try {
       const { data } = await supabase
         .from('rdv')
-        .select('id, pro_uid, client_uid, pro_profile_id, client_profile_id, animal_id, date_heure, motif, statut, notes_annulation, notes_pro, duree_minutes, premiere_visite, lieu, lieu_lat, lieu_lng, instructeur_profile_id')
+        .select('id, pro_uid, client_uid, pro_profile_id, client_profile_id, animal_id, date_heure, motif, statut, notes_annulation, notes_pro, notes_client, client_nom_manuel, client_telephone_manuel, duree_minutes, premiere_visite, lieu, lieu_lat, lieu_lng, instructeur_profile_id')
         .eq('pro_uid', user.uid)
         .eq('pro_profile_id', activeProfileId)
         .order('date_heure', { ascending: true });
@@ -1251,7 +1276,8 @@ export default function MesRdvPage() {
           ) : (
             <div className="space-y-3">
               {currentList.map(rdv => (
-                <RdvCard key={rdv.id} rdv={rdv} tab={activeTab as 'demandes' | 'a_venir' | 'historique'} isVet={isVet}
+                <RdvCard key={rdv.id} rdv={rdv} tab={activeTab as 'demandes' | 'a_venir' | 'historique'}
+                  myUid={user?.uid ?? ''} myProfileId={activeProfileId || null}
                   onAccepter={() => setModalAccepter(rdv)}
                   onRefuser={() => setModalRefuser(rdv)}
                   onAnnuler={() => setModalAnnuler(rdv)}

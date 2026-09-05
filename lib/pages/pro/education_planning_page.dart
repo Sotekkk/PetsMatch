@@ -4,6 +4,9 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
+import 'package:PetsMatch/pages/pro/owner_contact.dart';
+import 'package:PetsMatch/pages/pro/pro_agenda.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 const _kEducationTeal = Color(0xFF0C5C6C);
 const _kEducationPurple = Color(0xFF7B5EA7);
@@ -65,9 +68,34 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
           counts[cid] = (counts[cid] ?? 0) + 1;
         }
       }
+      final rdvs = List<Map<String, dynamic>>.from(results[0] as List);
+      // Résout nom du client + nom de l'animal pour l'affichage / la fiche.
+      final rClientUids = rdvs.map((r) => r['client_uid']?.toString()).whereType<String>().toSet().toList();
+      final rAnimalIds = rdvs.map((r) => r['animal_id']?.toString()).whereType<String>().toSet().toList();
+      final rNames = <String, String>{};
+      final rAnimalNames = <String, String>{};
+      if (rClientUids.isNotEmpty) {
+        final users = await _supa.from('user_profiles')
+            .select('uid, firstname, lastname').inFilter('uid', rClientUids).eq('is_main', true);
+        for (final u in users as List) {
+          rNames[u['uid'] as String] = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+        }
+      }
+      if (rAnimalIds.isNotEmpty) {
+        final animaux = await _supa.from('animaux').select('id, nom').inFilter('id', rAnimalIds);
+        for (final a in animaux as List) {
+          rAnimalNames[a['id'].toString()] = a['nom']?.toString() ?? 'Animal';
+        }
+      }
+      for (final r in rdvs) {
+        r['_client_nom'] = (rNames[r['client_uid']]?.isNotEmpty ?? false)
+            ? rNames[r['client_uid']]
+            : (r['client_nom_manuel']?.toString().isNotEmpty ?? false ? r['client_nom_manuel'] : 'Client');
+        r['_animal_nom'] = rAnimalNames[r['animal_id']?.toString()] ?? '';
+      }
       if (mounted) {
         setState(() {
-          _rdvs = List<Map<String, dynamic>>.from(results[0] as List);
+          _rdvs = rdvs;
           _cours = cours;
           _participantsCount = counts;
           _loading = false;
@@ -189,13 +217,19 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
         ? (s['titre']?.toString() ?? 'Cours collectif')
         : (s['motif']?.toString() ?? 'RDV');
     final estRecurrent = isCours && s['serie_id'] != null;
+    final clientNom = (s['_client_nom']?.toString() ?? '').trim();
+    final animalNom = (s['_animal_nom']?.toString() ?? '').trim();
     final sousTitre = isCours
         ? '${_participantsCount[s['id']] ?? 0} / ${s['capacite_max']} inscrits'
             '${estRecurrent && d != null ? ' · chaque ${_jours[d.weekday - 1]}' : ''}'
-        : 'Individuel — ${s['duree_minutes'] ?? 60} min';
+        : [
+            if (clientNom.isNotEmpty) clientNom,
+            if (animalNom.isNotEmpty) animalNom,
+            '${s['duree_minutes'] ?? 60} min',
+          ].join(' · ');
 
     return GestureDetector(
-      onTap: isCours ? () => _openCours(s) : null,
+      onTap: isCours ? () => _openCours(s) : () => _openRdvDetail(s),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),
@@ -225,10 +259,27 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
             ]),
             Text(sousTitre, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
           ])),
-          if (isCours) Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 20),
+          if (!isCours && s['statut'] == 'demande')
+            Container(
+              margin: const EdgeInsets.only(right: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(20)),
+              child: Text('à confirmer', style: TextStyle(fontFamily: 'Galey', fontSize: 9, fontWeight: FontWeight.w700, color: Colors.orange.shade700)),
+            ),
+          Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 20),
         ]),
       ),
     );
+  }
+
+  void _openRdvDetail(Map<String, dynamic> rdv) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _RdvDetailSheet(rdv: rdv),
+    ).then((changed) { if (changed == true) _load(); });
   }
 }
 
@@ -768,4 +819,155 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
             ),
     );
   }
+}
+
+// ── Détail d'un RDV individuel (depuis le planning) ───────────────────────────
+// Infos + message du client + coordonnées propriétaire + fiche animal en
+// lecture. La confirmation/refus se fait dans l'agenda (flux complet :
+// agenda_events, accès carnet, notifications).
+class _RdvDetailSheet extends StatelessWidget {
+  final Map<String, dynamic> rdv;
+  const _RdvDetailSheet({required this.rdv});
+
+  @override
+  Widget build(BuildContext context) {
+    final d = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
+    final dateStr = d != null ? DateFormat('EEEE d MMMM · HH:mm', 'fr_FR').format(d) : '';
+    final clientNom = (rdv['_client_nom']?.toString() ?? 'Client').trim();
+    final animalNom = (rdv['_animal_nom']?.toString() ?? '').trim();
+    final motif = rdv['motif']?.toString() ?? 'Cours';
+    final message = rdv['notes_client']?.toString().trim() ?? '';
+    final animalId = rdv['animal_id']?.toString();
+    final statut = rdv['statut']?.toString() ?? '';
+    final telManuel = rdv['client_telephone_manuel']?.toString().trim() ?? '';
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 14),
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+        Text(motif, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 16)),
+        if (dateStr.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(dateStr, style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
+        ],
+        const SizedBox(height: 12),
+        Row(children: [
+          const Icon(Icons.person_outline, size: 16, color: _kEducationTeal),
+          const SizedBox(width: 8),
+          Expanded(child: Text(clientNom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13.5))),
+        ]),
+        if (animalNom.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Row(children: [
+            const Icon(Icons.pets, size: 15, color: Color(0xFF6E9E57)),
+            const SizedBox(width: 8),
+            Text(animalNom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF6E9E57))),
+          ]),
+        ],
+        if (message.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: const Color(0x0C0C5C6C),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0x260C5C6C)),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Message du client', style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: _kEducationTeal)),
+              const SizedBox(height: 4),
+              Text(message, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF37474F))),
+            ]),
+          ),
+        ],
+        const SizedBox(height: 14),
+        Wrap(spacing: 10, runSpacing: 10, children: [
+          if ((rdv['client_uid']?.toString().isNotEmpty ?? false) && animalId != null && animalId.isNotEmpty)
+            _ActionChip(
+              icon: Icons.contact_phone_outlined,
+              label: 'Coordonnées',
+              child: OwnerContactButton(
+                animalId: animalId,
+                animalNom: animalNom.isNotEmpty ? animalNom : clientNom,
+                ownerUid: rdv['client_uid']?.toString(),
+                size: 18,
+              ),
+            )
+          else if (telManuel.isNotEmpty)
+            ActionChipButton(
+              icon: Icons.call_outlined, label: telManuel,
+              onTap: () => launchUrl(Uri(scheme: 'tel', path: telManuel.replaceAll(RegExp(r'[^0-9+]'), '')),
+                  mode: LaunchMode.externalApplication),
+            ),
+          if (animalId != null && animalId.isNotEmpty)
+            ActionChipButton(
+              icon: Icons.pets_outlined, label: 'Fiche de l\'animal',
+              onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => AnimalFichePage(animalId: animalId, readOnly: true, educationMode: true, rdvId: rdv['id']?.toString()),
+              )),
+            ),
+        ]),
+        if (statut == 'demande') ...[
+          const SizedBox(height: 16),
+          SizedBox(width: double.infinity, child: ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const ProAgendaPage(initialTabIndex: 0)));
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: _kEducationPurple, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 13)),
+            icon: const Icon(Icons.event_available_outlined, size: 18),
+            label: const Text('Confirmer / refuser dans l\'agenda', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          )),
+        ],
+      ]),
+    );
+  }
+}
+
+class _ActionChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Widget child;
+  const _ActionChip({required this.icon, required this.label, required this.child});
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.only(left: 4, right: 10),
+    decoration: BoxDecoration(
+      color: const Color(0x0C0C5C6C),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: const Color(0x260C5C6C)),
+    ),
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      child,
+      Text(label, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12.5, color: _kEducationTeal)),
+    ]),
+  );
+}
+
+class ActionChipButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const ActionChipButton({super.key, required this.icon, required this.label, required this.onTap});
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(12),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0x0C0C5C6C),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0x260C5C6C)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 16, color: _kEducationTeal),
+        const SizedBox(width: 7),
+        Text(label, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12.5, color: _kEducationTeal)),
+      ]),
+    ),
+  );
 }

@@ -155,8 +155,8 @@ export default function EducationPlanningPage() {
                       : `Individuel — ${(s.data as Rdv).duree_minutes ?? 60} min`;
                     return (
                       <div key={s.data.id}
-                        onClick={() => isCours && setDetailFor(s.data as Cours)}
-                        className={`bg-white rounded-xl border p-3 flex items-center gap-3 ${isCours ? 'cursor-pointer hover:shadow-sm' : ''}`}
+                        onClick={() => isCours ? setDetailFor(s.data as Cours) : router.push('/mes-rdv')}
+                        className="bg-white rounded-xl border p-3 flex items-center gap-3 cursor-pointer hover:shadow-sm"
                         style={{ borderColor: isCours ? `${PURPLE}4D` : '#e5e7eb' }}>
                         <div className="w-1 h-9 rounded" style={{ backgroundColor: isCours ? PURPLE : TEAL }} />
                         <span className="w-12 text-sm font-galey font-bold">{HOUR_FMT.format(d)}</span>
@@ -164,7 +164,7 @@ export default function EducationPlanningPage() {
                           <p className="text-sm font-galey font-semibold truncate">{recurrent && '🔁 '}{titre}</p>
                           <p className="text-xs font-galey text-gray-500">{sousTitre}</p>
                         </div>
-                        {isCours && <span className="text-gray-300">›</span>}
+                        <span className="text-gray-300">›</span>
                       </div>
                     );
                   })}

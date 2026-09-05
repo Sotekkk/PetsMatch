@@ -7,7 +7,9 @@ import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_fiche_client_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
+import 'package:PetsMatch/pages/pro/owner_contact.dart';
 import 'package:PetsMatch/pages/message.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/utils/geocoding_helper.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
@@ -2773,7 +2775,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           } : null,
           onDone:    () => _updateStatut(rdv['id'].toString(), 'termine'),
           onNotes:   () => _showNotesDialog(rdv),
-          onCarnetSante: (showProTools && hasAnimal)
+          // Fiche/carnet de santé en lecture — désormais sur tous les onglets
+          // (y compris « Demandes »), pas seulement les RDV confirmés.
+          onCarnetSante: (hasAnimal && User_Info.catPro != 'education')
               ? () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => AnimalFichePage(
                     animalId: animalId,
@@ -2909,6 +2913,7 @@ class _RdvCard extends StatelessWidget {
     final lieu = rdv['lieu']?.toString() ?? '';
     final duree = (rdv['duree_minutes'] as num?)?.toInt();
     final notes = rdv['notes_pro']?.toString() ?? '';
+    final messageClient = rdv['notes_client']?.toString().trim() ?? '';
     final statut = rdv['statut']?.toString() ?? '';
     final hasNotes = notes.isNotEmpty;
     final visitCount = (rdv['_visit_count'] as int?) ?? 0;
@@ -3015,6 +3020,31 @@ class _RdvCard extends StatelessWidget {
                     color: duree != null ? Colors.grey : Colors.orange.shade400),
               ),
 
+              // Message laissé par le client à la réservation
+              if (messageClient.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0x0C0C5C6C),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0x260C5C6C)),
+                  ),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Row(children: [
+                      Icon(Icons.chat_bubble_outline, size: 13, color: Color(0xFF0C5C6C)),
+                      SizedBox(width: 5),
+                      Text('Message du client', style: TextStyle(fontFamily: 'Galey',
+                          fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
+                    ]),
+                    const SizedBox(height: 4),
+                    Text(messageClient, style: const TextStyle(fontFamily: 'Galey',
+                        fontSize: 12.5, color: Color(0xFF37474F))),
+                  ]),
+                ),
+              ],
+
               // Notes indicator
               if (hasNotes) ...[
                 const SizedBox(height: 6),
@@ -3041,6 +3071,50 @@ class _RdvCard extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               ),
+              // Coordonnées du propriétaire — toujours dispo (même sur une
+              // demande en attente : le pro peut vouloir appeler avant de
+              // confirmer). Client au téléphone (RDV manuel) : appel direct.
+              if ((rdv['client_uid']?.toString().isNotEmpty ?? false) &&
+                  (rdv['animal_id']?.toString().isNotEmpty ?? false)) ...[
+                const SizedBox(width: 2),
+                OwnerContactButton(
+                  animalId: rdv['animal_id'].toString(),
+                  animalNom: animalNom.isNotEmpty ? animalNom : clientName,
+                  ownerUid: rdv['client_uid']?.toString(),
+                  size: 20,
+                ),
+              ] else if ((rdv['client_telephone_manuel']?.toString().trim().isNotEmpty ?? false)) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  onPressed: () => launchUrl(Uri(scheme: 'tel',
+                      path: rdv['client_telephone_manuel'].toString().replaceAll(RegExp(r'[^0-9+]'), '')),
+                      mode: LaunchMode.externalApplication),
+                  icon: const Icon(Icons.call_outlined, size: 20, color: Color(0xFF0C5C6C)),
+                  tooltip: 'Appeler ${rdv['client_telephone_manuel']}',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+              // Éducateur : fiche animal en lecture seule sur tous les onglets
+              // (les autres cat_pro passent par onCarnetSante ci-dessous).
+              if (User_Info.catPro == 'education' &&
+                  (rdv['animal_id']?.toString().isNotEmpty ?? false)) ...[
+                const SizedBox(width: 4),
+                Builder(builder: (ctx) => IconButton(
+                  onPressed: () => Navigator.push(ctx, MaterialPageRoute(
+                    builder: (_) => AnimalFichePage(
+                      animalId: rdv['animal_id'].toString(),
+                      readOnly: true,
+                      educationMode: true,
+                      rdvId: rdv['id']?.toString(),
+                    ),
+                  )),
+                  icon: const Icon(Icons.pets_outlined, size: 20, color: Color(0xFF6E9E57)),
+                  tooltip: 'Fiche de l\'animal',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                )),
+              ],
               if (onDelete != null) ...[
                 const SizedBox(width: 4),
                 IconButton(

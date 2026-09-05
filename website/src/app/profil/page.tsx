@@ -790,6 +790,12 @@ const TARIFS_TAXI_FIELDS = [
 
 const JOURS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
+// Types de pro qui prennent des RDV (→ réglage « délai minimum de réservation »).
+const CAT_PRO_AVEC_RDV = new Set([
+  'education', 'sante', 'veterinaire', 'pension', 'garde',
+  'toilettage', 'photographe', 'marechal_ferrant', 'taxi_animalier',
+]);
+
 const MOTIFS_LABELS: Record<string, Record<string, string>> = {
   veterinaire: { consultation: 'Consultation', vaccination: 'Vaccination', bilan: 'Bilan annuel', urgence: 'Urgence', chirurgie: 'Chirurgie', autre: 'Autre' },
   pension:     { visite: 'Visite', arrivee: 'Arrivée', depart: 'Départ', autre: 'Autre' },
@@ -883,6 +889,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [tarifsGarde, setTarifsGarde] = useState<Record<string, number>>({});
   const [tarifsTaxi, setTarifsTaxi] = useState<Record<string, number>>({});
   const [educationBilanRequis, setEducationBilanRequis] = useState(true);
+  const [delaiMinReservationH, setDelaiMinReservationH] = useState(0);
   const [tarifsEducationVisibles, setTarifsEducationVisibles] = useState(false);
   const [tarifsEducationExtra, setTarifsEducationExtra] = useState<{ label: string; prix: number; description: string }[]>([]);
   const [educationBilanDescription, setEducationBilanDescription] = useState('');
@@ -988,6 +995,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           setTarifsTaxi(r.tarifs_taxi as Record<string, number>);
         }
         setEducationBilanRequis((r.education_bilan_requis as boolean) ?? true);
+        setDelaiMinReservationH((r.delai_min_reservation_h as number | null) ?? 0);
         setTrajetOrigineDefaut((r.trajet_origine_defaut as string) ?? 'cabinet');
         setAutreDomicileAdresse((r.autre_domicile_adresse as string) ?? '');
         if (r.autre_domicile_lat != null && r.autre_domicile_lng != null) {
@@ -1174,6 +1182,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         : {}),
       ...(['garde', 'education'].includes((data?.profile_type ?? data?.cat_pro) ?? '')
         ? { acaced: acacedNum.trim(), acaced_numero: acacedNum.trim() }
+        : {}),
+      ...(CAT_PRO_AVEC_RDV.has((data?.profile_type ?? data?.cat_pro) ?? '')
+        ? { delai_min_reservation_h: delaiMinReservationH }
         : {}),
     };
 
@@ -1504,6 +1515,25 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
               <input ref={acacedDocRef} type="file" accept="image/*,application/pdf" className="hidden"
                 onChange={e => { const f = e.target.files?.[0]; if (f) setAcacedDocFile(f); e.target.value = ''; }} />
             </div>
+          </Card>
+        )}
+
+        {/* Délai minimum de réservation — tous pros à RDV */}
+        {CAT_PRO_AVEC_RDV.has(catPro) && (
+          <Card title="Délai minimum de réservation">
+            <p className="text-xs text-gray-400 mb-3">
+              Empêche les réservations de dernière minute : un client ne pourra pas prendre
+              un créneau qui commence dans moins de ce délai.
+            </p>
+            <Field label="Délai avant un RDV">
+              <select value={delaiMinReservationH} onChange={e => setDelaiMinReservationH(Number(e.target.value))} className={inputCls}>
+                <option value={0}>Aucun délai</option>
+                <option value={12}>12 h à l&apos;avance</option>
+                <option value={24}>24 h à l&apos;avance</option>
+                <option value={48}>48 h à l&apos;avance</option>
+                <option value={72}>72 h à l&apos;avance</option>
+              </select>
+            </Field>
           </Card>
         )}
 

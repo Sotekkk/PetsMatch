@@ -99,6 +99,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   bool _educationBilanRequis = true;
   bool _isFirstTimeEducationClient = false;
   String _educationBilanDescription = '';
+  // Délai minimum (h) imposé par le pro entre maintenant et le début du RDV.
+  int _delaiMinReservationH = 0;
 
   // Taxi animalier : trajet départ/arrivée + animaux transportés
   final _adresseDepartCtrl = TextEditingController();
@@ -294,7 +296,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       final row = (widget.proProfileId != null && widget.proProfileId!.isNotEmpty)
           ? await Supabase.instance.client
               .from('user_profiles')
-              .select('durees_motifs, profile_type, cat_pro, education_bilan_requis, education_bilan_description')
+              .select('durees_motifs, profile_type, cat_pro, education_bilan_requis, education_bilan_description, delai_min_reservation_h')
               .eq('id', widget.proProfileId!)
               .maybeSingle()
           : await Supabase.instance.client
@@ -318,6 +320,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         }
         _educationBilanRequis = row['education_bilan_requis'] as bool? ?? true;
         _educationBilanDescription = (row['education_bilan_description'] ?? '').toString().trim();
+        _delaiMinReservationH = (row['delai_min_reservation_h'] as num?)?.toInt() ?? 0;
         if (_catPro == 'education') await _checkFirstTimeEducationClient();
       }
     } catch (_) {}
@@ -446,10 +449,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     final duration = _selectedDuration;
     if (_availableSlots.isEmpty) return {};
 
-    // Pour aujourd'hui, on ne propose que les créneaux futurs (+ 30 min de marge)
+    // Heure minimale réservable : maintenant + délai imposé par le pro
+    // (repli 30 min si aucun délai). Gère le multi-jours.
     final now = DateTime.now();
-    final todayKey = '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}';
-    final nowMinutes = now.hour * 60 + now.minute + 30; // marge 30 min
+    final earliestBookable = _delaiMinReservationH > 0
+        ? now.add(Duration(hours: _delaiMinReservationH))
+        : now.add(const Duration(minutes: 30));
 
     // 1. Grouper les creneaux_pro par date
     // Un créneau marqué "collectif" par un éducateur est réservé à ses cours
@@ -503,10 +508,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
 
       // 4. Générer les créneaux disponibles (pas de 15 min)
       final available = <Map<String, dynamic>>[];
+      final dp = date.split('-');
+      final dayDate = DateTime(int.parse(dp[0]), int.parse(dp[1]), int.parse(dp[2]));
       for (final window in windows) {
         for (int t = window.startMin; t + duration <= window.endMin; t += 15) {
-          // Pour aujourd'hui : ignorer les créneaux déjà passés (+ 30 min de marge)
-          if (date == todayKey && t < nowMinutes) continue;
+          // Ignorer les créneaux avant l'heure minimale réservable
+          if (dayDate.add(Duration(minutes: t)).isBefore(earliestBookable)) continue;
           final overlaps = blocked.any((b) => t < b.endMin && t + duration > b.startMin);
           if (!overlaps) {
             final h = t ~/ 60;

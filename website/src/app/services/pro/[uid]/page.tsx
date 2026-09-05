@@ -46,6 +46,7 @@ interface ProData {
   tarifs_education_visibles?: boolean;
   tarifs_education_extra?: { label: string; prix: number; description?: string }[];
   education_bilan_description?: string;
+  delai_min_reservation_h?: number | null;
   forfaits_education?: { id: string; nom: string; nb_seances: number; prix: number }[];
   tarifs_taxi?: { prise_en_charge?: number; prix_km?: number; minimum?: number };
   tarifs_pension?: {
@@ -278,6 +279,7 @@ function ProDetailContent() {
           cat_pro: data.profile_type || data.cat_pro || '',
           tarifs_education: (data.tarifs_education as Record<string, number>) ?? {},
           education_bilan_requis: (data.education_bilan_requis as boolean) ?? true,
+          delai_min_reservation_h: (data.delai_min_reservation_h as number | null) ?? 0,
           tarifs_education_visibles: (data.tarifs_education_visibles as boolean) ?? false,
           tarifs_education_extra: Array.isArray(data.tarifs_education_extra) ? data.tarifs_education_extra : [],
           education_bilan_description: (data.education_bilan_description as string) ?? '',
@@ -307,6 +309,7 @@ function ProDetailContent() {
           rayon: data.rayon_intervention || 0, cat_pro: data.cat_pro || '',
           tarifs_education: (data.tarifs_education as Record<string, number>) ?? {},
           education_bilan_requis: (data.education_bilan_requis as boolean) ?? true,
+          delai_min_reservation_h: (data.delai_min_reservation_h as number | null) ?? 0,
           tarifs_education_visibles: (data.tarifs_education_visibles as boolean) ?? false,
           tarifs_education_extra: Array.isArray(data.tarifs_education_extra) ? data.tarifs_education_extra : [],
           education_bilan_description: (data.education_bilan_description as string) ?? '',
@@ -627,7 +630,14 @@ function ProDetailContent() {
     }
   }
 
+  // Délai minimum de réservation imposé par le pro : on masque tout créneau
+  // qui commence avant « maintenant + délai » (repli 30 min si aucun délai).
+  const delaiMinH = Number(pro?.delai_min_reservation_h) || 0;
+  const earliestBookable = new Date(Date.now() + (delaiMinH > 0 ? delaiMinH * 3600_000 : 30 * 60_000));
   const slotsByDate = slots.reduce<Record<string, Slot[]>>((acc, s) => {
+    const [dy, dmo, dd] = s.date.split('-').map(Number);
+    const [sh, sm] = s.heureDebut.split(':').map(Number);
+    if (new Date(dy, dmo - 1, dd, sh || 0, sm || 0) < earliestBookable) return acc;
     if (!acc[s.date]) acc[s.date] = [];
     acc[s.date].push(s);
     return acc;

@@ -52,6 +52,8 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
 
   bool _educationBilanRequis = true;
   bool _isFirstTimeClient = false;
+  // Délai minimum (h) imposé par le pro entre maintenant et le début du cours.
+  int _delaiMinReservationH = 0;
 
   // Profil du pro consulté, résolu une fois pour toutes : si l'appelant n'a
   // pas passé proProfileId (lien sans profil précis), on retombe sur le
@@ -124,11 +126,12 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
 
   Future<void> _loadPrestations() async {
     try {
-      const cols = 'education_bilan_requis, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng';
+      const cols = 'education_bilan_requis, delai_min_reservation_h, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng';
       final row = (widget.proProfileId != null && widget.proProfileId!.isNotEmpty)
           ? await _supa.from('user_profiles').select(cols).eq('id', widget.proProfileId!).maybeSingle()
           : await _supa.from('user_profiles').select(cols).eq('uid', widget.proUid).eq('is_main', true).maybeSingle();
       _educationBilanRequis = row?['education_bilan_requis'] as bool? ?? true;
+      _delaiMinReservationH = (row?['delai_min_reservation_h'] as num?)?.toInt() ?? 0;
       _origineDefaut = row?['trajet_origine_defaut']?.toString() ?? 'cabinet';
       _autreDomicileLat = (row?['autre_domicile_lat'] as num?)?.toDouble();
       _autreDomicileLng = (row?['autre_domicile_lng'] as num?)?.toDouble();
@@ -217,8 +220,11 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
     if (_availableSlots.isEmpty || _selectedPrestation == null) return {};
     final duration = _duration;
     final now = DateTime.now();
-    final todayKey = _dateKey(now);
-    final nowMinutes = now.hour * 60 + now.minute + 30;
+    // Heure minimale réservable : maintenant + délai imposé par le pro
+    // (repli 30 min si aucun délai). Gère le multi-jours.
+    final earliestBookable = _delaiMinReservationH > 0
+        ? now.add(Duration(hours: _delaiMinReservationH))
+        : now.add(const Duration(minutes: 30));
 
     final creneauxByDate = <String, List<({int startMin, int endMin, String? origine})>>{};
     for (final slot in _availableSlots) {
@@ -269,9 +275,11 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
       final blocked = rdvsDuJour.map((r) => (startMin: r.startMin, endMin: r.endMin)).toList();
 
       final available = <Map<String, dynamic>>[];
+      final dp = date.split('-');
+      final dayDate = DateTime(int.parse(dp[0]), int.parse(dp[1]), int.parse(dp[2]));
       for (final window in windows) {
         for (int t = window.startMin; t + duration <= window.endMin; t += 15) {
-          if (date == todayKey && t < nowMinutes) continue;
+          if (dayDate.add(Duration(minutes: t)).isBefore(earliestBookable)) continue;
           final overlaps = blocked.any((b) => t < b.endMin && t + duration > b.startMin);
           if (overlaps) continue;
 
@@ -391,8 +399,31 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
             _recapLine('Prix', '${(prestation['prix'] as num).toStringAsFixed(0)} €'),
           _recapLine('Lieu', _domicile ? 'À domicile — ${_adresseDomicileCtrl.text.trim()}' : 'Chez le professionnel'),
           const SizedBox(height: 12),
-          TextField(controller: _notesCtrl, maxLines: 2, style: const TextStyle(fontFamily: 'Galey'),
-              decoration: const InputDecoration(labelText: 'Message pour le pro (optionnel)', border: OutlineInputBorder())),
+          if (_isFirstTimeClient) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0x0C7B5EA7),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0x267B5EA7)),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Première fois avec ce professionnel',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF7B5EA7))),
+                const SizedBox(height: 8),
+                TextField(controller: _notesCtrl, maxLines: 3, style: const TextStyle(fontFamily: 'Galey'),
+                    decoration: const InputDecoration(
+                      labelText: 'Décrivez brièvement votre besoin',
+                      helperText: 'Visible par le professionnel — facultatif mais utile',
+                      helperMaxLines: 2,
+                      border: OutlineInputBorder(),
+                      filled: true, fillColor: Colors.white,
+                    )),
+              ]),
+            ),
+          ] else
+            TextField(controller: _notesCtrl, maxLines: 2, style: const TextStyle(fontFamily: 'Galey'),
+                decoration: const InputDecoration(labelText: 'Message pour le pro (optionnel)', border: OutlineInputBorder())),
           const SizedBox(height: 16),
           SizedBox(width: double.infinity, child: ElevatedButton(
             onPressed: _saving ? null : () => Navigator.pop(ctx, true),

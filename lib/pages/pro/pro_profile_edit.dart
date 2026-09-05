@@ -131,6 +131,15 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   bool _loadingForfaits = false;
   bool _educationBilanRequis = true;
 
+  // Tous pros à RDV : délai minimum entre maintenant et un RDV réservable
+  // (0 = aucun). Valeurs proposées : 0 / 12 / 24 / 48 / 72 h.
+  int _delaiMinReservationH = 0;
+  static const _catProAvecRdv = {
+    'education', 'sante', 'veterinaire', 'pension', 'garde',
+    'toilettage', 'photographe', 'marechal_ferrant', 'taxi_animalier',
+  };
+  bool get _isBookingPro => _catProAvecRdv.contains(_catPro);
+
   // Éducateur : vitrine publique
   bool _tarifsEducationVisibles = false;
   // Prestations libres nommées par l'éducateur : [{label, prix, description}]
@@ -329,6 +338,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                 MapEntry(k.toString(), (v as num?)?.toDouble() ?? 0)));
         }
         _educationBilanRequis = row['education_bilan_requis'] as bool? ?? true;
+        _delaiMinReservationH = (row['delai_min_reservation_h'] as num?)?.toInt() ?? 0;
         _trajetOrigineDefaut = row['trajet_origine_defaut']?.toString() ?? 'cabinet';
         _autreDomicileCtrl.text = row['autre_domicile_adresse']?.toString() ?? '';
         _autreDomicileLat = (row['autre_domicile_lat'] as num?)?.toDouble();
@@ -673,6 +683,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'education') 'tarifs_education_visibles': _tarifsEducationVisibles,
           if (_catPro == 'education') 'tarifs_education_extra': _cleanTarifsExtra(),
           if (_catPro == 'education') 'education_bilan_description': _educationBilanDescCtrl.text.trim(),
+          if (_isBookingPro) 'delai_min_reservation_h': _delaiMinReservationH,
           if (_catPro == 'education') 'trajet_origine_defaut': _trajetOrigineDefaut,
           if (_catPro == 'education') 'autre_domicile_adresse': _autreDomicileCtrl.text.trim(),
           if (_catPro == 'education') 'autre_domicile_lat': _autreDomicileLat,
@@ -771,6 +782,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'education') 'tarifs_education_visibles': _tarifsEducationVisibles,
           if (_catPro == 'education') 'tarifs_education_extra': _cleanTarifsExtra(),
           if (_catPro == 'education') 'education_bilan_description': _educationBilanDescCtrl.text.trim(),
+          if (_isBookingPro) 'delai_min_reservation_h': _delaiMinReservationH,
           if (_catPro == 'education') 'trajet_origine_defaut': _trajetOrigineDefaut,
           if (_catPro == 'education') 'autre_domicile_adresse': _autreDomicileCtrl.text.trim(),
           if (_catPro == 'education') 'autre_domicile_lat': _autreDomicileLat,
@@ -1331,6 +1343,39 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                     )),
                     const SizedBox(height: 4),
                     _tarifsExtraEditor(),
+                  ],
+
+                  // ── Délai minimum de réservation (tous pros à RDV) ────────
+                  if (_isBookingPro) ...[
+                    const SizedBox(height: 24),
+                    _sectionTitle('Délai minimum de réservation'),
+                    const SizedBox(height: 4),
+                    Text('Empêche les réservations de dernière minute : un client ne pourra '
+                        'pas prendre un créneau qui commence dans moins de ce délai.',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<int>(
+                      initialValue: _delaiMinReservationH,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.black87),
+                      decoration: InputDecoration(
+                        filled: true, fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 0, child: Text('Aucun délai', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                        DropdownMenuItem(value: 12, child: Text('12 h à l\'avance', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                        DropdownMenuItem(value: 24, child: Text('24 h à l\'avance', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                        DropdownMenuItem(value: 48, child: Text('48 h à l\'avance', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                        DropdownMenuItem(value: 72, child: Text('72 h à l\'avance', style: TextStyle(fontFamily: 'Galey', fontSize: 14))),
+                      ],
+                      onChanged: (v) => setState(() => _delaiMinReservationH = v ?? 0),
+                    ),
                   ],
 
                   // ── Bilan préalable obligatoire (éducateur) ───────────────

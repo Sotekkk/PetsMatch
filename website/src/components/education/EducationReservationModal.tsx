@@ -69,6 +69,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
   // n'a pas passé proProfileId) — évite de filtrer créneaux/RDV/notif sur un
   // pro_profile_id vide, qui ne retourne/n'écrit jamais la bonne ligne.
   const [resolvedProfileId, setResolvedProfileId] = useState<string | null>(null);
+  const [delaiMinH, setDelaiMinH] = useState(0); // délai mini de réservation imposé par le pro (heures)
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
   const [slots, setSlots] = useState<{ date: string; heure_debut: string; heure_fin: string; type_prestation: string | null; domicile_ok: boolean; trajet_origine: string | null }[]>([]);
   const [existingRdvs, setExistingRdvs] = useState<{ date_heure: string; duree_minutes: number; lieu_lat: number | null; lieu_lng: number | null }[]>([]);
@@ -87,12 +88,13 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
     if (!user) { router.push('/connexion'); return; }
     if (!profileLoaded) return; // attend la lecture du profil actif (localStorage) avant de scoper les animaux
     (async () => {
-      const cols = 'id, education_bilan_requis, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng';
+      const cols = 'id, education_bilan_requis, delai_min_reservation_h, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng';
       const proRow = proProfileId
         ? await supabase.from('user_profiles').select(cols).eq('id', proProfileId).maybeSingle()
         : await supabase.from('user_profiles').select(cols).eq('uid', proUid).eq('is_main', true).maybeSingle();
       const proData = proRow.data as {
-        id?: string; education_bilan_requis?: boolean; trajet_origine_defaut?: string;
+        id?: string; education_bilan_requis?: boolean; delai_min_reservation_h?: number | null;
+        trajet_origine_defaut?: string;
         autre_domicile_lat?: number; autre_domicile_lng?: number;
         latitude?: number; longitude?: number; lat?: number; lng?: number;
       } | null;
@@ -103,6 +105,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
       setResolvedProfileId(profileId || null);
       const bReq = proData?.education_bilan_requis ?? true;
       setBilanRequis(bReq);
+      setDelaiMinH(proData?.delai_min_reservation_h ?? 0);
       setOrigineDefaut(proData?.trajet_origine_defaut ?? 'cabinet');
       if (proData?.autre_domicile_lat != null && proData?.autre_domicile_lng != null) {
         setAutreDomicileLatLng({ lat: proData.autre_domicile_lat, lng: proData.autre_domicile_lng });
@@ -207,9 +210,9 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
   // Même algorithme que education_reservation_page.dart _smartSlotsByDate.
   const smartSlotsByDate = useMemo(() => {
     if (!selectedPrestation || slots.length === 0) return {} as Record<string, { heure_debut: string; heure_fin: string }[]>;
-    const now = new Date();
-    const todayKey = toDateStr(now);
-    const nowMinutes = now.getHours() * 60 + now.getMinutes() + 30;
+    // Heure minimale réservable : maintenant + délai imposé par le pro
+    // (repli 30 min si aucun délai). Gère le multi-jours.
+    const earliestBookable = new Date(Date.now() + (delaiMinH > 0 ? delaiMinH * 3600_000 : 30 * 60_000));
 
     const byDate: Record<string, { s: number; e: number; origine: string | null }[]> = {};
     for (const slot of slots) {
@@ -240,9 +243,10 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
       const blocked = rdvsDuJour.map(r => ({ s: r.startMin, e: r.endMin }));
 
       const available: { heure_debut: string; heure_fin: string }[] = [];
+      const [dy, dmo, dd] = date.split('-').map(Number);
       for (const w of windows) {
         for (let t = w.s; t + duration <= w.e; t += 15) {
-          if (date === todayKey && t < nowMinutes) continue;
+          if (new Date(dy, dmo - 1, dd, 0, t) < earliestBookable) continue;
           const overlaps = blocked.some(b => t < b.e && t + duration > b.s);
           if (overlaps) continue;
           if (domicile && domicileLatLng && !trajetOk(t, t + duration, w.origine, rdvsDuJour)) continue;
@@ -257,7 +261,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
     }
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slots, existingRdvs, duration, selectedPrestation, domicile, domicileLatLng, origineDefaut, cabinetLatLng, autreDomicileLatLng]);
+  }, [slots, existingRdvs, duration, selectedPrestation, domicile, domicileLatLng, origineDefaut, cabinetLatLng, autreDomicileLatLng, delaiMinH]);
 
   async function geocoderDomicile() {
     const adresse = adresseDomicile.trim();
@@ -435,8 +439,22 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
                 {domicile ? `🏠 À domicile — ${adresseDomicile}` : '📍 Chez le professionnel'}
               </p>
 
-              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Message pour le pro (optionnel)"
-                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-galey resize-none" />
+              {isFirstTime ? (
+                <div className="rounded-xl border p-3" style={{ borderColor: `${catColor}40`, backgroundColor: `${catColor}0C` }}>
+                  <p className="text-xs font-bold mb-2" style={{ fontFamily: 'Galey, sans-serif', color: catColor }}>
+                    Première fois avec ce professionnel
+                  </p>
+                  <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
+                    placeholder="Décrivez brièvement votre besoin"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-galey resize-none bg-white" />
+                  <p className="text-[11px] text-gray-400 mt-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+                    Visible par le professionnel — facultatif mais utile
+                  </p>
+                </div>
+              ) : (
+                <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Message pour le pro (optionnel)"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-galey resize-none" />
+              )}
 
               {!selectedAnimalId && (
                 <div className="rounded-xl border px-3 py-2.5 text-xs font-semibold flex items-start gap-2"
