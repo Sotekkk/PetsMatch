@@ -469,6 +469,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           'id': id,
           'uid_eleveur': null,
           'uid_proprietaire': uid,
+          // profile_id sur l'animal lui-même (cohérent avec les animaux
+          // éleveur) — sinon les écrans qui filtrent uniquement
+          // animaux.profile_id ne voient jamais l'animal, cf.
+          // EducationReservationModal.
+          if (User_Info.activeProfileId.isNotEmpty)
+            'profile_id': User_Info.activeProfileId,
           ...data,
           'created_at': DateTime.now().toIso8601String(),
         });

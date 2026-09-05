@@ -121,6 +121,10 @@ export default function AjouterAnimalPage() {
         row.uid_proprietaire = user.uid;
         row.provenance_qualite = 'achat';
       }
+      // profile_id sur l'animal lui-même (cohérent avec les animaux éleveur) —
+      // sinon les écrans qui ne filtrent que animaux.profile_id ne le voient
+      // jamais, cf. EducationReservationModal.
+      if (activeProfileId) row.profile_id = activeProfileId;
 
       const { error: err } = await supabase.from('animaux').insert([row]);
       if (err) throw err;
