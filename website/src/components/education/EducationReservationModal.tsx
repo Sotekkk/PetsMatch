@@ -264,6 +264,22 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slots, existingRdvs, duration, selectedPrestation, domicile, domicileLatLng, origineDefaut, cabinetLatLng, autreDomicileLatLng, delaiMinH]);
 
+  // Si la semaine affichée est vide mais qu'il y a des dispos plus tard,
+  // saute à la 1re semaine qui en a (la semaine en cours est souvent
+  // déjà passée / week-end → calendrier vide trompeur).
+  useEffect(() => {
+    const keys = Object.keys(smartSlotsByDate);
+    if (keys.length === 0) return;
+    const weekKeys = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(weekStart); d.setDate(d.getDate() + i); return toDateStr(d);
+    });
+    if (weekKeys.some(k => (smartSlotsByDate[k]?.length ?? 0) > 0)) return;
+    const first = keys.sort()[0];
+    const [y, mo, dd] = first.split('-').map(Number);
+    const m = mondayOf(new Date(y, mo - 1, dd));
+    if (m.getTime() > weekStart.getTime()) setWeekStart(m);
+  }, [smartSlotsByDate, weekStart]);
+
   async function geocoderDomicile() {
     const adresse = adresseDomicile.trim();
     if (!adresse) return;

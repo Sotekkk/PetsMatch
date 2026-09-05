@@ -155,7 +155,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
       }
 
       if (mounted) setState(() => _prestations = all);
-    } catch (_) {}
+    } catch (_) {/* liste vide si échec */}
   }
 
   // Un client est "nouveau" s'il n'a jamais eu de séance confirmée/terminée
@@ -197,7 +197,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           .order('heure_debut')
           .limit(2000);
       _availableSlots = List<Map<String, dynamic>>.from(rows as List);
-    } catch (_) {}
+    } catch (_) {/* créneaux vides si échec */}
 
     try {
       final rows = await _supa.from('rdv')
@@ -207,7 +207,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           .inFilter('statut', ['confirme', 'demande'])
           .gte('date_heure', now.toUtc().toIso8601String());
       _existingRdvs = List<Map<String, dynamic>>.from(rows as List);
-    } catch (_) {}
+    } catch (_) {/* pas de RDV bloquants si échec */}
   }
 
   String _dateKey(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -358,6 +358,21 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
   }
 
   void _shiftWeek(int days) => setState(() => _weekStart = _weekStart.add(Duration(days: days)));
+
+  // Si la semaine affichée n'a aucun créneau mais qu'il y en a plus tard,
+  // saute directement à la 1re semaine qui en a (évite le calendrier vide
+  // trompeur — la semaine en cours est souvent déjà passée / week-end).
+  void _jumpToFirstAvailableWeek() {
+    final smart = _smartSlotsByDate;
+    if (smart.isEmpty) return;
+    final visibleKeys = List.generate(_joursSemaine, (i) => _dateKey(_weekStart.add(Duration(days: i))));
+    if (visibleKeys.any((k) => (smart[k] ?? []).isNotEmpty)) return; // déjà des créneaux visibles
+    final firstDate = (smart.keys.toList()..sort()).first;
+    final parts = firstDate.split('-');
+    var d = DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+    d = d.subtract(Duration(days: d.weekday - 1)); // lundi de cette semaine
+    if (d.isAfter(_weekStart)) _weekStart = d;
+  }
 
   Future<void> _pickSlot(Map<String, dynamic> slot) async {
     if (_selectedAnimal == null) {
@@ -552,6 +567,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
                 _domicileLat = null;
                 _domicileLng = null;
                 _adresseDomicileCtrl.clear();
+                _jumpToFirstAvailableWeek();
               }),
               child: Container(
                 margin: const EdgeInsets.only(bottom: 10),
@@ -630,10 +646,11 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
     final smartSlots = _smartSlotsByDate;
     final days = List.generate(_joursSemaine, (i) => _weekStart.add(Duration(days: i)));
     final today = DateTime.now();
-    // Aide au diagnostic : distingue « pas de dispo publiée du tout » de
-    // « rien cette semaine » (→ inviter à avancer d'une semaine).
-    final aucuneDispo = _availableSlots.where((s) => s['type_prestation'] != 'collectif').isEmpty;
-    final semaineVide = smartSlots.isEmpty;
+    // Distingue « pas de dispo publiée du tout » de « rien CETTE semaine »
+    // (→ inviter à avancer d'une semaine).
+    final aucuneDispo = smartSlots.isEmpty;
+    final visibleKeys = days.map(_dateKey).toList();
+    final semaineVide = !aucuneDispo && !visibleKeys.any((k) => (smartSlots[k] ?? []).isNotEmpty);
     return Column(children: [
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -664,8 +681,15 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           width: double.infinity,
           color: color.withValues(alpha: 0.06),
           padding: const EdgeInsets.all(12),
-          child: Text('Rien de disponible cette semaine — utilisez la flèche « › » pour voir les semaines suivantes.',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: color)),
+          child: Row(children: [
+            Expanded(child: Text('Rien de disponible cette semaine.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: color))),
+            TextButton(
+              onPressed: () => setState(_jumpToFirstAvailableWeek),
+              child: Text('Voir les prochaines dispos ›',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: color)),
+            ),
+          ]),
         ),
       Expanded(
         child: ListView.builder(
