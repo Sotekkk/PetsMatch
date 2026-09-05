@@ -53,6 +53,12 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
   bool _educationBilanRequis = true;
   bool _isFirstTimeClient = false;
 
+  // Profil du pro consulté, résolu une fois pour toutes : si l'appelant n'a
+  // pas passé proProfileId (lien sans profil précis), on retombe sur le
+  // profil "is_main" de ce uid — sinon les requêtes créneaux/RDV filtrées
+  // sur pro_profile_id='' ne retournaient jamais aucune ligne.
+  String? _resolvedProfileId;
+
   // Trajet à domicile
   bool _domicile = false;
   bool _domicileChoiceMade = false;
@@ -99,8 +105,21 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
 
   Future<void> _init() async {
     setState(() => _loading = true);
+    await _resolveProfileId();
     await Future.wait([_loadPrestations(), _loadAvailableSlots()]);
     if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _resolveProfileId() async {
+    if (widget.proProfileId != null && widget.proProfileId!.isNotEmpty) {
+      _resolvedProfileId = widget.proProfileId;
+      return;
+    }
+    try {
+      final row = await _supa.from('user_profiles').select('id')
+          .eq('uid', widget.proUid).eq('is_main', true).maybeSingle();
+      _resolvedProfileId = row?['id']?.toString();
+    } catch (_) {}
   }
 
   Future<void> _loadPrestations() async {
@@ -117,8 +136,8 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
       _cabinetLng = (row?['longitude'] as num?)?.toDouble() ?? (row?['lng'] as num?)?.toDouble();
 
       var q = _supa.from('prestations_education').select().eq('pro_uid', widget.proUid).eq('actif', true);
-      if (widget.proProfileId != null && widget.proProfileId!.isNotEmpty) {
-        q = q.eq('pro_profile_id', widget.proProfileId!);
+      if (_resolvedProfileId != null && _resolvedProfileId!.isNotEmpty) {
+        q = q.eq('pro_profile_id', _resolvedProfileId!);
       }
       final rows = await q.order('ordre').order('created_at');
       var all = List<Map<String, dynamic>>.from(rows as List);
@@ -146,8 +165,8 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
       var q = _supa.from('rdv').select('id')
           .eq('client_uid', uid).eq('pro_uid', widget.proUid)
           .inFilter('statut', ['confirme', 'termine']);
-      if (widget.proProfileId != null && widget.proProfileId!.isNotEmpty) {
-        q = q.eq('pro_profile_id', widget.proProfileId!);
+      if (_resolvedProfileId != null && _resolvedProfileId!.isNotEmpty) {
+        q = q.eq('pro_profile_id', _resolvedProfileId!);
       }
       final rows = await q.limit(1);
       _isFirstTimeClient = (rows as List).isEmpty;
@@ -160,7 +179,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
       final today = _dateKey(now);
       final maxDt = DateTime(now.year, now.month + 3, now.day);
       final maxDate = _dateKey(maxDt);
-      final profileId = widget.proProfileId ?? '';
+      final profileId = _resolvedProfileId ?? '';
       final results = await Future.wait([
         _supa.from('creneaux_pro')
             .select('date, heure_debut, heure_fin, type_prestation, domicile_ok, trajet_origine')
@@ -401,7 +420,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
     try {
       await _supa.from('rdv').insert({
         'pro_uid': widget.proUid,
-        'pro_profile_id': widget.proProfileId ?? '',
+        'pro_profile_id': _resolvedProfileId ?? '',
         'client_uid': uid,
         if (User_Info.activeProfileId.isNotEmpty) 'client_profile_id': User_Info.activeProfileId,
         if (_selectedAnimal?['id'] != null) 'animal_id': _selectedAnimal!['id'].toString(),
@@ -425,7 +444,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
         'type': 'rdv_demande',
         'title': 'Nouvelle demande de RDV',
         'body': '$clientName souhaite un cours "${_selectedPrestation!['nom']}" le $dateStr',
-        if (widget.proProfileId != null && widget.proProfileId!.isNotEmpty) 'profile_id': widget.proProfileId,
+        if (_resolvedProfileId != null && _resolvedProfileId!.isNotEmpty) 'profile_id': _resolvedProfileId,
         'data': <String, dynamic>{'client_uid': uid},
         'read': false,
       });
