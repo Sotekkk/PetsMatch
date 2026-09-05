@@ -459,6 +459,7 @@ export default function ProCreneauxPage() {
                   setShowAddModal(false);
                   await applyRange(addDate, addStart, addEnd, addMode, addMode === 'disponible' ? addType : null, addMode === 'disponible' && addDomicile,
                     addMode === 'disponible' && addType === 'collectif' ? addPrestationId : null);
+                  await loadSlots();
                   setAddType(null);
                   setAddDomicile(false);
                   setAddPrestationId(null);
