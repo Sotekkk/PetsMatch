@@ -2147,7 +2147,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     return ranges;
   }
 
-  Future<void> _applyRange(String date, TimeOfDay start, TimeOfDay end, String statut, {String? type, bool domicileOk = false}) async {
+  Future<void> _applyRange(String date, TimeOfDay start, TimeOfDay end, String statut, {String? type, bool domicileOk = false, String? prestationId}) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final pid = User_Info.activeProfileId;
@@ -2168,7 +2168,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       });
       slots.add({'pro_uid': uid, 'pro_profile_id': pid, 'date': date,
           'heure_debut': hd, 'heure_fin': hf, 'statut': statut, 'type_prestation': type,
-          'domicile_ok': domicileOk});
+          'domicile_ok': domicileOk, 'prestation_id': prestationId});
       curMins = finMins;
     }
     try {
@@ -2216,6 +2216,19 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     String statut = 'disponible';
     String? type; // 'individuel' / 'collectif' / null = les deux (éducateur uniquement)
     bool domicileOk = false; // créneau proposable à domicile (éducateur uniquement)
+    String? prestationId; // cours du catalogue (collectif) rattaché à ce créneau
+
+    List<Map<String, dynamic>> coursCollectifs = [];
+    if (User_Info.catPro == 'education') {
+      try {
+        var q = Supabase.instance.client.from('prestations_education')
+            .select('id, nom').eq('pro_uid', FirebaseAuth.instance.currentUser?.uid ?? '')
+            .eq('type', 'collectif').eq('actif', true);
+        if (User_Info.activeProfileId.isNotEmpty) q = q.eq('pro_profile_id', User_Info.activeProfileId);
+        coursCollectifs = List<Map<String, dynamic>>.from(await q);
+      } catch (_) {}
+    }
+    if (!mounted) return;
 
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
@@ -2343,6 +2356,26 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       ),
                     )),
                 ]),
+                if (type == 'collectif' && coursCollectifs.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Align(alignment: Alignment.centerLeft,
+                      child: Text('Cours associé (optionnel)', style: TextStyle(
+                          fontFamily: 'Galey', fontSize: 11, color: Colors.grey,
+                          fontWeight: FontWeight.w600))),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<String?>(
+                    initialValue: prestationId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('Aucun', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                      for (final c in coursCollectifs)
+                        DropdownMenuItem(value: c['id'] as String, child: Text(c['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                    ],
+                    onChanged: (v) => setS(() => prestationId = v),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 Row(children: [
                   Expanded(child: Text('Disponible à domicile', style: TextStyle(
@@ -2374,7 +2407,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     if (confirmed == true && mounted) {
       await _applyRange(dateStr, startTime, endTime, statut,
           type: statut == 'disponible' ? type : null,
-          domicileOk: statut == 'disponible' && domicileOk);
+          domicileOk: statut == 'disponible' && domicileOk,
+          prestationId: statut == 'disponible' && type == 'collectif' ? prestationId : null);
     }
   }
 

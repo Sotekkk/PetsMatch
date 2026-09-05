@@ -417,7 +417,7 @@ function ProDetailContent() {
           animal_id: inscriptionAnimalId || null,
           ...(inscriptionSerie && inscriptionCours.serie_id ? { serie_id: inscriptionCours.serie_id } : {}),
           ...(prixCours ? { prix: prixCours } : {}),
-          statut: complet ? 'en_attente' : 'inscrit',
+          statut: complet ? 'en_attente' : 'demande',
         });
       }
 
@@ -427,17 +427,19 @@ function ProDetailContent() {
       const dateStr = new Date(inscriptionCours.date_heure).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
       await supabase.from('notifications').insert({
         uid: pro.uid, type: 'cours_collectif_inscription',
-        title: `Nouvelle inscription — ${inscriptionCours.titre}`,
+        title: `Demande d'inscription — ${inscriptionCours.titre}`,
         body: inscriptionSerie
-          ? `${clientName || 'Un client'} a inscrit ${animalNom} à toute la série "${inscriptionCours.titre}".`
-          : `${clientName || 'Un client'} a inscrit ${animalNom} au cours du ${dateStr}.`,
+          ? `${clientName || 'Un client'} souhaite inscrire ${animalNom} à toute la série "${inscriptionCours.titre}" — en attente de votre confirmation.`
+          : `${clientName || 'Un client'} souhaite inscrire ${animalNom} au cours du ${dateStr} — en attente de votre confirmation.`,
         ...(inscriptionCours.pro_profile_id ? { profile_id: inscriptionCours.pro_profile_id } : {}),
         data: { coursId: inscriptionCours.id },
         read: false,
       });
       await loadCoursCollectifs(pro.uid);
       setInscriptionCours(null);
-      if (uneEnAttente) alert('Inscription enregistrée — en liste d\'attente pour une ou plusieurs séances complètes.');
+      alert(uneEnAttente
+        ? 'Demande envoyée — en liste d\'attente pour une ou plusieurs séances complètes.'
+        : 'Demande envoyée — en attente de confirmation du professionnel.');
     } finally {
       setInscrivant(false);
     }
@@ -469,9 +471,12 @@ function ProDetailContent() {
     if (!participation || !pro) return;
     setInscrivant(true);
     try {
-      const etaisInscrit = participation.statut === 'inscrit';
+      // Libère une place (à promouvoir depuis la liste d'attente) si on
+      // occupait réellement une place — 'inscrit' (confirmé) ou 'demande'
+      // (en attente de confirmation, compte quand même dans la capacité).
+      const occupaitUnePlace = participation.statut === 'inscrit' || participation.statut === 'demande';
       await supabase.from('cours_collectifs_participants').update({ statut: 'annule' }).eq('id', participation.id);
-      if (etaisInscrit) await promouvoirListeAttente(cours.id);
+      if (occupaitUnePlace) await promouvoirListeAttente(cours.id);
       await loadCoursCollectifs(pro.uid);
     } finally {
       setInscrivant(false);
@@ -942,9 +947,10 @@ function ProDetailContent() {
                             {new Date(c.date_heure).toLocaleString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}
                           </p>
                           <p className={`text-xs font-semibold ${
-                            moi?.statut === 'inscrit' ? 'text-[#6E9E57]' : (complet || moi?.statut === 'en_attente') ? 'text-orange-600' : 'text-gray-400 font-normal'
+                            moi?.statut === 'inscrit' ? 'text-[#6E9E57]' : (complet || moi?.statut === 'en_attente' || moi?.statut === 'demande') ? 'text-orange-600' : 'text-gray-400 font-normal'
                           }`}>
                             {moi?.statut === 'inscrit' ? 'Vous êtes inscrit·e ✓'
+                              : moi?.statut === 'demande' ? 'En attente de confirmation du pro'
                               : moi?.statut === 'en_attente' ? 'Vous êtes en liste d\'attente'
                               : complet ? `Complet — ${inscrits} / ${c.capacite_max} places`
                               : `${inscrits} / ${c.capacite_max} places`}

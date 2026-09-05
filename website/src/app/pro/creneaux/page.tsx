@@ -83,6 +83,8 @@ export default function ProCreneauxPage() {
   const [addEnd, setAddEnd]                 = useState('10:00');
   const [addType, setAddType]               = useState<TypePrestation>(null);
   const [addDomicile, setAddDomicile]       = useState(false);
+  const [addPrestationId, setAddPrestationId] = useState<string | null>(null);
+  const [coursCollectifs, setCoursCollectifs] = useState<{ id: string; nom: string }[]>([]);
   const [slotTypes, setSlotTypes]           = useState<Record<string, TypePrestation>>({});
   const [slotDomicile, setSlotDomicile]     = useState<Record<string, boolean>>({});
   const [catPro, setCatPro]                 = useState('');
@@ -96,6 +98,14 @@ export default function ProCreneauxPage() {
     supabase.from('user_profiles').select('profile_type, cat_pro').eq('id', activeProfileId).single()
       .then(({ data }) => setCatPro((data?.profile_type ?? data?.cat_pro ?? '') as string));
   }, [activeProfileId]);
+
+  useEffect(() => {
+    if (!user || catPro !== 'education') return;
+    let q = supabase.from('prestations_education').select('id, nom')
+      .eq('pro_uid', user.uid).eq('type', 'collectif').eq('actif', true);
+    if (activeProfileId) q = q.eq('pro_profile_id', activeProfileId);
+    q.then(({ data }) => setCoursCollectifs((data ?? []) as { id: string; nom: string }[]));
+  }, [user, activeProfileId, catPro]);
 
   const loadSlots = useCallback(async () => {
     if (!user) return;
@@ -159,7 +169,7 @@ export default function ProCreneauxPage() {
     } catch { /* ignore — résumé informatif, pas bloquant */ }
   }
 
-  async function applyRange(start: string, end: string, statut: SlotStatus, type: TypePrestation = null, domicile = false) {
+  async function applyRange(start: string, end: string, statut: SlotStatus, type: TypePrestation = null, domicile = false, prestationId: string | null = null) {
     if (!user || saving) return;
     setSaving(true);
     let cur = timeToMins(start);
@@ -176,7 +186,8 @@ export default function ProCreneauxPage() {
       if (type) newTypes[key] = type;
       newDomicile[key] = domicile;
       rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, date: dateStr,
-        heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut, type_prestation: type, domicile_ok: domicile });
+        heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut, type_prestation: type, domicile_ok: domicile,
+        prestation_id: prestationId });
       cur += 15;
     }
     const merged = { ...slots, ...newSlots };
@@ -454,6 +465,19 @@ export default function ProCreneauxPage() {
               </div>
             )}
 
+            {catPro === 'education' && addMode === 'disponible' && addType === 'collectif' && coursCollectifs.length > 0 && (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
+                  Cours associé (optionnel)
+                </label>
+                <select value={addPrestationId ?? ''} onChange={e => setAddPrestationId(e.target.value || null)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm">
+                  <option value="">Aucun</option>
+                  {coursCollectifs.map(c => <option key={c.id} value={c.id}>{c.nom}</option>)}
+                </select>
+              </div>
+            )}
+
             {catPro === 'education' && addMode === 'disponible' && (
               <div className="flex items-center justify-between gap-4">
                 <span className="text-xs font-semibold text-gray-500" style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -477,9 +501,11 @@ export default function ProCreneauxPage() {
                 onClick={async () => {
                   if (timeToMins(addEnd) <= timeToMins(addStart)) return;
                   setShowAddModal(false);
-                  await applyRange(addStart, addEnd, addMode, addMode === 'disponible' ? addType : null, addMode === 'disponible' && addDomicile);
+                  await applyRange(addStart, addEnd, addMode, addMode === 'disponible' ? addType : null, addMode === 'disponible' && addDomicile,
+                    addMode === 'disponible' && addType === 'collectif' ? addPrestationId : null);
                   setAddType(null);
                   setAddDomicile(false);
+                  setAddPrestationId(null);
                 }}
                 disabled={saving || timeToMins(addEnd) <= timeToMins(addStart)}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"

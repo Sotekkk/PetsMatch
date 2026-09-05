@@ -178,7 +178,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
       ));
       return;
     }
-    if (type == 'cours_collectif_rappel' || type == 'cours_collectif_place_liberee') {
+    if (type == 'cours_collectif_rappel' || type == 'cours_collectif_place_liberee' ||
+        type == 'cours_collectif_confirme' || type == 'cours_collectif_refuse') {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => User_Info.catPro == 'education' ? const EducationPlanningPage() : const AgendaPage(),
       ));
@@ -876,6 +877,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'rdv_rappel':             return Icons.alarm_outlined;
       case 'cours_collectif_rappel': return Icons.alarm_outlined;
       case 'cours_collectif_place_liberee': return Icons.event_seat_outlined;
+      case 'cours_collectif_confirme': return Icons.check_circle_outline;
+      case 'cours_collectif_refuse': return Icons.cancel_outlined;
       case 'rdv_refuse':             return Icons.event_busy_outlined;
       case 'rdv_annule':
       case 'rdv_annule_client':      return Icons.cancel_outlined;
@@ -948,6 +951,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'rdv_rappel':             return const Color(0xFFFF9800);
       case 'cours_collectif_rappel': return const Color(0xFF7B5EA7);
       case 'cours_collectif_place_liberee': return const Color(0xFF6E9E57);
+      case 'cours_collectif_confirme': return const Color(0xFF6E9E57);
+      case 'cours_collectif_refuse': return Colors.redAccent;
       case 'rdv_refuse':
       case 'rdv_annule':
       case 'rdv_annule_client':      return Colors.redAccent;

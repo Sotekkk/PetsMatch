@@ -12,6 +12,7 @@ interface Prestation {
   id: string; nom: string; description: string | null;
   duree_minutes: number; prix: number | null;
   bilan_requis: boolean; domicile_ok: boolean;
+  type: 'individuel' | 'collectif'; capacite_max: number | null;
 }
 
 // Interrupteur toujours visible (fond coloré à l'état actif) — remplace les
@@ -49,14 +50,14 @@ export default function EducationPrestationsPage() {
   const activeProfileId = useActiveProfile();
   const [prestations, setPrestations] = useState<Prestation[]>([]);
   const [busy, setBusy] = useState(true);
-  const [form, setForm] = useState<{ id?: string; nom: string; description: string; duree_minutes: string; prix: string; bilan_requis: boolean; domicile_ok: boolean } | null>(null);
+  const [form, setForm] = useState<{ id?: string; nom: string; description: string; duree_minutes: string; prix: string; bilan_requis: boolean; domicile_ok: boolean; type: 'individuel' | 'collectif'; capacite_max: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     if (!user?.uid) return;
     setBusy(true);
     let q = supabase.from('prestations_education')
-      .select('id, nom, description, duree_minutes, prix, bilan_requis, domicile_ok')
+      .select('id, nom, description, duree_minutes, prix, bilan_requis, domicile_ok, type, capacite_max')
       .eq('pro_uid', user.uid).eq('actif', true);
     if (activeProfileId) q = q.eq('pro_profile_id', activeProfileId);
     const { data } = await q.order('ordre').order('created_at');
@@ -73,11 +74,13 @@ export default function EducationPrestationsPage() {
     try {
       const payload = {
         nom: form.nom.trim(),
+        type: form.type,
         description: form.description.trim() || null,
         duree_minutes: parseInt(form.duree_minutes, 10) || 60,
         prix: form.prix.trim() ? Number(form.prix) : null,
         bilan_requis: form.bilan_requis,
         domicile_ok: form.domicile_ok,
+        ...(form.type === 'collectif' ? { capacite_max: parseInt(form.capacite_max, 10) || 6 } : {}),
       };
       if (form.id) {
         await supabase.from('prestations_education').update(payload).eq('id', form.id);
@@ -102,7 +105,7 @@ export default function EducationPrestationsPage() {
     <div className="max-w-2xl mx-auto px-4 py-6">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>Mes cours</h1>
-        <button onClick={() => setForm({ nom: '', description: '', duree_minutes: '60', prix: '', bilan_requis: false, domicile_ok: true })}
+        <button onClick={() => setForm({ nom: '', description: '', duree_minutes: '60', prix: '', bilan_requis: false, domicile_ok: true, type: 'individuel', capacite_max: '6' })}
           className="text-white rounded-xl px-3 py-2 text-sm font-semibold" style={{ background: PURPLE }}>+ Cours</button>
       </div>
       <p className="text-sm text-gray-500 mb-4">
@@ -111,6 +114,19 @@ export default function EducationPrestationsPage() {
 
       {form && (
         <div className="border rounded-2xl p-4 mb-4 space-y-3" style={{ borderColor: `${PURPLE}55` }}>
+          <div className="flex gap-2">
+            {(['individuel', 'collectif'] as const).map(t => (
+              <button key={t} type="button" onClick={() => setForm({ ...form, type: t })}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all"
+                style={{
+                  background: form.type === t ? `${PURPLE}18` : 'white',
+                  borderColor: form.type === t ? PURPLE : '#e5e7eb',
+                  color: form.type === t ? PURPLE : '#6B7280',
+                }}>
+                {t === 'individuel' ? '🎓 Individuel' : '👥 Collectif'}
+              </button>
+            ))}
+          </div>
           <input value={form.nom} onChange={e => setForm({ ...form, nom: e.target.value })}
             placeholder="Nom du cours — ex : Rappel chiot"
             className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
@@ -120,6 +136,10 @@ export default function EducationPrestationsPage() {
             <input type="number" value={form.prix} onChange={e => setForm({ ...form, prix: e.target.value })}
               placeholder="Prix (€, optionnel)" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
           </div>
+          {form.type === 'collectif' && (
+            <input type="number" value={form.capacite_max} onChange={e => setForm({ ...form, capacite_max: e.target.value })}
+              placeholder="Capacité max" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+          )}
           <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
             rows={2} placeholder="Description (optionnel)"
             className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
@@ -152,11 +172,14 @@ export default function EducationPrestationsPage() {
                   id: p.id, nom: p.nom, description: p.description ?? '',
                   duree_minutes: String(p.duree_minutes), prix: p.prix != null ? String(p.prix) : '',
                   bilan_requis: p.bilan_requis, domicile_ok: p.domicile_ok,
+                  type: p.type ?? 'individuel', capacite_max: p.capacite_max != null ? String(p.capacite_max) : '6',
                 })}
                 className="flex-1 min-w-0 text-left">
-                <p className="text-sm font-semibold text-[#1F2A2E]">{p.nom}</p>
+                <p className="text-sm font-semibold text-[#1F2A2E] flex items-center gap-1.5">
+                  <span>{p.type === 'collectif' ? '👥' : '🎓'}</span> {p.nom}
+                </p>
                 <p className="text-xs text-gray-500">
-                  {p.duree_minutes} min{p.prix != null ? ` · ${p.prix.toFixed(0)} €` : ''}
+                  {p.type === 'collectif' ? `Collectif (max ${p.capacite_max ?? 6})` : 'Individuel'} · {p.duree_minutes} min{p.prix != null ? ` · ${p.prix.toFixed(0)} €` : ''}
                 </p>
                 {p.description && <p className="text-xs text-gray-600 mt-0.5 line-clamp-2">{p.description}</p>}
                 <div className="flex gap-1.5 mt-1.5">

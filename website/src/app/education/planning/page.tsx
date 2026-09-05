@@ -31,8 +31,10 @@ interface Cours {
 
 interface Participant {
   id: string;
-  client_uid: string;
+  client_uid: string | null;
   client_profile_id?: string | null;
+  client_nom_manuel?: string | null;
+  client_telephone_manuel?: string | null;
   animal_id?: string | null;
   statut: string;
   client_nom?: string;
@@ -353,15 +355,17 @@ function CoursDetailModal({ cours, onClose, onChanged }: { cours: Cours; onClose
   const load = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase.from('cours_collectifs_participants')
-      .select('id, client_uid, animal_id, statut').eq('cours_id', cours.id).neq('statut', 'annule').order('created_at');
+      .select('id, client_uid, animal_id, statut, client_nom_manuel, client_telephone_manuel').eq('cours_id', cours.id).neq('statut', 'annule').order('created_at');
     const list = (data ?? []) as Participant[];
-    const clientUids = [...new Set(list.map(p => p.client_uid))];
+    const clientUids = [...new Set(list.map(p => p.client_uid).filter((u): u is string => !!u))];
     const animalIds = [...new Set(list.map(p => p.animal_id).filter(Boolean))] as string[];
     if (clientUids.length > 0) {
       const { data: users } = await supabase.from('user_profiles').select('uid, firstname, lastname').in('uid', clientUids).eq('is_main', true);
       const names: Record<string, string> = {};
       for (const u of users ?? []) names[u.uid] = `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim() || 'Client';
-      for (const p of list) p.client_nom = names[p.client_uid];
+      for (const p of list) p.client_nom = p.client_uid ? names[p.client_uid] : (p.client_nom_manuel || 'Client');
+    } else {
+      for (const p of list) p.client_nom = p.client_nom_manuel || 'Client';
     }
     if (animalIds.length > 0) {
       const { data: animaux } = await supabase.from('animaux').select('id, nom').in('id', animalIds);
@@ -395,10 +399,49 @@ function CoursDetailModal({ cours, onClose, onChanged }: { cours: Cours; onClose
     });
   }
 
+  async function notifierDecisionDemande(participant: Participant, confirme: boolean) {
+    if (!participant.client_uid) return; // participant manuel, pas de compte à notifier
+    const dateStr = new Date(cours.date_heure).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Paris' });
+    await supabase.from('notifications').insert({
+      uid: participant.client_uid,
+      type: confirme ? 'cours_collectif_confirme' : 'cours_collectif_refuse',
+      title: confirme ? 'Inscription confirmée !' : 'Inscription refusée',
+      body: confirme
+        ? `Votre inscription au cours "${cours.titre}" du ${dateStr} est confirmée.`
+        : `Votre demande d'inscription au cours "${cours.titre}" du ${dateStr} n'a pas été retenue.`,
+      ...(participant.client_profile_id ? { profile_id: participant.client_profile_id } : {}),
+      data: { coursId: cours.id }, read: false,
+    });
+  }
+
   async function updateStatut(id: string, statut: string) {
-    const ancien = participants.find(p => p.id === id)?.statut;
+    const participant = participants.find(p => p.id === id);
+    const ancien = participant?.statut;
     await supabase.from('cours_collectifs_participants').update({ statut }).eq('id', id);
-    if (statut === 'annule' && ancien === 'inscrit') await promouvoirListeAttente();
+    // Une place occupée (confirmée OU en attente de confirmation) se libère
+    // en cas d'annulation → on promeut la liste d'attente.
+    if (statut === 'annule' && (ancien === 'inscrit' || ancien === 'demande')) await promouvoirListeAttente();
+    if (statut === 'annule' && ancien === 'demande' && participant) await notifierDecisionDemande(participant, false);
+    load();
+  }
+
+  async function confirmerDemande(id: string) {
+    const participant = participants.find(p => p.id === id);
+    await supabase.from('cours_collectifs_participants').update({ statut: 'inscrit' }).eq('id', id);
+    if (participant) await notifierDecisionDemande(participant, true);
+    load();
+  }
+
+  async function ajouterParticipantManuel() {
+    const nom = window.prompt('Nom du participant :');
+    if (!nom || !nom.trim()) return;
+    const tel = window.prompt('Téléphone (optionnel) :') ?? '';
+    await supabase.from('cours_collectifs_participants').insert({
+      cours_id: cours.id,
+      client_nom_manuel: nom.trim(),
+      ...(tel.trim() ? { client_telephone_manuel: tel.trim() } : {}),
+      statut: 'inscrit',
+    });
     load();
   }
 
@@ -425,11 +468,16 @@ function CoursDetailModal({ cours, onClose, onChanged }: { cours: Cours; onClose
       <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
           <h3 className="font-bold font-galey" style={{ color: PURPLE }}>{cours.titre}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+          <div className="flex items-center gap-3">
+            <button onClick={ajouterParticipantManuel} title="Ajouter un participant" className="text-lg" style={{ color: PURPLE }}>➕</button>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+          </div>
         </div>
         <div className="p-4 overflow-y-auto flex-1">
           <p className="text-sm font-galey font-semibold mb-3">
-            {participants.filter(p => p.statut !== 'en_attente').length} / {cours.capacite_max} inscrits
+            {participants.filter(p => p.statut !== 'en_attente' && p.statut !== 'demande').length} / {cours.capacite_max} inscrits
+            {participants.some(p => p.statut === 'demande') &&
+              ` · ${participants.filter(p => p.statut === 'demande').length} en attente de confirmation`}
             {participants.some(p => p.statut === 'en_attente') &&
               ` · ${participants.filter(p => p.statut === 'en_attente').length} en liste d'attente`}
           </p>
@@ -452,14 +500,23 @@ function CoursDetailModal({ cours, onClose, onChanged }: { cours: Cours; onClose
                         🎓
                       </button>
                     )}
-                    <select value={p.statut} onChange={e => updateStatut(p.id, e.target.value)}
-                      className="text-xs font-galey border border-gray-200 rounded-lg px-2 py-1">
-                      <option value="inscrit">Inscrit</option>
-                      <option value="en_attente">En liste d&apos;attente</option>
-                      <option value="present">Présent</option>
-                      <option value="absent">Absent</option>
-                      <option value="annule">Retirer</option>
-                    </select>
+                    {p.statut === 'demande' ? (
+                      <>
+                        <button onClick={() => confirmerDemande(p.id)}
+                          className="text-xs font-galey font-bold text-[#6E9E57] px-2 py-1">Confirmer</button>
+                        <button onClick={() => updateStatut(p.id, 'annule')}
+                          className="text-xs font-galey font-bold text-red-400 px-2 py-1">Refuser</button>
+                      </>
+                    ) : (
+                      <select value={p.statut} onChange={e => updateStatut(p.id, e.target.value)}
+                        className="text-xs font-galey border border-gray-200 rounded-lg px-2 py-1">
+                        <option value="inscrit">Inscrit</option>
+                        <option value="en_attente">En liste d&apos;attente</option>
+                        <option value="present">Présent</option>
+                        <option value="absent">Absent</option>
+                        <option value="annule">Retirer</option>
+                      </select>
+                    )}
                   </div>
                 </div>
               ))}

@@ -212,9 +212,12 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
     if (participation == null || _inscrivant) return;
     setState(() => _inscrivant = true);
     try {
-      final etaisInscrit = participation['statut'] == 'inscrit';
+      // Libère une place (à promouvoir depuis la liste d'attente) si on
+      // occupait réellement une place — 'inscrit' (confirmé) ou 'demande'
+      // (en attente de confirmation, compte quand même dans la capacité).
+      final occupaitUnePlace = participation['statut'] == 'inscrit' || participation['statut'] == 'demande';
       await _supa.from('cours_collectifs_participants').update({'statut': 'annule'}).eq('id', participation['id']);
-      if (etaisInscrit) await _promouvoirListeAttente(coursId);
+      if (occupaitUnePlace) await _promouvoirListeAttente(coursId);
       await _loadCoursCollectifs();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -340,7 +343,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
           'animal_id': animalId,
           if (touteLaSerie && serieId != null) 'serie_id': serieId,
           if (prix != null) 'prix': prix,
-          'statut': complet ? 'en_attente' : 'inscrit',
+          'statut': complet ? 'en_attente' : 'demande',
         });
       }
 
@@ -353,10 +356,10 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
         await _supa.from('notifications').insert({
           'uid': proUid,
           'type': 'cours_collectif_inscription',
-          'title': 'Nouvelle inscription — ${cours['titre']}',
+          'title': 'Demande d\'inscription — ${cours['titre']}',
           'body': touteLaSerie
-              ? '$clientName a inscrit ${animal['nom'] ?? 'son animal'} à toute la série "${cours['titre']}".'
-              : '$clientName a inscrit ${animal['nom'] ?? 'son animal'} au cours du $dateStr.',
+              ? '$clientName souhaite inscrire ${animal['nom'] ?? 'son animal'} à toute la série "${cours['titre']}" — en attente de votre confirmation.'
+              : '$clientName souhaite inscrire ${animal['nom'] ?? 'son animal'} au cours du $dateStr — en attente de votre confirmation.',
           if (cours['pro_profile_id'] != null) 'profile_id': cours['pro_profile_id'],
           'data': <String, dynamic>{'coursId': cours['id']},
           'read': false,
@@ -365,7 +368,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
       await _loadCoursCollectifs();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(uneEnAttente ? 'Inscrit·e — en liste d\'attente pour une ou plusieurs séances complètes.' : 'Inscription confirmée !',
+          content: Text(uneEnAttente ? 'Demande envoyée — en liste d\'attente pour une ou plusieurs séances complètes.' : 'Demande envoyée — en attente de confirmation du professionnel.',
               style: const TextStyle(fontFamily: 'Galey')),
           backgroundColor: uneEnAttente ? Colors.orange : const Color(0xFF6E9E57), behavior: SnackBarBehavior.floating,
         ));
@@ -1034,12 +1037,13 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                               style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                         Text(
                           statutMoi == 'inscrit' ? 'Vous êtes inscrit·e ✓'
+                              : statutMoi == 'demande' ? 'En attente de confirmation du pro'
                               : statutMoi == 'en_attente' ? 'Vous êtes en liste d\'attente'
                               : complet ? 'Complet — $inscrits / $capacite places'
                               : '$inscrits / $capacite places',
                           style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: statutMoi != null ? FontWeight.w700 : FontWeight.normal,
                               color: statutMoi == 'inscrit' ? const Color(0xFF6E9E57)
-                                  : (complet || statutMoi == 'en_attente') ? Colors.orange.shade700 : Colors.grey.shade500),
+                                  : (complet || statutMoi == 'en_attente' || statutMoi == 'demande') ? Colors.orange.shade700 : Colors.grey.shade500),
                         ),
                         if (prixCours != null && prixCours > 0)
                           Text('${prixCours.toStringAsFixed(0)} €',

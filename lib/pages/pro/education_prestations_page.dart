@@ -87,16 +87,23 @@ class _EducationPrestationsPageState extends State<EducationPrestationsPage> {
                     final prix = (p['prix'] as num?)?.toDouble();
                     final bilan = p['bilan_requis'] == true;
                     final domicile = p['domicile_ok'] != false;
+                    final collectif = p['type'] == 'collectif';
+                    final capacite = (p['capacite_max'] as num?)?.toInt();
                     return Card(
                       margin: const EdgeInsets.only(bottom: 10),
                       elevation: 1,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       child: ListTile(
                         onTap: () => _openForm(existing: p),
-                        title: Text(p['nom']?.toString() ?? '',
-                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                        title: Row(children: [
+                          Icon(collectif ? Icons.groups_outlined : Icons.school_outlined, size: 16, color: _purple),
+                          const SizedBox(width: 6),
+                          Expanded(child: Text(p['nom']?.toString() ?? '',
+                              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14))),
+                        ]),
                         subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text('${p['duree_minutes']} min${prix != null ? ' · ${prix.toStringAsFixed(0)} €' : ''}',
+                          Text('${collectif ? 'Collectif (max ${capacite ?? 6})' : 'Individuel'} · ${p['duree_minutes']} min'
+                                  '${prix != null ? ' · ${prix.toStringAsFixed(0)} €' : ''}',
                               style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
                           const SizedBox(height: 4),
                           Wrap(spacing: 6, runSpacing: 4, children: [
@@ -143,8 +150,10 @@ class _PrestationFormState extends State<_PrestationForm> {
   late final TextEditingController _dureeCtrl;
   late final TextEditingController _prixCtrl;
   late final TextEditingController _descCtrl;
+  late final TextEditingController _capaciteCtrl;
   late bool _bilanRequis;
   late bool _domicileOk;
+  late String _type;
   bool _saving = false;
 
   @override
@@ -155,13 +164,15 @@ class _PrestationFormState extends State<_PrestationForm> {
     _dureeCtrl = TextEditingController(text: (e?['duree_minutes'] as num?)?.toString() ?? '60');
     _prixCtrl = TextEditingController(text: (e?['prix'] as num?)?.toString() ?? '');
     _descCtrl = TextEditingController(text: e?['description']?.toString() ?? '');
+    _capaciteCtrl = TextEditingController(text: (e?['capacite_max'] as num?)?.toString() ?? '6');
     _bilanRequis = e?['bilan_requis'] == true;
     _domicileOk = e?['domicile_ok'] != false;
+    _type = e?['type']?.toString() ?? 'individuel';
   }
 
   @override
   void dispose() {
-    for (final c in [_nomCtrl, _dureeCtrl, _prixCtrl, _descCtrl]) {
+    for (final c in [_nomCtrl, _dureeCtrl, _prixCtrl, _descCtrl, _capaciteCtrl]) {
       c.dispose();
     }
     super.dispose();
@@ -183,10 +194,12 @@ class _PrestationFormState extends State<_PrestationForm> {
         'pro_uid': uid,
         if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
         'nom': _nomCtrl.text.trim(),
+        'type': _type,
         'duree_minutes': int.tryParse(_dureeCtrl.text.trim()) ?? 60,
         'prix': double.tryParse(_prixCtrl.text.trim()),
         'bilan_requis': _bilanRequis,
         'domicile_ok': _domicileOk,
+        if (_type == 'collectif') 'capacite_max': int.tryParse(_capaciteCtrl.text.trim()) ?? 6,
         if (_descCtrl.text.trim().isNotEmpty) 'description': _descCtrl.text.trim(),
       };
       if (widget.existing != null) {
@@ -242,6 +255,26 @@ class _PrestationFormState extends State<_PrestationForm> {
           Text(widget.existing != null ? 'Modifier le cours' : 'Nouveau cours',
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
           const SizedBox(height: 16),
+          Row(children: [
+            for (final t in [('individuel', '🎓 Individuel'), ('collectif', '👥 Collectif')])
+              Expanded(child: Padding(
+                padding: EdgeInsets.only(right: t.$1 == 'individuel' ? 8 : 0),
+                child: GestureDetector(
+                  onTap: () => setState(() => _type = t.$1),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    decoration: BoxDecoration(
+                      color: _type == t.$1 ? _purple.withValues(alpha: 0.1) : Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _type == t.$1 ? _purple : Colors.grey.shade300, width: _type == t.$1 ? 2 : 1),
+                    ),
+                    child: Center(child: Text(t.$2, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                        color: _type == t.$1 ? _purple : Colors.grey.shade600))),
+                  ),
+                ),
+              )),
+          ]),
+          const SizedBox(height: 12),
           _field(_nomCtrl, 'Nom du cours', ),
           const SizedBox(height: 12),
           Row(children: [
@@ -249,6 +282,10 @@ class _PrestationFormState extends State<_PrestationForm> {
             const SizedBox(width: 8),
             Expanded(child: _field(_prixCtrl, 'Prix (€, optionnel)', type: const TextInputType.numberWithOptions(decimal: true))),
           ]),
+          if (_type == 'collectif') ...[
+            const SizedBox(height: 12),
+            _field(_capaciteCtrl, 'Capacité max', type: TextInputType.number),
+          ],
           const SizedBox(height: 12),
           TextField(controller: _descCtrl, maxLines: 2, style: const TextStyle(fontFamily: 'Galey'),
               decoration: const InputDecoration(labelText: 'Description (optionnel)', border: OutlineInputBorder())),

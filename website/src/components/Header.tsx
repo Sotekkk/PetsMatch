@@ -696,6 +696,8 @@ function getNotifUrl(n: Notif): string | null {
       return '/agenda';
     case 'cours_collectif_rappel':
     case 'cours_collectif_place_liberee':
+    case 'cours_collectif_confirme':
+    case 'cours_collectif_refuse':
       return '/education/planning';
     case 'promenade_join':
     case 'promenade_accepte':
@@ -1238,7 +1240,8 @@ export default function Header() {
                               : n.type === 'rdv_confirme' ? '✅'
                               : n.type === 'rdv_modifie' ? '✏️'
                               : n.type === 'rdv_rappel' || n.type === 'cours_collectif_rappel' ? '⏰'
-                              : n.type === 'cours_collectif_place_liberee' ? '🎉'
+                              : n.type === 'cours_collectif_place_liberee' || n.type === 'cours_collectif_confirme' ? '🎉'
+                              : n.type === 'cours_collectif_refuse' ? '❌'
                               : n.type === 'rdv_refuse' || n.type?.includes('annule') ? '❌'
                               : n.type?.startsWith('rdv') ? '📅'
                               : n.type === 'employee_invite' ? '🤝'

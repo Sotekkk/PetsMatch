@@ -483,7 +483,7 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
       final participants = await _supa.from('cours_collectifs_participants')
           .select().eq('cours_id', widget.coursId).neq('statut', 'annule').order('created_at');
       final list = List<Map<String, dynamic>>.from(participants as List);
-      final clientUids = list.map((p) => p['client_uid'] as String).toSet().toList();
+      final clientUids = list.map((p) => p['client_uid']?.toString()).whereType<String>().toSet().toList();
       final animalIds = list.map((p) => p['animal_id']?.toString()).whereType<String>().toList();
       final names = <String, String>{};
       final animalNames = <String, String>{};
@@ -500,7 +500,9 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
         }
       }
       for (final p in list) {
-        p['_client_nom'] = names[p['client_uid']]?.isNotEmpty == true ? names[p['client_uid']] : 'Client';
+        p['_client_nom'] = names[p['client_uid']]?.isNotEmpty == true
+            ? names[p['client_uid']]
+            : (p['client_nom_manuel']?.toString().isNotEmpty == true ? p['client_nom_manuel'] : 'Client');
         p['_animal_nom'] = animalNames[p['animal_id']?.toString()] ?? '';
       }
       if (mounted) setState(() { _cours = cours; _participants = list; _loading = false; });
@@ -510,10 +512,41 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
   }
 
   Future<void> _updateStatut(String participantId, String statut) async {
-    final ancien = _participants.firstWhere((p) => p['id'] == participantId, orElse: () => {})['statut'];
+    final participant = _participants.firstWhere((p) => p['id'] == participantId, orElse: () => {});
+    final ancien = participant['statut'];
     await _supa.from('cours_collectifs_participants').update({'statut': statut}).eq('id', participantId);
-    if (statut == 'annule' && ancien == 'inscrit') await _promouvoirListeAttente();
+    // Une place occupée (confirmée OU en attente de confirmation) se libère
+    // en cas d'annulation → on promeut la liste d'attente.
+    if (statut == 'annule' && (ancien == 'inscrit' || ancien == 'demande')) await _promouvoirListeAttente();
+    if (statut == 'annule' && ancien == 'demande') await _notifierDecisionDemande(participant, confirme: false);
     _load();
+  }
+
+  Future<void> _confirmerDemande(String participantId) async {
+    final participant = _participants.firstWhere((p) => p['id'] == participantId, orElse: () => {});
+    await _supa.from('cours_collectifs_participants').update({'statut': 'inscrit'}).eq('id', participantId);
+    await _notifierDecisionDemande(participant, confirme: true);
+    _load();
+  }
+
+  Future<void> _notifierDecisionDemande(Map<String, dynamic> participant, {required bool confirme}) async {
+    if (participant['client_uid'] == null) return; // participant manuel, pas de compte à notifier
+    try {
+      final titre = _cours?['titre']?.toString() ?? 'un cours';
+      final d = DateTime.tryParse(_cours?['date_heure']?.toString() ?? '');
+      final dateStr = d != null ? DateFormat('dd/MM à HH:mm').format(d) : '';
+      await _supa.from('notifications').insert({
+        'uid': participant['client_uid'],
+        'type': confirme ? 'cours_collectif_confirme' : 'cours_collectif_refuse',
+        'title': confirme ? 'Inscription confirmée !' : 'Inscription refusée',
+        'body': confirme
+            ? 'Votre inscription au cours "$titre"${dateStr.isNotEmpty ? ' du $dateStr' : ''} est confirmée.'
+            : 'Votre demande d\'inscription au cours "$titre"${dateStr.isNotEmpty ? ' du $dateStr' : ''} n\'a pas été retenue.',
+        if (participant['client_profile_id'] != null) 'profile_id': participant['client_profile_id'],
+        'data': <String, dynamic>{'coursId': widget.coursId},
+        'read': false,
+      });
+    } catch (_) {}
   }
 
   /// Promeut le plus ancien participant en liste d'attente de ce cours quand
@@ -582,6 +615,48 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
     if (mounted) Navigator.pop(context);
   }
 
+  // Ajout manuel d'un participant sans compte (client au téléphone) — même
+  // esprit que rdv.client_nom_manuel/client_telephone_manuel pour les RDV
+  // individuels. Ajouté directement en 'inscrit' (c'est le pro qui l'ajoute).
+  Future<void> _ajouterParticipantManuel() async {
+    final nomCtrl = TextEditingController();
+    final telCtrl = TextEditingController();
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Ajouter un participant', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 4),
+          Text('Pour un client qui n\'utilise pas l\'application (appel téléphonique).',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+          const SizedBox(height: 16),
+          TextField(controller: nomCtrl, autofocus: true, style: const TextStyle(fontFamily: 'Galey'),
+              decoration: const InputDecoration(labelText: 'Nom', border: OutlineInputBorder())),
+          const SizedBox(height: 12),
+          TextField(controller: telCtrl, keyboardType: TextInputType.phone, style: const TextStyle(fontFamily: 'Galey'),
+              decoration: const InputDecoration(labelText: 'Téléphone (optionnel)', border: OutlineInputBorder())),
+          const SizedBox(height: 20),
+          SizedBox(width: double.infinity, child: ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: _kEducationPurple, padding: const EdgeInsets.symmetric(vertical: 14)),
+            child: const Text('Ajouter', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
+          )),
+        ]),
+      ),
+    );
+    if (ok != true || nomCtrl.text.trim().isEmpty) return;
+    await _supa.from('cours_collectifs_participants').insert({
+      'cours_id': widget.coursId,
+      'client_nom_manuel': nomCtrl.text.trim(),
+      if (telCtrl.text.trim().isNotEmpty) 'client_telephone_manuel': telCtrl.text.trim(),
+      'statut': 'inscrit',
+    });
+    _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     final titre = _cours?['titre']?.toString() ?? 'Cours collectif';
@@ -593,6 +668,11 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
         foregroundColor: Colors.white,
         title: Text(titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.person_add_outlined),
+            tooltip: 'Ajouter un participant',
+            onPressed: _ajouterParticipantManuel,
+          ),
           if (_cours?['serie_id'] != null)
             PopupMenuButton<String>(
               onSelected: (v) => v == 'serie' ? _cancelSerie() : _cancelCours(),
@@ -613,9 +693,12 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
               children: [
                 Builder(builder: (_) {
                   final enAttente = _participants.where((p) => p['statut'] == 'en_attente').length;
-                  final inscrits = _participants.length - enAttente;
+                  final demandes = _participants.where((p) => p['statut'] == 'demande').length;
+                  final inscrits = _participants.length - enAttente - demandes;
                   return Text(
-                    '$inscrits / $capacite inscrits${enAttente > 0 ? ' · $enAttente en liste d\'attente' : ''}',
+                    '$inscrits / $capacite inscrits'
+                        '${demandes > 0 ? ' · $demandes en attente de confirmation' : ''}'
+                        '${enAttente > 0 ? ' · $enAttente en liste d\'attente' : ''}',
                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15),
                   );
                 }),
@@ -648,25 +731,37 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
                               ),
                             )),
                           ),
-                        PopupMenuButton<String>(
-                          onSelected: (v) => _updateStatut(p['id'] as String, v),
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(value: 'present', child: Text('Présent')),
-                            PopupMenuItem(value: 'absent', child: Text('Absent')),
-                            PopupMenuItem(value: 'annule', child: Text('Retirer')),
-                          ],
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: p['statut'] == 'present' ? const Color(0xFFEEF5EA)
-                                  : p['statut'] == 'absent' ? Colors.red.shade50
-                                  : p['statut'] == 'en_attente' ? Colors.orange.shade50 : Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(p['statut'] == 'en_attente' ? 'en attente' : (p['statut'] as String? ?? 'inscrit'),
-                                style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                        if (p['statut'] == 'demande') ...[
+                          TextButton(
+                            onPressed: () => _confirmerDemande(p['id'] as String),
+                            style: TextButton.styleFrom(foregroundColor: const Color(0xFF6E9E57), padding: const EdgeInsets.symmetric(horizontal: 8)),
+                            child: const Text('Confirmer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12)),
                           ),
-                        ),
+                          TextButton(
+                            onPressed: () => _updateStatut(p['id'] as String, 'annule'),
+                            style: TextButton.styleFrom(foregroundColor: Colors.red.shade400, padding: const EdgeInsets.symmetric(horizontal: 8)),
+                            child: const Text('Refuser', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12)),
+                          ),
+                        ] else
+                          PopupMenuButton<String>(
+                            onSelected: (v) => _updateStatut(p['id'] as String, v),
+                            itemBuilder: (_) => const [
+                              PopupMenuItem(value: 'present', child: Text('Présent')),
+                              PopupMenuItem(value: 'absent', child: Text('Absent')),
+                              PopupMenuItem(value: 'annule', child: Text('Retirer')),
+                            ],
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: p['statut'] == 'present' ? const Color(0xFFEEF5EA)
+                                    : p['statut'] == 'absent' ? Colors.red.shade50
+                                    : p['statut'] == 'en_attente' ? Colors.orange.shade50 : Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(p['statut'] == 'en_attente' ? 'en attente' : (p['statut'] as String? ?? 'inscrit'),
+                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                            ),
+                          ),
                       ]),
                     ),
               ],
