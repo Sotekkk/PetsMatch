@@ -29,12 +29,20 @@ function sitePost(path, payload) {
                 hostname: u.hostname,
                 path: u.pathname + u.search,
                 method: "POST",
-                headers: {"Content-Type": "application/json", "Content-Length": Buffer.byteLength(body)},
-            }, (res) => { res.on("data", () => {}); res.on("end", resolve); });
+                headers: {
+                    "Content-Type": "application/json",
+                    "Content-Length": Buffer.byteLength(body),
+                },
+            }, (res) => {
+                res.on("data", () => {});
+                res.on("end", resolve);
+            });
             req.on("error", () => resolve());
             req.write(body);
             req.end();
-        } catch (e) { resolve(); }
+        } catch (e) {
+            resolve();
+        }
     });
 }
 
@@ -177,11 +185,12 @@ exports.sendRdvReminders = functions
         for (const win of windows) {
             let rdvs;
             try {
+                const cols = "id,client_uid,client_profile_id,client_email_manuel," +
+                    "client_nom_manuel,pro_uid,motif,date_heure,duree_minutes,lieu";
                 const qs = `statut=eq.confirme` +
                     `&date_heure=gte.${encodeURIComponent(win.from)}` +
                     `&date_heure=lte.${encodeURIComponent(win.to)}` +
-                    `&${win.sentField}=eq.false` +
-                    `&select=id,client_uid,client_profile_id,client_email_manuel,client_nom_manuel,pro_uid,motif,date_heure,duree_minutes,lieu`;
+                    `&${win.sentField}=eq.false&select=${cols}`;
                 rdvs = await supabaseGet(`rdv?${qs}`);
             } catch (e) {
                 console.error(`sendRdvReminders [${win.label}] fetch error:`, e);
@@ -243,7 +252,8 @@ exports.sendRdvReminders = functions
                     // Marquer comme envoyé (évite les doublons)
                     await supabasePatch("rdv", rdv.id, {[win.sentField]: true});
 
-                    console.log(`Rappel ${win.label} → RDV ${rdv.id} (${rdv.client_uid || rdv.client_email_manuel || "?"})`);
+                    const who = rdv.client_uid || rdv.client_email_manuel || "?";
+                    console.log(`Rappel ${win.label} -> RDV ${rdv.id} (${who})`);
                 } catch (e) {
                     console.error(`sendRdvReminders [${win.label}] error for RDV ${rdv.id}:`, e);
                 }
