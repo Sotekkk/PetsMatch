@@ -421,6 +421,18 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
               <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Message pour le pro (optionnel)"
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-galey resize-none" />
 
+              {!selectedAnimalId && (
+                <div className="rounded-xl border px-3 py-2.5 text-xs font-semibold flex items-start gap-2"
+                  style={{ borderColor: `${catColor}55`, backgroundColor: `${catColor}10`, color: catColor, fontFamily: 'Galey, sans-serif' }}>
+                  <span>⚠️</span>
+                  <span>
+                    {animaux.length === 0
+                      ? 'Aucun animal sur ce profil. Ajoutez-en un depuis « Mes animaux » (ou basculez sur votre profil particulier) pour pouvoir réserver un créneau.'
+                      : 'Choisissez d’abord un animal ci-dessus : les créneaux ne sont cliquables qu’une fois l’animal sélectionné.'}
+                  </span>
+                </div>
+              )}
+
               <div className="flex items-center justify-between">
                 <button onClick={() => setWeekStart(d => { const n = new Date(d); n.setDate(n.getDate() - 7); return n; })}
                   className="w-8 h-8 rounded-full border border-gray-200 hover:bg-gray-50">‹</button>
@@ -454,9 +466,6 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
                   );
                 })}
               </div>
-              {!selectedAnimalId && animaux.length > 0 && (
-                <p className="text-xs text-gray-400 text-center" style={{ fontFamily: 'Galey, sans-serif' }}>Choisissez un animal pour activer les créneaux.</p>
-              )}
             </div>
           )}
         </div>

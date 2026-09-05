@@ -61,7 +61,7 @@ function ServicesCarteContent() {
   const [catFilter, setCatFilter] = useState(() => searchParams.get('cat') ?? '');
   const [profFilter] = useState(() => searchParams.get('prof') ?? '');
   const [especeFilter, setEspeceFilter] = useState('');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => searchParams.get('q') ?? '');
   const [nearMe, setNearMe] = useState(false);
   const [locating, setLocating] = useState(false);
   const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);

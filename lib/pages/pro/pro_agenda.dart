@@ -2286,6 +2286,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           final isDisp = statut == 'disponible';
           return Padding(
             padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+            child: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Center(child: Container(width: 40, height: 4,
                   decoration: BoxDecoration(color: Colors.grey.shade300,
@@ -2326,66 +2327,78 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     child: Text('→', style: TextStyle(fontSize: 22, color: Colors.grey))),
                 Expanded(child: timeCard('À', endTime, false)),
               ]),
-              // Type de prestation (éducateur/comportementaliste uniquement)
+              // Options éducateur/comportementaliste — encadré teinté pour
+              // qu'on pense à les régler (type de cours + domicile).
               if (User_Info.catPro == 'education' && isDisp) ...[
                 const SizedBox(height: 16),
-                const Align(alignment: Alignment.centerLeft,
-                    child: Text('Réservé à', style: TextStyle(
-                        fontFamily: 'Galey', fontSize: 11, color: Colors.grey,
-                        fontWeight: FontWeight.w600))),
-                const SizedBox(height: 8),
-                Row(children: [
-                  for (final t in [('individuel', '🎓 Individuel'), ('collectif', '👥 Collectif'), (null, 'Les deux')])
-                    Expanded(child: Padding(
-                      padding: EdgeInsets.only(right: t.$1 == null ? 0 : 6),
-                      child: GestureDetector(
-                        onTap: () => setS(() => type = t.$1),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 9),
-                          decoration: BoxDecoration(
-                            color: type == t.$1 ? const Color(0x187B5EA7) : Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                                color: type == t.$1 ? const Color(0xFF7B5EA7) : Colors.grey.shade300,
-                                width: type == t.$1 ? 2 : 1),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0x0A7B5EA7),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0x337B5EA7)),
+                  ),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('Type de cours', style: TextStyle(
+                        fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700,
+                        color: Color(0xFF7B5EA7))),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      for (final t in [('individuel', '🎓 Individuel'), ('collectif', '👥 Collectif'), (null, 'Les deux')])
+                        Expanded(child: Padding(
+                          padding: EdgeInsets.only(right: t.$1 == null ? 0 : 6),
+                          child: GestureDetector(
+                            onTap: () => setS(() => type = t.$1),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 9),
+                              decoration: BoxDecoration(
+                                color: type == t.$1 ? const Color(0xFF7B5EA7) : Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                    color: type == t.$1 ? const Color(0xFF7B5EA7) : Colors.grey.shade300,
+                                    width: type == t.$1 ? 2 : 1),
+                              ),
+                              child: Center(child: Text(t.$2, textAlign: TextAlign.center, style: TextStyle(
+                                  fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600,
+                                  color: type == t.$1 ? Colors.white : Colors.grey.shade600))),
+                            ),
                           ),
-                          child: Center(child: Text(t.$2, textAlign: TextAlign.center, style: TextStyle(
-                              fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600,
-                              color: type == t.$1 ? const Color(0xFF7B5EA7) : Colors.grey.shade500))),
-                        ),
-                      ),
-                    )),
-                ]),
-                if (type == 'collectif' && coursCollectifs.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  const Align(alignment: Alignment.centerLeft,
-                      child: Text('Cours associé (optionnel)', style: TextStyle(
+                        )),
+                    ]),
+                    if (type == 'collectif' && coursCollectifs.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      const Text('Cours associé (optionnel)', style: TextStyle(
                           fontFamily: 'Galey', fontSize: 11, color: Colors.grey,
-                          fontWeight: FontWeight.w600))),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String?>(
-                    initialValue: prestationId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                    items: [
-                      const DropdownMenuItem(value: null, child: Text('Aucun', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
-                      for (final c in coursCollectifs)
-                        DropdownMenuItem(value: c['id'] as String, child: Text(c['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                          fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<String?>(
+                        initialValue: prestationId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true,
+                            filled: true, fillColor: Colors.white,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('Aucun', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                          for (final c in coursCollectifs)
+                            DropdownMenuItem(value: c['id'] as String, child: Text(c['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                        ],
+                        onChanged: (v) => setS(() => prestationId = v),
+                      ),
                     ],
-                    onChanged: (v) => setS(() => prestationId = v),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                Row(children: [
-                  Expanded(child: Text('Disponible à domicile', style: TextStyle(
-                      fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700))),
-                  Switch(
-                    value: domicileOk,
-                    activeThumbColor: const Color(0xFF7B5EA7),
-                    onChanged: (v) => setS(() => domicileOk = v),
-                  ),
-                ]),
+                    const Divider(height: 20),
+                    Row(children: [
+                      Expanded(child: Text('Proposer ce créneau à domicile', style: TextStyle(
+                          fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                          color: Colors.grey.shade800))),
+                      Switch(
+                        value: domicileOk,
+                        activeThumbColor: const Color(0xFF7B5EA7),
+                        onChanged: (v) => setS(() => domicileOk = v),
+                      ),
+                    ]),
+                  ]),
+                ),
               ],
               const SizedBox(height: 20),
               SizedBox(width: double.infinity, child: ElevatedButton(
@@ -2400,6 +2413,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     fontSize: 15, color: Colors.white)),
               )),
             ]),
+            ),
           );
         },
       ),
