@@ -24,7 +24,7 @@ interface Prestation {
   id: string; nom: string; description?: string | null;
   duree_minutes: number; prix?: number | null; bilan_requis: boolean; domicile_ok: boolean;
 }
-interface Animal { id: number; nom: string; espece: string; }
+interface Animal { id: number | string; nom: string; espece: string; }
 interface Props {
   proUid: string;
   proProfileId: string | null;
@@ -62,7 +62,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
   const [bilanRequis, setBilanRequis] = useState(true);
 
   const [animaux, setAnimaux] = useState<Animal[]>([]);
-  const [selectedAnimalId, setSelectedAnimalId] = useState<number | null>(null);
+  const [selectedAnimalId, setSelectedAnimalId] = useState<number | string | null>(null);
   const [notes, setNotes] = useState('');
 
   // Profil du pro consulté, résolu une fois (fallback "is_main" si l'appelant
@@ -128,11 +128,27 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
       }
       setPrestations(all);
 
-      let animauxQ = supabase.from('animaux').select('id, nom, espece')
-        .or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`).order('nom');
-      if (activeProfileId) animauxQ = animauxQ.eq('profile_id', activeProfileId);
-      const { data: animauxData } = await animauxQ;
-      setAnimaux((animauxData ?? []) as Animal[]);
+      // Animaux du client : profil actif d'abord (animaux.profile_id) PUIS
+      // animaux_proprietes (source de vérité de la propriété courante — la
+      // colonne animaux.profile_id est souvent null sur les vieux comptes,
+      // cf. rdv_booking_page.dart _loadAnimaux).
+      let directQ = supabase.from('animaux').select('id, nom, espece')
+        .or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`);
+      if (activeProfileId) directQ = directQ.eq('profile_id', activeProfileId);
+      let ownQ = supabase.from('animaux_proprietes').select('animal_id')
+        .eq('uid_proprio', user.uid).is('date_fin', null);
+      if (activeProfileId) ownQ = ownQ.eq('profile_id_proprio', activeProfileId);
+      const [{ data: directRows }, { data: ownRows }] = await Promise.all([directQ, ownQ]);
+      const direct = (directRows ?? []) as Animal[];
+      const directIds = new Set(direct.map(a => String(a.id)));
+      const missingIds = [...new Set(((ownRows ?? []) as { animal_id: string }[]).map(r => r.animal_id))]
+        .filter(id => id && !directIds.has(String(id)));
+      let viaCession: Animal[] = [];
+      if (missingIds.length > 0) {
+        const { data: r2 } = await supabase.from('animaux').select('id, nom, espece').in('id', missingIds);
+        viaCession = (r2 ?? []) as Animal[];
+      }
+      setAnimaux([...direct, ...viaCession].sort((a, b) => (a.nom ?? '').localeCompare(b.nom ?? '')));
 
       const now = new Date();
       const maxDt = new Date(now.getFullYear(), now.getMonth() + 3, now.getDate());
