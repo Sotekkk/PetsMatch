@@ -1,8 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_fiche_client_page.dart';
@@ -1558,6 +1561,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   Future<void> _showNouveauRdvDialog() async {
     final clientNomCtrl = TextEditingController();
     final clientTelCtrl = TextEditingController();
+    final clientEmailCtrl = TextEditingController();
     final animalNomCtrl = TextEditingController();
     final motifCtrl     = TextEditingController();
     final notesCtrl     = TextEditingController();
@@ -1566,6 +1570,52 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     int duree = 30;
     bool saving = false;
     String? error;
+    // Recherche d'un compte PetsMatch existant (téléphone OU email).
+    bool searching = false;
+    Map<String, dynamic>? foundUser;   // {uid, prenom, nom, email, profile_id}
+    bool searched = false;             // au moins une recherche effectuée
+    String? linkedUid, linkedProfileId, linkedNom;
+
+    Future<void> rechercherClient(void Function(void Function()) setModal) async {
+      final email = clientEmailCtrl.text.trim();
+      final tel = clientTelCtrl.text.trim();
+      if (email.isEmpty && tel.isEmpty) return;
+      setModal(() { searching = true; foundUser = null; });
+      try {
+        final supa = Supabase.instance.client;
+        Map<String, dynamic>? u;
+        if (email.isNotEmpty) {
+          final rows = await supa.from('users')
+              .select('uid, firstname, lastname, email, phone_number')
+              .ilike('email', email).limit(1);
+          if ((rows as List).isNotEmpty) u = Map<String, dynamic>.from(rows.first);
+        }
+        if (u == null && tel.isNotEmpty) {
+          final digits = tel.replaceAll(RegExp(r'[^0-9]'), '');
+          final tail = digits.length >= 8 ? digits.substring(digits.length - 8) : digits;
+          if (tail.length >= 6) {
+            final rows = await supa.from('users')
+                .select('uid, firstname, lastname, email, phone_number')
+                .ilike('phone_number', '%$tail%').limit(1);
+            if ((rows as List).isNotEmpty) u = Map<String, dynamic>.from(rows.first);
+          }
+        }
+        if (u != null) {
+          final prof = await supa.from('user_profiles')
+              .select('id').eq('uid', u['uid']).eq('profile_type', 'particulier').maybeSingle();
+          if (prof != null) {
+            u['profile_id'] = prof['id'];
+            u['prenom'] = u['firstname'];
+            u['nom'] = u['lastname'];
+          } else {
+            u = null; // compte sans profil particulier → on ne rattache pas
+          }
+        }
+        setModal(() { foundUser = u; searching = false; searched = true; });
+      } catch (_) {
+        setModal(() { searching = false; searched = true; });
+      }
+    }
 
     await showModalBottomSheet<void>(
       context: context,
@@ -1588,32 +1638,119 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
               ]),
               const SizedBox(height: 4),
-              const Text('Pour un client sans compte PetsMatch (walk-in, téléphone…). Le RDV est ajouté directement confirmé.',
+              const Text('Pour un client qui appelle. Le RDV est ajouté directement confirmé.',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 18),
-              TextField(
-                controller: clientNomCtrl,
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                decoration: InputDecoration(
-                  labelText: 'Nom du client *',
-                  labelStyle: const TextStyle(fontFamily: 'Galey'),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  contentPadding: const EdgeInsets.all(12),
+
+              if (linkedUid != null) ...[
+                // RDV rattaché à un compte existant
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0x0C6E9E57),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0x336E9E57)),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.verified_user_outlined, size: 20, color: Color(0xFF4A7A32)),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('RDV lié à un compte PetsMatch', style: TextStyle(
+                          fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF4A7A32))),
+                      Text(linkedNom ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+                    ])),
+                    TextButton(
+                      onPressed: () => setModal(() { linkedUid = null; linkedProfileId = null; linkedNom = null; }),
+                      child: const Text('Détacher', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                    ),
+                  ]),
                 ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: clientTelCtrl,
-                keyboardType: TextInputType.phone,
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                decoration: InputDecoration(
-                  labelText: 'Téléphone',
-                  labelStyle: const TextStyle(fontFamily: 'Galey'),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  contentPadding: const EdgeInsets.all(12),
+                const SizedBox(height: 12),
+              ] else ...[
+                TextField(
+                  controller: clientNomCtrl,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                  decoration: InputDecoration(
+                    labelText: 'Nom du client *',
+                    labelStyle: const TextStyle(fontFamily: 'Galey'),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: clientTelCtrl,
+                  keyboardType: TextInputType.phone,
+                  onChanged: (_) => setModal(() { searched = false; foundUser = null; }),
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                  decoration: InputDecoration(
+                    labelText: 'Téléphone *',
+                    labelStyle: const TextStyle(fontFamily: 'Galey'),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: clientEmailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  onChanged: (_) => setModal(() { searched = false; foundUser = null; }),
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                  decoration: InputDecoration(
+                    labelText: 'Email *',
+                    labelStyle: const TextStyle(fontFamily: 'Galey'),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    contentPadding: const EdgeInsets.all(12),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (clientEmailCtrl.text.trim().isNotEmpty || clientTelCtrl.text.trim().isNotEmpty)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: searching ? null : () => rechercherClient(setModal),
+                      icon: searching
+                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.search, size: 16),
+                      label: const Text('Ce client a-t-il déjà PetsMatch ?', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                      style: TextButton.styleFrom(foregroundColor: _teal, padding: EdgeInsets.zero),
+                    ),
+                  ),
+                if (foundUser != null) ...[
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0x0C6E9E57),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0x336E9E57)),
+                    ),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Compte trouvé : ${(foundUser!['prenom'] ?? '')} ${(foundUser!['nom'] ?? '')}'.trim(),
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+                      if ((foundUser!['email'] ?? '').toString().isNotEmpty)
+                        Text(foundUser!['email'].toString(), style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+                      const SizedBox(height: 6),
+                      SizedBox(width: double.infinity, child: OutlinedButton(
+                        onPressed: () => setModal(() {
+                          linkedUid = foundUser!['uid']?.toString();
+                          linkedProfileId = foundUser!['profile_id']?.toString();
+                          linkedNom = '${foundUser!['prenom'] ?? ''} ${foundUser!['nom'] ?? ''}'.trim();
+                          foundUser = null;
+                        }),
+                        style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFF4A7A32),
+                            side: const BorderSide(color: Color(0xFF6E9E57))),
+                        child: const Text('Rattacher ce RDV à son compte', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700)),
+                      )),
+                    ]),
+                  ),
+                ] else if (searched && !searching) ...[
+                  const SizedBox(height: 2),
+                  Text('Aucun compte trouvé — le client recevra un email de confirmation l\'invitant à rejoindre PetsMatch.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+                ],
+                const SizedBox(height: 10),
+              ],
               TextField(
                 controller: animalNomCtrl,
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
@@ -1750,20 +1887,30 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: saving ? null : () async {
-                    if (clientNomCtrl.text.trim().isEmpty) {
-                      setModal(() => error = 'Le nom du client est requis.');
-                      return;
+                    if (linkedUid == null) {
+                      final missing = <String>[
+                        if (clientNomCtrl.text.trim().isEmpty) 'nom',
+                        if (clientTelCtrl.text.trim().isEmpty) 'téléphone',
+                        if (clientEmailCtrl.text.trim().isEmpty) 'email',
+                      ];
+                      if (missing.isNotEmpty) {
+                        setModal(() => error = 'Champs requis : ${missing.join(", ")}.');
+                        return;
+                      }
                     }
                     setModal(() { saving = true; error = null; });
                     final ok = await _creerRdvManuel(
                       clientNom: clientNomCtrl.text.trim(),
                       clientTel: clientTelCtrl.text.trim(),
+                      clientEmail: clientEmailCtrl.text.trim(),
                       animalNom: animalNomCtrl.text.trim(),
                       motif: motifCtrl.text.trim(),
                       notes: notesCtrl.text.trim(),
                       date: date,
                       heure: heure,
                       dureeMinutes: duree,
+                      linkedUid: linkedUid,
+                      linkedProfileId: linkedProfileId,
                     );
                     if (ok && ctx.mounted) Navigator.pop(ctx);
                     else setModal(() { saving = false; error = 'Erreur lors de la création du RDV.'; });
@@ -1791,12 +1938,15 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   Future<bool> _creerRdvManuel({
     required String clientNom,
     required String clientTel,
+    required String clientEmail,
     required String animalNom,
     required String motif,
     required String notes,
     required DateTime date,
     required TimeOfDay heure,
     required int dureeMinutes,
+    String? linkedUid,
+    String? linkedProfileId,
   }) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return false;
@@ -1808,13 +1958,17 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       );
       pid = proProfile['id']?.toString() ?? '';
     }
+    final linked = linkedUid != null && linkedUid.isNotEmpty;
     try {
       final dh = DateTime(date.year, date.month, date.day, heure.hour, heure.minute).toUtc();
-      await Supabase.instance.client.from('rdv').insert({
+      final inserted = await Supabase.instance.client.from('rdv').insert({
         'pro_uid':                  uid,
         if (pid.isNotEmpty) 'pro_profile_id': pid,
-        'client_nom_manuel':        clientNom,
-        if (clientTel.isNotEmpty) 'client_telephone_manuel': clientTel,
+        if (linked) 'client_uid': linkedUid,
+        if (linked && (linkedProfileId ?? '').isNotEmpty) 'client_profile_id': linkedProfileId,
+        if (!linked) 'client_nom_manuel': clientNom,
+        if (!linked && clientTel.isNotEmpty) 'client_telephone_manuel': clientTel,
+        if (!linked && clientEmail.isNotEmpty) 'client_email_manuel': clientEmail,
         if (animalNom.isNotEmpty) 'animal_nom_manuel': animalNom,
         'cree_par_pro':             true,
         'date_heure':               dh.toIso8601String(),
@@ -1822,8 +1976,34 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         'duree_minutes':            dureeMinutes,
         if (notes.isNotEmpty) 'notes_client': notes,
         'statut':                   'confirme',
-      });
+      }).select('id').single();
+
       if (mounted) await Future.wait([_loadRdvs(), _loadAujourdhui()]);
+
+      if (linked) {
+        // Effets de bord d'une confirmation : agenda client + pro, notif
+        // « RDV confirmé », accès carnet santé — réutilise _updateStatut.
+        await _updateStatut(inserted['id'].toString(), 'confirme', dureeMinutes: dureeMinutes);
+      } else if (clientEmail.isNotEmpty) {
+        // Email de confirmation + invitation à rejoindre PetsMatch.
+        final proNom = User_Info.nameElevage.isNotEmpty
+            ? User_Info.nameElevage
+            : (User_Info.professionPro.isNotEmpty ? User_Info.professionPro : 'Le professionnel');
+        try {
+          await http.post(
+            Uri.parse('$kSiteBaseUrl/api/rdv/notify-email'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'email':        clientEmail,
+              'client_nom':   clientNom,
+              'pro_nom':      proNom,
+              'date_heure':   dh.toIso8601String(),
+              'motif':        motif.isNotEmpty ? motif : null,
+              'duree_minutes': dureeMinutes,
+            }),
+          );
+        } catch (_) {}
+      }
       return true;
     } catch (_) {
       return false;
