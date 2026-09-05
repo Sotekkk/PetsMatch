@@ -177,34 +177,36 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
   }
 
   Future<void> _loadAvailableSlots() async {
+    final now = DateTime.now();
+    final today = _dateKey(now);
+    final maxDt = DateTime(now.year, now.month + 3, now.day);
+    final maxDate = _dateKey(maxDt);
+    final profileId = _resolvedProfileId ?? '';
+
+    // Requêtes indépendantes : un échec sur les RDV ne doit pas priver
+    // l'utilisateur des créneaux disponibles (et inversement).
     try {
-      final now = DateTime.now();
-      final today = _dateKey(now);
-      final maxDt = DateTime(now.year, now.month + 3, now.day);
-      final maxDate = _dateKey(maxDt);
-      final profileId = _resolvedProfileId ?? '';
-      final results = await Future.wait([
-        _supa.from('creneaux_pro')
-            .select('date, heure_debut, heure_fin, type_prestation, domicile_ok, trajet_origine')
-            .eq('pro_uid', widget.proUid)
-            .eq('statut', 'disponible')
-            .eq('pro_profile_id', profileId)
-            .gte('date', today)
-            .lte('date', maxDate)
-            .order('date')
-            .order('heure_debut')
-            .limit(1000),
-        _supa.from('rdv')
-            .select('date_heure, duree_minutes, statut, lieu_lat, lieu_lng')
-            .eq('pro_uid', widget.proUid)
-            .eq('pro_profile_id', profileId)
-            .inFilter('statut', ['confirme', 'demande'])
-            .gte('date_heure', now.toUtc().toIso8601String()),
-      ]);
-      if (mounted) {
-        _availableSlots = List<Map<String, dynamic>>.from(results[0] as List);
-        _existingRdvs = List<Map<String, dynamic>>.from(results[1] as List);
-      }
+      final rows = await _supa.from('creneaux_pro')
+          .select('date, heure_debut, heure_fin, type_prestation, domicile_ok, trajet_origine')
+          .eq('pro_uid', widget.proUid)
+          .eq('statut', 'disponible')
+          .eq('pro_profile_id', profileId)
+          .gte('date', today)
+          .lte('date', maxDate)
+          .order('date')
+          .order('heure_debut')
+          .limit(2000);
+      _availableSlots = List<Map<String, dynamic>>.from(rows as List);
+    } catch (_) {}
+
+    try {
+      final rows = await _supa.from('rdv')
+          .select('date_heure, duree_minutes, statut, lieu_lat, lieu_lng')
+          .eq('pro_uid', widget.proUid)
+          .eq('pro_profile_id', profileId)
+          .inFilter('statut', ['confirme', 'demande'])
+          .gte('date_heure', now.toUtc().toIso8601String());
+      _existingRdvs = List<Map<String, dynamic>>.from(rows as List);
     } catch (_) {}
   }
 
@@ -628,6 +630,10 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
     final smartSlots = _smartSlotsByDate;
     final days = List.generate(_joursSemaine, (i) => _weekStart.add(Duration(days: i)));
     final today = DateTime.now();
+    // Aide au diagnostic : distingue « pas de dispo publiée du tout » de
+    // « rien cette semaine » (→ inviter à avancer d'une semaine).
+    final aucuneDispo = _availableSlots.where((s) => s['type_prestation'] != 'collectif').isEmpty;
+    final semaineVide = smartSlots.isEmpty;
     return Column(children: [
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -645,6 +651,22 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           IconButton(icon: const Icon(Icons.chevron_right), onPressed: () => _shiftWeek(7)),
         ]),
       ),
+      if (aucuneDispo)
+        Container(
+          width: double.infinity,
+          color: Colors.orange.shade50,
+          padding: const EdgeInsets.all(12),
+          child: Text('Ce professionnel n\'a pas encore publié de disponibilités pour ce type de cours.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.orange.shade800)),
+        )
+      else if (semaineVide)
+        Container(
+          width: double.infinity,
+          color: color.withValues(alpha: 0.06),
+          padding: const EdgeInsets.all(12),
+          child: Text('Rien de disponible cette semaine — utilisez la flèche « › » pour voir les semaines suivantes.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: color)),
+        ),
       Expanded(
         child: ListView.builder(
           padding: const EdgeInsets.all(12),

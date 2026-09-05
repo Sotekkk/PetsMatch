@@ -406,41 +406,37 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   // ── Créneaux disponibles (tous les pros) ─────────────────────────────────────
 
   Future<void> _loadAvailableSlots() async {
-    try {
-      final now = DateTime.now();
-      final today = '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}';
-      final maxDt = DateTime(now.year, now.month + 3, now.day);
-      final maxDate = '${maxDt.year}-${maxDt.month.toString().padLeft(2,'0')}-${maxDt.day.toString().padLeft(2,'0')}';
-      final profileId = widget.proProfileId ?? '';
-      final results = await Future.wait([
-        Supabase.instance.client
-            .from('creneaux_pro')
-            .select('date, heure_debut, heure_fin, type_prestation')
-            .eq('pro_uid', widget.proUid)
-            .eq('statut', 'disponible')
-            .eq('pro_profile_id', profileId)
-            .gte('date', today)
-            .lte('date', maxDate)
-            .order('date')
-            .order('heure_debut')
-            .limit(1000),
-        Supabase.instance.client
-            .from('rdv')
-            .select('date_heure, duree_minutes, statut, employe_id')
-            .eq('pro_uid', widget.proUid)
-            .eq('pro_profile_id', profileId)
-            .inFilter('statut', ['confirme', 'demande'])
-            .gte('date_heure', now.toUtc().toIso8601String()),
-      ]);
+    final now = DateTime.now();
+    final today = '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}';
+    final maxDt = DateTime(now.year, now.month + 3, now.day);
+    final maxDate = '${maxDt.year}-${maxDt.month.toString().padLeft(2,'0')}-${maxDt.day.toString().padLeft(2,'0')}';
+    final profileId = widget.proProfileId ?? '';
 
-      if (mounted) {
-        _availableSlots = (results[0] as List)
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList();
-        _existingRdvs = (results[1] as List)
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList();
-      }
+    // Requêtes indépendantes : un échec sur les RDV ne prive pas des créneaux.
+    try {
+      final rows = await Supabase.instance.client
+          .from('creneaux_pro')
+          .select('date, heure_debut, heure_fin, type_prestation')
+          .eq('pro_uid', widget.proUid)
+          .eq('statut', 'disponible')
+          .eq('pro_profile_id', profileId)
+          .gte('date', today)
+          .lte('date', maxDate)
+          .order('date')
+          .order('heure_debut')
+          .limit(2000);
+      _availableSlots = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (_) {}
+
+    try {
+      final rows = await Supabase.instance.client
+          .from('rdv')
+          .select('date_heure, duree_minutes, statut, employe_id')
+          .eq('pro_uid', widget.proUid)
+          .eq('pro_profile_id', profileId)
+          .inFilter('statut', ['confirme', 'demande'])
+          .gte('date_heure', now.toUtc().toIso8601String());
+      _existingRdvs = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
     } catch (_) {}
   }
 
