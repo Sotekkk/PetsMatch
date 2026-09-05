@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { geocodeAddress, distanceKm } from '@/lib/geocoding';
 
 // Vitesse moyenne heuristique (à vol d'oiseau) + marge de sécurité — même
@@ -50,7 +50,7 @@ const MONTH_FMT = new Intl.DateTimeFormat('fr-FR', { month: 'short', year: 'nume
 export default function EducationReservationModal({ proUid, proProfileId, proName, catColor, onClose }: Props) {
   const { user } = useAuth();
   const router = useRouter();
-  const activeProfileId = useActiveProfile();
+  const { id: activeProfileId, loaded: profileLoaded } = useActiveProfileState();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -85,6 +85,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
 
   useEffect(() => {
     if (!user) { router.push('/connexion'); return; }
+    if (!profileLoaded) return; // attend la lecture du profil actif (localStorage) avant de scoper les animaux
     (async () => {
       const cols = 'id, education_bilan_requis, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng';
       const proRow = proProfileId
@@ -150,7 +151,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, proUid, proProfileId]);
+  }, [user, proUid, proProfileId, profileLoaded, activeProfileId]);
 
   const duration = selectedPrestation?.duree_minutes ?? 60;
 
