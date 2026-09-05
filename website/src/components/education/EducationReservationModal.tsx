@@ -65,6 +65,10 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
   const [selectedAnimalId, setSelectedAnimalId] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
 
+  // Profil du pro consulté, résolu une fois (fallback "is_main" si l'appelant
+  // n'a pas passé proProfileId) — évite de filtrer créneaux/RDV/notif sur un
+  // pro_profile_id vide, qui ne retourne/n'écrit jamais la bonne ligne.
+  const [resolvedProfileId, setResolvedProfileId] = useState<string | null>(null);
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
   const [slots, setSlots] = useState<{ date: string; heure_debut: string; heure_fin: string; type_prestation: string | null; domicile_ok: boolean; trajet_origine: string | null }[]>([]);
   const [existingRdvs, setExistingRdvs] = useState<{ date_heure: string; duree_minutes: number; lieu_lat: number | null; lieu_lng: number | null }[]>([]);
@@ -82,16 +86,20 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
   useEffect(() => {
     if (!user) { router.push('/connexion'); return; }
     (async () => {
-      const profileId = proProfileId ?? '';
-      const cols = 'education_bilan_requis, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng';
+      const cols = 'id, education_bilan_requis, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng';
       const proRow = proProfileId
         ? await supabase.from('user_profiles').select(cols).eq('id', proProfileId).maybeSingle()
         : await supabase.from('user_profiles').select(cols).eq('uid', proUid).eq('is_main', true).maybeSingle();
       const proData = proRow.data as {
-        education_bilan_requis?: boolean; trajet_origine_defaut?: string;
+        id?: string; education_bilan_requis?: boolean; trajet_origine_defaut?: string;
         autre_domicile_lat?: number; autre_domicile_lng?: number;
         latitude?: number; longitude?: number; lat?: number; lng?: number;
       } | null;
+      // Le profil du pro consulté n'est pas forcément passé en paramètre
+      // (lien sans ?profileId=...) — on retombe alors sur le profil "is_main"
+      // résolu ci-dessus, pour ne jamais filtrer les créneaux/RDV sur un id vide.
+      const profileId = proProfileId ?? proData?.id ?? '';
+      setResolvedProfileId(profileId || null);
       const bReq = proData?.education_bilan_requis ?? true;
       setBilanRequis(bReq);
       setOrigineDefaut(proData?.trajet_origine_defaut ?? 'cabinet');
@@ -110,7 +118,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
 
       let pQ = supabase.from('prestations_education').select('id, nom, description, duree_minutes, prix, bilan_requis, domicile_ok')
         .eq('pro_uid', proUid).eq('actif', true);
-      if (proProfileId) pQ = pQ.eq('pro_profile_id', proProfileId);
+      if (profileId) pQ = pQ.eq('pro_profile_id', profileId);
       const { data: pRows } = await pQ.order('ordre').order('created_at');
       let all = (pRows ?? []) as Prestation[];
       if (bReq && firstTime) {
@@ -253,7 +261,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
       dateHeure.setHours(h, m, 0, 0);
       await supabase.from('rdv').insert({
         pro_uid: proUid,
-        pro_profile_id: proProfileId ?? '',
+        pro_profile_id: resolvedProfileId ?? '',
         client_uid: user.uid,
         ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
         animal_id: selectedAnimalId,
@@ -272,7 +280,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
         uid: proUid, type: 'rdv_demande',
         title: 'Nouvelle demande de RDV',
         body: `${clientName || 'Un client'} souhaite un cours "${selectedPrestation.nom}" le ${dateStr}`,
-        ...(proProfileId ? { profile_id: proProfileId } : {}),
+        ...(resolvedProfileId ? { profile_id: resolvedProfileId } : {}),
         data: { client_uid: user.uid }, read: false,
       });
       setSuccess(true);

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
-import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import CreneauxWeekGrid from '@/components/pro/CreneauxWeekGrid';
 
 const TEAL   = '#0C5C6C';
@@ -66,7 +66,7 @@ function groupRanges(slotsForDate: { time: string; statut: SlotStatus; type?: Ty
 export default function ProCreneauxPage() {
   const { user, loading } = useAuth();
   const router            = useRouter();
-  const activeProfileId   = useActiveProfile();
+  const { id: activeProfileId, loaded: profileLoaded } = useActiveProfileState();
 
   const [weekStart, setWeekStart]           = useState(() => getMonday(new Date()));
   const [slots, setSlots]                   = useState<Record<string, SlotStatus>>({});
@@ -109,7 +109,7 @@ export default function ProCreneauxPage() {
   }, [user, activeProfileId, catPro]);
 
   const loadSlots = useCallback(async () => {
-    if (!user) return;
+    if (!user || !profileLoaded || !activeProfileId) return;
     setLoadingSlots(true);
     const end = new Date(weekStart);
     end.setDate(weekStart.getDate() + 6);
@@ -145,7 +145,7 @@ export default function ProCreneauxPage() {
       setRdvs((rdvRows ?? []) as typeof rdvs);
     } catch { /* ignore */ }
     setLoadingSlots(false);
-  }, [user, activeProfileId, weekStart]);
+  }, [user, profileLoaded, activeProfileId, weekStart]);
 
   useEffect(() => { loadSlots(); }, [loadSlots]);
 
