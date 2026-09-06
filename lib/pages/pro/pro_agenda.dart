@@ -50,6 +50,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   // Créneau autorisé à domicile (éducateur uniquement) — utilisé par le
   // calcul de disponibilité de education_reservation_page.dart.
   final Set<String> _slotDomicile = {};
+  // Lien optionnel créneau → prestation (éducateur) — reporté à la réplication.
+  final Map<String, String> _slotPrestationIds = {};
 
   // VET07 — retard
   bool _retardDeclare = false;
@@ -2293,6 +2295,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         _blockedSlots.clear();
         _slotTypes.clear();
         _slotDomicile.clear();
+        _slotPrestationIds.clear();
         for (final row in rows) {
           final date = row['date'] as String;
           final heureDebut = row['heure_debut'] as String; // 'HH:MM:SS'
@@ -2303,6 +2306,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           final type = row['type_prestation'] as String?;
           if (type != null) _slotTypes[key] = type;
           if (row['domicile_ok'] == true) _slotDomicile.add(key);
+          final presId = row['prestation_id']?.toString();
+          if (presId != null && presId.isNotEmpty) _slotPrestationIds[key] = presId;
         }
       });
     } catch (_) {}
@@ -2370,6 +2375,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         _blockedSlots[key] = statut;
         if (type != null) { _slotTypes[key] = type; } else { _slotTypes.remove(key); }
         if (domicileOk) { _slotDomicile.add(key); } else { _slotDomicile.remove(key); }
+        if (prestationId != null) { _slotPrestationIds[key] = prestationId; } else { _slotPrestationIds.remove(key); }
       });
       slots.add({'pro_uid': uid, 'pro_profile_id': pid, 'date': date,
           'heure_debut': hd, 'heure_fin': hf, 'statut': statut, 'type_prestation': type,
@@ -2402,7 +2408,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       keyList.add('${date}_${(curMins ~/ 60).toString().padLeft(2, '0')}:${(curMins % 60).toString().padLeft(2, '0')}');
       curMins += 15;
     }
-    if (mounted) setState(() { for (final k in keyList) { _blockedSlots.remove(k); _slotTypes.remove(k); _slotDomicile.remove(k); } });
+    if (mounted) setState(() { for (final k in keyList) { _blockedSlots.remove(k); _slotTypes.remove(k); _slotDomicile.remove(k); _slotPrestationIds.remove(k); } });
     try {
       await Supabase.instance.client.from('creneaux_pro').delete()
           .eq('pro_uid', uid).eq('pro_profile_id', pid).eq('date', date)
@@ -2765,6 +2771,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           final heureDebut = '${(startMins ~/ 60).toString().padLeft(2, '0')}:${(startMins % 60).toString().padLeft(2, '0')}:00';
           final heureFin = '${(finMins ~/ 60).toString().padLeft(2, '0')}:${(finMins % 60).toString().padLeft(2, '0')}:00';
 
+          // Reporter le type de cours (individuel/collectif) + l'option à
+          // domicile + le lien prestation du créneau source, sinon toutes les
+          // copies redeviennent des créneaux individuels génériques.
           rows.add({
             'pro_uid':        uid,
             'pro_profile_id': pid,
@@ -2772,6 +2781,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             'heure_debut':    heureDebut,
             'heure_fin':      heureFin,
             'statut':         'disponible',
+            'type_prestation': _slotTypes[entry.key],
+            'domicile_ok':    _slotDomicile.contains(entry.key),
+            if (_slotPrestationIds[entry.key] != null)
+              'prestation_id': _slotPrestationIds[entry.key],
           });
         }
       }

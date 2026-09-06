@@ -87,6 +87,7 @@ export default function ProCreneauxPage() {
   const [coursCollectifs, setCoursCollectifs] = useState<{ id: string; nom: string }[]>([]);
   const [slotTypes, setSlotTypes]           = useState<Record<string, TypePrestation>>({});
   const [slotDomicile, setSlotDomicile]     = useState<Record<string, boolean>>({});
+  const [slotPrestationIds, setSlotPrestationIds] = useState<Record<string, string>>({});
   const [catPro, setCatPro]                 = useState('');
   const [rdvs, setRdvs]                     = useState<{ date_heure: string; duree_minutes: number | null; motif: string | null }[]>([]);
 
@@ -116,7 +117,7 @@ export default function ProCreneauxPage() {
     try {
       const { data } = await supabase
         .from('creneaux_pro')
-        .select('date, heure_debut, statut, type_prestation, domicile_ok')
+        .select('date, heure_debut, statut, type_prestation, domicile_ok, prestation_id')
         .eq('pro_uid', user.uid)
         .eq('pro_profile_id', activeProfileId)
         .in('statut', ['disponible', 'bloque'])
@@ -125,16 +126,19 @@ export default function ProCreneauxPage() {
       const map: Record<string, SlotStatus> = {};
       const typeMap: Record<string, TypePrestation> = {};
       const domicileMap: Record<string, boolean> = {};
-      for (const r of (data ?? []) as { date: string; heure_debut: string; statut: SlotStatus; type_prestation: TypePrestation; domicile_ok: boolean }[]) {
+      const presMap: Record<string, string> = {};
+      for (const r of (data ?? []) as { date: string; heure_debut: string; statut: SlotStatus; type_prestation: TypePrestation; domicile_ok: boolean; prestation_id: string | null }[]) {
         const hhmm = r.heure_debut.substring(0, 5);
         const key = `${r.date}_${hhmm}`;
         map[key] = r.statut;
         if (r.type_prestation) typeMap[key] = r.type_prestation;
         if (r.domicile_ok) domicileMap[key] = true;
+        if (r.prestation_id) presMap[key] = r.prestation_id;
       }
       setSlots(map);
       setSlotTypes(typeMap);
       setSlotDomicile(domicileMap);
+      setSlotPrestationIds(presMap);
 
       const { data: rdvRows } = await supabase.from('rdv')
         .select('date_heure, duree_minutes, motif')
@@ -191,6 +195,7 @@ export default function ProCreneauxPage() {
     const newSlots: Record<string, SlotStatus> = {};
     const newTypes: Record<string, TypePrestation> = {};
     const newDomicile: Record<string, boolean> = {};
+    const newPres: Record<string, string> = {};
     const rows: Record<string, unknown>[] = [];
     while (cur < endM) {
       const hhmm = minsToTime(cur);
@@ -199,6 +204,7 @@ export default function ProCreneauxPage() {
       newSlots[key] = statut;
       if (type) newTypes[key] = type;
       newDomicile[key] = domicile;
+      if (prestationId) newPres[key] = prestationId;
       rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, date,
         heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut, type_prestation: type, domicile_ok: domicile,
         prestation_id: prestationId });
@@ -208,6 +214,11 @@ export default function ProCreneauxPage() {
     setSlots(merged);
     setSlotTypes(prev => ({ ...prev, ...newTypes }));
     setSlotDomicile(prev => ({ ...prev, ...newDomicile }));
+    setSlotPrestationIds(prev => {
+      const n = { ...prev };
+      for (const k of Object.keys(newSlots)) { if (newPres[k]) n[k] = newPres[k]; else delete n[k]; }
+      return n;
+    });
     try {
       await supabase.from('creneaux_pro').upsert(rows, { onConflict: 'pro_uid,pro_profile_id,date,heure_debut' });
       await syncHorairesSummary(merged);
@@ -233,6 +244,8 @@ export default function ProCreneauxPage() {
     keyList.forEach(k => delete merged[k]);
     setSlots(merged);
     setSlotDomicile(prev => { const n = { ...prev }; keyList.forEach(k => delete n[k]); return n; });
+    setSlotTypes(prev => { const n = { ...prev }; keyList.forEach(k => delete n[k]); return n; });
+    setSlotPrestationIds(prev => { const n = { ...prev }; keyList.forEach(k => delete n[k]); return n; });
     try {
       await supabase.from('creneaux_pro').delete()
         .eq('pro_uid', user.uid).eq('pro_profile_id', activeProfileId)
@@ -268,8 +281,13 @@ export default function ProCreneauxPage() {
           const tDay     = new Date(target);
           tDay.setDate(target.getDate() + dayDiff);
           const fin = minsToTime(timeToMins(hhmm) + 15);
+          // Reporter type de cours + option domicile + lien prestation, sinon
+          // les copies redeviennent des créneaux individuels génériques.
           rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, date: toDateStr(tDay),
-            heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut: 'disponible' });
+            heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut: 'disponible',
+            type_prestation: slotTypes[key] ?? null,
+            domicile_ok: slotDomicile[key] ?? false,
+            ...(slotPrestationIds[key] ? { prestation_id: slotPrestationIds[key] } : {}) });
         }
         target = new Date(target); target.setDate(target.getDate() + 7);
       }
