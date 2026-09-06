@@ -88,6 +88,7 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
   const [certifSaving, setCertifSaving] = useState(false);
   const [certifError, setCertifError]   = useState('');
   const [certifToken, setCertifToken]   = useState<string | null>(null);
+  const [certifSending, setCertifSending] = useState(false);
   const especeLower = (animal.espece ?? '').toLowerCase();
   const needsDelaiLegal = ESPECES_DELAI_LEGAL.includes(especeLower);
 
@@ -199,6 +200,25 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
       setCertifError(`Erreur : ${e}`);
     } finally {
       setCertifSaving(false);
+    }
+  }
+
+  async function sendCertificat() {
+    if (!certifToken) return;
+    setCertifSending(true);
+    try {
+      const r = await fetch('/api/certificat/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: certifToken }),
+      });
+      const j = await r.json().catch(() => ({}));
+      alert(r.ok
+        ? (j.notified ? 'Certificat transmis (notification + e-mail).' : 'Certificat envoyé par e-mail.')
+        : (j.error ?? 'Erreur lors de l\'envoi.'));
+    } catch {
+      alert('Erreur réseau.');
+    } finally {
+      setCertifSending(false);
     }
   }
 
@@ -609,17 +629,21 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
                   </div>
                   {certifError && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-xl">{certifError}</p>}
                   {certifToken ? (
-                    <div className="bg-green-50 border border-green-200 rounded-xl p-3">
-                      <p className="text-xs font-semibold text-green-800 mb-1">✅ Certificat créé — partagez ce lien :</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <code className="text-[10px] bg-white border border-green-200 rounded px-2 py-1.5 flex-1 text-green-700 break-all">
-                          {typeof window !== 'undefined' ? window.location.origin : ''}/certificat/{certifToken}
-                        </code>
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-3 space-y-2">
+                      <p className="text-xs font-semibold text-green-800">✅ Certificat créé</p>
+                      <div className="flex gap-2">
+                        <button onClick={sendCertificat} disabled={certifSending}
+                          className="flex-1 bg-[#6E9E57] hover:bg-[#5d8a49] text-white text-xs font-semibold px-3 py-2 rounded-lg disabled:opacity-50">
+                          {certifSending ? 'Envoi…' : 'Envoyer au futur propriétaire'}
+                        </button>
                         <button onClick={() => navigator.clipboard.writeText(`${window.location.origin}/certificat/${certifToken}`)}
-                          className="shrink-0 bg-green-600 hover:bg-green-700 text-white text-[10px] font-semibold px-2.5 py-1.5 rounded-lg">
-                          Copier
+                          className="shrink-0 border border-green-300 text-green-700 text-xs font-semibold px-2.5 py-2 rounded-lg hover:bg-green-100">
+                          Copier le lien
                         </button>
                       </div>
+                      <p className="text-[10px] text-green-700">
+                        Le futur propriétaire reçoit une notification dans l’appli (s’il a un compte) et un e-mail.
+                      </p>
                     </div>
                   ) : (
                     <button onClick={createCertificatEngagement} disabled={certifSaving}

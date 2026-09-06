@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
+
 class CertificatsEngagementPage extends StatefulWidget {
   final bool isAssociation;
   const CertificatsEngagementPage({super.key, this.isAssociation = false});
@@ -77,7 +79,7 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
                     itemCount: _certs.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) => _CertCard(cert: _certs[i], onCopyLink: _copyLink, onEdit: (c) => _showCreateSheet(context, editCert: c), onDelete: _deleteCert),
+                    itemBuilder: (_, i) => _CertCard(cert: _certs[i], onCopyLink: _copyLink, onEdit: (c) => _showCreateSheet(context, editCert: c), onDelete: _deleteCert, onOpen: _openCert),
                   ),
                 ),
     );
@@ -115,6 +117,13 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
   void _copyLink(String token) {
     Clipboard.setData(ClipboardData(text: 'https://www.petsmatchapp.com/certificat/$token'));
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lien copié !')));
+  }
+
+  Future<void> _openCert(String token) async {
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => ContratSignaturePage(certificatEngagementToken: token),
+    ));
+    _load();
   }
 
   Future<void> _deleteCert(String id) async {
@@ -279,24 +288,34 @@ class _CertificatsEngagementPageState extends State<CertificatsEngagementPage> {
                     const Text('✅ Certificat créé !',
                         style: TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF3D6B33))),
                     const SizedBox(height: 6),
-                    const Text('Partagez ce lien à l\'acquéreur :',
+                    const Text('Ouvrez-le pour le relire et le transmettre au futur propriétaire (notification + e-mail).',
                         style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF3D6B33))),
-                    const SizedBox(height: 6),
-                    Text('petsmatchapp.com/certificat/$tokenResult',
-                        style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal)),
                     const SizedBox(height: 12),
                     SizedBox(width: double.infinity,
                       child: ElevatedButton.icon(
-                        icon: const Icon(Icons.copy, size: 16),
-                        label: const Text('Copier le lien', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                        icon: const Icon(Icons.description_outlined, size: 16),
+                        label: const Text('Ouvrir le certificat', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
                         style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white, elevation: 0,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _openCert(tokenResult!);
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      Expanded(child: Text('petsmatchapp.com/certificat/$tokenResult',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _teal))),
+                      TextButton(
                         onPressed: () {
                           Clipboard.setData(ClipboardData(text: 'https://www.petsmatchapp.com/certificat/$tokenResult'));
                           ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Lien copié !')));
                         },
+                        child: const Text('Copier', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
                       ),
-                    ),
+                    ]),
                     TextButton(onPressed: () => Navigator.pop(ctx),
                         child: const Text('Fermer', style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6F767B)))),
                   ]),
@@ -485,7 +504,8 @@ class _CertCard extends StatelessWidget {
   final void Function(String token) onCopyLink;
   final void Function(Map<String, dynamic> cert) onEdit;
   final void Function(String id) onDelete;
-  const _CertCard({required this.cert, required this.onCopyLink, required this.onEdit, required this.onDelete});
+  final void Function(String token) onOpen;
+  const _CertCard({required this.cert, required this.onCopyLink, required this.onEdit, required this.onDelete, required this.onOpen});
 
   static const _statusColor = {
     'envoye': Color(0xFF0C5C6C),
@@ -508,7 +528,10 @@ class _CertCard extends StatelessWidget {
     final dateS   = cert['date_signature_acquereur'] != null ? DateTime.tryParse(cert['date_signature_acquereur'] as String) : null;
     final color   = _statusColor[statut] ?? const Color(0xFF0C5C6C);
 
-    return Container(
+    return InkWell(
+      onTap: token.isEmpty ? null : () => onOpen(token),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -586,6 +609,7 @@ class _CertCard extends StatelessWidget {
           ]),
         ],
       ]),
+      ),
     );
   }
 }

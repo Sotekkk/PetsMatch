@@ -255,6 +255,25 @@ export default function CertificatEngagementPage() {
     setDeleteConfirmId(null);
   }
 
+  const [sendingId, setSendingId] = useState<string | null>(null);
+  async function handleSend(cert: Certificat) {
+    setSendingId(cert.id);
+    try {
+      const r = await fetch('/api/certificat/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: cert.token_signature }),
+      });
+      const j = await r.json().catch(() => ({}));
+      alert(r.ok
+        ? (j.notified ? 'Certificat transmis (notification + e-mail).' : 'Certificat envoyé par e-mail.')
+        : (j.error ?? 'Erreur lors de l\'envoi.'));
+    } catch {
+      alert('Erreur réseau.');
+    } finally {
+      setSendingId(null);
+    }
+  }
+
   function handlePrint() { window.print(); }
 
   if (loading || planLoading) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
@@ -482,6 +501,10 @@ export default function CertificatEngagementPage() {
                   </Link>
                   {cert.statut !== 'signe' && (
                     <>
+                      <button onClick={() => handleSend(cert)} disabled={sendingId === cert.id}
+                        className="text-xs bg-[#6E9E57] text-white px-3 py-1.5 rounded-lg hover:bg-[#5d8a49] disabled:opacity-50 font-medium">
+                        {sendingId === cert.id ? 'Envoi…' : 'Envoyer'}
+                      </button>
                       <button onClick={() => openEdit(cert)}
                         className="text-xs border border-[#0C5C6C]/30 text-[#0C5C6C] px-3 py-1.5 rounded-lg hover:bg-[#E8F4F6]">
                         Modifier

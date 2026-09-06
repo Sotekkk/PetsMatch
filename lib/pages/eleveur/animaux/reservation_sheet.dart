@@ -268,7 +268,15 @@ class _ReservationSheetState extends State<ReservationSheet> {
         setState(() => _certifError = json['error'] as String? ?? 'Erreur serveur');
         return;
       }
-      setState(() => _certifToken = json['token'] as String?);
+      final token = json['token'] as String?;
+      setState(() => _certifToken = token);
+      // Ouvre le certificat dans l'appli (lecture + « Envoyer au futur
+      // propriétaire ») — comme _creerContratReservation pour le contrat.
+      if (token != null && mounted) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ContratSignaturePage(certificatEngagementToken: token),
+        ));
+      }
     } catch (e) {
       setState(() => _certifError = 'Erreur : $e');
     } finally {

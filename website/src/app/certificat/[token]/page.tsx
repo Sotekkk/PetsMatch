@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useEffect, useState } from 'react';
+import { use, useEffect, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -35,6 +35,8 @@ interface Cert {
   token_signature: string;
   notes: string;
   cedant_uid: string;
+  signature_acquereur?: string | null;
+  signataire_nom?: string | null;
 }
 
 interface Cedant {
@@ -236,6 +238,9 @@ export default function CertificatPublicPage({ params }: { params: Promise<{ tok
   const [errorMsg, setErrorMsg] = useState('');
   const [delaiBloq, setDelaiBloq] = useState(false);
   const [joursRestants, setJoursRestants] = useState(0);
+  const [nom, setNom] = useState('');
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const padRef = useRef<unknown>(null);
 
   useEffect(() => {
     supabase.from('certificats_engagement').select('*').eq('token_signature', token).maybeSingle()
@@ -263,14 +268,44 @@ export default function CertificatPublicPage({ params }: { params: Promise<{ tok
           cat_pro: cp.cat_pro,
         } : null;
         setCedant(ced as Cedant | null);
+        if (ced) setNom(`${(data.acquereur_prenom ?? '')} ${(data.acquereur_nom ?? '')}`.trim());
         setLoading(false);
       });
   }, [token]);
 
+  // Canvas de signature (chargé quand la signature est possible).
+  useEffect(() => {
+    if (!cert || cert.statut === 'signe' || cert.statut === 'refuse' || delaiBloq) return;
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js';
+    s.onload = () => {
+      const w = window as unknown as { SignaturePad?: new (c: HTMLCanvasElement, o: object) => unknown };
+      if (canvasRef.current && w.SignaturePad) {
+        padRef.current = new w.SignaturePad(canvasRef.current, {
+          backgroundColor: 'rgba(0,0,0,0)', penColor: '#1F2A2E', minWidth: 1, maxWidth: 2.5,
+        });
+        const c = canvasRef.current;
+        const ratio = Math.max(window.devicePixelRatio || 1, 1);
+        c.width = c.offsetWidth * ratio;
+        c.height = c.offsetHeight * ratio;
+        c.getContext('2d')?.scale(ratio, ratio);
+      }
+    };
+    document.head.appendChild(s);
+    return () => { try { document.head.removeChild(s); } catch { /* déjà retiré */ } };
+  }, [cert, delaiBloq]);
+
   async function handleSign(actionType: 'signe' | 'refuse') {
+    let signature: string | undefined;
+    if (actionType === 'signe') {
+      const pad = padRef.current as { isEmpty(): boolean; toDataURL(t: string): string } | null;
+      if (!pad || pad.isEmpty()) { setErrorMsg('Veuillez signer dans le cadre avant de valider.'); setAction('error'); return; }
+      if (!nom.trim()) { setErrorMsg('Indiquez votre nom complet.'); setAction('error'); return; }
+      signature = pad.toDataURL('image/png');
+    }
     setAction(actionType === 'signe' ? 'signing' : 'refusing');
     const res = await fetch('/api/certificat/sign', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, action: actionType }) });
+      body: JSON.stringify({ token, action: actionType, signature, signataire_nom: nom.trim() }) });
     const json = await res.json();
     if (!res.ok) { setErrorMsg(json.error ?? 'Erreur'); setAction('error'); }
     else { setAction(actionType === 'signe' ? 'done_sign' : 'done_refuse');
@@ -544,12 +579,15 @@ export default function CertificatPublicPage({ params }: { params: Promise<{ tok
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500 mb-1">Acquéreur — {cert!.acquereur_prenom} {cert!.acquereur_nom}</p>
+                  <p className="text-xs text-gray-500 mb-1">Acquéreur — {cert!.signataire_nom || `${cert!.acquereur_prenom} ${cert!.acquereur_nom}`}</p>
                   {isSigned || action === 'done_sign' ? (
                     <>
                       <p className="text-xs text-green-700">Signé le <strong>{fmtDate(cert!.date_signature_acquereur)}</strong></p>
-                      <div className="mt-3 h-14 border-b-2 border-dashed border-green-300 flex items-end pb-1">
-                        <p className="text-[10px] text-green-600 font-medium">✅ Signature électronique validée</p>
+                      <div className="mt-2 h-14 border-b-2 border-dashed border-green-300 flex items-end pb-1">
+                        {cert!.signature_acquereur
+                          // eslint-disable-next-line @next/next/no-img-element
+                          ? <img src={cert!.signature_acquereur} alt="Signature" className="max-h-12" />
+                          : <p className="text-[10px] text-green-600 font-medium">✅ Signature électronique validée</p>}
                       </div>
                       <p className="text-[10px] text-green-600 mt-2 italic">« Je m'engage à respecter les besoins de l'animal. »</p>
                     </>
@@ -583,11 +621,20 @@ export default function CertificatPublicPage({ params }: { params: Promise<{ tok
               </div>
             ) : (
               <>
-                <p className="text-sm text-gray-700 mb-2 text-center font-medium">
+                <p className="text-sm text-gray-700 mb-3 text-center font-medium">
                   En signant, vous déclarez :<br/>
                   <span className="italic text-gray-600">« Je m'engage à respecter les besoins de l'animal. »</span>
                 </p>
-                {action === 'error' && <p className="text-sm text-red-600 text-center mb-3">{errorMsg}</p>}
+                <label className="block text-xs font-medium text-gray-600 mb-1">Votre nom complet</label>
+                <input value={nom} onChange={e => setNom(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm mb-3" placeholder="Prénom Nom" />
+                <label className="block text-xs font-medium text-gray-600 mb-1">Votre signature</label>
+                <div className="border-2 border-dashed border-gray-300 rounded-xl bg-white overflow-hidden">
+                  <canvas ref={canvasRef} style={{ width: '100%', height: '150px', touchAction: 'none', display: 'block' }} />
+                </div>
+                <button onClick={() => (padRef.current as { clear(): void } | null)?.clear()}
+                  className="text-xs text-gray-500 mt-1 underline">Effacer</button>
+                {action === 'error' && <p className="text-sm text-red-600 text-center mt-3">{errorMsg}</p>}
                 <div className="flex gap-3 mt-4">
                   <button onClick={() => handleSign('refuse')} disabled={action === 'refusing'}
                     className="flex-1 border border-gray-200 text-gray-600 font-medium py-3 rounded-xl text-sm hover:bg-gray-50 disabled:opacity-50">

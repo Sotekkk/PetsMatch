@@ -454,6 +454,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
       ));
       return;
     }
+    // Certificat d'engagement — à signer (acquéreur) OU signé (cédant)
+    if (type == 'certificat_a_signer' || type == 'certificat_signe') {
+      final tok = (data is Map ? data['token'] as String? : null)
+          ?? _tokenFromUrl(data is Map ? data['url'] as String? : null);
+      if (tok != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ContratSignaturePage(certificatEngagementToken: tok),
+        ));
+      }
+      return;
+    }
     // Cession — signature demandée à l'acquéreur → signer le récap DANS l'appli
     if (type == 'cession_signature_demandee') {
       final token = data is Map ? data['token'] as String? : null;

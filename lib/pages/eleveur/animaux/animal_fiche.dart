@@ -12941,7 +12941,7 @@ class _DocumentsTabState extends State<_DocumentsTab> {
         ? DateFormat('dd/MM/yyyy').format(DateTime.parse(dateRaw).toLocal())
         : '';
     final token = cert['token_signature'] as String?;
-    final sigLink = token != null ? 'https://petsmatch.vercel.app/certificat/$token' : null;
+    final sigLink = token != null ? 'https://www.petsmatchapp.com/certificat/$token' : null;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -12950,6 +12950,12 @@ class _DocumentsTabState extends State<_DocumentsTab> {
       color: Colors.grey[50],
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        onTap: token == null ? null : () async {
+          await Navigator.push(context, MaterialPageRoute(
+            builder: (_) => ContratSignaturePage(certificatEngagementToken: token),
+          ));
+          _load();
+        },
         leading: CircleAvatar(
           backgroundColor: Colors.amber.withOpacity(0.15),
           child: const Icon(Icons.verified_outlined, color: Colors.amber, size: 20),

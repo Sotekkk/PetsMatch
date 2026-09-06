@@ -724,3 +724,327 @@ Future<Uint8List> factureVentePdfBytes({
 
   return pdf.save();
 }
+
+// ─── CERTIFICAT D'ENGAGEMENT ET DE CONNAISSANCE ───────────────────────────────
+// Loi n° 2021-1539 · Décret n° 2022-1012 du 18 juillet 2022.
+// ⚠️ Contenu par espèce à garder identique au rendu web
+// (website/src/app/certificat/[token]/page.tsx — objet CONTENT).
+
+class _CertContent {
+  final String intro;
+  final List<List<String>> physio; // [titre, contenu]
+  final List<List<String>> psycho;
+  final List<String> sante;
+  final List<String> documents;
+  final List<List<String>> budget; // [poste, montant]
+  final String identNote;
+  const _CertContent(this.intro, this.physio, this.psycho, this.sante,
+      this.documents, this.budget, this.identNote);
+}
+
+const Map<String, _CertContent> _kCertContent = {
+  'chien': _CertContent(
+    "Ce certificat a pour objectif de vous donner toutes les informations pour accueillir votre chien au mieux, et de vous engager à respecter ses besoins. Il est établi conformément à la Loi n° 2021-1539 et au décret n° 2022-1012 du 18 juillet 2022.",
+    [
+      ['Boire', "Votre animal doit avoir en permanence de l'eau fraîche et propre à sa disposition. Adaptez la hauteur et la forme des gamelles à la taille de votre chien."],
+      ['Dormir', "Un chien dort en moyenne 12h/jour en discontinu. Prévoyez-lui un coin calme et sécurisé (panier, coussin) où il sera respecté dans son repos."],
+      ['Manger', "Le chien est carnivore. Prévoyez une alimentation adaptée à son âge, son poids et sa dépense physique. Deux repas par jour minimum sont recommandés pour limiter le risque de torsion d'estomac. Consultez votre vétérinaire pour toute transition alimentaire."],
+    ],
+    [
+      ['Mastiquer et renifler', "Ces comportements instinctifs permettent au chien de canaliser son énergie et de réduire son stress. Encouragez-les avec des promenades variées, tapis de fouille, jouets et friandises naturelles."],
+      ['Socialiser', "Le chien est une espèce sociale. Il a besoin d'interactions positives avec d'autres chiens et avec des humains tout au long de sa vie. Un chiot exposé à des environnements variés dès ses premiers mois sera plus équilibré."],
+      ['Sortir et se dépenser', "Au-delà de la dépense physique quotidienne indispensable, le chien a besoin de stimulation mentale. Jouets, jeux de recherche, éducation positive : variez les activités pour prévenir l'ennui."],
+      ['Éducation', "Instaurez des règles cohérentes dès l'arrivée du chien. Les commandements essentiels (stop, rappel) sont indispensables pour sa sécurité. Évitez toute méthode coercitive (art. R214-24 du Code rural)."],
+    ],
+    [
+      "Vaccination : première injection dès 7-8 semaines, rappels annuels selon le protocole vétérinaire.",
+      "Visite annuelle chez le vétérinaire même en l'absence de problèmes apparents.",
+      "Nettoyage régulier des oreilles et des yeux avec des produits adaptés à l'espèce.",
+      "Entretien du pelage adapté au type de poil (brossage, tonte si nécessaire).",
+      "Contrôle du tartre dentaire ; brossage, friandises à mâcher recommandés.",
+      "Vérification et taille des griffes si elles ne s'usent pas naturellement.",
+      "Antiparasitaires (puces, tiques, vers) selon les recommandations de votre vétérinaire.",
+      "Stérilisation recommandée sauf projet d'élevage (à discuter avec votre vétérinaire).",
+    ],
+    [
+      "Carnet de santé à jour avec les vaccinations effectuées",
+      "Certificat de cession (présent document)",
+      "Justificatif d'identification (puce électronique ou tatouage — obligatoire avant cession)",
+      "Certificat de naissance / livre des origines si chien de race inscrit au LOF",
+      "Passeport européen si déplacements à l'étranger prévus",
+    ],
+    [
+      ['Alimentation', '50 à 150 € / mois selon la taille'],
+      ['Soins vétérinaires (suivi courant)', '200 € / an minimum'],
+      ['Antiparasitaires & vaccins', '100 à 200 € / an'],
+      ['Matériel (panier, laisse, jouets)', "150 à 300 € à l'arrivée"],
+      ['Assurance santé animale', '20 à 60 € / mois (recommandée)'],
+      ['Toilettage (selon la race)', '30 à 80 € toutes les 6 à 8 semaines'],
+    ],
+    "En cas de changement d'adresse ou de propriétaire, signalez-le à I-CAD : 09 77 40 30 77 ou i-cad.fr",
+  ),
+  'chat': _CertContent(
+    "Ce certificat a pour objectif de vous donner toutes les informations pour accueillir votre chat au mieux, et de vous engager à respecter ses besoins. Il est établi conformément à la Loi n° 2021-1539 et au décret n° 2022-1012 du 18 juillet 2022.",
+    [
+      ['Boire', "Le chat boit peu et préfère l'eau courante ou une fontaine. Éloignez la gamelle d'eau de la gamelle de nourriture. Une alimentation humide (pâtée) contribue à son hydratation."],
+      ['Dormir', "Le chat dort entre 12 et 16h par jour. Prévoyez plusieurs zones de repos en hauteur où il se sentira en sécurité. Respectez ses périodes de sommeil."],
+      ['Manger', "Le chat est un carnivore strict. Son alimentation doit être riche en protéines animales. Plusieurs petits repas par jour sont préférables. Évitez les aliments interdits (oignon, ail, chocolat, raisins)."],
+    ],
+    [
+      ['Chasser et jouer', "L'instinct de chasse est fondamental chez le chat. Prévoyez des sessions de jeu quotidiennes avec des jouets stimulant cet instinct (cannes à plumes, souris). Cela prévient l'ennui et l'obésité."],
+      ['Griffer', "Le griffage est un besoin naturel permettant de marquer son territoire et d'entretenir ses griffes. Mettez à disposition des griffoirs adaptés à la taille de votre chat."],
+      ['Environnement enrichi', "Le chat a besoin d'explorer, grimper et se cacher. Arbres à chat, cachettes, fenêtres accessibles sont essentiels. Pour un chat d'intérieur, l'enrichissement est encore plus important."],
+      ['Socialisation', "L'exposition à l'humain dès les premières semaines de vie est déterminante pour son sociabilité. Respectez son rythme et évitez de le forcer à des interactions non désirées."],
+    ],
+    [
+      "Vaccination : typhus, coryza, leucose si sorties — rappels annuels.",
+      "Visite vétérinaire annuelle, plus fréquente à partir de 7 ans (chat senior).",
+      "Nettoyage des oreilles et des yeux si nécessaire (sécrétions, cérumen).",
+      "Entretien du pelage (brossage régulier, surtout pour les chats à poils longs).",
+      "Contrôle dentaire ; tartres fréquents chez le chat.",
+      "Antiparasitaires (puces, tiques, vers intestinaux) selon protocole vétérinaire.",
+      "Stérilisation recommandée entre 4 et 6 mois sauf projet d'élevage.",
+    ],
+    [
+      "Carnet de santé avec vaccinations à jour",
+      "Certificat de cession (présent document)",
+      "Justificatif d'identification (puce ou tatouage — obligatoire avant cession)",
+      "Pedigree LOOF si chat de race",
+    ],
+    [
+      ['Alimentation', '30 à 80 € / mois'],
+      ['Soins vétérinaires (suivi courant)', '150 à 300 € / an'],
+      ['Litière', '20 à 50 € / mois'],
+      ['Matériel (griffoir, jouets, arbre à chat)', "100 à 250 € à l'arrivée"],
+      ['Assurance santé animale', '15 à 40 € / mois'],
+    ],
+    "En cas de changement de propriétaire, signalez-le à I-CAD : 09 77 40 30 77 ou i-cad.fr",
+  ),
+  'lapin': _CertContent(
+    "Ce certificat vous informe des besoins essentiels de votre lapin et formalise vos engagements envers son bien-être, conformément à la Loi n° 2021-1539.",
+    [
+      ['Alimentation', "Le lapin est herbivore strict. Le foin doit représenter 80% de son alimentation (disponible à volonté). Complétez avec des légumes verts frais (persil, roquette, endive) et limitez les granulés. Évitez les laitues iceberg, les choux en grande quantité et tout aliment sucré."],
+      ['Eau', "Eau fraîche disponible en permanence. Le biberon ou la gamelle sont tous deux adaptés ; nettoyez-les quotidiennement."],
+      ['Espace', "Un lapin a besoin d'un minimum de 4 m² d'espace de vie. Le confinement permanent dans une cage est contraire à son bien-être. Prévoyez des sorties quotidiennes dans un espace sécurisé."],
+    ],
+    [
+      ['Enrichissement', "Le lapin a besoin de mâcher, creuser et explorer. Mettez à sa disposition des jouets adaptés (blocs de bois non traité, tunnels, cartons). Cela prévient les stéréotypies."],
+      ['Vie en duo', "Le lapin est grégaire. Il souffre de la solitude. Il est fortement recommandé d'adopter des lapins par paires (stérilisés ou de même sexe)."],
+    ],
+    [
+      "Vaccination contre la myxomatose et la VHD (VHD1 + VHD2) — rappels annuels obligatoires.",
+      "Visite vétérinaire annuelle et en urgence à la moindre modification du transit intestinal.",
+      "Stérilisation recommandée (prévient les cancers de l'utérus chez la femelle, fréquents après 4 ans).",
+      "Contrôle des dents (les incisives et molaires poussent en continu ; le foin les use naturellement).",
+      "Entretien des griffes toutes les 4 à 8 semaines.",
+    ],
+    [
+      "Certificat de cession (présent document)",
+      "Carnet de santé avec vaccinations si débutées",
+    ],
+    [
+      ['Alimentation (foin, légumes, granulés)', '20 à 40 € / mois'],
+      ['Soins vétérinaires + vaccins', '100 à 200 € / an'],
+      ['Litière', '15 à 30 € / mois'],
+      ['Matériel (cage, jouets, accessoires)', "100 à 200 € à l'arrivée"],
+    ],
+    "",
+  ),
+  'default': _CertContent(
+    "Ce certificat vous informe des besoins essentiels de votre animal et formalise vos engagements envers son bien-être, conformément à la Loi n° 2021-1539 du 30 novembre 2021.",
+    [
+      ['Alimentation', "Fournissez une alimentation adaptée à l'espèce, à l'âge et au poids de l'animal. Consultez un vétérinaire ou un spécialiste pour établir une ration équilibrée."],
+      ['Eau', "Eau fraîche disponible en permanence, renouvelée quotidiennement."],
+      ['Espace et logement', "Prévoyez un espace de vie suffisant et adapté aux besoins spécifiques de l'espèce (température, humidité, lumière)."],
+    ],
+    [
+      ['Enrichissement', "Offrez à votre animal des stimulations adaptées à son espèce : jeux, exploration, activité physique. L'ennui peut générer des troubles comportementaux."],
+      ['Socialisation', "Respectez les besoins sociaux propres à l'espèce. Certains animaux vivent en groupe, d'autres sont solitaires. Renseignez-vous auprès d'un spécialiste."],
+    ],
+    [
+      "Consultez un vétérinaire spécialisé dans l'espèce dès l'arrivée de l'animal et au minimum une fois par an.",
+      "Respectez le protocole de vaccination et de vermifugation adapté à l'espèce.",
+      "Surveillez tout changement de comportement, d'appétit ou d'aspect physique.",
+      "Prévenez ou faites traiter tout parasitisme interne ou externe.",
+    ],
+    [
+      "Certificat de cession (présent document)",
+      "Carnet de santé ou document sanitaire si disponible",
+    ],
+    [
+      ['Alimentation', "Variable selon l'espèce"],
+      ['Soins vétérinaires', '100 à 300 € / an minimum'],
+      ['Matériel et logement', "Variable selon l'espèce"],
+    ],
+    "",
+  ),
+};
+
+_CertContent _certContent(String? espece) =>
+    _kCertContent[(espece ?? '').toLowerCase()] ?? _kCertContent['default']!;
+
+pw.Widget _certHeading(String lettre, String titre) => pw.Padding(
+      padding: const pw.EdgeInsets.only(top: 12, bottom: 4),
+      child: pw.Row(children: [
+        pw.Container(
+          width: 14, height: 14, alignment: pw.Alignment.center,
+          decoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFFE8F4F6), shape: pw.BoxShape.circle),
+          child: pw.Text(lettre, style: pw.TextStyle(fontSize: 8, color: _teal, fontWeight: pw.FontWeight.bold)),
+        ),
+        pw.SizedBox(width: 6),
+        pw.Text(titre, style: _artTitle()),
+      ]),
+    );
+
+pw.Widget _certBesoin(List<String> item) => pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 3),
+      child: pw.RichText(text: pw.TextSpan(children: [
+        pw.TextSpan(text: '${item[0]} — ', style: _bold()),
+        pw.TextSpan(text: item[1], style: _body()),
+      ])),
+    );
+
+pw.Widget _certPuce(String texte, {String marque = '•'}) => pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 2),
+      child: pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+        pw.Text('$marque ', style: _body()),
+        pw.Expanded(child: pw.Text(texte, style: _body())),
+      ]),
+    );
+
+/// PDF du certificat d'engagement — `cert` = ligne `certificats_engagement`,
+/// `eleveur` = map profil (cf. `_mapEleveur` de contrat_signature_page.dart).
+Future<Uint8List> certificatEngagementPdfBytes({
+  required Map<String, dynamic> cert,
+  required Map<String, dynamic> eleveur,
+  String? sigAcheteur,
+}) async {
+  final pdf = pw.Document(theme: await _pdfTheme());
+  final p = _parties(eleveur);
+  final espece = (cert['espece'] as String? ?? '');
+  final especeLabel = espece.isNotEmpty ? (espece[0].toUpperCase() + espece.substring(1)) : '—';
+  final c = _certContent(espece);
+  final today = _fmt(DateTime.now());
+  final dateRemise = cert['date_remise'] != null
+      ? _fmt(DateTime.tryParse('${cert['date_remise']}')?.toLocal() ?? DateTime.now())
+      : today;
+  final dateLimite = cert['date_limite_signature'] != null
+      ? DateTime.tryParse('${cert['date_limite_signature']}')?.toLocal()
+      : null;
+  final dateSig = cert['date_signature_acquereur'] != null
+      ? _fmt(DateTime.tryParse('${cert['date_signature_acquereur']}')?.toLocal() ?? DateTime.now())
+      : null;
+  final acqNom = '${cert['acquereur_prenom'] ?? ''} ${cert['acquereur_nom'] ?? ''}'.trim();
+  final dnA = cert['date_naissance_animal'] != null
+      ? _fmt(DateTime.tryParse('${cert['date_naissance_animal']}') ?? DateTime.now())
+      : '';
+  final prix = cert['prix'];
+  final prixStr = (prix != null && '$prix'.trim().isNotEmpty)
+      ? '${(prix is num ? prix.toStringAsFixed(prix % 1 == 0 ? 0 : 2) : '$prix')} €'
+      : null;
+  final modalite = (cert['modalite_cession'] as String? ?? 'vente');
+  final idClean = '${cert['id'] ?? ''}'.replaceAll('-', '');
+  final ref = 'CERT-${(idClean.length >= 8 ? idClean.substring(0, 8) : idClean).toUpperCase()}';
+
+  pdf.addPage(pw.MultiPage(
+    pageFormat: PdfPageFormat.a4,
+    margin: const pw.EdgeInsets.fromLTRB(40, 40, 40, 40),
+    build: (ctx) => [
+      pw.Center(child: pw.Text('CERTIFICAT D\'ENGAGEMENT ET DE CONNAISSANCE',
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold, color: _teal, letterSpacing: 0.6))),
+      pw.SizedBox(height: 3),
+      pw.Center(child: pw.Text('Loi n° 2021-1539 · Décret n° 2022-1012 du 18 juillet 2022 · Réf. $ref', style: _small())),
+      pw.SizedBox(height: 10),
+      _para(c.intro),
+
+      _certHeading('A', 'Parties'),
+      pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+        pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+          pw.Text('Cédant', style: _bold()),
+          _line('Nom', p.eleveurNom),
+          _line('Adresse', p.eleveurAdresse),
+          _line('SIRET', p.eleveurSiret),
+          _line('Téléphone', p.eleveurTel),
+          _line('Email', p.eleveurEmail),
+          _line('Date de remise', dateRemise),
+        ])),
+        pw.SizedBox(width: 20),
+        pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+          pw.Text('Acquéreur', style: _bold()),
+          _line('Nom', acqNom.isEmpty ? null : acqNom),
+          _line('Email', cert['acquereur_email'] as String?),
+          _line('Téléphone', cert['acquereur_telephone'] as String?),
+          _line('Adresse', cert['acquereur_adresse'] as String?),
+        ])),
+      ]),
+
+      _certHeading('B', 'Animal concerné'),
+      _line('Nom', cert['nom_animal'] as String?),
+      _line('Espèce', especeLabel),
+      _line('Race', cert['race'] as String?),
+      _line('Date de naissance', dnA.isEmpty ? null : dnA),
+      _line('Identification', cert['num_identification'] as String?),
+      _line('Modalité', modalite == 'gratuit' ? 'Cession gratuite' : modalite == 'adoption' ? 'Adoption' : 'Vente'),
+      if (prixStr != null) _line('Prix', prixStr),
+
+      _certHeading('C', 'Besoins physiologiques'),
+      ...c.physio.map(_certBesoin),
+
+      _certHeading('D', 'Besoins comportementaux et psychologiques'),
+      ...c.psycho.map(_certBesoin),
+
+      _certHeading('E', 'Santé'),
+      ...c.sante.map((s) => _certPuce(s, marque: '☑')),
+
+      _certHeading('F', 'Dépenses à prévoir'),
+      ...c.budget.map((b) => pw.Padding(
+            padding: const pw.EdgeInsets.only(bottom: 1.5),
+            child: pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+              pw.Expanded(child: pw.Text(b[0], style: _body())),
+              pw.Text(b[1], style: _bold()),
+            ]),
+          )),
+      if (c.identNote.isNotEmpty) ...[
+        pw.SizedBox(height: 3),
+        pw.Text(c.identNote, style: _small()),
+      ],
+
+      _certHeading('G', 'Documents remis avec l\'animal'),
+      ...c.documents.map((d) => _certPuce(d, marque: '□')),
+
+      if (dateLimite != null) ...[
+        _certHeading('H', 'Délai de réflexion légal ($especeLabel)'),
+        _para('Pour les ${espece}s, l\'acquéreur dispose de 7 jours calendaires à compter de la remise du '
+            'certificat ($dateRemise) avant de pouvoir le signer. Signature possible à partir du '
+            '${_fmt(dateLimite)}. Aucune somme ne peut être perçue pendant ce délai.'),
+      ],
+
+      _certHeading('I', 'Signatures'),
+      pw.Row(children: [
+        pw.Expanded(child: pw.Padding(
+          padding: const pw.EdgeInsets.only(top: 4, right: 8),
+          child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+            pw.Text('Le Cédant : ${p.eleveurNom}', style: pw.TextStyle(fontSize: 8, color: _dark, fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(height: 4),
+            pw.Text('Remis le $dateRemise', style: _small()),
+            pw.SizedBox(height: 46),
+            pw.Container(width: 150, height: 0.6, color: PdfColors.grey500),
+            pw.SizedBox(height: 2),
+            pw.Text('Signature électronique PetsMatch', style: _small()),
+          ]),
+        )),
+        pw.SizedBox(width: 16),
+        _signBlock('L\'Acquéreur', cert['signataire_nom'] as String? ?? acqNom, signature: sigAcheteur),
+      ]),
+      pw.SizedBox(height: 4),
+      if (dateSig != null)
+        pw.Text('Signé le $dateSig — « Je m\'engage à respecter les besoins de l\'animal. »',
+            style: pw.TextStyle(fontSize: 8, color: _teal, fontStyle: pw.FontStyle.italic)),
+      pw.SizedBox(height: 6),
+      pw.Center(child: pw.Text('$today · Document généré via PetsMatch · Réf. ${cert['id'] ?? ''}', style: _small())),
+    ],
+  ));
+
+  return pdf.save();
+}

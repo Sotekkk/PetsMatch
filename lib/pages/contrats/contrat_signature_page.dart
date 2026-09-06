@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -23,9 +25,10 @@ const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
 const _dark  = Color(0xFF1F2A2E);
 
-/// Signature d'un contrat `documents_animaux` (vente, réservation, certificat,
-/// adoption, hébergement…) OU du récap de cession `cessions`, directement dans
-/// l'appli. Les écritures sont identiques au site → synchro automatique.
+/// Signature d'un contrat `documents_animaux` (vente, réservation, certificat de
+/// cession, adoption, hébergement…), du récap de cession `cessions`, OU du
+/// certificat d'engagement `certificats_engagement`, directement dans l'appli.
+/// Les écritures sont identiques au site → synchro automatique.
 class ContratSignaturePage extends StatefulWidget {
   /// Token du document `documents_animaux`.
   final String? token;
@@ -33,10 +36,23 @@ class ContratSignaturePage extends StatefulWidget {
   final String? documentId;
   /// Token d'un récap de cession `cessions` (mode « signer-cession »).
   final String? cessionToken;
+  /// Token d'un certificat d'engagement `certificats_engagement`.
+  final String? certificatEngagementToken;
+  /// Id d'un certificat d'engagement (alternative au token).
+  final String? certificatEngagementId;
 
-  const ContratSignaturePage({super.key, this.token, this.documentId, this.cessionToken});
+  const ContratSignaturePage({
+    super.key,
+    this.token,
+    this.documentId,
+    this.cessionToken,
+    this.certificatEngagementToken,
+    this.certificatEngagementId,
+  });
 
   bool get isCession => cessionToken != null;
+  bool get isCertificatEngagement =>
+      certificatEngagementToken != null || certificatEngagementId != null;
 
   @override
   State<ContratSignaturePage> createState() => _ContratSignaturePageState();
@@ -74,6 +90,8 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     try {
       if (widget.isCession) {
         await _loadCession();
+      } else if (widget.isCertificatEngagement) {
+        await _loadCertificatEngagement();
       } else {
         await _loadDocument();
       }
@@ -180,7 +198,59 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     _eleveur = up != null ? Map<String, dynamic>.from(up) : {};
   }
 
+  // ── Certificat d'engagement (certificats_engagement) ─────────────────────
+  Map<String, dynamic>? _cert; // ligne certificats_engagement
+
+  Future<void> _loadCertificatEngagement() async {
+    final q = _supa.from('certificats_engagement').select('*');
+    final res = widget.certificatEngagementToken != null
+        ? await q.eq('token_signature', widget.certificatEngagementToken!).maybeSingle()
+        : await q.eq('id', widget.certificatEngagementId!).maybeSingle();
+    if (res == null) { _error = 'Certificat introuvable ou lien expiré.'; return; }
+    _cert = Map<String, dynamic>.from(res);
+
+    final animalId = _cert!['animal_id']?.toString();
+    if (animalId != null && animalId.isNotEmpty) {
+      final a = await _supa.from('animaux').select('*').eq('id', animalId).maybeSingle();
+      if (a != null) _animal = Map<String, dynamic>.from(a);
+    }
+    final cedantUid = _cert!['cedant_uid'] as String?;
+    Map<String, dynamic>? up;
+    if (cedantUid != null) {
+      const f = 'nom, firstname, lastname, siret, phone_number, numero_elevage, '
+          'email_contact, adresse, rue, ville, code_postal, rue_pro, ville_pro, '
+          'code_postal_pro';
+      up = await _supa.from('user_profiles').select(f)
+          .eq('uid', cedantUid).eq('is_main', true).maybeSingle();
+    }
+    // Adapte les colonnes *_pro vers ce que _mapEleveur attend.
+    final upn = up == null ? <String, dynamic>{} : {
+      ...Map<String, dynamic>.from(up),
+      'rue': up['rue'] ?? up['rue_pro'],
+      'ville': up['ville'] ?? up['ville_pro'],
+      'code_postal': up['code_postal'] ?? up['code_postal_pro'],
+    };
+    _eleveur = _mapEleveur(upn);
+
+    await _buildPdf();
+  }
+
+  Future<void> _buildCertificatPdf() async {
+    if (_cert == null || _eleveur == null) { _pdfBytes = null; return; }
+    try {
+      _pdfBytes = await certificatEngagementPdfBytes(
+        cert: _cert!,
+        eleveur: _eleveur!,
+        sigAcheteur: _cert!['signature_acquereur'] as String?,
+      );
+    } catch (_) {
+      _pdfBytes = null;
+    }
+    _pdfRev++;
+  }
+
   Future<void> _buildPdf() async {
+    if (widget.isCertificatEngagement) { await _buildCertificatPdf(); return; }
     // PDF importé par l'utilisateur → il prime sur celui généré.
     if (_importedPdfUrl != null) {
       try {
@@ -281,8 +351,20 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
 
   // ── Rôle courant ──────────────────────────────────────────────────────────
 
-  bool get _isEleveur => _doc != null && _myUid == (_doc!['uid_eleveur'] as String?);
+  bool get _isEleveur {
+    if (widget.isCertificatEngagement) {
+      return _cert != null && _myUid == (_cert!['cedant_uid'] as String?);
+    }
+    return _doc != null && _myUid == (_doc!['uid_eleveur'] as String?);
+  }
+
   bool get _isAcquereur {
+    if (widget.isCertificatEngagement) {
+      if (_cert == null) return false;
+      final acqEmail = (_cert!['acquereur_email'] as String?)?.toLowerCase();
+      if (acqEmail != null && acqEmail.isNotEmpty && acqEmail == _myEmail) return true;
+      return _myUid == (_cert!['acquereur_uid'] as String?);
+    }
     if (_doc == null) return false;
     if (widget.isCession) {
       return _myUid == (_doc!['uid_acquereur'] as String?);
@@ -383,6 +465,163 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
         });
       }
       if (mounted) { setState(() {}); _snack('✅ Signature enregistrée'); }
+    } catch (e) {
+      _snack('Erreur : $e');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  // ── Certificat d'engagement ──────────────────────────────────────────────
+
+  DateTime? get _certDelaiLimite {
+    final v = _cert?['date_limite_signature'];
+    return v == null ? null : DateTime.tryParse('$v')?.toLocal();
+  }
+
+  bool get _certDelaiEcoule {
+    final l = _certDelaiLimite;
+    return l == null || !DateTime.now().isBefore(l);
+  }
+
+  /// Génère le PDF signé, l'archive (bucket `media`) avec son empreinte SHA-256.
+  Future<String?> _archiverCertificat() async {
+    try {
+      final bytes = await certificatEngagementPdfBytes(
+        cert: _cert!, eleveur: _eleveur!,
+        sigAcheteur: _cert!['signature_acquereur'] as String?,
+      );
+      final cedantUid = _cert!['cedant_uid'] as String? ?? 'inconnu';
+      final path = 'certificats/$cedantUid/${_cert!['id']}.pdf';
+      await _supa.storage.from('media').uploadBinary(
+        path, bytes,
+        fileOptions: const FileOptions(contentType: 'application/pdf', upsert: true),
+      );
+      final url = _supa.storage.from('media').getPublicUrl(path);
+      await _supa.from('certificats_engagement').update({
+        'pdf_url': url,
+        'pdf_hash': sha256.convert(bytes).toString(),
+      }).eq('id', _cert!['id']);
+      _cert!['pdf_url'] = url;
+      return url;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _signerCertificatEngagement(String dataUrl, String nom) async {
+    if (!_certDelaiEcoule) {
+      _snack('Signature possible à partir du '
+          '${DateFormat('dd/MM/yyyy').format(_certDelaiLimite!)}.');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final now = DateTime.now().toIso8601String();
+      await _supa.from('certificats_engagement').update({
+        'signature_acquereur': dataUrl,
+        'signataire_nom': nom.trim().isEmpty ? null : nom.trim(),
+        'signe_le': now,
+        'date_signature_acquereur': now,
+        'statut': 'signe',
+      }).eq('token_signature', _cert!['token_signature']);
+      _cert!['signature_acquereur'] = dataUrl;
+      _cert!['signataire_nom'] = nom.trim();
+      _cert!['statut'] = 'signe';
+      _cert!['date_signature_acquereur'] = now;
+
+      await _archiverCertificat();
+
+      // Notifier le cédant.
+      final cedantUid = _cert!['cedant_uid'] as String?;
+      if (cedantUid != null) {
+        final prof = await _supa.from('user_profiles')
+            .select('id').eq('uid', cedantUid).eq('is_main', true).maybeSingle();
+        final who = (nom.trim().isNotEmpty ? nom.trim()
+            : '${_cert!['acquereur_prenom'] ?? ''} ${_cert!['acquereur_nom'] ?? ''}'.trim());
+        await _supa.from('notifications').insert({
+          'uid': cedantUid,
+          'type': 'certificat_signe',
+          'title': '✅ Certificat d\'engagement signé — ${_cert!['nom_animal'] ?? 'Animal'}',
+          'body': '${who.isEmpty ? 'L\'acquéreur' : who} a signé le certificat d\'engagement.',
+          if (prof?['id'] != null) 'profile_id': prof!['id'],
+          'data': {
+            'token': _cert!['token_signature'],
+            'url': '$kSiteBaseUrl/certificat/${_cert!['token_signature']}',
+          },
+          'read': false,
+        });
+      }
+
+      await _buildPdf();
+      if (mounted) { setState(() {}); _snack('✅ Certificat signé'); }
+    } catch (e) {
+      _snack('Erreur : $e');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// Transmet le certificat au futur propriétaire : notif in-app si compte
+  /// PetsMatch + e-mail. Calqué sur `_envoyerAcquereur`.
+  Future<void> _envoyerCertificatEngagement() async {
+    setState(() => _saving = true);
+    try {
+      final token = _cert!['token_signature'] as String?;
+      final url = token != null ? '$kSiteBaseUrl/certificat/$token' : null;
+      final email = (_cert!['acquereur_email'] as String?)?.trim();
+      final animalNom = _cert!['nom_animal'] as String? ?? 'Animal';
+
+      // Résoudre l'uid de l'acquéreur si absent.
+      var acqUid = _cert!['acquereur_uid'] as String?;
+      if ((acqUid == null || acqUid.isEmpty) && email != null && email.isNotEmpty) {
+        final u = await _supa.from('users').select('uid').eq('email', email.toLowerCase()).maybeSingle();
+        acqUid = u?['uid'] as String?;
+        if (acqUid != null) {
+          await _supa.from('certificats_engagement')
+              .update({'acquereur_uid': acqUid}).eq('id', _cert!['id']);
+          _cert!['acquereur_uid'] = acqUid;
+        }
+      }
+
+      if (acqUid != null && acqUid.isNotEmpty) {
+        final prof = await _supa.from('user_profiles')
+            .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
+        await _supa.from('notifications').insert({
+          'uid': acqUid,
+          'type': 'certificat_a_signer',
+          'title': '📋 Certificat d\'engagement à signer — $animalNom',
+          'body': 'Le cédant vous transmet le certificat d\'engagement et de connaissance à lire et signer.',
+          if (prof?['id'] != null) 'profile_id': prof!['id'],
+          'data': {
+            if (token != null) 'token': token,
+            if (url != null) 'url': url,
+          },
+          'read': false,
+        });
+      }
+
+      if (email != null && email.isNotEmpty) {
+        try {
+          await http.post(
+            Uri.parse('$kSiteBaseUrl/api/certificat/notify-email'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'email': email,
+              'animal_nom': animalNom,
+              'signing_url': url ?? '',
+            }),
+          );
+        } catch (_) {}
+      }
+
+      if (mounted) {
+        _snack(acqUid != null && acqUid.isNotEmpty
+            ? '📤 Certificat transmis (notification + e-mail)'
+            : email != null && email.isNotEmpty
+                ? '📧 Certificat envoyé par e-mail'
+                : 'Aucun e-mail renseigné pour l\'acquéreur');
+      }
     } catch (e) {
       _snack('Erreur : $e');
     } finally {
@@ -491,9 +730,16 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
   }
 
   Future<void> _ouvrirWeb() async {
-    final token = _doc?['token'] as String?;
+    final String? token;
+    final String path;
+    if (widget.isCertificatEngagement) {
+      token = _cert?['token_signature'] as String?;
+      path = 'certificat';
+    } else {
+      token = _doc?['token'] as String?;
+      path = widget.isCession ? 'signer-cession' : 'signer-contrat';
+    }
     if (token == null) return;
-    final path = widget.isCession ? 'signer-cession' : 'signer-contrat';
     final url = Uri.parse('$kSiteBaseUrl/$path/$token');
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
@@ -509,17 +755,23 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
-        title: Text(widget.isCession ? 'Cession — signature' : 'Contrat — signature',
+        title: Text(
+            widget.isCession
+                ? 'Cession — signature'
+                : widget.isCertificatEngagement
+                    ? 'Certificat d\'engagement'
+                    : 'Contrat — signature',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
         actions: [
-          if (!widget.isCession && !_loading && _error == null && _isEleveur
+          if (!widget.isCession && !widget.isCertificatEngagement && !_loading
+              && _error == null && _isEleveur
               && (_doc?['statut'] as String?) != 'signe')
             IconButton(
               icon: const Icon(Icons.delete_outline, size: 20),
               tooltip: 'Supprimer ce contrat',
               onPressed: _supprimerDocument,
             ),
-          if (_doc?['token'] != null)
+          if (_doc?['token'] != null || _cert?['token_signature'] != null)
             IconButton(
               icon: const Icon(Icons.open_in_new, size: 20),
               tooltip: 'Ouvrir sur le web',
@@ -533,7 +785,130 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
               ? _errorView()
               : widget.isCession
                   ? _cessionView()
-                  : _documentView(),
+                  : widget.isCertificatEngagement
+                      ? _certificatView()
+                      : _documentView(),
+    );
+  }
+
+  // ── Certificat d'engagement ──────────────────────────────────────────────
+
+  Widget _certificatView() {
+    final statut = _cert?['statut'] as String? ?? 'envoye';
+    final sig = _cert?['signature_acquereur'] as String?;
+    final isSigned = statut == 'signe' || sig != null;
+    final acqNom = '${_cert?['acquereur_prenom'] ?? ''} ${_cert?['acquereur_nom'] ?? ''}'.trim();
+    final limite = _certDelaiLimite;
+    final delaiBloque = !isSigned && !_certDelaiEcoule;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+      children: [
+        if (_pdfBytes != null) _pdfCard() else _recapCard(),
+
+        // Vue cédant : transmettre au futur propriétaire.
+        if (_isEleveur && !isSigned) ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _saving ? null : _envoyerCertificatEngagement,
+              icon: const Icon(Icons.send_outlined, size: 16),
+              label: Text(
+                statut == 'envoye'
+                    ? 'Envoyer au futur propriétaire'
+                    : 'Relancer le futur propriétaire',
+                style: const TextStyle(fontSize: 12, fontFamily: 'Galey', fontWeight: FontWeight.w600),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _teal, side: const BorderSide(color: _teal),
+                minimumSize: const Size(0, 42),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Le futur propriétaire reçoit une notification dans l\'appli (s\'il a un '
+            'compte PetsMatch) et un e-mail avec le lien de signature.',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+          ),
+        ],
+
+        // Vue acquéreur : lire + signer.
+        if (delaiBloque && _isAcquereur) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF8E1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0x33FFB300)),
+            ),
+            child: Text(
+              'Délai de réflexion légal — signature possible à partir du '
+              '${DateFormat('dd/MM/yyyy').format(limite!)}. Aucune somme ne peut '
+              'être perçue avant cette date.',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF8A6D3B), height: 1.5),
+            ),
+          ),
+        ],
+
+        if (!isSigned && _isAcquereur && !delaiBloque) ...[
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF8E1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0x33FFB300)),
+            ),
+            child: const Text(
+              'En signant, je certifie avoir lu ce certificat et je m\'engage à '
+              'respecter les besoins de l\'animal.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF8A6D3B), height: 1.5),
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Text('Votre signature',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15, color: _dark)),
+          const SizedBox(height: 6),
+          _CertNomField(
+            initial: acqNom,
+            onSign: (nom, d) => _signerCertificatEngagement(d, nom),
+            saving: _saving,
+          ),
+        ],
+
+        if (isSigned) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _green.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '✅ Certificat signé'
+              '${_cert?['date_signature_acquereur'] != null ? ' le ${DateFormat('dd/MM/yyyy').format(DateTime.parse('${_cert!['date_signature_acquereur']}').toLocal())}' : ''}.',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF2E5A1E)),
+            ),
+          ),
+          if (_pdfBytes != null) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => Printing.sharePdf(
+                  bytes: _pdfBytes!, filename: 'certificat-engagement.pdf'),
+              icon: const Icon(Icons.ios_share, size: 16),
+              label: const Text('Partager / Imprimer'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _teal,
+                minimumSize: const Size(double.infinity, 44),
+                side: const BorderSide(color: _teal),
+              ),
+            ),
+          ],
+        ],
+      ],
     );
   }
 
@@ -1469,6 +1844,67 @@ class _ContratInfosFormState extends State<_ContratInfosForm> {
         ],
       ),
     );
+  }
+}
+
+// ── Champ nom + signature du certificat d'engagement ───────────────────────
+
+class _CertNomField extends StatefulWidget {
+  final String initial;
+  final bool saving;
+  final void Function(String nom, String dataUrl) onSign;
+  const _CertNomField({required this.initial, required this.saving, required this.onSign});
+
+  @override
+  State<_CertNomField> createState() => _CertNomFieldState();
+}
+
+class _CertNomFieldState extends State<_CertNomField> {
+  late final TextEditingController _ctrl = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  Future<void> _signer() async {
+    final dataUrl = await Navigator.push<String?>(context, MaterialPageRoute(
+      builder: (_) => const SignatureFullScreen(titre: 'Signature de l\'acquéreur'),
+    ));
+    if (dataUrl != null && dataUrl.isNotEmpty && mounted) {
+      widget.onSign(_ctrl.text.trim(), dataUrl);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      TextField(
+        controller: _ctrl,
+        textCapitalization: TextCapitalization.words,
+        decoration: InputDecoration(
+          labelText: 'Votre nom complet',
+          isDense: true,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        onChanged: (_) => setState(() {}),
+      ),
+      const SizedBox(height: 10),
+      SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: (widget.saving || _ctrl.text.trim().isEmpty) ? null : _signer,
+          icon: widget.saving
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+              : const Icon(Icons.draw_outlined, size: 18),
+          label: const Text('Signer le certificat',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _green, foregroundColor: Colors.white, elevation: 0,
+            minimumSize: const Size(0, 46),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+      ),
+    ]);
   }
 }
 

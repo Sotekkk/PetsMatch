@@ -646,6 +646,10 @@ function getNotifUrl(n: Notif): string | null {
     case 'contrat_invite':
     case 'contrat_a_signer':
       return d.token ? `/mes-contrats?doc=${d.token}` : '/mes-contrats';
+    // Certificat d'engagement — à signer (acquéreur) OU signé (cédant)
+    case 'certificat_a_signer':
+    case 'certificat_signe':
+      return d.url ?? (d.token ? `/certificat/${d.token}` : '/elevage/certificat-engagement');
     // Reçues par le vendeur / éleveur
     case 'contrat_saillie_invite':
       return d.url ?? d.signingUrl ?? (d.token ? `/signer-contrat/${d.token}` : '/elevage/contrat');
