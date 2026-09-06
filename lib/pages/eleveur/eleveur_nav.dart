@@ -25,6 +25,7 @@ import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart';
 import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
 import 'package:PetsMatch/pages/pro/restauration/inscription_restauration_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/profil_eleveur_edit.dart';
@@ -573,6 +574,17 @@ class _EleveurNavState extends State<EleveurNav> {
                           ));
                         },
                       ),
+                      if (_planCode == 'premium')
+                        _DrawerSubItem(
+                          label: 'Pets Social',
+                          icon: Icons.photo_library_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const SocialFeedPage(),
+                            ));
+                          },
+                        ),
                     ],
                   ),
                   _DrawerSection(
@@ -849,6 +861,17 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
+                  if (_planCode == 'premium')
+                    _DrawerItem(
+                      icon: Icons.photo_library_outlined,
+                      label: 'Pets Social',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const SocialFeedPage(),
+                        ));
+                      },
+                    ),
                 ],
                 _DrawerItem(
                   icon: Icons.local_offer_outlined,

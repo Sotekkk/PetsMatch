@@ -12,7 +12,7 @@ import 'package:PetsMatch/pages/marketplace/marketplace_page.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
-import 'package:PetsMatch/pages/particulier/particulier_home.dart';
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart';
 import 'package:PetsMatch/pages/particulier/user_feed.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
@@ -82,7 +82,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
         1 => MessagePage(),
         2 => const NotificationsPage(),
         3 => AgendaPage(onBack: () => setState(() => _selectedIndex = 0), isParticulier: true),
-        _ => const ParticulierHomePage(),
+        _ => const SocialFeedPage(),
       };
 
   @override
