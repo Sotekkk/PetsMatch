@@ -214,26 +214,48 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       if (pid.isNotEmpty) q = q.eq('pro_profile_id', pid);
       final rows = await q.order('date_heure', ascending: true);
 
-      // Load client names in batch
+      // Load client names in batch.
+      // ⚠ Multi-profil : le nom doit venir du PROFIL avec lequel le RDV a été
+      // pris (rdv.client_profile_id) — pas de users.name_elevage / is_main,
+      // qui affichent le nom d'élevage à la place du particulier.
       final clientUids = rows
           .map((r) => r['client_uid'] as String?)
           .whereType<String>()
           .toSet()
           .toList();
+      final clientProfileIds = rows
+          .map((r) => r['client_profile_id'] as String?)
+          .whereType<String>()
+          .where((s) => s.isNotEmpty)
+          .toSet()
+          .toList();
 
-      Map<String, String> clientNames = {};
+      Map<String, String> profileNames = {}; // clé = client_profile_id
+      if (clientProfileIds.isNotEmpty) {
+        try {
+          final profs = await Supabase.instance.client
+              .from('user_profiles')
+              .select('id, firstname, lastname, nom')
+              .inFilter('id', clientProfileIds);
+          for (final p in profs) {
+            final nom = (p['nom'] as String?)?.trim() ?? '';
+            final composed = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+            final name = nom.isNotEmpty ? nom : composed;
+            if (name.isNotEmpty) profileNames[p['id'] as String] = name;
+          }
+        } catch (_) {}
+      }
+
+      Map<String, String> clientNames = {}; // repli par client_uid
       if (clientUids.isNotEmpty) {
         try {
           final users = await Supabase.instance.client
               .from('users')
-              .select('uid, firstname, lastname, name_elevage')
+              .select('uid, firstname, lastname')
               .inFilter('uid', clientUids);
           for (final u in users) {
-            final uid = u['uid'] as String;
-            final name = (u['name_elevage'] as String?)?.isNotEmpty == true
-                ? u['name_elevage'] as String
-                : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
-            clientNames[uid] = name.isNotEmpty ? name : 'Client';
+            final name = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+            clientNames[u['uid'] as String] = name.isNotEmpty ? name : 'Client';
           }
         } catch (_) {}
       }
@@ -280,13 +302,16 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         setState(() {
           _rdvs = rows.map((r) {
             final cUid = r['client_uid'] as String?;
+            final cProfileId = r['client_profile_id'] as String?;
             final aId = r['animal_id']?.toString();
             final clientNomManuel = r['client_nom_manuel'] as String?;
             return {
               ...r,
-              '_client_name': cUid != null
-                  ? (clientNames[cUid] ?? 'Client')
-                  : (clientNomManuel?.isNotEmpty == true ? clientNomManuel! : 'Client'),
+              '_client_name': (cProfileId != null && profileNames[cProfileId] != null)
+                  ? profileNames[cProfileId]!
+                  : cUid != null
+                      ? (clientNames[cUid] ?? 'Client')
+                      : (clientNomManuel?.isNotEmpty == true ? clientNomManuel! : 'Client'),
               '_animal_nom': aId != null
                   ? (animalNames[aId] ?? '')
                   : ((r['animal_nom_manuel'] as String?) ?? ''),

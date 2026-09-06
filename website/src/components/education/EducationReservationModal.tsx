@@ -24,7 +24,10 @@ interface Prestation {
   id: string; nom: string; description?: string | null;
   duree_minutes: number; prix?: number | null; bilan_requis: boolean; domicile_ok: boolean;
   lieu_adresse?: string | null; lieu_lat?: number | null; lieu_lng?: number | null;
+  type?: 'individuel' | 'collectif' | null; capacite_max?: number | null;
 }
+// Séance de groupe déjà planifiée (cours collectif), rapprochée d'un créneau fixe.
+type CoursSeance = { date_heure: string; coursId: string; capacite: number; inscrits: number };
 interface Animal { id: number | string; nom: string; espece: string; }
 interface Props {
   proUid: string;
@@ -79,6 +82,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
   type RdvBlock = { date_heure: string; duree_minutes: number; lieu_lat: number | null; lieu_lng: number | null };
   const [slotsByWeek, setSlotsByWeek] = useState<Record<string, Slot[]>>({});
   const [rdvsByWeek, setRdvsByWeek] = useState<Record<string, RdvBlock[]>>({});
+  const [coursByWeek, setCoursByWeek] = useState<Record<string, CoursSeance[]>>({});
   const [loadingWeeks, setLoadingWeeks] = useState<Record<string, boolean>>({});
   const [probedFirstDate, setProbedFirstDate] = useState<string | null | undefined>(undefined); // undefined = pas encore sondé
 
@@ -128,7 +132,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
       const firstTime = (priorRdv ?? []).length === 0;
       setIsFirstTime(firstTime);
 
-      let pQ = supabase.from('prestations_education').select('id, nom, description, duree_minutes, prix, bilan_requis, domicile_ok, lieu_adresse, lieu_lat, lieu_lng')
+      let pQ = supabase.from('prestations_education').select('id, nom, description, duree_minutes, prix, bilan_requis, domicile_ok, lieu_adresse, lieu_lat, lieu_lng, type, capacite_max')
         .eq('pro_uid', proUid).eq('actif', true);
       if (profileId) pQ = pQ.eq('pro_profile_id', profileId);
       const { data: pRows } = await pQ.order('ordre').order('created_at');
@@ -166,6 +170,37 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
   }, [user, proUid, proProfileId, profileLoaded, activeProfileId]);
 
   const weekKeyOf = (d: Date) => toDateStr(mondayOf(d));
+  // Cours collectif : créneaux fixes bout à bout + inscription à une séance
+  // de groupe (capacité / liste d'attente) au lieu d'un RDV 1-pour-1.
+  const isCollectif = selectedPrestation?.type === 'collectif';
+
+  // Charge les séances de groupe d'une semaine + le nombre d'inscrits.
+  const loadCoursWeek = useCallback(async (wk: string) => {
+    const pid = resolvedProfileId;
+    if (!pid) return;
+    const [my, mm, md] = wk.split('-').map(Number);
+    const monday = new Date(my, mm - 1, md);
+    const sunday = new Date(my, mm - 1, md + 7);
+    const { data: cRows } = await supabase.from('cours_collectifs')
+      .select('id, date_heure, capacite_max')
+      .eq('pro_uid', proUid).eq('pro_profile_id', pid).neq('statut', 'annule')
+      .gte('date_heure', monday.toISOString()).lte('date_heure', sunday.toISOString());
+    const cours = (cRows ?? []) as { id: string; date_heure: string; capacite_max: number | null }[];
+    const ids = cours.map(c => c.id);
+    const counts: Record<string, number> = {};
+    if (ids.length > 0) {
+      const { data: parts } = await supabase.from('cours_collectifs_participants')
+        .select('cours_id').in('cours_id', ids).neq('statut', 'annule');
+      for (const p of (parts ?? []) as { cours_id: string }[]) counts[p.cours_id] = (counts[p.cours_id] ?? 0) + 1;
+    }
+    setCoursByWeek(m => ({
+      ...m,
+      [wk]: cours.map(c => ({
+        date_heure: c.date_heure, coursId: c.id,
+        capacite: c.capacite_max ?? 6, inscrits: counts[c.id] ?? 0,
+      })),
+    }));
+  }, [resolvedProfileId, proUid]);
 
   // Charge (une seule fois) créneaux + RDV de la semaine de `anyDay`.
   const loadWeek = useCallback(async (anyDay: Date) => {
@@ -201,9 +236,13 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
     if (!pid) return;
     let q = supabase.from('creneaux_pro').select('date')
       .eq('pro_uid', proUid).eq('statut', 'disponible').eq('pro_profile_id', pid)
-      .gte('date', toDateStr(new Date()))
-      .or('type_prestation.is.null,type_prestation.neq.collectif');
-    if (domicile) q = q.eq('domicile_ok', true);
+      .gte('date', toDateStr(new Date()));
+    if (isCollectif) {
+      q = q.eq('type_prestation', 'collectif');
+    } else {
+      q = q.or('type_prestation.is.null,type_prestation.neq.collectif');
+      if (domicile) q = q.eq('domicile_ok', true);
+    }
     const { data } = await q.order('date').limit(1);
     const first = (data ?? [])[0]?.date as string | undefined;
     setProbedFirstDate(first ?? null);
@@ -212,12 +251,16 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
       const m = mondayOf(new Date(y, mo - 1, dd));
       setWeekStart(w => (m.getTime() > w.getTime() ? m : w));
     }
-  }, [resolvedProfileId, proUid, domicile]);
+  }, [resolvedProfileId, proUid, domicile, isCollectif]);
 
   // Charge la semaine visible dès qu'elle change (et au 1er affichage du calendrier).
   useEffect(() => {
-    if (selectedPrestation && resolvedProfileId) loadWeek(weekStart);
-  }, [weekStart, selectedPrestation, resolvedProfileId, loadWeek]);
+    if (selectedPrestation && resolvedProfileId) {
+      loadWeek(weekStart);
+      if (isCollectif) loadCoursWeek(weekKeyOf(weekStart));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekStart, selectedPrestation, resolvedProfileId, loadWeek, loadCoursWeek, isCollectif]);
 
   // Au choix d'un cours / d'une option domicile : (re)sonde la 1re dispo.
   useEffect(() => {
@@ -265,22 +308,27 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
   const weekKey = toDateStr(weekStart);
   const weekSlots = slotsByWeek[weekKey] ?? [];
   const weekRdvs = rdvsByWeek[weekKey] ?? [];
+  const weekCours = coursByWeek[weekKey] ?? [];
   const smartSlotsByDate = useMemo(() => {
-    if (!selectedPrestation || weekSlots.length === 0) return {} as Record<string, { heure_debut: string; heure_fin: string }[]>;
+    type SlotOut = { heure_debut: string; heure_fin: string; coursId?: string | null; capacite?: number; inscrits?: number; complet?: boolean };
+    if (!selectedPrestation || weekSlots.length === 0) return {} as Record<string, SlotOut[]>;
+    const collectif = selectedPrestation.type === 'collectif';
+    const step = collectif ? duration : 15;
     // Heure minimale réservable : maintenant + délai imposé par le pro
     // (repli 30 min si aucun délai). Gère le multi-jours.
     const earliestBookable = new Date(Date.now() + (delaiMinH > 0 ? delaiMinH * 3600_000 : 30 * 60_000));
 
     const byDate: Record<string, { s: number; e: number; origine: string | null }[]> = {};
     for (const slot of weekSlots) {
-      if (slot.type_prestation === 'collectif') continue;
-      if (domicile && !slot.domicile_ok) continue;
+      const slotCollectif = slot.type_prestation === 'collectif';
+      if (collectif !== slotCollectif) continue;
+      if (!collectif && domicile && !slot.domicile_ok) continue;
       const [sh, sm] = slot.heure_debut.split(':').map(Number);
       const [eh, em] = slot.heure_fin.split(':').map(Number);
       (byDate[slot.date] ??= []).push({ s: sh * 60 + sm, e: eh * 60 + em, origine: slot.trajet_origine });
     }
 
-    const result: Record<string, { heure_debut: string; heure_fin: string }[]> = {};
+    const result: Record<string, SlotOut[]> = {};
     for (const [date, ranges] of Object.entries(byDate)) {
       ranges.sort((a, b) => a.s - b.s);
       const windows: { s: number; e: number; origine: string | null }[] = [];
@@ -299,26 +347,43 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
         .sort((a, b) => a.startMin - b.startMin);
       const blocked = rdvsDuJour.map(r => ({ s: r.startMin, e: r.endMin }));
 
-      const available: { heure_debut: string; heure_fin: string }[] = [];
+      const available: SlotOut[] = [];
       const [dy, dmo, dd] = date.split('-').map(Number);
+      const capaciteDefaut = selectedPrestation.capacite_max ?? 6;
       for (const w of windows) {
-        for (let t = w.s; t + duration <= w.e; t += 15) {
+        for (let t = w.s; t + duration <= w.e; t += step) {
           if (new Date(dy, dmo - 1, dd, 0, t) < earliestBookable) continue;
-          const overlaps = blocked.some(b => t < b.e && t + duration > b.s);
-          if (overlaps) continue;
-          if (domicile && domicileLatLng && !trajetOk(t, t + duration, w.origine, rdvsDuJour)) continue;
+          if (!collectif) {
+            if (blocked.some(b => t < b.e && t + duration > b.s)) continue;
+            if (domicile && domicileLatLng && !trajetOk(t, t + duration, w.origine, rdvsDuJour)) continue;
+          }
           const pad = (n: number) => String(n).padStart(2, '0');
-          available.push({
-            heure_debut: `${pad(Math.floor(t / 60))}:${pad(t % 60)}:00`,
+          const h = Math.floor(t / 60), m = t % 60;
+          const out: SlotOut = {
+            heure_debut: `${pad(h)}:${pad(m)}:00`,
             heure_fin: `${pad(Math.floor((t + duration) / 60))}:${pad((t + duration) % 60)}:00`,
-          });
+          };
+          if (collectif) {
+            const match = weekCours.find(c => {
+              const cdh = new Date(c.date_heure);
+              return cdh.getFullYear() === dy && cdh.getMonth() === dmo - 1 && cdh.getDate() === dd
+                && cdh.getHours() === h && cdh.getMinutes() === m;
+            });
+            const capacite = match?.capacite ?? capaciteDefaut;
+            const inscrits = match?.inscrits ?? 0;
+            out.coursId = match?.coursId ?? null;
+            out.capacite = capacite;
+            out.inscrits = inscrits;
+            out.complet = inscrits >= capacite;
+          }
+          available.push(out);
         }
       }
       if (available.length > 0) result[date] = available;
     }
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekSlots, weekRdvs, duration, selectedPrestation, domicile, domicileLatLng, origineDefaut, cabinetLatLng, autreDomicileLatLng, delaiMinH]);
+  }, [weekSlots, weekRdvs, weekCours, duration, selectedPrestation, domicile, domicileLatLng, origineDefaut, cabinetLatLng, autreDomicileLatLng, delaiMinH]);
 
   const weekLoading = !!loadingWeeks[weekKey] || (!!selectedPrestation && probedFirstDate === undefined);
   const aucuneDispo = probedFirstDate === null && !weekLoading;
@@ -333,6 +398,74 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
     setDomicileChoiceMade(true);
   }
 
+  // Nom à afficher au pro : celui du PROFIL avec lequel le client réserve
+  // (pas is_main, qui renvoie le nom d'élevage au lieu du particulier).
+  async function resolveClientName(): Promise<string> {
+    if (activeProfileId) {
+      const { data } = await supabase.from('user_profiles').select('firstname, lastname, nom').eq('id', activeProfileId).maybeSingle();
+      if (data) {
+        const name = (data.nom ?? '').trim() || `${data.firstname ?? ''} ${data.lastname ?? ''}`.trim();
+        if (name) return name;
+      }
+    }
+    if (user) {
+      const { data } = await supabase.from('users').select('firstname, lastname').eq('uid', user.uid).maybeSingle();
+      const name = data ? `${data.firstname ?? ''} ${data.lastname ?? ''}`.trim() : '';
+      if (name) return name;
+    }
+    return 'Un client';
+  }
+
+  // Inscription à une séance de groupe (cours collectif) — find-or-create de
+  // la séance puis insertion du participant (capacité → 'demande' /
+  // 'en_attente'). Miroir de education_reservation_page.dart _inscrireCollectif.
+  async function enrollCollectif(dateHeure: Date) {
+    if (!user || !selectedPrestation) return;
+    const pid = resolvedProfileId ?? '';
+    const utc = dateHeure.toISOString();
+
+    let coursId: string | null = null;
+    const { data: existing } = await supabase.from('cours_collectifs').select('id')
+      .eq('pro_uid', proUid).eq('pro_profile_id', pid).eq('date_heure', utc).neq('statut', 'annule').limit(1);
+    if (existing && existing.length > 0) {
+      coursId = existing[0].id as string;
+    } else {
+      const { data: created } = await supabase.from('cours_collectifs').insert({
+        pro_uid: proUid, pro_profile_id: pid, prestation_id: selectedPrestation.id,
+        titre: selectedPrestation.nom, date_heure: utc, duree_minutes: duration,
+        capacite_max: selectedPrestation.capacite_max ?? 6,
+        ...(selectedPrestation.lieu_adresse ? { lieu: selectedPrestation.lieu_adresse } : {}),
+        ...(selectedPrestation.lieu_lat != null ? { lieu_lat: selectedPrestation.lieu_lat, lieu_lng: selectedPrestation.lieu_lng } : {}),
+        statut: 'planifie',
+      }).select('id').single();
+      coursId = (created?.id as string) ?? null;
+    }
+    if (!coursId) throw new Error('cours introuvable');
+
+    const { data: current } = await supabase.from('cours_collectifs_participants')
+      .select('id').eq('cours_id', coursId).neq('statut', 'annule');
+    const capacite = selectedPrestation.capacite_max ?? 6;
+    const complet = (current ?? []).length >= capacite;
+
+    await supabase.from('cours_collectifs_participants').insert({
+      cours_id: coursId, client_uid: user.uid,
+      ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
+      animal_id: selectedAnimalId,
+      ...(selectedPrestation.prix != null ? { prix: selectedPrestation.prix } : {}),
+      statut: complet ? 'en_attente' : 'demande',
+    });
+
+    const clientName = await resolveClientName();
+    const dateStr = dateHeure.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+    await supabase.from('notifications').insert({
+      uid: proUid, type: 'cours_collectif_inscription',
+      title: `Demande d'inscription — ${selectedPrestation.nom}`,
+      body: `${clientName} souhaite s'inscrire au cours du ${dateStr} — en attente de votre confirmation.`,
+      ...(pid ? { profile_id: pid } : {}),
+      data: { coursId }, read: false,
+    });
+  }
+
   async function confirmSlot(date: string, heureDebut: string) {
     if (!user || !selectedPrestation) return;
     setSaving(true);
@@ -340,6 +473,11 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
       const [h, m] = heureDebut.split(':').map(Number);
       const dateHeure = new Date(`${date}T00:00:00`);
       dateHeure.setHours(h, m, 0, 0);
+      if (isCollectif) {
+        await enrollCollectif(dateHeure);
+        setSuccess(true);
+        return;
+      }
       await supabase.from('rdv').insert({
         pro_uid: proUid,
         pro_profile_id: resolvedProfileId ?? '',
@@ -358,8 +496,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
         } : {}),
         statut: 'demande',
       });
-      const { data: userData } = await supabase.from('user_profiles').select('firstname, lastname').eq('uid', user.uid).eq('is_main', true).maybeSingle();
-      const clientName = userData ? `${userData.firstname ?? ''} ${userData.lastname ?? ''}`.trim() : 'Un client';
+      const clientName = await resolveClientName();
       const dateStr = dateHeure.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
       await supabase.from('notifications').insert({
         uid: proUid, type: 'rdv_demande',
@@ -421,9 +558,11 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
                 <button key={p.id} onClick={() => {
                     setSelectedPrestation(p);
                     setDomicile(false);
-                    setDomicileChoiceMade(!p.domicile_ok);
+                    // Collectif : jamais à domicile → pas d'étape de choix.
+                    setDomicileChoiceMade(p.type === 'collectif' || !p.domicile_ok);
                     setDomicileLatLng(null);
                     setAdresseDomicile('');
+                    setCoursByWeek({});
                   }}
                   className="w-full flex items-center justify-between rounded-2xl border p-4 text-left hover:shadow-sm transition-shadow"
                   style={{ borderColor: `${catColor}40` }}>
@@ -432,6 +571,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
                     {p.description && <p className="text-xs text-gray-500" style={{ fontFamily: 'Galey, sans-serif' }}>{p.description}</p>}
                     <p className="text-xs text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
                       {p.duree_minutes} min{p.prix ? ` · ${p.prix.toFixed(0)} €` : ''}
+                      {p.type === 'collectif' ? ` · en groupe (max ${p.capacite_max ?? 6})` : ''}
                     </p>
                   </div>
                   <span style={{ color: catColor }}>›</span>
@@ -500,7 +640,10 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
               )}
 
               <p className="text-xs font-semibold" style={{ fontFamily: 'Galey, sans-serif', color: catColor }}>
-                {domicile ? `🏠 À domicile — ${adresseDomicile}` : '📍 Chez le professionnel'}
+                {isCollectif
+                  ? `👥 Séance de groupe${selectedPrestation.capacite_max ? ` — max ${selectedPrestation.capacite_max}` : ''}`
+                  : domicile ? `🏠 À domicile — ${adresseDomicile}` : '📍 Chez le professionnel'}
+                {isCollectif && selectedPrestation.lieu_adresse ? ` · ${selectedPrestation.lieu_adresse}` : ''}
               </p>
 
               {isFirstTime ? (
@@ -555,26 +698,31 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
               ) : null}
 
               <div className="space-y-3 max-h-[45vh] overflow-y-auto">
-                {days.map(day => {
+                {days.filter(day => (smartSlotsByDate[toDateStr(day)] ?? []).length > 0).map(day => {
                   const key = toDateStr(day);
                   const daySlots = smartSlotsByDate[key] ?? [];
                   return (
                     <div key={key} className="rounded-xl border border-gray-100 p-3">
                       <p className="text-xs font-bold capitalize mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>{DAY_FMT.format(day)}</p>
-                      {daySlots.length === 0 ? (
-                        <p className="text-xs text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>Aucun créneau disponible</p>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {daySlots.map(s => (
-                            <button key={s.heure_debut} disabled={saving || !selectedAnimalId}
-                              onClick={() => confirmSlot(key, s.heure_debut)}
-                              className="px-3 py-1.5 rounded-lg border text-xs font-semibold disabled:opacity-40"
-                              style={{ borderColor: catColor, color: catColor, fontFamily: 'Galey, sans-serif' }}>
-                              {s.heure_debut.slice(0, 5)}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                      <div className="flex flex-wrap gap-2">
+                        {daySlots.map(s => (
+                          <button key={s.heure_debut} disabled={saving || !selectedAnimalId}
+                            onClick={() => confirmSlot(key, s.heure_debut)}
+                            className="px-3 py-1.5 rounded-lg border text-xs font-semibold disabled:opacity-40 flex flex-col items-center leading-tight"
+                            style={{
+                              borderColor: s.complet ? '#FDBA74' : catColor,
+                              color: s.complet ? '#C2410C' : catColor,
+                              fontFamily: 'Galey, sans-serif',
+                            }}>
+                            <span>{s.heure_debut.slice(0, 5)}</span>
+                            {s.capacite != null && (
+                              <span className="text-[10px] opacity-70">
+                                {s.complet ? 'complet' : `${s.inscrits}/${s.capacite} pl.`}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   );
                 })}

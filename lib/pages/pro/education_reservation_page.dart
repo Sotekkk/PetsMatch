@@ -76,6 +76,10 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
   // à 1000 → seules ~4 semaines visibles).
   final Map<String, List<Map<String, dynamic>>> _slotsByWeek = {};
   final Map<String, List<Map<String, dynamic>>> _rdvsByWeek = {};
+  // Séances de groupe déjà créées (cours collectif) — clé = lundi (yyyy-MM-dd),
+  // valeur = [{date_heure, coursId, capacite, inscrits}]. Chargé seulement
+  // quand le cours choisi est de type 'collectif'.
+  final Map<String, List<Map<String, dynamic>>> _coursByWeek = {};
   final Set<String> _loadingWeeks = {};
   DateTime? _probedFirstDate; // 1re date où le pro a une dispo (sondage léger)
   bool _probed = false;
@@ -195,6 +199,11 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
   // Charge (une seule fois) les créneaux + RDV d'une semaine donnée.
   Future<void> _loadWeek(DateTime anyDayOfWeek) async {
     final wk = _weekKey(anyDayOfWeek);
+    // Séances de groupe : rechargées dès qu'on choisit un cours collectif
+    // (clé absente de _coursByWeek), indépendamment du cache créneaux/RDV.
+    if (_isCollectif && !_coursByWeek.containsKey(wk)) {
+      await _loadCoursWeek(wk);
+    }
     if (_slotsByWeek.containsKey(wk) || _loadingWeeks.contains(wk)) return;
     _loadingWeeks.add(wk);
     if (mounted) setState(() {});
@@ -231,8 +240,46 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
     if (mounted) setState(() {});
   }
 
+  // Charge les séances de groupe (cours collectif) d'une semaine + le nombre
+  // d'inscrits par séance — pour afficher « x/y places » sur chaque créneau
+  // fixe et rattacher une réservation à la bonne séance.
+  Future<void> _loadCoursWeek(String wk) async {
+    final mp = wk.split('-');
+    final monday = DateTime(int.parse(mp[0]), int.parse(mp[1]), int.parse(mp[2]));
+    final sunday = _addDays(monday, 6);
+    final profileId = _resolvedProfileId ?? '';
+    try {
+      final rows = await _supa.from('cours_collectifs')
+          .select('id, date_heure, capacite_max')
+          .eq('pro_uid', widget.proUid)
+          .eq('pro_profile_id', profileId)
+          .neq('statut', 'annule')
+          .gte('date_heure', monday.toUtc().toIso8601String())
+          .lte('date_heure', _addDays(sunday, 1).toUtc().toIso8601String());
+      final cours = List<Map<String, dynamic>>.from(rows as List);
+      final ids = cours.map((c) => c['id'].toString()).toList();
+      final counts = <String, int>{};
+      if (ids.isNotEmpty) {
+        final parts = await _supa.from('cours_collectifs_participants')
+            .select('cours_id').inFilter('cours_id', ids).neq('statut', 'annule');
+        for (final p in parts as List) {
+          final cid = p['cours_id'].toString();
+          counts[cid] = (counts[cid] ?? 0) + 1;
+        }
+      }
+      _coursByWeek[wk] = cours.map((c) => <String, dynamic>{
+        'date_heure': c['date_heure'],
+        'coursId': c['id'].toString(),
+        'capacite': (c['capacite_max'] as num?)?.toInt() ?? 6,
+        'inscrits': counts[c['id'].toString()] ?? 0,
+      }).toList();
+    } catch (_) { _coursByWeek[wk] = []; }
+    if (mounted) setState(() {});
+  }
+
   // Sondage léger : 1re date (≥ aujourd'hui) où le pro a une dispo compatible
-  // (non « collectif », et à domicile si demandé). 1 ligne → pas de plafond.
+  // avec le type de cours choisi (collectif ⇔ créneaux collectif ; sinon
+  // créneaux individuels, à domicile si demandé). 1 ligne → pas de plafond.
   Future<DateTime?> _firstAvailableDate({required bool domicileOnly}) async {
     final profileId = _resolvedProfileId ?? '';
     try {
@@ -241,9 +288,13 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           .eq('pro_uid', widget.proUid)
           .eq('statut', 'disponible')
           .eq('pro_profile_id', profileId)
-          .gte('date', _dateKey(DateTime.now()))
-          .or('type_prestation.is.null,type_prestation.neq.collectif');
-      if (domicileOnly) q = q.eq('domicile_ok', true);
+          .gte('date', _dateKey(DateTime.now()));
+      if (_isCollectif) {
+        q = q.eq('type_prestation', 'collectif');
+      } else {
+        q = q.or('type_prestation.is.null,type_prestation.neq.collectif');
+      }
+      if (domicileOnly && !_isCollectif) q = q.eq('domicile_ok', true);
       final rows = await q.order('date', ascending: true).limit(1);
       if ((rows as List).isEmpty) return null;
       final p = (rows.first['date'] as String).split('-');
@@ -278,19 +329,28 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
 
   int get _duration => (_selectedPrestation?['duree_minutes'] as num?)?.toInt() ?? 60;
 
-  // Créneaux intelligents : fusion des plages creneaux_pro disponibles, moins
-  // les RDV déjà posés, découpés à la durée du cours choisi — même algorithme
-  // que rdv_booking_page.dart _smartSlotsByDate (créneaux "collectif" exclus,
-  // marge de 30 min pour aujourd'hui).
-  // Calculé pour la SEULE semaine affichée (les créneaux/RDV sont chargés
-  // semaine par semaine → `_slotsByWeek` / `_rdvsByWeek`).
+  // Cours collectif : créneaux fixes bout à bout + inscription à une séance
+  // de groupe (capacité / liste d'attente) au lieu d'un RDV 1-pour-1.
+  bool get _isCollectif => _selectedPrestation?['type'] == 'collectif';
+
+  // Créneaux intelligents : fusion des plages creneaux_pro disponibles,
+  // découpées à la durée du cours choisi. Calculé pour la SEULE semaine
+  // affichée (créneaux/RDV chargés semaine par semaine).
+  //  - Cours INDIVIDUEL : créneaux glissants (pas de 15 min), moins les RDV
+  //    déjà posés, filtre trajet à domicile — comme rdv_booking_page.dart.
+  //  - Cours COLLECTIF : créneaux FIXES bout à bout (pas = durée), à partir
+  //    des plages `type_prestation == 'collectif'` uniquement ; chaque
+  //    créneau porte les places restantes de la séance de groupe existante.
   Map<String, List<Map<String, dynamic>>> get _smartSlotsByDate {
     if (_selectedPrestation == null) return {};
     final wk = _weekKey(_weekStart);
     final weekSlots = _slotsByWeek[wk] ?? const [];
     final weekRdvs = _rdvsByWeek[wk] ?? const [];
+    final weekCours = _coursByWeek[wk] ?? const [];
     if (weekSlots.isEmpty) return {};
+    final isCollectif = _isCollectif;
     final duration = _duration;
+    final step = isCollectif ? duration : 15;
     final now = DateTime.now();
     // Heure minimale réservable : maintenant + délai imposé par le pro
     // (repli 30 min si aucun délai). Gère le multi-jours.
@@ -300,8 +360,9 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
 
     final creneauxByDate = <String, List<({int startMin, int endMin, String? origine})>>{};
     for (final slot in weekSlots) {
-      if (slot['type_prestation'] == 'collectif') continue;
-      if (_domicile && slot['domicile_ok'] != true) continue;
+      final slotCollectif = slot['type_prestation'] == 'collectif';
+      if (isCollectif != slotCollectif) continue;
+      if (!isCollectif && _domicile && slot['domicile_ok'] != true) continue;
       final date = slot['date'] as String;
       final sp = (slot['heure_debut'] as String).split(':');
       final ep = (slot['heure_fin'] as String).split(':');
@@ -350,22 +411,45 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
       final dp = date.split('-');
       final dayDate = DateTime(int.parse(dp[0]), int.parse(dp[1]), int.parse(dp[2]));
       for (final window in windows) {
-        for (int t = window.startMin; t + duration <= window.endMin; t += 15) {
+        for (int t = window.startMin; t + duration <= window.endMin; t += step) {
           if (dayDate.add(Duration(minutes: t)).isBefore(earliestBookable)) continue;
-          final overlaps = blocked.any((b) => t < b.endMin && t + duration > b.startMin);
-          if (overlaps) continue;
 
-          if (_domicile && _domicileLat != null && _domicileLng != null) {
-            if (!_trajetOk(t, t + duration, window.origine, rdvsDuJour)) continue;
+          if (!isCollectif) {
+            final overlaps = blocked.any((b) => t < b.endMin && t + duration > b.startMin);
+            if (overlaps) continue;
+            if (_domicile && _domicileLat != null && _domicileLng != null) {
+              if (!_trajetOk(t, t + duration, window.origine, rdvsDuJour)) continue;
+            }
           }
 
           final h = t ~/ 60, m = t % 60;
           final eh = (t + duration) ~/ 60, em = (t + duration) % 60;
-          available.add({
+          final entry = <String, dynamic>{
             'date': date,
             'heure_debut': '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:00',
             'heure_fin': '${eh.toString().padLeft(2, '0')}:${em.toString().padLeft(2, '0')}:00',
-          });
+          };
+          if (isCollectif) {
+            // Rattache ce créneau fixe à la séance de groupe existante (même
+            // instant) pour afficher les places restantes.
+            final capaciteDefaut = (_selectedPrestation?['capacite_max'] as num?)?.toInt() ?? 6;
+            Map<String, dynamic>? match;
+            for (final c in weekCours) {
+              final cdh = DateTime.tryParse(c['date_heure']?.toString() ?? '')?.toLocal();
+              if (cdh != null && cdh.year == dayDate.year && cdh.month == dayDate.month
+                  && cdh.day == dayDate.day && cdh.hour == h && cdh.minute == m) {
+                match = c;
+                break;
+              }
+            }
+            final capacite = (match?['capacite'] as int?) ?? capaciteDefaut;
+            final inscrits = (match?['inscrits'] as int?) ?? 0;
+            entry['coursId'] = match?['coursId'];
+            entry['capacite'] = capacite;
+            entry['inscrits'] = inscrits;
+            entry['complet'] = inscrits >= capacite;
+          }
+          available.add(entry);
         }
       }
       if (available.isNotEmpty) result[date] = available;
@@ -475,7 +559,14 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           _recapLine('Durée', '$_duration min'),
           if ((prestation['prix'] as num?) != null)
             _recapLine('Prix', '${(prestation['prix'] as num).toStringAsFixed(0)} €'),
-          _recapLine('Lieu', _domicile ? 'À domicile — ${_adresseDomicileCtrl.text.trim()}' : 'Chez le professionnel'),
+          _recapLine('Lieu', (_isCollectif || !_domicile)
+              ? ((prestation['lieu_adresse']?.toString().trim().isNotEmpty ?? false)
+                  ? prestation['lieu_adresse'].toString()
+                  : 'Chez le professionnel')
+              : 'À domicile — ${_adresseDomicileCtrl.text.trim()}'),
+          if (_isCollectif)
+            _recapLine('Places', '${slot['inscrits']}/${slot['capacite']}'
+                '${slot['complet'] == true ? ' — liste d\'attente' : ''}'),
           const SizedBox(height: 12),
           if (_isFirstTimeClient) ...[
             Container(
@@ -511,7 +602,116 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
         ]),
       ),
     );
-    if (confirm == true) await _submit(dateHeure);
+    if (confirm == true) {
+      if (_isCollectif) {
+        await _inscrireCollectif(dateHeure);
+      } else {
+        await _submit(dateHeure);
+      }
+    }
+  }
+
+  // Nom à afficher au pro : celui de la personne (le pro veut pouvoir
+  // appeler / reconnaître le client), pas le nom d'élevage.
+  String get _clientDisplayName {
+    final n = '${User_Info.firstname} ${User_Info.lastname}'.trim();
+    if (n.isNotEmpty && n != 'none none') return n;
+    if (User_Info.nameElevage.isNotEmpty) return User_Info.nameElevage;
+    return 'Un client';
+  }
+
+  // Réservation d'un cours collectif = inscription à une séance de groupe.
+  // Réutilise le patron de service_detail_page.dart _inscrireAuCours :
+  // find-or-create de la séance, comptage capacité → 'demande' ou
+  // 'en_attente' (liste d'attente), notif au pro.
+  Future<void> _inscrireCollectif(DateTime dateHeure) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final prestation = _selectedPrestation;
+    if (uid == null || prestation == null) return;
+    setState(() => _saving = true);
+    try {
+      final profileId = _resolvedProfileId ?? '';
+      final utc = dateHeure.toUtc().toIso8601String();
+
+      String? coursId = _selectedSlot?['coursId']?.toString();
+      if (coursId == null) {
+        final existing = await _supa.from('cours_collectifs').select('id')
+            .eq('pro_uid', widget.proUid)
+            .eq('pro_profile_id', profileId)
+            .eq('date_heure', utc)
+            .neq('statut', 'annule')
+            .limit(1);
+        if ((existing as List).isNotEmpty) {
+          coursId = existing.first['id'].toString();
+        } else {
+          final created = await _supa.from('cours_collectifs').insert({
+            'pro_uid': widget.proUid,
+            'pro_profile_id': profileId,
+            'prestation_id': prestation['id'],
+            'titre': prestation['nom']?.toString() ?? 'Cours collectif',
+            'date_heure': utc,
+            'duree_minutes': _duration,
+            'capacite_max': (prestation['capacite_max'] as num?)?.toInt() ?? 6,
+            if (prestation['lieu_adresse']?.toString().trim().isNotEmpty ?? false)
+              'lieu': prestation['lieu_adresse'],
+            if (prestation['lieu_lat'] != null) 'lieu_lat': prestation['lieu_lat'],
+            if (prestation['lieu_lng'] != null) 'lieu_lng': prestation['lieu_lng'],
+            'statut': 'planifie',
+          }).select('id').single();
+          coursId = created['id'].toString();
+        }
+      }
+
+      final current = await _supa.from('cours_collectifs_participants')
+          .select('id').eq('cours_id', coursId).neq('statut', 'annule');
+      final capacite = (_selectedSlot?['capacite'] as int?)
+          ?? (prestation['capacite_max'] as num?)?.toInt() ?? 6;
+      final complet = (current as List).length >= capacite;
+
+      await _supa.from('cours_collectifs_participants').insert({
+        'cours_id': coursId,
+        'client_uid': uid,
+        if (User_Info.activeProfileId.isNotEmpty) 'client_profile_id': User_Info.activeProfileId,
+        if (_selectedAnimal?['id'] != null) 'animal_id': _selectedAnimal!['id'].toString(),
+        if ((prestation['prix'] as num?) != null) 'prix': prestation['prix'],
+        'statut': complet ? 'en_attente' : 'demande',
+      });
+
+      final dateStr = DateFormat('dd/MM à HH:mm').format(dateHeure);
+      final animalNom = _selectedAnimal?['nom']?.toString() ?? 'son animal';
+      await _supa.from('notifications').insert({
+        'uid': widget.proUid,
+        'type': 'cours_collectif_inscription',
+        'title': 'Demande d\'inscription — ${prestation['nom']}',
+        'body': '$_clientDisplayName souhaite inscrire $animalNom au cours du $dateStr — en attente de votre confirmation.',
+        if (profileId.isNotEmpty) 'profile_id': profileId,
+        'data': <String, dynamic>{'coursId': coursId},
+        'read': false,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            complet
+                ? 'Demande envoyée — vous êtes en liste d\'attente (séance complète).'
+                : 'Demande envoyée — en attente de confirmation du professionnel.',
+            style: const TextStyle(fontFamily: 'Galey'),
+          ),
+          backgroundColor: complet ? Colors.orange : const Color(0xFF6E9E57),
+          behavior: SnackBarBehavior.floating,
+        ));
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red, behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() { _saving = false; _selectedSlot = null; });
+    }
   }
 
   Widget _recapLine(String label, String value) => Padding(
@@ -548,10 +748,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
         'statut': 'demande',
       });
 
-      final composedName = User_Info.nameElevage.isNotEmpty
-          ? User_Info.nameElevage
-          : '${User_Info.firstname} ${User_Info.lastname}'.trim();
-      final clientName = (composedName.isNotEmpty && composedName != 'none none') ? composedName : 'Un client';
+      final clientName = _clientDisplayName;
       final dateStr = DateFormat('dd/MM à HH:mm').format(dateHeure);
       await _supa.from('notifications').insert({
         'uid': widget.proUid,
@@ -625,10 +822,12 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
                 setState(() {
                   _selectedPrestation = p;
                   _domicile = false;
-                  _domicileChoiceMade = p['domicile_ok'] != true; // pas de choix à faire si le cours ne le propose pas
+                  // Collectif : jamais à domicile → pas d'étape de choix.
+                  _domicileChoiceMade = p['type'] == 'collectif' || p['domicile_ok'] != true;
                   _domicileLat = null;
                   _domicileLng = null;
                   _adresseDomicileCtrl.clear();
+                  _coursByWeek.clear(); // dépend du cours choisi
                   _probed = false;
                   _probedFirstDate = null;
                 });
@@ -647,7 +846,9 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
                     Text(p['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
                     if ((p['description'] as String?)?.isNotEmpty == true)
                       Text(p['description'] as String, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
-                    Text('${p['duree_minutes']} min${(p['prix'] as num?) != null ? ' · ${(p['prix'] as num).toStringAsFixed(0)} €' : ''}',
+                    Text('${p['duree_minutes']} min'
+                        '${(p['prix'] as num?) != null ? ' · ${(p['prix'] as num).toStringAsFixed(0)} €' : ''}'
+                        '${p['type'] == 'collectif' ? ' · en groupe (max ${(p['capacite_max'] as num?)?.toInt() ?? 6})' : ''}',
                         style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
                   ])),
                   Icon(Icons.chevron_right, color: color),
@@ -717,9 +918,9 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
     final weekLoading = _loadingWeeks.contains(_weekKey(_weekStart)) || _probing;
     // Le sondage a fini et n'a rien trouvé → le pro n'a aucune dispo publiée.
     final aucuneDispo = _probed && _probedFirstDate == null && !weekLoading;
-    final visibleKeys = days.map(_dateKey).toList();
-    final semaineVide = !aucuneDispo && !weekLoading
-        && !visibleKeys.any((k) => (smartSlots[k] ?? []).isNotEmpty);
+    // On ne montre que les jours qui ont au moins un créneau du type choisi.
+    final visibleDays = days.where((d) => (smartSlots[_dateKey(d)] ?? []).isNotEmpty).toList();
+    final semaineVide = !aucuneDispo && !weekLoading && visibleDays.isEmpty;
     return Column(children: [
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -763,11 +964,13 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           ]),
         ),
       Expanded(
-        child: ListView.builder(
+        child: visibleDays.isEmpty
+            ? const SizedBox.shrink()
+            : ListView.builder(
           padding: const EdgeInsets.all(12),
-          itemCount: days.length,
+          itemCount: visibleDays.length,
           itemBuilder: (_, i) {
-            final day = days[i];
+            final day = visibleDays[i];
             final key = _dateKey(day);
             final slots = smartSlots[key] ?? [];
             final isPast = day.isBefore(DateTime(today.year, today.month, today.day));
@@ -784,22 +987,27 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13,
                         color: isPast ? Colors.grey.shade400 : Colors.black87)),
                 const SizedBox(height: 8),
-                if (slots.isEmpty)
-                  Text('Aucun créneau disponible', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400))
-                else
-                  Wrap(spacing: 8, runSpacing: 8, children: slots.map((s) {
-                    final heure = (s['heure_debut'] as String).substring(0, 5);
-                    return OutlinedButton(
-                      onPressed: () => _pickSlot(s),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: color,
-                        side: BorderSide(color: color),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      child: Text(heure, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
-                    );
-                  }).toList()),
+                Wrap(spacing: 8, runSpacing: 8, children: slots.map((s) {
+                  final heure = (s['heure_debut'] as String).substring(0, 5);
+                  final complet = s['complet'] == true;
+                  final hasPlaces = s.containsKey('capacite');
+                  return OutlinedButton(
+                    onPressed: () => _pickSlot(s),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: complet ? Colors.orange.shade800 : color,
+                      side: BorderSide(color: complet ? Colors.orange.shade300 : color),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Text(heure, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12)),
+                      if (hasPlaces)
+                        Text(complet ? 'complet' : '${s['inscrits']}/${s['capacite']} pl.',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                                color: complet ? Colors.orange.shade700 : Colors.grey.shade500)),
+                    ]),
+                  );
+                }).toList()),
               ]),
             );
           },

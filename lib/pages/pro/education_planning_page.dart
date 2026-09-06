@@ -70,15 +70,30 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
       }
       final rdvs = List<Map<String, dynamic>>.from(results[0] as List);
       // Résout nom du client + nom de l'animal pour l'affichage / la fiche.
+      // ⚠ Multi-profil : le nom vient du profil client_profile_id du RDV
+      // (pas de is_main, qui renvoie le nom d'élevage au lieu du particulier).
       final rClientUids = rdvs.map((r) => r['client_uid']?.toString()).whereType<String>().toSet().toList();
+      final rClientProfileIds = rdvs.map((r) => r['client_profile_id']?.toString())
+          .whereType<String>().where((s) => s.isNotEmpty).toSet().toList();
       final rAnimalIds = rdvs.map((r) => r['animal_id']?.toString()).whereType<String>().toSet().toList();
-      final rNames = <String, String>{};
+      final rProfileNames = <String, String>{}; // clé = client_profile_id
+      final rUserNames = <String, String>{}; // repli, clé = client_uid
       final rAnimalNames = <String, String>{};
+      if (rClientProfileIds.isNotEmpty) {
+        final profs = await _supa.from('user_profiles')
+            .select('id, firstname, lastname, nom').inFilter('id', rClientProfileIds);
+        for (final p in profs as List) {
+          final nom = (p['nom'] as String?)?.trim() ?? '';
+          final composed = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+          final name = nom.isNotEmpty ? nom : composed;
+          if (name.isNotEmpty) rProfileNames[p['id'] as String] = name;
+        }
+      }
       if (rClientUids.isNotEmpty) {
-        final users = await _supa.from('user_profiles')
-            .select('uid, firstname, lastname').inFilter('uid', rClientUids).eq('is_main', true);
+        final users = await _supa.from('users')
+            .select('uid, firstname, lastname').inFilter('uid', rClientUids);
         for (final u in users as List) {
-          rNames[u['uid'] as String] = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+          rUserNames[u['uid'] as String] = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
         }
       }
       if (rAnimalIds.isNotEmpty) {
@@ -88,9 +103,13 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
         }
       }
       for (final r in rdvs) {
-        r['_client_nom'] = (rNames[r['client_uid']]?.isNotEmpty ?? false)
-            ? rNames[r['client_uid']]
-            : (r['client_nom_manuel']?.toString().isNotEmpty ?? false ? r['client_nom_manuel'] : 'Client');
+        final byProfile = rProfileNames[r['client_profile_id']?.toString()];
+        final byUser = rUserNames[r['client_uid']?.toString()];
+        r['_client_nom'] = (byProfile?.isNotEmpty ?? false)
+            ? byProfile
+            : (byUser?.isNotEmpty ?? false)
+                ? byUser
+                : (r['client_nom_manuel']?.toString().isNotEmpty ?? false ? r['client_nom_manuel'] : 'Client');
         r['_animal_nom'] = rAnimalNames[r['animal_id']?.toString()] ?? '';
       }
       if (mounted) {
@@ -535,13 +554,26 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
           .select().eq('cours_id', widget.coursId).neq('statut', 'annule').order('created_at');
       final list = List<Map<String, dynamic>>.from(participants as List);
       final clientUids = list.map((p) => p['client_uid']?.toString()).whereType<String>().toSet().toList();
+      final clientProfileIds = list.map((p) => p['client_profile_id']?.toString())
+          .whereType<String>().where((s) => s.isNotEmpty).toSet().toList();
       final animalIds = list.map((p) => p['animal_id']?.toString()).whereType<String>().toList();
-      final names = <String, String>{};
+      final profileNames = <String, String>{}; // clé = client_profile_id
+      final userNames = <String, String>{}; // repli, clé = client_uid
       final animalNames = <String, String>{};
+      if (clientProfileIds.isNotEmpty) {
+        final profs = await _supa.from('user_profiles')
+            .select('id, firstname, lastname, nom').inFilter('id', clientProfileIds);
+        for (final p in profs as List) {
+          final nom = (p['nom'] as String?)?.trim() ?? '';
+          final composed = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+          final name = nom.isNotEmpty ? nom : composed;
+          if (name.isNotEmpty) profileNames[p['id'] as String] = name;
+        }
+      }
       if (clientUids.isNotEmpty) {
-        final users = await _supa.from('user_profiles').select('uid, firstname, lastname').inFilter('uid', clientUids).eq('is_main', true);
+        final users = await _supa.from('users').select('uid, firstname, lastname').inFilter('uid', clientUids);
         for (final u in users as List) {
-          names[u['uid'] as String] = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+          userNames[u['uid'] as String] = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
         }
       }
       if (animalIds.isNotEmpty) {
@@ -551,9 +583,13 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
         }
       }
       for (final p in list) {
-        p['_client_nom'] = names[p['client_uid']]?.isNotEmpty == true
-            ? names[p['client_uid']]
-            : (p['client_nom_manuel']?.toString().isNotEmpty == true ? p['client_nom_manuel'] : 'Client');
+        final byProfile = profileNames[p['client_profile_id']?.toString()];
+        final byUser = userNames[p['client_uid']?.toString()];
+        p['_client_nom'] = (byProfile?.isNotEmpty ?? false)
+            ? byProfile
+            : (byUser?.isNotEmpty ?? false)
+                ? byUser
+                : (p['client_nom_manuel']?.toString().isNotEmpty == true ? p['client_nom_manuel'] : 'Client');
         p['_animal_nom'] = animalNames[p['animal_id']?.toString()] ?? '';
       }
       if (mounted) setState(() { _cours = cours; _participants = list; _loading = false; });

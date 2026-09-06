@@ -1051,13 +1051,23 @@ export default function MesRdvPage() {
 
       const list = (data ?? []) as Rdv[];
       const clientUids = [...new Set(list.map(r => r.client_uid).filter(Boolean))];
+      const clientProfileIds = [...new Set(list.map(r => r.client_profile_id).filter(Boolean) as string[])];
       const animalIds  = [...new Set(list.map(r => r.animal_id).filter(Boolean) as string[])];
 
-      const [usersRes, animauxRes] = await Promise.all([
+      // ⚠ Multi-profil : le nom vient du profil client_profile_id du RDV
+      // (pas de name_elevage / is_main, qui affichent le nom d'élevage).
+      const [profilesRes, usersRes, animauxRes] = await Promise.all([
+        clientProfileIds.length ? supabase.from('user_profiles').select('id, firstname, lastname, nom').in('id', clientProfileIds) : Promise.resolve({ data: [] }),
         clientUids.length ? supabase.from('users').select('uid, firstname, lastname, prenom, nom').in('uid', clientUids) : Promise.resolve({ data: [] }),
         animalIds.length  ? supabase.from('animaux').select('id, nom').in('id', animalIds) : Promise.resolve({ data: [] }),
       ]);
 
+      const profilesMap: Record<string, string> = {};
+      for (const p of (profilesRes.data ?? [])) {
+        const rec = p as { id: string; firstname?: string; lastname?: string; nom?: string };
+        const name = (rec.nom ?? '').trim() || `${rec.firstname ?? ''} ${rec.lastname ?? ''}`.trim();
+        if (name) profilesMap[rec.id] = name;
+      }
       const usersMap: Record<string, string> = {};
       for (const u of (usersRes.data ?? [])) {
         const rec = u as { uid: string; firstname?: string; lastname?: string; prenom?: string; nom?: string };
@@ -1082,7 +1092,7 @@ export default function MesRdvPage() {
 
       setRdvs(list.map(r => ({
         ...r,
-        clientName: usersMap[r.client_uid] ?? undefined,
+        clientName: (r.client_profile_id ? profilesMap[r.client_profile_id] : undefined) ?? usersMap[r.client_uid] ?? undefined,
         animalNom:  r.animal_id ? animauxMap[String(r.animal_id)] ?? undefined : undefined,
         visitCount: visitCounts[r.client_uid] ?? 0,
       })));
