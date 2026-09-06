@@ -513,13 +513,24 @@ function ProDetailContent() {
     let ownQ = supabase.from('animaux_proprietes').select('animal_id')
       .eq('uid_proprio', user.uid).is('date_fin', null);
     if (activeProfileId) ownQ = ownQ.eq('profile_id_proprio', activeProfileId);
+    // Créneaux : PostgREST plafonne à 1000 lignes/réponse → un pro très chargé
+    // ne verrait jamais les dates lointaines. On pagine.
+    async function fetchAllSlots() {
+      const out: { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null }[] = [];
+      for (let page = 0; page < 6; page++) {
+        const { data } = await supabase.from('creneaux_pro').select('date, heure_debut, heure_fin, type_prestation')
+          .eq('pro_uid', uid).eq('statut', 'disponible').eq('pro_profile_id', profileId)
+          .gte('date', toDateStr(new Date()))
+          .order('date').order('heure_debut')
+          .range(page * 1000, page * 1000 + 999);
+        const rows = (data ?? []) as typeof out;
+        out.push(...rows);
+        if (rows.length < 1000) break;
+      }
+      return { data: out };
+    }
     const [slotsRes, animauxRes, ownRes] = await Promise.all([
-      supabase.from('creneaux_pro').select('date, heure_debut, heure_fin, type_prestation')
-        .eq('pro_uid', uid)
-        .eq('statut', 'disponible')
-        .eq('pro_profile_id', profileId)
-        .gte('date', toDateStr(new Date()))
-        .order('date').order('heure_debut'),
+      fetchAllSlots(),
       animauxQ,
       ownQ,
     ]);

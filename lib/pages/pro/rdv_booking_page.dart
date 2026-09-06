@@ -413,20 +413,29 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     final profileId = widget.proProfileId ?? '';
 
     // Requêtes indépendantes : un échec sur les RDV ne prive pas des créneaux.
+    // Pagination : PostgREST plafonne chaque réponse à 1000 lignes — un pro
+    // très chargé (créneaux 15 min répliqués sur des mois) dépasserait ce
+    // plafond et ne verrait jamais les dates lointaines. On boucle par pages.
     try {
-      final rows = await Supabase.instance.client
-          .from('creneaux_pro')
-          .select('date, heure_debut, heure_fin, type_prestation')
-          .eq('pro_uid', widget.proUid)
-          .eq('statut', 'disponible')
-          .eq('pro_profile_id', profileId)
-          .gte('date', today)
-          .lte('date', maxDate)
-          // ⚠ postgrest-dart : .order() est DESCENDANT par défaut (≠ JS).
-          .order('date', ascending: true)
-          .order('heure_debut', ascending: true)
-          .limit(1500);
-      _availableSlots = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      final all = <Map<String, dynamic>>[];
+      for (var page = 0; page < 6; page++) {
+        final rows = await Supabase.instance.client
+            .from('creneaux_pro')
+            .select('date, heure_debut, heure_fin, type_prestation')
+            .eq('pro_uid', widget.proUid)
+            .eq('statut', 'disponible')
+            .eq('pro_profile_id', profileId)
+            .gte('date', today)
+            .lte('date', maxDate)
+            // ⚠ postgrest-dart : .order() est DESCENDANT par défaut (≠ JS).
+            .order('date', ascending: true)
+            .order('heure_debut', ascending: true)
+            .range(page * 1000, page * 1000 + 999);
+        final list = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        all.addAll(list);
+        if (list.length < 1000) break;
+      }
+      _availableSlots = all;
     } catch (_) {}
 
     try {

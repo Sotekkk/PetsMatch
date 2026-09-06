@@ -70,10 +70,23 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
   double? _cabinetLat, _cabinetLng, _autreDomicileLat, _autreDomicileLng;
   double? _domicileLat, _domicileLng;
 
-  List<Map<String, dynamic>> _availableSlots = [];
-  List<Map<String, dynamic>> _existingRdvs = [];
+  // Chargement paresseux semaine par semaine — clé = date du lundi (yyyy-MM-dd).
+  // Une semaine = ≤ 7 jours × ~40 créneaux 15 min = ~280 lignes, bien sous le
+  // plafond PostgREST de 1000 (l'ancien fetch « 3 mois d'un coup » était tronqué
+  // à 1000 → seules ~4 semaines visibles).
+  final Map<String, List<Map<String, dynamic>>> _slotsByWeek = {};
+  final Map<String, List<Map<String, dynamic>>> _rdvsByWeek = {};
+  final Set<String> _loadingWeeks = {};
+  DateTime? _probedFirstDate; // 1re date où le pro a une dispo (sondage léger)
+  bool _probed = false;
+  bool _probing = false;
   DateTime _weekStart = DateTime.now();
   static const int _joursSemaine = 7;
+
+  String _weekKey(DateTime d) {
+    final monday = d.subtract(Duration(days: d.weekday - 1));
+    return _dateKey(DateTime(monday.year, monday.month, monday.day));
+  }
 
   Map<String, dynamic>? _selectedSlot; // {date, heure_debut, heure_fin}
 
@@ -108,7 +121,8 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
   Future<void> _init() async {
     setState(() => _loading = true);
     await _resolveProfileId();
-    await Future.wait([_loadPrestations(), _loadAvailableSlots()]);
+    await _loadPrestations();
+    await _loadWeek(_weekStart);
     if (mounted) setState(() => _loading = false);
   }
 
@@ -176,31 +190,28 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
     } catch (_) {}
   }
 
-  Future<void> _loadAvailableSlots() async {
-    final now = DateTime.now();
-    final today = _dateKey(now);
-    final maxDt = DateTime(now.year, now.month + 3, now.day);
-    final maxDate = _dateKey(maxDt);
+  // Charge (une seule fois) les créneaux + RDV d'une semaine donnée.
+  Future<void> _loadWeek(DateTime anyDayOfWeek) async {
+    final wk = _weekKey(anyDayOfWeek);
+    if (_slotsByWeek.containsKey(wk) || _loadingWeeks.contains(wk)) return;
+    _loadingWeeks.add(wk);
+    if (mounted) setState(() {});
+    final monday = DateTime.parse('$wk 00:00:00');
+    final sunday = monday.add(const Duration(days: 6));
     final profileId = _resolvedProfileId ?? '';
 
-    // Requêtes indépendantes : un échec sur les RDV ne doit pas priver
-    // l'utilisateur des créneaux disponibles (et inversement).
     try {
       final rows = await _supa.from('creneaux_pro')
           .select('date, heure_debut, heure_fin, type_prestation, domicile_ok, trajet_origine')
           .eq('pro_uid', widget.proUid)
           .eq('statut', 'disponible')
           .eq('pro_profile_id', profileId)
-          .gte('date', today)
-          .lte('date', maxDate)
-          // ⚠ postgrest-dart : .order() est DESCENDANT par défaut (≠ JS) —
-          // sans ascending:true on récupérait les 1000 DERNIERS créneaux
-          // (fin d'année) et jamais les prochains → calendrier « vide ».
+          .gte('date', _dateKey(monday))
+          .lte('date', _dateKey(sunday))
           .order('date', ascending: true)
-          .order('heure_debut', ascending: true)
-          .limit(1500);
-      _availableSlots = List<Map<String, dynamic>>.from(rows as List);
-    } catch (_) {/* créneaux vides si échec */}
+          .order('heure_debut', ascending: true);
+      _slotsByWeek[wk] = List<Map<String, dynamic>>.from(rows as List);
+    } catch (_) { _slotsByWeek[wk] = []; }
 
     try {
       final rows = await _supa.from('rdv')
@@ -208,9 +219,57 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           .eq('pro_uid', widget.proUid)
           .eq('pro_profile_id', profileId)
           .inFilter('statut', ['confirme', 'demande'])
-          .gte('date_heure', now.toUtc().toIso8601String());
-      _existingRdvs = List<Map<String, dynamic>>.from(rows as List);
-    } catch (_) {/* pas de RDV bloquants si échec */}
+          .gte('date_heure', monday.toUtc().toIso8601String())
+          .lte('date_heure', sunday.add(const Duration(days: 1)).toUtc().toIso8601String());
+      _rdvsByWeek[wk] = List<Map<String, dynamic>>.from(rows as List);
+    } catch (_) { _rdvsByWeek[wk] = []; }
+
+    _loadingWeeks.remove(wk);
+    if (mounted) setState(() {});
+  }
+
+  // Sondage léger : 1re date (≥ aujourd'hui) où le pro a une dispo compatible
+  // (non « collectif », et à domicile si demandé). 1 ligne → pas de plafond.
+  Future<DateTime?> _firstAvailableDate({required bool domicileOnly}) async {
+    final profileId = _resolvedProfileId ?? '';
+    try {
+      var q = _supa.from('creneaux_pro')
+          .select('date')
+          .eq('pro_uid', widget.proUid)
+          .eq('statut', 'disponible')
+          .eq('pro_profile_id', profileId)
+          .gte('date', _dateKey(DateTime.now()))
+          .or('type_prestation.is.null,type_prestation.neq.collectif');
+      if (domicileOnly) q = q.eq('domicile_ok', true);
+      final rows = await q.order('date', ascending: true).limit(1);
+      if ((rows as List).isEmpty) return null;
+      final p = (rows.first['date'] as String).split('-');
+      return DateTime(int.parse(p[0]), int.parse(p[1]), int.parse(p[2]));
+    } catch (_) { return null; }
+  }
+
+  // Positionne le calendrier sur la 1re semaine réservable si la semaine
+  // affichée est plus tôt / vide, puis charge cette semaine.
+  Future<void> _goToFirstAvailableWeek() async {
+    if (_probing) return;
+    _probing = true;
+    final first = await _firstAvailableDate(domicileOnly: _domicile);
+    _probing = false;
+    _probed = true;
+    _probedFirstDate = first;
+    if (!mounted) return;
+    if (first != null) {
+      final monday = first.subtract(Duration(days: first.weekday - 1));
+      final mondayNorm = DateTime(monday.year, monday.month, monday.day);
+      if (mondayNorm.isAfter(_weekStart)) {
+        setState(() => _weekStart = mondayNorm);
+      } else {
+        setState(() {});
+      }
+      await _loadWeek(_weekStart);
+    } else {
+      setState(() {});
+    }
   }
 
   String _dateKey(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -221,8 +280,14 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
   // les RDV déjà posés, découpés à la durée du cours choisi — même algorithme
   // que rdv_booking_page.dart _smartSlotsByDate (créneaux "collectif" exclus,
   // marge de 30 min pour aujourd'hui).
+  // Calculé pour la SEULE semaine affichée (les créneaux/RDV sont chargés
+  // semaine par semaine → `_slotsByWeek` / `_rdvsByWeek`).
   Map<String, List<Map<String, dynamic>>> get _smartSlotsByDate {
-    if (_availableSlots.isEmpty || _selectedPrestation == null) return {};
+    if (_selectedPrestation == null) return {};
+    final wk = _weekKey(_weekStart);
+    final weekSlots = _slotsByWeek[wk] ?? const [];
+    final weekRdvs = _rdvsByWeek[wk] ?? const [];
+    if (weekSlots.isEmpty) return {};
     final duration = _duration;
     final now = DateTime.now();
     // Heure minimale réservable : maintenant + délai imposé par le pro
@@ -232,7 +297,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
         : now.add(const Duration(minutes: 30));
 
     final creneauxByDate = <String, List<({int startMin, int endMin, String? origine})>>{};
-    for (final slot in _availableSlots) {
+    for (final slot in weekSlots) {
       if (slot['type_prestation'] == 'collectif') continue;
       if (_domicile && slot['domicile_ok'] != true) continue;
       final date = slot['date'] as String;
@@ -263,7 +328,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
 
       // RDV existants ce jour-là, triés — utilisés pour bloquer les créneaux
       // ET, en mode domicile, comme points de chaînage pour le trajet.
-      final rdvsDuJour = _existingRdvs.where((rdv) {
+      final rdvsDuJour = weekRdvs.where((rdv) {
         final dh = DateTime.tryParse(rdv['date_heure'] as String? ?? '')?.toLocal();
         return dh != null && _dateKey(dh) == date;
       }).map((rdv) {
@@ -351,7 +416,10 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
       _domicileLng = geo?.lng;
       _geocodingDomicile = false;
       _domicileChoiceMade = true;
+      _probed = false;
+      _probedFirstDate = null;
     });
+    _goToFirstAvailableWeek(); // re-sonde avec le filtre domicile
     if (geo == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Adresse introuvable — les créneaux à domicile ne pourront pas être filtrés par trajet.', style: TextStyle(fontFamily: 'Galey')),
@@ -360,21 +428,9 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
     }
   }
 
-  void _shiftWeek(int days) => setState(() => _weekStart = _weekStart.add(Duration(days: days)));
-
-  // Si la semaine affichée n'a aucun créneau mais qu'il y en a plus tard,
-  // saute directement à la 1re semaine qui en a (évite le calendrier vide
-  // trompeur — la semaine en cours est souvent déjà passée / week-end).
-  void _jumpToFirstAvailableWeek() {
-    final smart = _smartSlotsByDate;
-    if (smart.isEmpty) return;
-    final visibleKeys = List.generate(_joursSemaine, (i) => _dateKey(_weekStart.add(Duration(days: i))));
-    if (visibleKeys.any((k) => (smart[k] ?? []).isNotEmpty)) return; // déjà des créneaux visibles
-    final firstDate = (smart.keys.toList()..sort()).first;
-    final parts = firstDate.split('-');
-    var d = DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
-    d = d.subtract(Duration(days: d.weekday - 1)); // lundi de cette semaine
-    if (d.isAfter(_weekStart)) _weekStart = d;
+  void _shiftWeek(int days) {
+    setState(() => _weekStart = _weekStart.add(Duration(days: days)));
+    _loadWeek(_weekStart);
   }
 
   Future<void> _pickSlot(Map<String, dynamic> slot) async {
@@ -563,15 +619,19 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           ),
         const SizedBox(height: 12),
         ..._prestations.map((p) => GestureDetector(
-              onTap: () => setState(() {
-                _selectedPrestation = p;
-                _domicile = false;
-                _domicileChoiceMade = p['domicile_ok'] != true; // pas de choix à faire si le cours ne le propose pas
-                _domicileLat = null;
-                _domicileLng = null;
-                _adresseDomicileCtrl.clear();
-                _jumpToFirstAvailableWeek();
-              }),
+              onTap: () {
+                setState(() {
+                  _selectedPrestation = p;
+                  _domicile = false;
+                  _domicileChoiceMade = p['domicile_ok'] != true; // pas de choix à faire si le cours ne le propose pas
+                  _domicileLat = null;
+                  _domicileLng = null;
+                  _adresseDomicileCtrl.clear();
+                  _probed = false;
+                  _probedFirstDate = null;
+                });
+                _goToFirstAvailableWeek();
+              },
               child: Container(
                 margin: const EdgeInsets.only(bottom: 10),
                 padding: const EdgeInsets.all(14),
@@ -610,7 +670,10 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
         const SizedBox(height: 12),
         Row(children: [
           Expanded(child: OutlinedButton(
-            onPressed: () => setState(() { _domicile = false; _domicileChoiceMade = true; }),
+            onPressed: () {
+              setState(() { _domicile = false; _domicileChoiceMade = true; _probed = false; _probedFirstDate = null; });
+              _goToFirstAvailableWeek();
+            },
             style: OutlinedButton.styleFrom(foregroundColor: color, side: BorderSide(color: color), padding: const EdgeInsets.symmetric(vertical: 14)),
             child: const Text('Chez le professionnel', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
           )),
@@ -649,11 +712,12 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
     final smartSlots = _smartSlotsByDate;
     final days = List.generate(_joursSemaine, (i) => _weekStart.add(Duration(days: i)));
     final today = DateTime.now();
-    // Distingue « pas de dispo publiée du tout » de « rien CETTE semaine »
-    // (→ inviter à avancer d'une semaine).
-    final aucuneDispo = smartSlots.isEmpty;
+    final weekLoading = _loadingWeeks.contains(_weekKey(_weekStart)) || _probing;
+    // Le sondage a fini et n'a rien trouvé → le pro n'a aucune dispo publiée.
+    final aucuneDispo = _probed && _probedFirstDate == null && !weekLoading;
     final visibleKeys = days.map(_dateKey).toList();
-    final semaineVide = !aucuneDispo && !visibleKeys.any((k) => (smartSlots[k] ?? []).isNotEmpty);
+    final semaineVide = !aucuneDispo && !weekLoading
+        && !visibleKeys.any((k) => (smartSlots[k] ?? []).isNotEmpty);
     return Column(children: [
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -671,7 +735,9 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           IconButton(icon: const Icon(Icons.chevron_right), onPressed: () => _shiftWeek(7)),
         ]),
       ),
-      if (aucuneDispo)
+      if (weekLoading)
+        const LinearProgressIndicator(minHeight: 2)
+      else if (aucuneDispo)
         Container(
           width: double.infinity,
           color: Colors.orange.shade50,
@@ -688,7 +754,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
             Expanded(child: Text('Rien de disponible cette semaine.',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: color))),
             TextButton(
-              onPressed: () => setState(_jumpToFirstAvailableWeek),
+              onPressed: _goToFirstAvailableWeek,
               child: Text('Voir les prochaines dispos ›',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: color)),
             ),

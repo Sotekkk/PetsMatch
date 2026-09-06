@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -72,8 +72,15 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
   const [resolvedProfileId, setResolvedProfileId] = useState<string | null>(null);
   const [delaiMinH, setDelaiMinH] = useState(0); // délai mini de réservation imposé par le pro (heures)
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
-  const [slots, setSlots] = useState<{ date: string; heure_debut: string; heure_fin: string; type_prestation: string | null; domicile_ok: boolean; trajet_origine: string | null }[]>([]);
-  const [existingRdvs, setExistingRdvs] = useState<{ date_heure: string; duree_minutes: number; lieu_lat: number | null; lieu_lng: number | null }[]>([]);
+  // Chargement paresseux semaine par semaine (clé = lundi yyyy-MM-dd) — une
+  // semaine ≈ 280 lignes, l'ancien fetch « 3 mois » était plafonné à 1000
+  // (~4 semaines) par PostgREST.
+  type Slot = { date: string; heure_debut: string; heure_fin: string; type_prestation: string | null; domicile_ok: boolean; trajet_origine: string | null };
+  type RdvBlock = { date_heure: string; duree_minutes: number; lieu_lat: number | null; lieu_lng: number | null };
+  const [slotsByWeek, setSlotsByWeek] = useState<Record<string, Slot[]>>({});
+  const [rdvsByWeek, setRdvsByWeek] = useState<Record<string, RdvBlock[]>>({});
+  const [loadingWeeks, setLoadingWeeks] = useState<Record<string, boolean>>({});
+  const [probedFirstDate, setProbedFirstDate] = useState<string | null | undefined>(undefined); // undefined = pas encore sondé
 
   // Trajet à domicile
   const [domicile, setDomicile] = useState(false);
@@ -153,25 +160,70 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
         viaCession = (r2 ?? []) as Animal[];
       }
       setAnimaux([...direct, ...viaCession].sort((a, b) => (a.nom ?? '').localeCompare(b.nom ?? '')));
-
-      const now = new Date();
-      const maxDt = new Date(now.getFullYear(), now.getMonth() + 3, now.getDate());
-      const [{ data: slotRows }, { data: rdvRows }] = await Promise.all([
-        supabase.from('creneaux_pro').select('date, heure_debut, heure_fin, type_prestation, domicile_ok, trajet_origine')
-          .eq('pro_uid', proUid).eq('statut', 'disponible').eq('pro_profile_id', profileId)
-          .gte('date', toDateStr(now)).lte('date', toDateStr(maxDt))
-          .order('date').order('heure_debut').limit(1000),
-        supabase.from('rdv').select('date_heure, duree_minutes, lieu_lat, lieu_lng')
-          .eq('pro_uid', proUid).eq('pro_profile_id', profileId)
-          .in('statut', ['confirme', 'demande'])
-          .gte('date_heure', now.toISOString()),
-      ]);
-      setSlots((slotRows ?? []) as typeof slots);
-      setExistingRdvs((rdvRows ?? []) as typeof existingRdvs);
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, proUid, proProfileId, profileLoaded, activeProfileId]);
+
+  const weekKeyOf = (d: Date) => toDateStr(mondayOf(d));
+
+  // Charge (une seule fois) créneaux + RDV de la semaine de `anyDay`.
+  const loadWeek = useCallback(async (anyDay: Date) => {
+    const pid = resolvedProfileId;
+    if (!pid) return;
+    const wk = weekKeyOf(anyDay);
+    if (slotsByWeek[wk] || loadingWeeks[wk]) return;
+    setLoadingWeeks(m => ({ ...m, [wk]: true }));
+    const [my, mm, md] = wk.split('-').map(Number);
+    const monday = new Date(my, mm - 1, md);
+    const sunday = new Date(my, mm - 1, md + 6);
+    const [{ data: slotRows }, { data: rdvRows }] = await Promise.all([
+      supabase.from('creneaux_pro').select('date, heure_debut, heure_fin, type_prestation, domicile_ok, trajet_origine')
+        .eq('pro_uid', proUid).eq('statut', 'disponible').eq('pro_profile_id', pid)
+        .gte('date', toDateStr(monday)).lte('date', toDateStr(sunday))
+        .order('date').order('heure_debut'),
+      supabase.from('rdv').select('date_heure, duree_minutes, lieu_lat, lieu_lng')
+        .eq('pro_uid', proUid).eq('pro_profile_id', pid)
+        .in('statut', ['confirme', 'demande'])
+        .gte('date_heure', monday.toISOString())
+        .lte('date_heure', new Date(my, mm - 1, md + 7).toISOString()),
+    ]);
+    setSlotsByWeek(m => ({ ...m, [wk]: (slotRows ?? []) as Slot[] }));
+    setRdvsByWeek(m => ({ ...m, [wk]: (rdvRows ?? []) as RdvBlock[] }));
+    setLoadingWeeks(m => ({ ...m, [wk]: false }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedProfileId, proUid, slotsByWeek, loadingWeeks]);
+
+  // Sondage : 1re date (≥ aujourd'hui) avec une dispo compatible (non
+  // collectif, + domicile si demandé). Puis positionne la semaine dessus.
+  const goToFirstAvailableWeek = useCallback(async () => {
+    const pid = resolvedProfileId;
+    if (!pid) return;
+    let q = supabase.from('creneaux_pro').select('date')
+      .eq('pro_uid', proUid).eq('statut', 'disponible').eq('pro_profile_id', pid)
+      .gte('date', toDateStr(new Date()))
+      .or('type_prestation.is.null,type_prestation.neq.collectif');
+    if (domicile) q = q.eq('domicile_ok', true);
+    const { data } = await q.order('date').limit(1);
+    const first = (data ?? [])[0]?.date as string | undefined;
+    setProbedFirstDate(first ?? null);
+    if (first) {
+      const [y, mo, dd] = first.split('-').map(Number);
+      const m = mondayOf(new Date(y, mo - 1, dd));
+      setWeekStart(w => (m.getTime() > w.getTime() ? m : w));
+    }
+  }, [resolvedProfileId, proUid, domicile]);
+
+  // Charge la semaine visible dès qu'elle change (et au 1er affichage du calendrier).
+  useEffect(() => {
+    if (selectedPrestation && resolvedProfileId) loadWeek(weekStart);
+  }, [weekStart, selectedPrestation, resolvedProfileId, loadWeek]);
+
+  // Au choix d'un cours / d'une option domicile : (re)sonde la 1re dispo.
+  useEffect(() => {
+    if (selectedPrestation && resolvedProfileId) goToFirstAvailableWeek();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPrestation, domicile, domicileLatLng, resolvedProfileId]);
 
   const duration = selectedPrestation?.duree_minutes ?? 60;
 
@@ -208,15 +260,19 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
     return true;
   }
 
-  // Même algorithme que education_reservation_page.dart _smartSlotsByDate.
+  // Même algorithme que education_reservation_page.dart — pour la SEULE
+  // semaine affichée (créneaux/RDV chargés semaine par semaine).
+  const weekKey = toDateStr(weekStart);
+  const weekSlots = slotsByWeek[weekKey] ?? [];
+  const weekRdvs = rdvsByWeek[weekKey] ?? [];
   const smartSlotsByDate = useMemo(() => {
-    if (!selectedPrestation || slots.length === 0) return {} as Record<string, { heure_debut: string; heure_fin: string }[]>;
+    if (!selectedPrestation || weekSlots.length === 0) return {} as Record<string, { heure_debut: string; heure_fin: string }[]>;
     // Heure minimale réservable : maintenant + délai imposé par le pro
     // (repli 30 min si aucun délai). Gère le multi-jours.
     const earliestBookable = new Date(Date.now() + (delaiMinH > 0 ? delaiMinH * 3600_000 : 30 * 60_000));
 
     const byDate: Record<string, { s: number; e: number; origine: string | null }[]> = {};
-    for (const slot of slots) {
+    for (const slot of weekSlots) {
       if (slot.type_prestation === 'collectif') continue;
       if (domicile && !slot.domicile_ok) continue;
       const [sh, sm] = slot.heure_debut.split(':').map(Number);
@@ -233,7 +289,7 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
         if (last && r.s <= last.e) { last.e = Math.max(last.e, r.e); } else { windows.push({ ...r }); }
       }
 
-      const rdvsDuJour = existingRdvs
+      const rdvsDuJour = weekRdvs
         .filter(rdv => toDateStr(new Date(rdv.date_heure)) === date)
         .map(rdv => {
           const dh = new Date(rdv.date_heure);
@@ -262,23 +318,10 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
     }
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slots, existingRdvs, duration, selectedPrestation, domicile, domicileLatLng, origineDefaut, cabinetLatLng, autreDomicileLatLng, delaiMinH]);
+  }, [weekSlots, weekRdvs, duration, selectedPrestation, domicile, domicileLatLng, origineDefaut, cabinetLatLng, autreDomicileLatLng, delaiMinH]);
 
-  // Si la semaine affichée est vide mais qu'il y a des dispos plus tard,
-  // saute à la 1re semaine qui en a (la semaine en cours est souvent
-  // déjà passée / week-end → calendrier vide trompeur).
-  useEffect(() => {
-    const keys = Object.keys(smartSlotsByDate);
-    if (keys.length === 0) return;
-    const weekKeys = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(weekStart); d.setDate(d.getDate() + i); return toDateStr(d);
-    });
-    if (weekKeys.some(k => (smartSlotsByDate[k]?.length ?? 0) > 0)) return;
-    const first = keys.sort()[0];
-    const [y, mo, dd] = first.split('-').map(Number);
-    const m = mondayOf(new Date(y, mo - 1, dd));
-    if (m.getTime() > weekStart.getTime()) setWeekStart(m);
-  }, [smartSlotsByDate, weekStart]);
+  const weekLoading = !!loadingWeeks[weekKey] || (!!selectedPrestation && probedFirstDate === undefined);
+  const aucuneDispo = probedFirstDate === null && !weekLoading;
 
   async function geocoderDomicile() {
     const adresse = adresseDomicile.trim();
@@ -496,6 +539,20 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
                 <button onClick={() => setWeekStart(d => { const n = new Date(d); n.setDate(n.getDate() + 7); return n; })}
                   className="w-8 h-8 rounded-full border border-gray-200 hover:bg-gray-50">›</button>
               </div>
+
+              {weekLoading ? (
+                <p className="text-xs text-gray-400 py-2" style={{ fontFamily: 'Galey, sans-serif' }}>Chargement des créneaux…</p>
+              ) : aucuneDispo ? (
+                <p className="text-xs py-2 px-3 rounded-lg" style={{ fontFamily: 'Galey, sans-serif', background: '#FFF7ED', color: '#9A3412' }}>
+                  Ce professionnel n’a pas encore publié de disponibilités pour ce type de cours.
+                </p>
+              ) : Object.keys(smartSlotsByDate).length === 0 && probedFirstDate ? (
+                <div className="text-xs py-2 px-3 rounded-lg flex items-center justify-between gap-2"
+                  style={{ fontFamily: 'Galey, sans-serif', background: `${catColor}0F`, color: catColor }}>
+                  <span>Rien de disponible cette semaine.</span>
+                  <button className="font-bold whitespace-nowrap" onClick={goToFirstAvailableWeek}>Prochaines dispos ›</button>
+                </div>
+              ) : null}
 
               <div className="space-y-3 max-h-[45vh] overflow-y-auto">
                 {days.map(day => {
