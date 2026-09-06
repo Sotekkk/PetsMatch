@@ -83,10 +83,13 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
   DateTime _weekStart = DateTime.now();
   static const int _joursSemaine = 7;
 
-  String _weekKey(DateTime d) {
-    final monday = d.subtract(Duration(days: d.weekday - 1));
-    return _dateKey(DateTime(monday.year, monday.month, monday.day));
-  }
+  // ⚠ Arithmétique de dates : toujours passer par le constructeur DateTime
+  // (jamais `.add(Duration(days:))`) — un Duration est en heures exactes et
+  // « saute » d'un jour au changement d'heure (dernier dimanche d'octobre),
+  // ce qui bloquait la navigation semaine par semaine à cette date.
+  DateTime _addDays(DateTime d, int days) => DateTime(d.year, d.month, d.day + days);
+
+  String _weekKey(DateTime d) => _dateKey(_addDays(d, -(d.weekday - 1)));
 
   Map<String, dynamic>? _selectedSlot; // {date, heure_debut, heure_fin}
 
@@ -95,8 +98,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
     super.initState();
     final today = DateTime.now();
     // Lundi de la semaine courante.
-    _weekStart = today.subtract(Duration(days: today.weekday - 1));
-    _weekStart = DateTime(_weekStart.year, _weekStart.month, _weekStart.day);
+    _weekStart = _addDays(DateTime(today.year, today.month, today.day), -(today.weekday - 1));
     if (widget.preselectedAnimalId != null) {
       _loadPreselectedAnimal();
     }
@@ -196,8 +198,9 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
     if (_slotsByWeek.containsKey(wk) || _loadingWeeks.contains(wk)) return;
     _loadingWeeks.add(wk);
     if (mounted) setState(() {});
-    final monday = DateTime.parse('$wk 00:00:00');
-    final sunday = monday.add(const Duration(days: 6));
+    final mp = wk.split('-');
+    final monday = DateTime(int.parse(mp[0]), int.parse(mp[1]), int.parse(mp[2]));
+    final sunday = _addDays(monday, 6);
     final profileId = _resolvedProfileId ?? '';
 
     try {
@@ -220,7 +223,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           .eq('pro_profile_id', profileId)
           .inFilter('statut', ['confirme', 'demande'])
           .gte('date_heure', monday.toUtc().toIso8601String())
-          .lte('date_heure', sunday.add(const Duration(days: 1)).toUtc().toIso8601String());
+          .lte('date_heure', _addDays(sunday, 1).toUtc().toIso8601String());
       _rdvsByWeek[wk] = List<Map<String, dynamic>>.from(rows as List);
     } catch (_) { _rdvsByWeek[wk] = []; }
 
@@ -259,8 +262,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
     _probedFirstDate = first;
     if (!mounted) return;
     if (first != null) {
-      final monday = first.subtract(Duration(days: first.weekday - 1));
-      final mondayNorm = DateTime(monday.year, monday.month, monday.day);
+      final mondayNorm = _addDays(first, -(first.weekday - 1));
       if (mondayNorm.isAfter(_weekStart)) {
         setState(() => _weekStart = mondayNorm);
       } else {
@@ -429,7 +431,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
   }
 
   void _shiftWeek(int days) {
-    setState(() => _weekStart = _weekStart.add(Duration(days: days)));
+    setState(() => _weekStart = _addDays(_weekStart, days));
     _loadWeek(_weekStart);
   }
 
@@ -710,7 +712,7 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
 
   Widget _buildSemaineStep(Color color) {
     final smartSlots = _smartSlotsByDate;
-    final days = List.generate(_joursSemaine, (i) => _weekStart.add(Duration(days: i)));
+    final days = List.generate(_joursSemaine, (i) => _addDays(_weekStart, i));
     final today = DateTime.now();
     final weekLoading = _loadingWeeks.contains(_weekKey(_weekStart)) || _probing;
     // Le sondage a fini et n'a rien trouvé → le pro n'a aucune dispo publiée.
