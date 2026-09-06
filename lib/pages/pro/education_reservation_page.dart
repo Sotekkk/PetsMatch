@@ -193,9 +193,12 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           .eq('pro_profile_id', profileId)
           .gte('date', today)
           .lte('date', maxDate)
-          .order('date')
-          .order('heure_debut')
-          .limit(2000);
+          // ⚠ postgrest-dart : .order() est DESCENDANT par défaut (≠ JS) —
+          // sans ascending:true on récupérait les 1000 DERNIERS créneaux
+          // (fin d'année) et jamais les prochains → calendrier « vide ».
+          .order('date', ascending: true)
+          .order('heure_debut', ascending: true)
+          .limit(1500);
       _availableSlots = List<Map<String, dynamic>>.from(rows as List);
     } catch (_) {/* créneaux vides si échec */}
 

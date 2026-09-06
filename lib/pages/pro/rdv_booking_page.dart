@@ -422,9 +422,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           .eq('pro_profile_id', profileId)
           .gte('date', today)
           .lte('date', maxDate)
-          .order('date')
-          .order('heure_debut')
-          .limit(2000);
+          // ⚠ postgrest-dart : .order() est DESCENDANT par défaut (≠ JS).
+          .order('date', ascending: true)
+          .order('heure_debut', ascending: true)
+          .limit(1500);
       _availableSlots = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
     } catch (_) {}
 
