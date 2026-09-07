@@ -1,13 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math' as math;
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
@@ -92,144 +93,6 @@ Widget _avatarWidget(String? photoUrl, double radius) {
   );
 }
 
-// ─── Peintre silhouettes animaux ──────────────────────────────────────────────
-
-class _AnimalBgPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final stroke = Paint()
-      ..color = Colors.white.withValues(alpha: 0.055)
-      ..style  = PaintingStyle.stroke
-      ..strokeWidth = 1.4
-      ..strokeCap   = StrokeCap.round
-      ..strokeJoin  = StrokeJoin.round;
-
-    final fill = Paint()
-      ..color = Colors.white.withValues(alpha: 0.04)
-      ..style = PaintingStyle.fill;
-
-    final w = size.width;
-    final h = size.height;
-
-    // Chat haut-gauche
-    _cat(canvas, stroke, Offset(w * 0.07, h * 0.10), 56);
-    // Chien haut-droite
-    _dog(canvas, stroke, Offset(w * 0.88, h * 0.07), 50);
-    // Lapin bas-gauche
-    _rabbit(canvas, stroke, Offset(w * 0.06, h * 0.80), 46);
-    // Oiseau centre-haut
-    _bird(canvas, stroke, Offset(w * 0.54, h * 0.04), 38);
-    // Poisson bas-droite
-    _fish(canvas, stroke, Offset(w * 0.90, h * 0.86), 44);
-    // Chat petit milieu-droite
-    _cat(canvas, stroke, Offset(w * 0.82, h * 0.50), 32);
-    // Empreintes
-    _paw(canvas, fill, Offset(w * 0.48, h * 0.94), 20);
-    _paw(canvas, fill, Offset(w * 0.32, h * 0.18), 14);
-    _paw(canvas, fill, Offset(w * 0.68, h * 0.60), 16);
-    _paw(canvas, fill, Offset(w * 0.14, h * 0.50), 12);
-    _paw(canvas, fill, Offset(w * 0.76, h * 0.28), 11);
-  }
-
-  void _cat(Canvas c, Paint p, Offset o, double s) {
-    c.drawOval(Rect.fromCenter(center: o + Offset(0, s * 0.42), width: s * 0.72, height: s * 0.58), p);
-    c.drawCircle(o, s * 0.26, p);
-    _path(c, p, [
-      Offset(o.dx - s * 0.19, o.dy - s * 0.16),
-      Offset(o.dx - s * 0.10, o.dy - s * 0.38),
-      Offset(o.dx - s * 0.03, o.dy - s * 0.16),
-    ], close: true);
-    _path(c, p, [
-      Offset(o.dx + s * 0.19, o.dy - s * 0.16),
-      Offset(o.dx + s * 0.10, o.dy - s * 0.38),
-      Offset(o.dx + s * 0.03, o.dy - s * 0.16),
-    ], close: true);
-    final tail = Path()
-      ..moveTo(o.dx + s * 0.32, o.dy + s * 0.62)
-      ..cubicTo(o.dx + s * 0.68, o.dy + s * 0.66, o.dx + s * 0.78, o.dy + s * 0.36, o.dx + s * 0.56, o.dy + s * 0.14);
-    c.drawPath(tail, p);
-  }
-
-  void _dog(Canvas c, Paint p, Offset o, double s) {
-    c.drawRRect(RRect.fromRectAndRadius(
-      Rect.fromCenter(center: o + Offset(0, s * 0.44), width: s * 0.82, height: s * 0.66),
-      Radius.circular(s * 0.22)), p);
-    c.drawCircle(o, s * 0.29, p);
-    final le = Path()
-      ..moveTo(o.dx - s * 0.21, o.dy - s * 0.10)
-      ..cubicTo(o.dx - s * 0.42, o.dy + s * 0.02, o.dx - s * 0.43, o.dy + s * 0.30, o.dx - s * 0.26, o.dy + s * 0.32);
-    c.drawPath(le, p);
-    final re = Path()
-      ..moveTo(o.dx + s * 0.21, o.dy - s * 0.10)
-      ..cubicTo(o.dx + s * 0.42, o.dy + s * 0.02, o.dx + s * 0.43, o.dy + s * 0.30, o.dx + s * 0.26, o.dy + s * 0.32);
-    c.drawPath(re, p);
-    c.drawOval(Rect.fromCenter(center: o + Offset(0, s * 0.16), width: s * 0.30, height: s * 0.22), p);
-    final tail = Path()
-      ..moveTo(o.dx + s * 0.39, o.dy + s * 0.40)
-      ..cubicTo(o.dx + s * 0.62, o.dy + s * 0.22, o.dx + s * 0.66, o.dy - s * 0.06, o.dx + s * 0.50, o.dy - s * 0.14);
-    c.drawPath(tail, p);
-  }
-
-  void _rabbit(Canvas c, Paint p, Offset o, double s) {
-    c.drawOval(Rect.fromCenter(center: o + Offset(0, s * 0.36), width: s * 0.62, height: s * 0.68), p);
-    c.drawCircle(o, s * 0.23, p);
-    c.drawOval(Rect.fromCenter(center: o + Offset(-s * 0.10, -s * 0.52), width: s * 0.14, height: s * 0.42), p);
-    c.drawOval(Rect.fromCenter(center: o + Offset(s * 0.10, -s * 0.52), width: s * 0.14, height: s * 0.42), p);
-  }
-
-  void _bird(Canvas c, Paint p, Offset o, double s) {
-    c.drawOval(Rect.fromCenter(center: o + Offset(s * 0.10, 0), width: s * 0.72, height: s * 0.46), p);
-    c.drawCircle(o + Offset(-s * 0.26, -s * 0.10), s * 0.20, p);
-    _path(c, p, [
-      Offset(o.dx - s * 0.44, o.dy - s * 0.08),
-      Offset(o.dx - s * 0.60, o.dy - s * 0.14),
-      Offset(o.dx - s * 0.44, o.dy - s * 0.20),
-    ], close: true);
-    final tail = Path()
-      ..moveTo(o.dx + s * 0.40, o.dy)
-      ..lineTo(o.dx + s * 0.64, o.dy - s * 0.22)
-      ..moveTo(o.dx + s * 0.40, o.dy + s * 0.05)
-      ..lineTo(o.dx + s * 0.66, o.dy + s * 0.06)
-      ..moveTo(o.dx + s * 0.40, o.dy + s * 0.10)
-      ..lineTo(o.dx + s * 0.64, o.dy + s * 0.26);
-    c.drawPath(tail, p);
-  }
-
-  void _fish(Canvas c, Paint p, Offset o, double s) {
-    c.drawOval(Rect.fromCenter(center: o + Offset(-s * 0.10, 0), width: s * 0.72, height: s * 0.42), p);
-    _path(c, p, [
-      Offset(o.dx + s * 0.26, o.dy - s * 0.24),
-      Offset(o.dx + s * 0.58, o.dy),
-      Offset(o.dx + s * 0.26, o.dy + s * 0.24),
-    ]);
-    c.drawCircle(o + Offset(-s * 0.22, -s * 0.06), s * 0.07, p);
-  }
-
-  void _paw(Canvas c, Paint p, Offset o, double s) {
-    c.drawOval(Rect.fromCenter(center: o, width: s * 0.72, height: s * 0.62), p);
-    for (int i = 0; i < 4; i++) {
-      final a = -0.5 + (i / 3.0);
-      c.drawOval(Rect.fromCenter(
-        center: Offset(o.dx + math.cos(a) * s * 0.46, o.dy - s * 0.44 + math.sin(a.abs()) * s * 0.10),
-        width: s * 0.23, height: s * 0.21,
-      ), p);
-    }
-  }
-
-  void _path(Canvas c, Paint p, List<Offset> pts, {bool close = false}) {
-    if (pts.isEmpty) return;
-    final path = Path()..moveTo(pts.first.dx, pts.first.dy);
-    for (var pt in pts.skip(1)) {
-      path.lineTo(pt.dx, pt.dy);
-    }
-    if (close) path.close();
-    c.drawPath(path, p);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter _) => false;
-}
-
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 class SocialFeedPage extends StatefulWidget {
@@ -239,9 +102,57 @@ class SocialFeedPage extends StatefulWidget {
 }
 
 class _SocialFeedPageState extends State<SocialFeedPage> {
-  int _tabIndex = 0;
-  int _refresh  = 0;
+  int _tabIndex   = 0;
+  int _refresh    = 0;
+  int _notifCount = 0;
+  final _supa = Supabase.instance.client;
+
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNotifCount();
+  }
+
+  Future<void> _loadNotifCount() async {
+    final uid = _uid;
+    if (uid == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastSeenStr = prefs.getString('notif_seen_at_$uid');
+      final lastSeen = lastSeenStr != null ? DateTime.tryParse(lastSeenStr) : null;
+
+      final myPosts = await _supa.from('posts_socialmedia').select('id').eq('uid', uid);
+      final postIds = (myPosts as List).map((p) => p['id'] as String).toList();
+      int count = 0;
+      if (postIds.isNotEmpty) {
+        var q = _supa.from('post_comments')
+            .select('id')
+            .inFilter('post_id', postIds)
+            .neq('uid', uid);
+        if (lastSeen != null) {
+          q = q.gt('created_at', lastSeen.toIso8601String());
+        }
+        final comments = await q.limit(99);
+        count += (comments as List).length;
+      }
+      var fq = _supa.from('follows').select('follower_uid').eq('following_uid', uid);
+      if (lastSeen != null) {
+        fq = fq.gt('created_at', lastSeen.toIso8601String());
+      }
+      final follows = await fq;
+      count += (follows as List).length;
+      if (mounted) setState(() => _notifCount = count > 99 ? 99 : count);
+    } catch (_) {}
+  }
+
+  Future<void> _markNotifSeen() async {
+    final uid = _uid;
+    if (uid == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('notif_seen_at_$uid', DateTime.now().toIso8601String());
+  }
 
   void _openCreate() {
     if (_uid == null) return;
@@ -372,7 +283,25 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
         // ── Boutons header ───────────────────────────────────────
         _headerBtn(Icons.search_rounded, _openSearch),
         const SizedBox(width: 8),
-        _headerBtn(Icons.notifications_outlined, _openNotifications),
+        Stack(clipBehavior: Clip.none, children: [
+          _headerBtn(Icons.notifications_outlined, () {
+            setState(() => _notifCount = 0);
+            _markNotifSeen();
+            _openNotifications();
+          }),
+          if (_notifCount > 0)
+            Positioned(
+              top: -4, right: -4,
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFF0D1F22), width: 1.5)),
+                child: Text(_notifCount > 9 ? '9+' : '$_notifCount',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 9,
+                        fontWeight: FontWeight.w700, color: Colors.white)),
+              ),
+            ),
+        ]),
         const SizedBox(width: 8),
         _headerBtn(Icons.person_outline_rounded, _openMyProfile),
       ]),
@@ -456,6 +385,190 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ─── Skeleton loading ────────────────────────────────────────────────────────
+
+class _SkeletonFeed extends StatefulWidget {
+  const _SkeletonFeed();
+  @override
+  State<_SkeletonFeed> createState() => _SkeletonFeedState();
+}
+
+class _SkeletonFeedState extends State<_SkeletonFeed>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))..repeat(reverse: true);
+    _anim = Tween<double>(begin: 0.04, end: 0.12).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (_, __) => ListView.separated(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+        itemCount: 4,
+        separatorBuilder: (_, __) => const SizedBox(height: 14),
+        itemBuilder: (_, __) => Container(
+          height: 220,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: _anim.value),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Container(width: 42, height: 42, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: _anim.value * 2))),
+                const SizedBox(width: 10),
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Container(width: 120, height: 12, decoration: BoxDecoration(color: Colors.white.withValues(alpha: _anim.value * 2), borderRadius: BorderRadius.circular(6))),
+                  const SizedBox(height: 6),
+                  Container(width: 70, height: 9, decoration: BoxDecoration(color: Colors.white.withValues(alpha: _anim.value), borderRadius: BorderRadius.circular(6))),
+                ]),
+              ]),
+              const SizedBox(height: 14),
+              Container(width: double.infinity, height: 11, decoration: BoxDecoration(color: Colors.white.withValues(alpha: _anim.value * 1.5), borderRadius: BorderRadius.circular(6))),
+              const SizedBox(height: 8),
+              Container(width: 200, height: 11, decoration: BoxDecoration(color: Colors.white.withValues(alpha: _anim.value), borderRadius: BorderRadius.circular(6))),
+              const SizedBox(height: 16),
+              Expanded(child: Container(decoration: BoxDecoration(color: Colors.white.withValues(alpha: _anim.value), borderRadius: BorderRadius.circular(14)))),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Suggestions à suivre (empty state Mon feed) ──────────────────────────────
+
+class _SuggestionsWidget extends StatefulWidget {
+  final String myUid;
+  final VoidCallback onFollowed;
+  const _SuggestionsWidget({required this.myUid, required this.onFollowed});
+  @override
+  State<_SuggestionsWidget> createState() => _SuggestionsWidgetState();
+}
+
+class _SuggestionsWidgetState extends State<_SuggestionsWidget> {
+  final _supa = Supabase.instance.client;
+  List<Map<String, dynamic>> _suggestions = [];
+  Set<String> _followed = {};
+  bool _loading = true;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    final follows = await _supa.from('follows').select('following_uid').eq('follower_uid', widget.myUid);
+    _followed = {for (final r in follows as List) r['following_uid'] as String};
+    final excludeUids = [..._followed, widget.myUid];
+
+    final recent = await _supa.from('posts_socialmedia')
+        .select('uid')
+        .order('created_at', ascending: false)
+        .limit(100);
+    final uidsSeen = <String>{};
+    final candidateUids = <String>[];
+    for (final r in recent as List) {
+      final uid = r['uid'] as String;
+      if (!excludeUids.contains(uid) && uidsSeen.add(uid)) {
+        candidateUids.add(uid);
+        if (candidateUids.length >= 10) break;
+      }
+    }
+    if (candidateUids.isEmpty) { if (mounted) setState(() => _loading = false); return; }
+    final profRows = await _supa.from('user_profiles')
+        .select('uid, firstname, lastname, avatar_url, profile_type, nom')
+        .inFilter('uid', candidateUids)
+        .eq('is_main', true);
+    if (mounted) {
+      setState(() {
+        _suggestions = (profRows as List).cast<Map<String, dynamic>>();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _follow(String targetUid) async {
+    await _supa.from('follows').insert({'follower_uid': widget.myUid, 'following_uid': targetUid});
+    setState(() => _followed.add(targetUid));
+    await Future.delayed(const Duration(milliseconds: 600));
+    widget.onFollowed();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const SizedBox.shrink();
+    if (_suggestions.isEmpty) {
+      return Center(child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(gradient: const LinearGradient(colors: [_tealC, _green]), shape: BoxShape.circle,
+                boxShadow: [BoxShadow(color: _tealC.withValues(alpha: 0.35), blurRadius: 24)]),
+            child: const Icon(Icons.photo_library_outlined, size: 52, color: Colors.white)),
+          const SizedBox(height: 20),
+          const Text('Soyez le premier à publier !', textAlign: TextAlign.center,
+              style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+        ]),
+      ));
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 100),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 16),
+          child: Text('Suggestions · À suivre', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Colors.white)),
+        ),
+        ..._suggestions.map((prof) {
+          final uid = prof['uid'] as String;
+          final isFollowed = _followed.contains(uid);
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              color: Colors.white.withValues(alpha: 0.08),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+            ),
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              leading: _avatarWidget(_profilePhoto(prof), 22),
+              title: Text(_profileName(prof), style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white)),
+              subtitle: prof['profile_type'] == 'eleveur'
+                  ? const Text('Éleveur Pro', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: _green))
+                  : const Text('Particulier', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white54)),
+              trailing: GestureDetector(
+                onTap: isFollowed ? null : () => _follow(uid),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    gradient: isFollowed ? null : const LinearGradient(colors: [_tealC, _green]),
+                    color: isFollowed ? Colors.white.withValues(alpha: 0.10) : null,
+                    borderRadius: BorderRadius.circular(18),
+                    border: isFollowed ? Border.all(color: Colors.white24) : null,
+                  ),
+                  child: Text(isFollowed ? 'Suivi ✓' : 'Suivre',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+                ),
+              ),
+            ),
+          );
+        }),
+      ]),
     );
   }
 }
@@ -680,8 +793,7 @@ class _FeedListState extends State<_FeedList>
   Widget build(BuildContext context) {
     super.build(context);
     if (_loading) {
-      return const Center(
-          child: CircularProgressIndicator(color: Colors.white54));
+      return const _SkeletonFeed();
     }
     if (_feedError != null) {
       return Center(
@@ -697,41 +809,21 @@ class _FeedListState extends State<_FeedList>
       );
     }
     if (_posts.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-              padding: const EdgeInsets.all(28),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                    colors: [Color(0xFF0C5C6C), Color(0xFF6E9E57)]),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                      color: _tealC.withValues(alpha: 0.35),
-                      blurRadius: 24)
-                ],
-              ),
-              child: const Icon(Icons.photo_library_outlined,
-                  size: 52, color: Colors.white),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              widget.type == 'following'
-                  ? 'Suivez des personnes\npour voir leurs posts ici'
-                  : 'Aucune publication pour l\'instant',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  fontFamily: 'Galey',
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  height: 1.4),
-            ),
-          ]),
-        ),
-      );
+      if (widget.type == 'following') {
+        return _SuggestionsWidget(myUid: widget.myUid, onFollowed: _load);
+      }
+      return Center(child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(gradient: const LinearGradient(colors: [_tealC, _green]),
+                shape: BoxShape.circle, boxShadow: [BoxShadow(color: _tealC.withValues(alpha: 0.35), blurRadius: 24)]),
+            child: const Icon(Icons.photo_library_outlined, size: 52, color: Colors.white)),
+          const SizedBox(height: 20),
+          const Text('Aucune publication pour l\'instant', textAlign: TextAlign.center,
+              style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600, height: 1.4)),
+        ]),
+      ));
     }
     return RefreshIndicator(
       onRefresh: _load,
@@ -825,6 +917,64 @@ class _SocialPostCardState extends State<_SocialPostCard> {
     if (targetUid == null) return;
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => SocialProfilePage(targetUid: targetUid, myUid: widget.myUid)));
+  }
+
+  void _showReportDialog() {
+    final supa = Supabase.instance.client;
+    final postId = widget.post['id'] as String;
+    final reasons = ['Contenu inapproprié', 'Spam', 'Harcèlement', 'Fausse information', 'Autre'];
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF0C3535),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Signaler ce post', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white, fontSize: 17)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Pourquoi signaler ce contenu ?', style: TextStyle(fontFamily: 'Galey', color: Colors.white70, fontSize: 13)),
+            const SizedBox(height: 12),
+            ...reasons.map((r) => GestureDetector(
+              onTap: () async {
+                Navigator.pop(ctx);
+                try {
+                  await supa.from('post_reports').insert({
+                    'post_id': postId,
+                    'reporter_uid': widget.myUid,
+                    'reason': r,
+                  });
+                } catch (_) {}
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Signalement envoyé, merci.', style: TextStyle(fontFamily: 'Galey')),
+                    backgroundColor: Color(0xFF0C5C6C),
+                    duration: Duration(seconds: 3),
+                  ));
+                }
+              },
+              child: Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                ),
+                child: Text(r, style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 13)),
+              ),
+            )),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey', color: Colors.white54)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -932,20 +1082,30 @@ class _SocialPostCardState extends State<_SocialPostCard> {
                                         color: widget.isFollowing ? _tealC : Colors.white)),
                               ),
                             ),
-                          if (widget.isMyPost)
-                            PopupMenuButton<String>(
-                              icon: const Icon(Icons.more_horiz, color: _greyC, size: 20),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                              onSelected: (val) { if (val == 'delete') { widget.onDelete(); } },
-                              itemBuilder: (_) => [
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_horiz, color: _greyC, size: 20),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            onSelected: (val) {
+                              if (val == 'delete') { widget.onDelete(); }
+                              if (val == 'report') { _showReportDialog(); }
+                            },
+                            itemBuilder: (_) => [
+                              if (widget.isMyPost)
                                 const PopupMenuItem(value: 'delete',
                                     child: Row(children: [
                                       Icon(Icons.delete_outline, color: Colors.red, size: 18),
                                       SizedBox(width: 8),
                                       Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red)),
                                     ])),
-                              ],
-                            ),
+                              if (!widget.isMyPost)
+                                const PopupMenuItem(value: 'report',
+                                    child: Row(children: [
+                                      Icon(Icons.flag_outlined, color: Colors.orange, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Signaler', style: TextStyle(fontFamily: 'Galey', color: Colors.orange)),
+                                    ])),
+                            ],
+                          ),
                         ]),
                   ),
                 ),
@@ -2104,6 +2264,15 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   final _ctrl   = TextEditingController();
   final _images = <File>[];
   bool  _posting = false;
+  int   _charCount = 0;
+
+  static const _maxChars = 2000;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.addListener(() { if (mounted) setState(() => _charCount = _ctrl.text.length); });
+  }
 
   @override
   void dispose() { _ctrl.dispose(); super.dispose(); }
@@ -2129,12 +2298,15 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
     try {
       final urls = <String>[];
       for (final img in _images) {
-        final ext  = img.path.split('.').last.toLowerCase();
+        final compressed = await FlutterImageCompress.compressWithFile(
+          img.path, quality: 72, minWidth: 1080, minHeight: 1080, keepExif: false,
+        );
+        final bytes = compressed ?? await img.readAsBytes();
+        final ext  = 'jpg';
         final path = '${widget.myUid}/${DateTime.now().millisecondsSinceEpoch}_${urls.length}.$ext';
         await _supa.storage.from('social').uploadBinary(
-              path,
-              await img.readAsBytes(),
-              fileOptions: FileOptions(contentType: 'image/$ext', upsert: false),
+              path, bytes,
+              fileOptions: const FileOptions(contentType: 'image/jpg', upsert: false),
             );
         urls.add(_supa.storage.from('social').getPublicUrl(path));
       }
@@ -2168,7 +2340,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).viewInsets.bottom;
     return Container(
-      margin: const EdgeInsets.only(top: 80),
+      margin: const EdgeInsets.only(top: 40),
       decoration: const BoxDecoration(
         color: Color(0xFF0C3535),
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -2239,34 +2411,42 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
               filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
               child: TextField(
                 controller: _ctrl,
-                maxLines: 4,
-                minLines: 2,
-                style: const TextStyle(
-                    fontFamily: 'Galey', fontSize: 15, color: Colors.white),
+                maxLines: 10,
+                minLines: 6,
+                maxLength: _maxChars,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.white),
                 decoration: InputDecoration(
                   hintText: 'Partagez quelque chose avec la communauté...',
-                  hintStyle: TextStyle(
-                      fontFamily: 'Galey',
-                      color: Colors.white.withValues(alpha: 0.45)),
+                  hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.45)),
                   filled: true,
                   fillColor: Colors.white.withValues(alpha: 0.10),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.15))),
-                  enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.12))),
-                  focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide:
-                          const BorderSide(color: _tealC, width: 1.5)),
+                  counterStyle: TextStyle(
+                      fontFamily: 'Galey', fontSize: 11,
+                      color: _charCount > _maxChars * 0.9 ? Colors.orangeAccent : Colors.white38),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15))),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12))),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _tealC, width: 1.5)),
                 ),
               ),
             ),
           ),
         ),
+        // ── Barre d'icônes médias ─────────────────────────────────
+        const SizedBox(height: 10),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(children: [
+            _iconBtn(Icons.photo_library_outlined, 'Galerie', () => _pickImages(ImageSource.gallery)),
+            const SizedBox(width: 10),
+            _iconBtn(Icons.camera_alt_outlined, 'Photo', () => _pickImages(ImageSource.camera)),
+            const Spacer(),
+            if (_images.isNotEmpty)
+              Text('${_images.length} photo${_images.length > 1 ? 's' : ''}',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _green)),
+          ]),
+        ),
+
+        // ── Aperçu images ─────────────────────────────────────────
         if (_images.isNotEmpty) ...[
           const SizedBox(height: 12),
           SizedBox(
@@ -2280,8 +2460,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
                 child: Stack(children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(16),
-                    child: Image.file(_images[i],
-                        height: 190, width: 160, fit: BoxFit.cover),
+                    child: Image.file(_images[i], height: 190, width: 160, fit: BoxFit.cover),
                   ),
                   Positioned(
                     top: 6, right: 6,
@@ -2289,10 +2468,8 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
                       onTap: () => setState(() => _images.removeAt(i)),
                       child: Container(
                         padding: const EdgeInsets.all(5),
-                        decoration: const BoxDecoration(
-                            color: Colors.black54, shape: BoxShape.circle),
-                        child: const Icon(Icons.close,
-                            color: Colors.white, size: 14),
+                        decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                        child: const Icon(Icons.close, color: Colors.white, size: 14),
                       ),
                     ),
                   ),
@@ -2301,65 +2478,31 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
             ),
           ),
         ],
-        const SizedBox(height: 14),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(children: [
-            _MediaBtn(
-                icon: Icons.photo_library_outlined,
-                label: 'Galerie',
-                onTap: () => _pickImages(ImageSource.gallery)),
-            const SizedBox(width: 10),
-            _MediaBtn(
-                icon: Icons.camera_alt_outlined,
-                label: 'Photo',
-                onTap: () => _pickImages(ImageSource.camera)),
-          ]),
-        ),
+        const SizedBox(height: 8),
       ]),
+    );
+  }
+
+  Widget _iconBtn(IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 17, color: _green),
+          const SizedBox(width: 6),
+          Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white, fontWeight: FontWeight.w600)),
+        ]),
+      ),
     );
   }
 }
 
-// ─── Media button ─────────────────────────────────────────────────────────────
-
-class _MediaBtn extends StatelessWidget {
-  final IconData icon;
-  final String   label;
-  final VoidCallback onTap;
-  const _MediaBtn(
-      {required this.icon, required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) => InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(14),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(icon, size: 18, color: _green),
-                const SizedBox(width: 7),
-                Text(label,
-                    style: const TextStyle(
-                        fontFamily: 'Galey',
-                        fontSize: 13,
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600)),
-              ]),
-            ),
-          ),
-        ),
-      );
-}
 
 // ─── Search sheet ─────────────────────────────────────────────────────────────
 
@@ -2717,7 +2860,11 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
         SafeArea(
           child: _loading
               ? const Center(child: CircularProgressIndicator(color: _tealC))
-              : CustomScrollView(slivers: [
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  color: _tealC,
+                  backgroundColor: Colors.white,
+                  child: CustomScrollView(slivers: [
                   // ── AppBar ──────────────────────────────────────
                   SliverAppBar(
                     backgroundColor: Colors.transparent,
@@ -2783,9 +2930,15 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
                           child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
                             _statCol('Posts', _posts.length),
                             Container(width: 1, height: 36, color: Colors.white30),
-                            _statCol('Abonnés', _followersCount),
+                            GestureDetector(
+                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
+                                  _FollowListPage(targetUid: widget.targetUid, myUid: widget.myUid, type: 'followers'))),
+                              child: _statCol('Abonnés', _followersCount)),
                             Container(width: 1, height: 36, color: Colors.white30),
-                            _statCol('Abonnements', _followingCount),
+                            GestureDetector(
+                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
+                                  _FollowListPage(targetUid: widget.targetUid, myUid: widget.myUid, type: 'following'))),
+                              child: _statCol('Abonnements', _followingCount)),
                           ]),
                         ),
                       ),
@@ -2834,7 +2987,10 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
                               final urls = _mediaUrls(post['media_url']?.toString());
                               final thumb = urls.isNotEmpty ? urls.first : null;
                               return GestureDetector(
-                                onTap: () {/* TODO: ouvrir le post */},
+                                onTap: () => showModalBottomSheet(
+                                  context: context, isScrollControlled: true,
+                                  backgroundColor: Colors.transparent,
+                                  builder: (_) => _PostDetailSheet(post: post, myUid: widget.myUid)),
                                 child: Container(
                                   margin: const EdgeInsets.all(1.5),
                                   decoration: BoxDecoration(color: const Color(0xFF1A3A42)),
@@ -2853,6 +3009,7 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
                             crossAxisCount: 3, mainAxisSpacing: 0, crossAxisSpacing: 0),
                         ),
                 ]),
+                ),  // RefreshIndicator
         ),
       ]),
     );
@@ -3027,6 +3184,274 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
             ),
           ]),
         ),
+      ]),
+    );
+  }
+}
+
+// ─── Post detail sheet (depuis grille profil) ────────────────────────────────
+
+class _PostDetailSheet extends StatefulWidget {
+  final Map<String, dynamic> post;
+  final String myUid;
+  const _PostDetailSheet({required this.post, required this.myUid});
+  @override
+  State<_PostDetailSheet> createState() => _PostDetailSheetState();
+}
+
+class _PostDetailSheetState extends State<_PostDetailSheet> {
+  final _supa = Supabase.instance.client;
+  Map<String, dynamic>? _profile;
+  bool _isLiked = false;
+  bool _isFollowing = false;
+  int  _likeCount = 0;
+  int  _commentCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _likeCount = widget.post['like_count'] as int? ?? 0;
+    _commentCount = widget.post['comment_count'] as int? ?? 0;
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    final uid = widget.post['uid'] as String;
+    final results = await Future.wait([
+      _supa.from('user_profiles').select('uid, firstname, lastname, avatar_url, profile_type, nom')
+          .eq('uid', uid).eq('is_main', true).maybeSingle(),
+      _supa.from('post_likes').select('uid').eq('post_id', widget.post['id'] as String).eq('uid', widget.myUid).maybeSingle(),
+      _supa.from('follows').select('follower_uid').eq('follower_uid', widget.myUid).eq('following_uid', uid).maybeSingle(),
+    ]);
+    if (mounted) {
+      setState(() {
+        _profile = (results[0] as Map?)?.cast<String, dynamic>();
+        _isLiked = results[1] != null;
+        _isFollowing = results[2] != null;
+      });
+    }
+  }
+
+  Future<void> _toggleLike() async {
+    final postId = widget.post['id'] as String;
+    if (_isLiked) {
+      await _supa.from('post_likes').delete().eq('post_id', postId).eq('uid', widget.myUid);
+      setState(() { _isLiked = false; _likeCount--; });
+    } else {
+      await _supa.from('post_likes').insert({'post_id': postId, 'uid': widget.myUid});
+      setState(() { _isLiked = true; _likeCount++; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name = _profileName(_profile);
+    final photo = _profilePhoto(_profile);
+    final text = widget.post['texte']?.toString() ?? '';
+    final urls = _mediaUrls(widget.post['media_url']?.toString());
+    final date = widget.post['created_at']?.toString() ?? '';
+    return DraggableScrollableSheet(
+      initialChildSize: 0.90, minChildSize: 0.5, maxChildSize: 0.95,
+      builder: (_, ctrl) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF0C3535),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(children: [
+          const SizedBox(height: 8),
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 12),
+          // Header
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(children: [
+              GestureDetector(
+                onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => SocialProfilePage(targetUid: widget.post['uid'] as String, myUid: widget.myUid))); },
+                child: _avatarWidget(photo, 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(name, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white)),
+                Text(_fmtDate(date), style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white54)),
+              ])),
+              if (widget.post['uid'] != widget.myUid)
+                GestureDetector(
+                  onTap: () async {
+                    final uid = widget.post['uid'] as String;
+                    if (_isFollowing) {
+                      await _supa.from('follows').delete().eq('follower_uid', widget.myUid).eq('following_uid', uid);
+                      setState(() => _isFollowing = false);
+                    } else {
+                      await _supa.from('follows').insert({'follower_uid': widget.myUid, 'following_uid': uid});
+                      setState(() => _isFollowing = true);
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: _isFollowing ? null : const LinearGradient(colors: [_tealC, _green]),
+                      color: _isFollowing ? Colors.white12 : null,
+                      borderRadius: BorderRadius.circular(20),
+                      border: _isFollowing ? Border.all(color: Colors.white24) : null,
+                    ),
+                    child: Text(_isFollowing ? 'Suivi ✓' : 'Suivre',
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+                  ),
+                ),
+            ]),
+          ),
+          const SizedBox(height: 12),
+          Expanded(child: SingleChildScrollView(
+            controller: ctrl,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if (text.isNotEmpty) Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(text, style: const TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.white, height: 1.5)),
+              ),
+              if (urls.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _ImagesDisplay(urls: urls),
+              ],
+              const SizedBox(height: 16),
+            ]),
+          )),
+          // Actions
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            child: Row(children: [
+              _ActionBtn(
+                icon: _isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                label: _likeCount > 0 ? '$_likeCount' : 'J\'aime',
+                color: _isLiked ? const Color(0xFFE03055) : _greyC,
+                onTap: _toggleLike,
+              ),
+              _ActionBtn(
+                icon: Icons.chat_bubble_outline_rounded,
+                label: _commentCount > 0 ? '$_commentCount' : 'Commenter',
+                color: _greyC,
+                onTap: () => showModalBottomSheet(
+                  context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+                  builder: (_) => _CommentsSheet(postId: widget.post['id'] as String, myUid: widget.myUid, onCommentAdded: () => setState(() => _commentCount++))),
+              ),
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+// ─── Liste abonnés / abonnements ─────────────────────────────────────────────
+
+class _FollowListPage extends StatefulWidget {
+  final String targetUid;
+  final String myUid;
+  final String type; // 'followers' or 'following'
+  const _FollowListPage({required this.targetUid, required this.myUid, required this.type});
+  @override
+  State<_FollowListPage> createState() => _FollowListPageState();
+}
+
+class _FollowListPageState extends State<_FollowListPage> {
+  final _supa = Supabase.instance.client;
+  List<Map<String, dynamic>> _users = [];
+  Set<String> _myFollowing = {};
+  bool _loading = true;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    final results = await Future.wait([
+      widget.type == 'followers'
+          ? _supa.from('follows').select('follower_uid').eq('following_uid', widget.targetUid)
+          : _supa.from('follows').select('following_uid').eq('follower_uid', widget.targetUid),
+      _supa.from('follows').select('following_uid').eq('follower_uid', widget.myUid),
+    ]);
+    final uids = (results[0] as List).map((r) {
+      return (widget.type == 'followers' ? r['follower_uid'] : r['following_uid']) as String;
+    }).toList();
+    _myFollowing = {for (final r in results[1] as List) r['following_uid'] as String};
+    if (uids.isEmpty) { if (mounted) setState(() => _loading = false); return; }
+    final profRows = await _supa.from('user_profiles')
+        .select('uid, firstname, lastname, avatar_url, profile_type, nom')
+        .inFilter('uid', uids).eq('is_main', true);
+    if (mounted) {
+      setState(() {
+        _users = (profRows as List).cast<Map<String, dynamic>>();
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _toggleFollow(String targetUid) async {
+    if (_myFollowing.contains(targetUid)) {
+      await _supa.from('follows').delete().eq('follower_uid', widget.myUid).eq('following_uid', targetUid);
+      setState(() => _myFollowing.remove(targetUid));
+    } else {
+      await _supa.from('follows').insert({'follower_uid': widget.myUid, 'following_uid': targetUid});
+      setState(() => _myFollowing.add(targetUid));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = widget.type == 'followers' ? 'Abonnés' : 'Abonnements';
+    return Scaffold(
+      backgroundColor: _darkC,
+      body: Stack(children: [
+        Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
+        SafeArea(child: Column(children: [
+          Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(children: [
+              GestureDetector(onTap: () => Navigator.pop(context),
+                  child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20)),
+              const SizedBox(width: 16),
+              Text(title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: Colors.white)),
+            ])),
+          const Divider(color: Colors.white12, height: 1),
+          Expanded(child: _loading
+              ? const Center(child: CircularProgressIndicator(color: _tealC))
+              : _users.isEmpty
+                  ? Center(child: Text('Aucun $title'.toLowerCase(), style: const TextStyle(fontFamily: 'Galey', color: Colors.white60, fontSize: 15)))
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1, indent: 70),
+                      itemCount: _users.length,
+                      itemBuilder: (_, i) {
+                        final prof = _users[i];
+                        final uid = prof['uid'] as String;
+                        final isMe = uid == widget.myUid;
+                        final isFollowed = _myFollowing.contains(uid);
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          leading: GestureDetector(
+                            onTap: () => Navigator.push(context, MaterialPageRoute(
+                                builder: (_) => SocialProfilePage(targetUid: uid, myUid: widget.myUid))),
+                            child: _avatarWidget(_profilePhoto(prof), 22)),
+                          title: Text(_profileName(prof), style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14, color: Colors.white)),
+                          subtitle: prof['profile_type'] == 'eleveur'
+                              ? const Text('Éleveur Pro', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: _green))
+                              : null,
+                          trailing: isMe ? null : GestureDetector(
+                            onTap: () => _toggleFollow(uid),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                gradient: isFollowed ? null : const LinearGradient(colors: [_tealC, _green]),
+                                color: isFollowed ? Colors.white12 : null,
+                                borderRadius: BorderRadius.circular(18),
+                                border: isFollowed ? Border.all(color: Colors.white24) : null,
+                              ),
+                              child: Text(isFollowed ? 'Suivi ✓' : 'Suivre',
+                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+                            ),
+                          ),
+                        );
+                      },
+                    )),
+        ])),
       ]),
     );
   }
