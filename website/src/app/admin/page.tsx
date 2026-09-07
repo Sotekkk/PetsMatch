@@ -7,6 +7,10 @@ import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { notifyProfileValidated, sendNotification } from '@/lib/notifications';
+import AnimauxTab from './_components/AnimauxTab';
+import AnnoncesToutesTab from './_components/AnnoncesToutesTab';
+import ConsommationTab from './_components/ConsommationTab';
+import PlanEditor from './_components/PlanEditor';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,7 +72,7 @@ interface DossierEntry {
   isSecondary?: boolean; profileTableId?: string;
 }
 
-type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs' | 'annonces' | 'lieux_naturels' | 'tarification' | 'signalements_conv';
+type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs' | 'animaux' | 'annonces' | 'consommation' | 'lieux_naturels' | 'tarification' | 'signalements_conv';
 type FilterType = 'tous' | 'eleveur' | 'particulier' | 'pro' | 'secondaire' | 'admin' | 'en_attente';
 type SigFilter = 'en_attente' | 'traite' | 'rejete';
 
@@ -159,7 +163,7 @@ export default function AdminPage() {
   const [annoncesSuspectes, setAnnoncesSuspectes] = useState<AnnonceAdmin[]>([]);
   const [annoncesSuspendues, setAnnoncesSuspendues] = useState<AnnonceAdmin[]>([]);
   const [annoncesLoading, setAnnoncesLoading] = useState(false);
-  const [annoncesTab, setAnnoncesTab] = useState<'attente' | 'suspectes' | 'suspendues'>('attente');
+  const [annoncesTab, setAnnoncesTab] = useState<'attente' | 'suspectes' | 'suspendues' | 'toutes'>('attente');
 
   // Lieux naturels en attente de validation
   interface NaturalPlaceAdmin {
@@ -382,13 +386,6 @@ export default function AdminPage() {
     const { data: rpc } = await supabase.rpc('get_admin_stats');
     const r = (rpc ?? {}) as Record<string, unknown>;
     setStats(prev => prev ? { ...prev, profilsEnAttente: Number(r['profils_en_attente'] ?? prev.profilsEnAttente) } : prev);
-  }
-
-  async function togglePremium(entry: ProfileEntry) {
-    const newVal = !entry.isPremium;
-    await supabase.from('users').update({ is_premium: newVal }).eq('uid', entry.uid);
-    setEntries(prev => prev.map(e => (!e.isSecondary && e.uid === entry.uid) ? { ...e, isPremium: newVal } : e));
-    if (selected?.uid === entry.uid) setSelected(prev => prev ? { ...prev, isPremium: newVal } : null);
   }
 
   async function deleteEntry(entry: ProfileEntry) {
@@ -1106,7 +1103,9 @@ export default function AdminPage() {
           { key: 'signalements',  label: 'Signalements',  icon: '🚨', badge: stats?.signalementsEnAttente },
           { key: 'dossiers',      label: 'Dossiers',      icon: '📂', badge: stats?.profilsEnAttente },
           { key: 'utilisateurs',  label: 'Utilisateurs',  icon: '👥' },
+          { key: 'animaux',       label: 'Animaux',       icon: '🐾' },
           { key: 'annonces',      label: 'Annonces',      icon: '📋', badge: annoncesEnAttente.length || undefined },
+          { key: 'consommation',  label: 'Consommation',  icon: '📈' },
           { key: 'lieux_naturels',label: 'Lieux naturels',icon: '🌲', badge: (naturalPlacesEnAttente.length + amenitySuggestions.length + photoSuggestions.length) || undefined },
           { key: 'tarification',  label: 'Tarification',  icon: '💰' },
           { key: 'signalements_conv', label: 'Conv. signalées', icon: '💬' },
@@ -1616,6 +1615,12 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* ─── Animaux ──────────────────────────────────────────────────── */}
+        {tab === 'animaux' && user && <AnimauxTab adminUid={user.uid} />}
+
+        {/* ─── Consommation ─────────────────────────────────────────────── */}
+        {tab === 'consommation' && user && <ConsommationTab adminUid={user.uid} />}
+
         {/* ─── Annonces modération ───────────────────────────────────────── */}
         {tab === 'annonces' && (
           <div className="max-w-4xl mx-auto">
@@ -1635,6 +1640,7 @@ export default function AdminPage() {
                 { key: 'attente',    label: '⏳ En attente', count: annoncesEnAttente.length,   color: 'amber' },
                 { key: 'suspectes',  label: '🚨 Suspectes',  count: annoncesSuspectes.length,   color: 'red'   },
                 { key: 'suspendues', label: '🔒 Suspendues', count: annoncesSuspendues.length,  color: 'gray'  },
+                { key: 'toutes',     label: '📋 Toutes',     count: 0,                          color: 'gray'  },
               ] as const).map(t => (
                 <button key={t.key} onClick={() => setAnnoncesTab(t.key)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border ${
@@ -1654,7 +1660,9 @@ export default function AdminPage() {
               ))}
             </div>
 
-            {annoncesLoading ? (
+            {annoncesTab === 'toutes' && user && <AnnoncesToutesTab adminUid={user.uid} />}
+
+            {annoncesTab !== 'toutes' && (annoncesLoading ? (
               <div className="flex justify-center py-16">
                 <div className="w-8 h-8 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
               </div>
@@ -1791,7 +1799,7 @@ export default function AdminPage() {
                   )
                 )}
               </>
-            )}
+            ))}
           </div>
         )}
 
@@ -2626,13 +2634,14 @@ export default function AdminPage() {
       )}
 
       {/* ── Modal utilisateur ────────────────────────────────────────────── */}
-      {selected && (
+      {selected && user && (
         <ProfileModal
+          key={`${selected.uid}-${selected.profileTableId ?? ''}`}
           entry={selected}
+          adminUid={user.uid}
           onClose={() => setSelected(null)}
           onSetStatut={s => setStatut(selected, s)}
           onDelete={() => deleteEntry(selected)}
-          onTogglePremium={() => togglePremium(selected)}
         />
       )}
     </div>
@@ -2685,19 +2694,41 @@ function ProfileCard({ entry, onClick }: { entry: ProfileEntry; onClick: () => v
 
 // ─── ProfileModal ─────────────────────────────────────────────────────────────
 
-function ProfileModal({ entry, onClose, onSetStatut, onDelete, onTogglePremium }: {
-  entry: ProfileEntry; onClose: () => void;
+interface ProfileDetail {
+  uid: string;
+  user: Record<string, unknown> | null;
+  profiles: Record<string, unknown>[];
+  abonnements: Record<string, unknown>[];
+  plans: { profil_type: string; plan_code: string; label: string; prix_mensuel: number; actif: boolean }[];
+}
+
+function ProfileModal({ entry, adminUid, onClose, onSetStatut, onDelete }: {
+  entry: ProfileEntry; adminUid: string; onClose: () => void;
   onSetStatut: (s: string) => Promise<void>; onDelete: () => Promise<void>;
-  onTogglePremium: () => Promise<void>;
 }) {
   const [saving, setSaving] = useState(false);
-  const [premiumSaving, setPremiumSaving] = useState(false);
+  const [detail, setDetail] = useState<ProfileDetail | null>(null);
+  const [detailErr, setDetailErr] = useState('');
   const statut = entry.statutPro ?? 'actif';
   const name = [entry.firstName, entry.lastName].filter(Boolean).join(' ') || 'Nom inconnu';
   const certifs = (entry.certifications ?? []).map(c => [c.nom, c.organisme].filter(Boolean).join(' — ')).filter(Boolean);
   const isPro = !!entry.catPro;
   async function doStatut(s: string) { setSaving(true); try { await onSetStatut(s); } finally { setSaving(false); } }
-  async function doPremium() { setPremiumSaving(true); try { await onTogglePremium(); } finally { setPremiumSaving(false); } }
+
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/admin/profil?uid=${adminUid}&targetUid=${entry.uid}`)
+      .then(r => r.json())
+      .then(j => { if (!alive) return; if (j.error) setDetailErr(j.error); else setDetail(j); })
+      .catch(() => { if (alive) setDetailErr('Chargement impossible'); });
+    return () => { alive = false; };
+  }, [adminUid, entry.uid]);
+
+  const row = detail?.profiles.find(p =>
+    (entry.profileTableId && p.id === entry.profileTableId) || (!entry.profileTableId && p.is_main),
+  ) ?? detail?.profiles[0];
+  const profilType = (row?.profile_type as string) ?? entry.catPro ?? (entry.isElevage ? 'eleveur' : 'particulier');
+  const canSubscribe = profilType !== 'particulier';
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -2743,14 +2774,74 @@ function ProfileModal({ entry, onClose, onSetStatut, onDelete, onTogglePremium }
                 {statut !== 'suspendu'   && <ActionBtn label="⏸ Suspendre"   color="#ea580c" onClick={() => doStatut('suspendu')}   disabled={saving} />}
                 {statut !== 'refuse'     && <ActionBtn label="❌ Refuser"     color="#dc2626" onClick={() => doStatut('refuse')}     disabled={saving} />}
                 {statut !== 'en_attente' && <ActionBtn label="⏳ En attente" color="#2563eb" onClick={() => doStatut('en_attente')} disabled={saving} />}
-                {!entry.isSecondary && (
-                  <ActionBtn
-                    label={entry.isPremium ? '★ Retirer Premium' : '★ Passer Premium'}
-                    color="#d97706"
-                    onClick={doPremium}
-                    disabled={premiumSaving}
-                  />
-                )}
+              </div>
+            </Section>
+          )}
+
+          {/* ── Abonnement / plan ── */}
+          {canSubscribe && (
+            <Section title="Abonnement">
+              {!detail && !detailErr && <p className="text-xs text-gray-400">Chargement…</p>}
+              {detailErr && <p className="text-xs text-red-500">{detailErr}</p>}
+              {detail && (
+                <PlanEditor
+                  adminUid={adminUid}
+                  targetUid={entry.uid}
+                  profilType={profilType}
+                  profileId={(row?.id as string) ?? entry.profileTableId ?? null}
+                  plans={detail.plans}
+                  abonnements={detail.abonnements as never}
+                  onChanged={abos => setDetail(d => d ? { ...d, abonnements: abos as never } : d)}
+                />
+              )}
+            </Section>
+          )}
+
+          {/* ── Identité & facturation ── */}
+          {detail && row && (isPro || entry.isElevage || entry.isSecondary) && (
+            <Section title="Identité & facturation">
+              <InfoRow label="SIRET" value={(row.siret as string) || '—'} mono />
+              <div className="grid grid-cols-2 gap-2">
+                <InfoRow label="Forme juridique" value={(row.forme_juridique_pro as string) || '—'} />
+                <InfoRow label="N° TVA" value={(row.numero_tva as string) || '—'} />
+                <InfoRow label="RCS" value={(row.rcs_pro as string) || '—'} />
+                <InfoRow label="Capital" value={(row.capital_social_pro as string) || '—'} />
+                <InfoRow label="RNA" value={(row.rna as string) || '—'} />
+                <InfoRow label="Régime TVA" value={(row.regime_tva_pro as string) || '—'} />
+              </div>
+              <InfoRow label="ACACED"
+                value={[(row.acaced_numero as string) || (row.acaced as string), row.acaced_date_obtention as string]
+                  .filter(Boolean).join(' · ') || '—'} />
+              <InfoRow label="Adresse"
+                value={(row.adresse as string)
+                  || [row.rue, row.code_postal, row.ville].filter(Boolean).join(', ') || '—'} />
+              <div className="grid grid-cols-2 gap-2">
+                <InfoRow label="IBAN" value={(row.iban_pro as string) || '—'} mono />
+                <InfoRow label="BIC" value={(row.bic_pro as string) || '—'} mono />
+              </div>
+              <InfoRow label="Inscrit le"
+                value={row.created_at ? new Date(row.created_at as string).toLocaleDateString('fr-FR') : '—'} />
+            </Section>
+          )}
+
+          {/* ── Profils du compte ── */}
+          {detail && detail.profiles.length > 1 && (
+            <Section title={`Profils du compte (${detail.profiles.length})`}>
+              <div className="flex flex-col gap-1.5">
+                {detail.profiles.map(p => (
+                  <div key={p.id as string}
+                    className="flex items-center gap-2 text-sm bg-gray-50 rounded-lg px-3 py-1.5">
+                    <Badge label={CAT_LABELS[p.profile_type as string] ?? (p.profile_type as string)} color="#0C5C6C" />
+                    <span className="text-gray-700 truncate">
+                      {(p.nom as string) || `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim() || '—'}
+                    </span>
+                    {p.is_main === true && <span className="text-xs text-gray-400">principal</span>}
+                    <span className="ml-auto text-xs text-gray-400">{(p.statut_pro as string) ?? ''}</span>
+                    {(p.plan_code as string) && (p.plan_code as string) !== 'free' && (
+                      <Badge label={p.plan_code as string} color="#d97706" />
+                    )}
+                  </div>
+                ))}
               </div>
             </Section>
           )}
