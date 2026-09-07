@@ -65,8 +65,10 @@ export default function PlanEditor({ adminUid, targetUid, profilType, profileId,
           <>
             <Badge label={current.plan_code} color={current.plan_code === 'premium' ? '#d97706' : '#0C5C6C'} />
             <span className="text-gray-400 text-xs">
-              {current.stripe_subscription_id ? 'Stripe' : 'manuel'}
-              {current.date_fin ? ` · jusqu'au ${fmtDate(current.date_fin)}` : ''}
+              {current.periodicite ?? '—'} · {current.stripe_subscription_id ? 'Stripe' : 'manuel'}
+              {current.date_fin
+                ? ` · ${new Date(current.date_fin) < new Date() ? 'expiré le' : 'jusqu’au'} ${fmtDate(current.date_fin)}`
+                : ' · sans échéance'}
             </span>
           </>
         ) : <span className="text-gray-400">aucun (free)</span>}

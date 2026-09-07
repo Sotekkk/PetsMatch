@@ -2783,17 +2783,41 @@ function ProfileModal({ entry, adminUid, onClose, onSetStatut, onDelete }: {
             <Section title="Abonnement">
               {!detail && !detailErr && <p className="text-xs text-gray-400">Chargement…</p>}
               {detailErr && <p className="text-xs text-red-500">{detailErr}</p>}
-              {detail && (
-                <PlanEditor
-                  adminUid={adminUid}
-                  targetUid={entry.uid}
-                  profilType={profilType}
-                  profileId={(row?.id as string) ?? entry.profileTableId ?? null}
-                  plans={detail.plans}
-                  abonnements={detail.abonnements as never}
-                  onChanged={abos => setDetail(d => d ? { ...d, abonnements: abos as never } : d)}
-                />
-              )}
+              {detail && (() => {
+                const actifs = detail.abonnements.filter(a => a.statut === 'actif');
+                return (
+                  <>
+                    {actifs.length > 0 && (
+                      <div className="mb-3 space-y-1.5">
+                        {actifs.map(a => {
+                          const fin = a.date_fin as string | null;
+                          const expire = fin && new Date(fin) < new Date();
+                          return (
+                            <div key={a.id as string} className="flex items-center gap-2 text-sm bg-gray-50 rounded-lg px-3 py-1.5 flex-wrap">
+                              <Badge label={CAT_LABELS[a.profil_type as string] ?? (a.profil_type as string)} color="#0C5C6C" />
+                              <span className="font-medium text-[#d97706]">{a.plan_code as string}</span>
+                              <span className="text-xs text-gray-400">{(a.periodicite as string) ?? '—'}</span>
+                              <span className="text-xs text-gray-400">{a.stripe_subscription_id ? 'Stripe' : 'manuel'}</span>
+                              <span className={`ml-auto text-xs ${expire ? 'text-red-500 font-semibold' : 'text-gray-500'}`}>
+                                {fin ? `${expire ? '⚠ expiré le' : 'fin'} ${new Date(fin).toLocaleDateString('fr-FR')}` : 'sans échéance'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <PlanEditor
+                      adminUid={adminUid}
+                      targetUid={entry.uid}
+                      profilType={profilType}
+                      profileId={(row?.id as string) ?? entry.profileTableId ?? null}
+                      plans={detail.plans}
+                      abonnements={detail.abonnements as never}
+                      onChanged={abos => setDetail(d => d ? { ...d, abonnements: abos as never } : d)}
+                    />
+                  </>
+                );
+              })()}
             </Section>
           )}
 

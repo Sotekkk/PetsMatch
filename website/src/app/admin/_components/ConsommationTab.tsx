@@ -6,7 +6,7 @@ import { Badge, fmtDate, typeBadge, downloadCsv } from './ui';
 interface UidStat {
   uid: string; email: string | null; inscrit_le: string | null; derniere_activite: string | null;
   types: string[]; plan_principal: string | null; premium: boolean;
-  abos_actifs: { profil_type: string; plan_code: string; manuel: boolean; date_fin: string | null }[];
+  abos_actifs: { profil_type: string; plan_code: string; periodicite: string; manuel: boolean; date_fin: string | null }[];
   animaux: number; annonces_total: number; annonces_actives: number; annonces_vues: number;
   boosts_actifs: number; photos_estimees: number; messages: number; conversations: number;
   posts: number; rdv: number; balade_parcours: number; balade_termines: number; balade_km: number;
@@ -109,10 +109,12 @@ export default function ConsommationTab({ adminUid }: { adminUid: string }) {
             </select>
             <span className="text-sm text-gray-400 ml-auto">{rows.length} comptes</span>
             <button onClick={() => downloadCsv('consommation.csv', [
-              ['uid', 'email', 'types', 'plan', 'premium', 'inscrit', 'derniere_activite', 'animaux',
+              ['uid', 'email', 'types', 'plan', 'premium', 'abos_actifs', 'plan_fin', 'inscrit', 'derniere_activite', 'animaux',
                 'annonces_total', 'annonces_actives', 'vues', 'photos_est', 'messages', 'conversations',
                 'posts', 'rdv', 'balade_parcours', 'balade_km', 'boosts'],
               ...rows.map(r => [r.uid, r.email, (r.types ?? []).join('|'), r.plan_principal, r.premium ? 'oui' : 'non',
+                (r.abos_actifs ?? []).map(a => `${a.profil_type}:${a.plan_code}/${a.periodicite}${a.manuel ? '(manuel)' : ''}`).join(' | '),
+                (r.abos_actifs ?? []).map(a => a.date_fin).filter(Boolean).sort()[0] ?? '',
                 r.inscrit_le, r.derniere_activite, r.animaux, r.annonces_total, r.annonces_actives, r.annonces_vues,
                 r.photos_estimees, r.messages, r.conversations, r.posts, r.rdv, r.balade_parcours, r.balade_km, r.boosts_actifs])])}
               className="text-sm px-3 py-1.5 rounded-xl border border-gray-200 hover:bg-gray-50">⬇ CSV</button>
@@ -148,6 +150,15 @@ export default function ConsommationTab({ adminUid }: { adminUid: string }) {
                             {r.premium && <Badge label="★" color="#d97706" />}
                             {(r.types ?? []).map(t => <span key={t}>{typeBadge(t)}</span>)}
                             {r.abos_actifs?.some(a => a.manuel) && <Badge label="abo manuel" color="#7c3aed" />}
+                            {(() => {
+                              const fins = (r.abos_actifs ?? []).map(a => a.date_fin).filter(Boolean) as string[];
+                              if (!fins.length) return null;
+                              const soonest = fins.sort()[0];
+                              const exp = new Date(soonest) < new Date();
+                              return <span className={`text-xs ${exp ? 'text-red-500 font-semibold' : 'text-gray-400'}`}>
+                                {exp ? '⚠ expiré ' : 'plan → '}{fmtDate(soonest)}
+                              </span>;
+                            })()}
                           </div>
                         </td>
                         <td className="px-2 py-2.5 text-right tabular-nums">{r.animaux}</td>
