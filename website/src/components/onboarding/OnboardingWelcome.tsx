@@ -1,11 +1,15 @@
 'use client';
 
+import { onboardingHasTrial } from '@/lib/onboarding/types';
+
 export function OnboardingWelcome({
   firstName,
+  profileType = '',
   onStart,
   onSkip,
 }: {
   firstName?: string;
+  profileType?: string;
   onStart: () => void;
   onSkip: () => void;
 }) {
@@ -17,9 +21,15 @@ export function OnboardingWelcome({
         {name ? `Bienvenue sur PetsMatch, ${name} !` : 'Bienvenue sur PetsMatch !'}
       </h1>
       <p className="text-gray-600 leading-relaxed">
-        Votre essai gratuit de 30 jours commence aujourd&apos;hui.
-        <br />
-        Accès complet à toutes les fonctionnalités — aucune CB requise.
+        {onboardingHasTrial(profileType) ? (
+          <>
+            Votre essai gratuit de 30 jours commence aujourd&apos;hui.
+            <br />
+            Accès complet à toutes les fonctionnalités — aucune CB requise.
+          </>
+        ) : (
+          <>Configurons votre espace en quelques étapes.</>
+        )}
       </p>
       <div className="w-full flex flex-col gap-3 mt-4">
         <button

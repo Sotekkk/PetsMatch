@@ -8,16 +8,19 @@ import 'package:intl/intl.dart';
 /// complétées, fournis par le flow).
 class OnboardingCompletePage extends StatelessWidget {
   final List<String> achievements;
+  final String profileType;
   final VoidCallback onFinish;
 
   const OnboardingCompletePage({
     super.key,
     required this.achievements,
+    this.profileType = '',
     required this.onFinish,
   });
 
   @override
   Widget build(BuildContext context) {
+    final showTrial = onboardingHasTrial(profileType);
     final trialEnd = DateFormat('d MMMM yyyy', 'fr_FR').format(DateTime.now().add(const Duration(days: 30)));
     return Scaffold(
       backgroundColor: OnboardingTheme.bg,
@@ -49,10 +52,12 @@ class OnboardingCompletePage extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
-              Text('Votre essai se termine le $trialEnd.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+              if (showTrial) ...[
+                const SizedBox(height: 24),
+                Text('Votre essai se termine le $trialEnd.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+              ],
               const SizedBox(height: 32),
               SizedBox(
                 width: double.infinity,

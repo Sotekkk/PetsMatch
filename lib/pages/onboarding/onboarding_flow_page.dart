@@ -113,6 +113,7 @@ class _OnboardingFlowPageState extends State<OnboardingFlowPage> {
       case _Phase.welcome:
         return OnboardingWelcomePage(
           firstName: User_Info.firstname,
+          profileType: widget.profileType,
           onStart: _start,
           onSkip: _skipAll,
         );
@@ -133,7 +134,11 @@ class _OnboardingFlowPageState extends State<OnboardingFlowPage> {
         );
 
       case _Phase.complete:
-        return OnboardingCompletePage(achievements: _achievements, onFinish: _afterCompleteScreen);
+        return OnboardingCompletePage(
+          achievements: _achievements,
+          profileType: widget.profileType,
+          onFinish: _afterCompleteScreen,
+        );
 
       case _Phase.discovery:
         return OnboardingDiscoveryPage(items: _discoveryItems, onFinish: _finish);

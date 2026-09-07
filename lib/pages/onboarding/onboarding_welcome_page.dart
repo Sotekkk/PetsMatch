@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 /// (docs/PetsMatch_Specs_Onboarding_Anatomie.md §2).
 class OnboardingWelcomePage extends StatelessWidget {
   final String firstName;
+  final String profileType;
   final VoidCallback onStart;
   final VoidCallback onSkip;
 
   const OnboardingWelcomePage({
     super.key,
     required this.firstName,
+    this.profileType = '',
     required this.onStart,
     required this.onSkip,
   });
@@ -39,9 +41,11 @@ class OnboardingWelcomePage extends StatelessWidget {
                 style: OnboardingTheme.title,
               ),
               const SizedBox(height: 16),
-              const Text(
-                'Votre essai gratuit de 30 jours commence aujourd\'hui.\n'
-                'Accès complet à toutes les fonctionnalités — aucune CB requise.',
+              Text(
+                onboardingHasTrial(profileType)
+                    ? 'Votre essai gratuit de 30 jours commence aujourd\'hui.\n'
+                        'Accès complet à toutes les fonctionnalités — aucune CB requise.'
+                    : 'Configurons votre espace en quelques étapes.',
                 textAlign: TextAlign.center,
                 style: OnboardingTheme.body,
               ),

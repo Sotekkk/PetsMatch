@@ -109,6 +109,7 @@ export function OnboardingModal({
           <div className="flex-1 flex items-center justify-center">
             <OnboardingWelcome
               firstName={firstName}
+              profileType={profileType}
               onStart={() => setPhase(steps.length === 0 ? 'complete' : 'steps')}
               onSkip={skipAll}
             />
@@ -142,7 +143,7 @@ export function OnboardingModal({
 
         {phase === 'complete' && (
           <div className="flex-1 flex items-center justify-center">
-            <OnboardingComplete achievements={achievements} onFinish={afterComplete} />
+            <OnboardingComplete achievements={achievements} profileType={profileType} onFinish={afterComplete} />
           </div>
         )}
 

@@ -1,10 +1,14 @@
 'use client';
 
+import { onboardingHasTrial } from '@/lib/onboarding/types';
+
 export function OnboardingComplete({
   achievements,
+  profileType = '',
   onFinish,
 }: {
   achievements: string[];
+  profileType?: string;
   onFinish: () => void;
 }) {
   const trialEnd = new Date();
@@ -26,7 +30,9 @@ export function OnboardingComplete({
           </li>
         ))}
       </ul>
-      <p className="text-xs text-gray-500 mt-4">Votre essai se termine le {trialEndLabel}.</p>
+      {onboardingHasTrial(profileType) && (
+        <p className="text-xs text-gray-500 mt-4">Votre essai se termine le {trialEndLabel}.</p>
+      )}
       <button
         onClick={onFinish}
         className="w-full rounded-xl px-6 py-3 text-white font-semibold bg-[#6E9E57] hover:opacity-90 transition-opacity mt-6"

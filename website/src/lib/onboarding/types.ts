@@ -19,3 +19,9 @@ export interface OnboardingDiscoveryItem {
   subtitle: string;
   href: string;
 }
+
+/** Les profils gratuits (particulier, association) n'ont pas d'abonnement :
+ *  ne jamais leur afficher « essai gratuit de 30 jours ». */
+export function onboardingHasTrial(profileType: string): boolean {
+  return profileType !== 'particulier' && profileType !== 'association';
+}

@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 
+/// Les profils gratuits (particulier, association) n'ont pas d'abonnement :
+/// ne jamais leur afficher « essai gratuit de 30 jours ».
+bool onboardingHasTrial(String profileType) =>
+    !const {'particulier', 'association'}.contains(profileType);
+
 /// Palette et styles partagés par tous les écrans d'onboarding
 /// (voir docs/PetsMatch_Specs_Onboarding_Anatomie.md §2 — Architecture commune).
 class OnboardingTheme {
