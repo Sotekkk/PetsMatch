@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     images: ["/Banniere_petsmatch.png"],
   },
   verification: {
-    google: "google961c7a0a2687ef2e",
+    google: "C9BQ9MV0lT3NisYIpRcZVskqI4uMpdPLTnvQOnlAmQY",
   },
 };
 
