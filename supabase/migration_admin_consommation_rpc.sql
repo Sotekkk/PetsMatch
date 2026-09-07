@@ -117,7 +117,10 @@ BEGIN
            COUNT(*) AS n_total,
            COUNT(*) FILTER (WHERE statut = 'disponible') AS n_actives,
            COALESCE(SUM(vues), 0) AS vues,
-           COALESCE(SUM(COALESCE(array_length(photos, 1), 0)), 0) AS photos,
+           COALESCE(SUM(
+             CASE WHEN jsonb_typeof(to_jsonb(photos)) = 'array'
+                  THEN jsonb_array_length(to_jsonb(photos)) ELSE 0 END
+           ), 0) AS photos,
            COUNT(*) FILTER (WHERE boost_until IS NOT NULL AND boost_until > now()) AS boosts
     FROM annonces WHERE uid_eleveur IS NOT NULL GROUP BY uid_eleveur
   ),
