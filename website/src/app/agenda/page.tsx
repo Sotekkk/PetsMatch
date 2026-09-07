@@ -876,7 +876,7 @@ export default function AgendaPage() {
       </div>
 
       {showAdd && uid && (
-        <AddModal uid={uid} profileId={activeProfileId} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
+        <AddModal uid={uid} profileId={activeProfileId} isParticulierView={isParticulierView} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
       )}
 
       {modalAnnuler && (
@@ -1627,7 +1627,10 @@ function DayView({ date, events, tasks, onNavigate, onDelete, onAnnuler, onModif
 
 // ── AddModal ──────────────────────────────────────────────────────────────────
 
-function AddModal({ uid, profileId, onClose, onSaved }: { uid: string; profileId: string; onClose: () => void; onSaved: () => void }) {
+function AddModal({ uid, profileId, isParticulierView, onClose, onSaved }: { uid: string; profileId: string; isParticulierView: boolean; onClose: () => void; onSaved: () => void }) {
+  // « Mise bas » n'a pas de sens pour un profil particulier — réservé aux
+  // profils élevage/pro/association.
+  const types = isParticulierView ? TYPES.filter(t => t !== 'mise_bas') : TYPES;
   const [titre, setTitre]   = useState('');
   const [type, setType]     = useState('autre');
   const [date, setDate]     = useState(() => new Date().toISOString().slice(0, 16));
@@ -1663,7 +1666,7 @@ function AddModal({ uid, profileId, onClose, onSaved }: { uid: string; profileId
           style={{ fontFamily: 'Galey, sans-serif' }}
         />
         <div className="flex flex-wrap gap-2">
-          {TYPES.map(t => (
+          {types.map(t => (
             <button key={t} onClick={() => setType(t)}
               className="px-3 py-1.5 rounded-full text-xs font-semibold transition-colors"
               style={{
