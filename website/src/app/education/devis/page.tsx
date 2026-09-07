@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -49,6 +49,14 @@ const STATUT_LABEL: Record<string, string> = {
 };
 
 export default function DevisPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center py-32 text-gray-400">Chargement…</div>}>
+      <DevisPageInner />
+    </Suspense>
+  );
+}
+
+function DevisPageInner() {
   const { user, userData, loading } = useAuth();
   const router = useRouter();
   const activeProfileId = useActiveProfile();
