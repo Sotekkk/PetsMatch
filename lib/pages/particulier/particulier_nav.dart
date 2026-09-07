@@ -228,6 +228,16 @@ class _ParticulierNavState extends State<ParticulierNav> {
                           ));
                         },
                       ),
+                    _DrawerSubItem(
+                      label: 'Mes Contrats',
+                      icon: Icons.description_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const MesContratsParticulierPage(),
+                        ));
+                      },
+                    ),
                   ],
                 ),
                 _DrawerSection(
@@ -374,22 +384,6 @@ class _ParticulierNavState extends State<ParticulierNav> {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const MarketplacePage()));
                   },
-                ),
-                _DrawerSection(
-                  icon: Icons.folder_outlined,
-                  label: 'Administratif',
-                  children: [
-                    _DrawerSubItem(
-                      label: 'Mes Contrats',
-                      icon: Icons.description_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const MesContratsParticulierPage(),
-                        ));
-                      },
-                    ),
-                  ],
                 ),
                 if (User_Info.isPro) ...[
                   const Divider(height: 16),
