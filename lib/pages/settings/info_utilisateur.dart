@@ -1,11 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:PetsMatch/pages/particulier/numberadressregistration.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/utils/french_geo.dart';
+import 'package:PetsMatch/utils/image_pick.dart';
+import 'package:PetsMatch/utils/storage_helper.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geocoding/geocoding.dart' as geo;
 import 'package:geolocator/geolocator.dart';
@@ -58,6 +62,17 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
 
   final bool _isPhoneValid = true;
   final bool _isElevagePhoneValid = true;
+
+  // ── Profil particulier (multi-profil) ──────────────────────────────────────
+  // Quand le profil actif est un profil « particulier » (principal OU
+  // secondaire), l'écran lit/écrit UNIQUEMENT sa ligne user_profiles — jamais
+  // le formulaire élevage ni le doc partagé users/{uid} (sauf profil principal).
+  bool _isParticulierProfile = false;
+  String? _rowId;        // user_profiles.id de la ligne éditée
+  bool _rowIsMain = true;
+  File? _photoFile;
+  String? _photoUrl;
+
   bool _isDog = false;
   bool _isCat = false;
   List<String> _selectedDogBreeds = [];
@@ -66,6 +81,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
   @override
   void initState() {
     super.initState();
+    _isParticulierProfile = User_Info.activeType == 'particulier';
     _places = GoogleMapsPlaces(apiKey: getApiKey());
     _loadUserInfo();
     _loadCountries();
@@ -80,7 +96,14 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
 
   Future<void> _loadUserInfo() async {
     var user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
+    if (user == null) return;
+
+    if (_isParticulierProfile) {
+      await _loadParticulierProfile(user.uid);
+      return;
+    }
+
+    {
       var userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       User_Info.updateUserInfo(userDoc.data() as Map<String, dynamic>);
       _firstnameController.text = User_Info.firstname;
@@ -130,6 +153,210 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
     }
   }
 
+  /// Charge l'identité depuis la ligne user_profiles du profil particulier actif
+  /// (jamais le doc partagé users/{uid}, jamais les champs élevage).
+  Future<void> _loadParticulierProfile(String uid) async {
+    final supa = Supabase.instance.client;
+    Map<String, dynamic>? row;
+    try {
+      final pid = User_Info.activeProfileId;
+      if (pid.isNotEmpty) {
+        row = await supa.from('user_profiles').select().eq('id', pid).maybeSingle();
+      }
+      row ??= await supa
+          .from('user_profiles')
+          .select()
+          .eq('uid', uid)
+          .eq('profile_type', 'particulier')
+          .order('is_main', ascending: false)
+          .limit(1)
+          .maybeSingle();
+    } catch (_) {}
+    row ??= <String, dynamic>{};
+
+    _rowId = row['id'] as String?;
+    _rowIsMain = row['is_main'] == true;
+    if ((row['profile_type'] as String?) == 'particulier') _isParticulierProfile = true;
+
+    _firstnameController.text =
+        (row['firstname'] ?? User_Info.firstname).toString();
+    _lastnameController.text =
+        (row['lastname'] ?? User_Info.lastname).toString();
+    _dobController.text = (row['date_of_birth'] ?? '').toString();
+    _phoneISOCodeController.text = User_Info.codeISO;
+    _phoneController.text =
+        (row['phone_number'] ?? row['telephone'] ?? '').toString();
+    _rueController.text = (row['rue'] ?? '').toString();
+    _villeController.text = (row['ville'] ?? '').toString();
+    _codePostalController.text = (row['code_postal'] ?? '').toString();
+    _paysController.text = (row['pays']?.toString().isNotEmpty ?? false)
+        ? row['pays'].toString()
+        : 'France';
+    _lat = (row['lat'] as num?)?.toDouble();
+    _lng = (row['lng'] as num?)?.toDouble();
+    _photoUrl = row['avatar_url'] as String?;
+
+    final addrParts = [
+      _rueController.text,
+      _codePostalController.text,
+      _villeController.text,
+    ].where((s) => s.isNotEmpty);
+    if (addrParts.isNotEmpty) _addressSearchCtrl.text = addrParts.join(', ');
+
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _pickPhoto() async {
+    final f = await pickAndCropSquare();
+    if (f != null && mounted) setState(() => _photoFile = f);
+  }
+
+  Future<void> _updateParticulierProfile() async {
+    if (_phoneController.text.trim().isEmpty ||
+        _villeController.text.trim().isEmpty ||
+        _codePostalController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Téléphone, ville et code postal sont obligatoires',
+              style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final supa = Supabase.instance.client;
+    final uid = User_Info.uid;
+    final geoInfo = FrenchGeo.fromPostalCode(_codePostalController.text.trim());
+    final dept = geoInfo?.departement ?? '';
+    final reg = geoInfo?.region ?? '';
+
+    String? avatarUrl;
+    if (_photoFile != null) {
+      try {
+        final path = _rowIsMain
+            ? 'profiles/$uid/photo.jpg'
+            : 'profiles/$uid/particulier_${_rowId ?? uid}.jpg';
+        avatarUrl = await uploadPhoto(_photoFile!, path);
+      } catch (_) {}
+    }
+
+    final rue = _rueController.text.trim();
+    final ville = _villeController.text.trim();
+    final cp = _codePostalController.text.trim();
+    final pays = _paysController.text.trim().isNotEmpty
+        ? _paysController.text.trim()
+        : 'France';
+    final adresse = [
+      rue,
+      [cp, ville].where((s) => s.isNotEmpty).join(' '),
+    ].where((s) => s.isNotEmpty).join(', ');
+
+    final payload = <String, dynamic>{
+      'firstname': _firstnameController.text.trim(),
+      'lastname': _lastnameController.text.trim(),
+      'date_of_birth': _dobController.text.trim(),
+      'phone_number': _phoneController.text.trim(),
+      'telephone': _phoneController.text.trim(),
+      'rue': rue,
+      'ville': ville,
+      'code_postal': cp,
+      'pays': pays,
+      'adresse': adresse,
+      'departement': dept,
+      'region': reg,
+      if (_lat != null) 'lat': _lat,
+      if (_lng != null) 'lng': _lng,
+      if (avatarUrl != null) 'avatar_url': avatarUrl,
+    };
+
+    try {
+      if (_rowId != null) {
+        await supa.from('user_profiles').update(payload).eq('id', _rowId!);
+      } else {
+        await supa
+            .from('user_profiles')
+            .update(payload)
+            .eq('uid', uid)
+            .eq('profile_type', 'particulier');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+        ));
+      }
+      return;
+    }
+
+    // Miroir legacy — UNIQUEMENT pour le profil principal (les lecteurs
+    // Firestore/users partagés). Pour un profil secondaire, on ne touche
+    // jamais le doc partagé.
+    if (_rowIsMain) {
+      try {
+        await FirebaseFirestore.instance.collection('users').doc(uid).update({
+          'firstname': _firstnameController.text.trim(),
+          'lastname': _lastnameController.text.trim(),
+          'dateofbirth': _dobController.text.trim(),
+          'phone_number': _phoneController.text.trim(),
+          'rue': rue,
+          'ville': ville,
+          'codePostal': cp,
+          'pays': pays,
+          'departement': dept,
+          'region': reg,
+          if (_lat != null) 'lat': _lat,
+          if (_lng != null) 'lng': _lng,
+          if (avatarUrl != null) 'profilePictureUrl': avatarUrl,
+        });
+      } catch (_) {}
+      try {
+        await supa.from('users').update({
+          'firstname': _firstnameController.text.trim(),
+          'lastname': _lastnameController.text.trim(),
+          'date_of_birth': _dobController.text.trim(),
+          'phone_number': _phoneController.text.trim(),
+          'rue': rue,
+          'ville': ville,
+          'code_postal': cp,
+          'pays': pays,
+          'departement': dept,
+          'region': reg,
+          if (_lat != null) 'lat': _lat,
+          if (_lng != null) 'lng': _lng,
+          if (avatarUrl != null) 'profile_picture_url': avatarUrl,
+        }).eq('uid', uid);
+      } catch (_) {}
+      User_Info.rue = rue;
+      User_Info.ville = ville;
+      User_Info.codePostal = cp;
+      User_Info.departement = dept;
+      User_Info.region = reg;
+    }
+
+    // Rafraîchit l'identité en mémoire pour l'UI (aucune écriture BDD ici).
+    User_Info.firstname = _firstnameController.text.trim();
+    User_Info.lastname = _lastnameController.text.trim();
+    User_Info.phone_number = _phoneController.text.trim();
+    if (avatarUrl != null) User_Info.profilePictureUrl = avatarUrl;
+
+    if (mounted) {
+      setState(() {
+        _photoFile = null;
+        if (avatarUrl != null) _photoUrl = avatarUrl;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profil mis à jour', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Color(0xFF0C5C6C),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   Future<void> _loadCountries() async {
     final String response = await rootBundle.loadString('assets/CountryCodes.json');
     final data = await json.decode(response) as List;
@@ -145,6 +372,10 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
   }
 
   void _updateUserInfo() async {
+    if (_isParticulierProfile) {
+      await _updateParticulierProfile();
+      return;
+    }
     final bool isElevageOrPro = User_Info.isElevage || User_Info.isPro;
     if (isElevageOrPro) {
       if (_elevagePhoneController.text.trim().isEmpty ||
@@ -392,6 +623,10 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (_isParticulierProfile) ...[
+              _photoCard(),
+              const SizedBox(height: 12),
+            ],
             _card('Identité', [
               _field('Prénom *', _firstnameController),
               _field('Nom *', _lastnameController),
@@ -400,7 +635,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
             ]),
             const SizedBox(height: 12),
             _card('Coordonnées', [
-              if (!User_Info.isElevage && !User_Info.isPro) ...[
+              if (_isParticulierProfile || (!User_Info.isElevage && !User_Info.isPro)) ...[
                 _phoneField(_phoneController, 'Téléphone *', selectedCountry, _isPhoneValid,
                     (Country? c) => setState(() {
                           selectedCountry = c;
@@ -496,7 +731,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
                 const SizedBox(height: 12),
                 _field('Pays', _paysController),
               ],
-              if (User_Info.isElevage || User_Info.isPro) ...[
+              if (!_isParticulierProfile && (User_Info.isElevage || User_Info.isPro)) ...[
                 _field("Nom de l'élevage", _elevageNameController),
                 _phoneField(_elevagePhoneController, 'Téléphone élevage *', selectedElevageCountry,
                     _isElevagePhoneValid, (Country? c) => setState(() {
@@ -539,6 +774,56 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
   }
 
   // ── Cards & fields ─────────────────────────────────────────────────────────────
+
+  Widget _photoCard() {
+    final hasImg = _photoFile != null ||
+        (_photoUrl != null && _photoUrl!.isNotEmpty);
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Row(children: [
+        GestureDetector(
+          onTap: _pickPhoto,
+          child: Stack(children: [
+            CircleAvatar(
+              radius: 34,
+              backgroundColor: const Color(0xFFEEF5EA),
+              backgroundImage: _photoFile != null
+                  ? FileImage(_photoFile!) as ImageProvider
+                  : (hasImg ? NetworkImage(_photoUrl!) : null),
+              child: hasImg
+                  ? null
+                  : const Icon(Icons.person, color: Color(0xFF0C5C6C), size: 30),
+            ),
+            Positioned(
+              right: 0, bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.all(5),
+                decoration: const BoxDecoration(color: _teal, shape: BoxShape.circle),
+                child: const Icon(Icons.edit, size: 13, color: Colors.white),
+              ),
+            ),
+          ]),
+        ),
+        const SizedBox(width: 14),
+        const Expanded(
+          child: Text('Photo de profil',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                  fontSize: 14, color: Color(0xFF1F2A2E))),
+        ),
+        TextButton(
+          onPressed: _pickPhoto,
+          child: const Text('Modifier',
+              style: TextStyle(fontFamily: 'Galey', color: _green, fontSize: 13)),
+        ),
+      ]),
+    );
+  }
 
   Widget _card(String title, List<Widget> children) {
     return Container(

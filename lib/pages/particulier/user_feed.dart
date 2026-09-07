@@ -113,6 +113,30 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
     super.dispose();
   }
 
+  // ── Résolution de la ligne user_profiles du profil actif ───────────────────
+  // pid vide = profil principal (is_main). Sinon UUID user_profiles.id.
+  String? _profileRowId;
+  bool _profileRowIsMain = true;
+
+  Future<Map<String, dynamic>?> _loadActiveProfileRow(String cols) async {
+    final pid = User_Info.activeProfileId;
+    try {
+      if (pid.isNotEmpty) {
+        final r = await _supa.from('user_profiles').select(cols).eq('id', pid).maybeSingle();
+        _profileRowId = pid;
+        _profileRowIsMain = false;
+        return r;
+      }
+      final r = await _supa.from('user_profiles').select('$cols, id')
+          .eq('uid', User_Info.uid).eq('is_main', true).maybeSingle();
+      _profileRowId = r?['id'] as String?;
+      _profileRowIsMain = true;
+      return r;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _fetchProfile() async {
     try {
       final doc = await FirebaseFirestore.instance
@@ -121,26 +145,30 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
           .get();
       final d = doc.data() ?? {};
 
-      // « À propos de moi » est propre à CE profil : on lit user_profiles.description.
-      // En multi-profil, le champ Firestore users.desc (legacy, partagé) n'est
-      // plus fiable — il peut contenir la description d'un autre profil.
-      String? profileBio;
+      // Identité propre à CE profil : description / photo / adresse viennent
+      // de la ligne user_profiles du profil actif. Le doc Firestore users
+      // (legacy, partagé) n'est fiable que pour un compte mono-profil.
       final pid = User_Info.activeProfileId;
       final multiProfil = pid.isNotEmpty;
+      Map<String, dynamic>? row;
       try {
-        final row = multiProfil
-            ? await _supa.from('user_profiles').select('description').eq('id', pid).maybeSingle()
-            : await _supa.from('user_profiles').select('description')
-                .eq('uid', User_Info.uid).eq('is_main', true).maybeSingle();
-        profileBio = (row?['description'] as String?)?.trim();
+        row = await _loadActiveProfileRow(
+            'description, avatar_url, rue, ville, code_postal');
       } catch (_) {}
+      final profileBio = (row?['description'] as String?)?.trim();
+      final profileAvatar = (row?['avatar_url'] as String?)?.trim();
+      final profileRue = (row?['rue'] as String?)?.trim();
+      final profileVille = (row?['ville'] as String?)?.trim();
+      final profileCp = (row?['code_postal'] as String?)?.trim();
 
       // Remove address listeners to avoid _adresseModified = true during load
       _rueCtrl.removeListener(_onAdresseChanged);
       _cpCtrl.removeListener(_onAdresseChanged);
       _villeCtrl.removeListener(_onAdresseChanged);
       setState(() {
-        _profilePicUrl = d['profilePictureUrl'] ?? _profilePicUrl;
+        _profilePicUrl = (profileAvatar != null && profileAvatar.isNotEmpty)
+            ? profileAvatar
+            : (multiProfil ? _profilePicUrl : (d['profilePictureUrl'] ?? _profilePicUrl));
         _initBio = (profileBio != null && profileBio.isNotEmpty)
             ? profileBio
             : (multiProfil ? '' : (d['desc'] ?? ''));
@@ -148,9 +176,9 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
         _bioCtrl.text = _initBio;
         _adoptCtrl.text = _initAdopt;
         _hasAdoptProject = _initAdopt.isNotEmpty;
-        _rueCtrl.text   = d['rue'] ?? User_Info.rue;
-        _cpCtrl.text    = d['codePostal'] ?? User_Info.codePostal;
-        _villeCtrl.text = d['ville'] ?? User_Info.ville;
+        _rueCtrl.text   = profileRue ?? (multiProfil ? '' : (d['rue'] ?? User_Info.rue));
+        _cpCtrl.text    = profileCp ?? (multiProfil ? '' : (d['codePostal'] ?? User_Info.codePostal));
+        _villeCtrl.text = profileVille ?? (multiProfil ? '' : (d['ville'] ?? User_Info.ville));
         _adresseModified = false;
       });
       _rueCtrl.addListener(_onAdresseChanged);
@@ -169,32 +197,53 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
     final geo = FrenchGeo.fromPostalCode(_cpCtrl.text.trim());
     final dept = geo?.departement ?? '';
     final reg  = geo?.region ?? '';
-    await FirebaseFirestore.instance.collection('users').doc(uid).update({
-      'rue':        _rueCtrl.text.trim(),
-      'codePostal': _cpCtrl.text.trim(),
-      'ville':      _villeCtrl.text.trim(),
-      'departement': dept,
-      'region':      reg,
-      if (_profileLat != null) 'lat': _profileLat,
-      if (_profileLng != null) 'lng': _profileLng,
-    });
+    final rue = _rueCtrl.text.trim();
+    final ville = _villeCtrl.text.trim();
+    final cp = _cpCtrl.text.trim();
+    final adresse = [rue, [cp, ville].where((s) => s.isNotEmpty).join(' ')]
+        .where((s) => s.isNotEmpty).join(', ');
+
+    // Source de vérité : la ligne user_profiles du profil actif.
+    await _loadActiveProfileRow('id');
     try {
-      await _supa.from('users').upsert({
-        'uid':         uid,
-        'rue':         _rueCtrl.text.trim(),
-        'code_postal': _cpCtrl.text.trim(),
-        'ville':       _villeCtrl.text.trim(),
-        'departement': dept,
-        'region':      reg,
+      final q = _supa.from('user_profiles').update({
+        'rue': rue, 'ville': ville, 'code_postal': cp,
+        'adresse': adresse, 'departement': dept, 'region': reg,
         if (_profileLat != null) 'lat': _profileLat,
         if (_profileLng != null) 'lng': _profileLng,
-      }, onConflict: 'uid');
+      });
+      if (_profileRowId != null) {
+        await q.eq('id', _profileRowId!);
+      } else {
+        await q.eq('uid', uid).eq('is_main', true);
+      }
     } catch (_) {}
-    User_Info.rue = _rueCtrl.text.trim();
-    User_Info.codePostal = _cpCtrl.text.trim();
-    User_Info.ville = _villeCtrl.text.trim();
-    User_Info.departement = dept;
-    User_Info.region = reg;
+
+    // Miroir legacy — profil principal uniquement.
+    if (_profileRowIsMain) {
+      try {
+        await FirebaseFirestore.instance.collection('users').doc(uid).update({
+          'rue': rue, 'codePostal': cp, 'ville': ville,
+          'departement': dept, 'region': reg,
+          if (_profileLat != null) 'lat': _profileLat,
+          if (_profileLng != null) 'lng': _profileLng,
+        });
+      } catch (_) {}
+      try {
+        await _supa.from('users').upsert({
+          'uid': uid,
+          'rue': rue, 'code_postal': cp, 'ville': ville,
+          'departement': dept, 'region': reg,
+          if (_profileLat != null) 'lat': _profileLat,
+          if (_profileLng != null) 'lng': _profileLng,
+        }, onConflict: 'uid');
+      } catch (_) {}
+      User_Info.rue = rue;
+      User_Info.codePostal = cp;
+      User_Info.ville = ville;
+      User_Info.departement = dept;
+      User_Info.region = reg;
+    }
     setState(() {
       _adresseModified = false;
       _adresseSearchCtrl.clear();
@@ -448,13 +497,33 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
 
   Future<void> _uploadProfilePic() async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
-    final url = await uploadPhoto(_imageFile!, 'profiles/$uid/photo.jpg');
+    await _loadActiveProfileRow('id');
+    final path = _profileRowIsMain
+        ? 'profiles/$uid/photo.jpg'
+        : 'profiles/$uid/particulier_${_profileRowId ?? uid}.jpg';
+    final url = await uploadPhoto(_imageFile!, path);
     setState(() => _profilePicUrl = url);
-    User_Info.profilePictureUrl = url;
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(User_Info.uid)
-        .update({'profilePictureUrl': url});
+
+    // Source de vérité : user_profiles.avatar_url du profil actif.
+    try {
+      final q = _supa.from('user_profiles').update({'avatar_url': url});
+      if (_profileRowId != null) {
+        await q.eq('id', _profileRowId!);
+      } else {
+        await q.eq('uid', uid).eq('is_main', true);
+      }
+    } catch (_) {}
+
+    // Miroir legacy — profil principal uniquement.
+    if (_profileRowIsMain) {
+      User_Info.profilePictureUrl = url;
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(User_Info.uid)
+            .update({'profilePictureUrl': url});
+      } catch (_) {}
+    }
   }
 
   Future<void> _saveBio() async {

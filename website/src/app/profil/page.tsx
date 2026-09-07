@@ -2052,7 +2052,17 @@ export default function ProfilPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 
-  const isEleveur = userData?.isElevage === true;
+  // Adresse + photo propres au profil particulier édité (multi-profil)
+  const [rueParticulier, setRueParticulier] = useState('');
+  const [particulierAvatar, setParticulierAvatar] = useState<string | null>(null);
+
+  // Le formulaire est en « mode particulier » quand le profil actif est un
+  // profil particulier (principal OU secondaire) — jamais le formulaire
+  // élevage, même si le compte a is_elevage=true.
+  const editingParticulier = activeProfileId
+    ? resolvedType === 'particulier'
+    : !(userData?.isElevage === true);
+  const isEleveur = userData?.isElevage === true && !editingParticulier;
 
 
   useEffect(() => {
@@ -2131,6 +2141,32 @@ export default function ProfilPage() {
     })();
   }, [activeProfileLoaded, activeProfileId]);
 
+  // Profil particulier SECONDAIRE : charger l'identité depuis sa ligne
+  // user_profiles (le profil principal reste initialisé depuis userData).
+  useEffect(() => {
+    if (!activeProfileLoaded || !user) return;
+    if (!(activeProfileId && resolvedType === 'particulier')) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('user_profiles')
+        .select('firstname,lastname,date_of_birth,phone_number,telephone,rue,ville,code_postal,avatar_url')
+        .eq('id', activeProfileId).single();
+      if (cancelled || !data) return;
+      const r = data as Record<string, unknown>;
+      setFirstname((r.firstname as string) ?? '');
+      setLastname((r.lastname as string) ?? '');
+      setDob((r.date_of_birth as string) ?? '');
+      setPhone(((r.phone_number ?? r.telephone) as string) ?? '');
+      setRueParticulier((r.rue as string) ?? '');
+      setVille((r.ville as string) ?? '');
+      setCpParticulier((r.code_postal as string) ?? '');
+      setParticulierAvatar((r.avatar_url as string) ?? null);
+      const addr = [r.rue, r.code_postal, r.ville].filter(Boolean).join(', ');
+      if (addr) setAdresseSearch(addr);
+    })();
+    return () => { cancelled = true; };
+  }, [activeProfileLoaded, user, activeProfileId, resolvedType]);
+
   function onAdresseSearchChange(val: string) {
     setAdresseSearch(val);
     if (adresseDebounce.current) clearTimeout(adresseDebounce.current);
@@ -2166,7 +2202,11 @@ export default function ProfilPage() {
         }
         if (city) setVille(city);
         if (cp) setCpParticulier(cp);
-        if (num || route) setAdresseSearch([num, route].filter(Boolean).join(' '));
+        if (num || route) {
+          const street = [num, route].filter(Boolean).join(' ');
+          setRueParticulier(street);
+          setAdresseSearch(street);
+        }
       }
     );
   }
@@ -2311,6 +2351,9 @@ export default function ProfilPage() {
     setSaving(true);
     setSaved(false);
     try {
+      // Profil particulier secondaire : on n'écrit QUE sa ligne user_profiles,
+      // jamais la ligne partagée users / le doc Firestore users/{uid}.
+      const secondaryParticulier = editingParticulier && !!activeProfileId;
       const geo = fromPostalCode(cpParticulier);
       const payload: Record<string, unknown> = {
         uid: user!.uid,
@@ -2384,19 +2427,27 @@ export default function ProfilPage() {
       }
 
       if (avatarFile) {
+        const avatarPath = secondaryParticulier
+          ? `profiles/${user!.uid}/particulier_${activeProfileId}.jpg`
+          : `profiles/${user!.uid}/photo.jpg`;
         const avatarUrl = await uploadPhoto(
           avatarFile,
-          `profiles/${user!.uid}/photo.jpg`,
+          avatarPath,
           { maxDim: 800, quality: 0.85 },
         );
         payload.profile_picture_url = avatarUrl;
         if (isEleveur) payload.profile_picture_url_elevage = avatarUrl;
       }
 
-      const { error: usersErr } = await supabase.from('users').upsert(payload, { onConflict: 'uid' });
-      if (usersErr) { setFormErrors([`[users] ${usersErr.message}`]); return; }
+      // Miroir legacy (users partagé) — sauté pour un profil particulier
+      // secondaire (sinon on écrase l'identité du profil principal).
+      if (!secondaryParticulier) {
+        const { error: usersErr } = await supabase.from('users').upsert(payload, { onConflict: 'uid' });
+        if (usersErr) { setFormErrors([`[users] ${usersErr.message}`]); return; }
+      }
 
       // Sync vers user_profiles (source V2)
+      const geoPart = fromPostalCode(cpParticulier);
       const profileUpdate: Record<string, unknown> = {
         firstname,
         lastname,
@@ -2404,9 +2455,16 @@ export default function ProfilPage() {
         ville,
         code_postal: cpParticulier,
         date_of_birth: dob,
-        departement: fromPostalCode(cpParticulier)?.departement ?? '',
-        region:      fromPostalCode(cpParticulier)?.region      ?? '',
+        departement: geoPart?.departement ?? '',
+        region:      geoPart?.region      ?? '',
       };
+      if (editingParticulier) {
+        profileUpdate.telephone = phone;
+        profileUpdate.rue = rueParticulier;
+        profileUpdate.pays = 'France';
+        profileUpdate.adresse = [rueParticulier, [cpParticulier, ville].filter(Boolean).join(' ')]
+          .filter(Boolean).join(', ');
+      }
       if (payload.profile_picture_url) profileUpdate.avatar_url = payload.profile_picture_url;
       if (isEleveur) {
         profileUpdate.nom            = nameElevage;
@@ -2439,7 +2497,8 @@ export default function ProfilPage() {
       if (profileErr) { setFormErrors([`[user_profiles] ${profileErr.message}`]); return; }
 
       // Sync all profile fields to Firestore so the Flutter app can read them
-      try {
+      // (sauté pour un profil particulier secondaire — doc partagé)
+      if (!secondaryParticulier) try {
         const firestoreUpdate: Record<string, unknown> = { firstname, lastname, dateofbirth: dob };
         if (isEleveur) {
           const isDog = especesElevees.some(e => e.espece === 'chien');
@@ -2462,12 +2521,15 @@ export default function ProfilPage() {
         if (payload.banner_url) firestoreUpdate.bannerUrl = payload.banner_url as string;
         await updateDoc(doc(db, 'users', user!.uid), firestoreUpdate);
       } catch { /* doc may not exist yet, ignore */ }
-      try {
+      if (!secondaryParticulier) try {
         await updateProfile(user!, {
           displayName: isEleveur ? nameElevage : `${firstname} ${lastname}`.trim(),
         });
       } catch { /* non bloquant — App Check ou réseau */ }
-      await refreshUserData();
+      if (payload.profile_picture_url) setParticulierAvatar(payload.profile_picture_url as string);
+      setAvatarFile(null);
+      setAvatarPreview(null);
+      if (!secondaryParticulier) await refreshUserData();
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } finally {
@@ -2571,7 +2633,9 @@ export default function ProfilPage() {
     return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
   }
 
-  const avatar = userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl;
+  const avatar = editingParticulier
+    ? (particulierAvatar ?? userData?.profilePictureUrl)
+    : (userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl);
   const currentBanner = userData?.bannerUrl;
 
   // ACACED expiry

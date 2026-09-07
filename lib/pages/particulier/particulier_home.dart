@@ -53,6 +53,16 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
       final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
       final activeProfileId = User_Info.activeProfileId;
 
+      // Photo du profil actif : user_profiles.avatar_url (pas le doc partagé).
+      String? profileAvatar;
+      try {
+        final prow = activeProfileId.isNotEmpty
+            ? await _supa.from('user_profiles').select('avatar_url').eq('id', activeProfileId).maybeSingle()
+            : await _supa.from('user_profiles').select('avatar_url')
+                .eq('uid', uid).eq('is_main', true).maybeSingle();
+        profileAvatar = (prow?['avatar_url'] as String?)?.trim();
+      } catch (_) {}
+
       List ownRows;
       if (activeProfileId.isNotEmpty) {
         final check = await _supa
@@ -107,7 +117,10 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
 
       if (!mounted) return;
       setState(() {
-        _photoUrl = (doc.data())?['profilePictureUrl'];
+        final firestorePic = doc.data()?['profilePictureUrl'];
+        _photoUrl = (profileAvatar != null && profileAvatar.isNotEmpty)
+            ? profileAvatar
+            : (activeProfileId.isEmpty ? firestorePic : null);
         _animaux = List<Map<String, dynamic>>.from(animaux as List);
         _nbAnimaux = _animaux.length;
         _mesAlertes = List<Map<String, dynamic>>.from(alertesMes as List);
