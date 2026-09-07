@@ -6750,4 +6750,103 @@ https://claude.ai/code/artifact/557cb5e6-8b1d-4f28-9708-8705fec8daeb
 
 ---
 
+## 53. Particulier — « Abonnements & achats » : structure posée, données à brancher (session 2026-09-08)
+
+**Pour Nabil** — état des lieux avant de brancher les vrais moyens de
+paiement, achats ponctuels et abonnement du profil particulier.
+
+### Contexte
+
+L'entrée « Mon abonnement » des Paramètres pointait, pour **tous les
+profils y compris particulier**, vers `AbonnementPage`
+(`lib/pages/eleveur/abonnement_page.dart`) — la page de gestion des plans
+payants **éleveur** (limites d'annonces, `PlanService`). Sans rapport avec
+le particulier, qui est **gratuit par conception** (déjà écrit en commentaire
+dans `onboarding_theme.dart` / `website/src/lib/onboarding/types.ts` :
+*« Les profils gratuits (particulier, association) n'ont pas d'abonnement »*).
+
+Correctif posé (app uniquement — **le site web n'a pas encore d'équivalent,
+à faire**) : `lib/pages/settings/main_settings.dart` route maintenant vers
+une page dédiée particulier quand le profil actif n'est ni pro, ni éleveur,
+ni association ; `AbonnementPage` reste inchangée pour les autres profils.
+
+### Ce qui a été livré (app)
+
+`lib/pages/particulier/abonnements_achats_page.dart` — page « Abonnements &
+achats » avec 4 sous-rubriques :
+
+1. **Mon abonnement** — carte état actuel (formule/statut/prix/périodicité/
+   prochaine facturation/moyen de paiement). Affiche aujourd'hui l'état
+   « Gratuit » de façon honnête (pas de fausses données), avec un bouton
+   « En savoir plus sur les formules à venir ».
+2. **Mes achats** — liste des achats ponctuels (`AchatPonctuel` : id, date,
+   nom, type, montant, statut, factureUrl). Vide pour l'instant.
+3. **Mes crédits** — solde / achetés / utilisés (à 0) + historique
+   (`MouvementCredit` : date, motif, montant signé). Bouton « Acheter des
+   crédits » déjà présent mais inactif (snackbar « bientôt disponible »).
+4. **Facturation** — historique unifié (`LigneFacturation` : date, type,
+   libellé, montant, factureUrl). Vide pour l'instant.
+
+Les 3 listes vides et les modèles (`AchatPonctuel`, `MouvementCredit`,
+`LigneFacturation`) sont volontairement génériques : brancher une vraie
+requête Supabase à la place de `const []` ne demande pas de retoucher les
+widgets d'affichage (`_AchatRow`, `_CreditRow`, `_FactureRow`, `_EmptyCard`
+déjà prêts).
+
+### Ce qui existe déjà côté paiement — à réutiliser, pas dupliquer
+
+`docs/migration_paiements.sql` (déjà exécutée, tables **actives** côté pro
+via `lib/services/plan_service.dart`) :
+
+- `plans_tarifaires` (`profil_type`, `plan_code`, prix, `stripe_price_id_*`)
+- `abonnements` (`uid`, `profil_type`, `plan_code`, `stripe_subscription_id`,
+  `stripe_customer_id`, `periodicite`, `statut`, `date_debut`, `date_fin`)
+- `produits_ponctuels` (catalogue des achats ponctuels : code, label, prix,
+  `stripe_price_id`)
+- `achats_ponctuels` (`uid`, `produit_id`, `stripe_payment_intent_id`,
+  `statut`, `date_achat`, `date_expiration`)
+
+Ces 4 tables sont déjà scopées par `profil_type` (`abonnements`,
+`plans_tarifaires`) ou prêtes à l'être — **le chemin naturel est d'ajouter
+`profil_type = 'particulier'`** dans `plans_tarifaires`/`abonnements`
+plutôt que de créer un nouveau schéma. Pattern de lecture déjà utilisé
+partout (`plan_service.dart`, ex. `getPlanCode`) :
+
+```dart
+await supabase.from('abonnements')
+    .select('plan_code')
+    .eq('uid', uid).eq('profil_type', 'particulier').eq('statut', 'actif')
+    .order('created_at', ascending: false).limit(1).maybeSingle();
+```
+
+⚠️ **Point d'attention (fuite cross-profil)** — thème récurrent de cette
+session (voir §§ agenda/notifications ci-dessus) : `achats_ponctuels` n'a
+**pas** de colonne `profil_type`, seulement `uid`. Un compte avec plusieurs
+profils (particulier + éleveur, cas fréquent) verrait ses achats mélangés
+entre profils si on l'interroge par `uid` seul. Ajouter une colonne
+`profil_type` (ou `profile_id`) à `achats_ponctuels` avant de brancher
+`_buildAchatsSection()`, et filtrer dessus.
+
+**Moyen de paiement** : aucune colonne dédiée aujourd'hui sur `abonnements`
+(seulement `stripe_customer_id`/`stripe_subscription_id`). Deux options :
+appel live à l'API Stripe (`customers.retrieve` + `invoice_settings.
+default_payment_method`) au moment de l'affichage, ou webhook Stripe qui
+cache `payment_method_brand`/`payment_method_last4` sur `abonnements` (plus
+rapide à l'affichage, à synchroniser sur `payment_method.updated`).
+
+**Crédits** : aucune table existante (`plans_tarifaires`/`achats_ponctuels`
+ne couvrent pas un solde de crédits) — à créer si la fonctionnalité est
+activée (ex. `credits_particulier(uid, solde)` + `mouvements_credits(uid,
+date, motif, montant)`), en gardant le même souci de scope par profil.
+
+### Site web
+
+Aucun équivalent web n'a été créé pour cette page — seule l'app a la
+nouvelle page. Si le web doit refléter la même « Abonnements & achats »,
+partir de `website/src/app/agenda/page.tsx` ou `mes-animaux/page.tsx` pour
+le style/structure de page particulier existant, pas de `AbonnementPage`
+web (qui, comme côté app, est éleveur).
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*
