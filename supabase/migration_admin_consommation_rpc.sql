@@ -1,6 +1,9 @@
 -- RPC admin_consommation_stats() — stats de consommation par uid ET par profil.
 -- SECURITY DEFINER, AUCUN GRANT public : appelée uniquement via la clé service
 -- role dans website/src/app/api/admin/stats/route.ts (garde admin dans la route).
+--
+-- Note : les colonnes d'IDs sont un mélange TEXT (IDs Firestore legacy) et UUID
+-- selon les tables → tous les rapprochements se font en ::text.
 
 CREATE OR REPLACE FUNCTION admin_consommation_stats()
 RETURNS jsonb
@@ -14,47 +17,51 @@ DECLARE
 BEGIN
   ------------------------------------------------------------------ par profil
   WITH prof AS (
-    SELECT p.id, p.uid, p.profile_type, p.is_main,
+    SELECT p.id::text AS pid, p.uid, p.profile_type, p.is_main,
            COALESCE(NULLIF(TRIM(p.nom), ''),
                     NULLIF(TRIM(COALESCE(p.firstname,'') || ' ' || COALESCE(p.lastname,'')), ''),
                     'Profil') AS nom,
            p.plan_code, p.is_premium, p.created_at
     FROM user_profiles p
   ),
-  an_owned AS (   -- animaux rattachés à ce profil (lien actif)
-    SELECT ap.profile_id_proprio AS pid, COUNT(*) AS n
+  an_owned AS (
+    SELECT ap.profile_id_proprio::text AS pid, COUNT(*) AS n
     FROM animaux_proprietes ap
-    WHERE ap.profile_id_proprio IS NOT NULL AND ap.date_fin IS NULL
-    GROUP BY ap.profile_id_proprio
+    WHERE ap.profile_id_proprio IS NOT NULL AND ap.profile_id_proprio::text <> ''
+      AND ap.date_fin IS NULL
+    GROUP BY ap.profile_id_proprio::text
   ),
   annonces_p AS (
-    SELECT a.profile_id AS pid,
+    SELECT a.profile_id::text AS pid,
            COUNT(*) AS n_total,
            COUNT(*) FILTER (WHERE a.statut = 'disponible') AS n_actives,
            COALESCE(SUM(a.vues), 0) AS vues,
            COUNT(*) FILTER (WHERE a.boost_until IS NOT NULL AND a.boost_until > now()) AS boosts
-    FROM annonces a WHERE a.profile_id IS NOT NULL
-    GROUP BY a.profile_id
+    FROM annonces a
+    WHERE a.profile_id IS NOT NULL AND a.profile_id::text <> ''
+    GROUP BY a.profile_id::text
   ),
   msg_p AS (
-    SELECT sender_profile_id AS pid, COUNT(*) AS n
-    FROM messages WHERE sender_profile_id IS NOT NULL GROUP BY sender_profile_id
+    SELECT sender_profile_id::text AS pid, COUNT(*) AS n
+    FROM messages
+    WHERE sender_profile_id IS NOT NULL AND sender_profile_id::text <> ''
+    GROUP BY sender_profile_id::text
   ),
   posts_p AS (
-    SELECT author_profile_id AS pid, COUNT(*) AS n
-    FROM posts_socialmedia WHERE author_profile_id IS NOT NULL GROUP BY author_profile_id
+    SELECT author_profile_id::text AS pid, COUNT(*) AS n
+    FROM posts_socialmedia
+    WHERE author_profile_id IS NOT NULL AND author_profile_id::text <> ''
+    GROUP BY author_profile_id::text
   ),
   rdv_p AS (
     SELECT pid, COUNT(*) AS n FROM (
-      SELECT pro_profile_id AS pid FROM rdv WHERE pro_profile_id IS NOT NULL
+      SELECT pro_profile_id::text AS pid FROM rdv WHERE pro_profile_id IS NOT NULL AND pro_profile_id::text <> ''
       UNION ALL
-      SELECT client_profile_id AS pid FROM rdv WHERE client_profile_id IS NOT NULL
+      SELECT client_profile_id::text AS pid FROM rdv WHERE client_profile_id IS NOT NULL AND client_profile_id::text <> ''
     ) s GROUP BY pid
   )
-  -- NB : balades_ludiques_progressions n'a pas de joueur_profile_id en base →
-  -- les stats balades sont uniquement au niveau uid (voir plus bas).
   SELECT COALESCE(jsonb_agg(jsonb_build_object(
-    'profile_id', prof.id,
+    'profile_id', prof.pid,
     'uid', prof.uid,
     'profile_type', prof.profile_type,
     'is_main', prof.is_main,
@@ -70,18 +77,15 @@ BEGIN
     'messages', COALESCE(msg_p.n, 0),
     'posts', COALESCE(posts_p.n, 0),
     'rdv', COALESCE(rdv_p.n, 0),
-    'balade_parcours', 0,
-    'balade_termines', 0,
-    'balade_points', 0,
-    'balade_km', 0
+    'balade_parcours', 0, 'balade_termines', 0, 'balade_points', 0, 'balade_km', 0
   ) ORDER BY prof.uid, prof.is_main DESC), '[]'::jsonb)
   INTO by_profile
   FROM prof
-  LEFT JOIN an_owned    ON an_owned.pid    = prof.id
-  LEFT JOIN annonces_p  ON annonces_p.pid  = prof.id
-  LEFT JOIN msg_p       ON msg_p.pid       = prof.id
-  LEFT JOIN posts_p     ON posts_p.pid     = prof.id
-  LEFT JOIN rdv_p       ON rdv_p.pid       = prof.id;
+  LEFT JOIN an_owned    ON an_owned.pid   = prof.pid
+  LEFT JOIN annonces_p  ON annonces_p.pid = prof.pid
+  LEFT JOIN msg_p       ON msg_p.pid      = prof.pid
+  LEFT JOIN posts_p     ON posts_p.pid    = prof.pid
+  LEFT JOIN rdv_p       ON rdv_p.pid      = prof.pid;
 
   ------------------------------------------------------------------ par uid
   WITH u AS (
@@ -100,10 +104,11 @@ BEGIN
   ),
   an_u AS (
     SELECT uid, COUNT(*) AS n FROM (
-      SELECT DISTINCT ap.animal_id, ap.uid_proprio AS uid
-      FROM animaux_proprietes ap WHERE ap.uid_proprio IS NOT NULL AND ap.date_fin IS NULL
+      SELECT DISTINCT ap.animal_id::text AS aid, ap.uid_proprio AS uid
+      FROM animaux_proprietes ap
+      WHERE ap.uid_proprio IS NOT NULL AND ap.date_fin IS NULL
       UNION
-      SELECT DISTINCT a.id, COALESCE(a.uid_eleveur, a.uid_proprietaire) AS uid
+      SELECT DISTINCT a.id::text AS aid, COALESCE(a.uid_eleveur, a.uid_proprietaire) AS uid
       FROM animaux a WHERE COALESCE(a.uid_eleveur, a.uid_proprietaire) IS NOT NULL
     ) s WHERE uid IS NOT NULL GROUP BY uid
   ),
@@ -117,11 +122,9 @@ BEGIN
     FROM annonces WHERE uid_eleveur IS NOT NULL GROUP BY uid_eleveur
   ),
   media_u AS (
-    SELECT uid,
-           COUNT(*) FILTER (WHERE photo_url IS NOT NULL AND photo_url <> '') AS n
+    SELECT uid, COUNT(*) FILTER (WHERE photo_url IS NOT NULL AND photo_url <> '') AS n
     FROM (
-      SELECT COALESCE(a.uid_eleveur, a.uid_proprietaire) AS uid, a.photo_url
-      FROM animaux a
+      SELECT COALESCE(a.uid_eleveur, a.uid_proprietaire) AS uid, a.photo_url FROM animaux a
     ) s WHERE uid IS NOT NULL GROUP BY uid
   ),
   msg_u AS (
@@ -140,9 +143,9 @@ BEGIN
   ),
   rdv_u AS (
     SELECT uid, COUNT(*) AS n FROM (
-      SELECT pro_uid AS uid FROM rdv WHERE pro_uid IS NOT NULL
+      SELECT pro_uid AS uid FROM rdv WHERE pro_uid IS NOT NULL AND pro_uid <> ''
       UNION ALL
-      SELECT client_uid AS uid FROM rdv WHERE client_uid IS NOT NULL
+      SELECT client_uid AS uid FROM rdv WHERE client_uid IS NOT NULL AND client_uid <> ''
     ) s GROUP BY uid
   ),
   balade_u AS (
@@ -151,7 +154,7 @@ BEGIN
            COUNT(*) FILTER (WHERE pr.statut = 'termine') AS termines,
            COALESCE(SUM(b.distance_km) FILTER (WHERE pr.statut = 'termine'), 0) AS km
     FROM balades_ludiques_progressions pr
-    LEFT JOIN balades_ludiques b ON b.id = pr.balade_id
+    LEFT JOIN balades_ludiques b ON b.id::text = pr.balade_id::text
     WHERE pr.joueur_uid IS NOT NULL GROUP BY pr.joueur_uid
   ),
   abo_u AS (
