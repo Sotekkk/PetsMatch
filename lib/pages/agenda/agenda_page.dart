@@ -70,10 +70,9 @@ List<String> _typesForProfile() {
   if (User_Info.isElevage) {
     return ['rdv', 'mise_bas', 'medication', 'visite', 'autre'];
   }
-  // Particulier : un animal peut aussi mettre bas hors élevage (portée non
-  // planifiée) — même liste que le site web (non filtrée par profil côté
-  // web, cf. website/src/app/agenda/page.tsx).
-  return ['rdv', 'mise_bas', 'medication', 'visite', 'autre'];
+  // Particulier : pas de « Mise bas », réservée aux profils élevage/pro/
+  // association (idem côté site web, cf. website/src/app/agenda/page.tsx).
+  return ['rdv', 'medication', 'visite', 'autre'];
 }
 
 String _eventSubtitle(String time, String type, dynamic dureeMinutes) {
@@ -274,20 +273,29 @@ class _AgendaPageState extends State<AgendaPage> {
               .inFilter('animal_id', animalIds)
               .eq('statut', 'actif')
               .isFilter('date_fin', null);
+          // Exclut mon propre uid : mes événements sont déjà chargés
+          // ci-dessus, correctement filtrés par profil (pro_profile_id).
+          // Sans cette exclusion, un compte multi-profils (ex. particulier +
+          // éleveur) se voit fuiter TOUS ses propres événements de l'autre
+          // profil dès que le même uid possède un animal aussi suivi côté
+          // élevage.
           final ownerUids = (coOwners as List)
               .map((r) => r['uid_proprio'] as String)
+              .where((u) => u != _uid)
               .toSet()
               .toList();
-          final shared = await _supa
-              .from('agenda_events')
-              .select()
-              .inFilter('animal_id', animalIds)
-              .inFilter('uid', ownerUids)
-              .gte('date_debut', from.toIso8601String())
-              .lte('date_debut', to.toIso8601String());
-          final seen = filtered.map((e) => e['id']).toSet();
-          for (final e in (shared as List)) {
-            if (seen.add(e['id'])) filtered.add(e);
+          if (ownerUids.isNotEmpty) {
+            final shared = await _supa
+                .from('agenda_events')
+                .select()
+                .inFilter('animal_id', animalIds)
+                .inFilter('uid', ownerUids)
+                .gte('date_debut', from.toIso8601String())
+                .lte('date_debut', to.toIso8601String());
+            final seen = filtered.map((e) => e['id']).toSet();
+            for (final e in (shared as List)) {
+              if (seen.add(e['id'])) filtered.add(e);
+            }
           }
         }
       } catch (_) {}
@@ -1188,6 +1196,17 @@ class _AgendaPageState extends State<AgendaPage> {
             : null,
         title: const Text('Mon Agenda',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        actions: [
+          // Bouton toujours visible (même pour un particulier) — jusqu'ici le
+          // seul moyen d'ajouter un événement était le lien qui n'apparaît
+          // que quand la vue Liste est totalement vide. Même fonction que
+          // le bouton « + Ajouter » de l'agenda web (website/src/app/agenda/page.tsx).
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: 'Ajouter un événement',
+            onPressed: () => _showAddSheet(),
+          ),
+        ],
         bottom: _viewModeToggleBar(),
       ),
       body: _loading

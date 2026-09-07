@@ -456,10 +456,16 @@ export default function AgendaPage() {
       if (animalIds.length > 0) {
         const { data: owners } = await supabase.from('animaux_proprietes')
           .select('uid_proprio').in('animal_id', animalIds).eq('statut', 'actif').is('date_fin', null);
-        const ownerUids = [...new Set((owners ?? []).map(r => r.uid_proprio as string))];
-        const { data: shared } = await supabase.from('agenda_events').select('*')
+        // Exclut mon propre uid : mes événements sont déjà chargés ci-dessus,
+        // correctement filtrés par profil (pro_profile_id). Sans cette
+        // exclusion, un compte multi-profils (ex. particulier + éleveur) se
+        // voit fuiter TOUS ses propres événements de l'autre profil dès que
+        // le même uid possède un animal aussi suivi côté élevage.
+        const ownerUids = [...new Set((owners ?? []).map(r => r.uid_proprio as string))]
+          .filter(u => u !== uid);
+        const { data: shared } = ownerUids.length > 0 ? await supabase.from('agenda_events').select('*')
           .in('animal_id', animalIds).in('uid', ownerUids)
-          .gte('date_debut', from).lte('date_debut', to);
+          .gte('date_debut', from).lte('date_debut', to) : { data: [] };
         const seen = new Set(list.map(e => e.id));
         for (const e of (shared ?? []) as AgendaEvent[]) {
           if (!seen.has(e.id)) { seen.add(e.id); list.push(e); }
@@ -870,7 +876,7 @@ export default function AgendaPage() {
       </div>
 
       {showAdd && uid && (
-        <AddModal uid={uid} profileId={activeProfileId} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
+        <AddModal uid={uid} profileId={activeProfileId} isParticulierView={isParticulierView} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
       )}
 
       {modalAnnuler && (
@@ -1621,7 +1627,10 @@ function DayView({ date, events, tasks, onNavigate, onDelete, onAnnuler, onModif
 
 // ── AddModal ──────────────────────────────────────────────────────────────────
 
-function AddModal({ uid, profileId, onClose, onSaved }: { uid: string; profileId: string; onClose: () => void; onSaved: () => void }) {
+function AddModal({ uid, profileId, isParticulierView, onClose, onSaved }: { uid: string; profileId: string; isParticulierView: boolean; onClose: () => void; onSaved: () => void }) {
+  // « Mise bas » n'a pas de sens pour un profil particulier — réservé aux
+  // profils élevage/pro/association.
+  const types = isParticulierView ? TYPES.filter(t => t !== 'mise_bas') : TYPES;
   const [titre, setTitre]   = useState('');
   const [type, setType]     = useState('autre');
   const [date, setDate]     = useState(() => new Date().toISOString().slice(0, 16));
@@ -1657,7 +1666,7 @@ function AddModal({ uid, profileId, onClose, onSaved }: { uid: string; profileId
           style={{ fontFamily: 'Galey, sans-serif' }}
         />
         <div className="flex flex-wrap gap-2">
-          {TYPES.map(t => (
+          {types.map(t => (
             <button key={t} onClick={() => setType(t)}
               className="px-3 py-1.5 rounded-full text-xs font-semibold transition-colors"
               style={{
