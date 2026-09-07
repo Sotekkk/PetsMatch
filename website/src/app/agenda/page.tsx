@@ -426,12 +426,18 @@ export default function AgendaPage() {
     }
     const { data } = await q;
 
-    // Si profil pro secondaire actif : charger aussi les RDV en attente
-    if (activeProfileId && uid) {
-      const { data: rdvData } = await supabase.from('rdv')
+    // Charger aussi les RDV en attente de confirmation — statut réel
+    // 'demande' (pas 'en_attente', qui ne correspond à rien côté rdv), et
+    // pas seulement pour un profil pro secondaire : le profil principal
+    // (ex. éleveur) reçoit aussi des demandes, avec pro_profile_id vide.
+    if (uid) {
+      let rdvQ = supabase.from('rdv')
         .select('id, date_debut, motif, client_uid, client_profile_id, animal_id')
-        .eq('pro_uid', uid).eq('pro_profile_id', activeProfileId)
-        .eq('statut', 'en_attente').order('date_debut');
+        .eq('pro_uid', uid).eq('statut', 'demande');
+      rdvQ = activeProfileId
+        ? rdvQ.eq('pro_profile_id', activeProfileId)
+        : rdvQ.or('pro_profile_id.is.null,pro_profile_id.eq.');
+      const { data: rdvData } = await rdvQ.order('date_debut');
       setPendingRdvs((rdvData ?? []) as typeof pendingRdvs);
     } else {
       setPendingRdvs([]);
@@ -805,8 +811,8 @@ export default function AgendaPage() {
           </div>
         )}
 
-        {/* RDV en attente — visible uniquement pour un profil pro secondaire */}
-        {activeProfileId && pendingRdvs.length > 0 && (
+        {/* RDV en attente de confirmation (profil principal ou secondaire) */}
+        {pendingRdvs.length > 0 && (
           <div className="mb-6">
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
               RDV en attente de confirmation ({pendingRdvs.length})
