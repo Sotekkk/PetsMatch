@@ -240,6 +240,14 @@ class _ParticulierNavState extends State<ParticulierNav> {
                     ),
                   ],
                 ),
+                _DrawerItem(
+                  icon: Icons.groups_outlined,
+                  label: 'Communauté',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunauteHubPage()));
+                  },
+                ),
                 _DrawerSection(
                   icon: Icons.search_off_rounded,
                   label: 'Perdus & Trouvés',
@@ -367,14 +375,6 @@ class _ParticulierNavState extends State<ParticulierNav> {
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const ServicesPage()));
-                  },
-                ),
-                _DrawerItem(
-                  icon: Icons.groups_outlined,
-                  label: 'Communauté',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunauteHubPage()));
                   },
                 ),
                 _DrawerItem(
