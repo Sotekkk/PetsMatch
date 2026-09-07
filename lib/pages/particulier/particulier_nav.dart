@@ -265,42 +265,6 @@ class _ParticulierNavState extends State<ParticulierNav> {
                   },
                 ),
                 _DrawerSection(
-                  icon: Icons.search_off_rounded,
-                  label: 'Perdus & Trouvés',
-                  children: [
-                    _DrawerSubItem(
-                      label: 'Mes déclarations perdues/trouvées',
-                      icon: Icons.manage_search_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const MesAlertesPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Animaux perdus/trouvés',
-                      icon: Icons.location_searching,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnimauxPerdusPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'J\'ai trouvé un animal',
-                      icon: Icons.pets,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnimalTrouveFormPage(),
-                        ));
-                      },
-                    ),
-                  ],
-                ),
-                _DrawerSection(
                   icon: Icons.campaign_outlined,
                   label: 'Annonces',
                   children: [
@@ -376,6 +340,42 @@ class _ParticulierNavState extends State<ParticulierNav> {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const ServicesPage()));
                   },
+                ),
+                _DrawerSection(
+                  icon: Icons.search_off_rounded,
+                  label: 'Perdus & Trouvés',
+                  children: [
+                    _DrawerSubItem(
+                      label: 'Mes déclarations perdues/trouvées',
+                      icon: Icons.manage_search_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const MesAlertesPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Animaux perdus/trouvés',
+                      icon: Icons.location_searching,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const AnimauxPerdusPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'J\'ai trouvé un animal',
+                      icon: Icons.pets,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const AnimalTrouveFormPage(),
+                        ));
+                      },
+                    ),
+                  ],
                 ),
                 _DrawerItem(
                   icon: Icons.local_offer_outlined,
