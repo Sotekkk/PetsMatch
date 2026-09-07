@@ -742,8 +742,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final rdv = _rdvs.firstWhere((r) => r['id'].toString() == rdvId, orElse: () => {});
       final clientUid = rdv['client_uid'] as String?;
       final proUid    = FirebaseAuth.instance.currentUser?.uid;
-      final proName   = User_Info.nameElevage.isNotEmpty ? User_Info.nameElevage : 'La pension';
-      final clientName = rdv['_client_name']?.toString() ?? 'Client';
+      final names = await _rdvEventNames(rdv);
+      final proName = names.proName;
+      final clientName = names.clientName;
       // Agenda client
       if (clientUid != null) {
         await supa.from('agenda_events').upsert({
@@ -948,8 +949,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
       final clientUid = rdv['client_uid'] as String?;
       final proUid = FirebaseAuth.instance.currentUser?.uid;
-      final proName = User_Info.nameElevage.isNotEmpty ? User_Info.nameElevage : 'Le professionnel';
-      final clientName = rdv['_client_name']?.toString() ?? 'Client';
+      final names = await _rdvEventNames(rdv);
+      final proName = names.proName;
+      final clientName = names.clientName;
 
       if (clientUid != null) {
         await supa.from('agenda_events').upsert({
@@ -1155,6 +1157,42 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     ));
   }
 
+  /// Noms à afficher dans les agenda_events d'un RDV, résolus depuis les
+  /// PROFILS (client_profile_id / pro_profile_id) et jamais via is_main /
+  /// User_Info.nameElevage — sinon un compte multi-profils voit le mauvais
+  /// nom (ex. « RDV avec Pomsky de la Luna » au lieu du particulier).
+  Future<({String proName, String clientName})> _rdvEventNames(Map<String, dynamic> rdv) async {
+    final supa = Supabase.instance.client;
+    String proName = '';
+    String clientName = (rdv['_client_name']?.toString().trim().isNotEmpty ?? false)
+        ? rdv['_client_name'].toString().trim() : '';
+    final cpid = (rdv['client_profile_id'] as String?)?.trim();
+    final ppid = (rdv['pro_profile_id'] as String?)?.trim();
+    try {
+      final ids = <String>{if (cpid?.isNotEmpty ?? false) cpid!, if (ppid?.isNotEmpty ?? false) ppid!};
+      if (ids.isNotEmpty) {
+        final rows = await supa.from('user_profiles')
+            .select('id, firstname, lastname, nom').inFilter('id', ids.toList());
+        for (final r in rows as List) {
+          final nom = (r['nom'] as String?)?.trim() ?? '';
+          final composed = '${r['firstname'] ?? ''} ${r['lastname'] ?? ''}'.trim();
+          if (r['id'] == cpid) clientName = composed.isNotEmpty ? composed : (nom.isNotEmpty ? nom : clientName);
+          if (r['id'] == ppid) proName = nom.isNotEmpty ? nom : (composed.isNotEmpty ? composed : proName);
+        }
+      }
+    } catch (_) {}
+    if (proName.isEmpty) {
+      proName = User_Info.nameElevage.isNotEmpty
+          ? User_Info.nameElevage
+          : (User_Info.professionPro.isNotEmpty ? User_Info.professionPro : 'Le professionnel');
+    }
+    if (clientName.isEmpty) {
+      final manual = rdv['client_nom_manuel']?.toString().trim();
+      clientName = (manual?.isNotEmpty ?? false) ? manual! : 'Client';
+    }
+    return (proName: proName, clientName: clientName);
+  }
+
   Future<void> _updateStatut(String rdvId, String statut,
       {int? dureeMinutes, String? motifAnnulation}) async {
     try {
@@ -1172,12 +1210,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
       if (statut == 'confirme' && clientUid != null) {
         final proUid2   = FirebaseAuth.instance.currentUser?.uid;
-        final proName = User_Info.nameElevage.isNotEmpty
-            ? User_Info.nameElevage
-            : User_Info.professionPro.isNotEmpty
-                ? User_Info.professionPro
-                : 'Professionnel';
-        final clientName2 = rdv['_client_name']?.toString() ?? 'Client';
+        final names = await _rdvEventNames(rdv);
+        final proName = names.proName;
+        final clientName2 = names.clientName;
         final dhUtc = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toUtc();
         // Agenda client
         await supa.from('agenda_events').upsert({

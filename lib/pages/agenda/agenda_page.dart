@@ -250,6 +250,42 @@ class _AgendaPageState extends State<AgendaPage> {
         return epid.isEmpty;
       }).toList();
 
+      // Dé-duplication par RDV : un même rendez-vous peut avoir 2 lignes
+      // agenda_events (côté client = `rdv_id` ; côté pro = `couleur:'rdv:<id>'`).
+      // Quand le client et le pro sont le MÊME uid (on réserve avec son propre
+      // profil pro), les deux peuvent passer le filtre. On garde une seule
+      // ligne par RDV : celle du profil actif, sinon la ligne « client »
+      // (`rdv_id` renseigné).
+      String? rdvKeyOf(Map e) {
+        final rid = e['rdv_id']?.toString();
+        if (rid != null && rid.isNotEmpty) return rid;
+        final c = e['couleur']?.toString() ?? '';
+        return c.startsWith('rdv:') ? c.substring(4) : null;
+      }
+      final byRdvKey = <String, Map<String, dynamic>>{};
+      final deduped = <Map<String, dynamic>>[];
+      for (final e in filtered.cast<Map<String, dynamic>>()) {
+        final k = rdvKeyOf(e);
+        if (k == null) { deduped.add(e); continue; }
+        final existing = byRdvKey[k];
+        if (existing == null) {
+          byRdvKey[k] = e;
+          deduped.add(e);
+        } else {
+          final eIsClientSide = (e['rdv_id']?.toString().isNotEmpty ?? false);
+          final keepE = pid.isNotEmpty
+              ? (e['pro_profile_id'] as String?) == pid
+              : eIsClientSide;
+          if (keepE) {
+            deduped[deduped.indexOf(existing)] = e;
+            byRdvKey[k] = e;
+          }
+        }
+      }
+      filtered
+        ..clear()
+        ..addAll(deduped);
+
       // Co-propriété : les événements liés à un animal dont je suis
       // co-propriétaire actif (RDV véto/comportementaliste/ostéo, rappels
       // vaccins/traitements, mise-bas…) créés par un autre co-propriétaire

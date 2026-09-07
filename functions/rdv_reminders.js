@@ -4,15 +4,14 @@ const https = require("https");
 
 if (!admin.apps.length) admin.initializeApp();
 
-// Clé partagée avec alertes.js — à définir via :
-//   firebase functions:config:set supabase.url="..." supabase.service_key="..."
-// Ou laisser alertes.js comme source de vérité et importer depuis process.env.
-const SUPABASE_URL = process.env.SUPABASE_URL ||
-    (functions.config().supabase || {}).url ||
-    "https://zyvpngcvzrkdytypjlyq.supabase.co";
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY ||
-    (functions.config().supabase || {}).service_key ||
-    "";
+// Même clé service_role que alertes.js / agenda.js (hardcodée par cohérence —
+// functions.config().supabase.service_key n'est PAS défini sur ce projet, donc
+// le repli "" faisait échouer TOUS les GET Supabase en 401 → aucun rappel).
+const SUPABASE_URL = "https://zyvpngcvzrkdytypjlyq.supabase.co";
+const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" +
+    ".eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5dnBuZ2N2enJrZHl0eXBqbHlxIiwi" +
+    "cm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTM2NDY1NSwiZXhwIjoyMDk0" +
+    "OTQwNjU1fQ.1U96V3c7nHG3T08dboBcxTd05k8A_JQfnyrJTbJ0HgQ";
 
 // Site pour l'email de rappel des clients sans compte PetsMatch.
 const SITE_URL = process.env.SITE_URL ||
@@ -216,10 +215,10 @@ exports.sendRdvReminders = functions
 
                         await supabaseInsert("notifications", [{
                             uid: rdv.client_uid,
-                            type: `rdv_rappel_${win.label.replace("min", "m")}`,
+                            type: "rdv_rappel",
                             title: title,
                             body: body,
-                            data: {rdv_id: rdv.id},
+                            data: {rdv_id: rdv.id, echeance: win.echeance},
                             read: false,
                             ...(rdv.client_profile_id ? {profile_id: rdv.client_profile_id} : {}),
                         }]);
