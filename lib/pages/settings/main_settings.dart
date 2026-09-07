@@ -7,11 +7,14 @@ import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
+import 'package:PetsMatch/pages/onboarding/onboarding_flow_page.dart';
+import 'package:PetsMatch/pages/onboarding/onboarding_registry.dart';
 import 'package:PetsMatch/pages/settings/about_us.dart';
 import 'package:PetsMatch/pages/settings/connectionSecu.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 import 'package:PetsMatch/pages/settings/parametre_config.dart';
 import 'package:PetsMatch/pages/settings/utilisateurs_bloques_page.dart';
+import 'package:PetsMatch/services/onboarding_service.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -262,6 +265,23 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                 text: 'Exporter mes données',
                 onTap: () => _exportUserData(context),
               ),
+              if (onboardingRegistry.containsKey(User_Info.activeType))
+                buildSettingsOption(
+                  context,
+                  icon: Icons.flag_outlined,
+                  text: 'Reprendre le guide de démarrage',
+                  onTap: () async {
+                    final pid = User_Info.activeProfileId;
+                    final ptype = User_Info.activeType;
+                    if (pid.isEmpty) return;
+                    await OnboardingService.reset(pid);
+                    if (!context.mounted) return;
+                    Navigator.of(context).push(MaterialPageRoute(
+                      fullscreenDialog: true,
+                      builder: (_) => OnboardingFlowPage(profileId: pid, profileType: ptype, resume: false),
+                    ));
+                  },
+                ),
               const SizedBox(height: 32),
               SizedBox(
                 width: double.infinity,

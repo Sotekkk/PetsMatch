@@ -52,13 +52,14 @@ export async function isCompleted(profileId: string): Promise<boolean> {
   return row?.completed_at != null;
 }
 
-/** Étapes restantes, pour le bandeau "Finalisez votre profil". */
+/** Étapes restantes, pour le bandeau "Finalisez votre profil". 0 si complété
+ *  ou ignoré définitivement (« Passer » / bandeau fermé). */
 export async function remainingSteps(profileId: string, profileType: string): Promise<number> {
   const total = onboardingStepsCount[profileType];
   if (!total) return 0;
   const row = await getProgress(profileId);
   if (!row) return total;
-  if (row.completed_at) return 0;
+  if (row.completed_at || row.skipped) return 0;
   const done = row.completed_steps?.length ?? 0;
   return Math.max(0, Math.min(total, total - done));
 }
@@ -79,8 +80,9 @@ export async function markCompleted(profileId: string): Promise<void> {
   );
 }
 
-/** Bouton "Passer" — n'efface pas la progression déjà faite, empêche juste
- * le relance automatique. */
+/** Bouton "Passer" / fermeture du bandeau — n'efface pas la progression déjà
+ * faite, empêche le relance automatique ET masque le bandeau. Réversible via
+ * "Reprendre le guide" (resetProgress). */
 export async function markSkipped(profileId: string): Promise<void> {
   await supabase.from('onboarding_progress').upsert(
     { profile_id: profileId, skipped: true },
@@ -88,10 +90,8 @@ export async function markSkipped(profileId: string): Promise<void> {
   );
 }
 
-/** "Reprendre le guide" (relance complète depuis le début). */
+/** "Reprendre le guide" — supprime la progression pour que shouldAutoLaunch()
+ * relance le parcours au prochain chargement. */
 export async function resetProgress(profileId: string): Promise<void> {
-  await supabase.from('onboarding_progress').upsert(
-    { profile_id: profileId, completed_steps: [], completed_at: null, skipped: false },
-    { onConflict: 'profile_id' },
-  );
+  await supabase.from('onboarding_progress').delete().eq('profile_id', profileId);
 }

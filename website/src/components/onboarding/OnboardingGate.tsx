@@ -81,6 +81,10 @@ export default function OnboardingGate() {
             setResume(true);
             setOpen(true);
           }}
+          onDismiss={() => {
+            setRemaining(0);
+            if (activeProfileId) OnboardingService.markSkipped(activeProfileId);
+          }}
         />
       )}
     </>

@@ -47,13 +47,14 @@ class OnboardingService {
   }
 
   /// Étapes restantes, pour le bandeau "Finalisez votre profil — X étapes
-  /// restantes". Retourne 0 si complété ou si le type n'a pas d'onboarding.
+  /// restantes". Retourne 0 si complété, ignoré définitivement (« Passer » /
+  /// bandeau fermé), ou si le type n'a pas d'onboarding.
   static Future<int> remainingSteps(String profileId, String profileType) async {
     final total = onboardingStepsCount[profileType];
     if (total == null) return 0;
     final row = await getProgress(profileId);
     if (row == null) return total;
-    if (row['completed_at'] != null) return 0;
+    if (row['completed_at'] != null || row['skipped'] == true) return 0;
     final done = (row['completed_steps'] as List?)?.length ?? 0;
     return (total - done).clamp(0, total);
   }
@@ -81,9 +82,9 @@ class OnboardingService {
     );
   }
 
-  /// Bouton "Passer" — n'efface pas la progression déjà faite, empêche juste
-  /// le relance automatique. Le bandeau de rappel reste affiché tant que
-  /// completed_at est null.
+  /// Bouton "Passer" / fermeture du bandeau — n'efface pas la progression déjà
+  /// faite, empêche le relance automatique ET masque le bandeau de rappel.
+  /// Réversible via "Reprendre le guide" (Paramètres → reset).
   static Future<void> markSkipped(String profileId) async {
     await _supa.from('onboarding_progress').upsert(
       {'profile_id': profileId, 'skipped': true},

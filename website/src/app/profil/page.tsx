@@ -1968,7 +1968,7 @@ function EmployeursLink({ uid }: { uid: string }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function ProfilPage() {
-  const { user, userData, loading, refreshUserData } = useAuth();
+  const { user, userData, loading, refreshUserData, activeProfileId: authProfileId } = useAuth();
   const router = useRouter();
   // Profil actif : loaded=false tant que localStorage n'a pas été lu
   const { loaded: activeProfileLoaded, id: activeProfileId } = useActiveProfileState();
@@ -3119,6 +3119,26 @@ export default function ProfilPage() {
             {exporting ? 'Export…' : 'Télécharger'}
           </button>
         </div>
+
+        {['eleveur','association','particulier','veterinaire','pension','garde','education','sante','toilettage','photographe'].includes(userData?.profileType ?? '') && (
+          <div className="flex items-start justify-between py-3 border-t border-gray-100">
+            <div>
+              <p className="text-sm font-semibold text-[#1F2A2E]">Guide de démarrage</p>
+              <p className="text-xs text-gray-400 mt-0.5">Relancer le parcours de configuration de ce profil</p>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!authProfileId) return;
+                await import('@/lib/onboarding/service').then(m => m.resetProgress(authProfileId));
+                window.location.reload();
+              }}
+              className="text-sm font-semibold text-[#0C5C6C] border border-[#0C5C6C] hover:bg-[#0C5C6C] hover:text-white px-4 py-2 rounded-xl transition-colors whitespace-nowrap"
+            >
+              Reprendre
+            </button>
+          </div>
+        )}
 
         <div className="flex items-start justify-between pt-3 border-t border-gray-100">
           <div>

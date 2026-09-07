@@ -62,6 +62,12 @@ class _OnboardingReminderBannerState extends State<OnboardingReminderBanner> {
     _reload();
   }
 
+  Future<void> _dismiss() async {
+    if (_profileId.isEmpty) return;
+    setState(() => _remaining = 0);
+    await OnboardingService.markSkipped(_profileId);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_remaining <= 0) return const SizedBox.shrink();
@@ -91,6 +97,15 @@ class _OnboardingReminderBannerState extends State<OnboardingReminderBanner> {
                 ),
               ),
               const Icon(Icons.chevron_right, color: Colors.white, size: 20),
+              const SizedBox(width: 2),
+              InkWell(
+                onTap: _dismiss,
+                customBorder: const CircleBorder(),
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.close, color: Colors.white70, size: 18),
+                ),
+              ),
             ],
           ),
         ),
