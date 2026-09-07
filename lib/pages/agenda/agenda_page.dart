@@ -274,20 +274,29 @@ class _AgendaPageState extends State<AgendaPage> {
               .inFilter('animal_id', animalIds)
               .eq('statut', 'actif')
               .isFilter('date_fin', null);
+          // Exclut mon propre uid : mes événements sont déjà chargés
+          // ci-dessus, correctement filtrés par profil (pro_profile_id).
+          // Sans cette exclusion, un compte multi-profils (ex. particulier +
+          // éleveur) se voit fuiter TOUS ses propres événements de l'autre
+          // profil dès que le même uid possède un animal aussi suivi côté
+          // élevage.
           final ownerUids = (coOwners as List)
               .map((r) => r['uid_proprio'] as String)
+              .where((u) => u != _uid)
               .toSet()
               .toList();
-          final shared = await _supa
-              .from('agenda_events')
-              .select()
-              .inFilter('animal_id', animalIds)
-              .inFilter('uid', ownerUids)
-              .gte('date_debut', from.toIso8601String())
-              .lte('date_debut', to.toIso8601String());
-          final seen = filtered.map((e) => e['id']).toSet();
-          for (final e in (shared as List)) {
-            if (seen.add(e['id'])) filtered.add(e);
+          if (ownerUids.isNotEmpty) {
+            final shared = await _supa
+                .from('agenda_events')
+                .select()
+                .inFilter('animal_id', animalIds)
+                .inFilter('uid', ownerUids)
+                .gte('date_debut', from.toIso8601String())
+                .lte('date_debut', to.toIso8601String());
+            final seen = filtered.map((e) => e['id']).toSet();
+            for (final e in (shared as List)) {
+              if (seen.add(e['id'])) filtered.add(e);
+            }
           }
         }
       } catch (_) {}

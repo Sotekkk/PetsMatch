@@ -456,10 +456,16 @@ export default function AgendaPage() {
       if (animalIds.length > 0) {
         const { data: owners } = await supabase.from('animaux_proprietes')
           .select('uid_proprio').in('animal_id', animalIds).eq('statut', 'actif').is('date_fin', null);
-        const ownerUids = [...new Set((owners ?? []).map(r => r.uid_proprio as string))];
-        const { data: shared } = await supabase.from('agenda_events').select('*')
+        // Exclut mon propre uid : mes événements sont déjà chargés ci-dessus,
+        // correctement filtrés par profil (pro_profile_id). Sans cette
+        // exclusion, un compte multi-profils (ex. particulier + éleveur) se
+        // voit fuiter TOUS ses propres événements de l'autre profil dès que
+        // le même uid possède un animal aussi suivi côté élevage.
+        const ownerUids = [...new Set((owners ?? []).map(r => r.uid_proprio as string))]
+          .filter(u => u !== uid);
+        const { data: shared } = ownerUids.length > 0 ? await supabase.from('agenda_events').select('*')
           .in('animal_id', animalIds).in('uid', ownerUids)
-          .gte('date_debut', from).lte('date_debut', to);
+          .gte('date_debut', from).lte('date_debut', to) : { data: [] };
         const seen = new Set(list.map(e => e.id));
         for (const e of (shared ?? []) as AgendaEvent[]) {
           if (!seen.has(e.id)) { seen.add(e.id); list.push(e); }
