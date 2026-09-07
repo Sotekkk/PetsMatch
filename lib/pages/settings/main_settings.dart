@@ -171,15 +171,20 @@ class _SettingsMainPageState extends State<SettingsMainPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
               _SectionLabel('À propos du compte'),
-              buildSettingsOption(
-                context,
-                icon: Icons.account_circle_outlined,
-                text: 'Information utilisateur',
-                onTap: () {
-                  Navigator.of(context).push(MaterialPageRoute(
-                      builder: (context) => InfoUserSettings()));
-                },
-              ),
+              // Doublon avec « Mon Profil » du menu particulier (même page
+              // InfoUserSettings) — gardé ici uniquement pour les profils
+              // qui n'ont pas cette entrée dans leur propre menu (éleveur,
+              // association, pro…).
+              if (!User_Info.isPro && !User_Info.isElevage && !User_Info.isAssociation)
+                buildSettingsOption(
+                  context,
+                  icon: Icons.account_circle_outlined,
+                  text: 'Information utilisateur',
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                        builder: (context) => InfoUserSettings()));
+                  },
+                ),
               if (User_Info.isPro) ...[
                 buildSettingsOption(
                   context,
