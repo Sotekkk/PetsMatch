@@ -241,6 +241,14 @@ class _ParticulierNavState extends State<ParticulierNav> {
                   ],
                 ),
                 _DrawerItem(
+                  icon: Icons.calendar_month_outlined,
+                  label: 'Mon Agenda',
+                  onTap: () {
+                    Navigator.pop(context);
+                    setState(() => _selectedIndex = 3);
+                  },
+                ),
+                _DrawerItem(
                   icon: Icons.groups_outlined,
                   label: 'Communauté',
                   onTap: () {
@@ -248,41 +256,13 @@ class _ParticulierNavState extends State<ParticulierNav> {
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunauteHubPage()));
                   },
                 ),
-                _DrawerSection(
-                  icon: Icons.search_off_rounded,
-                  label: 'Perdus & Trouvés',
-                  children: [
-                    _DrawerSubItem(
-                      label: 'Mes déclarations perdues/trouvées',
-                      icon: Icons.manage_search_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const MesAlertesPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'Animaux perdus/trouvés',
-                      icon: Icons.location_searching,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnimauxPerdusPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerSubItem(
-                      label: 'J\'ai trouvé un animal',
-                      icon: Icons.pets,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const AnimalTrouveFormPage(),
-                        ));
-                      },
-                    ),
-                  ],
+                _DrawerItem(
+                  icon: Icons.favorite_border,
+                  label: 'Favoris',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => LikesPage()));
+                  },
                 ),
                 _DrawerSection(
                   icon: Icons.campaign_outlined,
@@ -354,28 +334,48 @@ class _ParticulierNavState extends State<ParticulierNav> {
                   ),
                 // « Mes PetFriends » retiré du menu : accessible depuis Communauté.
                 _DrawerItem(
-                  icon: Icons.calendar_month_outlined,
-                  label: 'Mon Agenda',
-                  onTap: () {
-                    Navigator.pop(context);
-                    setState(() => _selectedIndex = 3);
-                  },
-                ),
-                _DrawerItem(
-                  icon: Icons.favorite_border,
-                  label: 'Favoris',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => LikesPage()));
-                  },
-                ),
-                _DrawerItem(
                   icon: Icons.storefront_outlined,
                   label: 'Annuaire professionnel',
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const ServicesPage()));
                   },
+                ),
+                _DrawerSection(
+                  icon: Icons.search_off_rounded,
+                  label: 'Perdus & Trouvés',
+                  children: [
+                    _DrawerSubItem(
+                      label: 'Mes déclarations perdues/trouvées',
+                      icon: Icons.manage_search_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const MesAlertesPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Animaux perdus/trouvés',
+                      icon: Icons.location_searching,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const AnimauxPerdusPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'J\'ai trouvé un animal',
+                      icon: Icons.pets,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const AnimalTrouveFormPage(),
+                        ));
+                      },
+                    ),
+                  ],
                 ),
                 _DrawerItem(
                   icon: Icons.local_offer_outlined,
