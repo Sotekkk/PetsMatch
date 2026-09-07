@@ -21,7 +21,6 @@ const PUBLIC_PATHS = [
   '/animaux-perdus',
   '/services',
   '/animal-friendly',
-  '/marketplace',
   '/communaute',
   '/promenades',
 ];

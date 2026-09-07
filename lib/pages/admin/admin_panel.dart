@@ -4,7 +4,6 @@ import 'package:PetsMatch/pages/admin/signalements_admin.dart';
 import 'package:PetsMatch/pages/admin/supabase_migration_page.dart';
 import 'package:PetsMatch/pages/admin/user_list.dart';
 import 'package:PetsMatch/pages/admin/verification_list.dart';
-import 'package:PetsMatch/pages/marketplace/admin_marketplace_tab.dart';
 import 'package:PetsMatch/pages/admin/lieux_admin_tab.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/services/renewal_service.dart';
@@ -38,7 +37,6 @@ class _AdminPanelState extends State<AdminPanel> {
       const UserList(),
       const ProList(),
       const SignalementsAdmin(),
-      const AdminMarketplaceTab(),
       const AnnoncesAdmin(),
       const LieuxAdminTab(),
     ];
@@ -121,8 +119,8 @@ class _AdminPanelState extends State<AdminPanel> {
         onTap: (index) {
           setState(() => _selectedIndex = index);
           if (index == 4) _loadPendingSig();
-          if (index == 6) _loadSuspectAnnonces();
-          if (index == 7) _loadPendingLieux();
+          if (index == 5) _loadSuspectAnnonces();
+          if (index == 6) _loadPendingLieux();
         },
         items: [
           const BottomNavigationBarItem(
@@ -150,10 +148,6 @@ class _AdminPanelState extends State<AdminPanel> {
                   )
                 : const Icon(Icons.flag_outlined),
             label: 'Signalements',
-          ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.local_offer_outlined),
-            label: 'Marketplace',
           ),
           BottomNavigationBarItem(
             icon: _suspectAnnonces > 0

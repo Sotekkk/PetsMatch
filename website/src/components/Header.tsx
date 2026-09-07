@@ -44,7 +44,6 @@ const NAV_GUEST = [
   { href: '/animaux-perdus', label: 'Animaux perdus' },
   { href: '/services',       label: 'Annuaire' },
   { href: '/communaute',     label: 'Communauté' },
-  { href: '/marketplace',    label: 'Marketplace' },
 ];
 
 const NAV_ELEVEUR = [
@@ -180,7 +179,6 @@ const MENU_VET = [
     items: [
       { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
-      { href: '/marketplace', label: 'Marketplace',                 icon: '🛍️' },
     ],
   },
 ];
@@ -218,7 +216,6 @@ const MENU_PRO = [
     items: [
       { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
-      { href: '/marketplace', label: 'Marketplace',                 icon: '🛍️' },
     ],
   },
 ];
@@ -354,7 +351,6 @@ const MENU_EDUCATION = [
     items: [
       { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
-      { href: '/marketplace', label: 'Marketplace',                 icon: '🛍️' },
     ],
   },
 ];
@@ -416,7 +412,6 @@ const MENU_ASSOCIATION = [
     items: [
       { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
-      { href: '/marketplace', label: 'Marketplace',                 icon: '🛍️' },
     ],
   },
 ];
@@ -492,7 +487,6 @@ const SEARCH_KEYWORDS: Record<string, string[]> = {
   '/mes-alertes': ['alertes perdus', 'notifications perdus', 'gerer mes alertes'],
   '/services': ['annuaire', 'professionnels', 'veterinaire', 'toiletteur', 'educateur', 'pension', 'annuaire pro'],
   '/communaute': ['groupes', 'forum', 'forums', 'balades', 'balade ludique', 'balades ludiques', 'balade canine', 'evenements', 'lieux pet-friendly', 'lieux naturels', 'dogfriendly', 'dog friendly', 'petfriends', 'promenade', 'communaute'],
-  '/marketplace': ['boutique', 'partenaires', 'reductions', 'bons plans', 'marketplace'],
   '/mes-taches': ['taches', 'todo', 'rappels', 'mes taches'],
   '/profil': ['mon profil', 'parametres', 'compte', 'modifier profil'],
   '/favoris': ['favoris', 'likes', 'mes interactions'],

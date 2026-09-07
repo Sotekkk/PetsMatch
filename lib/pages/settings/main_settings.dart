@@ -171,15 +171,20 @@ class _SettingsMainPageState extends State<SettingsMainPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
               _SectionLabel('À propos du compte'),
-              buildSettingsOption(
-                context,
-                icon: Icons.account_circle_outlined,
-                text: 'Information utilisateur',
-                onTap: () {
-                  Navigator.of(context).push(MaterialPageRoute(
-                      builder: (context) => InfoUserSettings()));
-                },
-              ),
+              // Doublon avec « Mon Profil » du menu particulier (même page
+              // InfoUserSettings) — gardé ici uniquement pour les profils
+              // qui n'ont pas cette entrée dans leur propre menu (éleveur,
+              // association, pro…).
+              if (!User_Info.isPro && !User_Info.isElevage && !User_Info.isAssociation)
+                buildSettingsOption(
+                  context,
+                  icon: Icons.account_circle_outlined,
+                  text: 'Information utilisateur',
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                        builder: (context) => InfoUserSettings()));
+                  },
+                ),
               if (User_Info.isPro) ...[
                 buildSettingsOption(
                   context,
@@ -199,26 +204,16 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                         builder: (context) => const ProAgendaPage()));
                   },
                 ),
+                buildSettingsOption(
+                  context,
+                  icon: Icons.store_outlined,
+                  text: 'Mon établissement',
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                        builder: (context) => const MonEtablissementPage()));
+                  },
+                ),
               ],
-              buildSettingsOption(
-                context,
-                icon: Icons.store_outlined,
-                text: 'Mon établissement',
-                onTap: () {
-                  Navigator.of(context).push(MaterialPageRoute(
-                      builder: (context) => const MonEtablissementPage()));
-                },
-              ),
-              buildSettingsOption(
-                context,
-                icon: Icons.block_outlined,
-                text: 'Utilisateurs bloqués',
-                iconColor: Colors.red.shade400,
-                onTap: () {
-                  Navigator.of(context).push(MaterialPageRoute(
-                      builder: (context) => const UtilisatesBloquesPage()));
-                },
-              ),
               buildSettingsOption(
                 context,
                 icon: Icons.star_outline,
@@ -235,6 +230,16 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                 onTap: () {
                   Navigator.of(context).push(MaterialPageRoute(
                       builder: (context) => SecuConnectionSetting()));
+                },
+              ),
+              buildSettingsOption(
+                context,
+                icon: Icons.block_outlined,
+                text: 'Utilisateurs bloqués',
+                iconColor: Colors.red.shade400,
+                onTap: () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                      builder: (context) => const UtilisatesBloquesPage()));
                 },
               ),
               const SizedBox(height: 24),

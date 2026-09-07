@@ -7,7 +7,6 @@ import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/widgets/profile_switcher_header.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
-import 'package:PetsMatch/pages/marketplace/marketplace_page.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
@@ -313,11 +312,6 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
           label: 'Communauté',
           onTap: () => _push(const CommunauteHubPage()),
         ),
-        _DrawerItem(
-          icon: Icons.local_offer_outlined,
-          label: 'Marketplace',
-          onTap: () => _push(const MarketplacePage()),
-        ),
         _DrawerSection(
           icon: Icons.folder_outlined,
           label: 'Administratif',
@@ -483,11 +477,6 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
           icon: Icons.groups_outlined,
           label: 'Communauté',
           onTap: () => _push(const CommunauteHubPage()),
-        ),
-        _DrawerItem(
-          icon: Icons.local_offer_outlined,
-          label: 'Marketplace',
-          onTap: () => _push(const MarketplacePage()),
         ),
         if (User_Info.isPro) ...[
           // Pension : compte forcément pro, le separateur "Espace pro" n'a

@@ -8,7 +8,6 @@ import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
 import 'package:PetsMatch/pages/association/post/annonces_asso_feed_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
-import 'package:PetsMatch/pages/marketplace/marketplace_page.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
@@ -376,14 +375,6 @@ class _ParticulierNavState extends State<ParticulierNav> {
                       },
                     ),
                   ],
-                ),
-                _DrawerItem(
-                  icon: Icons.local_offer_outlined,
-                  label: 'Marketplace',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const MarketplacePage()));
-                  },
                 ),
                 if (User_Info.isPro) ...[
                   const Divider(height: 16),

@@ -6,7 +6,6 @@ import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
-import 'package:PetsMatch/widgets/marketplace_banner.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
@@ -296,11 +295,6 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                           const SizedBox(height: 16),
                           _buildAlerteBanner(context),
                         ],
-                        const SizedBox(height: 8),
-                        MarketplaceBanner(
-                          espece: null,
-                          placement: 'dashboard',
-                        ),
                         if (!User_Info.isPro) ...[
                           const SizedBox(height: 24),
                           _buildSectionTitle('Dernières annonces'),
