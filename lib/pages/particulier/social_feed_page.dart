@@ -20,6 +20,7 @@ const _darkC  = Color(0xFF0D1F22);
 const _green  = Color(0xFF6E9E57);
 const _greyC  = Color(0xFF9CA3AF);
 
+
 // Fond — dégradé teal profond du haut vers le bas
 const _bgGrad = LinearGradient(
   begin: Alignment.topCenter,
@@ -34,6 +35,75 @@ const _ringGrad = LinearGradient(
   end: Alignment.bottomLeft,
   colors: [Color(0xFF6E9E57), Color(0xFF0C5C6C), Color(0xFF0A3F4A)],
 );
+
+// ─── Cosmétiques ───────────────────────────────────────────────────────────
+const _cosmeticRings = <String, LinearGradient>{
+  'ring_gold':    LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: [Color(0xFFFFD700), Color(0xFFFF9500), Color(0xFFFF6B00)]),
+  'ring_rose':    LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: [Color(0xFFFF6B9D), Color(0xFFFF4081), Color(0xFF9B59B6)]),
+  'ring_fire':    LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: [Color(0xFFFF4500), Color(0xFFFF6B00), Color(0xFFFFAA00)]),
+  'ring_arctic':  LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: [Color(0xFF90E0EF), Color(0xFF48CAE4), Color(0xFF00B4DB)]),
+  'ring_galaxy':  LinearGradient(begin: Alignment.topRight, end: Alignment.bottomLeft, colors: [Color(0xFFF093FB), Color(0xFF764BA2), Color(0xFF667EEA)]),
+  'ring_rainbow': LinearGradient(begin: Alignment.topLeft,  end: Alignment.bottomRight, colors: [Color(0xFFFF0080), Color(0xFFFF8C00), Color(0xFF00C9FF), Color(0xFF00FF87)]),
+};
+
+const _cosmeticBanners = <String, LinearGradient>{
+  // ── Dégradés ──
+  'banner_sunset': LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFC5C7D), Color(0xFF6A3093)]),
+  'banner_ocean':  LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF2193B0), Color(0xFF6DD5FA)]),
+  'banner_forest': LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF134E5E), Color(0xFF71B280)]),
+  'banner_galaxy': LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF1A1A2E), Color(0xFF764BA2), Color(0xFFF093FB)]),
+  'banner_rose':   LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFC466B), Color(0xFF3F5EFB)]),
+  'banner_aurora': LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF00C9FF), Color(0xFF92FE9D)]),
+  // ── Couleurs unies (même couleur x2 = solid) ──
+  'color_noir':    LinearGradient(colors: [Color(0xFF0A0A0A), Color(0xFF0A0A0A)]),
+  'color_blanc':   LinearGradient(colors: [Color(0xFFF2F2F2), Color(0xFFF2F2F2)]),
+  'color_teal':    LinearGradient(colors: [Color(0xFF0C5C6C), Color(0xFF0C5C6C)]),
+  'color_vert':    LinearGradient(colors: [Color(0xFF2D6A4F), Color(0xFF2D6A4F)]),
+  'color_beige':   LinearGradient(colors: [Color(0xFFF5E6D3), Color(0xFFF5E6D3)]),
+  'color_gris':    LinearGradient(colors: [Color(0xFF2C3E50), Color(0xFF2C3E50)]),
+};
+
+/// Résout la décoration d'une bannière à partir de son id :
+/// - URL http → image réseau (BoxFit.cover)
+/// - clé gradient/couleur → LinearGradient de _cosmeticBanners
+/// - null → fond sombre par défaut
+BoxDecoration _bannerDecoration(String? key) {
+  if (key == null) return const BoxDecoration(gradient: _bgGrad);
+  if (key.startsWith('http')) {
+    return BoxDecoration(
+      image: DecorationImage(image: NetworkImage(key), fit: BoxFit.cover),
+    );
+  }
+  final grad = _cosmeticBanners[key];
+  return grad != null ? BoxDecoration(gradient: grad) : const BoxDecoration(gradient: _bgGrad);
+}
+
+// Catalogue — ajouter ici les nouvelles bannières image quand prêtes
+// Pour une bannière image : ajouter 'preview_url' avec l'URL de la miniature
+const _cosmeticCatalog = <Map<String, Object>>[
+  {'id': 'ring_gold',       'type': 'avatar_ring',    'label': 'Anneau Doré',              'cost': 150},
+  {'id': 'ring_rose',       'type': 'avatar_ring',    'label': 'Anneau Rose Sakura',        'cost': 150},
+  {'id': 'ring_fire',       'type': 'avatar_ring',    'label': 'Anneau Flammes',            'cost': 150},
+  {'id': 'ring_arctic',     'type': 'avatar_ring',    'label': 'Anneau Arctique',           'cost': 150},
+  {'id': 'ring_galaxy',     'type': 'avatar_ring',    'label': 'Anneau Galaxie',            'cost': 200},
+  {'id': 'ring_rainbow',    'type': 'avatar_ring',    'label': 'Anneau Arc-en-ciel',        'cost': 250},
+  // ── Bannières dégradé ──
+  {'id': 'banner_sunset',   'type': 'profile_banner', 'label': 'Coucher de soleil',         'cost': 200},
+  {'id': 'banner_ocean',    'type': 'profile_banner', 'label': 'Océan',                     'cost': 200},
+  {'id': 'banner_forest',   'type': 'profile_banner', 'label': 'Forêt',                     'cost': 200},
+  {'id': 'banner_galaxy',   'type': 'profile_banner', 'label': 'Galaxie',                   'cost': 250},
+  {'id': 'banner_rose',     'type': 'profile_banner', 'label': 'Rose Violet',               'cost': 200},
+  {'id': 'banner_aurora',   'type': 'profile_banner', 'label': 'Aurora',                    'cost': 250},
+  // ── Couleurs unies ──
+  {'id': 'color_noir',      'type': 'profile_banner', 'label': 'Noir',                      'cost': 100},
+  {'id': 'color_blanc',     'type': 'profile_banner', 'label': 'Blanc',                     'cost': 100},
+  {'id': 'color_teal',      'type': 'profile_banner', 'label': 'Teal',                      'cost': 100},
+  {'id': 'color_vert',      'type': 'profile_banner', 'label': 'Vert forêt',                'cost': 100},
+  {'id': 'color_beige',     'type': 'profile_banner', 'label': 'Beige',                     'cost': 100},
+  {'id': 'color_gris',      'type': 'profile_banner', 'label': 'Gris ardoise',              'cost': 100},
+  // ── Bannières image custom — ajouter ici ──
+  // {'id': 'img_animaux',   'type': 'profile_banner', 'label': 'Animaux',  'cost': 350, 'preview_url': 'https://...', 'banner_url': 'https://...'},
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -122,6 +192,22 @@ Future<Map<String, Map<String, dynamic>>> _resolveAuthors(List<dynamic> rows) as
       out.putIfAbsent(r['uid'] as String, () => Map<String, dynamic>.from(r as Map));
     }
   }
+  // Fetch avatar ring cosmetics for all resolved authors
+  final uids = out.keys.toList();
+  if (uids.isNotEmpty) {
+    try {
+      final cosmetics = await supa.from('user_cosmetics')
+          .select('uid, active_value')
+          .inFilter('uid', uids)
+          .eq('cosmetic_type', 'avatar_ring');
+      for (final c in cosmetics as List) {
+        final u = c['uid'] as String;
+        if (out.containsKey(u) && c['active_value'] != null) {
+          out[u]!['_ring'] = c['active_value'] as String;
+        }
+      }
+    } catch (_) {}
+  }
   return out;
 }
 
@@ -150,16 +236,17 @@ String _fmtDate(String iso) {
   }
 }
 
-Widget _avatarWidget(String? photoUrl, double radius) {
+Widget _avatarWidget(String? photoUrl, double radius, {String? ringStyle}) {
+  final grad = ringStyle != null ? (_cosmeticRings[ringStyle] ?? _ringGrad) : _ringGrad;
   return Container(
     padding: const EdgeInsets.all(2.5),
-    decoration: const BoxDecoration(shape: BoxShape.circle, gradient: _ringGrad),
+    decoration: BoxDecoration(shape: BoxShape.circle, gradient: grad),
     child: Container(
       padding: const EdgeInsets.all(2.5),
       decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
       child: CircleAvatar(
         radius: radius,
-        backgroundColor: Color(0xFFD4EDE8),
+        backgroundColor: const Color(0xFFD4EDE8),
         backgroundImage: (photoUrl != null && photoUrl.isNotEmpty)
             ? NetworkImage(photoUrl)
             : null,
@@ -725,6 +812,17 @@ class _FeedListState extends State<_FeedList>
             .select()
             .order('created_at', ascending: false)
             .limit(50);
+        // Posts boostés remontent en tête de Découverte
+        final now = DateTime.now();
+        posts.sort((a, b) {
+          final aUntil = a['boosted_until'] != null ? DateTime.tryParse(a['boosted_until'] as String) : null;
+          final bUntil = b['boosted_until'] != null ? DateTime.tryParse(b['boosted_until'] as String) : null;
+          final aBoosted = aUntil?.isAfter(now) == true;
+          final bBoosted = bUntil?.isAfter(now) == true;
+          if (aBoosted && !bBoosted) return -1;
+          if (!aBoosted && bBoosted) return 1;
+          return 0;
+        });
       }
 
       if (posts.isEmpty) {
@@ -969,6 +1067,7 @@ class _SocialPostCard extends StatefulWidget {
 
 class _SocialPostCardState extends State<_SocialPostCard> {
   bool _showHeart = false;
+  String? _boostedUntilOverride;
 
   void _doubleTapLike() {
     if (!widget.isLiked) widget.onLike();
@@ -1044,6 +1143,118 @@ class _SocialPostCardState extends State<_SocialPostCard> {
     );
   }
 
+  bool _isBoosted(String? until) {
+    final raw = _boostedUntilOverride ?? until;
+    if (raw == null) return false;
+    final dt = DateTime.tryParse(raw);
+    return dt != null && dt.isAfter(DateTime.now());
+  }
+
+  Future<void> _showBoostDialog() async {
+    final supa = Supabase.instance.client;
+    final uid = widget.myUid;
+    const cost = 50;
+
+    final walletRow = await supa.from('credit_wallets').select().eq('uid', uid).maybeSingle();
+    final solde = (walletRow?['solde'] as int?) ?? 0;
+
+    if (!mounted) return;
+
+    if (solde < cost) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Crédits insuffisants',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+          content: Text(
+            'Vous avez $solde crédit${solde > 1 ? 's' : ''}.\nBooster un post coûte $cost crédits.',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey')),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6E9E57)),
+              child: const Text('Acheter des crédits',
+                  style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Booster ce post',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+        content: Text(
+          'Dépenser $cost crédits pour mettre ce post en avant ?\n\nSolde actuel : $solde crédits',
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey')),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0C5C6C)),
+            child: const Text('Booster 🚀',
+                style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    try {
+      final newSolde = solde - cost;
+      final newTotalUtilise = ((walletRow?['total_utilise'] as int?) ?? 0) + cost;
+      await Future.wait([
+        supa.from('credit_wallets').upsert({
+          'uid': uid,
+          'solde': newSolde,
+          'total_utilise': newTotalUtilise,
+          'updated_at': DateTime.now().toIso8601String(),
+        }, onConflict: 'uid'),
+        supa.from('credit_transactions').insert({
+          'uid': uid,
+          'montant': -cost,
+          'motif': 'Boost de post',
+          'ref_id': widget.post['id'] as String,
+        }),
+        supa.from('posts_socialmedia').update({
+          'boosted_until': DateTime.now().add(const Duration(hours: 48)).toIso8601String(),
+        }).eq('id', widget.post['id'] as String),
+      ]);
+      if (mounted) {
+        final until = DateTime.now().add(const Duration(hours: 48)).toIso8601String();
+        setState(() => _boostedUntilOverride = until);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Post boosté ! 🚀', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Color(0xFF0C5C6C),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Erreur lors du boost', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final name         = _profileName(widget.profile);
@@ -1086,7 +1297,7 @@ class _SocialPostCardState extends State<_SocialPostCard> {
                     child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          _avatarWidget(photoUrl, 20),
+                          _avatarWidget(photoUrl, 20, ringStyle: widget.profile?['_ring'] as String?),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(
@@ -1122,6 +1333,20 @@ class _SocialPostCardState extends State<_SocialPostCard> {
                                             ]),
                                       ),
                                     ],
+                                    if (_isBoosted(widget.post['boosted_until']?.toString())) ...[
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFF6B35).withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: const Color(0xFFFF6B35).withValues(alpha: 0.4)),
+                                        ),
+                                        child: const Text('Boosté', style: TextStyle(
+                                              fontFamily: 'Galey', fontSize: 9,
+                                              color: Color(0xFFFF6B35), fontWeight: FontWeight.w700)),
+                                      ),
+                                    ],
                                   ]),
                                   const SizedBox(height: 1),
                                   Text(_fmtDate(date),
@@ -1155,15 +1380,23 @@ class _SocialPostCardState extends State<_SocialPostCard> {
                             onSelected: (val) {
                               if (val == 'delete') { widget.onDelete(); }
                               if (val == 'report') { _showReportDialog(); }
+                              if (val == 'boost')  { _showBoostDialog(); }
                             },
                             itemBuilder: (_) => [
-                              if (widget.isMyPost)
+                              if (widget.isMyPost) ...[
+                                const PopupMenuItem(value: 'boost',
+                                    child: Row(children: [
+                                      Icon(Icons.rocket_launch_outlined, color: Color(0xFF0C5C6C), size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Booster ce post', style: TextStyle(fontFamily: 'Galey', color: Color(0xFF0C5C6C))),
+                                    ])),
                                 const PopupMenuItem(value: 'delete',
                                     child: Row(children: [
                                       Icon(Icons.delete_outline, color: Colors.red, size: 18),
                                       SizedBox(width: 8),
                                       Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red)),
                                     ])),
+                              ],
                               if (!widget.isMyPost)
                                 const PopupMenuItem(value: 'report',
                                     child: Row(children: [
@@ -2070,7 +2303,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       _avatarWidget(
-                                          photo, isReply ? 12 : 15),
+                                          photo, isReply ? 12 : 15,
+                                          ringStyle: prof?['_ring'] as String?),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: GestureDetector(
@@ -2855,8 +3089,35 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
   int _followingCount = 0;
   bool _isFollowing = false;
   bool _loading = true;
+  String? _activeRing;
+  String? _activeBanner;
+  List<String> _ownedRings = [];
+  List<String> _ownedBanners = [];
 
   bool get _isMyProfile => widget.targetUid == widget.myUid;
+
+  void _openShop() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _CosmeticsShopSheet(
+        myUid: widget.myUid,
+        ownedRings: _ownedRings,
+        ownedBanners: _ownedBanners,
+        activeRing: _activeRing,
+        activeBanner: _activeBanner,
+        onEquip: (type, value, ownedRings, ownedBanners, activeRing, activeBanner) {
+          setState(() {
+            _ownedRings = ownedRings;
+            _ownedBanners = ownedBanners;
+            _activeRing = activeRing;
+            _activeBanner = activeBanner;
+          });
+        },
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -2877,6 +3138,9 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
           .order('created_at', ascending: false),
       _supa.from('follows').select('follower_uid').eq('following_uid', widget.targetUid),
       _supa.from('follows').select('following_uid').eq('follower_uid', widget.targetUid),
+      _supa.from('user_cosmetics')
+          .select('cosmetic_type, active_value, owned')
+          .eq('uid', widget.targetUid),
     ]);
 
     final followCheck = await _supa.from('follows')
@@ -2885,6 +3149,16 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
         .eq('following_uid', widget.targetUid)
         .maybeSingle();
 
+    String? ring; String? banner;
+    List<String> ownedRings = []; List<String> ownedBanners = [];
+    for (final c in (results[4] as List)) {
+      final t = c['cosmetic_type'] as String;
+      final val = c['active_value'] as String?;
+      final owned = (c['owned'] as List?)?.cast<String>() ?? [];
+      if (t == 'avatar_ring')    { ring = val; ownedRings = owned; }
+      if (t == 'profile_banner') { banner = val; ownedBanners = owned; }
+    }
+
     if (mounted) {
       setState(() {
         _profile = results[0] as Map<String, dynamic>?;
@@ -2892,6 +3166,8 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
         _followersCount = (results[2] as List).length;
         _followingCount = (results[3] as List).length;
         _isFollowing = followCheck != null;
+        _activeRing = ring; _activeBanner = banner;
+        _ownedRings = ownedRings; _ownedBanners = ownedBanners;
         _loading = false;
       });
     }
@@ -2919,6 +3195,13 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
       backgroundColor: _darkC,
       body: Stack(children: [
         Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
+        // Couvre status bar + AppBar en un seul bloc pour éviter le raccord
+        if (_activeBanner != null)
+          Positioned(
+            top: 0, left: 0, right: 0,
+            height: MediaQuery.of(context).padding.top + kToolbarHeight,
+            child: Container(decoration: _bannerDecoration(_activeBanner)),
+          ),
         SafeArea(
           child: _loading
               ? const Center(child: CircularProgressIndicator(color: _tealC))
@@ -2931,23 +3214,39 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
                   SliverAppBar(
                     backgroundColor: Colors.transparent,
                     elevation: 0,
+                    scrolledUnderElevation: 0,
+                    shadowColor: Colors.transparent,
+                    surfaceTintColor: Colors.transparent,
                     iconTheme: const IconThemeData(color: Colors.white),
                     pinned: false,
+                    flexibleSpace: null,
+                    actions: [
+                      if (_isMyProfile)
+                        IconButton(
+                          icon: const Icon(Icons.auto_awesome, color: Colors.white),
+                          tooltip: 'Boutique cosmétiques',
+                          onPressed: () => _openShop(),
+                        ),
+                    ],
                     title: Text(name,
                         style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                             fontSize: 18, color: Colors.white)),
                     centerTitle: true,
                   ),
 
-                  SliverToBoxAdapter(child: Column(children: [
+                  SliverToBoxAdapter(child: Stack(children: [
+                    if (_activeBanner != null)
+                      Positioned.fill(child: Container(decoration: _bannerDecoration(_activeBanner))),
+                    Column(children: [
                     const SizedBox(height: 8),
                     // ── Avatar ──────────────────────────────────────
                     Container(
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        gradient: const LinearGradient(colors: [_tealC, _green], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                        boxShadow: [BoxShadow(color: _tealC.withValues(alpha: 0.5), blurRadius: 20, spreadRadius: 2)],
+                        gradient: _activeRing != null
+                            ? (_cosmeticRings[_activeRing!] ?? const LinearGradient(colors: [_tealC, _green], begin: Alignment.topLeft, end: Alignment.bottomRight))
+                            : const LinearGradient(colors: [_tealC, _green], begin: Alignment.topLeft, end: Alignment.bottomRight),
                       ),
                       child: CircleAvatar(
                         radius: 46,
@@ -3029,7 +3328,8 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
                     // ── Séparateur ──────────────────────────────────
                     Divider(color: Colors.white.withValues(alpha: 0.15), height: 1),
                     const SizedBox(height: 4),
-                  ])),
+                  ]),   // Column
+                ])),    // Stack + SliverToBoxAdapter
 
                   // ── Grille posts ────────────────────────────────────
                   _posts.isEmpty
@@ -3519,6 +3819,265 @@ class _FollowListPageState extends State<_FollowListPage> {
                     )),
         ])),
       ]),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Boutique cosmétiques
+// ═══════════════════════════════════════════════════════════════════════════
+
+typedef _OnEquip = void Function(
+  String type, String value,
+  List<String> ownedRings, List<String> ownedBanners,
+  String? activeRing, String? activeBanner,
+);
+
+class _CosmeticsShopSheet extends StatefulWidget {
+  final String myUid;
+  final List<String> ownedRings;
+  final List<String> ownedBanners;
+  final String? activeRing;
+  final String? activeBanner;
+  final _OnEquip onEquip;
+  const _CosmeticsShopSheet({
+    required this.myUid, required this.ownedRings, required this.ownedBanners,
+    required this.activeRing, required this.activeBanner, required this.onEquip,
+  });
+  @override
+  State<_CosmeticsShopSheet> createState() => _CosmeticsShopSheetState();
+}
+
+class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tab;
+  final _supa = Supabase.instance.client;
+  bool _busy = false;
+  late List<String> _ownedRings;
+  late List<String> _ownedBanners;
+  late String? _activeRing;
+  late String? _activeBanner;
+
+  @override
+  void initState() {
+    super.initState();
+    _tab = TabController(length: 2, vsync: this);
+    _ownedRings = List.from(widget.ownedRings);
+    _ownedBanners = List.from(widget.ownedBanners);
+    _activeRing = widget.activeRing;
+    _activeBanner = widget.activeBanner;
+  }
+
+  @override
+  void dispose() { _tab.dispose(); super.dispose(); }
+
+  Future<void> _buyOrEquip(Map<String, Object> item) async {
+    if (_busy) return;
+    final id = item['id'] as String;
+    final type = item['type'] as String;
+    final cost = item['cost'] as int;
+    final isRing = type == 'avatar_ring';
+    final owned = isRing ? _ownedRings : _ownedBanners;
+    final alreadyOwned = owned.contains(id);
+
+    if (!alreadyOwned) {
+      // Acheter
+      setState(() => _busy = true);
+      try {
+        final walletRow = await _supa.from('credit_wallets').select().eq('uid', widget.myUid).maybeSingle();
+        final solde = (walletRow?['solde'] as int?) ?? 0;
+        if (solde < cost) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Crédits insuffisants ($solde cr. disponibles, $cost cr. requis)',
+                  style: const TextStyle(fontFamily: 'Galey')),
+              backgroundColor: const Color(0xFF1F2A2E), behavior: SnackBarBehavior.floating,
+            ));
+          }
+          setState(() => _busy = false);
+          return;
+        }
+        final newOwned = [...owned, id];
+        await Future.wait([
+          _supa.from('credit_wallets').upsert({
+            'uid': widget.myUid,
+            'solde': solde - cost,
+            'total_utilise': ((walletRow?['total_utilise'] as int?) ?? 0) + cost,
+            'updated_at': DateTime.now().toIso8601String(),
+          }, onConflict: 'uid'),
+          _supa.from('credit_transactions').insert({
+            'uid': widget.myUid, 'montant': -cost,
+            'motif': 'Cosmétique ${item['label']}', 'ref_id': id,
+          }),
+          _supa.from('user_cosmetics').upsert({
+            'uid': widget.myUid, 'cosmetic_type': type,
+            'active_value': id, 'owned': newOwned,
+            'updated_at': DateTime.now().toIso8601String(),
+          }, onConflict: 'uid,cosmetic_type'),
+        ]);
+        if (mounted) {
+          setState(() {
+            if (isRing) { _ownedRings = newOwned; _activeRing = id; }
+            else { _ownedBanners = newOwned; _activeBanner = id; }
+            _busy = false;
+          });
+          widget.onEquip(type, id, _ownedRings, _ownedBanners, _activeRing, _activeBanner);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('${item['label']} acheté et équipé !', style: const TextStyle(fontFamily: 'Galey')),
+            backgroundColor: _tealC, behavior: SnackBarBehavior.floating,
+          ));
+        }
+      } catch (_) {
+        if (mounted) setState(() => _busy = false);
+      }
+    } else {
+      // Équiper / déséquiper
+      final isActive = isRing ? _activeRing == id : _activeBanner == id;
+      final newActive = isActive ? null : id;
+      try {
+        await _supa.from('user_cosmetics').upsert({
+          'uid': widget.myUid, 'cosmetic_type': type,
+          'active_value': newActive, 'owned': owned,
+          'updated_at': DateTime.now().toIso8601String(),
+        }, onConflict: 'uid,cosmetic_type');
+        if (mounted) {
+          setState(() {
+            if (isRing) { _activeRing = newActive; }
+            else { _activeBanner = newActive; }
+          });
+          widget.onEquip(type, id, _ownedRings, _ownedBanners, _activeRing, _activeBanner);
+        }
+      } catch (_) {}
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rings   = _cosmeticCatalog.where((c) => c['type'] == 'avatar_ring').toList();
+    final banners = _cosmeticCatalog.where((c) => c['type'] == 'profile_banner').toList();
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.75,
+      decoration: const BoxDecoration(
+        color: Color(0xFF0D1F22),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(children: [
+        const SizedBox(height: 10),
+        Center(child: Container(width: 36, height: 4,
+            decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
+        const SizedBox(height: 16),
+        const Text('Boutique', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: Colors.white)),
+        const SizedBox(height: 4),
+        Text('Personnalisez votre profil Pets Social', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white.withValues(alpha: 0.5))),
+        const SizedBox(height: 14),
+        TabBar(
+          controller: _tab,
+          indicatorColor: _green,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white38,
+          labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13),
+          tabs: const [Tab(text: 'Anneaux avatar'), Tab(text: 'Bannières profil')],
+        ),
+        Expanded(child: TabBarView(controller: _tab, children: [
+          _itemGrid(rings,   isRing: true),
+          _itemGrid(banners, isRing: false),
+        ])),
+        Padding(
+          padding: EdgeInsets.fromLTRB(20, 8, 20, MediaQuery.of(context).padding.bottom + 12),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const Icon(Icons.toll_outlined, size: 15, color: Colors.white38),
+            const SizedBox(width: 6),
+            Text('Achetez des crédits dans Paramètres → Abonnements & achats',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white38)),
+          ]),
+        ),
+      ]),
+    );
+  }
+
+  Widget _bannerPreviewWidget(Map<String, Object> item, bool active) {
+    final id = item['id'] as String;
+    final previewUrl = item['preview_url'] as String?;
+    final bannerUrl  = item['banner_url']  as String?;
+    final url = previewUrl ?? bannerUrl;
+    final isImage = url != null || id.startsWith('http');
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        width: 80, height: 32,
+        child: isImage
+            ? Image.network(url ?? id, fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(color: Colors.white12))
+            : Container(decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                gradient: _cosmeticBanners[id] ?? _bgGrad,
+              )),
+      ),
+    );
+  }
+
+  Widget _itemGrid(List<Map<String, Object>> items, {required bool isRing}) {
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2, childAspectRatio: 1.1, crossAxisSpacing: 12, mainAxisSpacing: 12,
+      ),
+      itemCount: items.length,
+      itemBuilder: (_, i) {
+        final item = items[i];
+        final id = item['id'] as String;
+        final owned = isRing ? _ownedRings.contains(id) : _ownedBanners.contains(id);
+        final active = isRing ? _activeRing == id : _activeBanner == id;
+        final grad = isRing
+            ? (_cosmeticRings[id] ?? _ringGrad)
+            : (_cosmeticBanners[id] ?? _bgGrad);
+
+        return GestureDetector(
+          onTap: _busy ? null : () => _buyOrEquip(item),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: active ? _green : (owned ? Colors.white24 : Colors.white12),
+                width: active ? 2.5 : 1,
+              ),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
+                colors: [Colors.white.withValues(alpha: 0.07), Colors.white.withValues(alpha: 0.03)],
+              ),
+            ),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              // Preview
+              if (isRing)
+                Container(
+                  width: 54, height: 54,
+                  decoration: BoxDecoration(shape: BoxShape.circle, gradient: grad),
+                  child: Container(
+                    margin: const EdgeInsets.all(3),
+                    decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF0D1F22)),
+                    child: const Icon(Icons.pets, color: Colors.white38, size: 22),
+                  ),
+                )
+              else
+                _bannerPreviewWidget(item, active),
+              const SizedBox(height: 8),
+              Text(item['label'] as String,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white)),
+              const SizedBox(height: 4),
+              if (!owned)
+                Text('${item['cost']} cr.', style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: _green))
+              else if (active)
+                const Text('Équipé ✓', style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: _green, fontWeight: FontWeight.w700))
+              else
+                Text('Équiper', style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.white.withValues(alpha: 0.5))),
+            ]),
+          ),
+        );
+      },
     );
   }
 }

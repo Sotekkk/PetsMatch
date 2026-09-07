@@ -1,30 +1,19 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
-// ── Palette (identique au reste des pages particulier — cf. mes_contrats_page.dart) ──
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
 const _dark  = Color(0xFF1F2A2E);
 
-// ── Modèles génériques ──────────────────────────────────────────────────────────
-// Le profil particulier est gratuit par conception (cf. commentaire dans
-// onboarding_theme.dart : « Les profils gratuits (particulier, association)
-// n'ont pas d'abonnement »). Il n'existe donc aujourd'hui aucune table Supabase
-// ni aucun modèle de paiement pour un abonnement, un achat ponctuel ou des
-// crédits côté particulier — ces classes ne servent qu'à préparer l'affichage
-// (structure volontairement générique) pour le jour où ces fonctionnalités
-// seront réellement activées. Tant que ce n'est pas le cas, les listes qui
-// les utilisent restent vides et l'UI l'assume clairement (états vides),
-// plutôt que d'inventer des données.
-
-/// Un achat ponctuel (boost, personnalisation, pass, cadeau virtuel…).
 class AchatPonctuel {
   final String id;
   final DateTime date;
   final String nom;
-  final String type; // 'boost' | 'personnalisation' | 'pass' | 'cadeau_virtuel' | ...
+  final String type;
   final double montant;
-  final String statut; // 'paye' | 'en_attente' | 'rembourse' | 'echoue'
+  final String statut;
   final String? factureUrl;
   const AchatPonctuel({
     required this.id, required this.date, required this.nom, required this.type,
@@ -32,19 +21,16 @@ class AchatPonctuel {
   });
 }
 
-/// Une ligne de l'historique des mouvements de crédits.
 class MouvementCredit {
   final DateTime date;
   final String motif;
-  final int montant; // positif = crédité, négatif = débité
+  final int montant;
   const MouvementCredit({required this.date, required this.motif, required this.montant});
 }
 
-/// Une ligne de l'historique de facturation unifié (abonnement, achat, pack
-/// de crédits, remboursement…).
 class LigneFacturation {
   final DateTime date;
-  final String type; // 'abonnement' | 'renouvellement' | 'achat' | 'pack_credits' | 'remboursement'
+  final String type;
   final String libelle;
   final double montant;
   final String? factureUrl;
@@ -64,7 +50,8 @@ const _statutLabels = {
   'paye': 'Payé', 'en_attente': 'En attente', 'rembourse': 'Remboursé', 'echoue': 'Échoué',
 };
 const _statutColors = {
-  'paye': _green, 'en_attente': Color(0xFFE0A030), 'rembourse': Color(0xFF6F767B), 'echoue': Color(0xFFE05C5C),
+  'paye': _green, 'en_attente': Color(0xFFE0A030),
+  'rembourse': Color(0xFF6F767B), 'echoue': Color(0xFFE05C5C),
 };
 
 class AbonnementsAchatsPage extends StatefulWidget {
@@ -75,15 +62,71 @@ class AbonnementsAchatsPage extends StatefulWidget {
 }
 
 class _AbonnementsAchatsPageState extends State<AbonnementsAchatsPage> {
-  // Aucune source de données réelle pour l'instant (voir commentaire plus
-  // haut) — listes vides, prêtes à être remplacées par une requête Supabase
-  // dès qu'une table dédiée existera, sans changer le reste de la page.
+  final _supa = Supabase.instance.client;
+  String? get _uid => FirebaseAuth.instance.currentUser?.uid;
+
   final List<AchatPonctuel> _achats = const [];
-  final List<MouvementCredit> _mouvementsCredits = const [];
+  List<MouvementCredit> _mouvementsCredits = const [];
   final List<LigneFacturation> _facturation = const [];
-  static const int _soldeCredits = 0;
-  static const int _creditsAchetes = 0;
-  static const int _creditsUtilises = 0;
+  int _soldeCredits = 0;
+  int _creditsAchetes = 0;
+  int _creditsUtilises = 0;
+  bool _loading = true;
+  List<Map<String, dynamic>> _packs = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final uid = _uid;
+    if (uid == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final results = await Future.wait([
+        _supa.from('credit_wallets').select().eq('uid', uid).maybeSingle(),
+        _supa.from('credit_transactions').select().eq('uid', uid)
+            .order('created_at', ascending: false).limit(50),
+        _supa.from('credit_packs').select().eq('actif', true).order('ordre'),
+      ]);
+
+      final wallet = results[0] as Map<String, dynamic>?;
+      final transactions = results[1] as List;
+      final packs = results[2] as List;
+
+      final mouvements = transactions.map((t) => MouvementCredit(
+        date: DateTime.parse(t['created_at'] as String),
+        motif: t['motif'] as String,
+        montant: t['montant'] as int,
+      )).toList();
+
+      if (mounted) {
+        setState(() {
+          _soldeCredits    = wallet?['solde']         as int? ?? 0;
+          _creditsAchetes  = wallet?['total_achete']  as int? ?? 0;
+          _creditsUtilises = wallet?['total_utilise'] as int? ?? 0;
+          _mouvementsCredits = mouvements;
+          _packs = packs.cast<Map<String, dynamic>>();
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _openPacksSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _CreditPacksSheet(packs: _packs),
+    );
+  }
 
   void _bientotDisponible(String message) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -104,37 +147,38 @@ class _AbonnementsAchatsPageState extends State<AbonnementsAchatsPage> {
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
         elevation: 0,
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
-        children: [
-          const _SectionTitle('Mon abonnement'),
-          const SizedBox(height: 10),
-          _buildAbonnementCard(),
-          const SizedBox(height: 28),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: _teal))
+          : RefreshIndicator(
+              color: _teal,
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
+                children: [
+                  const _SectionTitle('Mon abonnement'),
+                  const SizedBox(height: 10),
+                  _buildAbonnementCard(),
+                  const SizedBox(height: 28),
 
-          const _SectionTitle('Mes achats'),
-          const SizedBox(height: 10),
-          _buildAchatsSection(),
-          const SizedBox(height: 28),
+                  const _SectionTitle('Mes achats'),
+                  const SizedBox(height: 10),
+                  _buildAchatsSection(),
+                  const SizedBox(height: 28),
 
-          const _SectionTitle('Mes crédits'),
-          const SizedBox(height: 10),
-          _buildCreditsSection(),
-          const SizedBox(height: 28),
+                  const _SectionTitle('Mes crédits'),
+                  const SizedBox(height: 10),
+                  _buildCreditsSection(),
+                  const SizedBox(height: 28),
 
-          const _SectionTitle('Facturation'),
-          const SizedBox(height: 10),
-          _buildFacturationSection(),
-        ],
-      ),
+                  const _SectionTitle('Facturation'),
+                  const SizedBox(height: 10),
+                  _buildFacturationSection(),
+                ],
+              ),
+            ),
     );
   }
 
-  // ── 1. Mon abonnement ──────────────────────────────────────────────────────
-  // Profil particulier = gratuit aujourd'hui (aucune formule payante n'existe
-  // encore). On affiche donc honnêtement l'état « Gratuit » plutôt que
-  // d'inventer un prix ou une date de facturation — les boutons Gérer /
-  // Changer / Résilier n'ont pas de sens tant qu'il n'y a rien à gérer.
   Widget _buildAbonnementCard() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -184,7 +228,6 @@ class _AbonnementsAchatsPageState extends State<AbonnementsAchatsPage> {
     ]),
   );
 
-  // ── 2. Mes achats ────────────────────────────────────────────────────────
   Widget _buildAchatsSection() {
     if (_achats.isEmpty) {
       return const _EmptyCard(
@@ -196,7 +239,6 @@ class _AbonnementsAchatsPageState extends State<AbonnementsAchatsPage> {
     return Column(children: _achats.map((a) => _AchatRow(achat: a)).toList());
   }
 
-  // ── 3. Mes crédits ───────────────────────────────────────────────────────
   Widget _buildCreditsSection() {
     return Column(children: [
       Container(
@@ -217,7 +259,7 @@ class _AbonnementsAchatsPageState extends State<AbonnementsAchatsPage> {
       SizedBox(
         width: double.infinity,
         child: ElevatedButton.icon(
-          onPressed: () => _bientotDisponible('L\'achat de crédits n\'est pas encore disponible.'),
+          onPressed: _openPacksSheet,
           style: ElevatedButton.styleFrom(
             backgroundColor: _green, foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 13),
@@ -246,7 +288,6 @@ class _AbonnementsAchatsPageState extends State<AbonnementsAchatsPage> {
     Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
   ]);
 
-  // ── 4. Facturation ───────────────────────────────────────────────────────
   Widget _buildFacturationSection() {
     if (_facturation.isEmpty) {
       return const _EmptyCard(
@@ -256,6 +297,103 @@ class _AbonnementsAchatsPageState extends State<AbonnementsAchatsPage> {
       );
     }
     return Column(children: _facturation.map((f) => _FactureRow(ligne: f)).toList());
+  }
+}
+
+// ── Sheet packs de crédits ────────────────────────────────────────────────────
+
+class _CreditPacksSheet extends StatelessWidget {
+  final List<Map<String, dynamic>> packs;
+  const _CreditPacksSheet({required this.packs});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFFF5F7F5),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).padding.bottom + 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(child: Container(
+            width: 36, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+          )),
+          const SizedBox(height: 18),
+          const Text('Acheter des crédits',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 19, color: _dark)),
+          const SizedBox(height: 4),
+          Text('Utilisez vos crédits pour booster vos posts,\nenvoyer des cadeaux et personnaliser votre profil.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+          const SizedBox(height: 20),
+          if (packs.isEmpty)
+            const Center(child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: CircularProgressIndicator(color: _teal),
+            ))
+          else
+            ...packs.map((p) => _PackCard(pack: p)),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: _teal.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Row(children: [
+              Icon(Icons.lock_clock, size: 16, color: _teal),
+              SizedBox(width: 10),
+              Expanded(child: Text(
+                'Paiement sécurisé bientôt disponible.\nVos crédits seront disponibles dès l\'ouverture.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal),
+              )),
+            ]),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PackCard extends StatelessWidget {
+  final Map<String, dynamic> pack;
+  const _PackCard({required this.pack});
+
+  @override
+  Widget build(BuildContext context) {
+    final tag = pack['tag'] as String?;
+    final credits = pack['credits'] as int;
+    final prix = (pack['prix_euros'] as num).toStringAsFixed(2);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: tag != null ? Border.all(color: _green, width: 2) : null,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      child: Row(children: [
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(pack['nom'] as String,
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: _dark)),
+            if (tag != null)
+              Text(tag, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _green, fontWeight: FontWeight.w600)),
+          ]),
+        ),
+        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Text('$credits crédits',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _teal)),
+          Text('$prix €',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+        ]),
+      ]),
+    );
   }
 }
 

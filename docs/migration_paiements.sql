@@ -84,6 +84,8 @@ ALTER TABLE public.annonces ADD COLUMN IF NOT EXISTS boost_until TIMESTAMPTZ;
 -- Plans et produits : données publiques, lecture libre, écriture via service_role uniquement
 ALTER TABLE public.plans_tarifaires ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.produits_ponctuels ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "plans_read" ON public.plans_tarifaires;
+DROP POLICY IF EXISTS "produits_read" ON public.produits_ponctuels;
 CREATE POLICY "plans_read" ON public.plans_tarifaires FOR SELECT USING (true);
 CREATE POLICY "produits_read" ON public.produits_ponctuels FOR SELECT USING (true);
 
