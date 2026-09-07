@@ -18,6 +18,7 @@ const cessionSterilisationFunctions = require("./cession_sterilisation");
 
 // Stripe + messagerie
 exports.createStripePaymentIntent = stripeFunctions.createStripePaymentIntent;
+exports.createCreditPaymentIntent = stripeFunctions.createCreditPaymentIntent;
 exports.createStripeSubscription = stripeFunctions.createStripeSubscription;
 exports.cancelStripeSubscription = stripeFunctions.cancelStripeSubscription;
 exports.stripeWebhook = stripeFunctions.stripeWebhook;

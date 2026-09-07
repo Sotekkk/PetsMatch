@@ -647,7 +647,7 @@ class _DrawerSectionState extends State<_DrawerSection> {
             contentPadding: const EdgeInsets.symmetric(horizontal: 20),
           ),
           AnimatedCrossFade(
-            firstChild: const SizedBox.shrink(),
+            firstChild: const SizedBox(width: double.infinity),
             secondChild: Container(
               color: const Color(0xFFF8F8F6),
               child: Column(children: widget.children),

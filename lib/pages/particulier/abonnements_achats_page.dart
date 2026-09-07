@@ -1,12 +1,9 @@
-import 'dart:convert';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
-
-const _kCreditsUrl = 'https://petsmatchapp.com/.netlify/functions/stripe-credits';
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -329,15 +326,17 @@ class CreditPacksSheetState extends State<CreditPacksSheet> {
     final packId = pack['id'] as String;
     setState(() => _loadingPackId = packId);
     try {
-      // 1. Créer le PaymentIntent côté serveur
-      final resp = await http.post(
-        Uri.parse(_kCreditsUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'pack_id': packId, 'uid': widget.myUid}),
-      );
-      if (resp.statusCode != 200) throw Exception('[${resp.statusCode}] ${resp.body.isEmpty ? "(réponse vide)" : resp.body}');
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      final clientSecret = data['clientSecret'] as String;
+      // 1. Créer le PaymentIntent via Firebase Function
+      final fn = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('createCreditPaymentIntent');
+      final result = await fn.call({
+        'packId': packId,
+        'uid': widget.myUid,
+        'credits': pack['credits'],
+        'prixEuros': pack['prix_euros'].toString(),
+        'nom': pack['nom'],
+      });
+      final clientSecret = result.data['clientSecret'] as String;
 
       // 2. Initialiser le Payment Sheet
       await Stripe.instance.initPaymentSheet(
