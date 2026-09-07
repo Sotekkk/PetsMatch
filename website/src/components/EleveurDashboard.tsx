@@ -6,7 +6,6 @@ import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan, PLAN_CONFIG } from '@/lib/use-plan';
-import MarketplaceBanner from './MarketplaceBanner';
 
 interface Annonce {
   id: string;
@@ -160,9 +159,6 @@ export default function EleveurDashboard() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-8">
-        {/* Bannière partenaires marketplace */}
-        <MarketplaceBanner />
-
         <div className="grid grid-cols-3 gap-3">
           {[
             { value: animalCount, label: 'Animaux', icon: '🐾', href: '/mes-animaux' },

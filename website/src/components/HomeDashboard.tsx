@@ -47,15 +47,6 @@ const features = [
     bg: 'bg-[#E3F2FD]',
     border: 'border-[#2196F3]/30',
   },
-  {
-    icon: '🛍️',
-    title: 'Marketplace',
-    desc: 'Boutiques, alimentation, artisans… des partenaires sélectionnés pour vos animaux.',
-    href: '/marketplace',
-    cta: 'Découvrir',
-    bg: 'bg-[#F3E5F5]',
-    border: 'border-[#8E24AA]/30',
-  },
 ];
 
 function GuestHome() {

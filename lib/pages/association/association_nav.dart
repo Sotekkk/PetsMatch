@@ -20,7 +20,6 @@ import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
-import 'package:PetsMatch/pages/marketplace/marketplace_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
 import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
@@ -358,16 +357,6 @@ class _AssociationNavState extends State<AssociationNav> {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(
                       builder: (_) => const CommunauteHubPage(),
-                    ));
-                  },
-                ),
-                _DrawerItem(
-                  icon: Icons.local_offer_outlined,
-                  label: 'Marketplace',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const MarketplacePage(),
                     ));
                   },
                 ),

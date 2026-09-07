@@ -16,7 +16,6 @@ import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
-import 'package:PetsMatch/pages/marketplace/marketplace_page.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
 
 import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
@@ -188,12 +187,6 @@ List<QuickAction> _all(BuildContext ctx) => [
     keywords: ['services', 'pros', 'vétérinaire', 'toiletteur', 'éducateur', 'pension', 'pet sitter', 'trouver un pro', 'près de chez moi'],
     icon: Icons.storefront_outlined, group: 'Annuaire & Communauté',
     visible: () => true, open: (c) => _push(c, const ServicesPage()),
-  ),
-  QuickAction(
-    label: 'Marketplace',
-    keywords: ['boutique', 'produits', 'accessoires', 'alimentation', 'partenaires', 'acheter'],
-    icon: Icons.local_offer_outlined, group: 'Annuaire & Communauté',
-    visible: () => true, open: (c) => _push(c, const MarketplacePage()),
   ),
 
   // ── Communauté ─────────────────────────────────────────────────────────────
