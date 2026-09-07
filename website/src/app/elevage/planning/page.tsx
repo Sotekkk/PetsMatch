@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -263,7 +263,7 @@ ${sectionsHtml}
 
 // ════════════════════════════════════════════════════════════════════════════════
 
-export default function PlanningPage() {
+function PlanningPageInner() {
   const { user, loading } = useAuth();
   const { id: profileId, loaded: profileLoaded } = useActiveProfileState();
   const router = useRouter();
@@ -2003,5 +2003,13 @@ function DeleteScopeModal({ groupe, uid, dateRef, onClose, onDeleted }: {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function PlanningPage() {
+  return (
+    <Suspense fallback={null}>
+      <PlanningPageInner />
+    </Suspense>
   );
 }

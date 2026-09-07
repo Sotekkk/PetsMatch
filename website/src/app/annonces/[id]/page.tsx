@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -403,7 +403,7 @@ function BebeCard({ bebe: b, index, annonceId, uidEleveur, currentUser, onOpenLi
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function AnnonceDetailPage() {
+function AnnonceDetailPageInner() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1124,5 +1124,13 @@ export default function AnnonceDetailPage() {
         onClose={() => setLightbox(null)} />
     )}
     </>
+  );
+}
+
+export default function AnnonceDetailPage() {
+  return (
+    <Suspense fallback={null}>
+      <AnnonceDetailPageInner />
+    </Suspense>
   );
 }

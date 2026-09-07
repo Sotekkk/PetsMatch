@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -2212,7 +2212,7 @@ function CoproprietairesSection({ animalId, animalNom, userUid }: {
 
 // ─── Page principale ──────────────────────────────────────────────────────────
 
-export default function AnimalFichePage() {
+function AnimalFichePageInner() {
   const { id } = useParams<{ id: string }>();
   const { user, userData } = useAuth();
   const activeProfileId = useActiveProfile();
@@ -4704,5 +4704,13 @@ export default function AnimalFichePage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function AnimalFichePage() {
+  return (
+    <Suspense fallback={null}>
+      <AnimalFichePageInner />
+    </Suspense>
   );
 }

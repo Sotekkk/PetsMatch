@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -21,7 +21,7 @@ async function uploadPhoto(file: File, uid: string): Promise<string> {
   return data.publicUrl;
 }
 
-export default function CreerAnnonceAssoPage() {
+function CreerAnnonceAssoPageInner() {
   const { user, activeProfileId } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
@@ -435,5 +435,13 @@ export default function CreerAnnonceAssoPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+export default function CreerAnnonceAssoPage() {
+  return (
+    <Suspense fallback={null}>
+      <CreerAnnonceAssoPageInner />
+    </Suspense>
   );
 }

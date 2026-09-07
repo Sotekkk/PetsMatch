@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -43,7 +43,7 @@ const STATUT_MAP = Object.fromEntries([...DETENUS_STATUTS, ...ANCIEN_STATUTS].ma
 // indépendant porté par fa_id (un animal en FA reste "disponible" ou "en soin").
 const ASSIGNABLE_STATUTS = ['en_soin', 'disponible', 'adopte', 'transfere', 'decede'];
 
-export default function AnimauxAssoPage() {
+function AnimauxAssoPageInner() {
   const { user, activeProfileId } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -263,5 +263,13 @@ export default function AnimauxAssoPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function AnimauxAssoPage() {
+  return (
+    <Suspense fallback={null}>
+      <AnimauxAssoPageInner />
+    </Suspense>
   );
 }

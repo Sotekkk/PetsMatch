@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -35,7 +35,7 @@ const TYPE_COLORS: Record<string, string> = {
   chirurgie: 'bg-red-100 text-red-700', autre: 'bg-gray-100 text-gray-600',
 };
 
-export default function RegistreSanitairePage() {
+function RegistreSanitairePageInner() {
   const { user, loading } = useAuth();
   const activeProfileId = useActiveProfile();
   const { config: planConfig, loading: planLoading } = usePlan();
@@ -386,5 +386,13 @@ function NouvelActeForm({ uid, profileId, profilSource = 'eleveur', onClose, onS
         </form>
       </div>
     </div>
+  );
+}
+
+export default function RegistreSanitairePage() {
+  return (
+    <Suspense fallback={null}>
+      <RegistreSanitairePageInner />
+    </Suspense>
   );
 }

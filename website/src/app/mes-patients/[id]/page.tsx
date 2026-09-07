@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Image from 'next/image';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -190,7 +190,7 @@ function ForfaitSousForm({ proUid, onSave, onCancel }: {
   );
 }
 
-export default function PatientDetailPage() {
+function PatientDetailPageInner() {
   const { user, userData } = useAuth();
   const router = useRouter();
   const params = useParams();
@@ -2066,5 +2066,13 @@ export default function PatientDetailPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function PatientDetailPage() {
+  return (
+    <Suspense fallback={null}>
+      <PatientDetailPageInner />
+    </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { Suspense, useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
@@ -32,7 +32,7 @@ function formatTime(iso: string) {
       d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function PetFriendChatWebPage() {
+function PetFriendChatWebPageInner() {
   const { convId } = useParams<{ convId: string }>();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -265,5 +265,13 @@ export default function PetFriendChatWebPage() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function PetFriendChatWebPage() {
+  return (
+    <Suspense fallback={null}>
+      <PetFriendChatWebPageInner />
+    </Suspense>
   );
 }

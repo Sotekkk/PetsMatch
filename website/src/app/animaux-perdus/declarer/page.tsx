@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -47,7 +47,7 @@ function isValidEmail(c: string) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function DeclarerPerduPage() {
+function DeclarerPerduPageInner() {
   const { user, loading } = useAuth();
   const activeProfileId = useActiveProfile();
   const router = useRouter();
@@ -590,5 +590,13 @@ export default function DeclarerPerduPage() {
           onCancel={() => { URL.revokeObjectURL(photoCropSrc); setPhotoCropSrc(null); }} />
       )}
     </div>
+  );
+}
+
+export default function DeclarerPerduPage() {
+  return (
+    <Suspense fallback={null}>
+      <DeclarerPerduPageInner />
+    </Suspense>
   );
 }

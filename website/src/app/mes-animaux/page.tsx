@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { Suspense, useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -289,7 +289,7 @@ function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, rep
   );
 }
 
-export default function MesAnimauxPage() {
+function MesAnimauxPageInner() {
   const { user, userData, loading, activeProfileId } = useAuth();
   const { plan } = usePlan();
   const router = useRouter();
@@ -1146,5 +1146,13 @@ export default function MesAnimauxPage() {
       />
     )}
     </>
+  );
+}
+
+export default function MesAnimauxPage() {
+  return (
+    <Suspense fallback={null}>
+      <MesAnimauxPageInner />
+    </Suspense>
   );
 }
