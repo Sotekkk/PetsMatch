@@ -199,16 +199,16 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                         builder: (context) => const ProAgendaPage()));
                   },
                 ),
+                buildSettingsOption(
+                  context,
+                  icon: Icons.store_outlined,
+                  text: 'Mon établissement',
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                        builder: (context) => const MonEtablissementPage()));
+                  },
+                ),
               ],
-              buildSettingsOption(
-                context,
-                icon: Icons.store_outlined,
-                text: 'Mon établissement',
-                onTap: () {
-                  Navigator.of(context).push(MaterialPageRoute(
-                      builder: (context) => const MonEtablissementPage()));
-                },
-              ),
               buildSettingsOption(
                 context,
                 icon: Icons.block_outlined,
