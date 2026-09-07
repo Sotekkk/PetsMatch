@@ -22,6 +22,9 @@ export const metadata: Metadata = {
     description: "La communauté des passionnés d'animaux",
     images: ["/Banniere_petsmatch.png"],
   },
+  verification: {
+    google: "google961c7a0a2687ef2e",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
