@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
-const _kApiBase = 'https://petsmatchapp.com';
+const _kCreditsUrl = 'https://petsmatchapp.com/.netlify/functions/stripe-credits';
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -331,7 +331,7 @@ class CreditPacksSheetState extends State<CreditPacksSheet> {
     try {
       // 1. Créer le PaymentIntent côté serveur
       final resp = await http.post(
-        Uri.parse('$_kApiBase/api/stripe/credits'),
+        Uri.parse(_kCreditsUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'pack_id': packId, 'uid': widget.myUid}),
       );
