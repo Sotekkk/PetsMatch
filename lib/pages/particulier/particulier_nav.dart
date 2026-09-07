@@ -256,6 +256,14 @@ class _ParticulierNavState extends State<ParticulierNav> {
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunauteHubPage()));
                   },
                 ),
+                _DrawerItem(
+                  icon: Icons.favorite_border,
+                  label: 'Favoris',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => LikesPage()));
+                  },
+                ),
                 _DrawerSection(
                   icon: Icons.search_off_rounded,
                   label: 'Perdus & Trouvés',
@@ -361,14 +369,6 @@ class _ParticulierNavState extends State<ParticulierNav> {
                     },
                   ),
                 // « Mes PetFriends » retiré du menu : accessible depuis Communauté.
-                _DrawerItem(
-                  icon: Icons.favorite_border,
-                  label: 'Favoris',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => LikesPage()));
-                  },
-                ),
                 _DrawerItem(
                   icon: Icons.storefront_outlined,
                   label: 'Annuaire professionnel',
