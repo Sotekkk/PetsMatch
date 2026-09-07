@@ -180,7 +180,6 @@ class _ParticulierNavState extends State<ParticulierNav> {
                 _DrawerSection(
                   icon: Icons.person_outline,
                   label: 'Mon Profil',
-                  initiallyExpanded: true,
                   children: [
                     _DrawerSubItem(
                       label: 'Mon Profil',

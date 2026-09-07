@@ -14,6 +14,7 @@ import 'package:PetsMatch/pages/message.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:PetsMatch/pages/settings/main_settings.dart';
 import 'package:PetsMatch/pages/settings/info_utilisateur.dart';
+import 'package:PetsMatch/pages/particulier/abonnements_achats_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
@@ -316,6 +317,13 @@ List<QuickAction> _all(BuildContext ctx) => [
     icon: Icons.edit_outlined, group: 'Mon profil',
     visible: () => _particulier,
     open: (c) => _push(c, const InfoUserSettings()),
+  ),
+  QuickAction(
+    label: 'Abonnements & achats',
+    keywords: ['abonnement', 'achats', 'crédits', 'facturation', 'factures', 'paiement'],
+    icon: Icons.star_outline, group: 'Mon profil',
+    visible: () => _particulier,
+    open: (c) => _push(c, const AbonnementsAchatsPage()),
   ),
 
   // ── Annonces / adoption (recherche) — commun particulier & pros ─────────────
