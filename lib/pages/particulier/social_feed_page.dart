@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
+import 'package:PetsMatch/pages/particulier/abonnements_achats_page.dart' show CreditPacksSheet;
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
@@ -3941,6 +3942,8 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
   late List<String> _ownedBanners;
   late String? _activeRing;
   late String? _activeBanner;
+  int _solde = 0;
+  List<Map<String, dynamic>> _packs = [];
 
   @override
   void initState() {
@@ -3950,6 +3953,35 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
     _ownedBanners = List.from(widget.ownedBanners);
     _activeRing = widget.activeRing;
     _activeBanner = widget.activeBanner;
+    _loadWallet();
+  }
+
+  Future<void> _loadWallet() async {
+    try {
+      final results = await Future.wait([
+        _supa.from('credit_wallets').select('solde').eq('uid', widget.myUid).maybeSingle(),
+        _supa.from('credit_packs').select().eq('actif', true).order('ordre'),
+      ]);
+      if (mounted) {
+        setState(() {
+          _solde = (results[0] as Map<String, dynamic>?)?['solde'] as int? ?? 0;
+          _packs = (results[1] as List).cast<Map<String, dynamic>>();
+        });
+      }
+    } catch (_) {}
+  }
+
+  void _openCreditsSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => CreditPacksSheet(
+        packs: _packs,
+        myUid: widget.myUid,
+        onSuccess: _loadWallet,
+      ),
+    );
   }
 
   @override
@@ -4133,12 +4165,38 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
           _itemGrid(banners, isRing: false),
         ])),
         Padding(
-          padding: EdgeInsets.fromLTRB(20, 8, 20, MediaQuery.of(context).padding.bottom + 12),
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Icon(Icons.toll_outlined, size: 15, color: Colors.white38),
-            const SizedBox(width: 6),
-            Text('Achetez des crédits dans Paramètres → Abonnements & achats',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white38)),
+          padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.of(context).padding.bottom + 12),
+          child: Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white10,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(children: [
+                const Icon(Icons.toll_outlined, size: 16, color: _green),
+                const SizedBox(width: 6),
+                Text('$_solde cr.',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white)),
+              ]),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: GestureDetector(
+                onTap: _openCreditsSheet,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(colors: [_tealC, _green]),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Center(
+                    child: Text('Acheter des crédits',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Colors.white)),
+                  ),
+                ),
+              ),
+            ),
           ]),
         ),
       ]),

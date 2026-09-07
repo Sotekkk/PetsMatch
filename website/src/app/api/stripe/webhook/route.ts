@@ -121,6 +121,42 @@ export async function POST(req: NextRequest) {
         break;
       }
 
+      // ── Paiement crédits Pets Social confirmé ────────────────────────────
+      case 'payment_intent.succeeded': {
+        const pi = event.data.object as import('stripe').default.PaymentIntent;
+        const { uid, pack_id, credits } = pi.metadata ?? {};
+        if (!uid || !pack_id || !credits) break;
+
+        const creditsInt = parseInt(credits, 10);
+        if (isNaN(creditsInt) || creditsInt <= 0) break;
+
+        // Upsert wallet (ajoute les crédits au solde existant)
+        const { data: wallet } = await supabase
+          .from('credit_wallets')
+          .select('solde, total_achete')
+          .eq('uid', uid)
+          .maybeSingle();
+
+        const soldeActuel = (wallet?.solde as number) ?? 0;
+        const totalAchetéActuel = (wallet?.total_achete as number) ?? 0;
+
+        await supabase.from('credit_wallets').upsert({
+          uid,
+          solde: soldeActuel + creditsInt,
+          total_achete: totalAchetéActuel + creditsInt,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'uid' });
+
+        await supabase.from('credit_transactions').insert({
+          uid,
+          montant: creditsInt,
+          motif: `Achat pack crédits`,
+          ref_id: pack_id,
+        });
+
+        break;
+      }
+
       // ── Abonnement annulé ─────────────────────────────────────────────────
       case 'customer.subscription.deleted': {
         const sub = event.data.object as Stripe.Subscription;

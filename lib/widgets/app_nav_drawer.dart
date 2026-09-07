@@ -237,7 +237,7 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
           label: 'Perdus & Trouvés',
           children: [
             _DrawerSubItem(
-              label: 'Mes déclarations perdues/trouvées',
+              label: 'Mes déclarations',
               icon: Icons.manage_search_outlined,
               onTap: () => _push(const MesAlertesPage()),
             ),
@@ -446,7 +446,7 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
           label: 'Animaux perdus / trouvés',
           children: [
             _DrawerSubItem(
-              label: 'Mes déclarations perdues/trouvées',
+              label: 'Mes déclarations',
               icon: Icons.manage_search_outlined,
               onTap: () => _push(const MesAlertesPage()),
             ),
@@ -682,7 +682,8 @@ class _DrawerSubItem extends StatelessWidget {
             Icon(icon, color: locked ? Colors.grey.shade400 : const Color(0xFF6E9E57), size: 18),
             const SizedBox(width: 10),
             Expanded(child: Text(label,
-                overflow: TextOverflow.ellipsis,
+                maxLines: 2,
+                softWrap: true,
                 style: TextStyle(
                     fontFamily: 'Galey',
                     fontSize: 14,
