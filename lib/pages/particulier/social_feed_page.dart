@@ -494,7 +494,7 @@ class _SuggestionsWidgetState extends State<_SuggestionsWidget> {
     final profRows = await _supa.from('user_profiles')
         .select('uid, firstname, lastname, avatar_url, profile_type, nom')
         .inFilter('uid', candidateUids)
-        .eq('is_main', true);
+        .eq('is_main', true).eq('profile_type', 'particulier');
     if (mounted) {
       setState(() {
         _suggestions = (profRows as List).cast<Map<String, dynamic>>();
@@ -661,7 +661,7 @@ class _FeedListState extends State<_FeedList>
           .from('user_profiles')
           .select('uid, firstname, lastname, avatar_url, profile_type, nom')
           .inFilter('uid', authorUids)
-          .eq('is_main', true);
+          .eq('is_main', true).eq('profile_type', 'particulier');
       _profiles = {
         for (final r in profileRows as List)
           r['uid'] as String: r as Map<String, dynamic>
@@ -1216,7 +1216,7 @@ class _MyPostsListState extends State<_MyPostsList>
             .from('user_profiles')
             .select('uid, firstname, lastname, avatar_url, profile_type, nom')
             .eq('uid', widget.myUid)
-            .eq('is_main', true)
+            .eq('is_main', true).eq('profile_type', 'particulier')
             .maybeSingle(),
       ]);
       if (mounted) {
@@ -1749,7 +1749,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
           .from('user_profiles')
           .select('uid, firstname, lastname, avatar_url, profile_type, nom')
           .inFilter('uid', uids)
-          .eq('is_main', true);
+          .eq('is_main', true).eq('profile_type', 'particulier');
       _profiles = {
         for (final r in profRows as List)
           r['uid'] as String: r as Map<String, dynamic>
@@ -2559,7 +2559,7 @@ class _SearchSheetState extends State<_SearchSheet> {
           .from('user_profiles')
           .select('uid, firstname, lastname, avatar_url, profile_type, nom')
           .or('firstname.ilike.%$q%,lastname.ilike.%$q%,nom.ilike.%$q%')
-          .eq('is_main', true)
+          .eq('is_main', true).eq('profile_type', 'particulier')
           .neq('uid', widget.myUid)
           .limit(20);
       if (mounted) {
@@ -2806,7 +2806,7 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
       _supa.from('user_profiles')
           .select('uid, firstname, lastname, avatar_url, profile_type, nom')
           .eq('uid', widget.targetUid)
-          .eq('is_main', true)
+          .eq('is_main', true).eq('profile_type', 'particulier')
           .maybeSingle(),
       _supa.from('posts_socialmedia')
           .select()
@@ -3080,7 +3080,7 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
       final profRows = await _supa.from('user_profiles')
           .select('uid, firstname, lastname, avatar_url, profile_type, nom')
           .inFilter('uid', uids)
-          .eq('is_main', true);
+          .eq('is_main', true).eq('profile_type', 'particulier');
       profiles = { for (final r in profRows as List) r['uid'] as String: r as Map<String, dynamic> };
     }
 
@@ -3219,7 +3219,7 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
     final uid = widget.post['uid'] as String;
     final results = await Future.wait([
       _supa.from('user_profiles').select('uid, firstname, lastname, avatar_url, profile_type, nom')
-          .eq('uid', uid).eq('is_main', true).maybeSingle(),
+          .eq('uid', uid).eq('is_main', true).eq('profile_type', 'particulier').maybeSingle(),
       _supa.from('post_likes').select('uid').eq('post_id', widget.post['id'] as String).eq('uid', widget.myUid).maybeSingle(),
       _supa.from('follows').select('follower_uid').eq('follower_uid', widget.myUid).eq('following_uid', uid).maybeSingle(),
     ]);
@@ -3376,7 +3376,7 @@ class _FollowListPageState extends State<_FollowListPage> {
     if (uids.isEmpty) { if (mounted) setState(() => _loading = false); return; }
     final profRows = await _supa.from('user_profiles')
         .select('uid, firstname, lastname, avatar_url, profile_type, nom')
-        .inFilter('uid', uids).eq('is_main', true);
+        .inFilter('uid', uids).eq('is_main', true).eq('profile_type', 'particulier');
     if (mounted) {
       setState(() {
         _users = (profRows as List).cast<Map<String, dynamic>>();
