@@ -228,7 +228,25 @@ class _ParticulierNavState extends State<ParticulierNav> {
                           ));
                         },
                       ),
+                    _DrawerSubItem(
+                      label: 'Mes Contrats',
+                      icon: Icons.description_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const MesContratsParticulierPage(),
+                        ));
+                      },
+                    ),
                   ],
+                ),
+                _DrawerItem(
+                  icon: Icons.groups_outlined,
+                  label: 'Communauté',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunauteHubPage()));
+                  },
                 ),
                 _DrawerSection(
                   icon: Icons.search_off_rounded,
@@ -360,36 +378,12 @@ class _ParticulierNavState extends State<ParticulierNav> {
                   },
                 ),
                 _DrawerItem(
-                  icon: Icons.groups_outlined,
-                  label: 'Communauté',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunauteHubPage()));
-                  },
-                ),
-                _DrawerItem(
                   icon: Icons.local_offer_outlined,
                   label: 'Marketplace',
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const MarketplacePage()));
                   },
-                ),
-                _DrawerSection(
-                  icon: Icons.folder_outlined,
-                  label: 'Administratif',
-                  children: [
-                    _DrawerSubItem(
-                      label: 'Mes Contrats',
-                      icon: Icons.description_outlined,
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const MesContratsParticulierPage(),
-                        ));
-                      },
-                    ),
-                  ],
                 ),
                 if (User_Info.isPro) ...[
                   const Divider(height: 16),
