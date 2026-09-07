@@ -1216,25 +1216,27 @@ class _SocialPostCardState extends State<_SocialPostCard> {
     if (confirm != true || !mounted) return;
 
     try {
-      final newSolde = solde - cost;
-      final newTotalUtilise = ((walletRow?['total_utilise'] as int?) ?? 0) + cost;
-      await Future.wait([
-        supa.from('credit_wallets').upsert({
-          'uid': uid,
-          'solde': newSolde,
-          'total_utilise': newTotalUtilise,
-          'updated_at': DateTime.now().toIso8601String(),
-        }, onConflict: 'uid'),
-        supa.from('credit_transactions').insert({
-          'uid': uid,
-          'montant': -cost,
-          'motif': 'Boost de post',
-          'ref_id': widget.post['id'] as String,
-        }),
-        supa.from('posts_socialmedia').update({
-          'boosted_until': DateTime.now().add(const Duration(hours: 48)).toIso8601String(),
-        }).eq('id', widget.post['id'] as String),
-      ]);
+      // Débit atomique côté serveur (RPC SECURITY DEFINER) puis boost.
+      final spend = await supa.rpc('credit_spend', params: {
+        'p_uid': uid,
+        'p_cost': cost,
+        'p_motif': 'Boost de post',
+        'p_ref_id': widget.post['id'] as String,
+      });
+      if (!(spend is Map && spend['ok'] == true)) {
+        if (mounted) {
+          final s = (spend is Map ? spend['solde'] : null) ?? solde;
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Crédits insuffisants ($s crédit${s == 1 ? '' : 's'}).',
+                style: const TextStyle(fontFamily: 'Galey')),
+            backgroundColor: Colors.red, behavior: SnackBarBehavior.floating,
+          ));
+        }
+        return;
+      }
+      await supa.from('posts_socialmedia').update({
+        'boosted_until': DateTime.now().add(const Duration(hours: 48)).toIso8601String(),
+      }).eq('id', widget.post['id'] as String);
       if (mounted) {
         final until = DateTime.now().add(const Duration(hours: 48)).toIso8601String();
         setState(() => _boostedUntilOverride = until);
@@ -3898,23 +3900,30 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
           return;
         }
         final newOwned = [...owned, id];
-        await Future.wait([
-          _supa.from('credit_wallets').upsert({
-            'uid': widget.myUid,
-            'solde': solde - cost,
-            'total_utilise': ((walletRow?['total_utilise'] as int?) ?? 0) + cost,
-            'updated_at': DateTime.now().toIso8601String(),
-          }, onConflict: 'uid'),
-          _supa.from('credit_transactions').insert({
-            'uid': widget.myUid, 'montant': -cost,
-            'motif': 'Cosmétique ${item['label']}', 'ref_id': id,
-          }),
-          _supa.from('user_cosmetics').upsert({
-            'uid': widget.myUid, 'cosmetic_type': type,
-            'active_value': id, 'owned': newOwned,
-            'updated_at': DateTime.now().toIso8601String(),
-          }, onConflict: 'uid,cosmetic_type'),
-        ]);
+        // Débit atomique côté serveur (RPC SECURITY DEFINER).
+        final spend = await _supa.rpc('credit_spend', params: {
+          'p_uid': widget.myUid,
+          'p_cost': cost,
+          'p_motif': 'Cosmétique ${item['label']}',
+          'p_ref_id': id,
+        });
+        if (!(spend is Map && spend['ok'] == true)) {
+          if (mounted) {
+            final s = (spend is Map ? spend['solde'] : null) ?? solde;
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Crédits insuffisants ($s cr. disponibles, $cost cr. requis)',
+                  style: const TextStyle(fontFamily: 'Galey')),
+              backgroundColor: const Color(0xFF1F2A2E), behavior: SnackBarBehavior.floating,
+            ));
+            setState(() => _busy = false);
+          }
+          return;
+        }
+        await _supa.from('user_cosmetics').upsert({
+          'uid': widget.myUid, 'cosmetic_type': type,
+          'active_value': id, 'owned': newOwned,
+          'updated_at': DateTime.now().toIso8601String(),
+        }, onConflict: 'uid,cosmetic_type');
         if (mounted) {
           setState(() {
             if (isRing) { _ownedRings = newOwned; _activeRing = id; }
