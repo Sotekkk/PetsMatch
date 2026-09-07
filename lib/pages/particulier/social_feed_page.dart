@@ -48,9 +48,12 @@ String _profileName(Map<String, dynamic>? p) {
 const _kAuthorCols = 'id, uid, firstname, lastname, avatar_url, profile_type, nom';
 
 /// Id du profil PARTICULIER d'un uid — identité utilisée dans le réseau social,
-/// jamais le profil pro / is_main.
+/// jamais le profil pro / is_main. Mémoïsé (les inserts like/follow l'appellent
+/// souvent).
+final Map<String, String?> _pidCache = {};
 Future<String?> _particulierProfileId(String uid) async {
   if (uid.isEmpty) return null;
+  if (_pidCache.containsKey(uid)) return _pidCache[uid];
   try {
     final rows = await Supabase.instance.client
         .from('user_profiles')
@@ -59,10 +62,35 @@ Future<String?> _particulierProfileId(String uid) async {
         .eq('profile_type', 'particulier')
         .order('is_main', ascending: false)
         .limit(1);
-    return (rows as List).isNotEmpty ? rows.first['id'] as String? : null;
+    final id = (rows as List).isNotEmpty ? rows.first['id'] as String? : null;
+    _pidCache[uid] = id;
+    return id;
   } catch (_) {
     return null;
   }
+}
+
+/// Insère un like en renseignant le profil particulier du liker.
+Future<void> _insertLike(String postId, String uid) async {
+  final pid = await _particulierProfileId(uid);
+  await Supabase.instance.client.from('post_likes').insert({
+    'post_id': postId,
+    'uid': uid,
+    if (pid != null) 'author_profile_id': pid,
+  });
+}
+
+/// Insère une relation de suivi en renseignant les profils particulier des
+/// deux parties.
+Future<void> _insertFollow(String followerUid, String followingUid) async {
+  final fp = await _particulierProfileId(followerUid);
+  final tp = await _particulierProfileId(followingUid);
+  await Supabase.instance.client.from('follows').insert({
+    'follower_uid': followerUid,
+    'following_uid': followingUid,
+    if (fp != null) 'follower_profile_id': fp,
+    if (tp != null) 'following_profile_id': tp,
+  });
 }
 
 /// Résout les profils PARTICULIER auteurs de posts/commentaires via
@@ -554,7 +582,7 @@ class _SuggestionsWidgetState extends State<_SuggestionsWidget> {
   }
 
   Future<void> _follow(String targetUid) async {
-    await _supa.from('follows').insert({'follower_uid': widget.myUid, 'following_uid': targetUid});
+    await _insertFollow(widget.myUid, targetUid);
     setState(() => _followed.add(targetUid));
     await Future.delayed(const Duration(milliseconds: 600));
     widget.onFollowed();
@@ -764,8 +792,7 @@ class _FeedListState extends State<_FeedList>
         await _supa.from('post_likes').delete()
             .eq('post_id', postId).eq('uid', widget.myUid);
       } else {
-        await _supa.from('post_likes')
-            .insert({'post_id': postId, 'uid': widget.myUid});
+        await _insertLike(postId, widget.myUid);
       }
     } catch (_) {
       setState(() {
@@ -794,8 +821,7 @@ class _FeedListState extends State<_FeedList>
             .eq('follower_uid', widget.myUid)
             .eq('following_uid', targetUid);
       } else {
-        await _supa.from('follows')
-            .insert({'follower_uid': widget.myUid, 'following_uid': targetUid});
+        await _insertFollow(widget.myUid, targetUid);
       }
     } catch (_) {
       setState(() {
@@ -2107,12 +2133,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                               left: 8, top: 4),
                                           child: GestureDetector(
                                             onTap: () async {
-                                              await _supa
-                                                  .from('follows')
-                                                  .insert({
-                                                'follower_uid': widget.myUid,
-                                                'following_uid': cUid,
-                                              });
+                                              await _insertFollow(widget.myUid, cUid);
                                               if (mounted) {
                                                 setState(() =>
                                                     _following.add(cUid));
@@ -2628,8 +2649,7 @@ class _SearchSheetState extends State<_SearchSheet> {
             .eq('follower_uid', widget.myUid)
             .eq('following_uid', targetUid);
       } else {
-        await _supa.from('follows')
-            .insert({'follower_uid': widget.myUid, 'following_uid': targetUid});
+        await _insertFollow(widget.myUid, targetUid);
       }
     } catch (_) {
       setState(() {
@@ -2886,8 +2906,7 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
           .eq('following_uid', widget.targetUid);
       setState(() { _isFollowing = false; _followersCount--; });
     } else {
-      await _supa.from('follows')
-          .insert({'follower_uid': widget.myUid, 'following_uid': widget.targetUid});
+      await _insertFollow(widget.myUid, widget.targetUid);
       setState(() { _isFollowing = true; _followersCount++; });
     }
   }
@@ -3285,7 +3304,7 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
       await _supa.from('post_likes').delete().eq('post_id', postId).eq('uid', widget.myUid);
       setState(() { _isLiked = false; _likeCount--; });
     } else {
-      await _supa.from('post_likes').insert({'post_id': postId, 'uid': widget.myUid});
+      await _insertLike(postId, widget.myUid);
       setState(() { _isLiked = true; _likeCount++; });
     }
   }
@@ -3330,7 +3349,7 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
                       await _supa.from('follows').delete().eq('follower_uid', widget.myUid).eq('following_uid', uid);
                       setState(() => _isFollowing = false);
                     } else {
-                      await _supa.from('follows').insert({'follower_uid': widget.myUid, 'following_uid': uid});
+                      await _insertFollow(widget.myUid, uid);
                       setState(() => _isFollowing = true);
                     }
                   },
@@ -3437,7 +3456,7 @@ class _FollowListPageState extends State<_FollowListPage> {
       await _supa.from('follows').delete().eq('follower_uid', widget.myUid).eq('following_uid', targetUid);
       setState(() => _myFollowing.remove(targetUid));
     } else {
-      await _supa.from('follows').insert({'follower_uid': widget.myUid, 'following_uid': targetUid});
+      await _insertFollow(widget.myUid, targetUid);
       setState(() => _myFollowing.add(targetUid));
     }
   }
