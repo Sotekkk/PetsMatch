@@ -507,7 +507,12 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
       User_Info.isCat = isCat;
       User_Info.dogBreeds = isDog ? _racesFor('chien') : [];
       User_Info.catBreeds = isCat ? _racesFor('chat')  : [];
-      if (photoUrl != null) User_Info.profilePictureUrlElevage = photoUrl;
+      if (photoUrl != null) {
+        User_Info.profilePictureUrlElevage = photoUrl;
+        User_Info.primaryAvatar = photoUrl;
+        // Force le rechargement du cache profils (bandeau du menu, switcher).
+        User_Info.availableProfiles = [];
+      }
       if (bannerUrl != null) setState(() => _bannerUrl = bannerUrl);
 
       // Sync address + geo to Supabase users table

@@ -29,19 +29,50 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
   }
 
   Future<void> _loadProfiles({bool forceRefresh = false}) async {
-    if (!forceRefresh && User_Info.availableProfiles.isNotEmpty) {
-      if (mounted) setState(() { _profiles = User_Info.availableProfiles; _loading = false; });
+    // Peinture immédiate depuis le cache…
+    if (User_Info.availableProfiles.isNotEmpty && _profiles.isEmpty) {
+      _profiles = User_Info.availableProfiles;
+      _loading = false;
+    }
+    // …puis TOUJOURS un rafraîchissement DB : l'avatar du bandeau doit refléter
+    // user_profiles.avatar_url (édité depuis « Mon Profil »), pas un cache figé
+    // au login.
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      if (mounted) setState(() => _loading = false);
       return;
     }
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
     try {
       final rows = await ProfileService.loadProfiles(uid);
       User_Info.availableProfiles = rows;
+
+      // Synchronise l'avatar caché du profil actif (menu ↔ profil public).
+      final active = User_Info.activeProfileId.isEmpty
+          ? rows.firstWhere((r) => r['is_main'] == true, orElse: () => <String, dynamic>{})
+          : rows.firstWhere((r) => r['id']?.toString() == User_Info.activeProfileId,
+              orElse: () => <String, dynamic>{});
+      final da = _displayAvatar(active);
+      if (da.isNotEmpty) {
+        User_Info.profilePictureUrl = da;
+        User_Info.profilePictureUrlElevage = da;
+        if (User_Info.activeProfileId.isEmpty) User_Info.primaryAvatar = da;
+      }
+
       if (mounted) setState(() { _profiles = rows; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Avatar affiché pour une ligne user_profiles, aligné sur le profil public :
+  /// particulier → photo perso (avatar_url) ; pro / éleveur / asso → photo
+  /// pro (profile_picture_url_pro), sinon repli sur l'autre.
+  static String _displayAvatar(Map<String, dynamic> p) {
+    final perso = p['avatar_url']?.toString() ?? '';
+    final pro = p['profile_picture_url_pro']?.toString() ?? '';
+    final type = p['profile_type']?.toString() ?? '';
+    if (type == 'particulier') return perso.isNotEmpty ? perso : pro;
+    return pro.isNotEmpty ? pro : perso;
   }
 
   String get _currentName {
@@ -54,12 +85,14 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
   }
 
   String get _currentAvatar {
-    if (User_Info.activeProfileId.isEmpty) return User_Info.primaryAvatar;
-    final p = _profiles.firstWhere(
-      (r) => r['id']?.toString() == User_Info.activeProfileId,
-      orElse: () => {},
-    );
-    return p['avatar_url']?.toString() ?? User_Info.primaryAvatar;
+    final p = User_Info.activeProfileId.isEmpty
+        ? _profiles.firstWhere((r) => r['is_main'] == true, orElse: () => <String, dynamic>{})
+        : _profiles.firstWhere(
+            (r) => r['id']?.toString() == User_Info.activeProfileId,
+            orElse: () => <String, dynamic>{},
+          );
+    final a = _displayAvatar(p);
+    return a.isNotEmpty ? a : User_Info.primaryAvatar;
   }
 
   String get _currentRoleLabel {
@@ -349,7 +382,7 @@ class _SwitcherSheet extends StatelessWidget {
                   label: p['nom']?.toString() ?? p['profile_label']?.toString() ?? typeLabel(type),
                   sublabel: typeLabel(type),
                   icon: typeIcon(type),
-                  avatarUrl: p['avatar_url']?.toString() ?? '',
+                  avatarUrl: _ProfileSwitcherHeaderState._displayAvatar(p),
                   isActive: activeProfileId == id || (activeProfileId.isEmpty && isMain),
                   isMain: isMain,
                   onTap: () => onSelect(p),

@@ -2529,7 +2529,8 @@ export default function ProfilPage() {
       if (payload.profile_picture_url) setParticulierAvatar(payload.profile_picture_url as string);
       setAvatarFile(null);
       setAvatarPreview(null);
-      if (!secondaryParticulier) await refreshUserData();
+      // Rafraîchit availableProfiles / userData (bandeau + switcher du Header).
+      await refreshUserData();
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } finally {

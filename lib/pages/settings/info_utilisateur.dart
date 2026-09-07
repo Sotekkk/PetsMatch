@@ -340,7 +340,12 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
     User_Info.firstname = _firstnameController.text.trim();
     User_Info.lastname = _lastnameController.text.trim();
     User_Info.phone_number = _phoneController.text.trim();
-    if (avatarUrl != null) User_Info.profilePictureUrl = avatarUrl;
+    if (avatarUrl != null) {
+      User_Info.profilePictureUrl = avatarUrl;
+      if (_rowIsMain) User_Info.primaryAvatar = avatarUrl;
+      // Force le rechargement du cache profils (bandeau du menu, switcher).
+      User_Info.availableProfiles = [];
+    }
 
     if (mounted) {
       setState(() {

@@ -517,6 +517,7 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
     // Miroir legacy — profil principal uniquement.
     if (_profileRowIsMain) {
       User_Info.profilePictureUrl = url;
+      User_Info.primaryAvatar = url;
       try {
         await FirebaseFirestore.instance
             .collection('users')
@@ -524,6 +525,8 @@ class _UserParticulierFeedState extends State<UserParticulierFeed>
             .update({'profilePictureUrl': url});
       } catch (_) {}
     }
+    // Force le rechargement du cache profils (bandeau du menu, switcher).
+    User_Info.availableProfiles = [];
   }
 
   Future<void> _saveBio() async {

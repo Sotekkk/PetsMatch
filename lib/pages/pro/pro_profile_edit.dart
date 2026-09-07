@@ -715,6 +715,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         final updated = await _supa.from('user_profiles')
             .select().eq('id', widget.secondaryProfileId!).maybeSingle();
         if (updated != null) User_Info.applyProfile(updated);
+        // Force le rechargement du cache profils (bandeau du menu, switcher).
+        User_Info.availableProfiles = [];
       } else {
         // ── Profil principal → users ───────────────────────────────────────────
         await _supa.from('users').upsert({
