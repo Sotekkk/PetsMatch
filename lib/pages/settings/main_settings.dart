@@ -216,16 +216,6 @@ class _SettingsMainPageState extends State<SettingsMainPage>
               ],
               buildSettingsOption(
                 context,
-                icon: Icons.block_outlined,
-                text: 'Utilisateurs bloqués',
-                iconColor: Colors.red.shade400,
-                onTap: () {
-                  Navigator.of(context).push(MaterialPageRoute(
-                      builder: (context) => const UtilisatesBloquesPage()));
-                },
-              ),
-              buildSettingsOption(
-                context,
                 icon: Icons.star_outline,
                 text: 'Mon abonnement',
                 onTap: () {
@@ -240,6 +230,16 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                 onTap: () {
                   Navigator.of(context).push(MaterialPageRoute(
                       builder: (context) => SecuConnectionSetting()));
+                },
+              ),
+              buildSettingsOption(
+                context,
+                icon: Icons.block_outlined,
+                text: 'Utilisateurs bloqués',
+                iconColor: Colors.red.shade400,
+                onTap: () {
+                  Navigator.of(context).push(MaterialPageRoute(
+                      builder: (context) => const UtilisatesBloquesPage()));
                 },
               ),
               const SizedBox(height: 24),
