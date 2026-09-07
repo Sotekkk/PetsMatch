@@ -39,12 +39,62 @@ const _ringGrad = LinearGradient(
 
 String _profileName(Map<String, dynamic>? p) {
   if (p == null) return 'Membre';
-  if (p['profile_type'] == 'eleveur') {
-    final ne = (p['nom'] ?? '').toString();
-    if (ne.isNotEmpty) return ne;
-  }
   final n = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
-  return n.isNotEmpty ? n : 'Membre';
+  if (n.isNotEmpty) return n;
+  final ne = (p['nom'] ?? '').toString();
+  return ne.isNotEmpty ? ne : 'Membre';
+}
+
+const _kAuthorCols = 'id, uid, firstname, lastname, avatar_url, profile_type, nom';
+
+/// Id du profil PARTICULIER d'un uid — identité utilisée dans le réseau social,
+/// jamais le profil pro / is_main.
+Future<String?> _particulierProfileId(String uid) async {
+  if (uid.isEmpty) return null;
+  try {
+    final rows = await Supabase.instance.client
+        .from('user_profiles')
+        .select('id')
+        .eq('uid', uid)
+        .eq('profile_type', 'particulier')
+        .order('is_main', ascending: false)
+        .limit(1);
+    return (rows as List).isNotEmpty ? rows.first['id'] as String? : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Résout les profils PARTICULIER auteurs de posts/commentaires via
+/// `author_profile_id` (repli : profil particulier de l'uid pour les anciennes
+/// lignes non rétro-remplies). Retourne une map uid -> ligne user_profiles.
+Future<Map<String, Map<String, dynamic>>> _resolveAuthors(List<dynamic> rows) async {
+  final supa = Supabase.instance.client;
+  final out = <String, Map<String, dynamic>>{};
+  final profIds = rows
+      .map((r) => r['author_profile_id'] as String?)
+      .whereType<String>()
+      .toSet()
+      .toList();
+  if (profIds.isNotEmpty) {
+    final byId = await supa.from('user_profiles').select(_kAuthorCols).inFilter('id', profIds);
+    for (final r in byId as List) {
+      out[r['uid'] as String] = Map<String, dynamic>.from(r as Map);
+    }
+  }
+  final missing = rows
+      .map((r) => r['uid'] as String)
+      .toSet()
+      .where((u) => !out.containsKey(u))
+      .toList();
+  if (missing.isNotEmpty) {
+    final byUid = await supa.from('user_profiles').select(_kAuthorCols)
+        .inFilter('uid', missing).eq('profile_type', 'particulier');
+    for (final r in byUid as List) {
+      out.putIfAbsent(r['uid'] as String, () => Map<String, dynamic>.from(r as Map));
+    }
+  }
+  return out;
 }
 
 String? _profilePhoto(Map<String, dynamic>? p) =>
@@ -494,7 +544,7 @@ class _SuggestionsWidgetState extends State<_SuggestionsWidget> {
     final profRows = await _supa.from('user_profiles')
         .select('uid, firstname, lastname, avatar_url, profile_type, nom')
         .inFilter('uid', candidateUids)
-        .eq('is_main', true).eq('profile_type', 'particulier');
+        .eq('profile_type', 'particulier');
     if (mounted) {
       setState(() {
         _suggestions = (profRows as List).cast<Map<String, dynamic>>();
@@ -654,18 +704,9 @@ class _FeedListState extends State<_FeedList>
         return;
       }
 
-      final postIds    = posts.map((p) => p['id'] as String).toList();
-      final authorUids = posts.map((p) => p['uid'] as String).toSet().toList();
+      final postIds = posts.map((p) => p['id'] as String).toList();
 
-      final profileRows = await _supa
-          .from('user_profiles')
-          .select('uid, firstname, lastname, avatar_url, profile_type, nom')
-          .inFilter('uid', authorUids)
-          .eq('is_main', true).eq('profile_type', 'particulier');
-      _profiles = {
-        for (final r in profileRows as List)
-          r['uid'] as String: r as Map<String, dynamic>
-      };
+      _profiles = await _resolveAuthors(posts);
 
       final allLikes = await _supa
           .from('post_likes')
@@ -1216,7 +1257,7 @@ class _MyPostsListState extends State<_MyPostsList>
             .from('user_profiles')
             .select('uid, firstname, lastname, avatar_url, profile_type, nom')
             .eq('uid', widget.myUid)
-            .eq('is_main', true).eq('profile_type', 'particulier')
+            .eq('profile_type', 'particulier')
             .maybeSingle(),
       ]);
       if (mounted) {
@@ -1728,9 +1769,14 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   String? _replyToName;
   String? _replyToId;
   Set<String> _following = {};
+  String? _myProfileId;
 
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() {
+    super.initState();
+    _load();
+    _particulierProfileId(widget.myUid).then((id) { if (mounted) _myProfileId = id; });
+  }
 
   @override
   void dispose() { _ctrl.dispose(); super.dispose(); }
@@ -1743,17 +1789,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     final rows       = results[0] as List;
     final followRows = results[1] as List;
     _following = {for (final r in followRows) r['following_uid'] as String};
-    final uids = rows.map((r) => r['uid'] as String).toSet().toList();
-    if (uids.isNotEmpty) {
-      final profRows = await _supa
-          .from('user_profiles')
-          .select('uid, firstname, lastname, avatar_url, profile_type, nom')
-          .inFilter('uid', uids)
-          .eq('is_main', true).eq('profile_type', 'particulier');
-      _profiles = {
-        for (final r in profRows as List)
-          r['uid'] as String: r as Map<String, dynamic>
-      };
+    if (rows.isNotEmpty) {
+      _profiles = await _resolveAuthors(rows);
     }
     if (mounted) {
       setState(() {
@@ -1830,11 +1867,13 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     if (text.isEmpty || _sending) return;
     setState(() => _sending = true);
     try {
+      final pid = _myProfileId ?? await _particulierProfileId(widget.myUid);
       final inserted = await _supa
           .from('post_comments')
           .insert({
             'post_id': widget.postId,
             'uid': widget.myUid,
+            if (pid != null) 'author_profile_id': pid,
             'texte': text,
             if (_replyToId != null) 'parent_id': _replyToId,
           })
@@ -2265,6 +2304,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   final _images = <File>[];
   bool  _posting = false;
   int   _charCount = 0;
+  String? _myProfileId;
 
   static const _maxChars = 2000;
 
@@ -2272,6 +2312,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   void initState() {
     super.initState();
     _ctrl.addListener(() { if (mounted) setState(() => _charCount = _ctrl.text.length); });
+    _particulierProfileId(widget.myUid).then((id) { if (mounted) _myProfileId = id; });
   }
 
   @override
@@ -2315,8 +2356,10 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
           : urls.length == 1
               ? urls.first
               : jsonEncode(urls);
+      final pid = _myProfileId ?? await _particulierProfileId(widget.myUid);
       await _supa.from('posts_socialmedia').insert({
         'uid': widget.myUid,
+        if (pid != null) 'author_profile_id': pid,
         if (text.isNotEmpty) 'texte': text,
         if (mediaValue != null) 'media_url': mediaValue,
       });
@@ -2559,7 +2602,7 @@ class _SearchSheetState extends State<_SearchSheet> {
           .from('user_profiles')
           .select('uid, firstname, lastname, avatar_url, profile_type, nom')
           .or('firstname.ilike.%$q%,lastname.ilike.%$q%,nom.ilike.%$q%')
-          .eq('is_main', true).eq('profile_type', 'particulier')
+          .eq('profile_type', 'particulier')
           .neq('uid', widget.myUid)
           .limit(20);
       if (mounted) {
@@ -2806,7 +2849,7 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
       _supa.from('user_profiles')
           .select('uid, firstname, lastname, avatar_url, profile_type, nom')
           .eq('uid', widget.targetUid)
-          .eq('is_main', true).eq('profile_type', 'particulier')
+          .eq('profile_type', 'particulier')
           .maybeSingle(),
       _supa.from('posts_socialmedia')
           .select()
@@ -3080,7 +3123,7 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
       final profRows = await _supa.from('user_profiles')
           .select('uid, firstname, lastname, avatar_url, profile_type, nom')
           .inFilter('uid', uids)
-          .eq('is_main', true).eq('profile_type', 'particulier');
+          .eq('profile_type', 'particulier');
       profiles = { for (final r in profRows as List) r['uid'] as String: r as Map<String, dynamic> };
     }
 
@@ -3217,9 +3260,13 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
 
   Future<void> _loadProfile() async {
     final uid = widget.post['uid'] as String;
+    final authorPid = widget.post['author_profile_id'] as String?;
+    final profQ = authorPid != null
+        ? _supa.from('user_profiles').select(_kAuthorCols).eq('id', authorPid).maybeSingle()
+        : _supa.from('user_profiles').select(_kAuthorCols)
+            .eq('uid', uid).eq('profile_type', 'particulier').maybeSingle();
     final results = await Future.wait([
-      _supa.from('user_profiles').select('uid, firstname, lastname, avatar_url, profile_type, nom')
-          .eq('uid', uid).eq('is_main', true).eq('profile_type', 'particulier').maybeSingle(),
+      profQ,
       _supa.from('post_likes').select('uid').eq('post_id', widget.post['id'] as String).eq('uid', widget.myUid).maybeSingle(),
       _supa.from('follows').select('follower_uid').eq('follower_uid', widget.myUid).eq('following_uid', uid).maybeSingle(),
     ]);
@@ -3376,7 +3423,7 @@ class _FollowListPageState extends State<_FollowListPage> {
     if (uids.isEmpty) { if (mounted) setState(() => _loading = false); return; }
     final profRows = await _supa.from('user_profiles')
         .select('uid, firstname, lastname, avatar_url, profile_type, nom')
-        .inFilter('uid', uids).eq('is_main', true).eq('profile_type', 'particulier');
+        .inFilter('uid', uids).eq('profile_type', 'particulier');
     if (mounted) {
       setState(() {
         _users = (profRows as List).cast<Map<String, dynamic>>();
