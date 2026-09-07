@@ -1196,6 +1196,17 @@ class _AgendaPageState extends State<AgendaPage> {
             : null,
         title: const Text('Mon Agenda',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        actions: [
+          // Bouton toujours visible (même pour un particulier) — jusqu'ici le
+          // seul moyen d'ajouter un événement était le lien qui n'apparaît
+          // que quand la vue Liste est totalement vide. Même fonction que
+          // le bouton « + Ajouter » de l'agenda web (website/src/app/agenda/page.tsx).
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: 'Ajouter un événement',
+            onPressed: () => _showAddSheet(),
+          ),
+        ],
         bottom: _viewModeToggleBar(),
       ),
       body: _loading
