@@ -70,7 +70,10 @@ List<String> _typesForProfile() {
   if (User_Info.isElevage) {
     return ['rdv', 'mise_bas', 'medication', 'visite', 'autre'];
   }
-  return ['rdv', 'visite', 'autre'];
+  // Particulier : un animal peut aussi mettre bas hors élevage (portée non
+  // planifiée) — même liste que le site web (non filtrée par profil côté
+  // web, cf. website/src/app/agenda/page.tsx).
+  return ['rdv', 'mise_bas', 'medication', 'visite', 'autre'];
 }
 
 String _eventSubtitle(String time, String type, dynamic dureeMinutes) {
