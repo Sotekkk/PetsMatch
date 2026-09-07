@@ -241,6 +241,14 @@ class _ParticulierNavState extends State<ParticulierNav> {
                   ],
                 ),
                 _DrawerItem(
+                  icon: Icons.calendar_month_outlined,
+                  label: 'Mon Agenda',
+                  onTap: () {
+                    Navigator.pop(context);
+                    setState(() => _selectedIndex = 3);
+                  },
+                ),
+                _DrawerItem(
                   icon: Icons.groups_outlined,
                   label: 'Communauté',
                   onTap: () {
@@ -353,14 +361,6 @@ class _ParticulierNavState extends State<ParticulierNav> {
                     },
                   ),
                 // « Mes PetFriends » retiré du menu : accessible depuis Communauté.
-                _DrawerItem(
-                  icon: Icons.calendar_month_outlined,
-                  label: 'Mon Agenda',
-                  onTap: () {
-                    Navigator.pop(context);
-                    setState(() => _selectedIndex = 3);
-                  },
-                ),
                 _DrawerItem(
                   icon: Icons.favorite_border,
                   label: 'Favoris',
