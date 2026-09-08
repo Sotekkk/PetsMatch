@@ -6,13 +6,45 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 const _tealC = Color(0xFF00ACC1);
 
+// ── Couleurs par type d'animal (alignées sur animaux_perdus_page) ─────────────
+
+const _kAnimalTypes = [
+  ('Chien',  'chien'),
+  ('Chat',   'chat'),
+  ('Lapin',  'lapin'),
+  ('Oiseau', 'oiseau'),
+  ('NAC',    'nac'),
+  ('Cheval', 'cheval'),
+  ('Ovin',   'ovin'),
+  ('Caprin', 'caprin'),
+  ('Porc',   'porcin'),
+  ('Autre',  'autre'),
+];
+
+Color _animalColor(String? type) {
+  switch (type) {
+    case 'chien':  return const Color(0xFFEA580C);
+    case 'chat':   return const Color(0xFF9333EA);
+    case 'lapin':  return const Color(0xFFDB2777);
+    case 'oiseau': return const Color(0xFF0891B2);
+    case 'nac':    return const Color(0xFF7C3AED);
+    case 'cheval': return const Color(0xFF16A34A);
+    case 'ovin':   return const Color(0xFFD97706);
+    case 'caprin': return const Color(0xFF65A30D);
+    case 'porcin': return const Color(0xFFE11D48);
+    default:       return const Color(0xFF6B7280);
+  }
+}
+
+// ── Catégories forum ──────────────────────────────────────────────────────────
+
 const _kAllCategories = [
-  _CatInfo('Santé', '🏥', 'sante'),
-  _CatInfo('Alimentation', '🍖', 'alimentation'),
-  _CatInfo('Éducation', '🎓', 'education'),
-  _CatInfo('Élevage', '🐣', 'elevage'),
-  _CatInfo('Bien-être', '💆', 'bien_etre'),
-  _CatInfo('Général', '💬', 'general'),
+  _CatInfo('Santé',        Icons.local_hospital_outlined,  'sante',       Color(0xFF0EA5E9)),
+  _CatInfo('Alimentation', Icons.restaurant_outlined,      'alimentation', Color(0xFFF59E0B)),
+  _CatInfo('Éducation',    Icons.school_outlined,          'education',   Color(0xFF8B5CF6)),
+  _CatInfo('Élevage',      Icons.cruelty_free_outlined,    'elevage',     Color(0xFF22C55E)),
+  _CatInfo('Bien-être',    Icons.spa_outlined,             'bien_etre',   Color(0xFFEC4899)),
+  _CatInfo('Général',      Icons.forum_outlined,           'general',     Color(0xFF6B7280)),
 ];
 
 /// "Élevage" n'a rien à faire dans le forum du profil particulier —
@@ -25,9 +57,10 @@ List<_CatInfo> get _kCategories {
 
 class _CatInfo {
   final String label;
-  final String emoji;
+  final IconData icon;
   final String slug;
-  const _CatInfo(this.label, this.emoji, this.slug);
+  final Color color;
+  const _CatInfo(this.label, this.icon, this.slug, this.color);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,7 +110,15 @@ class ForumPage extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 child: Row(children: [
-                  Text(cat.emoji, style: const TextStyle(fontSize: 28)),
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: cat.color.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(cat.icon, color: cat.color, size: 22),
+                  ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Text(cat.label,
@@ -87,8 +128,8 @@ class ForumPage extends StatelessWidget {
                             fontSize: 16,
                             color: Color(0xFF1E2025))),
                   ),
-                  const Icon(Icons.arrow_forward_ios_rounded,
-                      size: 14, color: Colors.grey),
+                  Icon(Icons.arrow_forward_ios_rounded,
+                      size: 14, color: Colors.grey.shade400),
                 ]),
               ),
             ),
@@ -162,8 +203,8 @@ class _ForumCategorieePageState extends State<_ForumCategorieePage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
       appBar: AppBar(
-        backgroundColor: _tealC,
-        title: Text('${widget.cat.emoji} ${widget.cat.label}',
+        backgroundColor: widget.cat.color,
+        title: Text(widget.cat.label,
             style: const TextStyle(
                 fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
         leading: IconButton(
@@ -173,18 +214,18 @@ class _ForumCategorieePageState extends State<_ForumCategorieePage> {
       ),
       floatingActionButton: _uid.isNotEmpty
           ? FloatingActionButton(
-              backgroundColor: _tealC,
+              backgroundColor: widget.cat.color,
               onPressed: _openCreation,
               child: const Icon(Icons.edit_outlined, color: Colors.white),
             )
           : null,
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _tealC))
+          ? Center(child: CircularProgressIndicator(color: widget.cat.color))
           : _sujets.isEmpty
               ? _empty()
               : RefreshIndicator(
                   onRefresh: _load,
-                  color: _tealC,
+                  color: widget.cat.color,
                   child: ListView.separated(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
                     itemCount: _sujets.length,
@@ -241,6 +282,8 @@ class _SujetTile extends StatelessWidget {
     final contenu = sujet['contenu']?.toString() ?? '';
     final createdAt = sujet['created_at']?.toString() ?? '';
     final epingle = sujet['epingle'] == true;
+    final animalType = sujet['animal_type']?.toString() ?? '';
+    final animalColor = _animalColor(animalType.isEmpty ? null : animalType);
 
     return GestureDetector(
       onTap: onTap,
@@ -248,7 +291,6 @@ class _SujetTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: epingle ? Border.all(color: _tealC.withValues(alpha: 0.4)) : null,
           boxShadow: [
             BoxShadow(
                 color: Colors.black.withValues(alpha: 0.05),
@@ -256,35 +298,63 @@ class _SujetTile extends StatelessWidget {
                 offset: const Offset(0, 1))
           ],
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              if (epingle) ...[
-                const Icon(Icons.push_pin, size: 13, color: _tealC),
-                const SizedBox(width: 4),
-              ],
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: IntrinsicHeight(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Container(width: 4, color: animalColor),
               Expanded(
-                child: Text(titre,
-                    style: const TextStyle(
-                        fontFamily: 'Galey',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                        color: Color(0xFF1E2025))),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      if (epingle) ...[
+                        Icon(Icons.push_pin, size: 13, color: animalColor),
+                        const SizedBox(width: 4),
+                      ],
+                      Expanded(
+                        child: Text(titre,
+                            style: const TextStyle(
+                                fontFamily: 'Galey',
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                                color: Color(0xFF1E2025))),
+                      ),
+                      Text(_fmtDate(createdAt),
+                          style: const TextStyle(
+                              fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+                    ]),
+                    if (contenu.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(contenu,
+                          style: const TextStyle(
+                              fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis),
+                    ],
+                    if (animalType.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: animalColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          animalType[0].toUpperCase() + animalType.substring(1),
+                          style: TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: animalColor),
+                        ),
+                      ),
+                    ],
+                  ]),
+                ),
               ),
-              Text(_fmtDate(createdAt),
-                  style: const TextStyle(
-                      fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
             ]),
-            if (contenu.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(contenu,
-                  style: const TextStyle(
-                      fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis),
-            ],
-          ]),
+          ),
         ),
       ),
     );
@@ -535,6 +605,7 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
 
   String _titre = '';
   String _contenu = '';
+  String? _animalType;
   bool _saving = false;
 
   Future<void> _save() async {
@@ -548,6 +619,7 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
         'titre': _titre,
         'contenu': _contenu,
         'created_at': DateTime.now().toIso8601String(),
+        if (_animalType != null) 'animal_type': _animalType,
       });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -598,6 +670,36 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints()),
                 ]),
+                const SizedBox(height: 20),
+
+                _lbl('Animal concerné'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _kAnimalTypes.map((t) {
+                    final sel = _animalType == t.$2;
+                    final color = _animalColor(t.$2);
+                    return GestureDetector(
+                      onTap: () => setState(() => _animalType = sel ? null : t.$2),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: sel ? color : Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                              color: sel ? color : Colors.grey.shade300),
+                        ),
+                        child: Text(t.$1,
+                            style: TextStyle(
+                                fontFamily: 'Galey',
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: sel ? Colors.white : Colors.grey.shade700)),
+                      ),
+                    );
+                  }).toList(),
+                ),
                 const SizedBox(height: 20),
 
                 _lbl('Titre *'),

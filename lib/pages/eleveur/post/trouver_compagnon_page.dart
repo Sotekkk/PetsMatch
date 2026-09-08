@@ -2,6 +2,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart' show speciesIcon, speciesLabel;
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/annonces_map_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -103,6 +104,12 @@ class _TrouverCompagnonPageState extends State<TrouverCompagnonPage> {
                   subtitle: 'Filtrez par espèce, race, région…',
                   onTap: () => Navigator.push(context, MaterialPageRoute(
                       builder: (_) => const AnnoncesPublicPage())),
+                ),
+
+                const SizedBox(height: 20),
+                _MapPreviewCard(
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const AnnoncesMapPage())),
                 ),
 
                 const SizedBox(height: 28),
@@ -246,6 +253,117 @@ class _ModeCard extends StatelessWidget {
   }
 }
 
+
+// ── Aperçu carte ──────────────────────────────────────────────────────────────
+
+class _MapPreviewCard extends StatelessWidget {
+  final VoidCallback onTap;
+  const _MapPreviewCard({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 130,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 10, offset: const Offset(0, 4))],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Stack(fit: StackFit.expand, children: [
+            // Fond carte stylisé
+            Container(color: const Color(0xFFE8F4F0)),
+            CustomPaint(painter: _MapGridPainter()),
+            // Overlay gradient
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    const Color(0xFF0C5C6C).withValues(alpha: 0.85),
+                    const Color(0xFF16A34A).withValues(alpha: 0.60),
+                  ],
+                ),
+              ),
+            ),
+            // Contenu
+            Padding(
+              padding: const EdgeInsets.all(18),
+              child: Row(children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('Explorer la carte',
+                          style: TextStyle(fontFamily: 'Galey',
+                              fontWeight: FontWeight.w700, fontSize: 17,
+                              color: Colors.white)),
+                      const SizedBox(height: 5),
+                      Text('Éleveurs et annonces géolocalisés',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                              color: Colors.white.withValues(alpha: 0.85))),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.map_rounded, size: 14, color: Color(0xFF0C5C6C)),
+                          SizedBox(width: 5),
+                          Text('Ouvrir la carte',
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                  fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
+                        ]),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.location_on_rounded,
+                    color: Colors.white, size: 52),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _MapGridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFF16A34A).withValues(alpha: 0.12)
+      ..strokeWidth = 1;
+    const step = 24.0;
+    for (double x = 0; x < size.width; x += step) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (double y = 0; y < size.height; y += step) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+    // Quelques "routes" stylisées
+    final roadPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.20)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(0, size.height * 0.4),
+        Offset(size.width, size.height * 0.55), roadPaint);
+    canvas.drawLine(Offset(size.width * 0.3, 0),
+        Offset(size.width * 0.45, size.height), roadPaint);
+  }
+
+  @override
+  bool shouldRepaint(_) => false;
+}
 
 // ── Mini card annonce horizontale ─────────────────────────────────────────────
 
