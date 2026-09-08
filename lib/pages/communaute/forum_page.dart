@@ -1,3 +1,4 @@
+import 'package:PetsMatch/main.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -5,7 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 const _tealC = Color(0xFF00ACC1);
 
-const _kCategories = [
+const _kAllCategories = [
   _CatInfo('Santé', '🏥', 'sante'),
   _CatInfo('Alimentation', '🍖', 'alimentation'),
   _CatInfo('Éducation', '🎓', 'education'),
@@ -13,6 +14,14 @@ const _kCategories = [
   _CatInfo('Bien-être', '💆', 'bien_etre'),
   _CatInfo('Général', '💬', 'general'),
 ];
+
+/// "Élevage" n'a rien à faire dans le forum du profil particulier —
+/// réservé aux profils éleveur/pro/association.
+List<_CatInfo> get _kCategories {
+  final isParticulier = !User_Info.isPro && !User_Info.isElevage && !User_Info.isAssociation;
+  if (!isParticulier) return _kAllCategories;
+  return _kAllCategories.where((c) => c.slug != 'elevage').toList();
+}
 
 class _CatInfo {
   final String label;

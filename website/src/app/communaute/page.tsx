@@ -17,7 +17,7 @@ interface CommunauteItem {
 
 const ITEMS: CommunauteItem[] = [
   {
-    label: 'Balades canines',
+    label: 'Balades',
     subtitle: 'Organisez ou rejoignez des balades collectives',
     icon: '🦮',
     color: '#2E7D5E',

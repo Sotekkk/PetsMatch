@@ -20,7 +20,7 @@ class CommunauteHubPage extends StatelessWidget {
   static const _sections = <_CommunauteSection>[
     _CommunauteSection(
       icon: Icons.directions_walk_outlined,
-      label: 'Balades canines',
+      label: 'Balades',
       subtitle: 'Organisez des sorties avec d\'autres propriétaires',
       color: Color(0xFF2E7D5E),
       requiresAuth: false,
@@ -217,7 +217,7 @@ class CommunauteHubPage extends StatelessWidget {
 
     Widget page;
     switch (section.label) {
-      case 'Balades canines':
+      case 'Balades':
         page = const PromenadePage();
         break;
       case 'Balades ludiques':

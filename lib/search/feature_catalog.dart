@@ -204,7 +204,7 @@ List<QuickAction> _all(BuildContext ctx) => [
     visible: () => true, open: (c) => _push(c, const BaladesLudiquesHubPage()),
   ),
   QuickAction(
-    label: 'Balades canines',
+    label: 'Balades',
     keywords: ['promenade', 'sortie', 'groupe', 'rencontre chiens', 'marche'],
     icon: Icons.directions_walk_outlined, group: 'Annuaire & Communauté',
     visible: () => true, open: (c) => _push(c, const PromenadePage()),
