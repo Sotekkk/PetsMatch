@@ -1,8 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { ACTIVE_PROFILE_TYPE_KEY } from '@/hooks/useActiveProfile';
 
-const CATEGORIES = [
+const ALL_CATEGORIES = [
   { slug: 'sante', label: 'Santé', emoji: '🏥', desc: 'Maladies, traitements, conseils vétérinaires' },
   { slug: 'alimentation', label: 'Alimentation', emoji: '🍖', desc: 'Nutrition, régimes, marques' },
   { slug: 'education', label: 'Éducation', emoji: '🎓', desc: 'Dressage, comportement, astuces' },
@@ -12,6 +14,15 @@ const CATEGORIES = [
 ];
 
 export default function ForumPage() {
+  // "Élevage" n'a rien à faire dans le forum du profil particulier —
+  // réservé aux profils éleveur/pro/association.
+  const [categories, setCategories] = useState(ALL_CATEGORIES);
+  useEffect(() => {
+    const type = typeof window !== 'undefined' ? localStorage.getItem(ACTIVE_PROFILE_TYPE_KEY) : null;
+    const isParticulier = !type || type === 'particulier';
+    setCategories(isParticulier ? ALL_CATEGORIES.filter(c => c.slug !== 'elevage') : ALL_CATEGORIES);
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#F8F8F8]">
       {/* Hero */}
@@ -29,7 +40,7 @@ export default function ForumPage() {
 
       <div className="max-w-2xl mx-auto px-4 py-8">
         <div className="flex flex-col gap-3">
-          {CATEGORIES.map(cat => (
+          {categories.map(cat => (
             <Link
               key={cat.slug}
               href={`/communaute/forum/${cat.slug}`}
