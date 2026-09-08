@@ -224,10 +224,13 @@ exports.sendRdvReminders = functions
                                 `&select=nom,firstname,lastname&limit=1`);
                             const p = rows && rows[0];
                             if (p) {
-                                proName = (p.nom
-                                    || `${p.firstname || ""} ${p.lastname || ""}`).trim();
+                                const fallbackName =
+                                    `${p.firstname || ""} ${p.lastname || ""}`.trim();
+                                proName = (p.nom || fallbackName).trim();
                             }
-                        } catch (e) { /* repli ci-dessous */ }
+                        } catch (e) {
+                            // repli ci-dessous
+                        }
                     }
                     if (!proName) {
                         proName = proData.nameElevage || proData.professionPro || "votre praticien";
@@ -299,11 +302,12 @@ exports.sendRdvReminders = functions
                         }
                         const extra = [animalNom, rdv.lieu].filter(Boolean).join(" · ");
 
-                        const proFcm = proDoc.exists ? proDoc.data()?.fcmToken : null;
+                        const proFcm = proDoc.exists ?
+                            proDoc.data()?.fcmToken : null;
                         const proTitle = win.proTitle || win.title;
-                        const proBody = win.proBody
-                            ? win.proBody(who, extra)
-                            : `Rappel : visite avec ${who}${extra ? ` — ${extra}` : ""}.`;
+                        const proBody = win.proBody ?
+                            win.proBody(who, extra) :
+                            `Rappel : visite avec ${who}${extra ? ` — ${extra}` : ""}.`;
 
                         await supabaseInsert("notifications", [{
                             uid: rdv.pro_uid,
