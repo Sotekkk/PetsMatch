@@ -6,6 +6,39 @@ const stripe = require("stripe")(
 
 admin.initializeApp();
 
+exports.createCreditPaymentIntent = functions
+    .region("europe-west1")
+    .https.onCall(async (data, context) => {
+        const packId = data.packId;
+        const credits = data.credits;
+        const prixEuros = data.prixEuros;
+        const nom = data.nom;
+        const uid = (context.auth && context.auth.uid) ? context.auth.uid : data.uid;
+
+        if (!packId || !credits || !prixEuros || !uid) {
+            throw new functions.https.HttpsError("invalid-argument", "packId, credits, prixEuros et uid requis.");
+        }
+        const montantCentimes = Math.round(parseFloat(prixEuros) * 100);
+
+        try {
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: montantCentimes,
+                currency: "eur",
+                metadata: {
+                    uid,
+                    packId: String(packId),
+                    credits: String(credits),
+                    nom: String(nom ?? packId),
+                },
+                automatic_payment_methods: {enabled: true},
+            });
+            return {clientSecret: paymentIntent.client_secret};
+        } catch (err) {
+            console.error("[createCreditPaymentIntent]", err);
+            throw new functions.https.HttpsError("internal", "Erreur création PaymentIntent.");
+        }
+    });
+
 exports.createStripePaymentIntent = functions
     .region("europe-west1")
     .https.onCall(async (data, context) => {

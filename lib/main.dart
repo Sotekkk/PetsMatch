@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:PetsMatch/pages/admin/admin_panel.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
@@ -562,6 +563,10 @@ Future<void> main() async {
         ? AppleProvider.debug
         : AppleProvider.appAttest,
   );
+
+  // Stripe — initialisé une seule fois au démarrage
+  Stripe.publishableKey = 'pk_test_51Pagp22MpEB6OUl5WhTICWegB3ibkSKDcVlmUDMFDdm7SWnfLmI8XM1aIKXWeslNjK7CSzJwe2yu64CW1bl0s3s100iwTo71nt';
+  await Stripe.instance.applySettings();
 
   // Supabase
   await Supabase.initialize(

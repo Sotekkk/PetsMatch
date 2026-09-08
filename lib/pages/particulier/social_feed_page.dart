@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
+import 'package:PetsMatch/pages/particulier/abonnements_achats_page.dart' show CreditPacksSheet;
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
@@ -1161,55 +1162,137 @@ class _SocialPostCardState extends State<_SocialPostCard> {
     if (!mounted) return;
 
     if (solde < cost) {
-      showDialog(
+      showModalBottomSheet(
         context: context,
-        builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('Crédits insuffisants',
-              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
-          content: Text(
-            'Vous avez $solde crédit${solde > 1 ? 's' : ''}.\nBooster un post coûte $cost crédits.',
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+        backgroundColor: Colors.transparent,
+        builder: (_) => Container(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+          decoration: const BoxDecoration(
+            color: Color(0xFF0D1F22),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey')),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 36, height: 4,
+                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 20),
+            const Icon(Icons.toll_outlined, color: Colors.orangeAccent, size: 36),
+            const SizedBox(height: 12),
+            const Text('Crédits insuffisants', style: TextStyle(
+                fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Colors.white)),
+            const SizedBox(height: 8),
+            Text('Tu as $solde cr. · Boost = $cost cr.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white.withValues(alpha: 0.6))),
+            const SizedBox(height: 24),
+            GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                width: double.infinity, height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: const Center(child: Text('Fermer',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                        fontSize: 15, color: Colors.white70))),
+              ),
             ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6E9E57)),
-              child: const Text('Acheter des crédits',
-                  style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
-            ),
-          ],
+          ]),
         ),
       );
       return;
     }
 
-    final confirm = await showDialog<bool>(
+    final confirm = await showModalBottomSheet<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Booster ce post',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
-        content: Text(
-          'Dépenser $cost crédits pour mettre ce post en avant ?\n\nSolde actuel : $solde crédits',
-          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        decoration: const BoxDecoration(
+          color: Color(0xFF0D1F22),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey')),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 36, height: 4,
+              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [Color(0xFFFF6B00), Color(0xFFFFAA00)]),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.rocket_launch_rounded, color: Colors.white, size: 28),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0C5C6C)),
-            child: const Text('Booster 🚀',
-                style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 14),
+          const Text('Booster ce post', style: TextStyle(
+              fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Colors.white)),
+          const SizedBox(height: 6),
+          Text('Ton post sera mis en avant pendant 48h\ndans l\'onglet Découverte.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white.withValues(alpha: 0.6))),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text('Coût', style: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.55), fontSize: 13)),
+              Text('$cost crédits', style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+            ]),
           ),
-        ],
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text('Solde après', style: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.55), fontSize: 13)),
+              Text('${solde - cost} crédits', style: TextStyle(
+                  fontFamily: 'Galey',
+                  color: (solde - cost) < 50 ? Colors.orangeAccent : _green,
+                  fontWeight: FontWeight.w700, fontSize: 13)),
+            ]),
+          ),
+          const SizedBox(height: 20),
+          Row(children: [
+            Expanded(child: GestureDetector(
+              onTap: () => Navigator.pop(context, false),
+              child: Container(
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: const Center(child: Text('Annuler',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                        fontSize: 15, color: Colors.white70))),
+              ),
+            )),
+            const SizedBox(width: 12),
+            Expanded(child: GestureDetector(
+              onTap: () => Navigator.pop(context, true),
+              child: Container(
+                height: 50,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [Color(0xFFFF6B00), Color(0xFFFFAA00)]),
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [BoxShadow(color: const Color(0xFFFF6B00).withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))],
+                ),
+                child: const Center(child: Text('Booster — 50 cr.',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 15, color: Colors.white))),
+              ),
+            )),
+          ]),
+        ]),
       ),
     );
 
@@ -3859,6 +3942,8 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
   late List<String> _ownedBanners;
   late String? _activeRing;
   late String? _activeBanner;
+  int _solde = 0;
+  List<Map<String, dynamic>> _packs = [];
 
   @override
   void initState() {
@@ -3868,6 +3953,35 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
     _ownedBanners = List.from(widget.ownedBanners);
     _activeRing = widget.activeRing;
     _activeBanner = widget.activeBanner;
+    _loadWallet();
+  }
+
+  Future<void> _loadWallet() async {
+    try {
+      final results = await Future.wait([
+        _supa.from('credit_wallets').select('solde').eq('uid', widget.myUid).maybeSingle(),
+        _supa.from('credit_packs').select().eq('actif', true).order('ordre'),
+      ]);
+      if (mounted) {
+        setState(() {
+          _solde = (results[0] as Map<String, dynamic>?)?['solde'] as int? ?? 0;
+          _packs = (results[1] as List).cast<Map<String, dynamic>>();
+        });
+      }
+    } catch (_) {}
+  }
+
+  void _openCreditsSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => CreditPacksSheet(
+        packs: _packs,
+        myUid: widget.myUid,
+        onSuccess: _loadWallet,
+      ),
+    );
   }
 
   @override
@@ -3883,6 +3997,64 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
     final alreadyOwned = owned.contains(id);
 
     if (!alreadyOwned) {
+      // Confirmation avant achat
+      final confirmed = await showModalBottomSheet<bool>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        builder: (_) => Container(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+          decoration: const BoxDecoration(
+            color: Color(0xFF0D1F22),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 36, height: 4,
+                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 20),
+            const Icon(Icons.toll_outlined, color: _green, size: 36),
+            const SizedBox(height: 12),
+            Text('Confirmer l\'achat', style: const TextStyle(
+                fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: Colors.white)),
+            const SizedBox(height: 8),
+            Text('${item['label']}  ·  $cost crédits',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white.withValues(alpha: 0.65))),
+            const SizedBox(height: 24),
+            Row(children: [
+              Expanded(child: GestureDetector(
+                onTap: () => Navigator.pop(context, false),
+                child: Container(
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: const Center(child: Text('Annuler',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                          fontSize: 15, color: Colors.white70))),
+                ),
+              )),
+              const SizedBox(width: 12),
+              Expanded(child: GestureDetector(
+                onTap: () => Navigator.pop(context, true),
+                child: Container(
+                  height: 50,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(colors: [_tealC, _green]),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [BoxShadow(color: _tealC.withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))],
+                  ),
+                  child: Center(child: Text('Acheter — $cost cr.',
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                          fontSize: 15, color: Colors.white))),
+                ),
+              )),
+            ]),
+          ]),
+        ),
+      );
+      if (confirmed != true) return;
+
       // Acheter
       setState(() => _busy = true);
       try {
@@ -3993,12 +4165,38 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
           _itemGrid(banners, isRing: false),
         ])),
         Padding(
-          padding: EdgeInsets.fromLTRB(20, 8, 20, MediaQuery.of(context).padding.bottom + 12),
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Icon(Icons.toll_outlined, size: 15, color: Colors.white38),
-            const SizedBox(width: 6),
-            Text('Achetez des crédits dans Paramètres → Abonnements & achats',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white38)),
+          padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.of(context).padding.bottom + 12),
+          child: Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white10,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(children: [
+                const Icon(Icons.toll_outlined, size: 16, color: _green),
+                const SizedBox(width: 6),
+                Text('$_solde cr.',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white)),
+              ]),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: GestureDetector(
+                onTap: _openCreditsSheet,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(colors: [_tealC, _green]),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Center(
+                    child: Text('Acheter des crédits',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Colors.white)),
+                  ),
+                ),
+              ),
+            ),
           ]),
         ),
       ]),

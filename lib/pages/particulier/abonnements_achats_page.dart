@@ -1,5 +1,7 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
@@ -120,11 +122,17 @@ class _AbonnementsAchatsPageState extends State<AbonnementsAchatsPage> {
   }
 
   void _openPacksSheet() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _CreditPacksSheet(packs: _packs),
+      builder: (_) => CreditPacksSheet(
+        packs: _packs,
+        myUid: uid,
+        onSuccess: _load,
+      ),
     );
   }
 
@@ -302,9 +310,90 @@ class _AbonnementsAchatsPageState extends State<AbonnementsAchatsPage> {
 
 // ── Sheet packs de crédits ────────────────────────────────────────────────────
 
-class _CreditPacksSheet extends StatelessWidget {
+class CreditPacksSheet extends StatefulWidget {
   final List<Map<String, dynamic>> packs;
-  const _CreditPacksSheet({required this.packs});
+  final String myUid;
+  final VoidCallback onSuccess;
+  const CreditPacksSheet({required this.packs, required this.myUid, required this.onSuccess});
+  @override
+  State<CreditPacksSheet> createState() => CreditPacksSheetState();
+}
+
+class CreditPacksSheetState extends State<CreditPacksSheet> {
+  String? _loadingPackId;
+
+  Future<void> _pay(Map<String, dynamic> pack) async {
+    final packId = pack['id'] as String;
+    setState(() => _loadingPackId = packId);
+    try {
+      // 1. Créer le PaymentIntent via Firebase Function
+      final fn = FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('createCreditPaymentIntent');
+      final result = await fn.call({
+        'packId': packId,
+        'uid': widget.myUid,
+        'credits': pack['credits'],
+        'prixEuros': pack['prix_euros'].toString(),
+        'nom': pack['nom'],
+      });
+      final clientSecret = result.data['clientSecret'] as String;
+
+      // 2. Initialiser le Payment Sheet
+      await Stripe.instance.initPaymentSheet(
+        paymentSheetParameters: SetupPaymentSheetParameters(
+          paymentIntentClientSecret: clientSecret,
+          merchantDisplayName: 'PetsMatch',
+          style: ThemeMode.dark,
+        ),
+      );
+
+      // 3. Présenter le Payment Sheet
+      await Stripe.instance.presentPaymentSheet();
+
+      // 4. Paiement réussi — créditer le wallet côté Flutter (immédiat)
+      final supa = Supabase.instance.client;
+      final credits = pack['credits'] as int;
+      final walletRow = await supa.from('credit_wallets').select().eq('uid', widget.myUid).maybeSingle();
+      final soldeActuel = (walletRow?['solde'] as int?) ?? 0;
+      final totalActuel = (walletRow?['total_achete'] as int?) ?? 0;
+      await Future.wait([
+        supa.from('credit_wallets').upsert({
+          'uid': widget.myUid,
+          'solde': soldeActuel + credits,
+          'total_achete': totalActuel + credits,
+          'updated_at': DateTime.now().toIso8601String(),
+        }, onConflict: 'uid'),
+        supa.from('credit_transactions').insert({
+          'uid': widget.myUid,
+          'montant': credits,
+          'motif': 'Achat pack ${pack['nom']}',
+          'ref_id': packId,
+        }),
+      ]);
+
+      if (mounted) Navigator.pop(context);
+      widget.onSuccess();
+    } on StripeException catch (e) {
+      if (e.error.code == FailureCode.Canceled) {
+        // Annulé par l'utilisateur — silencieux
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Paiement échoué : ${e.error.localizedMessage}',
+              style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red.shade800, behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red.shade800, behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _loadingPackId = null);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -326,32 +415,28 @@ class _CreditPacksSheet extends StatelessWidget {
           const Text('Acheter des crédits',
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 19, color: _dark)),
           const SizedBox(height: 4),
-          Text('Utilisez vos crédits pour booster vos posts,\nenvoyer des cadeaux et personnaliser votre profil.',
+          Text('Boostez vos posts et personnalisez votre profil.',
               style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
           const SizedBox(height: 20),
-          if (packs.isEmpty)
-            const Center(child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: CircularProgressIndicator(color: _teal),
-            ))
+          if (widget.packs.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 28),
+              child: Center(child: Text('Aucun pack disponible pour le moment.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500))),
+            )
           else
-            ...packs.map((p) => _PackCard(pack: p)),
+            ...widget.packs.map((p) => _PackCard(
+              pack: p,
+              loading: _loadingPackId == p['id'],
+              onTap: _loadingPackId == null ? () => _pay(p) : null,
+            )),
           const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: _teal.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Row(children: [
-              Icon(Icons.lock_clock, size: 16, color: _teal),
-              SizedBox(width: 10),
-              Expanded(child: Text(
-                'Paiement sécurisé bientôt disponible.\nVos crédits seront disponibles dès l\'ouverture.',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal),
-              )),
-            ]),
-          ),
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const Icon(Icons.lock_outline, size: 13, color: _teal),
+            const SizedBox(width: 6),
+            Text('Paiement sécurisé · Stripe',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+          ]),
         ],
       ),
     );
@@ -360,7 +445,9 @@ class _CreditPacksSheet extends StatelessWidget {
 
 class _PackCard extends StatelessWidget {
   final Map<String, dynamic> pack;
-  const _PackCard({required this.pack});
+  final bool loading;
+  final VoidCallback? onTap;
+  const _PackCard({required this.pack, this.loading = false, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -368,31 +455,38 @@ class _PackCard extends StatelessWidget {
     final credits = pack['credits'] as int;
     final prix = (pack['prix_euros'] as num).toStringAsFixed(2);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: tag != null ? Border.all(color: _green, width: 2) : null,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
-      ),
-      child: Row(children: [
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(pack['nom'] as String,
-                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: _dark)),
-            if (tag != null)
-              Text(tag, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _green, fontWeight: FontWeight.w600)),
-          ]),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: tag != null ? Border.all(color: _green, width: 2) : null,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
         ),
-        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text('$credits crédits',
-              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _teal)),
-          Text('$prix €',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+        child: Row(children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(pack['nom'] as String,
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: _dark)),
+              if (tag != null)
+                Text(tag, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _green, fontWeight: FontWeight.w600)),
+            ]),
+          ),
+          if (loading)
+            const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
+          else ...[
+            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Text('$credits crédits',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: _teal)),
+              Text('$prix €',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+            ]),
+          ],
         ]),
-      ]),
+      ),
     );
   }
 }
