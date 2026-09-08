@@ -34,6 +34,7 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
 
   bool _loading = true;
   Map<String, int> _tarifsBase = {};
+  List<Map<String, dynamic>> _tarifsExtra = []; // [{label, prix, description}]
   List<Map<String, dynamic>> _clients = [];
   Map<String, Map<String, num>> _overridesByProfile = {};
 
@@ -49,7 +50,7 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
     final pid = User_Info.activeProfileId;
     if (uid == null || pid.isEmpty) { setState(() => _loading = false); return; }
     try {
-      final profileRowFuture = _supa.from('user_profiles').select('tarifs_garde').eq('id', pid).maybeSingle();
+      final profileRowFuture = _supa.from('user_profiles').select('tarifs_garde, tarifs_garde_extra').eq('id', pid).maybeSingle();
       final rdvRowsFuture = _supa.from('rdv').select('client_uid, client_profile_id, animal_id')
           .eq('pro_uid', uid).eq('pro_profile_id', pid)
           .inFilter('statut', ['confirme', 'termine'])
@@ -66,6 +67,16 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
           tarifsBase[e.key.toString()] = (e.value as num?)?.toInt() ?? 0;
         }
       }
+      final tarifsExtra = <Map<String, dynamic>>[
+        if (profileRow?['tarifs_garde_extra'] is List)
+          for (final e in (profileRow!['tarifs_garde_extra'] as List))
+            if (e is Map)
+              {
+                'label': e['label']?.toString() ?? '',
+                'prix': (e['prix'] as num?)?.toInt() ?? 0,
+                'description': e['description']?.toString() ?? '',
+              },
+      ];
 
       final rdvRows = List<Map<String, dynamic>>.from(rdvRowsRaw as List);
       final seenClients = <String, Map<String, dynamic>>{};
@@ -108,6 +119,7 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
       if (mounted) {
         setState(() {
           _tarifsBase = tarifsBase;
+          _tarifsExtra = tarifsExtra;
           _clients = clients;
           _overridesByProfile = overridesByProfile;
           _loading = false;
@@ -128,6 +140,14 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
       for (final t in prestationsGarde)
         t.$1: TextEditingController(text: (_tarifsBase[t.$1] ?? 0).toString()),
     };
+    // Prestations sur mesure : liste éditable de {labelCtrl, prixCtrl}.
+    final extra = <(TextEditingController, TextEditingController)>[
+      for (final e in _tarifsExtra)
+        (
+          TextEditingController(text: e['label']?.toString() ?? ''),
+          TextEditingController(text: (e['prix'] as num?)?.toString() ?? '0'),
+        ),
+    ];
     bool saving = false;
 
     await showModalBottomSheet<void>(
@@ -137,6 +157,7 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => Padding(
           padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+          child: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
@@ -170,6 +191,61 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
                 ),
               ]),
             )),
+            const Divider(height: 24),
+            Text('Prestations sur mesure',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Colors.grey.shade700)),
+            const SizedBox(height: 8),
+            ...List.generate(extra.length, (i) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: extra[i].$1,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                    decoration: InputDecoration(
+                      isDense: true, hintText: 'Nom de la prestation',
+                      hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                      filled: true, fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 74,
+                  child: TextFormField(
+                    controller: extra[i].$2,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                    decoration: InputDecoration(
+                      isDense: true, suffixText: '€',
+                      filled: true, fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => setSheetState(() => extra.removeAt(i)),
+                  icon: const Icon(Icons.close, size: 18, color: Colors.redAccent),
+                ),
+              ]),
+            )),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => setSheetState(() => extra.add(
+                    (TextEditingController(), TextEditingController(text: '0')))),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Ajouter une prestation',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                style: TextButton.styleFrom(foregroundColor: _teal),
+              ),
+            ),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
@@ -180,15 +256,23 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
                     for (final t in prestationsGarde)
                       t.$1: int.tryParse(ctrls[t.$1]!.text) ?? 0,
                   };
+                  final extraOut = [
+                    for (final e in extra)
+                      if (e.$1.text.trim().isNotEmpty)
+                        {'label': e.$1.text.trim(), 'prix': int.tryParse(e.$2.text) ?? 0},
+                  ];
                   try {
                     if (pid.isNotEmpty) {
-                      await _supa.from('user_profiles').update({'tarifs_garde': grille}).eq('id', pid);
+                      await _supa.from('user_profiles')
+                          .update({'tarifs_garde': grille, 'tarifs_garde_extra': extraOut}).eq('id', pid);
                     } else {
                       await _supa.from('user_profiles')
-                          .update({'tarifs_garde': grille}).eq('uid', uid).eq('is_main', true);
-                      await _supa.from('users').update({'tarifs_garde': grille}).eq('uid', uid);
+                          .update({'tarifs_garde': grille, 'tarifs_garde_extra': extraOut})
+                          .eq('uid', uid).eq('is_main', true);
+                      await _supa.from('users')
+                          .update({'tarifs_garde': grille, 'tarifs_garde_extra': extraOut}).eq('uid', uid);
                       await FirebaseFirestore.instance.collection('users').doc(uid)
-                          .set({'tarifsGarde': grille}, SetOptions(merge: true));
+                          .set({'tarifsGarde': grille, 'tarifsGardeExtra': extraOut}, SetOptions(merge: true));
                     }
                   } catch (_) {}
                   if (ctx.mounted) Navigator.pop(ctx);
@@ -206,6 +290,7 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
               ),
             ),
           ]),
+          ),
         ),
       ),
     );
@@ -345,7 +430,8 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
                     itemCount: _clients.length + 2,
                     itemBuilder: (_, i) {
                       if (i == 0) {
-                        final nb = _tarifsBase.values.where((v) => v > 0).length;
+                        final nb = _tarifsBase.values.where((v) => v > 0).length
+                            + _tarifsExtra.where((e) => (e['label']?.toString().trim() ?? '').isNotEmpty).length;
                         return Card(
                           margin: const EdgeInsets.only(bottom: 10),
                           elevation: 1,

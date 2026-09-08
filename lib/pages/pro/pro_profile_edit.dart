@@ -147,6 +147,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   bool _tarifsEducationVisibles = false;
   // Prestations libres nommées par l'éducateur : [{label, prix, description}]
   List<Map<String, dynamic>> _tarifsEducationExtra = [];
+  // Idem pour le pet-sitter / promeneur.
+  List<Map<String, dynamic>> _tarifsGardeExtra = [];
   final _educationBilanDescCtrl = TextEditingController();
 
   // Éducateur : trajet à domicile — origine par défaut (cabinet ou "autre
@@ -366,6 +368,17 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                 },
           ];
         }
+        if (row['tarifs_garde_extra'] is List) {
+          _tarifsGardeExtra = [
+            for (final e in (row['tarifs_garde_extra'] as List))
+              if (e is Map)
+                {
+                  'label': e['label']?.toString() ?? '',
+                  'prix': (e['prix'] as num?)?.toInt() ?? 0,
+                  'description': e['description']?.toString() ?? '',
+                },
+          ];
+        }
         _arrhesPourcentage = (row['arrhes_pourcentage'] as num?)?.toInt() ?? 0;
         if (row['horaires'] is Map) {
           for (final j in _jours) {
@@ -474,8 +487,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   }
 
   // Prestations libres : on ne garde que les lignes avec un libellé.
-  List<Map<String, dynamic>> _cleanTarifsExtra() => [
-        for (final e in _tarifsEducationExtra)
+  List<Map<String, dynamic>> _cleanTarifsExtra([List<Map<String, dynamic>>? src]) => [
+        for (final e in (src ?? _tarifsEducationExtra))
           if ((e['label']?.toString().trim() ?? '').isNotEmpty)
             {
               'label': e['label'].toString().trim(),
@@ -622,18 +635,27 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         } catch (_) {}
       }
 
+      // Chemins de stockage : un profil secondaire a ses propres fichiers
+      // (sinon tous les profils du compte partagent profiles/$uid/photo.jpg
+      // et changer la photo de l'un écrase celle des autres).
+      final sid = widget.secondaryProfileId;
+      final photoPath  = sid != null ? 'profiles/$uid/pro_$sid.jpg'         : 'profiles/$uid/photo.jpg';
+      final bannerPath = sid != null ? 'profiles/$uid/pro_${sid}_banner.jpg' : 'profiles/$uid/banner.jpg';
+      final acacedPath = sid != null ? 'profiles/$uid/pro_${sid}_acaced.jpg' : 'profiles/$uid/acaced.jpg';
+      final cacheBust = '?v=${DateTime.now().millisecondsSinceEpoch}';
+
       String? photoUrl = _photoUrl;
       if (_photoFile != null) {
-        photoUrl = await uploadPhoto(_photoFile!, 'profiles/$uid/photo.jpg');
+        photoUrl = (await uploadPhoto(_photoFile!, photoPath)) + cacheBust;
       }
 
       String? bannerUrl = _bannerUrl;
       if (_bannerFile != null) {
-        bannerUrl = await uploadPhoto(_bannerFile!, 'profiles/$uid/banner.jpg');
+        bannerUrl = (await uploadPhoto(_bannerFile!, bannerPath)) + cacheBust;
       }
       String? acacedDocUrl = _acacedDocUrl;
       if (_acacedDocFile != null) {
-        acacedDocUrl = await uploadPhoto(_acacedDocFile!, 'profiles/$uid/acaced.jpg');
+        acacedDocUrl = await uploadPhoto(_acacedDocFile!, acacedPath);
       }
 
       // photos_galerie : liste de {url, legende} (jsonb).
@@ -688,6 +710,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
+          if (_catPro == 'garde') 'tarifs_garde_extra': _cleanTarifsExtra(_tarifsGardeExtra),
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           if (_catPro == 'education') 'tarifs_education_visibles': _tarifsEducationVisibles,
@@ -746,6 +769,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
+          if (_catPro == 'garde') 'tarifs_garde_extra': _cleanTarifsExtra(_tarifsGardeExtra),
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           if (_catPro == 'education') 'tarifs_education_visibles': _tarifsEducationVisibles,
@@ -790,6 +814,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'pension') 'arrhes_pourcentage': _arrhesPourcentage,
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
+          if (_catPro == 'garde') 'tarifs_garde_extra': _cleanTarifsExtra(_tarifsGardeExtra),
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           if (_catPro == 'education') 'tarifs_education_visibles': _tarifsEducationVisibles,
@@ -1296,6 +1321,16 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                         ),
                       ]),
                     )),
+                    const SizedBox(height: 4),
+                    Text('Prestations sur mesure',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                            fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
+                    const SizedBox(height: 6),
+                    _tarifsExtraEditor(
+                      _tarifsGardeExtra,
+                      (v) => setState(() => _tarifsGardeExtra = v),
+                      accent: const Color(0xFF0C5C6C),
+                    ),
                   ],
 
                   // ── Tarifs éducateur/comportementaliste ───────────────────
@@ -1356,7 +1391,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                       ]),
                     )),
                     const SizedBox(height: 4),
-                    _tarifsExtraEditor(),
+                    _tarifsExtraEditor(
+                      _tarifsEducationExtra,
+                      (v) => setState(() => _tarifsEducationExtra = v),
+                    ),
                   ],
 
                   // ── Délai minimum de réservation (tous pros à RDV) ────────
@@ -1765,19 +1803,21 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     if (file != null && mounted) setState(() => _photoFile = file);
   }
 
-  // ── Prestations libres (éducateur) ─────────────────────────────────────────
+  // ── Prestations libres (éducateur / pet-sitter) ────────────────────────────
 
-  Widget _tarifsExtraEditor() {
+  Widget _tarifsExtraEditor(
+    List<Map<String, dynamic>> items,
+    void Function(List<Map<String, dynamic>>) set, {
+    Color accent = const Color(0xFF7B5EA7),
+  }) {
     void update(int i, String key, Object value) {
-      setState(() {
-        final next = [..._tarifsEducationExtra];
-        next[i] = {...next[i], key: value};
-        _tarifsEducationExtra = next;
-      });
+      final next = [...items];
+      next[i] = {...next[i], key: value};
+      set(next);
     }
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      for (int i = 0; i < _tarifsEducationExtra.length; i++)
+      for (int i = 0; i < items.length; i++)
         Container(
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.all(10),
@@ -1786,7 +1826,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
             Row(children: [
               Expanded(
                 child: TextFormField(
-                  initialValue: _tarifsEducationExtra[i]['label']?.toString() ?? '',
+                  initialValue: items[i]['label']?.toString() ?? '',
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
                   decoration: const InputDecoration(
                     isDense: true, hintText: 'Nom de la prestation',
@@ -1799,7 +1839,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
               SizedBox(
                 width: 74,
                 child: TextFormField(
-                  initialValue: (_tarifsEducationExtra[i]['prix'] as num?)?.toString() ?? '0',
+                  initialValue: (items[i]['prix'] as num?)?.toString() ?? '0',
                   keyboardType: TextInputType.number,
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
@@ -1808,14 +1848,12 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                 ),
               ),
               IconButton(
-                onPressed: () => setState(() {
-                  _tarifsEducationExtra = [..._tarifsEducationExtra]..removeAt(i);
-                }),
+                onPressed: () => set([...items]..removeAt(i)),
                 icon: const Icon(Icons.close, size: 18, color: Colors.redAccent),
               ),
             ]),
             TextFormField(
-              initialValue: _tarifsEducationExtra[i]['description']?.toString() ?? '',
+              initialValue: items[i]['description']?.toString() ?? '',
               style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700),
               decoration: const InputDecoration(
                 isDense: true, hintText: 'Description (facultatif)',
@@ -1829,12 +1867,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       Align(
         alignment: Alignment.centerLeft,
         child: TextButton.icon(
-          onPressed: () => setState(() {
-            _tarifsEducationExtra = [..._tarifsEducationExtra, {'label': '', 'prix': 0, 'description': ''}];
-          }),
+          onPressed: () => set([...items, {'label': '', 'prix': 0, 'description': ''}]),
           icon: const Icon(Icons.add, size: 18),
           label: const Text('Ajouter une prestation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-          style: TextButton.styleFrom(foregroundColor: const Color(0xFF7B5EA7)),
+          style: TextButton.styleFrom(foregroundColor: accent),
         ),
       ),
     ]);

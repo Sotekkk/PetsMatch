@@ -529,6 +529,17 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
         if (v > 0) out.add((entry.value, '${v.toStringAsFixed(0)} €'));
       }
     }
+    final extra = _proData?['tarifs_garde_extra'];
+    if (extra is List) {
+      for (final e in extra) {
+        if (e is! Map) continue;
+        final label = e['label']?.toString().trim() ?? '';
+        if (label.isEmpty) continue;
+        final v = (e['prix'] as num?)?.toDouble() ?? 0;
+        final desc = e['description']?.toString().trim() ?? '';
+        out.add((desc.isEmpty ? label : '$label — $desc', v > 0 ? '${v.toStringAsFixed(0)} €' : '—'));
+      }
+    }
     return out;
   }
 

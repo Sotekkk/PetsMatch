@@ -50,6 +50,7 @@ interface ProData {
   forfaits_education?: { id: string; nom: string; nb_seances: number; prix: number }[];
   tarifs_taxi?: { prise_en_charge?: number; prix_km?: number; minimum?: number };
   tarifs_garde?: Record<string, number>;
+  tarifs_garde_extra?: { label: string; prix: number; description?: string }[];
   tarifs_pension?: {
     especes?: { espece: string; prix_seul: number; prix_partage?: number }[];
     afficher_public?: boolean;
@@ -287,6 +288,7 @@ function ProDetailContent() {
           tarifs_taxi: (data.tarifs_taxi as ProData['tarifs_taxi']) ?? {},
           tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
           tarifs_garde: (data.tarifs_garde as Record<string, number>) ?? {},
+          tarifs_garde_extra: Array.isArray(data.tarifs_garde_extra) ? data.tarifs_garde_extra : [],
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
         };
       } else {
@@ -317,6 +319,7 @@ function ProDetailContent() {
           education_bilan_description: (data.education_bilan_description as string) ?? '',
           tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
           tarifs_garde: (data.tarifs_garde as Record<string, number>) ?? {},
+          tarifs_garde_extra: Array.isArray(data.tarifs_garde_extra) ? data.tarifs_garde_extra : [],
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
         };
       }
@@ -689,9 +692,17 @@ function ProDetailContent() {
   };
   const gardeTarifs: { label: string; prix: string }[] =
     pro?.cat_pro === 'garde'
-      ? Object.entries(GARDE_TARIF_LABELS)
-          .filter(([k]) => (pro.tarifs_garde?.[k] ?? 0) > 0)
-          .map(([k, label]) => ({ label, prix: `${pro.tarifs_garde![k]} €` }))
+      ? [
+          ...Object.entries(GARDE_TARIF_LABELS)
+            .filter(([k]) => (pro.tarifs_garde?.[k] ?? 0) > 0)
+            .map(([k, label]) => ({ label, prix: `${pro.tarifs_garde![k]} €` })),
+          ...(pro.tarifs_garde_extra ?? [])
+            .filter(e => e.label?.trim())
+            .map(e => ({
+              label: e.description?.trim() ? `${e.label.trim()} — ${e.description.trim()}` : e.label.trim(),
+              prix: (e.prix ?? 0) > 0 ? `${e.prix} €` : '—',
+            })),
+        ]
       : [];
 
   const motifs = requiresBilanFirst
