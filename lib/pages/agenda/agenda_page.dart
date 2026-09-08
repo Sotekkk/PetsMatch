@@ -9,6 +9,7 @@ import 'package:PetsMatch/widgets/pro_day_timeline.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart' show AddEmployeManuelSheet;
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AnimalFichePage;
+import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 
 const _kTeal = Color(0xFF0C5C6C);
 
@@ -2496,6 +2497,26 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
                           style: OutlinedButton.styleFrom(
                             foregroundColor: _teal,
                             side: const BorderSide(color: _teal),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            padding: const EdgeInsets.symmetric(vertical: 11),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (_iAmPro && (_animal?['id']?.toString() ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: () => showVisiteRapportSheet(context, {
+                            ..._rdv ?? const {},
+                            '_animal_nom': _animal?['nom'],
+                          }),
+                          icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                          label: const Text('Envoyer des nouvelles au maître',
+                              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _teal,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                             padding: const EdgeInsets.symmetric(vertical: 11),
                           ),

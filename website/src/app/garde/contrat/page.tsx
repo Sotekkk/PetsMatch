@@ -96,6 +96,7 @@ export default function GardeContratPage() {
     setGenerating(r.id);
     const { data } = await supabase.from('documents_animaux').insert({
       uid_eleveur: user.uid,
+      ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}),
       animal_id: r.animal_id,
       rdv_id: r.id,
       type: 'contrat_garde',
@@ -103,6 +104,7 @@ export default function GardeContratPage() {
       statut: 'brouillon',
       metadata: {
         client_nom: r._client_nom,
+        ...(r.client_uid ? { client_uid: r.client_uid } : {}),
         date_visite: r.date_heure,
       },
     }).select('id, token').single();

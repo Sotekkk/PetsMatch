@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/geocoding_helper.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
+import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 
 // ── Ma tournée — carte des visites du jour + ordre réordonnable. L'heure du
 // RDV (date_heure) reste la référence officielle ; ordre_visite est un
@@ -266,6 +267,7 @@ class _TourneePageState extends State<TourneePage> {
                         onAddAddress: () => _addAddress(_visites[i]),
                         onValider: () => _valider(_visites[i]),
                         onOpen: () => _openFiche(_visites[i]),
+                        onNouvelles: () => showVisiteRapportSheet(context, _visites[i]),
                       ),
                     ),
                   ),
@@ -315,6 +317,7 @@ class _VisiteTile extends StatelessWidget {
   final VoidCallback onAddAddress;
   final VoidCallback onValider;
   final VoidCallback onOpen;
+  final VoidCallback onNouvelles;
   static const _teal = Color(0xFF0C5C6C);
 
   const _VisiteTile({
@@ -324,6 +327,7 @@ class _VisiteTile extends StatelessWidget {
     required this.onAddAddress,
     required this.onValider,
     required this.onOpen,
+    required this.onNouvelles,
   });
 
   @override
@@ -385,6 +389,12 @@ class _VisiteTile extends StatelessWidget {
                     ),
                 ]),
               ]),
+            ),
+            IconButton(
+              onPressed: onNouvelles,
+              tooltip: 'Envoyer des nouvelles',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.photo_camera_outlined, color: _teal),
             ),
             IconButton(
               onPressed: onValider,

@@ -340,6 +340,22 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
           tva: m('tva'), tvaTaux: tvaTaux,
           sterilisationClause: sterilClause, villeSignature: ville,
         );
+      } else if (type == 'contrat_garde') {
+        _pdfBytes = await contratGardePdfBytes(
+          animal: animalPdf, prestataire: _eleveur!,
+          clientNom: m('client_nom'),
+          clientAdresse: m('client_adresse'),
+          clientEmail: m('client_email'),
+          clientTel: m('client_tel'),
+          prestation: m('prestation'),
+          datePrestation: m('date_visite').isNotEmpty
+              ? DateTime.tryParse(m('date_visite'))
+              : (m('date_prestation').isNotEmpty ? DateTime.tryParse(m('date_prestation')) : null),
+          tarif: m('tarif'),
+          notes: m('notes'),
+          sigPrestataire: sigElv, sigClient: sigAcq,
+          villeSignature: ville,
+        );
       } else {
         _pdfBytes = null; // autres types → carte récap
       }
@@ -372,6 +388,12 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     final meta = (_doc!['metadata'] as Map?) ?? {};
     final acqEmail = (meta['acquereur_email'] as String?)?.toLowerCase();
     if (acqEmail != null && acqEmail.isNotEmpty && acqEmail == _myEmail) return true;
+    // Contrat de garde / prestation : le client est identifié par client_uid /
+    // client_email dans les métadonnées (pas d'acquéreur au sens cession).
+    final clientUid = meta['client_uid'] as String?;
+    if (clientUid != null && clientUid.isNotEmpty && clientUid == _myUid) return true;
+    final clientEmail = (meta['client_email'] as String?)?.toLowerCase();
+    if (clientEmail != null && clientEmail.isNotEmpty && clientEmail == _myEmail) return true;
     if (_animal != null && _myUid == (_animal!['uid_acquereur'] as String?)) return true;
     return _myUid == (_doc!['uid_acquereur'] as String?);
   }
@@ -642,9 +664,11 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       final token = _doc!['token'] as String?;
       final url = token != null ? '$kSiteBaseUrl/signer-contrat/$token' : null;
 
-      // Résoudre l'uid de l'acquéreur
-      var acqUid = (meta['acquereur_uid'] as String?) ?? (_doc!['uid_acquereur'] as String?);
-      final email = (meta['acquereur_email'] as String?)?.trim();
+      // Résoudre l'uid de l'acquéreur (contrat de garde : client_uid)
+      var acqUid = (meta['acquereur_uid'] as String?)
+          ?? (_doc!['uid_acquereur'] as String?)
+          ?? (meta['client_uid'] as String?);
+      final email = ((meta['acquereur_email'] ?? meta['client_email']) as String?)?.trim();
       if ((acqUid == null || acqUid.isEmpty) && email != null && email.isNotEmpty) {
         final u = await _supa.from('users').select('uid').eq('email', email).maybeSingle();
         acqUid = u?['uid'] as String?;

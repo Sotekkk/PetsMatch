@@ -613,6 +613,125 @@ Future<pw.Document> _certificatCessionDoc({
   return pdf;
 }
 
+// ─── CONTRAT DE PRESTATION — GARDE / PET-SITTING ──────────────────────────────
+
+/// Contrat de prestation pet-sitting / promenade (module garde). Mêmes
+/// mécanismes de signature que les contrats éleveur (deux blocs signature,
+/// image base64). [prestataire] = map profil du pet-sitter (clés `_parties`).
+Future<Uint8List> contratGardePdfBytes({
+  required Map<String, dynamic> animal,
+  required Map<String, dynamic> prestataire,
+  String clientNom = '', String clientAdresse = '', String clientEmail = '', String clientTel = '',
+  String prestation = '', DateTime? datePrestation, String tarif = '', String notes = '',
+  String? sigPrestataire, String? sigClient, String villeSignature = '',
+}) async {
+  final pdf = pw.Document(theme: await _pdfTheme());
+  final p = _parties(prestataire);
+  final today = _fmt(DateTime.now());
+  final dateP = datePrestation != null ? _fmt(datePrestation) : '';
+  final espece = (animal['espece'] as String? ?? '').trim();
+  final race = (animal['race'] as String? ?? '').trim();
+  final animalDesc = [
+    if (espece.isNotEmpty) espece[0].toUpperCase() + espece.substring(1),
+    if (race.isNotEmpty) race,
+  ].join(' — ');
+  final tarifLabel = tarif.trim().isEmpty ? 'à convenir' : '${tarif.trim()} €';
+
+  pdf.addPage(pw.MultiPage(
+    pageFormat: PdfPageFormat.a4,
+    margin: const pw.EdgeInsets.fromLTRB(40, 40, 40, 40),
+    build: (ctx) => [
+      pw.Center(child: pw.Text('CONTRAT DE PRESTATION PET-SITTING / PROMENADE',
+          style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold, color: _teal, letterSpacing: 0.8))),
+      pw.SizedBox(height: 16),
+
+      pw.Text('ENTRE LES SOUSSIGNÉS :', style: _bold()),
+      pw.SizedBox(height: 3),
+      _line('Le Prestataire', p.eleveurNom),
+      _line('Demeurant à', p.eleveurAdresse),
+      _line('Téléphone', p.eleveurTel),
+      _line('SIRET', p.eleveurSiret),
+      _line('Email', p.eleveurEmail),
+      pw.SizedBox(height: 8),
+      pw.Text('ET :', style: _bold()),
+      pw.SizedBox(height: 3),
+      _line('Le Client', clientNom.trim().isEmpty ? null : clientNom.trim()),
+      _line('Demeurant à', clientAdresse.trim().isEmpty ? null : clientAdresse.trim()),
+      _line('Téléphone', clientTel.trim().isEmpty ? null : clientTel.trim()),
+      _line('Email', clientEmail.trim().isEmpty ? null : clientEmail.trim()),
+
+      pw.SizedBox(height: 10),
+      pw.Text('Article 1 : Objet du contrat', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _line('Animal confié', animal['nom'] as String?),
+      _line('Espèce / race', animalDesc.isEmpty ? null : animalDesc),
+      _line('Identification', animal['identification'] as String?),
+      _line('Prestation', prestation.trim().isEmpty ? 'Visite / promenade' : prestation.trim()),
+      _line('Date de la prestation', dateP.isEmpty ? null : dateP),
+      _line('Tarif', tarifLabel),
+
+      pw.Text('Article 2 : Conditions d\'accès au domicile', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para('Le Client s\'engage à fournir au Prestataire les moyens d\'accès nécessaires (clés, codes) à la '
+          'réalisation de la prestation, et à signaler toute consigne particulière de sécurité (alarme, animaux '
+          'additionnels, accès restreint).'),
+
+      pw.Text('Article 3 : Soins vétérinaires d\'urgence', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para('En cas d\'urgence médicale constatée pendant la prestation, le Prestataire est autorisé à faire appel '
+          'au vétérinaire de garde sans délai. Les frais vétérinaires engagés sont intégralement à la charge du '
+          'Client et feront l\'objet d\'une facturation. Le Client sera contacté dès que possible.'),
+
+      pw.Text('Article 4 : Responsabilité civile', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para('Le Prestataire est couvert par une assurance responsabilité civile professionnelle. Le Client demeure '
+          'seul responsable des dommages causés par son animal à des tiers ou à des biens durant la prestation, '
+          'dans la limite d\'une garde normalement diligente par le Prestataire.'),
+
+      pw.Text('Article 5 : Comportement & sécurité de l\'animal', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para('Le Client certifie que l\'animal est sociable et ne présente pas de comportement agressif connu. '
+          'Tout antécédent de morsure, d\'attaque ou de comportement dangereux doit être déclaré avant la première '
+          'prestation.'),
+
+      pw.Text('Article 6 : Modalités financières', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para('Le règlement de la prestation est dû selon les modalités convenues entre les parties. En cas '
+          'd\'annulation moins de 24 h avant la prestation prévue, celle-ci pourra être facturée en tout ou partie '
+          'selon les conditions du Prestataire.'),
+
+      pw.Text('Article 7 : Force majeure & responsabilité médicale', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para('Le Prestataire ne peut être tenu responsable du décès ou de la maladie d\'un animal survenant malgré '
+          'les soins appropriés, ni en cas de force majeure. Le Prestataire s\'engage à mettre tout en œuvre pour '
+          'assurer le bien-être et la sécurité de l\'animal confié.'),
+
+      if (notes.trim().isNotEmpty) ...[
+        pw.SizedBox(height: 9),
+        pw.Text('Article 8 : Notes complémentaires', style: _artTitle()),
+        pw.SizedBox(height: 3),
+        _para(notes.trim()),
+      ],
+
+      pw.SizedBox(height: 16),
+      pw.Text(villeSignature.trim().isEmpty
+          ? 'Fait le $today.'
+          : 'Fait à ${villeSignature.trim()}, le $today.', style: _body()),
+      pw.SizedBox(height: 8),
+      _copyBanner('Contrat établi en deux exemplaires originaux, un pour chaque partie.'),
+      pw.Row(children: [
+        _signBlock('Le Prestataire', p.eleveurNom, signature: sigPrestataire),
+        pw.SizedBox(width: 16),
+        _signBlock('Le Client', clientNom, signature: sigClient),
+      ]),
+      pw.SizedBox(height: 6),
+      pw.Center(child: pw.Text('$today - PetsMatch', style: _small())),
+    ],
+  ));
+
+  return pdf.save();
+}
+
 // ─── FACTURE ──────────────────────────────────────────────────────────────────
 
 /// Facture de vente d'un animal. Montants TTC ; si [tvaTaux] > 0, la TVA est

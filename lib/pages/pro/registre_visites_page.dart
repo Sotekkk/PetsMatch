@@ -1,12 +1,10 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
+import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
-import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 
 // ── Registre visites — liste des RDV (visites/promenades) du profil garde,
 // avec statut de compte-rendu. Contrairement à la pension (logements avec
@@ -95,8 +93,10 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
 
       String? token = existing?['token'] as String?;
       if (token == null) {
+        final pid = User_Info.activeProfileId;
         final row = await _supa.from('documents_animaux').insert({
           'uid_eleveur': uid,
+          if (pid.isNotEmpty) 'pro_profile_id': pid,
           'animal_id': rdv['animal_id'],
           'rdv_id': rdv['id'],
           'type': 'contrat_garde',
@@ -104,7 +104,11 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
           'statut': 'en_attente',
           'metadata': {
             'client_nom': rdv['_client_nom'],
+            if (rdv['client_uid'] != null) 'client_uid': rdv['client_uid'],
+            if (rdv['client_profile_id'] != null) 'client_profile_id': rdv['client_profile_id'],
             'date_visite': rdv['date_heure'],
+            if ((rdv['motif']?.toString() ?? '').isNotEmpty) 'prestation': rdv['motif'],
+            if ((rdv['lieu']?.toString() ?? '').isNotEmpty) 'client_adresse': rdv['lieu'],
           },
         }).select('token').single();
         token = row['token'] as String?;
@@ -139,128 +143,6 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')), backgroundColor: Colors.red));
-      }
-    }
-  }
-
-  Future<void> _openRapport(Map<String, dynamic> rdv) async {
-    final noteCtrl = TextEditingController();
-    File? photoFile;
-    bool posting = false;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheetState) => Padding(
-          padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
-            Text('Rapport de visite — ${rdv['_animal_nom']}',
-                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: noteCtrl,
-              maxLines: 4,
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-              decoration: InputDecoration(
-                hintText: 'Comment s\'est passée la visite/promenade…',
-                hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                contentPadding: const EdgeInsets.all(12),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(children: [
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final file = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
-                  if (file == null) return;
-                  setSheetState(() => photoFile = File(file.path));
-                },
-                icon: const Icon(Icons.photo_camera_outlined, size: 18),
-                label: Text(photoFile == null ? 'Ajouter une photo' : 'Photo ajoutée ✓',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-              ),
-            ]),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: posting ? null : () async {
-                  setSheetState(() => posting = true);
-                  await _envoyerRapport(rdv, noteCtrl.text.trim(), photoFile);
-                  if (ctx.mounted) Navigator.pop(ctx);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _teal, foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  elevation: 0,
-                ),
-                child: posting
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : const Text('Envoyer au propriétaire',
-                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
-              ),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _envoyerRapport(Map<String, dynamic> rdv, String note, File? photoFile) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null || (note.isEmpty && photoFile == null)) return;
-    try {
-      String? photoUrl;
-      if (photoFile != null) {
-        final path = 'visite_rapports/${uid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        photoUrl = await storage.uploadPhoto(photoFile, path, quality: 75);
-      }
-      await _supa.from('pension_updates').insert({
-        'animal_id': rdv['animal_id'],
-        'pro_uid':   uid,
-        'photo_url': photoUrl,
-        'note':      note.isEmpty ? null : note,
-      });
-      final ownerUid = rdv['client_uid']?.toString();
-      if (ownerUid != null && ownerUid.isNotEmpty) {
-        final proNom = User_Info.nameElevage.isNotEmpty
-            ? User_Info.nameElevage
-            : '${User_Info.firstname} ${User_Info.lastname}'.trim();
-        try {
-          await _supa.from('notifications').insert({
-            'uid':   ownerUid,
-            'type':  'visite_rapport',
-            'title': 'Rapport de visite — ${rdv['_animal_nom']}',
-            'body':  '${proNom.isNotEmpty ? proNom : 'Votre pet sitter'} a envoyé un rapport pour ${rdv['_animal_nom']}.',
-            if (rdv['client_profile_id'] != null) 'profile_id': rdv['client_profile_id'],
-            'data':  <String, dynamic>{
-              'animalId': rdv['animal_id']?.toString() ?? '',
-              'animalNom': rdv['_animal_nom'],
-            },
-            'read':  false,
-          });
-        } catch (_) {}
-      }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Rapport envoyé au propriétaire.', style: TextStyle(fontFamily: 'Galey')),
-          backgroundColor: Color(0xFF6E9E57),
-          behavior: SnackBarBehavior.floating,
-        ));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ));
       }
     }
   }
@@ -314,7 +196,7 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
                     itemBuilder: (_, i) => _VisiteCard(
                       rdv: displayed[i],
                       onTerminer: () => _marquerTermine(displayed[i]),
-                      onRapport: () => _openRapport(displayed[i]),
+                      onRapport: () => showVisiteRapportSheet(context, displayed[i]),
                       onContrat: () => _genererContratSignature(displayed[i]),
                     ),
                   ),
