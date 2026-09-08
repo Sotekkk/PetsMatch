@@ -282,14 +282,29 @@ exports.sendRdvReminders = functions
 
                     // ── Rappel au PRO (petsitter, véto, éducateur…) ──
                     try {
+                        // Nom du client : profil CLIENT du RDV (client_profile_id)
+                        // en priorité — un client multi-profils ne doit pas
+                        // s'afficher « Pomsky de la Luna » (son profil éleveur).
                         let who = rdv.client_nom_manuel || "";
-                        if (!who && rdv.client_uid) {
+                        if (!who && rdv.client_profile_id) {
                             const rows = await supabaseGet(
-                                `user_profiles?uid=eq.${rdv.client_uid}&is_main=eq.true` +
+                                `user_profiles?id=eq.${rdv.client_profile_id}` +
                                 `&select=firstname,lastname,nom&limit=1`);
                             const c = rows && rows[0];
                             if (c) {
-                                who = (c.nom || `${c.firstname || ""} ${c.lastname || ""}`).trim();
+                                who = (c.nom ||
+                                    `${c.firstname || ""} ${c.lastname || ""}`).trim();
+                            }
+                        }
+                        if (!who && rdv.client_uid) {
+                            const rows = await supabaseGet(
+                                `user_profiles?uid=eq.${rdv.client_uid}` +
+                                `&profile_type=eq.particulier&order=is_main.desc&limit=1` +
+                                `&select=firstname,lastname,nom`);
+                            const c = rows && rows[0];
+                            if (c) {
+                                who = (c.nom ||
+                                    `${c.firstname || ""} ${c.lastname || ""}`).trim();
                             }
                         }
                         who = who || "un client";
