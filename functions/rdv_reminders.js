@@ -208,11 +208,30 @@ exports.sendRdvReminders = functions
 
             for (const rdv of rdvs) {
                 try {
-                    // Nom du pro depuis Firestore
                     const proDoc = await admin.firestore()
                         .collection("users").doc(rdv.pro_uid).get();
                     const proData = proDoc.exists ? proDoc.data() : {};
-                    const proName = proData.nameElevage || proData.professionPro || "votre praticien";
+
+                    // Nom du pro : celui du PROFIL concerné par le RDV
+                    // (user_profiles.pro_profile_id) — un compte multi-profils
+                    // ne doit pas afficher "Pomsky de la Luna" pour un RDV
+                    // pet-sitter. Repli sur le doc Firestore si pas de profil.
+                    let proName = "";
+                    if (rdv.pro_profile_id) {
+                        try {
+                            const rows = await supabaseGet(
+                                `user_profiles?id=eq.${rdv.pro_profile_id}` +
+                                `&select=nom,firstname,lastname&limit=1`);
+                            const p = rows && rows[0];
+                            if (p) {
+                                proName = (p.nom
+                                    || `${p.firstname || ""} ${p.lastname || ""}`).trim();
+                            }
+                        } catch (e) { /* repli ci-dessous */ }
+                    }
+                    if (!proName) {
+                        proName = proData.nameElevage || proData.professionPro || "votre praticien";
+                    }
 
                     const title = win.title;
                     const body = win.body(proName, rdv.motif);

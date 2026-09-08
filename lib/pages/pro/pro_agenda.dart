@@ -1167,7 +1167,14 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     String clientName = (rdv['_client_name']?.toString().trim().isNotEmpty ?? false)
         ? rdv['_client_name'].toString().trim() : '';
     final cpid = (rdv['client_profile_id'] as String?)?.trim();
-    final ppid = (rdv['pro_profile_id'] as String?)?.trim();
+    var ppid = (rdv['pro_profile_id'] as String?)?.trim();
+    // RDV pris sans pro_profile_id (ancien flux / bug de réservation) : le pro
+    // confirme depuis son profil actif → c'est celui-là qu'il faut nommer,
+    // pas User_Info.nameElevage (éleveur) qui donnerait « Pomsky de la Luna »
+    // pour un RDV pet-sitter.
+    if ((ppid == null || ppid.isEmpty) && User_Info.activeProfileId.isNotEmpty) {
+      ppid = User_Info.activeProfileId;
+    }
     try {
       final ids = <String>{if (cpid?.isNotEmpty ?? false) cpid!, if (ppid?.isNotEmpty ?? false) ppid!};
       if (ids.isNotEmpty) {

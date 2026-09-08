@@ -712,7 +712,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         final dh = DateTime(d.year, d.month, d.day, int.parse(hp[0]), int.parse(hp[1])).toUtc();
         return {
           'pro_uid':        widget.proUid,
-          'pro_profile_id': widget.proProfileId ?? '',
+          if ((widget.proProfileId ?? '').isNotEmpty) 'pro_profile_id': widget.proProfileId,
           'client_uid': uid,
           if (User_Info.activeProfileId.isNotEmpty) 'client_profile_id': User_Info.activeProfileId,
           if (animalId != null && animalId.isNotEmpty) 'animal_id': animalId,
