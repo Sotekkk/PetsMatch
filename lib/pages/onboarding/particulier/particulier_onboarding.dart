@@ -1,4 +1,4 @@
-import 'package:PetsMatch/pages/particulier/mes_animaux_page.dart';
+import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
 import 'package:PetsMatch/pages/particulier/user_feed.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_action_step.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_registry.dart';
@@ -38,7 +38,11 @@ final List<OnboardingStepDef> _steps = [
       description: 'Nom, race, date de naissance, photo, numéro de puce — créez sa fiche '
           'en quelques secondes.',
       primaryLabel: 'Ajouter mon animal →',
-      pageBuilder: (_) => const AnimalFormPage(),
+      // AnimalFormPage (Firestore, legacy) écrivait dans une collection
+      // jamais lue par le reste de l'app (tout est passé sur Supabase
+      // `animaux`) — l'animal saisi ici disparaissait, forçant à le
+      // ressaisir depuis Mes Animaux. Même page que partout ailleurs.
+      pageBuilder: (_) => const AnimalFicheParticulierPage(),
       onNext: onNext,
       onSkip: onSkip,
       secondaryLabel: 'Passer cette étape',
