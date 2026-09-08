@@ -8,6 +8,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/widgets/pro_day_timeline.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart' show AddEmployeManuelSheet;
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AnimalFichePage;
 
 const _kTeal = Color(0xFF0C5C6C);
 
@@ -36,14 +37,14 @@ const _kTypeLabel = {
 };
 
 const _kTypeIcon = {
-  'rdv':        '🩺',
+  'rdv':        '🐾',
   'mise_bas':   '🐣',
   'medication': '💊',
   'visite':     '👀',
   'formation':  '📚',
   'reunion':    '🤝',
   'absence':    '🏖️',
-  'promenade':  '🐾',
+  'promenade':  '🚶',
   'autre':      '📅',
 };
 
@@ -1532,7 +1533,9 @@ class _AgendaPageState extends State<AgendaPage> {
                     heureDebut: 7,
                     heureFin: 22,
                     onRdvTap: (e) {
-                      if (e['type'] == 'rdv' && e['rdv_id'] != null) {
+                      final hasLink = (e['rdv_id']?.toString().isNotEmpty ?? false)
+                          || (e['couleur']?.toString() ?? '').startsWith('rdv:');
+                      if (e['type'] == 'rdv' && hasLink) {
                         showModalBottomSheet(
                           context: context,
                           isScrollControlled: true,
@@ -1710,6 +1713,12 @@ class _EventTile extends StatelessWidget {
 
   bool get _isRdv => event['type'] == 'rdv';
   String? get _rdvId => event['rdv_id']?.toString().let((v) => v.isNotEmpty ? v : null);
+  /// RDV ouvrable : événement côté client (rdv_id) OU côté pro (couleur `rdv:id`).
+  bool get _hasRdvLink {
+    if (_rdvId != null) return true;
+    final c = event['couleur']?.toString() ?? '';
+    return c.startsWith('rdv:');
+  }
   // Limite d'annulation choisie par le pro (0 = toujours possible).
   int get _annulationLimiteH => (event['_annulation_limite_h'] as num?)?.toInt() ?? 0;
   bool get _canCancelRdv {
@@ -2130,7 +2139,7 @@ class _EventTile extends StatelessWidget {
         subtitle: Text(_eventSubtitle(time, type, event['duree_minutes']),
             style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
         trailing: trailing,
-        onTap: _isRdv && _rdvId != null
+        onTap: _isRdv && _hasRdvLink
             ? () => showModalBottomSheet(
                 context: context,
                 isScrollControlled: true,
@@ -2248,6 +2257,16 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
   Map<String, dynamic>? _rdv;
   Map<String, dynamic>? _pro;
   Map<String, dynamic>? _animal;
+  bool _iAmPro = false;
+  String _ownerName = '';
+  String _ownerTel = '';
+
+  String? get _rdvIdResolved {
+    final rid = widget.event['rdv_id']?.toString();
+    if (rid != null && rid.isNotEmpty) return rid;
+    final c = widget.event['couleur']?.toString() ?? '';
+    return c.startsWith('rdv:') ? c.substring(4) : null;
+  }
 
   @override
   void initState() {
@@ -2256,24 +2275,34 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
   }
 
   Future<void> _load() async {
-    final rdvId = widget.event['rdv_id']?.toString();
+    final rdvId = _rdvIdResolved;
     if (rdvId == null) { setState(() => _loading = false); return; }
     try {
       final rdvRows = await _supa.from('rdv')
-          .select('id, pro_uid, client_uid, animal_id, date_heure, motif, statut, duree_minutes, notes_client, lieu, lieu_lat, lieu_lng')
+          .select('id, pro_uid, pro_profile_id, client_uid, client_profile_id, animal_id, '
+              'animal_nom_manuel, client_nom_manuel, client_telephone_manuel, '
+              'date_heure, motif, statut, duree_minutes, notes_client, lieu, lieu_lat, lieu_lng, adresse_depart')
           .eq('id', rdvId).maybeSingle();
       if (rdvRows == null) { setState(() => _loading = false); return; }
       _rdv = Map<String, dynamic>.from(rdvRows);
+      final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+      _iAmPro = myUid.isNotEmpty && myUid == _rdv!['pro_uid']?.toString();
 
-      // Pro profile (adresse, GPS)
+      // Profil du pro concerné (par pro_profile_id sinon compte principal) —
+      // sert au nom affiché ET au repli GPS (adresse cabinet).
       try {
-        final proRows = await _supa.from('user_profiles')
-            .select('uid, firstname, lastname, name_elevage:nom, profession_pro, adress_elevage:adresse, lat, lng')
-            .eq('uid', _rdv!['pro_uid']).eq('is_main', true).maybeSingle();
+        final ppid = _rdv!['pro_profile_id']?.toString();
+        final proRows = (ppid != null && ppid.isNotEmpty)
+            ? await _supa.from('user_profiles')
+                .select('uid, firstname, lastname, name_elevage:nom, profession_pro, adress_elevage:adresse, lat, lng')
+                .eq('id', ppid).maybeSingle()
+            : await _supa.from('user_profiles')
+                .select('uid, firstname, lastname, name_elevage:nom, profession_pro, adress_elevage:adresse, lat, lng')
+                .eq('uid', _rdv!['pro_uid']).eq('is_main', true).maybeSingle();
         if (proRows != null) _pro = Map<String, dynamic>.from(proRows);
       } catch (_) {}
 
-      // Animal info
+      // Animal
       final animalId = _rdv!['animal_id']?.toString();
       if (animalId != null && animalId.isNotEmpty) {
         try {
@@ -2282,6 +2311,36 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
           if (aRows != null) _animal = Map<String, dynamic>.from(aRows);
         } catch (_) {}
       }
+
+      // Maître de l'animal (client) : nom + téléphone, via client_profile_id
+      // sinon compte principal du client_uid, sinon champs manuels du RDV.
+      try {
+        final cpid = _rdv!['client_profile_id']?.toString();
+        Map<String, dynamic>? c;
+        if (cpid != null && cpid.isNotEmpty) {
+          c = await _supa.from('user_profiles')
+              .select('firstname, lastname, nom, phone_number, telephone')
+              .eq('id', cpid).maybeSingle();
+        } else if ((_rdv!['client_uid']?.toString() ?? '').isNotEmpty) {
+          c = await _supa.from('user_profiles')
+              .select('firstname, lastname, nom, phone_number, telephone')
+              .eq('uid', _rdv!['client_uid']).eq('is_main', true).maybeSingle();
+        }
+        if (c != null) {
+          final nom = (c['nom'] as String?)?.trim() ?? '';
+          final composed = '${c['firstname'] ?? ''} ${c['lastname'] ?? ''}'.trim();
+          _ownerName = composed.isNotEmpty ? composed : nom;
+          _ownerTel = (c['phone_number'] as String?)?.trim().isNotEmpty == true
+              ? c['phone_number'].toString().trim()
+              : (c['telephone'] as String?)?.trim() ?? '';
+        }
+        if (_ownerName.isEmpty) {
+          _ownerName = (_rdv!['client_nom_manuel'] as String?)?.trim() ?? '';
+        }
+        if (_ownerTel.isEmpty) {
+          _ownerTel = (_rdv!['client_telephone_manuel'] as String?)?.trim() ?? '';
+        }
+      } catch (_) {}
 
       if (mounted) setState(() => _loading = false);
     } catch (_) {
@@ -2383,30 +2442,66 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
                       decoration: BoxDecoration(color: Colors.grey.shade300,
                           borderRadius: BorderRadius.circular(2)))),
 
-                  // ── Animal ────────────────────────────────────────────────
-                  if (_animal != null) ...[
+                  // ── Animal + maître ───────────────────────────────────────
+                  if (_animal != null || _rdv?['animal_nom_manuel'] != null) ...[
                     Row(children: [
                       CircleAvatar(
                         radius: 28,
                         backgroundColor: _teal.withValues(alpha: 0.10),
-                        backgroundImage: (_animal!['photo_url']?.toString() ?? '').isNotEmpty
+                        backgroundImage: (_animal?['photo_url']?.toString() ?? '').isNotEmpty
                             ? CachedNetworkImageProvider(_animal!['photo_url'].toString()) as ImageProvider
                             : null,
-                        child: (_animal!['photo_url']?.toString() ?? '').isEmpty
+                        child: (_animal?['photo_url']?.toString() ?? '').isEmpty
                             ? const Icon(Icons.pets, color: _teal, size: 24) : null,
                       ),
                       const SizedBox(width: 14),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(_animal!['nom']?.toString() ?? '',
+                        Text(_animal?['nom']?.toString() ?? _rdv?['animal_nom_manuel']?.toString() ?? 'Animal',
                             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800,
                                 fontSize: 18, color: Color(0xFF1F2A2E))),
-                        if ((_animal!['espece']?.toString() ?? '').isNotEmpty)
+                        if ((_animal?['espece']?.toString() ?? '').isNotEmpty)
                           Text(
                             [_animal!['espece'], _animal!['race']].where((s) => s?.toString().isNotEmpty == true).join(' · '),
                             style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal, fontWeight: FontWeight.w600),
                           ),
+                        if (_ownerName.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: Text('Maître : $_ownerName',
+                                style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade600)),
+                          ),
                       ])),
+                      if (_ownerTel.isNotEmpty)
+                        IconButton(
+                          tooltip: 'Appeler le maître',
+                          icon: const Icon(Icons.phone_outlined, color: _teal),
+                          onPressed: () => launchUrl(Uri.parse('tel:$_ownerTel')),
+                        ),
                     ]),
+                    if ((_animal?['id']?.toString() ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => AnimalFichePage(
+                              animalId: _animal!['id'].toString(),
+                              readOnly: true,
+                              rdvId: _rdv?['id']?.toString(),
+                            ),
+                          )),
+                          icon: const Icon(Icons.pets_outlined, size: 18),
+                          label: const Text('Voir la fiche de l\'animal',
+                              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _teal,
+                            side: const BorderSide(color: _teal),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            padding: const EdgeInsets.symmetric(vertical: 11),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     const Divider(),
                     const SizedBox(height: 12),
@@ -2420,8 +2515,13 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
                   ),
                   if (_rdv?['motif']?.toString().isNotEmpty == true) ...[
                     const SizedBox(height: 8),
-                    _InfoRow(icon: Icons.medical_services_outlined,
+                    _InfoRow(icon: Icons.sticky_note_2_outlined,
                         text: _rdv!['motif'].toString()),
+                  ],
+                  if ((_rdv?['notes_client']?.toString() ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _InfoRow(icon: Icons.chat_bubble_outline,
+                        text: _rdv!['notes_client'].toString()),
                   ],
                   if (_rdv?['duree_minutes'] != null) ...[
                     const SizedBox(height: 8),
@@ -2430,18 +2530,24 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
                   ],
                   const SizedBox(height: 12),
 
-                  // ── Professionnel ─────────────────────────────────────────
+                  // ── Autre partie (pro si je suis client) ──────────────────
                   const Divider(),
                   const SizedBox(height: 12),
-                  _InfoRow(icon: Icons.person_outlined, text: _proName(), bold: true),
+                  if (!_iAmPro)
+                    _InfoRow(icon: Icons.person_outlined, text: _proName(), bold: true),
+                  if (_iAmPro && _ownerName.isNotEmpty)
+                    _InfoRow(icon: Icons.person_outlined, text: _ownerName, bold: true),
+
+                  // ── Lieu du rendez-vous ──────────────────────────────────
                   if ((_rdv?['lieu']?.toString() ?? '').isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    _InfoRow(icon: Icons.location_on_outlined,
-                        text: _rdv!['lieu'].toString()),
-                  ] else if ((_pro?['adress_elevage']?.toString() ?? '').isNotEmpty) ...[
+                    _InfoRow(icon: Icons.location_on_outlined, text: _rdv!['lieu'].toString()),
+                  ] else if ((_rdv?['adresse_depart']?.toString() ?? '').isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    _InfoRow(icon: Icons.location_on_outlined,
-                        text: _pro!['adress_elevage'].toString()),
+                    _InfoRow(icon: Icons.location_on_outlined, text: _rdv!['adresse_depart'].toString()),
+                  ] else if ((_pro?['adress_elevage']?.toString() ?? '').isNotEmpty && !_iAmPro) ...[
+                    const SizedBox(height: 8),
+                    _InfoRow(icon: Icons.location_on_outlined, text: _pro!['adress_elevage'].toString()),
                   ],
 
                   // ── Bouton GPS ────────────────────────────────────────────
