@@ -868,6 +868,20 @@ class _FeedListState extends State<_FeedList>
           for (final r in byUid as List) {
             _profiles.putIfAbsent(r['uid'] as String, () => Map<String, dynamic>.from(r as Map));
           }
+          // Fetch rings for these newly added profiles
+          final newUids = (byUid as List).map((r) => r['uid'] as String).toList();
+          if (newUids.isNotEmpty) {
+            final cosmetics = await _supa.from('user_cosmetics')
+                .select('uid, active_value')
+                .inFilter('uid', newUids)
+                .eq('cosmetic_type', 'avatar_ring');
+            for (final c in cosmetics as List) {
+              final u = c['uid'] as String;
+              if (_profiles.containsKey(u) && c['active_value'] != null) {
+                _profiles[u]!['_ring'] = c['active_value'] as String;
+              }
+            }
+          }
         } catch (_) {}
       }
 
@@ -4180,12 +4194,19 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
       _supa.from('follows').select('follower_uid').eq('follower_uid', widget.myUid).eq('following_uid', uid).maybeSingle(),
       _supa.from('post_likes').select('uid').eq('post_id', _effectiveId),
       _supa.from('post_comments').select('id').eq('post_id', _effectiveId),
+      _supa.from('user_cosmetics').select('cosmetic_type, active_value')
+          .eq('uid', uid).eq('cosmetic_type', 'avatar_ring').maybeSingle(),
     ]);
     if (mounted) {
       widget.post['like_count']    = (results[3] as List).length;
       widget.post['comment_count'] = (results[4] as List).length;
+      final prof = (results[0] as Map?)?.cast<String, dynamic>();
+      final cosmeticRow = results[5] as Map?;
+      if (prof != null && cosmeticRow?['active_value'] != null) {
+        prof['_ring'] = cosmeticRow!['active_value'] as String;
+      }
       setState(() {
-        _profile     = (results[0] as Map?)?.cast<String, dynamic>();
+        _profile     = prof;
         _isLiked     = results[1] != null;
         _isFollowing = results[2] != null;
         _loading     = false;
