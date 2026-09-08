@@ -49,6 +49,7 @@ interface ProData {
   delai_min_reservation_h?: number | null;
   forfaits_education?: { id: string; nom: string; nb_seances: number; prix: number }[];
   tarifs_taxi?: { prise_en_charge?: number; prix_km?: number; minimum?: number };
+  tarifs_garde?: Record<string, number>;
   tarifs_pension?: {
     especes?: { espece: string; prix_seul: number; prix_partage?: number }[];
     afficher_public?: boolean;
@@ -285,6 +286,7 @@ function ProDetailContent() {
           education_bilan_description: (data.education_bilan_description as string) ?? '',
           tarifs_taxi: (data.tarifs_taxi as ProData['tarifs_taxi']) ?? {},
           tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
+          tarifs_garde: (data.tarifs_garde as Record<string, number>) ?? {},
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
         };
       } else {
@@ -314,6 +316,7 @@ function ProDetailContent() {
           tarifs_education_extra: Array.isArray(data.tarifs_education_extra) ? data.tarifs_education_extra : [],
           education_bilan_description: (data.education_bilan_description as string) ?? '',
           tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
+          tarifs_garde: (data.tarifs_garde as Record<string, number>) ?? {},
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
         };
       }
@@ -677,6 +680,20 @@ function ProDetailContent() {
             })),
         ]
       : [];
+  const GARDE_TARIF_LABELS: Record<string, string> = {
+    promenade_30min: 'Promenade (30 min)',
+    promenade_1h: 'Promenade (1h)',
+    promenade_2h: 'Promenade (2h)',
+    garde_journee: 'Garde à domicile (journée)',
+    autre: 'Autre prestation',
+  };
+  const gardeTarifs: { label: string; prix: string }[] =
+    pro?.cat_pro === 'garde'
+      ? Object.entries(GARDE_TARIF_LABELS)
+          .filter(([k]) => (pro.tarifs_garde?.[k] ?? 0) > 0)
+          .map(([k, label]) => ({ label, prix: `${pro.tarifs_garde![k]} €` }))
+      : [];
+
   const motifs = requiresBilanFirst
     ? (MOTIFS_BY_CAT.education ?? []).filter(m => m.key === 'evaluation')
     : MOTIFS_BY_CAT[pro?.cat_pro ?? ''] ?? DEFAULT_MOTIFS;
@@ -909,6 +926,19 @@ function ProDetailContent() {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            )}
+            {pro.cat_pro === 'garde' && gardeTarifs.length > 0 && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <p className="font-bold text-[#1E2025] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Tarifs</p>
+                <div className="space-y-1.5">
+                  {gardeTarifs.map((t, i) => (
+                    <div key={i} className="flex items-start justify-between gap-3 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      <span className="text-[#1E2025] font-medium">{t.label}</span>
+                      <span className="text-[#0C5C6C] font-bold whitespace-nowrap">{t.prix}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

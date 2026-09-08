@@ -510,6 +510,28 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   String get _educationBilanDescription =>
       (_proData?['education_bilan_description'] ?? '').toString().trim();
 
+  /// Pet-sitter / promeneur : grille tarifaire standard (`tarifs_garde`),
+  /// affichée dès qu'au moins une prestation a un prix.
+  List<(String, String)> get _tarifsGardePublics {
+    if (_proData?['cat_pro'] != 'garde') return [];
+    const labels = {
+      'promenade_30min': 'Promenade (30 min)',
+      'promenade_1h': 'Promenade (1h)',
+      'promenade_2h': 'Promenade (2h)',
+      'garde_journee': 'Garde à domicile (journée)',
+      'autre': 'Autre prestation',
+    };
+    final out = <(String, String)>[];
+    final t = _proData?['tarifs_garde'];
+    if (t is Map) {
+      for (final entry in labels.entries) {
+        final v = (t[entry.key] as num?)?.toDouble() ?? 0;
+        if (v > 0) out.add((entry.value, '${v.toStringAsFixed(0)} €'));
+      }
+    }
+    return out;
+  }
+
   String get _siteWeb => _proData?['site_web'] ?? '';
   String get _instagram => _proData?['instagram'] ?? '';
   String get _facebook => _proData?['facebook'] ?? '';
@@ -911,6 +933,29 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                     Expanded(child: Text(t.$1,
                         style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
                             fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
+                    Text(t.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                        fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
+                  ]),
+                )),
+              ],
+            )),
+          ],
+
+          // Tarifs pet-sitter / promeneur (grille standard)
+          if (_tarifsGardePublics.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _card(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionTitle('Tarifs'),
+                const SizedBox(height: 8),
+                ..._tarifsGardePublics.map((t) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(child: Text(t.$1,
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                            fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
+                    const SizedBox(width: 8),
                     Text(t.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
                         fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
                   ]),

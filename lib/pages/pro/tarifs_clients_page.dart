@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
@@ -115,6 +116,99 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Édite la grille tarifaire **standard** (`tarifs_garde`) — celle qui
+  /// s'affiche sur la fiche publique. Miroir `users` si profil principal.
+  Future<void> _editStandardTarifs() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final pid = User_Info.activeProfileId;
+    if (uid == null) return;
+    final ctrls = <String, TextEditingController>{
+      for (final t in prestationsGarde)
+        t.$1: TextEditingController(text: (_tarifsBase[t.$1] ?? 0).toString()),
+    };
+    bool saving = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            const Text('Tarifs standard',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 4),
+            Text('Affichés sur votre fiche publique. Laissez à 0 les prestations non proposées.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+            const SizedBox(height: 16),
+            ...prestationsGarde.map((t) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(children: [
+                Expanded(child: Text(t.$2,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600))),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 90,
+                  child: TextFormField(
+                    controller: ctrls[t.$1],
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                    decoration: InputDecoration(
+                      suffixText: '€',
+                      filled: true, fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                    ),
+                  ),
+                ),
+              ]),
+            )),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: saving ? null : () async {
+                  setSheetState(() => saving = true);
+                  final grille = <String, int>{
+                    for (final t in prestationsGarde)
+                      t.$1: int.tryParse(ctrls[t.$1]!.text) ?? 0,
+                  };
+                  try {
+                    if (pid.isNotEmpty) {
+                      await _supa.from('user_profiles').update({'tarifs_garde': grille}).eq('id', pid);
+                    } else {
+                      await _supa.from('user_profiles')
+                          .update({'tarifs_garde': grille}).eq('uid', uid).eq('is_main', true);
+                      await _supa.from('users').update({'tarifs_garde': grille}).eq('uid', uid);
+                      await FirebaseFirestore.instance.collection('users').doc(uid)
+                          .set({'tarifsGarde': grille}, SetOptions(merge: true));
+                    }
+                  } catch (_) {}
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  await _load();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _teal, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
+                child: saving
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
   }
 
   Future<void> _editClientTarifs(Map<String, dynamic> client) async {
@@ -244,16 +338,45 @@ class _TarifsClientsPageState extends State<TarifsClientsPage> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _teal))
-          : _clients.isEmpty
-              ? Center(child: Text('Aucun client disponible — un RDV confirmé est requis.',
-                  style: const TextStyle(fontFamily: 'Galey', color: Colors.grey)))
-              : RefreshIndicator(
+          : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView.builder(
                     padding: const EdgeInsets.all(12),
-                    itemCount: _clients.length,
+                    itemCount: _clients.length + 2,
                     itemBuilder: (_, i) {
-                      final c = _clients[i];
+                      if (i == 0) {
+                        final nb = _tarifsBase.values.where((v) => v > 0).length;
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          elevation: 1,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          child: ListTile(
+                            onTap: _editStandardTarifs,
+                            leading: const Icon(Icons.sell_outlined, color: _teal),
+                            title: const Text('Tarifs standard',
+                                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                            subtitle: Text(
+                              nb > 0
+                                  ? '$nb prestation${nb > 1 ? 's' : ''} tarifée${nb > 1 ? 's' : ''} · visible sur votre fiche'
+                                  : 'À renseigner — s\'affiche sur votre fiche publique',
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                  color: nb > 0 ? const Color(0xFF6E9E57) : Colors.orange.shade700)),
+                            trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                          ),
+                        );
+                      }
+                      if (i == 1) {
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(4, 8, 4, 6),
+                          child: Text(
+                            _clients.isEmpty
+                                ? 'Tarifs par client : disponible dès votre premier RDV confirmé.'
+                                : 'Tarifs personnalisés par client',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
+                        );
+                      }
+                      final c = _clients[i - 2];
                       final nbOverrides = _overridesByProfile[c['client_profile_id']]?.length ?? 0;
                       return Card(
                         margin: const EdgeInsets.only(bottom: 10),

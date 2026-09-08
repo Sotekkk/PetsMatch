@@ -248,10 +248,16 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         _tvaFranchise            = (row['regime_tva_pro'] ?? '') == 'franchise';
         _photoUrl  = isSecondary ? row['avatar_url'] as String? : row['profile_picture_url_pro'] as String?;
         _bannerUrl = row['banner_url'] as String?;
-        _nomStructureCtrl.text = (row['nom'] ?? row['name_elevage']) ?? User_Info.nameElevage;
-        _professionCtrl.text   = row['profession_pro']  ?? User_Info.professionPro;
+        // Profil secondaire : aucune retombée sur les champs du compte /
+        // de l'élevage (User_Info.*) — chaque profil a sa propre identité.
+        _nomStructureCtrl.text = isSecondary
+            ? (row['nom'] ?? '')
+            : ((row['nom'] ?? row['name_elevage']) ?? User_Info.nameElevage);
+        _professionCtrl.text   = isSecondary
+            ? (row['profession_pro'] ?? '')
+            : (row['profession_pro'] ?? User_Info.professionPro);
         _descCtrl.text         = isSecondary
-            ? (row['desc_entreprise'] ?? row['description'] ?? User_Info.descEntreprise)
+            ? (row['desc_entreprise'] ?? row['description'] ?? '')
             : (row['desc_entreprise'] ?? User_Info.descEntreprise);
         _tarifsCtrl.text       = row['tarifs']          ?? '';
         _phoneCtrl.text        = (row['phone_number'] ?? row['phone'] ?? row['numero_elevage'] ?? '').toString();

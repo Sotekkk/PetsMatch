@@ -397,6 +397,9 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
       data['cat_pro']            = type;
       data['nom']                = _nomCtrl.text.trim();
       data['profession_pro']     = _subProfession ?? widget.typeInfo.label;
+      // Aussi sous la clé lue par ProProfileEditPage (desc_entreprise) pour
+      // éviter tout retour à la description d'un autre profil du compte.
+      data['desc_entreprise']    = _descCtrl.text.trim();
       data['siret']              = _siretCtrl.text.trim();
       data['rayon_intervention'] = _rayon;
       data['especes_acceptees']  = _especesAcceptees.toList();
