@@ -96,6 +96,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
   const isVet  = catPro === 'veterinaire' || catPro === 'sante';
   const isPension = catPro === 'pension';
   const isEducation = catPro === 'education';
+  const isGarde = catPro === 'garde';
   const todayIso = new Date().toISOString().slice(0, 10);
   const rdvTodayEdu = upcomingRdvs.filter(r => (r.date_heure ?? '').slice(0, 10) === todayIso).length;
   const name   = profile.nom || userData?.firstname || 'Mon cabinet';
@@ -391,6 +392,30 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
                 <Link href="/education/bibliotheque" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
                   <div className="text-2xl mb-1">🏋️</div>
                   <p className="text-xs font-semibold text-[#1F2A2E]">Bibliothèque d&apos;exercices</p>
+                </Link>
+              </>
+            )}
+            {isGarde && (
+              <>
+                <Link href="/garde/registre" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
+                  <div className="text-2xl mb-1">📖</div>
+                  <p className="text-xs font-semibold text-[#1F2A2E]">Registre des visites</p>
+                </Link>
+                <Link href="/garde/cles" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
+                  <div className="text-2xl mb-1">🔑</div>
+                  <p className="text-xs font-semibold text-[#1F2A2E]">Gestion des clés</p>
+                </Link>
+                <Link href="/garde/devis" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
+                  <div className="text-2xl mb-1">📝</div>
+                  <p className="text-xs font-semibold text-[#1F2A2E]">Devis</p>
+                </Link>
+                <Link href="/garde/tarifs-clients" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
+                  <div className="text-2xl mb-1">💶</div>
+                  <p className="text-xs font-semibold text-[#1F2A2E]">Tarifs clients</p>
+                </Link>
+                <Link href="/garde/abonnement" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
+                  <div className="text-2xl mb-1">⭐</div>
+                  <p className="text-xs font-semibold text-[#1F2A2E]">Mon abonnement</p>
                 </Link>
               </>
             )}

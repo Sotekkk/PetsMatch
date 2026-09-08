@@ -80,7 +80,7 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 const TYPE_ICON: Record<string, string> = {
-  rdv:        '🩺',
+  rdv:        '🐾',
   mise_bas:   '🐣',
   medication: '💊',
   visite:     '👀',
@@ -900,23 +900,45 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
 }) {
   const [saving, setSaving] = useState(false);
   const [clientName, setClientName] = useState('');
+  const [proName, setProName] = useState('');
+  const [animalName, setAnimalName] = useState('');
 
   useEffect(() => {
-    supabase.from('user_profiles').select('firstname, lastname').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle()
-      .then(({ data }) => {
-        if (data) {
-          const d = data as { firstname: string; lastname: string };
-          setClientName([d.firstname, d.lastname].filter(Boolean).join(' '));
-        }
-      });
-  }, [rdv.client_uid]);
+    let alive = true;
+    const cq = rdv.client_profile_id
+      ? supabase.from('user_profiles').select('firstname, lastname, nom').eq('id', rdv.client_profile_id).maybeSingle()
+      : supabase.from('user_profiles').select('firstname, lastname, nom').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle();
+    cq.then(({ data }) => {
+      if (!alive || !data) return;
+      const d = data as { firstname?: string; lastname?: string; nom?: string };
+      setClientName((d.nom || [d.firstname, d.lastname].filter(Boolean).join(' ') || '').trim());
+    });
+    (proProfileId
+      ? supabase.from('user_profiles').select('firstname, lastname, nom').eq('id', proProfileId).maybeSingle()
+      : supabase.from('user_profiles').select('firstname, lastname, nom').eq('uid', proUid).eq('is_main', true).maybeSingle()
+    ).then(({ data }) => {
+      if (!alive || !data) return;
+      const d = data as { firstname?: string; lastname?: string; nom?: string };
+      setProName((d.nom || [d.firstname, d.lastname].filter(Boolean).join(' ') || '').trim());
+    });
+    if (rdv.animal_id != null) {
+      supabase.from('animaux').select('nom').eq('id', String(rdv.animal_id)).maybeSingle()
+        .then(({ data }) => { if (alive && data) setAnimalName(((data as { nom?: string }).nom || '').trim()); });
+    }
+    return () => { alive = false; };
+  }, [rdv.client_uid, rdv.client_profile_id, rdv.animal_id, proUid, proProfileId]);
 
   async function accept() {
     setSaving(true);
+    const m = (rdv.motif || '').trim();
+    const cn = clientName || 'le client';
+    const pn = proName || 'le professionnel';
+    const titrePro = m && animalName ? `${m} pour ${animalName}` : m ? `${m} — ${cn}` : `RDV avec ${cn}`;
+    const titreClient = m ? `${m} — ${pn}` : `RDV avec ${pn}`;
     await supabase.from('rdv').update({ statut: 'confirme' }).eq('id', rdv.id);
     await supabase.from('agenda_events').insert({
       uid: proUid,
-      titre: `RDV ${clientName || 'Client'}${rdv.motif ? ` — ${rdv.motif}` : ''}`,
+      titre: titrePro,
       type: 'rdv',
       date_debut: rdv.date_debut,
       rdv_id: rdv.id,
@@ -924,7 +946,7 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
     });
     await supabase.from('agenda_events').upsert({
       uid: rdv.client_uid,
-      titre: `RDV${rdv.motif ? ` — ${rdv.motif}` : ''}`,
+      titre: titreClient,
       type: 'rdv',
       date_debut: rdv.date_debut,
       rdv_id: rdv.id,

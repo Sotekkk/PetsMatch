@@ -745,11 +745,14 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final names = await _rdvEventNames(rdv);
       final proName = names.proName;
       final clientName = names.clientName;
+      final motifTxt = (rdv['motif'] as String?)?.trim() ?? '';
+      final titreClient = _rdvEventTitle(proSide: false, motif: motifTxt, other: proName);
+      final titrePro = _rdvEventTitle(proSide: true, motif: motifTxt, other: clientName, animal: names.animalName);
       // Agenda client
       if (clientUid != null) {
         await supa.from('agenda_events').upsert({
           'uid':           clientUid,
-          'titre':         'RDV avec $proName',
+          'titre':         titreClient,
           'type':          'rdv',
           'date_debut':    preciseDh.toIso8601String(),
           'animal_id':     rdv['animal_id'],
@@ -776,7 +779,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               .eq('uid', proUid).eq('couleur', 'rdv:${rdv['id']}');
           await supa.from('agenda_events').insert({
             'uid':            proUid,
-            'titre':          'RDV avec $clientName',
+            'titre':          titrePro,
             'type':           'rdv',
             'date_debut':     preciseDh.toIso8601String(),
             'animal_id':      rdv['animal_id'],
@@ -952,10 +955,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final names = await _rdvEventNames(rdv);
       final proName = names.proName;
       final clientName = names.clientName;
+      final motifTitre = motif.trim().isNotEmpty ? motif.trim() : ((rdv['motif'] as String?)?.trim() ?? '');
+      final titreClient = _rdvEventTitle(proSide: false, motif: motifTitre, other: proName);
+      final titrePro = _rdvEventTitle(proSide: true, motif: motifTitre, other: clientName, animal: names.animalName);
 
       if (clientUid != null) {
         await supa.from('agenda_events').upsert({
-          'uid': clientUid, 'titre': 'RDV avec $proName', 'type': 'rdv',
+          'uid': clientUid, 'titre': titreClient, 'type': 'rdv',
           'date_debut': newDh.toIso8601String(), 'animal_id': rdv['animal_id'],
           'notes': motif, 'rdv_id': rdvId, 'duree_minutes': duree,
           'pro_profile_id': rdv['client_profile_id'],
@@ -971,7 +977,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       if (proUid != null) {
         await supa.from('agenda_events').delete().eq('uid', proUid).eq('couleur', 'rdv:$rdvId');
         await supa.from('agenda_events').insert({
-          'uid': proUid, 'titre': 'RDV avec $clientName', 'type': 'rdv',
+          'uid': proUid, 'titre': titrePro, 'type': 'rdv',
           'date_debut': newDh.toIso8601String(), 'animal_id': rdv['animal_id'],
           'notes': motif, 'duree_minutes': duree, 'couleur': 'rdv:$rdvId',
           'pro_profile_id': rdv['pro_profile_id'],
@@ -1161,9 +1167,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   /// PROFILS (client_profile_id / pro_profile_id) et jamais via is_main /
   /// User_Info.nameElevage — sinon un compte multi-profils voit le mauvais
   /// nom (ex. « RDV avec Pomsky de la Luna » au lieu du particulier).
-  Future<({String proName, String clientName})> _rdvEventNames(Map<String, dynamic> rdv) async {
+  Future<({String proName, String clientName, String animalName})> _rdvEventNames(Map<String, dynamic> rdv) async {
     final supa = Supabase.instance.client;
     String proName = '';
+    String animalName = (rdv['_animal_name'] ?? rdv['_animal_nom'] ?? rdv['animal_nom_manuel'])
+            ?.toString().trim() ?? '';
     String clientName = (rdv['_client_name']?.toString().trim().isNotEmpty ?? false)
         ? rdv['_client_name'].toString().trim() : '';
     final cpid = (rdv['client_profile_id'] as String?)?.trim();
@@ -1197,7 +1205,30 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final manual = rdv['client_nom_manuel']?.toString().trim();
       clientName = (manual?.isNotEmpty ?? false) ? manual! : 'Client';
     }
-    return (proName: proName, clientName: clientName);
+    if (animalName.isEmpty) {
+      final aid = rdv['animal_id']?.toString();
+      if (aid != null && aid.isNotEmpty) {
+        try {
+          final a = await supa.from('animaux').select('nom').eq('id', aid).maybeSingle();
+          animalName = (a?['nom'] as String?)?.trim() ?? '';
+        } catch (_) {}
+      }
+    }
+    return (proName: proName, clientName: clientName, animalName: animalName);
+  }
+
+  /// Titre d'un agenda_event de RDV. Côté pro : privilégie « motif pour animal »
+  /// (utile pour un pet-sitter / véto qui pense à l'animal, pas au payeur) ;
+  /// côté client : « motif — pro ».
+  String _rdvEventTitle({required bool proSide, String motif = '', String other = '', String animal = ''}) {
+    final m = motif.trim();
+    if (proSide) {
+      if (m.isNotEmpty && animal.trim().isNotEmpty) return '$m pour ${animal.trim()}';
+      if (m.isNotEmpty) return '$m — ${other.isEmpty ? 'client' : other}';
+      return 'RDV avec ${other.isEmpty ? 'client' : other}';
+    }
+    if (m.isNotEmpty) return '$m — ${other.isEmpty ? 'le professionnel' : other}';
+    return 'RDV avec ${other.isEmpty ? 'le professionnel' : other}';
   }
 
   Future<void> _updateStatut(String rdvId, String statut,
@@ -1220,11 +1251,14 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         final names = await _rdvEventNames(rdv);
         final proName = names.proName;
         final clientName2 = names.clientName;
+        final motifTxt = (rdv['motif'] as String?)?.trim() ?? '';
+        final titreClient = _rdvEventTitle(proSide: false, motif: motifTxt, other: proName);
+        final titrePro = _rdvEventTitle(proSide: true, motif: motifTxt, other: clientName2, animal: names.animalName);
         final dhUtc = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toUtc();
         // Agenda client
         await supa.from('agenda_events').upsert({
           'uid':           clientUid,
-          'titre':         'RDV avec $proName',
+          'titre':         titreClient,
           'type':          'rdv',
           'date_debut':    dhUtc?.toIso8601String() ?? rdv['date_heure'],
           'animal_id':     rdv['animal_id'],
@@ -1240,7 +1274,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                 .eq('uid', proUid2).eq('couleur', 'rdv:${rdv['id']}');
             await supa.from('agenda_events').insert({
               'uid':            proUid2,
-              'titre':          'RDV avec $clientName2',
+              'titre':          titrePro,
               'type':           'rdv',
               'date_debut':     dhUtc?.toIso8601String() ?? rdv['date_heure'],
               'animal_id':      rdv['animal_id'],
