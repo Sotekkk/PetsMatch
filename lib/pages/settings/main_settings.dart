@@ -7,6 +7,7 @@ import 'package:PetsMatch/pages/pro/pro_profile_edit.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/particulier/abonnements_achats_page.dart';
+import 'package:PetsMatch/pages/particulier/influencer_request_page.dart';
 import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_flow_page.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_registry.dart';
@@ -219,7 +220,7 @@ class _SettingsMainPageState extends State<SettingsMainPage>
               // (plans payants éleveur/annonces) — espace dédié qui prépare
               // la structure abonnement/achats/crédits/facturation pour ce
               // profil, sans réutiliser à tort la page éleveur.
-              if (!User_Info.isPro && !User_Info.isElevage && !User_Info.isAssociation)
+              if (!User_Info.isPro && !User_Info.isElevage && !User_Info.isAssociation) ...[
                 buildSettingsOption(
                   context,
                   icon: Icons.star_outline,
@@ -228,8 +229,18 @@ class _SettingsMainPageState extends State<SettingsMainPage>
                     Navigator.of(context).push(MaterialPageRoute(
                         builder: (context) => const AbonnementsAchatsPage()));
                   },
-                )
-              else
+                ),
+                buildSettingsOption(
+                  context,
+                  icon: Icons.auto_awesome,
+                  iconColor: const Color(0xFF6E9E57),
+                  text: 'Badge Influenceur',
+                  onTap: () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                        builder: (context) => const InfluencerRequestPage()));
+                  },
+                ),
+              ] else
                 buildSettingsOption(
                   context,
                   icon: Icons.star_outline,

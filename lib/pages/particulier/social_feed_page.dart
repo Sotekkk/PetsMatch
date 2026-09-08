@@ -13,13 +13,14 @@ import 'package:intl/intl.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:PetsMatch/pages/particulier/abonnements_achats_page.dart' show CreditPacksSheet;
+import 'package:share_plus/share_plus.dart';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
 const _tealC  = Color(0xFF0C5C6C);
 const _darkC  = Color(0xFF0D1F22);
 const _green  = Color(0xFF6E9E57);
-const _greyC  = Color(0xFF9CA3AF);
+const _greyC  = Color(0xFF5A6473);
 
 
 // Fond — dégradé teal profond du haut vers le bas
@@ -116,7 +117,7 @@ String _profileName(Map<String, dynamic>? p) {
   return ne.isNotEmpty ? ne : 'Membre';
 }
 
-const _kAuthorCols = 'id, uid, firstname, lastname, avatar_url, profile_type, nom';
+const _kAuthorCols = 'id, uid, firstname, lastname, avatar_url, profile_type, nom, is_influencer';
 
 /// Id du profil PARTICULIER d'un uid — identité utilisée dans le réseau social,
 /// jamais le profil pro / is_main. Mémoïsé (les inserts like/follow l'appellent
@@ -226,12 +227,21 @@ List<String> _mediaUrls(String? raw) {
 String _fmtDate(String iso) {
   try {
     final dt   = DateTime.parse(iso).toLocal();
-    final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 1) return 'À l\'instant';
-    if (diff.inHours < 1) return 'Il y a ${diff.inMinutes} min';
-    if (diff.inDays < 1) return 'Il y a ${diff.inHours}h';
-    if (diff.inDays < 7) return 'Il y a ${diff.inDays}j';
-    return DateFormat('dd/MM/yyyy').format(dt);
+    final now  = DateTime.now();
+    final diff = now.difference(dt);
+    final hhmm = DateFormat('HH:mm').format(dt);
+    if (diff.inMinutes < 1)  return 'À l\'instant';
+    if (diff.inMinutes < 60) return 'Il y a ${diff.inMinutes} min';
+    if (diff.inHours < 24 && now.day == dt.day) return 'Aujourd\'hui à $hhmm';
+    if (diff.inDays < 2 && now.day - dt.day == 1) return 'Hier à $hhmm';
+    if (diff.inDays < 7) {
+      const jours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+      return '${jours[dt.weekday - 1]} à $hhmm';
+    }
+    const mois = ['jan', 'fév', 'mar', 'avr', 'mai', 'juin', 'juil', 'aoû', 'sep', 'oct', 'nov', 'déc'];
+    final m = mois[dt.month - 1];
+    if (dt.year == now.year) return '${dt.day} $m à $hhmm';
+    return '${dt.day} $m ${dt.year}';
   } catch (_) {
     return '';
   }
@@ -831,14 +841,52 @@ class _FeedListState extends State<_FeedList>
         return;
       }
 
+      // Déduplique : enlève le post original si un repost de lui est déjà dans le feed
+      final repostOrigIds = posts
+          .where((p) => p['is_repost'] == true && p['original_post_id'] != null)
+          .map((p) => p['original_post_id'] as String)
+          .toSet();
+      if (repostOrigIds.isNotEmpty) {
+        posts = posts.where((p) =>
+            p['is_repost'] == true || !repostOrigIds.contains(p['id'] as String)).toList();
+      }
+
       final postIds = posts.map((p) => p['id'] as String).toList();
 
       _profiles = await _resolveAuthors(posts);
 
+      // Charge aussi les profils des auteurs originaux des reposts
+      final origUids = posts
+          .where((p) => p['is_repost'] == true && p['original_uid'] != null)
+          .map((p) => p['original_uid'] as String)
+          .where((u) => !_profiles.containsKey(u))
+          .toSet().toList();
+      if (origUids.isNotEmpty) {
+        try {
+          final byUid = await _supa.from('user_profiles').select(_kAuthorCols)
+              .inFilter('uid', origUids).eq('profile_type', 'particulier');
+          for (final r in byUid as List) {
+            _profiles.putIfAbsent(r['uid'] as String, () => Map<String, dynamic>.from(r as Map));
+          }
+        } catch (_) {}
+      }
+
+      // Pour les reposts, les likes/commentaires sont sur l'ID original
+      String effectiveId(dynamic p) {
+        final m = p as Map;
+        return m['is_repost'] == true && m['original_post_id'] != null
+            ? m['original_post_id'] as String : m['id'] as String;
+      }
+      final allQueryIds = posts.map(effectiveId).toSet().toList();
+      // Stocke l'ID effectif dans le post pour usage dans itemBuilder
+      for (final post in posts) {
+        post['_effective_id'] = effectiveId(post);
+      }
+
       final allLikes = await _supa
           .from('post_likes')
           .select('post_id, uid')
-          .inFilter('post_id', postIds);
+          .inFilter('post_id', allQueryIds);
       final likeCounts = <String, int>{};
       _liked = {};
       for (final l in allLikes as List) {
@@ -850,7 +898,7 @@ class _FeedListState extends State<_FeedList>
       final allComments = await _supa
           .from('post_comments')
           .select('post_id')
-          .inFilter('post_id', postIds);
+          .inFilter('post_id', allQueryIds);
       final commentCounts = <String, int>{};
       for (final c in allComments as List) {
         final pid = c['post_id'] as String;
@@ -858,8 +906,9 @@ class _FeedListState extends State<_FeedList>
       }
 
       for (final post in posts) {
-        post['like_count']    = likeCounts[post['id']] ?? 0;
-        post['comment_count'] = commentCounts[post['id']] ?? 0;
+        final eid = post['_effective_id'] as String;
+        post['like_count']    = likeCounts[eid] ?? 0;
+        post['comment_count'] = commentCounts[eid] ?? 0;
       }
 
       if (mounted) {
@@ -1000,24 +1049,40 @@ class _FeedListState extends State<_FeedList>
         itemCount: _posts.length,
         separatorBuilder: (_, __) => const SizedBox(height: 14),
         itemBuilder: (_, i) {
-          final post   = _posts[i];
-          final postId = post['id'] as String;
-          return _SocialPostCard(
+          final post        = _posts[i];
+          final postId      = post['id'] as String;
+          final effectiveId = post['_effective_id'] as String? ?? postId;
+          final isRepost    = post['is_repost'] == true;
+          final reposterUid = post['uid'] as String;
+          final originalUid = isRepost ? (post['original_uid'] as String? ?? reposterUid) : reposterUid;
+          final reposterProfile = isRepost ? _profiles[reposterUid] : null;
+          final displayProfile  = _profiles[originalUid];
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            if (isRepost) Padding(
+              padding: const EdgeInsets.only(left: 14, bottom: 6),
+              child: Row(children: [
+                const Icon(Icons.repeat_rounded, size: 13, color: _greyC),
+                const SizedBox(width: 5),
+                Text('${_profileName(reposterProfile)} a republié',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _greyC)),
+              ]),
+            ),
+            _SocialPostCard(
             post: post,
-            profile: _profiles[post['uid']],
-            isLiked: _liked.contains(postId),
-            isFollowing: _following.contains(post['uid'] as String),
-            isMyPost: post['uid'] == widget.myUid,
+            profile: displayProfile,
+            isLiked: _liked.contains(effectiveId),
+            isFollowing: _following.contains(originalUid),
+            isMyPost: originalUid == widget.myUid,
             myUid: widget.myUid,
-            onLike: () => _toggleLike(postId),
-            onFollow: () => _toggleFollow(post['uid'] as String),
+            onLike: () => _toggleLike(effectiveId),
+            onFollow: () => _toggleFollow(originalUid),
             onDelete: () => _deletePost(postId),
             onComment: () => showModalBottomSheet(
               context: context,
               isScrollControlled: true,
               backgroundColor: Colors.transparent,
               builder: (_) => _CommentsSheet(
-                postId: postId,
+                postId: effectiveId,
                 myUid: widget.myUid,
                 onCommentAdded: () => setState(() {
                   final idx = _posts.indexWhere((p) => p['id'] == postId);
@@ -1028,7 +1093,8 @@ class _FeedListState extends State<_FeedList>
                 }),
               ),
             ),
-          );
+          ),
+          ]);
         },
       ),
     );
@@ -1067,8 +1133,150 @@ class _SocialPostCard extends StatefulWidget {
 }
 
 class _SocialPostCardState extends State<_SocialPostCard> {
+  final _supa = Supabase.instance.client;
   bool _showHeart = false;
   String? _boostedUntilOverride;
+  bool _isSaved = false;
+  bool _isReposted = false;
+  int _repostCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSaved();
+    _loadRepostCount();
+  }
+
+  String get _effectivePostId {
+    if (widget.post['_effective_id'] != null) return widget.post['_effective_id'] as String;
+    if (widget.post['is_repost'] == true && widget.post['original_post_id'] != null) {
+      return widget.post['original_post_id'] as String;
+    }
+    return widget.post['id'] as String;
+  }
+
+  Future<void> _loadSaved() async {
+    try {
+      final row = await _supa.from('post_favorites')
+          .select('id').eq('uid', widget.myUid).eq('post_id', _effectivePostId).maybeSingle();
+      if (mounted) setState(() => _isSaved = row != null);
+    } catch (_) {}
+  }
+
+  Future<void> _loadRepostCount() async {
+    try {
+      final rows = await _supa.from('posts_socialmedia')
+          .select('id, uid')
+          .eq('original_post_id', _effectivePostId)
+          .eq('is_repost', true);
+      final list = rows as List;
+      if (mounted) setState(() {
+        _repostCount = list.length;
+        _isReposted = list.any((r) => r['uid'] == widget.myUid);
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _toggleSave() async {
+    final eid = _effectivePostId;
+    HapticFeedback.lightImpact();
+    final newVal = !_isSaved;
+    setState(() => _isSaved = newVal);
+    try {
+      if (newVal) {
+        await _supa.from('post_favorites').insert({'uid': widget.myUid, 'post_id': eid});
+      } else {
+        await _supa.from('post_favorites').delete().eq('uid', widget.myUid).eq('post_id', eid);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isSaved = !newVal);
+    }
+  }
+
+  Future<void> _share() async {
+    try {
+      final text = widget.post['texte']?.toString() ?? '';
+      final name = _profileName(widget.profile);
+      final content = text.isNotEmpty ? '"$text"\n\n— $name sur Pets Social' : '— $name sur Pets Social';
+      if (content.isEmpty) return;
+      await Share.share(content);
+    } catch (_) {}
+  }
+
+  Future<void> _repost() async {
+    if (_isReposted) {
+      // Annuler la republication
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: const Color(0xFF0C3535),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Annuler la republication ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
+          content: const Text('Ce post ne sera plus dans le feed de tes abonnés.', style: TextStyle(fontFamily: 'Galey', color: Colors.white70, fontSize: 13)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false),
+                child: Text('Garder', style: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.5)))),
+            TextButton(onPressed: () => Navigator.pop(context, true),
+                child: const Text('Annuler la repub.', style: TextStyle(fontFamily: 'Galey', color: Colors.redAccent, fontWeight: FontWeight.w700))),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      try {
+        final origId = widget.post['is_repost'] == true
+            ? (widget.post['original_post_id'] as String)
+            : (widget.post['id'] as String);
+        await _supa.from('posts_socialmedia')
+            .delete()
+            .eq('uid', widget.myUid)
+            .eq('original_post_id', origId)
+            .eq('is_repost', true);
+        setState(() { _isReposted = false; if (_repostCount > 0) _repostCount--; });
+        HapticFeedback.lightImpact();
+      } catch (_) {}
+    } else {
+      // Republier (1 seule fois)
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: const Color(0xFF0C3535),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Republier ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
+          content: const Text('Ce post sera partagé à tes abonnés.', style: TextStyle(fontFamily: 'Galey', color: Colors.white70, fontSize: 13)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false),
+                child: Text('Annuler', style: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.5)))),
+            TextButton(onPressed: () => Navigator.pop(context, true),
+                child: const Text('Republier', style: TextStyle(fontFamily: 'Galey', color: _green, fontWeight: FontWeight.w700))),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      try {
+        final orig = widget.post;
+        // Si c'est déjà un repost, pointer vers l'original (pas un repost de repost)
+        final origId  = orig['is_repost'] == true ? (orig['original_post_id'] as String) : (orig['id'] as String);
+        final origUid = orig['is_repost'] == true ? (orig['original_uid'] as String) : (orig['uid'] as String);
+        await _supa.from('posts_socialmedia').insert({
+          'uid': widget.myUid,
+          'texte': orig['texte'],
+          'media_url': orig['media_url'],
+          'is_repost': true,
+          'original_post_id': origId,
+          'original_uid': origUid,
+        });
+        setState(() { _isReposted = true; _repostCount++; });
+        HapticFeedback.mediumImpact();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Post republié !', style: TextStyle(fontFamily: 'Galey')),
+            backgroundColor: Color(0xFF0C5C6C),
+            behavior: SnackBarBehavior.floating,
+          ));
+        }
+      } catch (_) {}
+    }
+  }
 
   void _doubleTapLike() {
     if (!widget.isLiked) widget.onLike();
@@ -1400,22 +1608,21 @@ class _SocialPostCardState extends State<_SocialPostCard> {
                                     if (widget.profile?['profile_type'] == 'eleveur') ...[
                                       const SizedBox(width: 6),
                                       Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          gradient: const LinearGradient(
-                                              colors: [_tealC, Color(0xFF1E7A8C)]),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: const Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(Icons.verified, size: 9, color: Colors.white),
-                                              SizedBox(width: 3),
-                                              Text('Pro', style: TextStyle(
-                                                  fontFamily: 'Galey', fontSize: 9,
-                                                  color: Colors.white, fontWeight: FontWeight.w700)),
-                                            ]),
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(gradient: const LinearGradient(colors: [_tealC, Color(0xFF1E7A8C)]), borderRadius: BorderRadius.circular(8)),
+                                        child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                                          Icon(Icons.verified, size: 9, color: Colors.white),
+                                          SizedBox(width: 3),
+                                          Text('Pro', style: TextStyle(fontFamily: 'Galey', fontSize: 9, color: Colors.white, fontWeight: FontWeight.w700)),
+                                        ]),
+                                      ),
+                                    ],
+                                    if (widget.profile?['is_influencer'] == true) ...[
+                                      const SizedBox(width: 4),
+                                      Container(
+                                        padding: const EdgeInsets.all(3),
+                                        decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF6E9E57), Color(0xFF0C5C6C)]), shape: BoxShape.circle),
+                                        child: const Icon(Icons.auto_awesome, size: 9, color: Colors.white),
                                       ),
                                     ],
                                     if (_isBoosted(widget.post['boosted_until']?.toString())) ...[
@@ -1519,15 +1726,33 @@ class _SocialPostCardState extends State<_SocialPostCard> {
                   child: Row(children: [
                     _ActionBtn(
                       icon: widget.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                      label: likeCount > 0 ? '$likeCount' : 'J\'aime',
+                      label: likeCount > 0 ? '$likeCount' : '',
                       color: widget.isLiked ? const Color(0xFFE03055) : _greyC,
                       onTap: widget.onLike,
                     ),
                     _ActionBtn(
                       icon: Icons.chat_bubble_outline_rounded,
-                      label: commentCount > 0 ? '$commentCount' : 'Commenter',
+                      label: commentCount > 0 ? '$commentCount' : '',
                       color: _greyC,
                       onTap: widget.onComment,
+                    ),
+                    _ActionBtn(
+                      icon: Icons.repeat_rounded,
+                      label: _repostCount > 0 ? '$_repostCount' : '',
+                      color: _isReposted ? _tealC : _greyC,
+                      onTap: _repost,
+                    ),
+                    _ActionBtn(
+                      icon: _isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                      label: '',
+                      color: _isSaved ? _tealC : _greyC,
+                      onTap: _toggleSave,
+                    ),
+                    _ActionBtn(
+                      icon: Icons.ios_share_rounded,
+                      label: '',
+                      color: _greyC,
+                      onTap: _share,
                     ),
                   ]),
                 ),
@@ -1942,15 +2167,17 @@ class _ActionBtn extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(icon, size: 20, color: color),
-              const SizedBox(width: 6),
-              Text(label,
-                  style: TextStyle(
-                      fontFamily: 'Galey',
-                      fontSize: 13,
-                      color: color,
-                      fontWeight: FontWeight.w600)),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 22, color: color),
+              if (label.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(label,
+                    style: TextStyle(
+                        fontFamily: 'Galey',
+                        fontSize: 11,
+                        color: color,
+                        fontWeight: FontWeight.w600)),
+              ],
             ]),
           ),
         ),
@@ -2258,16 +2485,43 @@ class _CommentsSheetState extends State<_CommentsSheet> {
             borderRadius: BorderRadius.circular(2),
           ),
         ),
-        const SizedBox(height: 16),
-        ShaderMask(
-          shaderCallback: (b) =>
-              const LinearGradient(colors: [_tealC, _green]).createShader(b),
-          child: const Text('Commentaires',
-              style: TextStyle(
-                  fontFamily: 'Galey',
-                  fontWeight: FontWeight.w700,
-                  fontSize: 17,
-                  color: Colors.white)),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(children: [
+            const SizedBox(width: 38),
+            Expanded(
+              child: ShaderMask(
+                shaderCallback: (b) =>
+                    const LinearGradient(colors: [_tealC, _green]).createShader(b),
+                child: const Text('Commentaires',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontFamily: 'Galey',
+                        fontWeight: FontWeight.w700,
+                        fontSize: 17,
+                        color: Colors.white)),
+              ),
+            ),
+            GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                  child: Container(
+                    width: 30, height: 30,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
+                    ),
+                    child: const Icon(Icons.close_rounded, color: Colors.white70, size: 16),
+                  ),
+                ),
+              ),
+            ),
+          ]),
         ),
         const SizedBox(height: 12),
         Divider(height: 1, color: Colors.white.withValues(alpha: 0.10)),
@@ -2425,18 +2679,23 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                                       CrossAxisAlignment
                                                           .start,
                                                   children: [
-                                                    Text(
-                                                        _profileName(prof),
-                                                        style: TextStyle(
-                                                            fontFamily:
-                                                                'Galey',
-                                                            fontWeight:
-                                                                FontWeight.w700,
-                                                            fontSize:
-                                                                isReply
-                                                                    ? 11
-                                                                    : 12,
-                                                            color: _green)),
+                                                    Row(children: [
+                                                      Text(
+                                                          _profileName(prof),
+                                                          style: TextStyle(
+                                                              fontFamily: 'Galey',
+                                                              fontWeight: FontWeight.w700,
+                                                              fontSize: isReply ? 11 : 12,
+                                                              color: _green)),
+                                                      if (prof?['is_influencer'] == true) ...[
+                                                        const SizedBox(width: 4),
+                                                        Container(
+                                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                          decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF6E9E57), Color(0xFF0C5C6C)]), borderRadius: BorderRadius.circular(6)),
+                                                          child: const Icon(Icons.auto_awesome, size: 8, color: Colors.white),
+                                                        ),
+                                                      ],
+                                                    ]),
                                                     const SizedBox(height: 3),
                                                     commentText(),
                                                   ]),
@@ -2516,6 +2775,12 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                               fontSize: 11,
                                               color: Colors.white.withValues(alpha: 0.40))),
                                     ),
+                                    if ((c['created_at'] as String?) != null)
+                                      Text('  · ${_fmtDate(c['created_at'] as String)}',
+                                          style: TextStyle(
+                                              fontFamily: 'Galey',
+                                              fontSize: 10,
+                                              color: Colors.white.withValues(alpha: 0.30))),
                                     if (cUid == widget.myUid)
                                       Text('  · Maintenir pour supprimer',
                                           style: TextStyle(
@@ -2901,6 +3166,7 @@ class _SearchSheetState extends State<_SearchSheet> {
   final _ctrl    = TextEditingController();
   List<Map<String, dynamic>> _results = [];
   Set<String> _following = {};
+  Map<String, String?> _rings = {}; // uid → ring style
   bool  _searching = false;
   Timer? _debounce;
 
@@ -2945,9 +3211,25 @@ class _SearchSheetState extends State<_SearchSheet> {
           .eq('profile_type', 'particulier')
           .neq('uid', widget.myUid)
           .limit(20);
+      final results = (rows as List).cast<Map<String, dynamic>>();
+
+      // Fetch rings pour afficher les contours custom
+      Map<String, String?> rings = {};
+      if (results.isNotEmpty) {
+        final uids = results.map((r) => r['uid'] as String).toList();
+        final cosRows = await _supa.from('user_cosmetics')
+            .select('uid, cosmetic_type, active_value')
+            .inFilter('uid', uids)
+            .eq('cosmetic_type', 'avatar_ring');
+        for (final c in cosRows as List) {
+          rings[c['uid'] as String] = c['active_value'] as String?;
+        }
+      }
+
       if (mounted) {
         setState(() {
-          _results   = (rows as List).cast<Map<String, dynamic>>();
+          _results   = results;
+          _rings     = rings;
           _searching = false;
         });
       }
@@ -3062,7 +3344,14 @@ class _SearchSheetState extends State<_SearchSheet> {
                         final photo = _profilePhoto(r);
                         final isPro = r['profile_type'] == 'eleveur';
                         final isFollowing = _following.contains(uid);
-                        return Padding(
+                        final ringStyle = _rings[uid];
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => SocialProfilePage(targetUid: uid, myUid: widget.myUid)));
+                          },
+                          child: Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(16),
@@ -3080,7 +3369,7 @@ class _SearchSheetState extends State<_SearchSheet> {
                                           .withValues(alpha: 0.15)),
                                 ),
                                 child: Row(children: [
-                                  _avatarWidget(photo, 20),
+                                  _avatarWidget(photo, 20, ringStyle: ringStyle),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: Column(
@@ -3146,7 +3435,7 @@ class _SearchSheetState extends State<_SearchSheet> {
                               ),
                             ),
                           ),
-                        );
+                        ));
                       },
                     ),
         ),
@@ -3170,6 +3459,9 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
 
   Map<String, dynamic>? _profile;
   List<Map<String, dynamic>> _posts = [];
+  List<Map<String, dynamic>> _repostPosts = [];
+  List<Map<String, dynamic>> _savedPosts = [];
+  int _selectedTab = 0;
   int _followersCount = 0;
   int _followingCount = 0;
   bool _isFollowing = false;
@@ -3178,6 +3470,8 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
   String? _activeBanner;
   List<String> _ownedRings = [];
   List<String> _ownedBanners = [];
+  List<Map<String, String?>> _mutualProfiles = [];
+  int _mutualTotal = 0;
 
   bool get _isMyProfile => widget.targetUid == widget.myUid;
 
@@ -3244,15 +3538,75 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
       if (t == 'profile_banner') { banner = val; ownedBanners = owned; }
     }
 
+    // Abonnés communs : followers du profil cible qui sont aussi suivis par moi
+    List<Map<String, String?>> mutualProfiles = [];
+    int mutualTotal = 0;
+    if (!_isMyProfile) {
+      try {
+        final targetFollowerUids = (results[2] as List)
+            .map((r) => r['follower_uid'] as String)
+            .toSet();
+        final myFollowingRows = await _supa.from('follows')
+            .select('following_uid')
+            .eq('follower_uid', widget.myUid);
+        final myFollowingUids = (myFollowingRows as List)
+            .map((r) => r['following_uid'] as String)
+            .toSet();
+        final commonUids = targetFollowerUids.intersection(myFollowingUids).toList();
+        mutualTotal = commonUids.length;
+        if (commonUids.isNotEmpty) {
+          final sample = commonUids.take(6).toList();
+          final profRows = await _supa.from('user_profiles')
+              .select('uid, firstname, lastname, nom, avatar_url')
+              .inFilter('uid', sample);
+          final seen = <String>{};
+          for (final r in profRows as List) {
+            final uid = r['uid'] as String;
+            if (seen.contains(uid)) continue;
+            seen.add(uid);
+            final fn  = r['firstname'] as String? ?? '';
+            final nom = r['nom'] as String? ?? '';
+            final ln  = r['lastname'] as String? ?? '';
+            final name = fn.isNotEmpty ? fn : (nom.isNotEmpty ? nom : ln);
+            if (name.isNotEmpty) {
+              mutualProfiles.add({'name': name, 'avatar': r['avatar_url'] as String?});
+            }
+            if (mutualProfiles.length >= 3) break;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Favoris (seulement si c'est mon profil)
+    List<Map<String, dynamic>> savedPosts = [];
+    if (widget.targetUid == widget.myUid) {
+      try {
+        final favRows = await _supa.from('post_favorites')
+            .select('post_id').eq('uid', widget.myUid);
+        final postIds = (favRows as List).map((r) => r['post_id'] as String).toList();
+        if (postIds.isNotEmpty) {
+          final favPosts = await _supa.from('posts_socialmedia')
+              .select().inFilter('id', postIds).order('created_at', ascending: false);
+          savedPosts = (favPosts as List).cast<Map<String, dynamic>>();
+        }
+      } catch (_) {}
+    }
+
+    final allPosts = (results[1] as List).cast<Map<String, dynamic>>();
+
     if (mounted) {
       setState(() {
         _profile = results[0] as Map<String, dynamic>?;
-        _posts = (results[1] as List).cast<Map<String, dynamic>>();
+        _posts = allPosts.where((p) => p['is_repost'] != true).toList();
+        _repostPosts = allPosts.where((p) => p['is_repost'] == true).toList();
+        _savedPosts = savedPosts;
         _followersCount = (results[2] as List).length;
         _followingCount = (results[3] as List).length;
         _isFollowing = followCheck != null;
         _activeRing = ring; _activeBanner = banner;
         _ownedRings = ownedRings; _ownedBanners = ownedBanners;
+        _mutualProfiles = mutualProfiles;
+        _mutualTotal = mutualTotal;
         _loading = false;
       });
     }
@@ -3270,6 +3624,14 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
       await _insertFollow(widget.myUid, widget.targetUid);
       setState(() { _isFollowing = true; _followersCount++; });
     }
+  }
+
+  String _buildMutualText() {
+    final names = _mutualProfiles.map((p) => p['name'] ?? '').toList();
+    final extra = _mutualTotal - names.length;
+    final joined = names.join(', ');
+    if (extra <= 0) return 'Suivi par $joined';
+    return 'Suivi par $joined et $extra autre${extra > 1 ? 's' : ''}';
   }
 
   @override
@@ -3357,6 +3719,14 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
                           ]),
                         ),
                       ],
+                      if (_profile?['is_influencer'] == true) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF6E9E57), Color(0xFF0C5C6C)]), shape: BoxShape.circle),
+                          child: const Icon(Icons.auto_awesome, size: 11, color: Colors.white),
+                        ),
+                      ],
                     ]),
                     const SizedBox(height: 20),
 
@@ -3391,6 +3761,49 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
                     ),
                     const SizedBox(height: 16),
 
+                    // ── Abonnés communs ─────────────────────────────
+                    if (!_isMyProfile && _mutualProfiles.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          // Mini avatars empilés
+                          SizedBox(
+                            width: 26.0 + (_mutualProfiles.length - 1) * 18.0,
+                            height: 28,
+                            child: Stack(
+                              children: List.generate(_mutualProfiles.length, (i) {
+                                final av = _mutualProfiles[i]['avatar'];
+                                return Positioned(
+                                  left: i * 18.0,
+                                  child: Container(
+                                    width: 28, height: 28,
+                                    padding: const EdgeInsets.all(1.5),
+                                    decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: LinearGradient(colors: [_tealC, _green]),
+                                    ),
+                                    child: ClipOval(child: av != null && av.isNotEmpty
+                                        ? Image.network(av, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const ColoredBox(color: Color(0xFF1A4A50)))
+                                        : const ColoredBox(color: Color(0xFF1A4A50), child: Icon(Icons.pets_outlined, size: 12, color: Colors.white54))),
+                                  ),
+                                );
+                              }),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(child: Text(
+                            _buildMutualText(),
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white54),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          )),
+                        ]),
+                      ),
+                      const SizedBox(height: 12),
+                    ] else
+                      const SizedBox(height: 16),
+
                     // ── Bouton suivre / mon profil ──────────────────
                     if (!_isMyProfile)
                       GestureDetector(
@@ -3416,50 +3829,111 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
                   ]),   // Column
                 ])),    // Stack + SliverToBoxAdapter
 
-                  // ── Grille posts ────────────────────────────────────
-                  _posts.isEmpty
-                      ? SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.all(48),
-                            child: Center(
-                              child: Text(_isMyProfile ? 'Tu n\'as pas encore posté' : 'Aucun post',
-                                  style: const TextStyle(fontFamily: 'Galey', color: Colors.white60, fontSize: 15)),
-                            ),
-                          ),
-                        )
-                      : SliverGrid(
-                          delegate: SliverChildBuilderDelegate(
-                            (_, i) {
-                              final post = _posts[i];
-                              final urls = _mediaUrls(post['media_url']?.toString());
-                              final thumb = urls.isNotEmpty ? urls.first : null;
-                              return GestureDetector(
-                                onTap: () => showModalBottomSheet(
-                                  context: context, isScrollControlled: true,
-                                  backgroundColor: Colors.transparent,
-                                  builder: (_) => _PostDetailSheet(post: post, myUid: widget.myUid)),
-                                child: Container(
-                                  margin: const EdgeInsets.all(1.5),
-                                  decoration: BoxDecoration(color: const Color(0xFF1A3A42)),
-                                  child: thumb != null
-                                      ? Image.network(thumb, fit: BoxFit.cover)
-                                      : Center(child: Text(post['texte']?.toString() ?? '',
-                                          style: const TextStyle(fontFamily: 'Galey', color: Colors.white70, fontSize: 11),
-                                          maxLines: 4, overflow: TextOverflow.ellipsis,
-                                          textAlign: TextAlign.center)),
-                                ),
-                              );
-                            },
-                            childCount: _posts.length,
-                          ),
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3, mainAxisSpacing: 0, crossAxisSpacing: 0),
-                        ),
+                  // ── Barre d'onglets ─────────────────────────────────
+                  SliverToBoxAdapter(child: _buildProfileTabBar()),
+
+                  // ── Contenu selon onglet ─────────────────────────────
+                  ..._buildProfileContent(),
                 ]),
                 ),  // RefreshIndicator
         ),
       ]),
     );
+  }
+
+  Widget _buildProfileTabBar() {
+    final tabs = ['Posts', 'Reposts', if (_isMyProfile) 'Favoris'];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      child: Row(
+        children: List.generate(tabs.length, (i) {
+          final sel = _selectedTab == i;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedTab = i),
+              child: Container(
+                margin: EdgeInsets.only(right: i < tabs.length - 1 ? 8 : 0),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: sel ? Colors.white.withValues(alpha: 0.12) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  border: sel ? Border.all(color: Colors.white24) : null,
+                ),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text(tabs[i],
+                      style: TextStyle(
+                          fontFamily: 'Galey', fontSize: 13,
+                          fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
+                          color: sel ? Colors.white : Colors.white54),
+                      textAlign: TextAlign.center),
+                  if (sel) ...[
+                    const SizedBox(height: 4),
+                    Container(width: 20, height: 2,
+                        decoration: BoxDecoration(color: _green, borderRadius: BorderRadius.circular(1))),
+                  ],
+                ]),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  List<Widget> _buildProfileContent() {
+    final List<Map<String, dynamic>> posts = _selectedTab == 0
+        ? _posts
+        : _selectedTab == 1
+            ? _repostPosts
+            : _savedPosts;
+
+    final emptyMsg = _selectedTab == 0
+        ? (_isMyProfile ? 'Tu n\'as pas encore posté' : 'Aucun post')
+        : _selectedTab == 1
+            ? 'Aucune republication'
+            : 'Aucun favori';
+
+    if (posts.isEmpty) {
+      return [SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.all(48),
+          child: Center(child: Text(emptyMsg,
+              style: const TextStyle(fontFamily: 'Galey', color: Colors.white60, fontSize: 15))),
+        ),
+      )];
+    }
+
+    return [SliverGrid(
+      delegate: SliverChildBuilderDelegate(
+        (_, i) {
+          final post = posts[i];
+          final urls = _mediaUrls(post['media_url']?.toString());
+          final thumb = urls.isNotEmpty ? urls.first : null;
+          return GestureDetector(
+            onTap: () => showDialog(
+              context: context,
+              barrierColor: Colors.black87,
+              builder: (_) => Dialog(
+                backgroundColor: Colors.transparent,
+                insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 48),
+                child: _PostDetailSheet(post: post, myUid: widget.myUid),
+              )),
+            child: Container(
+              margin: const EdgeInsets.all(1.5),
+              decoration: const BoxDecoration(color: Color(0xFF1A3A42)),
+              child: thumb != null
+                  ? Image.network(thumb, fit: BoxFit.cover)
+                  : Center(child: Text(post['texte']?.toString() ?? '',
+                      style: const TextStyle(fontFamily: 'Galey', color: Colors.white70, fontSize: 11),
+                      maxLines: 4, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center)),
+            ),
+          );
+        },
+        childCount: posts.length,
+      ),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3, mainAxisSpacing: 0, crossAxisSpacing: 0),
+    )];
   }
 
   Widget _statCol(String label, int count) {
@@ -3594,36 +4068,55 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
                             final name = _profileName(prof);
                             final photo = _profilePhoto(prof);
                             final isFollow = n['type'] == 'follow';
-                            return ListTile(
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                              leading: GestureDetector(
-                                onTap: () {
-                                  final uid = prof?['uid'] as String?;
-                                  if (uid == null) return;
-                                  Navigator.push(context, MaterialPageRoute(
-                                    builder: (_) => SocialProfilePage(targetUid: uid, myUid: widget.myUid)));
-                                },
-                                child: _avatarWidget(photo, 22),
+                            final date = n['created_at'] as String? ?? '';
+                            return Dismissible(
+                              key: ValueKey('${n['type']}_${n['created_at']}_${prof?['uid']}'),
+                              direction: DismissDirection.endToStart,
+                              onDismissed: (_) => setState(() => _notifs.removeAt(i)),
+                              background: Container(
+                                alignment: Alignment.centerRight,
+                                padding: const EdgeInsets.only(right: 20),
+                                color: Colors.red.shade700,
+                                child: const Icon(Icons.delete_outline_rounded, color: Colors.white, size: 22),
                               ),
-                              title: RichText(text: TextSpan(
-                                style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white),
-                                children: [
-                                  TextSpan(text: name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                                  TextSpan(text: isFollow ? ' a commencé à vous suivre' : ' a commenté votre post'),
-                                ],
-                              )),
-                              subtitle: isFollow
-                                  ? null
-                                  : Text('"${() { final t = n['texte'] as String? ?? ''; return t.length > 50 ? '${t.substring(0, 50)}…' : t; }()}"',
-                                      style: const TextStyle(fontFamily: 'Galey', color: Colors.white54, fontSize: 12)),
-                              trailing: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(colors: [_tealC, _green]),
-                                  shape: BoxShape.circle,
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                leading: GestureDetector(
+                                  onTap: () {
+                                    final uid = prof?['uid'] as String?;
+                                    if (uid == null) return;
+                                    Navigator.push(context, MaterialPageRoute(
+                                      builder: (_) => SocialProfilePage(targetUid: uid, myUid: widget.myUid)));
+                                  },
+                                  child: _avatarWidget(photo, 22),
                                 ),
-                                child: Icon(isFollow ? Icons.person_add_rounded : Icons.chat_bubble_outline_rounded,
-                                    color: Colors.white, size: 14),
+                                title: RichText(text: TextSpan(
+                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white),
+                                  children: [
+                                    TextSpan(text: name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                    TextSpan(text: isFollow ? ' a commencé à te suivre' : ' a commenté ton post'),
+                                  ],
+                                )),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    if (!isFollow)
+                                      Text('"${() { final t = n['texte'] as String? ?? ''; return t.length > 50 ? '${t.substring(0, 50)}…' : t; }()}"',
+                                          style: const TextStyle(fontFamily: 'Galey', color: Colors.white54, fontSize: 12)),
+                                    if (date.isNotEmpty)
+                                      Text(_fmtDate(date),
+                                          style: const TextStyle(fontFamily: 'Galey', color: Colors.white30, fontSize: 11)),
+                                  ],
+                                ),
+                                trailing: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(colors: [_tealC, _green]),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(isFollow ? Icons.person_add_rounded : Icons.chat_bubble_outline_rounded,
+                                      color: Colors.white, size: 14),
+                                ),
                               ),
                             );
                           },
@@ -3649,148 +4142,119 @@ class _PostDetailSheet extends StatefulWidget {
 class _PostDetailSheetState extends State<_PostDetailSheet> {
   final _supa = Supabase.instance.client;
   Map<String, dynamic>? _profile;
-  bool _isLiked = false;
+  bool _isLiked    = false;
   bool _isFollowing = false;
-  int  _likeCount = 0;
-  int  _commentCount = 0;
+  bool _loading    = true;
+
+  String get _effectiveId {
+    if (widget.post['_effective_id'] != null) return widget.post['_effective_id'] as String;
+    if (widget.post['is_repost'] == true && widget.post['original_post_id'] != null) {
+      return widget.post['original_post_id'] as String;
+    }
+    return widget.post['id'] as String;
+  }
+
+  String get _authorUid {
+    if (widget.post['is_repost'] == true && widget.post['original_uid'] != null) {
+      return widget.post['original_uid'] as String;
+    }
+    return widget.post['uid'] as String;
+  }
 
   @override
   void initState() {
     super.initState();
-    _likeCount = widget.post['like_count'] as int? ?? 0;
-    _commentCount = widget.post['comment_count'] as int? ?? 0;
     _loadProfile();
   }
 
   Future<void> _loadProfile() async {
-    final uid = widget.post['uid'] as String;
+    final uid = _authorUid;
     final authorPid = widget.post['author_profile_id'] as String?;
     final profQ = authorPid != null
         ? _supa.from('user_profiles').select(_kAuthorCols).eq('id', authorPid).maybeSingle()
         : _supa.from('user_profiles').select(_kAuthorCols)
             .eq('uid', uid).eq('profile_type', 'particulier').maybeSingle();
-    final results = await Future.wait([
+    final results = await Future.wait<dynamic>([
       profQ,
-      _supa.from('post_likes').select('uid').eq('post_id', widget.post['id'] as String).eq('uid', widget.myUid).maybeSingle(),
+      _supa.from('post_likes').select('uid').eq('post_id', _effectiveId).eq('uid', widget.myUid).maybeSingle(),
       _supa.from('follows').select('follower_uid').eq('follower_uid', widget.myUid).eq('following_uid', uid).maybeSingle(),
+      _supa.from('post_likes').select('uid').eq('post_id', _effectiveId),
+      _supa.from('post_comments').select('id').eq('post_id', _effectiveId),
     ]);
     if (mounted) {
+      widget.post['like_count']    = (results[3] as List).length;
+      widget.post['comment_count'] = (results[4] as List).length;
       setState(() {
-        _profile = (results[0] as Map?)?.cast<String, dynamic>();
-        _isLiked = results[1] != null;
+        _profile     = (results[0] as Map?)?.cast<String, dynamic>();
+        _isLiked     = results[1] != null;
         _isFollowing = results[2] != null;
+        _loading     = false;
       });
     }
   }
 
   Future<void> _toggleLike() async {
-    final postId = widget.post['id'] as String;
     if (_isLiked) {
-      await _supa.from('post_likes').delete().eq('post_id', postId).eq('uid', widget.myUid);
-      setState(() { _isLiked = false; _likeCount--; });
+      await _supa.from('post_likes').delete().eq('post_id', _effectiveId).eq('uid', widget.myUid);
+      setState(() {
+        _isLiked = false;
+        widget.post['like_count'] = ((widget.post['like_count'] as int?) ?? 1) - 1;
+      });
     } else {
-      await _insertLike(postId, widget.myUid);
-      setState(() { _isLiked = true; _likeCount++; });
+      await _insertLike(_effectiveId, widget.myUid);
+      setState(() {
+        _isLiked = true;
+        widget.post['like_count'] = ((widget.post['like_count'] as int?) ?? 0) + 1;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final name = _profileName(_profile);
-    final photo = _profilePhoto(_profile);
-    final text = widget.post['texte']?.toString() ?? '';
-    final urls = _mediaUrls(widget.post['media_url']?.toString());
-    final date = widget.post['created_at']?.toString() ?? '';
-    return DraggableScrollableSheet(
-      initialChildSize: 0.90, minChildSize: 0.5, maxChildSize: 0.95,
-      builder: (_, ctrl) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF0C3535),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    if (_loading) {
+      return Container(
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
+        height: 220,
+        child: const Center(child: CircularProgressIndicator(color: _tealC)),
+      );
+    }
+    // Column(min) empêche le card de s'étirer à toute la hauteur du dialog
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _SocialPostCard(
+          post: widget.post,
+          profile: _profile,
+          isLiked: _isLiked,
+          isFollowing: _isFollowing,
+          isMyPost: _authorUid == widget.myUid,
+          myUid: widget.myUid,
+          onLike: _toggleLike,
+          onFollow: () async {
+            final uid = _authorUid;
+            if (_isFollowing) {
+              await _supa.from('follows').delete()
+                  .eq('follower_uid', widget.myUid).eq('following_uid', uid);
+              setState(() => _isFollowing = false);
+            } else {
+              await _insertFollow(widget.myUid, uid);
+              setState(() => _isFollowing = true);
+            }
+          },
+          onDelete: () => Navigator.pop(context),
+          onComment: () => showModalBottomSheet(
+            context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+            builder: (_) => _CommentsSheet(
+              postId: _effectiveId,
+              myUid: widget.myUid,
+              onCommentAdded: () => setState(() {
+                widget.post['comment_count'] = ((widget.post['comment_count'] as int?) ?? 0) + 1;
+              }))),
         ),
-        child: Column(children: [
-          const SizedBox(height: 8),
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 12),
-          // Header
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(children: [
-              GestureDetector(
-                onTap: () { Navigator.pop(context); Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => SocialProfilePage(targetUid: widget.post['uid'] as String, myUid: widget.myUid))); },
-                child: _avatarWidget(photo, 20),
-              ),
-              const SizedBox(width: 10),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(name, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white)),
-                Text(_fmtDate(date), style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white54)),
-              ])),
-              if (widget.post['uid'] != widget.myUid)
-                GestureDetector(
-                  onTap: () async {
-                    final uid = widget.post['uid'] as String;
-                    if (_isFollowing) {
-                      await _supa.from('follows').delete().eq('follower_uid', widget.myUid).eq('following_uid', uid);
-                      setState(() => _isFollowing = false);
-                    } else {
-                      await _insertFollow(widget.myUid, uid);
-                      setState(() => _isFollowing = true);
-                    }
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    decoration: BoxDecoration(
-                      gradient: _isFollowing ? null : const LinearGradient(colors: [_tealC, _green]),
-                      color: _isFollowing ? Colors.white12 : null,
-                      borderRadius: BorderRadius.circular(20),
-                      border: _isFollowing ? Border.all(color: Colors.white24) : null,
-                    ),
-                    child: Text(_isFollowing ? 'Suivi ✓' : 'Suivre',
-                        style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
-                  ),
-                ),
-            ]),
-          ),
-          const SizedBox(height: 12),
-          Expanded(child: SingleChildScrollView(
-            controller: ctrl,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              if (text.isNotEmpty) Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(text, style: const TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.white, height: 1.5)),
-              ),
-              if (urls.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                _ImagesDisplay(urls: urls),
-              ],
-              const SizedBox(height: 16),
-            ]),
-          )),
-          // Actions
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-            child: Row(children: [
-              _ActionBtn(
-                icon: _isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                label: _likeCount > 0 ? '$_likeCount' : 'J\'aime',
-                color: _isLiked ? const Color(0xFFE03055) : _greyC,
-                onTap: _toggleLike,
-              ),
-              _ActionBtn(
-                icon: Icons.chat_bubble_outline_rounded,
-                label: _commentCount > 0 ? '$_commentCount' : 'Commenter',
-                color: _greyC,
-                onTap: () => showModalBottomSheet(
-                  context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
-                  builder: (_) => _CommentsSheet(postId: widget.post['id'] as String, myUid: widget.myUid, onCommentAdded: () => setState(() => _commentCount++))),
-              ),
-            ]),
-          ),
-        ]),
-      ),
+      ],
     );
   }
+
 }
 
 // ─── Liste abonnés / abonnements ─────────────────────────────────────────────

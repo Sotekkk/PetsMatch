@@ -1,4 +1,5 @@
 import 'package:PetsMatch/pages/admin/annonces_admin.dart';
+import 'package:PetsMatch/pages/admin/influencer_admin_tab.dart';
 import 'package:PetsMatch/pages/admin/pro_list.dart';
 import 'package:PetsMatch/pages/admin/signalements_admin.dart';
 import 'package:PetsMatch/pages/admin/supabase_migration_page.dart';
@@ -25,6 +26,7 @@ class _AdminPanelState extends State<AdminPanel> {
   int _pendingSig = 0;
   int _suspectAnnonces = 0;
   int _pendingLieux = 0;
+  int _pendingInfluenceur = 0;
 
   late final List<Widget> _pages;
 
@@ -39,10 +41,12 @@ class _AdminPanelState extends State<AdminPanel> {
       const SignalementsAdmin(),
       const AnnoncesAdmin(),
       const LieuxAdminTab(),
+      const InfluenceurAdminTab(),
     ];
     _loadPendingSig();
     _loadSuspectAnnonces();
     _loadPendingLieux();
+    _loadPendingInfluenceur();
   }
 
   Future<void> _loadPendingSig() async {
@@ -62,6 +66,16 @@ class _AdminPanelState extends State<AdminPanel> {
           .select('id')
           .eq('statut', 'en_attente_validation');
       if (mounted) setState(() => _pendingLieux = (res as List).length);
+    } catch (_) {}
+  }
+
+  Future<void> _loadPendingInfluenceur() async {
+    try {
+      final res = await Supabase.instance.client
+          .from('influencer_requests')
+          .select('id')
+          .eq('statut', 'pending');
+      if (mounted) setState(() => _pendingInfluenceur = (res as List).length);
     } catch (_) {}
   }
 
@@ -121,6 +135,7 @@ class _AdminPanelState extends State<AdminPanel> {
           if (index == 4) _loadPendingSig();
           if (index == 5) _loadSuspectAnnonces();
           if (index == 6) _loadPendingLieux();
+          if (index == 7) _loadPendingInfluenceur();
         },
         items: [
           const BottomNavigationBarItem(
@@ -168,6 +183,16 @@ class _AdminPanelState extends State<AdminPanel> {
                   )
                 : const Icon(Icons.hotel_outlined),
             label: 'Lieux',
+          ),
+          BottomNavigationBarItem(
+            icon: _pendingInfluenceur > 0
+                ? Badge(
+                    label: Text('$_pendingInfluenceur',
+                        style: const TextStyle(fontSize: 10, fontFamily: 'Galey')),
+                    child: const Icon(Icons.auto_awesome),
+                  )
+                : const Icon(Icons.auto_awesome),
+            label: 'Influenceurs',
           ),
         ],
       ),
