@@ -93,6 +93,14 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   String _catPro = '';
   String? _selectedMotifKey; // pour les pros autres que vet/pension
 
+  // Garde à domicile : la pet-sitter autorise-t-elle les prestations qui se
+  // chevauchent (jusqu'à la capacité du jour) ? + réservation d'une garde-journée
+  // sur une plage de dates.
+  bool _gardeChevauchementOk = true;
+  DateTime? _gardeDebut;
+  DateTime? _gardeFin;
+  bool get _isGardeJournee => widget.isGarde && _selectedMotifKey == 'garde_journee';
+
   // Éducateur : un nouveau client ne peut réserver qu'un bilan tant qu'il
   // n'a pas eu de séance confirmée avec ce pro (sauf si le pro désactive
   // cette exigence dans son profil).
@@ -296,16 +304,17 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       final row = (widget.proProfileId != null && widget.proProfileId!.isNotEmpty)
           ? await Supabase.instance.client
               .from('user_profiles')
-              .select('durees_motifs, profile_type, cat_pro, education_bilan_requis, education_bilan_description, delai_min_reservation_h')
+              .select('durees_motifs, profile_type, cat_pro, education_bilan_requis, education_bilan_description, delai_min_reservation_h, garde_chevauchement_ok')
               .eq('id', widget.proProfileId!)
               .maybeSingle()
           : await Supabase.instance.client
               .from('users')
-              .select('durees_motifs, cat_pro')
+              .select('durees_motifs, cat_pro, garde_chevauchement_ok')
               .eq('uid', widget.proUid)
               .maybeSingle();
       if (row != null && mounted) {
         _catPro = row['profile_type']?.toString() ?? row['cat_pro']?.toString() ?? '';
+        _gardeChevauchementOk = row['garde_chevauchement_ok'] as bool? ?? true;
         if (row['durees_motifs'] is Map) {
           _dureesMotifs = Map<String, int>.from(
             (row['durees_motifs'] as Map).map((k, v) =>
@@ -421,7 +430,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       for (var page = 0; page < 6; page++) {
         final rows = await Supabase.instance.client
             .from('creneaux_pro')
-            .select('date, heure_debut, heure_fin, type_prestation')
+            .select('date, heure_debut, heure_fin, type_prestation, capacite')
             .eq('pro_uid', widget.proUid)
             .eq('statut', 'disponible')
             .eq('pro_profile_id', profileId)
@@ -441,13 +450,38 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     try {
       final rows = await Supabase.instance.client
           .from('rdv')
-          .select('date_heure, duree_minutes, statut, employe_id')
+          .select('date_heure, duree_minutes, statut, employe_id, motif')
           .eq('pro_uid', widget.proUid)
           .eq('pro_profile_id', profileId)
           .inFilter('statut', ['confirme', 'demande'])
           .gte('date_heure', now.toUtc().toIso8601String());
       _existingRdvs = (rows as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
     } catch (_) {}
+  }
+
+  /// Garde : capacité d'un jour = plus grande valeur `capacite` parmi les
+  /// créneaux disponibles de ce jour (défaut 1).
+  int _dayCapacity(String date) {
+    var cap = 1;
+    for (final slot in _availableSlots) {
+      if (slot['date'] != date) continue;
+      final c = (slot['capacite'] as num?)?.toInt() ?? 1;
+      if (c > cap) cap = c;
+    }
+    return cap;
+  }
+
+  /// Garde-journée : nb de gardes-journée déjà demandées/confirmées ce jour.
+  int _gardeJourneeCount(DateTime day) {
+    var n = 0;
+    for (final rdv in _existingRdvs) {
+      final m = (rdv['motif']?.toString() ?? '').toLowerCase();
+      if (m != 'garde journée' && m != 'garde_journee') continue;
+      final dh = DateTime.tryParse(rdv['date_heure'] as String? ?? '')?.toLocal();
+      if (dh == null) continue;
+      if (dh.year == day.year && dh.month == day.month && dh.day == day.day) n++;
+    }
+    return n;
   }
 
   // Créneaux intelligents : 15 min d'intervalle, en tenant compte des RDVs existants
@@ -516,11 +550,19 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       final available = <Map<String, dynamic>>[];
       final dp = date.split('-');
       final dayDate = DateTime(int.parse(dp[0]), int.parse(dp[1]), int.parse(dp[2]));
+      // Garde + chevauchement autorisé : la pet-sitter enchaîne les visites,
+      // deux prestations courtes peuvent se chevaucher → on n'exclut pas les
+      // horaires déjà pris (seuls les créneaux « bloqué » sont retirés, et ils
+      // ne sont pas chargés puisqu'on ne lit que statut='disponible').
+      final gardeOverlapAllowed = _catPro == 'garde' && _gardeChevauchementOk;
+
       for (final window in windows) {
         for (int t = window.startMin; t + duration <= window.endMin; t += 15) {
           // Ignorer les créneaux avant l'heure minimale réservable
           if (dayDate.add(Duration(minutes: t)).isBefore(earliestBookable)) continue;
-          final overlaps = blocked.any((b) => t < b.endMin && t + duration > b.startMin);
+          final overlaps = gardeOverlapAllowed
+              ? false
+              : blocked.any((b) => t < b.endMin && t + duration > b.startMin);
           if (!overlaps) {
             final h = t ~/ 60;
             final m = t % 60;
@@ -576,6 +618,14 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   Future<void> _submit() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+
+    // « Première fois ? » — obligatoire pour pension et garde.
+    if ((widget.isPension || widget.isGarde) && _premiereVisite == null) {
+      _snack('Indiquez s\'il s\'agit d\'une première fois', color: Colors.orange); return;
+    }
+
+    // Garde-journée : réservation sur une plage de dates (une ligne rdv/jour).
+    if (_isGardeJournee) { await _submitGardeJournee(uid); return; }
 
     // Validation créneau (tous les pros)
     if (_selectedSlot == null) {
@@ -718,7 +768,6 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           if (animalId != null && animalId.isNotEmpty) 'animal_id': animalId,
           'date_heure': dh.toIso8601String(),
           'motif':      motif,
-          if (widget.isPension && _premiereVisite != null) 'premiere_visite': _premiereVisite,
           if (widget.isTaxi) ...{
             'adresse_depart': _adresseDepartCtrl.text.trim(),
             'adresse_arrivee': _adresseArriveeCtrl.text.trim(),
@@ -740,6 +789,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             if (_selectedPrestation != null) 'prix_calcule': _prixAffiche(_selectedPrestation!),
             if (_selectedEmploye != null) 'employe_id': _selectedEmploye!['id'],
           },
+          if ((widget.isPension || widget.isGarde) && _premiereVisite != null)
+            'premiere_visite': _premiereVisite,
           if (_notesCtrl.text.trim().isNotEmpty && (widget.isPension ? _selectedMotif != 'autre' : true))
             'notes_client': _notesCtrl.text.trim(),
           'duree_minutes': dureeToSend,
@@ -805,6 +856,90 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     }
   }
 
+  /// Garde-journée : crée une ligne `rdv` (motif « Garde journée ») par jour
+  /// disponible de la plage [_gardeDebut, _gardeFin].
+  Future<void> _submitGardeJournee(String uid) async {
+    if (_gardeDebut == null || _gardeFin == null) {
+      _snack('Choisissez les dates de garde', color: Colors.orange); return;
+    }
+    final okDays = _gardeJourDays.where((e) => e.ok).map((e) => e.day).toList();
+    if (okDays.isEmpty) {
+      _snack('Aucune date disponible sur cette période', color: Colors.orange); return;
+    }
+    final animalId = _selectedAnimal?['id']?.toString();
+
+    setState(() => _saving = true);
+    try {
+      final rows = okDays.map((d) {
+        final dh = DateTime(d.year, d.month, d.day, 9, 0).toUtc();
+        return {
+          'pro_uid': widget.proUid,
+          if ((widget.proProfileId ?? '').isNotEmpty) 'pro_profile_id': widget.proProfileId,
+          'client_uid': uid,
+          if (User_Info.activeProfileId.isNotEmpty) 'client_profile_id': User_Info.activeProfileId,
+          if (animalId != null && animalId.isNotEmpty) 'animal_id': animalId,
+          'date_heure': dh.toIso8601String(),
+          'motif': 'Garde journée',
+          if (_premiereVisite != null) 'premiere_visite': _premiereVisite,
+          if (_notesCtrl.text.trim().isNotEmpty) 'notes_client': _notesCtrl.text.trim(),
+          'duree_minutes': 480,
+          'statut': 'demande',
+        };
+      }).toList();
+
+      await Supabase.instance.client.from('rdv').insert(rows);
+
+      try {
+        final composedName = User_Info.nameElevage.isNotEmpty
+            ? User_Info.nameElevage
+            : '${User_Info.firstname} ${User_Info.lastname}'.trim();
+        final clientName = (composedName.isNotEmpty && composedName != 'none' && composedName != 'none none')
+            ? composedName
+            : (FirebaseAuth.instance.currentUser?.displayName?.isNotEmpty == true
+                ? FirebaseAuth.instance.currentUser!.displayName!
+                : 'Un client');
+        final duStr = _formatDate(okDays.first);
+        final auStr = _formatDate(okDays.last);
+        await Supabase.instance.client.from('notifications').insert({
+          'uid': widget.proUid,
+          'type': 'rdv_demande',
+          'title': 'Nouvelle demande de garde',
+          'body': okDays.length > 1
+              ? '$clientName souhaite une garde du $duStr au $auStr (${okDays.length} jours)'
+              : '$clientName souhaite une garde le $duStr',
+          if ((widget.proProfileId ?? '').isNotEmpty) 'profile_id': widget.proProfileId,
+          'data': <String, dynamic>{
+            'client_uid': uid,
+            if (_selectedAnimal != null) 'animal_nom': _selectedAnimal!['nom']?.toString() ?? '',
+          },
+          'read': false,
+        });
+        await FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('notifyProNewRdv')
+            .call({
+              'proUid': widget.proUid,
+              'clientName': clientName,
+              'dateStr': duStr,
+              'motif': 'Garde journée',
+            });
+      } catch (_) {}
+
+      if (mounted) {
+        _snack(
+          okDays.length == _gardeJourDays.length
+              ? 'Demande de garde envoyée !'
+              : '${okDays.length} jour(s) demandé(s) — dates complètes ignorées.',
+          color: widget.categoryColor,
+        );
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (mounted) _snack('Erreur : $e', color: Colors.red);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   void _snack(String msg, {Color color = Colors.black87}) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg, style: const TextStyle(fontFamily: 'Galey')),
@@ -845,10 +980,14 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                     _buildPhotographeLieuSection(),
                     const SizedBox(height: 20),
                   ],
-                  ..._buildSlotPicker(),
-                  if (widget.isGarde && _selectedSlot != null) ...[
-                    const SizedBox(height: 20),
-                    _buildRecurrenceSection(),
+                  if (_isGardeJournee)
+                    ..._buildGardeJourneeDates()
+                  else ...[
+                    ..._buildSlotPicker(),
+                    if (widget.isGarde && _selectedSlot != null) ...[
+                      const SizedBox(height: 20),
+                      _buildRecurrenceSection(),
+                    ],
                   ],
                   const SizedBox(height: 20),
                   _buildAnimalSection(),
@@ -988,6 +1127,95 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     const SizedBox(height: 10),
     _buildSlotSelector(),
   ];
+
+  // ── Garde-journée : plage de dates + capacité par jour ──────────────────────
+
+  /// Jours (début exclu du calcul d'indispo si complet) entre _gardeDebut et
+  /// _gardeFin, avec pour chacun sa disponibilité.
+  List<({DateTime day, bool ok})> get _gardeJourDays {
+    if (_gardeDebut == null || _gardeFin == null) return [];
+    final out = <({DateTime day, bool ok})>[];
+    var d = DateTime(_gardeDebut!.year, _gardeDebut!.month, _gardeDebut!.day);
+    final end = DateTime(_gardeFin!.year, _gardeFin!.month, _gardeFin!.day);
+    while (!d.isAfter(end)) {
+      final key = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      final hasSlot = _availableSlots.any((s) => s['date'] == key);
+      final ok = hasSlot && _gardeJourneeCount(d) < _dayCapacity(key);
+      out.add((day: d, ok: ok));
+      d = d.add(const Duration(days: 1));
+    }
+    return out;
+  }
+
+  Future<void> _pickGardeDate(bool isStart) async {
+    final now = DateTime.now();
+    final first = now;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: isStart
+          ? (_gardeDebut ?? now.add(const Duration(days: 1)))
+          : (_gardeFin ?? _gardeDebut ?? now.add(const Duration(days: 1))),
+      firstDate: first,
+      lastDate: now.add(const Duration(days: 120)),
+      builder: (c, child) => Theme(
+        data: Theme.of(c).copyWith(colorScheme: ColorScheme.light(primary: widget.categoryColor)),
+        child: child!,
+      ),
+    );
+    if (picked == null) return;
+    setState(() {
+      if (isStart) {
+        _gardeDebut = picked;
+        if (_gardeFin == null || _gardeFin!.isBefore(picked)) _gardeFin = picked;
+      } else {
+        _gardeFin = picked.isBefore(_gardeDebut ?? picked) ? _gardeDebut : picked;
+      }
+    });
+  }
+
+  List<Widget> _buildGardeJourneeDates() {
+    final days = _gardeJourDays;
+    final indispo = days.where((e) => !e.ok).toList();
+    Widget dateCard(String label, DateTime? d, bool isStart) => Expanded(
+      child: GestureDetector(
+        onTap: () => _pickGardeDate(isStart),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE4E7E2)),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+            const SizedBox(height: 4),
+            Text(d == null ? 'Choisir' : _formatDate(d),
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+          ]),
+        ),
+      ),
+    );
+    return [
+      _sectionTitle('Dates de garde *'),
+      const SizedBox(height: 10),
+      Row(children: [
+        dateCard('Du', _gardeDebut, true),
+        const SizedBox(width: 10),
+        dateCard('Au', _gardeFin, false),
+      ]),
+      if (days.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Text(
+          indispo.isEmpty
+              ? '${days.length} jour${days.length > 1 ? 's' : ''} de garde — toutes les dates sont disponibles.'
+              : '${indispo.length} date(s) complète(s) ou fermée(s) seront ignorées : '
+                  '${indispo.map((e) => _formatDate(e.day)).join(', ')}.',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+              color: indispo.isEmpty ? Colors.grey.shade600 : Colors.orange.shade800),
+        ),
+      ],
+    ];
+  }
 
   // ── Pension motif ─────────────────────────────────────────────────────────────
 
@@ -1336,6 +1564,32 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
           decoration: _inputDecoration('Précisez le motif…'),
         ),
+      ],
+      if (widget.isGarde) ...[
+        const SizedBox(height: 20),
+        _sectionTitle('Avez-vous déjà fait appel à ce pet-sitter ?'),
+        const SizedBox(height: 10),
+        Row(children: [
+          for (final v in [(true, 'Première fois'), (false, 'Déjà client·e')]) ...[
+            GestureDetector(
+              onTap: () => setState(() => _premiereVisite = v.$1),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _premiereVisite == v.$1 ? widget.categoryColor : Colors.white,
+                  border: Border.all(color: _premiereVisite == v.$1
+                      ? widget.categoryColor : const Color(0xFFE4E7E2)),
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: Text(v.$2, style: TextStyle(
+                    fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                    color: _premiereVisite == v.$1 ? Colors.white : const Color(0xFF1E2025))),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ]),
       ],
     ];
   }

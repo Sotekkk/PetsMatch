@@ -51,6 +51,7 @@ interface ProData {
   tarifs_taxi?: { prise_en_charge?: number; prix_km?: number; minimum?: number };
   tarifs_garde?: Record<string, number>;
   tarifs_garde_extra?: { label: string; prix: number; description?: string }[];
+  garde_chevauchement_ok?: boolean;
   tarifs_pension?: {
     especes?: { espece: string; prix_seul: number; prix_partage?: number }[];
     afficher_public?: boolean;
@@ -60,7 +61,7 @@ interface Prestation {
   id: string; nom: string; description?: string; duree_minutes?: number;
   prix?: number; prix_base?: number; grille_prix?: { prix: number }[];
 }
-interface Slot { date: string; heureDebut: string; heureFin: string; }
+interface Slot { date: string; heureDebut: string; heureFin: string; capacite?: number; }
 interface Animal { id: number; nom: string; espece: string; }
 interface CoursCollectif {
   id: string; titre: string; date_heure: string; capacite_max: number; lieu?: string | null;
@@ -165,6 +166,10 @@ function ProDetailContent() {
   const [saving, setSaving] = useState(false);
   const [rdvSuccess, setRdvSuccess] = useState(false);
   const [rdvCount, setRdvCount] = useState(1);
+  // Garde-journée : plage de dates + gardes-journée déjà réservées par jour.
+  const [gardeDebut, setGardeDebut] = useState('');
+  const [gardeFin, setGardeFin] = useState('');
+  const [gardeJourCounts, setGardeJourCounts] = useState<Record<string, number>>({});
 
   // Taxi animalier : trajet départ/arrivée + animaux transportés
   const [adresseDepart, setAdresseDepart] = useState('');
@@ -289,6 +294,7 @@ function ProDetailContent() {
           tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
           tarifs_garde: (data.tarifs_garde as Record<string, number>) ?? {},
           tarifs_garde_extra: Array.isArray(data.tarifs_garde_extra) ? data.tarifs_garde_extra : [],
+          garde_chevauchement_ok: (data.garde_chevauchement_ok as boolean | null) ?? true,
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
         };
       } else {
@@ -320,6 +326,7 @@ function ProDetailContent() {
           tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
           tarifs_garde: (data.tarifs_garde as Record<string, number>) ?? {},
           tarifs_garde_extra: Array.isArray(data.tarifs_garde_extra) ? data.tarifs_garde_extra : [],
+          garde_chevauchement_ok: (data.garde_chevauchement_ok as boolean | null) ?? true,
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
         };
       }
@@ -522,9 +529,9 @@ function ProDetailContent() {
     // Créneaux : PostgREST plafonne à 1000 lignes/réponse → un pro très chargé
     // ne verrait jamais les dates lointaines. On pagine.
     async function fetchAllSlots() {
-      const out: { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null }[] = [];
+      const out: { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null; capacite?: number | null }[] = [];
       for (let page = 0; page < 6; page++) {
-        const { data } = await supabase.from('creneaux_pro').select('date, heure_debut, heure_fin, type_prestation')
+        const { data } = await supabase.from('creneaux_pro').select('date, heure_debut, heure_fin, type_prestation, capacite')
           .eq('pro_uid', uid).eq('statut', 'disponible').eq('pro_profile_id', profileId)
           .gte('date', toDateStr(new Date()))
           .order('date').order('heure_debut')
@@ -550,13 +557,31 @@ function ProDetailContent() {
         .in('statut', ['confirme', 'termine']).limit(1);
       setIsFirstTimeEducationClient((priorRdv ?? []).length === 0);
     }
-    const rawSlots = (slotsRes.data ?? []) as { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null }[];
+    const rawSlots = (slotsRes.data ?? []) as { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null; capacite?: number | null }[];
     // Un créneau marqué "collectif" par l'éducateur est réservé à ses cours
     // collectifs (planifiés séparément) — non proposé ici pour un RDV individuel.
     const individualSlots = pro?.cat_pro === 'education'
       ? rawSlots.filter(s => s.type_prestation !== 'collectif')
       : rawSlots;
-    setSlots(individualSlots.map(s => ({ date: s.date, heureDebut: s.heure_debut, heureFin: s.heure_fin })));
+    setSlots(individualSlots.map(s => ({ date: s.date, heureDebut: s.heure_debut, heureFin: s.heure_fin, capacite: s.capacite ?? 1 })));
+
+    // Garde : gardes-journée déjà demandées/confirmées (pour la capacité/jour).
+    if (pro?.cat_pro === 'garde') {
+      const { data: gj } = await supabase.from('rdv')
+        .select('date_heure, motif')
+        .eq('pro_uid', uid).eq('pro_profile_id', profileId)
+        .in('statut', ['demande', 'confirme'])
+        .gte('date_heure', new Date().toISOString());
+      const counts: Record<string, number> = {};
+      for (const r of (gj ?? []) as { date_heure: string; motif: string | null }[]) {
+        const m = (r.motif ?? '').toLowerCase();
+        if (!m.includes('garde') || !m.includes('journ')) continue;
+        const d = new Date(r.date_heure);
+        const key = toDateStr(d);
+        counts[key] = (counts[key] ?? 0) + 1;
+      }
+      setGardeJourCounts(counts);
+    }
 
     const direct = (animauxRes.data ?? []) as Animal[];
     const cessionIds = [...new Set((ownRes.data ?? []).map(r => r.animal_id as string))];
@@ -591,14 +616,50 @@ function ProDetailContent() {
   const isTaxi = pro?.cat_pro === 'taxi_animalier';
 
   async function confirmRdv() {
-    if (!selectedSlot || !motifKey || !user || !pro) return;
-    if (pro.cat_pro === 'veterinaire' && premiereVisite === null) return;
+    if (!motifKey || !user || !pro) return;
+    if (!isGardeJournee && !selectedSlot) return;
+    if (premiereRequise && premiereVisite === null) return;
     if (isTaxi && (!adresseDepart.trim() || !adresseArrivee.trim() || animauxTaxiIds.length === 0)) return;
     setSaving(true);
     try {
       const motifInfo = (MOTIFS_BY_CAT[pro.cat_pro] ?? DEFAULT_MOTIFS).find(m => m.key === motifKey);
       const motifLabel = motifInfo?.label ?? motifKey;
+      const premiereSuffix = premiereVisite !== null ? `${premiereVisite ? ' (1ère visite)' : ''}` : '';
+
+      // Garde-journée : une ligne rdv par jour disponible de la plage.
+      if (isGardeJournee) {
+        for (const { date } of gardeJourOkDays) {
+          const dh = new Date(`${date}T09:00:00`);
+          await supabase.from('rdv').insert({
+            pro_uid: pro.uid, client_uid: user.uid,
+            animal_id: selectedAnimalId || null,
+            date_heure: dh.toISOString(), duree_minutes: 480,
+            statut: 'demande',
+            motif: `${motifLabel}${premiereSuffix}`,
+            ...(premiereVisite !== null ? { premiere_visite: premiereVisite } : {}),
+            notes_client: notes || null,
+            pro_profile_id: pro.profileTableId || null,
+            ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
+          });
+        }
+        await supabase.from('notifications').insert({
+          uid: pro.uid, type: 'rdv_demande', title: 'Nouvelle demande de garde',
+          body: gardeJourOkDays.length > 1
+            ? `Demande de garde du ${fmtDate(gardeJourOkDays[0].date)} au ${fmtDate(gardeJourOkDays[gardeJourOkDays.length - 1].date)} (${gardeJourOkDays.length} jours).`
+            : `Demande de garde le ${fmtDate(gardeJourOkDays[0].date)}.`,
+          ...(pro.profileTableId ? { profile_id: pro.profileTableId } : {}),
+          data: { pro_uid: pro.uid },
+        });
+        setRdvCount(gardeJourOkDays.length);
+        setRdvSuccess(true);
+        setSaving(false);
+        return;
+      }
+
+      if (!selectedSlot) return;
+      const slotRef = selectedSlot;
       const targetSlots = occurrenceSlots();
+      const skipReserve = pro.cat_pro === 'garde' && pro.garde_chevauchement_ok !== false;
 
       for (const slot of targetSlots) {
         const dateDebut = new Date(`${slot.date}T${slot.heureDebut}`);
@@ -609,7 +670,8 @@ function ProDetailContent() {
           animal_id: isTaxi ? (animauxTaxiIds[0] ?? null) : (selectedAnimalId || null),
           date_heure: dateDebut.toISOString(), duree_minutes: dureeMinutes,
           statut: 'demande',
-          motif: premiereVisite !== null ? `${motifLabel}${premiereVisite ? ' (1ère visite)' : ''}` : motifLabel,
+          motif: `${motifLabel}${premiereSuffix}`,
+          ...(premiereVisite !== null ? { premiere_visite: premiereVisite } : {}),
           notes_client: notes || null,
           pro_profile_id: pro.profileTableId || null,
           ...(activeProfileId ? { client_profile_id: activeProfileId } : {}),
@@ -622,10 +684,12 @@ function ProDetailContent() {
             ...(latArrivee != null ? { lat_arrivee: latArrivee, lng_arrivee: lngArrivee } : {}),
           } : {}),
         });
-        await supabase.from('creneaux_pro').update({ statut: 'reserve' })
-          .eq('pro_uid', pro.uid)
-          .eq('date', slot.date)
-          .eq('heure_debut', slot.heureDebut);
+        if (!skipReserve) {
+          await supabase.from('creneaux_pro').update({ statut: 'reserve' })
+            .eq('pro_uid', pro.uid)
+            .eq('date', slot.date)
+            .eq('heure_debut', slot.heureDebut);
+        }
       }
 
       const isSerie = targetSlots.length > 1;
@@ -633,8 +697,8 @@ function ProDetailContent() {
         uid: pro.uid, type: 'rdv_demande',
         title: isSerie ? 'Nouvelle série de RDV récurrents' : 'Nouvelle demande de RDV',
         body: isSerie
-          ? `Demande de ${targetSlots.length} RDV récurrents à partir du ${fmtDate(selectedSlot.date)} à ${fmtTime(selectedSlot.heureDebut)} — ${motifLabel}.`
-          : `Demande pour le ${fmtDate(selectedSlot.date)} à ${fmtTime(selectedSlot.heureDebut)} — ${motifLabel}.`,
+          ? `Demande de ${targetSlots.length} RDV récurrents à partir du ${fmtDate(slotRef.date)} à ${fmtTime(slotRef.heureDebut)} — ${motifLabel}.`
+          : `Demande pour le ${fmtDate(slotRef.date)} à ${fmtTime(slotRef.heureDebut)} — ${motifLabel}.`,
         ...(pro.profileTableId ? { profile_id: pro.profileTableId } : {}),
         data: { pro_uid: pro.uid },
       });
@@ -660,6 +724,28 @@ function ProDetailContent() {
     return acc;
   }, {});
   const availableDates = Object.keys(slotsByDate).sort();
+
+  // ── Garde : capacité / garde-journée ──────────────────────────────────────
+  const isGardeJournee = pro?.cat_pro === 'garde' && motifKey === 'garde_journee';
+  function dayCapacity(date: string): number {
+    let cap = 1;
+    for (const s of slots) if (s.date === date && (s.capacite ?? 1) > cap) cap = s.capacite ?? 1;
+    return cap;
+  }
+  const gardeJourDays: { date: string; ok: boolean }[] = (() => {
+    if (!gardeDebut || !gardeFin) return [];
+    const out: { date: string; ok: boolean }[] = [];
+    const d = new Date(`${gardeDebut}T00:00:00`);
+    const end = new Date(`${gardeFin}T00:00:00`);
+    while (d <= end) {
+      const key = toDateStr(d);
+      const hasSlot = slots.some(s => s.date === key);
+      out.push({ date: key, ok: hasSlot && (gardeJourCounts[key] ?? 0) < dayCapacity(key) });
+      d.setDate(d.getDate() + 1);
+    }
+    return out;
+  })();
+  const gardeJourOkDays = gardeJourDays.filter(x => x.ok);
 
   const requiresBilanFirst = pro?.cat_pro === 'education' && pro.education_bilan_requis !== false && isFirstTimeEducationClient;
 
@@ -708,11 +794,12 @@ function ProDetailContent() {
   const motifs = requiresBilanFirst
     ? (MOTIFS_BY_CAT.education ?? []).filter(m => m.key === 'evaluation')
     : MOTIFS_BY_CAT[pro?.cat_pro ?? ''] ?? DEFAULT_MOTIFS;
-  const isVet  = pro?.cat_pro === 'veterinaire' || pro?.cat_pro === 'sante';
   const catColor = CAT_COLORS[pro?.cat_pro ?? ''] ?? '#0C5C6C';
 
-  const canConfirm = !!motifKey && !!selectedSlot &&
-    (pro?.cat_pro !== 'veterinaire' || premiereVisite !== null) &&
+  const premiereRequise = ['veterinaire', 'sante', 'pension', 'garde'].includes(pro?.cat_pro ?? '');
+  const canConfirm = !!motifKey &&
+    (isGardeJournee ? gardeJourOkDays.length > 0 : !!selectedSlot) &&
+    (!premiereRequise || premiereVisite !== null) &&
     (!isTaxi || (!!adresseDepart.trim() && !!adresseArrivee.trim() && animauxTaxiIds.length > 0));
 
   if (loading) return (
@@ -855,7 +942,7 @@ function ProDetailContent() {
             disabled={!pro.accept_new_clients}
             className="flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold text-white transition-colors disabled:opacity-50"
             style={{ backgroundColor: catColor, fontFamily: 'Galey, sans-serif' }}>
-            📅 {pro.accept_new_clients ? (pro.cat_pro === 'education' ? 'Réserver un cours' : 'Prendre RDV') : 'Complet'}
+            📅 {!pro.accept_new_clients ? 'Complet' : pro.cat_pro === 'education' ? 'Réserver un cours' : (pro.cat_pro === 'pension' || pro.cat_pro === 'garde') ? 'Réserver' : 'Prendre RDV'}
           </button>
         </div>
       </div>
@@ -1266,13 +1353,15 @@ function ProDetailContent() {
                     </div>
                   </div>
 
-                  {/* Première visite (vétérinaire seulement) */}
-                  {isVet && motifKey && (
+                  {/* Première fois ? (vétérinaire, ostéo, pension, garde) */}
+                  {premiereRequise && motifKey && (
                     <div>
                       <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5"
-                        style={{ fontFamily: 'Galey, sans-serif' }}>Première visite ? *</p>
+                        style={{ fontFamily: 'Galey, sans-serif' }}>
+                        {pro.cat_pro === 'garde' ? 'Première fois avec ce pet-sitter ? *' : pro.cat_pro === 'pension' ? 'Première fois dans cette pension ? *' : 'Première visite ? *'}
+                      </p>
                       <div className="flex gap-3">
-                        {[{ val: true, label: 'Oui, première visite' }, { val: false, label: 'Non, déjà client(e)' }].map(opt => (
+                        {[{ val: true, label: 'Oui, première fois' }, { val: false, label: 'Non, déjà client(e)' }].map(opt => (
                           <button key={String(opt.val)} onClick={() => setPremiereVisite(opt.val)}
                             className="flex-1 py-2.5 rounded-xl border text-sm font-semibold transition-all"
                             style={{
@@ -1323,8 +1412,37 @@ function ProDetailContent() {
                   </div>
                   )}
 
+                  {/* Garde-journée : plage de dates */}
+                  {isGardeJournee && (
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5"
+                        style={{ fontFamily: 'Galey, sans-serif' }}>Dates de garde *</p>
+                      <div className="flex gap-3">
+                        <label className="flex-1 text-xs text-gray-500" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          Du
+                          <input type="date" value={gardeDebut} min={toDateStr(new Date())}
+                            onChange={e => { setGardeDebut(e.target.value); if (!gardeFin || gardeFin < e.target.value) setGardeFin(e.target.value); }}
+                            className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-[#1E2025]" />
+                        </label>
+                        <label className="flex-1 text-xs text-gray-500" style={{ fontFamily: 'Galey, sans-serif' }}>
+                          Au
+                          <input type="date" value={gardeFin} min={gardeDebut || toDateStr(new Date())}
+                            onChange={e => setGardeFin(e.target.value)}
+                            className="mt-1 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-[#1E2025]" />
+                        </label>
+                      </div>
+                      {gardeJourDays.length > 0 && (
+                        <p className="text-xs mt-2" style={{ fontFamily: 'Galey, sans-serif', color: gardeJourOkDays.length === gardeJourDays.length ? '#6B7280' : '#B45309' }}>
+                          {gardeJourOkDays.length === gardeJourDays.length
+                            ? `${gardeJourDays.length} jour(s) de garde — toutes les dates sont disponibles.`
+                            : `${gardeJourDays.length - gardeJourOkDays.length} date(s) complète(s) ou fermée(s) seront ignorées.`}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   {/* Date */}
-                  {availableDates.length === 0 ? (
+                  {isGardeJournee ? null : availableDates.length === 0 ? (
                     <div className="text-center py-6 bg-gray-50 rounded-2xl">
                       <span className="text-2xl block mb-2">📅</span>
                       <p className="text-sm text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
@@ -1435,11 +1553,13 @@ function ProDetailContent() {
                   </div>
 
                   {/* Récap + Confirmer */}
-                  {selectedSlot && motifKey && (
+                  {((selectedSlot && motifKey) || (isGardeJournee && gardeJourOkDays.length > 0)) && (
                     <div className="bg-gray-50 rounded-2xl px-4 py-3 text-sm space-y-1">
                       <p className="font-bold text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>Récapitulatif</p>
                       <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
-                        📅 {fmtDate(selectedSlot.date)} à {fmtTime(selectedSlot.heureDebut)}
+                        {isGardeJournee
+                          ? `📅 ${gardeJourOkDays.length} jour(s) — du ${fmtDate(gardeJourOkDays[0].date)} au ${fmtDate(gardeJourOkDays[gardeJourOkDays.length - 1].date)}`
+                          : `📅 ${fmtDate(selectedSlot!.date)} à ${fmtTime(selectedSlot!.heureDebut)}`}
                       </p>
                       <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
                         📋 {motifs.find(m => m.key === motifKey)?.label}

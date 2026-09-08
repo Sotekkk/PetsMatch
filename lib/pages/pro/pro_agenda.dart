@@ -52,6 +52,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   final Set<String> _slotDomicile = {};
   // Lien optionnel créneau → prestation (éducateur) — reporté à la réplication.
   final Map<String, String> _slotPrestationIds = {};
+  // Garde : la pet-sitter autorise-t-elle des prestations qui se chevauchent ?
+  bool _gardeChevauchementOk = true;
 
   // VET07 — retard
   bool _retardDeclare = false;
@@ -2386,12 +2388,25 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       if (pid.isNotEmpty) creneauxQ = creneauxQ.eq('pro_profile_id', pid);
       final rows = await creneauxQ;
 
+      bool chevauchementOk = true;
+      if (User_Info.catPro == 'garde') {
+        try {
+          final prof = pid.isNotEmpty
+              ? await Supabase.instance.client.from('user_profiles')
+                  .select('garde_chevauchement_ok').eq('id', pid).maybeSingle()
+              : await Supabase.instance.client.from('users')
+                  .select('garde_chevauchement_ok').eq('uid', uid).maybeSingle();
+          chevauchementOk = prof?['garde_chevauchement_ok'] as bool? ?? true;
+        } catch (_) {}
+      }
+
       if (!mounted) return;
       setState(() {
         _blockedSlots.clear();
         _slotTypes.clear();
         _slotDomicile.clear();
         _slotPrestationIds.clear();
+        _gardeChevauchementOk = chevauchementOk;
         for (final row in rows) {
           final date = row['date'] as String;
           final heureDebut = row['heure_debut'] as String; // 'HH:MM:SS'
@@ -2407,6 +2422,26 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         }
       });
     } catch (_) {}
+  }
+
+  Future<void> _setGardeChevauchement(bool v) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    setState(() => _gardeChevauchementOk = v);
+    final pid = User_Info.activeProfileId;
+    try {
+      if (pid.isNotEmpty) {
+        await Supabase.instance.client.from('user_profiles')
+            .update({'garde_chevauchement_ok': v}).eq('id', pid);
+      } else {
+        await Supabase.instance.client.from('user_profiles')
+            .update({'garde_chevauchement_ok': v}).eq('uid', uid).eq('is_main', true);
+        await Supabase.instance.client.from('users')
+            .update({'garde_chevauchement_ok': v}).eq('uid', uid);
+      }
+    } catch (e) {
+      if (mounted) _showErr(e);
+    }
   }
 
   // ── Helpers créneaux ─────────────────────────────────────────────────────────
@@ -2453,7 +2488,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     return ranges;
   }
 
-  Future<void> _applyRange(String date, TimeOfDay start, TimeOfDay end, String statut, {String? type, bool domicileOk = false, String? prestationId}) async {
+  Future<void> _applyRange(String date, TimeOfDay start, TimeOfDay end, String statut, {String? type, bool domicileOk = false, String? prestationId, int capacite = 1}) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final pid = User_Info.activeProfileId;
@@ -2475,7 +2510,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       });
       slots.add({'pro_uid': uid, 'pro_profile_id': pid, 'date': date,
           'heure_debut': hd, 'heure_fin': hf, 'statut': statut, 'type_prestation': type,
-          'domicile_ok': domicileOk, 'prestation_id': prestationId});
+          'domicile_ok': domicileOk, 'prestation_id': prestationId, 'capacite': capacite});
       curMins = finMins;
     }
     try {
@@ -2526,6 +2561,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     String? type; // 'individuel' / 'collectif' / null = les deux (éducateur uniquement)
     bool domicileOk = false; // créneau proposable à domicile (éducateur uniquement)
     String? prestationId; // cours du catalogue (collectif) rattaché à ce créneau
+    int capacite = 1; // nombre de places (garde à domicile : plusieurs animaux/jour)
 
     List<Map<String, dynamic>> coursCollectifs = [];
     if (User_Info.catPro == 'education') {
@@ -2709,6 +2745,37 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   ]),
                 ),
               ],
+              // Garde à domicile : nombre de places sur cette plage
+              // (ex. 4 animaux le même jour).
+              if (User_Info.catPro == 'garde' && isDisp) ...[
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0x0A0C5C6C),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0x330C5C6C)),
+                  ),
+                  child: Row(children: [
+                    const Expanded(child: Text('Nombre de places',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                            fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C)))),
+                    IconButton(
+                      onPressed: capacite > 1 ? () => setS(() => capacite--) : null,
+                      icon: const Icon(Icons.remove_circle_outline, color: Color(0xFF0C5C6C)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    Text('$capacite', style: const TextStyle(fontFamily: 'Galey',
+                        fontWeight: FontWeight.w700, fontSize: 16)),
+                    IconButton(
+                      onPressed: capacite < 10 ? () => setS(() => capacite++) : null,
+                      icon: const Icon(Icons.add_circle_outline, color: Color(0xFF0C5C6C)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ]),
+                ),
+              ],
               const SizedBox(height: 20),
               SizedBox(width: double.infinity, child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
@@ -2731,7 +2798,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       await _applyRange(dateStr, startTime, endTime, statut,
           type: statut == 'disponible' ? type : null,
           domicileOk: statut == 'disponible' && domicileOk,
-          prestationId: statut == 'disponible' && type == 'collectif' ? prestationId : null);
+          prestationId: statut == 'disponible' && type == 'collectif' ? prestationId : null,
+          capacite: (User_Info.catPro == 'garde' && statut == 'disponible') ? capacite : 1);
     }
   }
 
@@ -2978,6 +3046,22 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           ),
         ]),
       ),
+      if (User_Info.catPro == 'garde')
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 2, 8, 0),
+          child: Row(children: [
+            const Expanded(child: Text(
+              'Autoriser les prestations qui se chevauchent',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12.5,
+                  fontWeight: FontWeight.w600, color: Color(0xFF1E2025)),
+            )),
+            Switch(
+              value: _gardeChevauchementOk,
+              activeThumbColor: _teal,
+              onChanged: _setGardeChevauchement,
+            ),
+          ]),
+        ),
       Padding(
         padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
         child: Row(children: [

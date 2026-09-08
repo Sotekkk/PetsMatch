@@ -1246,7 +1246,13 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                 : null,
             icon: const Icon(Icons.calendar_month_outlined, size: 18),
             label: Text(
-              _acceptNewClients ? (_proData?['cat_pro'] == 'education' ? 'Réserver un cours' : 'Prendre RDV') : 'Complet',
+              !_acceptNewClients
+                  ? 'Complet'
+                  : _proData?['cat_pro'] == 'education'
+                      ? 'Réserver un cours'
+                      : (_proData?['cat_pro'] == 'pension' || _proData?['cat_pro'] == 'garde')
+                          ? 'Réserver'
+                          : 'Prendre RDV',
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600),
             ),
             style: ElevatedButton.styleFrom(
