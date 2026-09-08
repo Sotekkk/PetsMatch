@@ -102,12 +102,14 @@ export function generateContratGardeHTML(
 </div>
 
 <h2>Objet du contrat</h2>
-<table class="info-table">
+${rdv.animal_nom
+  ? `<table class="info-table">
   <tr><td>Animal</td><td>${rdv.animal_nom} ${rdv.espece ? '(' + rdv.espece + (rdv.race ? ' — ' + rdv.race : '') + ')' : ''}</td></tr>
   <tr><td>Prestation</td><td>${rdv.type_prestation || 'Visite / promenade'}</td></tr>
   <tr><td>Date de la prestation</td><td>${fmt(rdv.date_visite)}</td></tr>
   <tr><td>Tarif</td><td>${tarif}</td></tr>
-</table>
+</table>`
+  : `<div class="block">Le présent contrat encadre l'ensemble des prestations de garde, visite ou promenade confiées ponctuellement par le Client au Prestataire. Chaque intervention fait l'objet d'une réservation dans l'application, précisant l'animal concerné, les dates et le tarif applicable.</div>`}
 
 <h2>Conditions générales de prestation</h2>
 

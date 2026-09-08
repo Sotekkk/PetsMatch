@@ -9,20 +9,16 @@ import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { usePlanGarde } from '@/lib/use-plan';
 import { sendNotification } from '@/lib/notifications';
 
-interface Rdv {
-  id: string;
-  animal_id: string | null;
-  client_uid: string | null;
-  date_heure: string;
-  statut: string;
-  _animal_nom?: string;
-  _client_nom?: string;
-  _client_email?: string;
+interface Client {
+  uid: string;
+  nom: string;
+  email: string;
+  profileId: string | null;
+  doc?: Doc;
 }
 
 interface Doc {
   id: string;
-  rdv_id: string;
   token: string | null;
   statut: string;
 }
@@ -41,11 +37,9 @@ export default function GardeContratPage() {
   const router = useRouter();
   const activeProfileId = useActiveProfile();
   const { plan: gardePlan } = usePlanGarde();
-  const [rdvs, setRdvs] = useState<Rdv[]>([]);
-  const [docs, setDocs] = useState<Record<string, Doc>>({});
+  const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState<string | null>(null);
-  const [sendingEmail, setSendingEmail] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
     if (authLoading) return;
@@ -55,101 +49,127 @@ export default function GardeContratPage() {
 
   const load = useCallback(async () => {
     if (!user) return;
-    let q = supabase.from('rdv').select('id, animal_id, client_uid, date_heure, statut').eq('pro_uid', user.uid);
-    if (activeProfileId) q = q.eq('pro_profile_id', activeProfileId) as typeof q;
+    let rdvQ = supabase.from('rdv').select('client_uid, client_profile_id').eq('pro_uid', user.uid);
+    if (activeProfileId) rdvQ = rdvQ.eq('pro_profile_id', activeProfileId) as typeof rdvQ;
+    let docQ = supabase.from('documents_animaux').select('id, token, statut, metadata')
+      .eq('uid_eleveur', user.uid).eq('type', 'contrat_garde');
+    if (activeProfileId) docQ = docQ.eq('pro_profile_id', activeProfileId) as typeof docQ;
+
     const [{ data: rows }, { data: docsData }] = await Promise.all([
-      q.in('statut', ['confirme', 'termine']).order('date_heure', { ascending: false }).limit(50),
-      supabase.from('documents_animaux').select('id, rdv_id, token, statut').eq('uid_eleveur', user.uid).eq('type', 'contrat_garde'),
+      rdvQ.in('statut', ['confirme', 'termine']),
+      docQ,
     ]);
-    const rowsList = (rows ?? []) as Rdv[];
-    const clientUids = [...new Set(rowsList.map(r => r.client_uid).filter((u): u is string => !!u))];
-    const animalIds = [...new Set(rowsList.map(r => r.animal_id).filter((a): a is string => !!a))];
-    const [{ data: clients }, { data: animaux }] = await Promise.all([
-      clientUids.length
-        ? supabase.from('user_profiles').select('uid, firstname, lastname, nom, email_contact').in('uid', clientUids).eq('is_main', true)
-        : Promise.resolve({ data: [] as { uid: string; firstname: string | null; lastname: string | null; nom: string | null; email_contact: string | null }[] }),
-      animalIds.length
-        ? supabase.from('animaux').select('id, nom').in('id', animalIds)
-        : Promise.resolve({ data: [] as { id: string; nom: string | null }[] }),
+    const rowsList = (rows ?? []) as { client_uid: string | null; client_profile_id: string | null }[];
+    // client_uid → client_profile_id (le profil qui a réservé — jamais is_main,
+    // qui renverrait le profil éleveur d'un compte multi-profils).
+    const uniq = new Map<string, string | null>();
+    for (const r of rowsList) if (r.client_uid) uniq.set(r.client_uid, r.client_profile_id ?? uniq.get(r.client_uid) ?? null);
+    const clientUids = [...uniq.keys()];
+    const clientPids = [...new Set([...uniq.values()].filter((p): p is string => !!p))];
+    const uidsNoPid = clientUids.filter(u => !uniq.get(u));
+
+    type Prof = { id: string; uid: string; firstname: string | null; lastname: string | null; nom: string | null; email_contact: string | null };
+    const [{ data: byPid }, { data: byUid }] = await Promise.all([
+      clientPids.length
+        ? supabase.from('user_profiles').select('id, uid, firstname, lastname, nom, email_contact').in('id', clientPids)
+        : Promise.resolve({ data: [] as Prof[] }),
+      uidsNoPid.length
+        ? supabase.from('user_profiles').select('id, uid, firstname, lastname, nom, email_contact').in('uid', uidsNoPid).eq('is_main', true)
+        : Promise.resolve({ data: [] as Prof[] }),
     ]);
-    const clientNames = new Map((clients ?? []).map(c => {
-      const nom = c.nom?.trim();
-      const full = nom || `${c.firstname ?? ''} ${c.lastname ?? ''}`.trim();
-      return [c.uid, full || 'Client'];
-    }));
-    const clientEmails = new Map((clients ?? []).map(c => [c.uid, c.email_contact ?? '']));
-    const animalNames = new Map((animaux ?? []).map(a => [a.id, a.nom ?? '']));
-    setRdvs(rowsList.map(r => ({
-      ...r,
-      _client_nom: r.client_uid ? clientNames.get(r.client_uid) ?? 'Client' : 'Client',
-      _client_email: r.client_uid ? clientEmails.get(r.client_uid) ?? '' : '',
-      _animal_nom: r.animal_id ? animalNames.get(r.animal_id) ?? '' : '',
-    })));
-    setDocs(Object.fromEntries(((docsData ?? []) as Doc[]).map(d => [d.rdv_id, d])));
+    const nomOf = (c: Prof) => c.nom?.trim() || `${c.firstname ?? ''} ${c.lastname ?? ''}`.trim() || 'Client';
+    const nameByPid = new Map((byPid ?? []).map(c => [c.id, nomOf(c)]));
+    const emailByPid = new Map((byPid ?? []).map(c => [c.id, c.email_contact ?? '']));
+    const nameByUid = new Map((byUid ?? []).map(c => [c.uid, nomOf(c)]));
+    const emailByUid = new Map((byUid ?? []).map(c => [c.uid, c.email_contact ?? '']));
+
+    const docByClient = new Map<string, Doc>();
+    for (const d of (docsData ?? []) as (Doc & { metadata: Record<string, unknown> })[]) {
+      const cu = (d.metadata?.client_uid as string | undefined) ?? '';
+      if (cu) docByClient.set(cu, { id: d.id, token: d.token, statut: d.statut });
+    }
+
+    setClients(clientUids.map(uid => {
+      const pid = uniq.get(uid) ?? null;
+      return {
+        uid,
+        nom: (pid && nameByPid.get(pid)) || nameByUid.get(uid) || 'Client',
+        email: (pid && emailByPid.get(pid)) || emailByUid.get(uid) || '',
+        profileId: pid,
+        doc: docByClient.get(uid),
+      };
+    }).sort((a, b) => a.nom.localeCompare(b.nom)));
     setLoading(false);
   }, [user, activeProfileId]);
 
   useEffect(() => { load(); }, [load]);
 
-  async function genererContrat(r: Rdv) {
+  async function ouvrirContrat(c: Client) {
     if (!user) return;
-    setGenerating(r.id);
-    const { data } = await supabase.from('documents_animaux').insert({
-      uid_eleveur: user.uid,
-      ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}),
-      animal_id: r.animal_id,
-      rdv_id: r.id,
-      type: 'contrat_garde',
-      titre: `Contrat de prestation — ${r._animal_nom}`,
-      statut: 'brouillon',
-      metadata: {
-        client_nom: r._client_nom,
-        ...(r.client_uid ? { client_uid: r.client_uid } : {}),
-        date_visite: r.date_heure,
-      },
-    }).select('id, token').single();
-    setGenerating(null);
-    if (data) load();
+    setBusy(c.uid);
+    try {
+      let token = c.doc?.token ?? null;
+      if (!token) {
+        const { data } = await supabase.from('documents_animaux').insert({
+          uid_eleveur: user.uid,
+          ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}),
+          type: 'contrat_garde',
+          titre: `Contrat de prestation — ${c.nom}`,
+          statut: 'brouillon',
+          metadata: {
+            client_nom: c.nom,
+            client_uid: c.uid,
+            ...(c.profileId ? { client_profile_id: c.profileId } : {}),
+            ...(c.email ? { client_email: c.email } : {}),
+          },
+        }).select('token').single();
+        token = (data?.token as string | null) ?? null;
+      }
+      if (token) window.open(`/signer-contrat/${token}`, '_blank');
+      await load();
+    } finally {
+      setBusy(null);
+    }
   }
 
-  async function transmettre(r: Rdv) {
-    const doc = docs[r.id];
-    if (!user || !doc?.token) return;
-    await supabase.from('documents_animaux').update({ statut: 'en_attente' }).eq('id', doc.id);
-    const signingUrl = `${window.location.origin}/signer-contrat/${doc.token}`;
-    if (r.client_uid) {
+  async function transmettre(c: Client) {
+    if (!user || !c.doc?.token) return;
+    setBusy(c.uid);
+    try {
+      await supabase.from('documents_animaux').update({ statut: 'en_attente' }).eq('id', c.doc.id);
+      const signingUrl = `${window.location.origin}/signer-contrat/${c.doc.token}`;
       const gardeNom = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre pet sitter';
       await sendNotification({
-        uid: r.client_uid, type: 'contrat_invite',
+        uid: c.uid, type: 'contrat_invite',
         title: '📄 Contrat à signer',
-        body: `${gardeNom} vous envoie le contrat de prestation de ${r._animal_nom} — vérifiez et signez`,
-        data: { token: doc.token, url: signingUrl },
+        body: `${gardeNom} vous envoie le contrat de prestation — vérifiez et signez. Il couvre toutes vos gardes.`,
+        data: { token: c.doc.token, url: signingUrl },
       });
+      await navigator.clipboard.writeText(signingUrl).catch(() => {});
+      alert(`Contrat transmis ! Lien copié :\n${signingUrl}`);
+      await load();
+    } finally {
+      setBusy(null);
     }
-    await navigator.clipboard.writeText(signingUrl).catch(() => {});
-    alert(`Contrat transmis ! Lien copié dans le presse-papiers :\n${signingUrl}`);
-    load();
   }
 
-  async function envoyerParEmail(r: Rdv) {
-    const doc = docs[r.id];
-    if (!doc?.token || !r._client_email) return;
-    setSendingEmail(r.id);
-    const signingUrl = `${window.location.origin}/signer-contrat/${doc.token}`;
+  async function envoyerParEmail(c: Client) {
+    if (!c.doc?.token || !c.email) return;
+    setBusy(c.uid);
+    const signingUrl = `${window.location.origin}/signer-contrat/${c.doc.token}`;
     const gardeNom = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre pet sitter';
     try {
       const res = await fetch('/api/contrat/notify-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: r._client_email, client_nom: r._client_nom, pro_nom: gardeNom,
-          titre: `Contrat de prestation — ${r._animal_nom}`, signing_url: signingUrl,
+          email: c.email, client_nom: c.nom, pro_nom: gardeNom,
+          titre: 'Contrat de prestation', signing_url: signingUrl,
         }),
       });
-      if (res.ok) alert('Email envoyé au client.');
-      else alert('Erreur lors de l\'envoi de l\'email.');
+      alert(res.ok ? 'Email envoyé au client.' : 'Erreur lors de l\'envoi de l\'email.');
     } finally {
-      setSendingEmail(null);
+      setBusy(null);
     }
   }
 
@@ -159,56 +179,51 @@ export default function GardeContratPage() {
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
       <h1 className="text-2xl font-bold font-galey text-teal-800">Contrats de prestation</h1>
       <p className="text-sm text-gray-500 font-galey">
-        Générez un contrat par visite/promenade, signable électroniquement.
+        Un seul contrat par client — signé une fois, il couvre toutes ses gardes.
       </p>
 
       {loading ? (
         <div className="flex justify-center py-16">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-teal-700" />
         </div>
-      ) : rdvs.length === 0 ? (
+      ) : clients.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <p className="text-4xl mb-3">📋</p>
-          <p className="font-galey">Aucune visite enregistrée pour l&apos;instant</p>
+          <p className="font-galey">Aucun client — un RDV confirmé est requis.</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {rdvs.map(r => {
-            const doc = docs[r.id];
-            const meta = doc ? STATUT_META[doc.statut] ?? STATUT_META.brouillon : null;
+          {clients.map(c => {
+            const meta = c.doc ? STATUT_META[c.doc.statut] ?? STATUT_META.brouillon : null;
+            const isDraft = !c.doc || c.doc.statut === 'brouillon';
             return (
-              <div key={r.id} className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100 flex items-center justify-between gap-4">
-                <div>
-                  <p className="font-bold font-galey text-gray-900">{r._animal_nom} — {r._client_nom}</p>
-                  <p className="text-xs text-gray-500 font-galey">
-                    {new Date(r.date_heure).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                </div>
+              <div key={c.uid} className="bg-white rounded-2xl shadow-sm p-4 border border-gray-100 flex items-center justify-between gap-4">
+                <p className="font-bold font-galey text-gray-900">{c.nom}</p>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   {meta && (
                     <span className={`text-xs font-galey font-bold px-2.5 py-1 rounded-full ${meta.cls}`}>{meta.label}</span>
                   )}
-                  {!doc ? (
-                    <button onClick={() => genererContrat(r)} disabled={generating === r.id}
+                  {!c.doc ? (
+                    <button onClick={() => ouvrirContrat(c)} disabled={busy === c.uid}
                       className="bg-teal-700 text-white px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-800 disabled:opacity-50">
-                      {generating === r.id ? '…' : 'Générer le contrat'}
+                      {busy === c.uid ? '…' : 'Générer le contrat'}
                     </button>
-                  ) : doc.statut === 'brouillon' ? (
-                    <button onClick={() => transmettre(r)}
-                      className="bg-teal-700 text-white px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-800">
+                  ) : isDraft ? (
+                    <button onClick={() => transmettre(c)} disabled={busy === c.uid}
+                      className="bg-teal-700 text-white px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-800 disabled:opacity-50">
                       Envoyer pour signature
                     </button>
                   ) : (
-                    <a href={`/signer-contrat/${doc.token}`} target="_blank" rel="noopener noreferrer"
+                    <a href={`/signer-contrat/${c.doc.token}`} target="_blank" rel="noopener noreferrer"
                       className="border border-teal-200 text-teal-700 px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-teal-50">
                       Voir le contrat
                     </a>
                   )}
-                  {doc && doc.statut !== 'brouillon' && r._client_email && (
+                  {c.doc && c.doc.statut !== 'brouillon' && c.doc.statut !== 'signe' && c.email && (
                     gardePlan !== 'free' ? (
-                      <button onClick={() => envoyerParEmail(r)} disabled={sendingEmail === r.id}
+                      <button onClick={() => envoyerParEmail(c)} disabled={busy === c.uid}
                         className="border border-gray-200 text-gray-600 px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-gray-50 disabled:opacity-50">
-                        {sendingEmail === r.id ? '…' : '📧 Par email'}
+                        {busy === c.uid ? '…' : '📧 Par email'}
                       </button>
                     ) : (
                       <Link href="/garde/abonnement"

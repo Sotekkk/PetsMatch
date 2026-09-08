@@ -200,33 +200,47 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           },
         );
       } else if (data.type === 'contrat_garde') {
-        const { data: rdv } = await supabase
-          .from('rdv')
-          .select('animal_id, client_uid, date_heure')
-          .eq('id', data.rdv_id)
-          .maybeSingle();
+        // Contrat « cadre » par client : rattaché à metadata.client_uid, pas à
+        // un RDV / un animal précis. (Anciens contrats : repli sur rdv_id.)
         let animalInfo: { nom?: string; espece?: string; race?: string } = {};
         let clientInfo: { nom?: string; contact?: string } = {};
-        if (rdv?.animal_id) {
-          const { data: an } = await supabase.from('animaux').select('nom, espece, race').eq('id', rdv.animal_id).maybeSingle();
-          animalInfo = an ?? {};
+        const clientUid = (meta.client_uid as string | undefined)
+          ?? (data.rdv_id
+            ? (await supabase.from('rdv').select('client_uid').eq('id', data.rdv_id).maybeSingle()).data?.client_uid
+            : null);
+        if (data.rdv_id) {
+          const { data: rdv } = await supabase.from('rdv')
+            .select('animal_id, date_heure').eq('id', data.rdv_id).maybeSingle();
+          if (rdv?.animal_id) {
+            const { data: an } = await supabase.from('animaux').select('nom, espece, race').eq('id', rdv.animal_id).maybeSingle();
+            animalInfo = an ?? {};
+          }
         }
-        if (rdv?.client_uid) {
+        const clientPid = meta.client_profile_id as string | undefined;
+        if (clientPid) {
           const { data: cp2 } = await supabase.from('user_profiles')
-            .select('firstname, lastname, email_contact').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle();
+            .select('firstname, lastname, nom, email_contact').eq('id', clientPid).maybeSingle();
+          if (cp2) clientInfo = {
+            nom: (cp2.nom?.trim() || `${cp2.firstname ?? ''} ${cp2.lastname ?? ''}`.trim()),
+            contact: cp2.email_contact ?? '',
+          };
+        }
+        if (!clientInfo.nom && clientUid) {
+          const { data: cp2 } = await supabase.from('user_profiles')
+            .select('firstname, lastname, nom, email_contact').eq('uid', clientUid).eq('is_main', true).maybeSingle();
           clientInfo = {
-            nom: `${cp2?.firstname ?? ''} ${cp2?.lastname ?? ''}`.trim(),
+            nom: (cp2?.nom?.trim() || `${cp2?.firstname ?? ''} ${cp2?.lastname ?? ''}`.trim()),
             contact: cp2?.email_contact ?? '',
           };
         }
         generatedHtml = generateContratGardeHTML(
           {
-            animal_nom: animalInfo.nom ?? meta.acquereur_nom ?? '',
+            animal_nom: animalInfo.nom ?? '',
             espece: animalInfo.espece,
             race: animalInfo.race,
-            client_nom: meta.client_nom || clientInfo.nom,
-            client_contact: meta.client_contact || clientInfo.contact,
-            date_visite: rdv?.date_heure ?? meta.date_visite,
+            client_nom: (meta.client_nom as string) || clientInfo.nom,
+            client_contact: (meta.client_contact as string) || (meta.client_email as string) || clientInfo.contact,
+            date_visite: meta.date_visite,
             type_prestation: meta.type_prestation,
           },
           {

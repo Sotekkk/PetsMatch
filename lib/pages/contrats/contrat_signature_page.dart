@@ -266,7 +266,9 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     }
     final type = _doc?['type'] as String? ?? '';
     final meta = (_doc?['metadata'] as Map?)?.cast<String, dynamic>() ?? {};
-    if (_animal == null || _eleveur == null) { _pdfBytes = null; return; }
+    // Le contrat de garde « cadre » (par client) n'est pas rattaché à un animal.
+    final animalRequired = type != 'contrat_garde';
+    if ((animalRequired && _animal == null) || _eleveur == null) { _pdfBytes = null; return; }
     final sigElv = meta['signature_eleveur'] as String?;
     final sigAcq = meta['signature_acquereur'] as String?;
     String m(String k) => (meta[k]?.toString() ?? '');
@@ -280,7 +282,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
         ? m('tva_taux') : '';
     // Champs animal éditables dans le formulaire → priment sur la fiche animale.
     final animalPdf = <String, dynamic>{
-      ..._animal!,
+      ...?_animal,
       if (m('animal_nom').isNotEmpty) 'nom': m('animal_nom'),
       if (m('animal_race').isNotEmpty) 'race': m('animal_race'),
       if (m('animal_couleur').isNotEmpty) 'couleur': m('animal_couleur'),
@@ -342,7 +344,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
         );
       } else if (type == 'contrat_garde') {
         _pdfBytes = await contratGardePdfBytes(
-          animal: animalPdf, prestataire: _eleveur!,
+          animal: _animal == null ? null : animalPdf, prestataire: _eleveur!,
           clientNom: m('client_nom'),
           clientAdresse: m('client_adresse'),
           clientEmail: m('client_email'),
@@ -396,6 +398,29 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     if (clientEmail != null && clientEmail.isNotEmpty && clientEmail == _myEmail) return true;
     if (_animal != null && _myUid == (_animal!['uid_acquereur'] as String?)) return true;
     return _myUid == (_doc!['uid_acquereur'] as String?);
+  }
+
+  /// Libellés des deux signataires selon le type de contrat (« éleveur /
+  /// acquéreur » ne convient pas à une garde, une adoption, une saillie…).
+  /// `vendeurDe` / `acquereurDe` : forme génitive (« Signature … »).
+  /// `acquereurA` : forme datif (« Envoyer … »).
+  ({String vendeurDe, String acquereurDe, String acquereurA}) get _signerRoles {
+    if (widget.isCertificatEngagement) {
+      return (vendeurDe: 'du cédant', acquereurDe: 'du futur propriétaire', acquereurA: 'au futur propriétaire');
+    }
+    switch (_doc?['type'] as String? ?? '') {
+      case 'contrat_garde':
+      case 'contrat_hebergement':
+      case 'contrat_prestation':
+      case 'contrat_education':
+        return (vendeurDe: 'du prestataire', acquereurDe: 'du client', acquereurA: 'au client');
+      case 'contrat_adoption':
+        return (vendeurDe: 'de l\'association', acquereurDe: 'de l\'adoptant·e', acquereurA: 'à l\'adoptant·e');
+      case 'contrat_saillie':
+        return (vendeurDe: 'du propriétaire de l\'étalon', acquereurDe: 'du propriétaire de la femelle', acquereurA: 'au propriétaire de la femelle');
+      default:
+        return (vendeurDe: 'de l\'éleveur / vendeur', acquereurDe: 'de l\'acquéreur', acquereurA: 'à l\'acquéreur');
+    }
   }
 
   // ── Signature — documents_animaux ─────────────────────────────────────────
@@ -1037,7 +1062,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
                   onPressed: _saving ? null : _envoyerAcquereur,
                   icon: const Icon(Icons.send_outlined, size: 16),
                   label: Text(
-                    statut == 'brouillon' ? 'Envoyer à l\'acquéreur' : 'Relancer l\'acquéreur',
+                    '${statut == 'brouillon' ? 'Envoyer' : 'Relancer'} ${_signerRoles.acquereurA}',
                     style: const TextStyle(fontSize: 12, fontFamily: 'Galey', fontWeight: FontWeight.w600),
                   ),
                   style: OutlinedButton.styleFrom(
@@ -1054,7 +1079,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
                   style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15, color: _dark)),
               const SizedBox(height: 10),
               _sigZone(
-                label: 'Signature de l\'éleveur / vendeur',
+                label: 'Signature ${_signerRoles.vendeurDe}',
                 existing: sigElv,
                 canSign: !isFinal && _isEleveur && sigElv == null,
                 signedAt: meta['signe_eleveur_le'] as String?,
@@ -1062,7 +1087,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
               ),
               const SizedBox(height: 12),
               _sigZone(
-                label: 'Signature de l\'acquéreur',
+                label: 'Signature ${_signerRoles.acquereurDe}',
                 existing: sigAcq,
                 canSign: !isFinal && _isAcquereur && sigAcq == null,
                 signedAt: meta['signe_acquereur_le'] as String?,

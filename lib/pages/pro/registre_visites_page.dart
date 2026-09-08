@@ -25,7 +25,9 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
 
   bool _loading = true;
   List<Map<String, dynamic>> _visites = [];
-  bool _showPassees = false;
+  int _tab = 0; // 0 = À venir, 1 = Passées, 2 = Contrats clients
+  // client_uid → {nom, email, profile_id, doc_token, doc_statut}
+  Map<String, Map<String, dynamic>> _clients = {};
 
   @override
   void initState() {
@@ -47,82 +49,138 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
 
       final list = List<Map<String, dynamic>>.from(rows as List);
 
-      final clientUids = list.map((r) => r['client_uid'] as String?).whereType<String>().toSet().toList();
+      // Résolution du client par SON profil (client_profile_id) — jamais
+      // uid+is_main, qui renverrait le profil éleveur d'un compte multi-profils.
+      final clientProfileIds = list.map((r) => r['client_profile_id']?.toString())
+          .whereType<String>().where((s) => s.isNotEmpty).toSet().toList();
+      final clientUidsNoPid = list
+          .where((r) => (r['client_profile_id']?.toString() ?? '').isEmpty)
+          .map((r) => r['client_uid'] as String?).whereType<String>().toSet().toList();
       final animalIds  = list.map((r) => r['animal_id']?.toString()).whereType<String>().where((s) => s.isNotEmpty).toSet().toList();
 
       final results = await Future.wait([
-        clientUids.isNotEmpty
-            ? _supa.from('user_profiles').select('uid, firstname, lastname, nom').inFilter('uid', clientUids).eq('is_main', true)
+        clientProfileIds.isNotEmpty
+            ? _supa.from('user_profiles').select('id, uid, firstname, lastname, nom, email_contact').inFilter('id', clientProfileIds)
+            : Future.value(<Map<String, dynamic>>[]),
+        clientUidsNoPid.isNotEmpty
+            ? _supa.from('user_profiles').select('id, uid, firstname, lastname, nom, email_contact').inFilter('uid', clientUidsNoPid).eq('is_main', true)
             : Future.value(<Map<String, dynamic>>[]),
         animalIds.isNotEmpty
             ? _supa.from('animaux').select('id, nom').inFilter('id', animalIds)
             : Future.value(<Map<String, dynamic>>[]),
       ]);
 
-      final clientNames = <String, String>{};
-      for (final c in (results[0] as List)) {
+      // Contrats de prestation « cadre » du profil garde actif, indexés par client.
+      var docsQ = _supa.from('documents_animaux')
+          .select('token, statut, metadata')
+          .eq('uid_eleveur', uid)
+          .eq('type', 'contrat_garde');
+      if (pid.isNotEmpty) docsQ = docsQ.eq('pro_profile_id', pid);
+      final docs = List<Map<String, dynamic>>.from(await docsQ as List);
+
+      String nomOf(Map<String, dynamic> c) {
         final nom = (c['nom'] as String?)?.trim();
         final full = nom?.isNotEmpty == true ? nom! : '${c['firstname'] ?? ''} ${c['lastname'] ?? ''}'.trim();
-        clientNames[c['uid'] as String] = full.isNotEmpty ? full : 'Client';
+        return full.isNotEmpty ? full : 'Client';
+      }
+      final nameByPid = <String, String>{};
+      final emailByPid = <String, String>{};
+      final nameByUid = <String, String>{};
+      final emailByUid = <String, String>{};
+      for (final c in (results[0] as List)) {
+        nameByPid[c['id'] as String] = nomOf(c);
+        emailByPid[c['id'] as String] = (c['email_contact'] as String?) ?? '';
+      }
+      for (final c in (results[1] as List)) {
+        nameByUid[c['uid'] as String] = nomOf(c);
+        emailByUid[c['uid'] as String] = (c['email_contact'] as String?) ?? '';
       }
       final animalNames = <String, String>{
-        for (final a in (results[1] as List)) a['id'].toString(): a['nom']?.toString() ?? '',
+        for (final a in (results[2] as List)) a['id'].toString(): a['nom']?.toString() ?? '',
       };
 
-      for (final r in list) {
-        r['_client_nom'] = clientNames[r['client_uid']] ?? 'Client';
-        r['_animal_nom'] = animalNames[r['animal_id']?.toString()] ?? '';
+      final docByClient = <String, Map<String, dynamic>>{};
+      for (final d in docs) {
+        final meta = (d['metadata'] as Map?) ?? {};
+        final cu = meta['client_uid']?.toString();
+        if (cu != null && cu.isNotEmpty) docByClient[cu] = d;
       }
 
-      if (mounted) setState(() { _visites = list; _loading = false; });
+      String clientName(Map<String, dynamic> r) {
+        final cp = r['client_profile_id']?.toString() ?? '';
+        if (cp.isNotEmpty && nameByPid[cp] != null) return nameByPid[cp]!;
+        return nameByUid[r['client_uid']?.toString() ?? ''] ?? 'Client';
+      }
+      String clientEmail(Map<String, dynamic> r) {
+        final cp = r['client_profile_id']?.toString() ?? '';
+        if (cp.isNotEmpty && (emailByPid[cp] ?? '').isNotEmpty) return emailByPid[cp]!;
+        return emailByUid[r['client_uid']?.toString() ?? ''] ?? '';
+      }
+
+      final clients = <String, Map<String, dynamic>>{};
+      for (final r in list) {
+        r['_client_nom'] = clientName(r);
+        r['_animal_nom'] = animalNames[r['animal_id']?.toString()] ?? '';
+        final cu = r['client_uid']?.toString();
+        if (cu != null && cu.isNotEmpty && !clients.containsKey(cu)) {
+          final doc = docByClient[cu];
+          clients[cu] = {
+            'nom': clientName(r),
+            'email': clientEmail(r),
+            'profile_id': r['client_profile_id'],
+            'doc_token': doc?['token'],
+            'doc_statut': doc?['statut'],
+          };
+        }
+      }
+
+      if (mounted) setState(() { _visites = list; _clients = clients; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _genererContratSignature(Map<String, dynamic> rdv) async {
+  /// Ouvre (ou crée) le contrat de prestation « cadre » d'un client — un seul
+  /// par (profil garde, client), réutilisé pour toutes ses gardes. Scopé
+  /// `pro_profile_id` + `metadata.client_uid` (aucun mélange de profils).
+  Future<void> _openClientContrat(String clientUid) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+    final client = _clients[clientUid];
+    if (client == null) return;
+    final pid = User_Info.activeProfileId;
     try {
-      final existing = await _supa
-          .from('documents_animaux')
-          .select('token')
-          .eq('rdv_id', rdv['id'])
+      var q = _supa.from('documents_animaux')
+          .select('token, statut')
+          .eq('uid_eleveur', uid)
           .eq('type', 'contrat_garde')
-          .maybeSingle();
+          .eq('metadata->>client_uid', clientUid);
+      if (pid.isNotEmpty) q = q.eq('pro_profile_id', pid);
+      final existing = await q.maybeSingle();
 
       String? token = existing?['token'] as String?;
       if (token == null) {
-        final pid = User_Info.activeProfileId;
         final row = await _supa.from('documents_animaux').insert({
           'uid_eleveur': uid,
           if (pid.isNotEmpty) 'pro_profile_id': pid,
-          'animal_id': rdv['animal_id'],
-          'rdv_id': rdv['id'],
           'type': 'contrat_garde',
-          'titre': 'Contrat de prestation — ${rdv['_animal_nom'] ?? ''}',
+          'titre': 'Contrat de prestation — ${client['nom']}',
           'statut': 'en_attente',
           'metadata': {
-            'client_nom': rdv['_client_nom'],
-            if (rdv['client_uid'] != null) 'client_uid': rdv['client_uid'],
-            if (rdv['client_profile_id'] != null) 'client_profile_id': rdv['client_profile_id'],
-            'date_visite': rdv['date_heure'],
-            if ((rdv['motif']?.toString() ?? '').isNotEmpty) 'prestation': rdv['motif'],
-            if ((rdv['lieu']?.toString() ?? '').isNotEmpty) 'client_adresse': rdv['lieu'],
+            'client_nom': client['nom'],
+            'client_uid': clientUid,
+            if (client['profile_id'] != null) 'client_profile_id': client['profile_id'],
+            if ((client['email'] as String?)?.isNotEmpty == true) 'client_email': client['email'],
           },
         }).select('token').single();
         token = row['token'] as String?;
-      } else {
-        await _supa.from('documents_animaux')
-            .update({'statut': 'en_attente'})
-            .eq('rdv_id', rdv['id'])
-            .eq('type', 'contrat_garde');
       }
       if (token == null) return;
       if (mounted) {
         await Navigator.push(context, MaterialPageRoute(
           builder: (_) => ContratSignaturePage(token: token),
         ));
+        await _load();
       }
     } catch (e) {
       if (mounted) {
@@ -155,7 +213,52 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
       return r['statut'] != 'termine' && (dh == null || dh.isAfter(now));
     }).toList();
     final passees = _visites.where((r) => !aVenir.contains(r)).toList().reversed.toList();
-    final displayed = _showPassees ? passees : aVenir;
+    final clientsList = _clients.entries.toList()
+      ..sort((a, b) => (a.value['nom'] as String).compareTo(b.value['nom'] as String));
+
+    Widget content;
+    if (_tab == 2) {
+      content = clientsList.isEmpty
+          ? const _Empty('Aucun client — un RDV confirmé est requis.')
+          : ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: clientsList.length + 1,
+              itemBuilder: (_, i) {
+                if (i == 0) {
+                  return const Padding(
+                    padding: EdgeInsets.fromLTRB(4, 4, 4, 10),
+                    child: Text(
+                      'Un seul contrat de prestation par client — signé une fois, il couvre toutes ses gardes.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey),
+                    ),
+                  );
+                }
+                final e = clientsList[i - 1];
+                return _ClientContratCard(
+                  nom: e.value['nom'] as String,
+                  statut: e.value['doc_statut'] as String?,
+                  onTap: () => _openClientContrat(e.key),
+                );
+              },
+            );
+    } else {
+      final displayed = _tab == 1 ? passees : aVenir;
+      content = displayed.isEmpty
+          ? _Empty(_tab == 1 ? 'Aucune visite passée' : 'Aucune visite à venir')
+          : ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: displayed.length,
+              itemBuilder: (_, i) => _VisiteCard(
+                rdv: displayed[i],
+                onTerminer: () => _marquerTermine(displayed[i]),
+                onRapport: () => showVisiteRapportSheet(context, displayed[i]),
+                onContrat: () {
+                  final cu = displayed[i]['client_uid']?.toString();
+                  if (cu != null && cu.isNotEmpty) _openClientContrat(cu);
+                },
+              ),
+            );
+    }
 
     return Scaffold(
       backgroundColor: _bg,
@@ -170,37 +273,64 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: Row(children: [
-              Expanded(
-                child: _TabChip(label: 'À venir (${aVenir.length})', selected: !_showPassees,
-                    onTap: () => setState(() => _showPassees = false)),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _TabChip(label: 'Passées (${passees.length})', selected: _showPassees,
-                    onTap: () => setState(() => _showPassees = true)),
-              ),
+              for (final t in [
+                (0, 'À venir (${aVenir.length})'),
+                (1, 'Passées (${passees.length})'),
+                (2, 'Contrats (${clientsList.length})'),
+              ]) ...[
+                Expanded(
+                  child: _TabChip(label: t.$2, selected: _tab == t.$1,
+                      onTap: () => setState(() => _tab = t.$1)),
+                ),
+                if (t.$1 != 2) const SizedBox(width: 8),
+              ],
             ]),
           ),
         ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _teal))
-          : displayed.isEmpty
-              ? Center(child: Text(_showPassees ? 'Aucune visite passée' : 'Aucune visite à venir',
-                  style: const TextStyle(fontFamily: 'Galey', color: Colors.grey)))
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: displayed.length,
-                    itemBuilder: (_, i) => _VisiteCard(
-                      rdv: displayed[i],
-                      onTerminer: () => _marquerTermine(displayed[i]),
-                      onRapport: () => showVisiteRapportSheet(context, displayed[i]),
-                      onContrat: () => _genererContratSignature(displayed[i]),
-                    ),
-                  ),
-                ),
+          : RefreshIndicator(onRefresh: _load, child: content),
+    );
+  }
+}
+
+class _Empty extends StatelessWidget {
+  final String text;
+  const _Empty(this.text);
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Text(text, style: const TextStyle(fontFamily: 'Galey', color: Colors.grey)),
+      );
+}
+
+class _ClientContratCard extends StatelessWidget {
+  final String nom;
+  final String? statut;
+  final VoidCallback onTap;
+  static const _teal = Color(0xFF0C5C6C);
+  const _ClientContratCard({required this.nom, required this.statut, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color) = switch (statut) {
+      'signe' => ('Signé', const Color(0xFF6E9E57)),
+      'partiellement_signe' => ('Partiellement signé', const Color(0xFF3E7CB1)),
+      'en_attente' => ('En attente de signature', const Color(0xFFCA8A04)),
+      null => ('À générer', Colors.grey),
+      _ => (statut!, Colors.grey),
+    };
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ListTile(
+        onTap: onTap,
+        leading: const Icon(Icons.draw_outlined, color: _teal),
+        title: Text(nom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+        subtitle: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: color)),
+        trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+      ),
     );
   }
 }

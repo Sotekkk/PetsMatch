@@ -619,7 +619,7 @@ Future<pw.Document> _certificatCessionDoc({
 /// mécanismes de signature que les contrats éleveur (deux blocs signature,
 /// image base64). [prestataire] = map profil du pet-sitter (clés `_parties`).
 Future<Uint8List> contratGardePdfBytes({
-  required Map<String, dynamic> animal,
+  Map<String, dynamic>? animal,
   required Map<String, dynamic> prestataire,
   String clientNom = '', String clientAdresse = '', String clientEmail = '', String clientTel = '',
   String prestation = '', DateTime? datePrestation, String tarif = '', String notes = '',
@@ -629,8 +629,8 @@ Future<Uint8List> contratGardePdfBytes({
   final p = _parties(prestataire);
   final today = _fmt(DateTime.now());
   final dateP = datePrestation != null ? _fmt(datePrestation) : '';
-  final espece = (animal['espece'] as String? ?? '').trim();
-  final race = (animal['race'] as String? ?? '').trim();
+  final espece = (animal?['espece'] as String? ?? '').trim();
+  final race = (animal?['race'] as String? ?? '').trim();
   final animalDesc = [
     if (espece.isNotEmpty) espece[0].toUpperCase() + espece.substring(1),
     if (race.isNotEmpty) race,
@@ -663,10 +663,15 @@ Future<Uint8List> contratGardePdfBytes({
       pw.SizedBox(height: 10),
       pw.Text('Article 1 : Objet du contrat', style: _artTitle()),
       pw.SizedBox(height: 3),
-      _line('Animal confié', animal['nom'] as String?),
-      _line('Espèce / race', animalDesc.isEmpty ? null : animalDesc),
-      _line('Identification', animal['identification'] as String?),
-      _line('Prestation', prestation.trim().isEmpty ? 'Visite / promenade' : prestation.trim()),
+      if (animal != null) ...[
+        _line('Animal confié', animal['nom'] as String?),
+        _line('Espèce / race', animalDesc.isEmpty ? null : animalDesc),
+        _line('Identification', animal['identification'] as String?),
+      ] else
+        _para('Le présent contrat encadre l\'ensemble des prestations de garde, visite ou '
+            'promenade confiées ponctuellement par le Client au Prestataire. Chaque intervention '
+            'fait l\'objet d\'une réservation précisant l\'animal concerné, les dates et le tarif.'),
+      _line('Prestation', prestation.trim().isEmpty ? 'Garde / visite / promenade' : prestation.trim()),
       _line('Date de la prestation', dateP.isEmpty ? null : dateP),
       _line('Tarif', tarifLabel),
 
