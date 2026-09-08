@@ -3,13 +3,17 @@
 -- Traçabilité des clés client détenues par un profil garde
 -- (qui a la clé, où/comment y accéder, depuis quand).
 -- Exécuter dans Supabase SQL Editor (idempotent)
+--
+-- ⚠️ Correctif : animaux.id est de type TEXT (IDs Firestore legacy) — la
+-- version précédente déclarait animal_id UUID → la migration échouait sur
+-- le FK (incompatible types uuid / text) et la table n'a jamais été créée.
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS cles_clients (
   id                UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   pro_uid           TEXT NOT NULL,
   pro_profile_id    UUID REFERENCES user_profiles(id) ON DELETE CASCADE,
-  animal_id         UUID REFERENCES animaux(id) ON DELETE SET NULL,
+  animal_id         TEXT REFERENCES animaux(id) ON DELETE SET NULL,
   owner_uid         TEXT,
   owner_profile_id  UUID REFERENCES user_profiles(id) ON DELETE SET NULL,
   description       TEXT NOT NULL,

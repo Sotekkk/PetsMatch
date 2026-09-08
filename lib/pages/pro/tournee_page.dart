@@ -302,8 +302,20 @@ class _VisiteTile extends StatelessWidget {
           Text(heure, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
           const SizedBox(width: 8),
           if (lieu.isNotEmpty)
-            Expanded(child: Text(lieu, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                color: geocoded ? Colors.grey.shade700 : Colors.orange.shade800), overflow: TextOverflow.ellipsis))
+            Expanded(
+              child: GestureDetector(
+                onTap: onAddAddress,
+                child: Row(children: [
+                  Flexible(child: Text(lieu, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      color: geocoded ? Colors.grey.shade700 : Colors.orange.shade800),
+                      overflow: TextOverflow.ellipsis)),
+                  if (!geocoded) ...[
+                    const SizedBox(width: 4),
+                    Icon(Icons.edit_location_alt_outlined, size: 13, color: Colors.orange.shade800),
+                  ],
+                ]),
+              ),
+            )
           else
             GestureDetector(
               onTap: onAddAddress,
