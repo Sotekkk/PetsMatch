@@ -12,8 +12,14 @@ interface RdvInfo {
   id: string;
   pro_uid: string;
   pro_profile_id?: string | null;
+  client_profile_id?: string | null;
   statut: string;
   animal_id?: string | number | null;
+  animal_nom_manuel?: string | null;
+  client_nom_manuel?: string | null;
+  client_telephone_manuel?: string | null;
+  notes_client?: string | null;
+  adresse_depart?: string | null;
   duree_minutes?: number | null;
   motif?: string | null;
   client_uid?: string | null;
@@ -473,11 +479,13 @@ export default function AgendaPage() {
       }
     } catch { /* noop */ }
 
-    // Enrichir avec infos rdv
-    const rdvIds = list.map(e => e.rdv_id).filter(Boolean) as string[];
+    // Enrichir avec infos rdv — côté client (rdv_id) ET côté pro (couleur 'rdv:<id>')
+    const rdvIds = [...new Set(list
+      .map(e => e.rdv_id || (e.couleur?.startsWith('rdv:') ? e.couleur.slice(4) : null))
+      .filter(Boolean) as string[])];
     if (rdvIds.length > 0) {
       const { data: rdvsData } = await supabase
-        .from('rdv').select('id, pro_uid, pro_profile_id, statut, animal_id, duree_minutes, motif, client_uid, lieu, lieu_lat, lieu_lng').in('id', rdvIds);
+        .from('rdv').select('id, pro_uid, pro_profile_id, client_profile_id, statut, animal_id, animal_nom_manuel, client_nom_manuel, client_telephone_manuel, notes_client, adresse_depart, duree_minutes, motif, client_uid, lieu, lieu_lat, lieu_lng').in('id', rdvIds);
       const rdvMap: Record<string, RdvInfo> = {};
       for (const r of (rdvsData ?? [])) {
         const rec = r as RdvInfo;
@@ -501,7 +509,10 @@ export default function AgendaPage() {
           r.annulation_limite_h = r.pro_profile_id ? (byPpid[r.pro_profile_id] ?? 0) : (byUid[r.pro_uid] ?? 0);
         }
       } catch { /* noop */ }
-      setEvents(list.map(e => ({ ...e, rdv: e.rdv_id ? rdvMap[e.rdv_id] ?? null : null })));
+      setEvents(list.map(e => {
+        const rid = e.rdv_id || (e.couleur?.startsWith('rdv:') ? e.couleur.slice(4) : null);
+        return { ...e, rdv: rid ? rdvMap[rid] ?? null : null };
+      }));
     } else {
       setEvents(list);
     }
@@ -871,7 +882,7 @@ export default function AgendaPage() {
           />
         ) : (
           <ListView groups={grouped} keys={groupedKeys} onDelete={deleteEvent}
-            onAnnuler={setModalAnnuler} onModifier={setModalModifier} onNavigateToAnimal={navigateToAnimal} />
+            onAnnuler={setModalAnnuler} onModifier={setModalModifier} onNavigateToAnimal={navigateToAnimal} viewerUid={uid ?? ''} />
         )}
       </div>
 
@@ -1395,7 +1406,7 @@ function CalendarView({ year, month, events, tasks, selectedDay, onPrev, onNext,
             <p className="text-gray-400 text-sm text-center py-4" style={{ fontFamily: 'Galey, sans-serif' }}>Aucun événement ni tâche</p>
           ) : dayEvts.length === 0 ? null : (
             <div className="space-y-2">
-              {dayEvts.map(e => <EventCard key={e.id} event={e} onDelete={onDelete} onAnnuler={onAnnuler} onModifier={onModifier} onNavigateToAnimal={onNavigateToAnimal} />)}
+              {dayEvts.map(e => <EventCard key={e.id} event={e} onDelete={onDelete} onAnnuler={onAnnuler} onModifier={onModifier} onNavigateToAnimal={onNavigateToAnimal} viewerUid={uid} />)}
             </div>
           )}
         </div>
@@ -1406,12 +1417,13 @@ function CalendarView({ year, month, events, tasks, selectedDay, onPrev, onNext,
 
 // ── ListView ───────────────────────────────────────────────────────────────────
 
-function ListView({ groups, keys, onDelete, onAnnuler, onModifier, onNavigateToAnimal }: {
+function ListView({ groups, keys, onDelete, onAnnuler, onModifier, onNavigateToAnimal, viewerUid = '' }: {
   groups: Record<string, AgendaEvent[]>; keys: string[];
   onDelete: (id: number) => void;
   onAnnuler: (e: AgendaEvent) => void;
   onModifier: (e: AgendaEvent) => void;
   onNavigateToAnimal: (id: string | number | null | undefined) => void;
+  viewerUid?: string;
 }) {
   if (keys.length === 0) return (
     <div className="text-center py-20">
@@ -1434,7 +1446,7 @@ function ListView({ groups, keys, onDelete, onAnnuler, onModifier, onNavigateToA
               {label}
             </p>
             <div className="space-y-2">
-              {evts.map(e => <EventCard key={e.id} event={e} onDelete={onDelete} onAnnuler={onAnnuler} onModifier={onModifier} onNavigateToAnimal={onNavigateToAnimal} />)}
+              {evts.map(e => <EventCard key={e.id} event={e} onDelete={onDelete} onAnnuler={onAnnuler} onModifier={onModifier} onNavigateToAnimal={onNavigateToAnimal} viewerUid={viewerUid} />)}
             </div>
           </div>
         );
@@ -1443,17 +1455,114 @@ function ListView({ groups, keys, onDelete, onAnnuler, onModifier, onNavigateToA
   );
 }
 
+// ── RdvDetails : fiche animal + maître (ou pro) + lieu de récupération ─────────
+
+function RdvDetails({ rdv, viewerUid, onNavigateToAnimal }: {
+  rdv: RdvInfo;
+  viewerUid: string;
+  onNavigateToAnimal: (id: string | number | null | undefined) => void;
+}) {
+  const iAmPro = viewerUid !== '' && viewerUid === rdv.pro_uid;
+  const [animal, setAnimal] = useState<{ nom: string; photo_url: string | null } | null>(
+    rdv.animal_id == null && rdv.animal_nom_manuel ? { nom: rdv.animal_nom_manuel, photo_url: null } : null,
+  );
+  const [otherName, setOtherName] = useState('');
+  const [otherTel, setOtherTel] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    // Animal (fiche liée uniquement ; le nom manuel est déjà en état initial)
+    if (rdv.animal_id != null) {
+      supabase.from('animaux').select('nom, photo_url').eq('id', String(rdv.animal_id)).maybeSingle()
+        .then(({ data }) => { if (alive && data) setAnimal(data as { nom: string; photo_url: string | null }); });
+    }
+    // Autre partie : le maître (si je suis le pro) ou le pro (si je suis le client)
+    async function loadOther() {
+      if (iAmPro) {
+        if (rdv.client_profile_id) {
+          const { data } = await supabase.from('user_profiles')
+            .select('nom, firstname, lastname, telephone').eq('id', rdv.client_profile_id).maybeSingle();
+          if (data) return { name: (data.nom || [data.firstname, data.lastname].filter(Boolean).join(' ')).trim(), tel: data.telephone || '' };
+        }
+        if (rdv.client_uid) {
+          const { data } = await supabase.from('user_profiles')
+            .select('nom, firstname, lastname, telephone').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle();
+          if (data) return { name: (data.nom || [data.firstname, data.lastname].filter(Boolean).join(' ')).trim(), tel: data.telephone || '' };
+        }
+        return { name: (rdv.client_nom_manuel || '').trim(), tel: (rdv.client_telephone_manuel || '').trim() };
+      }
+      if (rdv.pro_profile_id) {
+        const { data } = await supabase.from('user_profiles')
+          .select('nom, firstname, lastname, telephone').eq('id', rdv.pro_profile_id).maybeSingle();
+        if (data) return { name: (data.nom || [data.firstname, data.lastname].filter(Boolean).join(' ')).trim(), tel: data.telephone || '' };
+      }
+      const { data } = await supabase.from('user_profiles')
+        .select('nom, firstname, lastname, telephone').eq('uid', rdv.pro_uid).eq('is_main', true).maybeSingle();
+      if (data) return { name: (data.nom || [data.firstname, data.lastname].filter(Boolean).join(' ')).trim(), tel: data.telephone || '' };
+      return { name: '', tel: '' };
+    }
+    loadOther().then(r => { if (alive) { setOtherName(r.name); setOtherTel(r.tel); } });
+    return () => { alive = false; };
+  }, [rdv, iAmPro]);
+
+  const lieuRecup = rdv.lieu || rdv.adresse_depart || '';
+
+  return (
+    <div className="space-y-2 pt-1">
+      {animal && (
+        <button onClick={() => onNavigateToAnimal(rdv.animal_id)}
+          className="w-full flex items-center gap-3 rounded-lg border border-gray-100 hover:border-[#0C5C6C]/40 px-3 py-2 transition-colors text-left">
+          {animal.photo_url
+            ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={animal.photo_url} alt={animal.nom} className="w-9 h-9 rounded-full object-cover flex-shrink-0" />
+            )
+            : <span className="w-9 h-9 rounded-full bg-[#0C5C6C]/10 flex items-center justify-center flex-shrink-0">🐾</span>}
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-[#1E2025] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{animal.nom}</p>
+            <p className="text-[10px] text-gray-400">Voir la fiche de l&apos;animal →</p>
+          </div>
+        </button>
+      )}
+
+      {otherName && (
+        <div className="flex items-center gap-2 text-xs text-gray-600">
+          <span className="text-gray-400">{iAmPro ? '👤 Maître :' : '💼 Professionnel :'}</span>
+          <span className="font-medium">{otherName}</span>
+          {otherTel && (
+            <a href={`tel:${otherTel}`} className="ml-auto text-[#0C5C6C] font-semibold">📞 {otherTel}</a>
+          )}
+        </div>
+      )}
+
+      {rdv.notes_client && (
+        <p className="text-xs text-gray-500"><span className="text-gray-400">Note du client : </span>{rdv.notes_client}</p>
+      )}
+
+      {lieuRecup && (
+        <p className="text-xs text-gray-600">
+          <span className="text-gray-400">{iAmPro ? '📍 Lieu de récupération : ' : '📍 Lieu du RDV : '}</span>
+          {lieuRecup}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── EventCard ─────────────────────────────────────────────────────────────────
 
-function EventCard({ event: e, onDelete, onAnnuler, onModifier, onNavigateToAnimal }: {
+function EventCard({ event: e, onDelete, onAnnuler, onModifier, onNavigateToAnimal, viewerUid = '' }: {
   event: AgendaEvent;
   onDelete: (id: number) => void;
   onAnnuler: (e: AgendaEvent) => void;
   onModifier: (e: AgendaEvent) => void;
   onNavigateToAnimal: (id: string | number | null | undefined) => void;
+  viewerUid?: string;
 }) {
   const color  = colorFor(e);
   const isRdv  = !!e.rdv_id;
+  const hasRdvInfo = !!e.rdv;
+  const [openDetails, setOpenDetails] = useState(false);
   // Le client peut annuler/modifier tant qu'on est à plus de `limite` heures
   // du RDV (limite 0 = toujours possible, choisi par le pro).
   const annulLimiteH = Number(e.rdv?.annulation_limite_h) || 0;
@@ -1480,7 +1589,7 @@ function EventCard({ event: e, onDelete, onAnnuler, onModifier, onNavigateToAnim
           {e.notes && <p className="text-xs text-gray-400 truncate">{e.notes}</p>}
           {lieu && <p className="text-xs text-gray-400 truncate">📍 {lieu}</p>}
         </div>
-        {!isRdv && (
+        {!isRdv && !hasRdvInfo && (
           <button onClick={() => onDelete(e.id)} className="text-gray-300 hover:text-red-400 transition-colors text-lg flex-shrink-0">×</button>
         )}
       </div>
@@ -1493,12 +1602,25 @@ function EventCard({ event: e, onDelete, onAnnuler, onModifier, onNavigateToAnim
         </a>
       )}
 
-      {animalId && (
+      {animalId && !hasRdvInfo && (
         <button onClick={() => onNavigateToAnimal(animalId)}
           className="w-full text-xs font-semibold py-1.5 rounded-lg border border-[#0C5C6C]/20 hover:border-[#0C5C6C] text-[#0C5C6C] transition-colors"
           style={{ fontFamily: 'Galey, sans-serif' }}>
           🐾 Ouvrir la fiche animal
         </button>
+      )}
+
+      {hasRdvInfo && (
+        <>
+          <button onClick={() => setOpenDetails(v => !v)}
+            className="w-full text-xs font-semibold py-1.5 rounded-lg border border-gray-100 hover:border-gray-300 text-gray-500 transition-colors"
+            style={{ fontFamily: 'Galey, sans-serif' }}>
+            {openDetails ? 'Masquer les détails ▴' : 'Détails du rendez-vous ▾'}
+          </button>
+          {openDetails && e.rdv && (
+            <RdvDetails rdv={e.rdv} viewerUid={viewerUid} onNavigateToAnimal={onNavigateToAnimal} />
+          )}
+        </>
       )}
 
       {isRdv && plus24h && (
