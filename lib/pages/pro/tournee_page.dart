@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/geocoding_helper.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 
 // ── Ma tournée — carte des visites du jour + ordre réordonnable. L'heure du
 // RDV (date_heure) reste la référence officielle ; ordre_visite est un
@@ -120,6 +121,41 @@ class _TourneePageState extends State<TourneePage> {
     } catch (_) {}
   }
 
+  Future<void> _valider(Map<String, dynamic> rdv) async {
+    try {
+      await _supa.from('rdv').update({'statut': 'termine'}).eq('id', rdv['id']);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Visite marquée terminée.', style: TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Color(0xFF6E9E57),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  void _openFiche(Map<String, dynamic> rdv) {
+    final animalId = rdv['animal_id']?.toString() ?? '';
+    if (animalId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Cette visite n\'est pas rattachée à une fiche animal.',
+            style: TextStyle(fontFamily: 'Galey')),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => AnimalFichePage(animalId: animalId, readOnly: true, rdvId: rdv['id']?.toString()),
+    ));
+  }
+
   Future<void> _addAddress(Map<String, dynamic> rdv) async {
     final ctrl = TextEditingController(text: rdv['lieu']?.toString() ?? '');
     final address = await showDialog<String>(
@@ -228,6 +264,8 @@ class _TourneePageState extends State<TourneePage> {
                         index: i,
                         rdv: _visites[i],
                         onAddAddress: () => _addAddress(_visites[i]),
+                        onValider: () => _valider(_visites[i]),
+                        onOpen: () => _openFiche(_visites[i]),
                       ),
                     ),
                   ),
@@ -275,9 +313,18 @@ class _VisiteTile extends StatelessWidget {
   final int index;
   final Map<String, dynamic> rdv;
   final VoidCallback onAddAddress;
+  final VoidCallback onValider;
+  final VoidCallback onOpen;
   static const _teal = Color(0xFF0C5C6C);
 
-  const _VisiteTile({super.key, required this.index, required this.rdv, required this.onAddAddress});
+  const _VisiteTile({
+    super.key,
+    required this.index,
+    required this.rdv,
+    required this.onAddAddress,
+    required this.onValider,
+    required this.onOpen,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -290,40 +337,70 @@ class _VisiteTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: ListTile(
-        leading: CircleAvatar(
-          radius: 16,
-          backgroundColor: _teal.withValues(alpha: 0.1),
-          child: Text('${index + 1}', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _teal)),
-        ),
-        title: Text('${rdv['_animal_nom']} — ${rdv['_client_nom']}',
-            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
-        subtitle: Row(children: [
-          Text(heure, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
-          const SizedBox(width: 8),
-          if (lieu.isNotEmpty)
-            Expanded(
-              child: GestureDetector(
-                onTap: onAddAddress,
-                child: Row(children: [
-                  Flexible(child: Text(lieu, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                      color: geocoded ? Colors.grey.shade700 : Colors.orange.shade800),
-                      overflow: TextOverflow.ellipsis)),
-                  if (!geocoded) ...[
-                    const SizedBox(width: 4),
-                    Icon(Icons.edit_location_alt_outlined, size: 13, color: Colors.orange.shade800),
-                  ],
-                ]),
-              ),
-            )
-          else
-            GestureDetector(
-              onTap: onAddAddress,
-              child: const Text('+ Ajouter une adresse',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal, decoration: TextDecoration.underline)),
+      child: InkWell(
+        onTap: onOpen,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+          child: Row(children: [
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: _teal.withValues(alpha: 0.1),
+              child: Text('${index + 1}',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _teal)),
             ),
-        ]),
-        trailing: const Icon(Icons.drag_handle, color: Colors.grey),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${rdv['_animal_nom']} — ${rdv['_client_nom']}',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                const SizedBox(height: 2),
+                Row(children: [
+                  Text(heure, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                  const SizedBox(width: 8),
+                  if (lieu.isNotEmpty)
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: onAddAddress,
+                        child: Row(children: [
+                          Flexible(
+                            child: Text(lieu,
+                                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                    color: geocoded ? Colors.grey.shade700 : Colors.orange.shade800),
+                                overflow: TextOverflow.ellipsis),
+                          ),
+                          if (!geocoded) ...[
+                            const SizedBox(width: 4),
+                            Icon(Icons.edit_location_alt_outlined, size: 13, color: Colors.orange.shade800),
+                          ],
+                        ]),
+                      ),
+                    )
+                  else
+                    GestureDetector(
+                      onTap: onAddAddress,
+                      child: const Text('+ Ajouter une adresse',
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal,
+                              decoration: TextDecoration.underline)),
+                    ),
+                ]),
+              ]),
+            ),
+            IconButton(
+              onPressed: onValider,
+              tooltip: 'Marquer terminée',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.check_circle_outline, color: Color(0xFF6E9E57)),
+            ),
+            ReorderableDragStartListener(
+              index: index,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4),
+                child: Icon(Icons.drag_handle, color: Colors.grey),
+              ),
+            ),
+          ]),
+        ),
       ),
     );
   }

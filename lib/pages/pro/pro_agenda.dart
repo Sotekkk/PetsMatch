@@ -2046,7 +2046,27 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         // Effets de bord d'une confirmation : agenda client + pro, notif
         // « RDV confirmé », accès carnet santé — réutilise _updateStatut.
         await _updateStatut(inserted['id'].toString(), 'confirme', dureeMinutes: dureeMinutes);
-      } else if (clientEmail.isNotEmpty) {
+      } else {
+        // Client sans compte : au minimum, la visite doit apparaître dans
+        // « Mon Agenda » du pro (aucun agenda_event côté client, il n'a pas
+        // de compte).
+        try {
+          final rdvId = inserted['id'].toString();
+          await Supabase.instance.client.from('agenda_events').delete()
+              .eq('uid', uid).eq('couleur', 'rdv:$rdvId');
+          await Supabase.instance.client.from('agenda_events').insert({
+            'uid':            uid,
+            'titre':          'RDV avec ${clientNom.isNotEmpty ? clientNom : 'Client'}',
+            'type':           'rdv',
+            'date_debut':     dh.toIso8601String(),
+            'notes':          motif.isNotEmpty ? motif : 'RDV',
+            'duree_minutes':  dureeMinutes,
+            'couleur':        'rdv:$rdvId',
+            if (pid.isNotEmpty) 'pro_profile_id': pid,
+          });
+        } catch (_) {}
+      }
+      if (!linked && clientEmail.isNotEmpty) {
         // Email de confirmation + invitation à rejoindre PetsMatch.
         final proNom = User_Info.nameElevage.isNotEmpty
             ? User_Info.nameElevage

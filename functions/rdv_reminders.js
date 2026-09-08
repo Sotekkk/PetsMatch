@@ -158,6 +158,9 @@ exports.sendRdvReminders = functions
                 title: "RDV demain",
                 body: (proName, motif) =>
                     `Rappel : votre RDV avec ${proName} est demain${motif ? ` — ${motif}` : ""}.`,
+                proTitle: "Visite demain",
+                proBody: (who, extra) =>
+                    `Rappel : visite avec ${who} demain${extra ? ` — ${extra}` : ""}.`,
             },
             {
                 label: "1h",
@@ -168,6 +171,9 @@ exports.sendRdvReminders = functions
                 title: "RDV dans 1 heure",
                 body: (proName, motif) =>
                     `Votre RDV avec ${proName} est dans 1 heure${motif ? ` — ${motif}` : ""}.`,
+                proTitle: "Visite dans 1 heure",
+                proBody: (who, extra) =>
+                    `Visite avec ${who} dans 1 heure${extra ? ` — ${extra}` : ""}.`,
             },
             {
                 label: "30min",
@@ -178,6 +184,9 @@ exports.sendRdvReminders = functions
                 title: "RDV dans 30 minutes",
                 body: (proName, motif) =>
                     `Votre RDV avec ${proName} commence dans 30 minutes${motif ? ` — ${motif}` : ""}.`,
+                proTitle: "Visite dans 30 minutes",
+                proBody: (who, extra) =>
+                    `Visite avec ${who} dans 30 minutes${extra ? ` — ${extra}` : ""}.`,
             },
         ];
 
@@ -185,7 +194,8 @@ exports.sendRdvReminders = functions
             let rdvs;
             try {
                 const cols = "id,client_uid,client_profile_id,client_email_manuel," +
-                    "client_nom_manuel,pro_uid,motif,date_heure,duree_minutes,lieu";
+                    "client_nom_manuel,pro_uid,pro_profile_id,animal_id,animal_nom_manuel," +
+                    "motif,date_heure,duree_minutes,lieu";
                 const qs = `statut=eq.confirme` +
                     `&date_heure=gte.${encodeURIComponent(win.from)}` +
                     `&date_heure=lte.${encodeURIComponent(win.to)}` +
@@ -246,6 +256,59 @@ exports.sendRdvReminders = functions
                             lieu: rdv.lieu || null,
                             echeance: win.echeance,
                         });
+                    }
+
+                    // ── Rappel au PRO (petsitter, véto, éducateur…) ──
+                    try {
+                        let who = rdv.client_nom_manuel || "";
+                        if (!who && rdv.client_uid) {
+                            const rows = await supabaseGet(
+                                `user_profiles?uid=eq.${rdv.client_uid}&is_main=eq.true` +
+                                `&select=firstname,lastname,nom&limit=1`);
+                            const c = rows && rows[0];
+                            if (c) {
+                                who = (c.nom || `${c.firstname || ""} ${c.lastname || ""}`).trim();
+                            }
+                        }
+                        who = who || "un client";
+
+                        let animalNom = rdv.animal_nom_manuel || "";
+                        if (!animalNom && rdv.animal_id) {
+                            const arows = await supabaseGet(
+                                `animaux?id=eq.${encodeURIComponent(rdv.animal_id)}&select=nom&limit=1`);
+                            if (arows && arows[0]) animalNom = arows[0].nom || "";
+                        }
+                        const extra = [animalNom, rdv.lieu].filter(Boolean).join(" · ");
+
+                        const proFcm = proDoc.exists ? proDoc.data()?.fcmToken : null;
+                        const proTitle = win.proTitle || win.title;
+                        const proBody = win.proBody
+                            ? win.proBody(who, extra)
+                            : `Rappel : visite avec ${who}${extra ? ` — ${extra}` : ""}.`;
+
+                        await supabaseInsert("notifications", [{
+                            uid: rdv.pro_uid,
+                            type: "rdv_rappel",
+                            title: proTitle,
+                            body: proBody,
+                            data: {rdv_id: rdv.id, echeance: win.echeance, role: "pro"},
+                            read: false,
+                            ...(rdv.pro_profile_id ? {profile_id: rdv.pro_profile_id} : {}),
+                        }]);
+
+                        if (proFcm) {
+                            await admin.messaging().send({
+                                token: proFcm,
+                                data: {type: "rdv_rappel", title: proTitle, body: proBody, rdv_id: rdv.id},
+                                android: {priority: "high"},
+                                apns: {
+                                    headers: {"apns-priority": "10"},
+                                    payload: {aps: {alert: {title: proTitle, body: proBody}, sound: "default"}},
+                                },
+                            });
+                        }
+                    } catch (e) {
+                        console.error(`sendRdvReminders [${win.label}] pro notif error ${rdv.id}:`, e);
                     }
 
                     // Marquer comme envoyé (évite les doublons)
