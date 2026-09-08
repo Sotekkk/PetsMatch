@@ -6849,4 +6849,46 @@ web (qui, comme côté app, est éleveur).
 
 ---
 
+## 54. Module garde — passe de test end-to-end (session 2026-09-08)
+
+Reprise du module petsitter/promeneur (§28), non retesté depuis juillet.
+Vérif au niveau requêtes anon + création de 2 RDV garde de test.
+
+**OK** : registre visites (chargement RDV, marquer terminée), rapport de
+visite (`pension_updates` + notif), Ma tournée (RDV du jour, réordonnancement
+`ordre_visite`, géocodage `lieu_lat/lng`), contrat `contrat_garde` (web),
+devis + `forfaits_garde`, tarifs (`tarifs_garde` / `tarifs_clients_garde`),
+gating premium garde (après fix RLS `abonnements`, §voir plus bas).
+
+**Cassé — `cles_clients` inexistante en base** : `migration_garde_cles.sql`
+déclarait `animal_id UUID` alors que `animaux.id` est **TEXT** (IDs Firestore)
+→ le FK échouait → table jamais créée → « Gestion des clés » non
+fonctionnelle (app + `/garde/cles`). **Corrigé** (`animal_id TEXT`, commit
+`f49ee0be`) — migration à ré-exécuter.
+
+**Bug annexe corrigé** : `tournee_page` — une adresse saisie mais non
+géocodée n'était plus rééditable (le lien « + Ajouter une adresse »
+disparaissait dès que `lieu` était rempli). Le texte d'adresse ouvre
+maintenant le dialogue.
+
+**Limites connues (non bloquantes)** :
+- `ContratSignaturePage` (app) n'a pas de branche `contrat_garde` → carte
+  récap générique au lieu du contrat formaté ; le vrai contrat n'est visible
+  que via « Ouvrir sur le web ».
+- `pension_updates.animal_id` a un FK vers `animaux` → un RDV garde avec
+  animal « manuel » (`animal_nom_manuel`) fait échouer l'envoi du rapport.
+- Côté propriétaire, les rapports garde s'affichent sous « Nouvelles de la
+  pension » (même table, cosmétique).
+
+**Régression trouvée & corrigée en début de session** : RLS activée sur
+`abonnements` (via le Table Editor Supabase) sans policy SELECT → clé anon ne
+lisait plus aucun abonnement → tous les profils repassés en « Découverte ».
+Fix : `migration_abonnements_rls_fix.sql` (policy `SELECT USING(true)`).
+`user_profiles.plan_code` resynchronisé depuis `abonnements`.
+
+**Migrations à exécuter** : `migration_garde_cles.sql` (corrigée),
+`migration_abonnements_rls_fix.sql`.
+
+---
+
 *Document maintenu par l'équipe PetsMatch — toute modification fonctionnelle doit être reportée ici avant implémentation.*
