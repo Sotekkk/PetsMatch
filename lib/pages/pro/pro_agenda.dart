@@ -361,6 +361,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     int duree = rdvDuree ??
         (motifKey != null ? (_dureesMotifs[motifKey] ?? 30) : 30);
 
+    // Garde à domicile pour la journée : pas d'heure/durée précise à saisir —
+    // le pro choisit « journée » ou « demi-journée » (matin / après-midi).
+    final ml = motifLabel.toLowerCase();
+    final isGardeJournee = ml.contains('garde') && ml.contains('journ');
+    // 'journee' (8h, 480) / 'matin' (8h, 240) / 'aprem' (14h, 240)
+    String gardeType = duree <= 300 ? 'matin' : 'journee';
+
     final requestedDh = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
     int preciseHour   = requestedDh?.hour   ?? 10;
     int preciseMinute = requestedDh?.minute  ?? 0;
@@ -388,6 +395,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
 
               // ── Toggle Confirmer / Contre-proposition ─────────────────────
+              // Garde-journée : pas de contre-proposition d'horaire (la date
+              // est ce qui compte, une ligne par jour).
+              if (!isGardeJournee)
               Row(children: [
                   Expanded(child: GestureDetector(
                     onTap: () => setModal(() => isCounter = false),
@@ -537,7 +547,37 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   ),
                 ),
               ] else ...[
-                ...[
+                if (isGardeJournee) ...[
+                  const Text('Type de garde',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+                  const SizedBox(height: 12),
+                  Wrap(spacing: 10, runSpacing: 10, children: [
+                    ('journee', 'Journée complète'),
+                    ('matin', 'Demi-journée (matin)'),
+                    ('aprem', 'Demi-journée (après-midi)'),
+                  ].map((o) {
+                    final sel = gardeType == o.$1;
+                    return GestureDetector(
+                      onTap: () => setModal(() {
+                        gardeType = o.$1;
+                        duree = o.$1 == 'journee' ? 480 : 240;
+                      }),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                        decoration: BoxDecoration(
+                          color: sel ? _teal : Colors.white,
+                          border: Border.all(color: sel ? _teal : const Color(0xFFE4E7E2)),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(o.$2, style: TextStyle(
+                            fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                            color: sel ? Colors.white : const Color(0xFF1E2025))),
+                      ),
+                    );
+                  }).toList()),
+                  const SizedBox(height: 24),
+                ] else ...[
                   // ── Confirmer : heure exacte dans le créneau demandé ────────
                   const Text('Heure exacte du rendez-vous',
                       style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
@@ -603,42 +643,45 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                 ],
 
                 // ── Durée (commun) ──────────────────────────────────────────
-                const Text('Durée du rendez-vous',
-                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-                const SizedBox(height: 6),
-                const Text('Sert à bloquer votre agenda — le client ne la verra pas.',
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
-                const SizedBox(height: 14),
-                Wrap(spacing: 10, runSpacing: 10, children: [15, 30, 45, 60, 90, 120].map((d) {
-                  final sel = duree == d;
-                  return GestureDetector(
-                    onTap: () => setModal(() => duree = d),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: sel ? _teal : Colors.white,
-                        border: Border.all(color: sel ? _teal : const Color(0xFFE4E7E2)),
-                        borderRadius: BorderRadius.circular(10),
+                if (!isGardeJournee) ...[
+                  const Text('Durée du rendez-vous',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+                  const SizedBox(height: 6),
+                  const Text('Sert à bloquer votre agenda — le client ne la verra pas.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 14),
+                  Wrap(spacing: 10, runSpacing: 10, children: [15, 30, 45, 60, 90, 120].map((d) {
+                    final sel = duree == d;
+                    return GestureDetector(
+                      onTap: () => setModal(() => duree = d),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: sel ? _teal : Colors.white,
+                          border: Border.all(color: sel ? _teal : const Color(0xFFE4E7E2)),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          d < 60 ? '$d min' : (d == 60 ? '1 h' : '${d ~/ 60} h${d % 60 > 0 ? " ${d % 60}" : ""}'),
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                              color: sel ? Colors.white : const Color(0xFF1E2025)),
+                        ),
                       ),
-                      child: Text(
-                        d < 60 ? '$d min' : (d == 60 ? '1 h' : '${d ~/ 60} h${d % 60 > 0 ? " ${d % 60}" : ""}'),
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
-                            color: sel ? Colors.white : const Color(0xFF1E2025)),
-                      ),
-                    ),
-                  );
-                }).toList()),
-                const SizedBox(height: 24),
+                    );
+                  }).toList()),
+                  const SizedBox(height: 24),
+                ],
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () => Navigator.pop(ctx, {
                       'confirmed': true,
                       'isCounter': false,
-                      'preciseHour': preciseHour,
-                      'preciseMinute': preciseMinute,
-                      'duree': duree,
+                      'preciseHour': isGardeJournee ? (gardeType == 'aprem' ? 14 : 8) : preciseHour,
+                      'preciseMinute': isGardeJournee ? 0 : preciseMinute,
+                      'duree': isGardeJournee ? (gardeType == 'journee' ? 480 : 240) : duree,
+                      'gardeType': isGardeJournee ? gardeType : null,
                     }),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _teal, foregroundColor: Colors.white,
@@ -747,6 +790,14 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       final names = await _rdvEventNames(rdv);
       final proName = names.proName;
       final clientName = names.clientName;
+      // Garde à domicile : on annonce « journée / demi-journée », pas une heure.
+      final mlc = (rdv['motif']?.toString() ?? '').toLowerCase();
+      final estGardeJournee = mlc.contains('garde') && mlc.contains('journ');
+      final dateJour = '${preciseDh.toLocal().day.toString().padLeft(2, "0")}/${preciseDh.toLocal().month.toString().padLeft(2, "0")}';
+      final heureTxt = '${preciseDh.toLocal().hour.toString().padLeft(2, "0")}h${preciseDh.toLocal().minute.toString().padLeft(2, "0")}';
+      final bodyConfirme = estGardeJournee
+          ? 'Garde confirmée pour le $dateJour — ${dureeMinutes >= 400 ? "journée complète" : preciseDh.toLocal().hour < 12 ? "matinée" : "après-midi"}.'
+          : 'Votre rendez-vous est confirmé pour le $dateJour à $heureTxt';
       final motifTxt = (rdv['motif'] as String?)?.trim() ?? '';
       final titreClient = _rdvEventTitle(proSide: false, motif: motifTxt, other: proName);
       final titrePro = _rdvEventTitle(proSide: true, motif: motifTxt, other: clientName, animal: names.animalName);
@@ -767,8 +818,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         await supa.from('notifications').insert({
           'uid':   clientUid,
           'type':  'rdv_confirme',
-          'title': 'RDV confirmé par $proName',
-          'body':  'Votre rendez-vous est confirmé pour le ${preciseDh.toLocal().day.toString().padLeft(2,"0")}/${preciseDh.toLocal().month.toString().padLeft(2,"0")} à ${preciseDh.toLocal().hour.toString().padLeft(2,"0")}h${preciseDh.toLocal().minute.toString().padLeft(2,"0")}',
+          'title': estGardeJournee ? 'Garde confirmée par $proName' : 'RDV confirmé par $proName',
+          'body':  bodyConfirme,
           if ((rdv['client_profile_id'] as String?)?.isNotEmpty == true) 'profile_id': rdv['client_profile_id'],
           'data':  {'rdv_id': rdv['id'], if (rdv['animal_id'] != null) 'animal_id': rdv['animal_id'].toString()},
           'read':  false,
