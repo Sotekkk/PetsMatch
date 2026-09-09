@@ -41,9 +41,15 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
       final sel = _supa
           .from('documents_animaux')
           .select('id, type, titre, statut, token, uid_acquereur, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)');
+      // Destinataire d'un contrat : acquéreur (vente/cession) OU client
+      // (prestation de garde/pet-sitting → metadata.client_uid / client_email).
       final rows = await (uid != null
-              ? sel.or('metadata->>acquereur_email.eq.${email ?? '-'},uid_acquereur.eq.$uid,metadata->>acquereur_uid.eq.$uid')
-              : sel.filter('metadata->>acquereur_email', 'eq', email!))
+              ? sel.or('metadata->>acquereur_email.eq.${email ?? '-'},'
+                  'uid_acquereur.eq.$uid,'
+                  'metadata->>acquereur_uid.eq.$uid,'
+                  'metadata->>client_uid.eq.$uid,'
+                  'metadata->>client_email.eq.${email ?? '-'}')
+              : sel.or('metadata->>acquereur_email.eq.$email,metadata->>client_email.eq.$email'))
           .order('created_at', ascending: false);
       if (mounted) {
         setState(() { _docs = List<Map<String, dynamic>>.from(rows); _loading = false; });
@@ -123,6 +129,9 @@ class _DocCard extends StatelessWidget {
     'contrat_vente':       '🤝 Contrat de vente',
     'contrat_reservation': '🐾 Contrat de réservation',
     'certificat_cession':  '📋 Certificat de cession',
+    'contrat_garde':       '🏠 Contrat de prestation',
+    'contrat_pension':     '🏨 Contrat de pension',
+    'contrat_education':   '🎓 Contrat d\'éducation',
   };
 
   Future<void> _refuse(BuildContext context) async {
@@ -233,16 +242,27 @@ class _DocCard extends StatelessWidget {
           // Titre + badge
           Row(children: [
             Expanded(
-              child: Text(_typeLabel[type] ?? '📄 Document',
+              child: Text(_titre(type, doc['titre'] as String?),
                   style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _dark)),
             ),
             _StatutBadge(statut: statut),
           ]),
 
-          // Animal
+          // Animal — depuis le join, sinon depuis les métadonnées (garde).
           if (animal != null) ...[
             const SizedBox(height: 4),
             Text('${animal['nom'] ?? ''} · ${animal['espece'] ?? ''}',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey[600])),
+          ] else if ((meta['animal_nom'] ?? meta['animal_noms']) != null) ...[
+            const SizedBox(height: 4),
+            Text(() {
+                  final a = meta['animal_noms'] ?? meta['animal_nom'];
+                  return a is List ? a.join(', ') : a.toString();
+                }(),
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey[600])),
+          ] else if ((meta['client_nom'] as String?)?.isNotEmpty == true) ...[
+            const SizedBox(height: 4),
+            Text('Client : ${meta['client_nom']}',
                 style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey[600])),
           ],
 
@@ -332,6 +352,13 @@ class _DocCard extends StatelessWidget {
         ]),
       ),
     );
+  }
+
+  static String _titre(String type, String? titre) {
+    final label = _typeLabel[type];
+    if (label != null) return label;
+    if (titre != null && titre.trim().isNotEmpty) return titre.trim();
+    return '📄 Document';
   }
 
   String _fmt(DateTime d) =>

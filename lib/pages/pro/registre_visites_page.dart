@@ -143,15 +143,17 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
   /// Ouvre (ou crée) le contrat de prestation « cadre » d'un client — un seul
   /// par (profil garde, client), réutilisé pour toutes ses gardes. Scopé
   /// `pro_profile_id` + `metadata.client_uid` (aucun mélange de profils).
-  Future<void> _openClientContrat(String clientUid) async {
+  Future<void> _openClientContrat(String clientUid, [Map<String, dynamic>? rdv]) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final client = _clients[clientUid];
     if (client == null) return;
     final pid = User_Info.activeProfileId;
+    final animalId  = rdv?['animal_id']?.toString();
+    final animalNom = (rdv?['_animal_nom'] ?? rdv?['animal_nom'] ?? '').toString();
     try {
       var q = _supa.from('documents_animaux')
-          .select('token, statut')
+          .select('id, token, statut, animal_id, metadata')
           .eq('uid_eleveur', uid)
           .eq('type', 'contrat_garde')
           .eq('metadata->>client_uid', clientUid);
@@ -166,14 +168,31 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
           'type': 'contrat_garde',
           'titre': 'Contrat de prestation — ${client['nom']}',
           'statut': 'en_attente',
+          if (animalId != null && animalId.isNotEmpty) 'animal_id': animalId,
           'metadata': {
             'client_nom': client['nom'],
             'client_uid': clientUid,
             if (client['profile_id'] != null) 'client_profile_id': client['profile_id'],
             if ((client['email'] as String?)?.isNotEmpty == true) 'client_email': client['email'],
+            if (animalNom.isNotEmpty) 'animal_nom': animalNom,
+            if (animalNom.isNotEmpty) 'animal_noms': [animalNom],
           },
         }).select('token').single();
         token = row['token'] as String?;
+      } else if (animalNom.isNotEmpty) {
+        // Contrat déjà là : on rattache l'animal courant s'il manque.
+        final meta = Map<String, dynamic>.from((existing!['metadata'] as Map?) ?? {});
+        final noms = List<String>.from((meta['animal_noms'] as List?) ?? const []);
+        final needAnimalId = (existing['animal_id'] == null) && animalId != null && animalId.isNotEmpty;
+        if (!noms.contains(animalNom) || needAnimalId) {
+          if (!noms.contains(animalNom)) noms.add(animalNom);
+          meta['animal_noms'] = noms;
+          meta['animal_nom'] ??= animalNom;
+          await _supa.from('documents_animaux').update({
+            'metadata': meta,
+            if (needAnimalId) 'animal_id': animalId,
+          }).eq('id', existing['id'] as String);
+        }
       }
       if (token == null) return;
       if (mounted) {
@@ -251,10 +270,10 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
               itemBuilder: (_, i) => _VisiteCard(
                 rdv: displayed[i],
                 onTerminer: () => _marquerTermine(displayed[i]),
-                onRapport: () => showVisiteRapportSheet(context, displayed[i]),
+                onRapport: () => sendGardeNews(context, displayed[i]),
                 onContrat: () {
                   final cu = displayed[i]['client_uid']?.toString();
-                  if (cu != null && cu.isNotEmpty) _openClientContrat(cu);
+                  if (cu != null && cu.isNotEmpty) _openClientContrat(cu, displayed[i]);
                 },
               ),
             );

@@ -733,11 +733,21 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
 
       if (acqUid != null && acqUid.isNotEmpty) {
         final destPid = await _destinataireProfileId(acqUid, meta);
+        final docType = (_doc!['type'] as String?) ?? '';
+        final isPresta = docType == 'contrat_garde' || docType == 'contrat_pension'
+            || docType == 'contrat_education' || docType == 'contrat_photographe';
+        final emetteur = isPresta ? 'Votre prestataire' : 'L\'éleveur';
+        final titreDoc = (_doc!['titre'] as String?)?.trim();
+        final animalPart = _animal?['nom'] != null
+            ? ' — ${_animal!['nom']}'
+            : (meta['animal_nom'] != null ? ' — ${meta['animal_nom']}' : '');
         await _supa.from('notifications').insert({
           'uid': acqUid,
           'type': 'contrat_signe_eleveur',
-          'title': '📄 Contrat à signer — ${_animal?['nom'] ?? 'Animal'}',
-          'body': 'L\'éleveur vous a transmis ${_doc!['titre'] ?? 'un contrat'} — vérifiez et signez.',
+          'title': isPresta && (titreDoc?.isNotEmpty ?? false)
+              ? '📄 $titreDoc'
+              : '📄 Contrat à signer$animalPart',
+          'body': '$emetteur vous a transmis ${titreDoc?.isNotEmpty == true ? titreDoc : 'un contrat'} — vérifiez et signez.',
           if (destPid != null) 'profile_id': destPid,
           'data': {
             if (token != null) 'token': token,

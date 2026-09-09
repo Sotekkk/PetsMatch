@@ -5,6 +5,36 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
+import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
+
+/// Point d'entrée « envoyer des nouvelles » depuis le registre / la tournée /
+/// l'agenda. Une **promenade ou une visite courte** → feuille « rapport »
+/// unique. Une **garde** (garde-journée ou durée ≥ 24 h) → **journal de garde**
+/// multi-entrées (comme le journal de pension), que le pet-sitter alimente à la
+/// fréquence qu'il veut.
+Future<void> sendGardeNews(BuildContext context, Map<String, dynamic> rdv) async {
+  final motif = (rdv['motif'] ?? rdv['_motif'] ?? '').toString().toLowerCase();
+  final dureeMin = rdv['duree_minutes'] is int
+      ? rdv['duree_minutes'] as int
+      : int.tryParse(rdv['duree_minutes']?.toString() ?? '') ?? 0;
+  final isGarde = motif.contains('garde') || motif.contains('journ') || dureeMin >= 24 * 60;
+  final animalId = rdv['animal_id']?.toString();
+
+  if (isGarde && animalId != null && animalId.isNotEmpty) {
+    final animalNom = (rdv['_animal_nom'] ?? rdv['animal_nom'] ?? rdv['_animal_name'] ?? 'Animal').toString();
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => PensionJournalPage(
+        animalId: animalId,
+        animalNom: animalNom.isEmpty ? 'Animal' : animalNom,
+        journalKind: 'garde',
+        clientUid: rdv['client_uid']?.toString(),
+        clientProfileId: rdv['client_profile_id']?.toString(),
+      ),
+    ));
+    return;
+  }
+  await showVisiteRapportSheet(context, rdv);
+}
 
 /// Bottom sheet « Rapport de visite » — transmettre des nouvelles + une photo
 /// au propriétaire de l'animal (module garde / pet-sitting).

@@ -16,6 +16,9 @@ class PensionJournalPage extends StatefulWidget {
   final String? pensionEntreeId;
   final String animalNom;
   final bool readOnly; // true côté propriétaire (lecture seule)
+  final String journalKind; // 'pension' (défaut) | 'garde'
+  final String? clientUid;        // garde : propriétaire (rdv.client_uid)
+  final String? clientProfileId;  // garde : profil du propriétaire (rdv.client_profile_id)
 
   const PensionJournalPage({
     super.key,
@@ -23,7 +26,12 @@ class PensionJournalPage extends StatefulWidget {
     this.pensionEntreeId,
     required this.animalNom,
     this.readOnly = false,
+    this.journalKind = 'pension',
+    this.clientUid,
+    this.clientProfileId,
   });
+
+  bool get isGarde => journalKind == 'garde';
 
   @override
   State<PensionJournalPage> createState() => _PensionJournalPageState();
@@ -195,22 +203,40 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
   Future<void> _notifyOwner({required bool hasMedia}) async {
     if (widget.animalId == null) return;
     try {
-      final propRow = await _supa.from('animaux_proprietes')
-          .select('uid_proprio, profile_id_proprio').eq('animal_id', widget.animalId!)
-          .filter('date_fin', 'is', null).order('date_debut', ascending: false)
-          .limit(1).maybeSingle();
-      final ownerUid = propRow?['uid_proprio'] as String?;
-      final ownerProfileId = propRow?['profile_id_proprio'] as String?;
+      String? ownerUid = widget.clientUid;
+      String? ownerProfileId = widget.clientProfileId;
+      if (ownerUid == null || ownerUid.isEmpty) {
+        final propRow = await _supa.from('animaux_proprietes')
+            .select('uid_proprio, profile_id_proprio').eq('animal_id', widget.animalId!)
+            .filter('date_fin', 'is', null).order('date_debut', ascending: false)
+            .limit(1).maybeSingle();
+        ownerUid = propRow?['uid_proprio'] as String?;
+        ownerProfileId = propRow?['profile_id_proprio'] as String?;
+      }
       if (ownerUid == null || ownerUid.isEmpty) return;
-      final pensionNom = User_Info.nameElevage.isNotEmpty
+      // Fallback : le profil PARTICULIER du propriétaire (is_main peut être un
+      // profil éleveur/pro → la notif n'apparaîtrait pas dans sa liste).
+      if (ownerProfileId == null || ownerProfileId.isEmpty) {
+        try {
+          final p = await _supa.from('user_profiles')
+              .select('id').eq('uid', ownerUid).eq('profile_type', 'particulier')
+              .order('is_main', ascending: false).limit(1).maybeSingle();
+          ownerProfileId = p?['id'] as String?;
+        } catch (_) {}
+      }
+      final proNom = User_Info.nameElevage.isNotEmpty
           ? User_Info.nameElevage : '${User_Info.firstname} ${User_Info.lastname}'.trim();
+      final who = proNom.isNotEmpty ? proNom : (widget.isGarde ? 'Votre pet sitter' : 'La pension');
       await _supa.from('notifications').insert({
-        'uid': ownerUid, 'type': 'pension_journal',
-        'title': 'Nouvelles de ${widget.animalNom}',
+        'uid': ownerUid,
+        'type': widget.isGarde ? 'garde_journal' : 'pension_journal',
+        'title': widget.isGarde
+            ? 'Journal de garde — ${widget.animalNom}'
+            : 'Nouvelles de ${widget.animalNom}',
         'body': hasMedia
-            ? '$pensionNom a partagé une photo/vidéo de ${widget.animalNom}.'
-            : '$pensionNom a laissé une note pour ${widget.animalNom}.',
-        if (ownerProfileId != null) 'profile_id': ownerProfileId,
+            ? '$who a partagé une photo/vidéo de ${widget.animalNom}.'
+            : '$who a laissé une note pour ${widget.animalNom}.',
+        if (ownerProfileId != null && ownerProfileId.isNotEmpty) 'profile_id': ownerProfileId,
         'data': {'animalId': widget.animalId, 'animalNom': widget.animalNom},
         'read': false,
       });
@@ -224,7 +250,8 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
       appBar: AppBar(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
-        title: Text('Journal — ${widget.animalNom}', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        title: Text(widget.isGarde ? 'Journal de garde — ${widget.animalNom}' : 'Journal — ${widget.animalNom}',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
       ),
       body: Column(children: [
         Expanded(
@@ -234,7 +261,11 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
                   ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
                       Icon(Icons.photo_camera_back_outlined, size: 60, color: Colors.grey.shade300),
                       const SizedBox(height: 12),
-                      Text(widget.readOnly ? 'Aucune nouvelle pour l\'instant' : 'Partagez une première nouvelle',
+                      Text(widget.readOnly
+                              ? 'Aucune nouvelle pour l\'instant'
+                              : (widget.isGarde
+                                  ? 'Partagez une première nouvelle de la garde'
+                                  : 'Partagez une première nouvelle'),
                           style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)),
                     ]))
                   : ListView.builder(
@@ -357,8 +388,10 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
                     controller: _noteCtrl,
                     minLines: 1, maxLines: 3,
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
-                    decoration: const InputDecoration(
-                      hintText: 'Une petite note pour le propriétaire…',
+                    decoration: InputDecoration(
+                      hintText: widget.isGarde
+                          ? 'Nouvelles de la garde (repas, sorties, comportement…)'
+                          : 'Une petite note pour le propriétaire…',
                       border: InputBorder.none,
                     ),
                   ),

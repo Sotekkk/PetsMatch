@@ -267,7 +267,7 @@ class _TourneePageState extends State<TourneePage> {
                         onAddAddress: () => _addAddress(_visites[i]),
                         onValider: () => _valider(_visites[i]),
                         onOpen: () => _openFiche(_visites[i]),
-                        onNouvelles: () => showVisiteRapportSheet(context, _visites[i]),
+                        onNouvelles: () => sendGardeNews(context, _visites[i]),
                       ),
                     ),
                   ),

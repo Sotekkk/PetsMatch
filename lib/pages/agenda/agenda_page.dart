@@ -2508,7 +2508,7 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton.icon(
-                          onPressed: () => showVisiteRapportSheet(context, {
+                          onPressed: () => sendGardeNews(context, {
                             ..._rdv ?? const {},
                             '_animal_nom': _animal?['nom'],
                           }),
