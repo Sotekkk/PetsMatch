@@ -249,16 +249,23 @@ Future<void> _insertFollow(String followerUid, String followingUid,
   });
 }
 
-/// Clé d'auteur d'une ligne (post / commentaire / repost) : SON profil si
-/// connu, sinon l'uid préfixé (lignes legacy). Deux profils d'un même compte
-/// (ex. particulier + éleveur) ne se confondent plus.
+/// Clé du profil AUTEUR d'une ligne (post / commentaire / repost). Pour un
+/// repost = le **reposteur** (pas l'auteur original). `author_profile_id` sinon
+/// `u:<uid>` (legacy). Deux profils d'un même compte ne se confondent plus.
 String _authorKey(Map row) {
-  final pid = (row['author_profile_id'] ?? row['_orig_author_profile_id']) as String?;
-  return (pid != null && pid.isNotEmpty) ? pid : 'u:${row['uid'] ?? row['original_uid']}';
+  final pid = row['author_profile_id'] as String?;
+  return (pid != null && pid.isNotEmpty) ? pid : 'u:${row['uid']}';
+}
+
+/// Clé du profil de l'auteur ORIGINAL d'un repost (ce qui s'affiche dans le
+/// corps de la carte).
+String _origAuthorKey(Map row) {
+  final pid = row['_orig_author_profile_id'] as String?;
+  return (pid != null && pid.isNotEmpty) ? pid : 'u:${row['original_uid'] ?? row['uid']}';
 }
 
 /// Résout les profils auteurs de posts/commentaires. Retourne une map
-/// **`_authorKey` -> ligne user_profiles** (profil id, sinon `u:<uid>`).
+/// **clé profil (`_authorKey`/`_origAuthorKey`) -> ligne user_profiles**.
 Future<Map<String, Map<String, dynamic>>> _resolveAuthors(List<dynamic> rows) async {
   final supa = Supabase.instance.client;
   final out = <String, Map<String, dynamic>>{};
@@ -274,12 +281,16 @@ Future<Map<String, Map<String, dynamic>>> _resolveAuthors(List<dynamic> rows) as
       out[r['id'] as String] = Map<String, dynamic>.from(r as Map);
     }
   }
-  // Lignes sans profil connu → profil particulier de l'uid (legacy).
+  // Lignes sans profil connu (legacy) → profil particulier de l'uid concerné.
+  // Un repost sans author_profile_id → on résout SON reposteur (uid) ET son
+  // auteur original (original_uid).
   final legacyUids = <String>{
-    for (final r in rows)
-      if ((r['author_profile_id'] as String?)?.isNotEmpty != true
-          && (r['_orig_author_profile_id'] as String?)?.isNotEmpty != true)
-        (r['uid'] ?? r['original_uid']) as String,
+    for (final r in rows) ...[
+      if ((r['author_profile_id'] as String?)?.isNotEmpty != true) r['uid'] as String,
+      if (r['is_repost'] == true
+          && (r['_orig_author_profile_id'] as String?)?.isNotEmpty != true
+          && r['original_uid'] != null) r['original_uid'] as String,
+    ],
   }.where((u) => !out.containsKey('u:$u')).toList();
   if (legacyUids.isNotEmpty) {
     final byUid = await supa.from('user_profiles').select(_kAuthorCols)
@@ -1182,11 +1193,7 @@ class _FeedListState extends State<_FeedList>
           // Profil qui a republié : son author_profile_id (ou u:<uid>).
           final reposterProfile = isRepost ? _profiles[_authorKey(post)] : null;
           // Profil de l'auteur affiché (original si repost).
-          final displayProfile = _profiles[isRepost
-              ? ((post['_orig_author_profile_id'] as String?)?.isNotEmpty == true
-                  ? post['_orig_author_profile_id'] as String
-                  : 'u:${post['original_uid'] ?? post['uid']}')
-              : _authorKey(post)];
+          final displayProfile = _profiles[isRepost ? _origAuthorKey(post) : _authorKey(post)];
           return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
             if (isRepost) Padding(
               padding: const EdgeInsets.only(left: 14, bottom: 6),
