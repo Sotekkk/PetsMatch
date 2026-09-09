@@ -67,11 +67,18 @@ interface FeedItem {
   profileId?: string;
   photoEleveur?: string;
   isSaillie?: boolean;
+  equideFormule?: string;
+  prixUnite?: string;
   dateNaissance?: string;
   pedigree?: boolean;
   registreType?: string;
   profilSource?: string;
 }
+
+const EQUIDE_FORMULE_LABEL: Record<string, string> = {
+  location: 'Location', demi_pension: 'Demi-pension',
+  pension_complete: 'Pension', valorisation: 'Valorisation',
+};
 
 function especeLabel(espece: string): string {
   const map: Record<string, string> = {
@@ -145,6 +152,8 @@ function buildFeedItems(annonces: RawAnnonce[]): FeedItem[] {
         description: a.description,
         ville: a.ville_eleveur, nomEleveur: a.nom_eleveur,
         uidEleveur: a.uid_eleveur, profileId: a.profile_id, isSaillie,
+        equideFormule: EQUIDE_FORMULE_LABEL[a.type_vente ?? ''] ? a.type_vente : undefined,
+        prixUnite: (a as unknown as Record<string, string>).prix_unite,
         dateNaissance: a.date_naissance_animal,
         registreType: a.registre_type,
         profilSource: a.profil_source,
@@ -154,13 +163,13 @@ function buildFeedItems(annonces: RawAnnonce[]): FeedItem[] {
   return items;
 }
 
-const ESPECES = ['tous', 'chien', 'chat', 'lapin', 'oiseau', 'reptile', 'autre'];
+const ESPECES = ['tous', 'chien', 'chat', 'cheval', 'lapin', 'oiseau', 'reptile', 'autre'];
 const ESPECE_EMOJI: Record<string, string> = {
-  tous: '🐾', chien: '🐕', chat: '🐈', lapin: '🐇',
+  tous: '🐾', chien: '🐕', chat: '🐈', cheval: '🐴', lapin: '🐇',
   oiseau: '🐦', reptile: '🦎', autre: '🐾',
 };
 const ESPECE_LABEL: Record<string, string> = {
-  tous: 'Toutes', chien: 'Chien', chat: 'Chat', lapin: 'Lapin',
+  tous: 'Toutes', chien: 'Chien', chat: 'Chat', cheval: 'Cheval', lapin: 'Lapin',
   oiseau: 'Oiseau', reptile: 'Reptile', autre: 'Autre',
 };
 
@@ -230,7 +239,7 @@ function FeedPageContent() {
     setLoading(true);
     let q = supabase
       .from('annonces')
-      .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, sexe, nom_eleveur, uid_eleveur, profile_id, description, registre_type, date_naissance, date_naissance_animal, profil_source')
+      .select('id, titre, espece, race, type, type_vente, prix_unite, photos, animaux_portee, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, sexe, nom_eleveur, uid_eleveur, profile_id, description, registre_type, date_naissance, date_naissance_animal, profil_source')
       .eq('statut', 'disponible')
       .order('created_at', { ascending: false });
 
@@ -830,6 +839,11 @@ function FeedPageContent() {
                   💜 Saillie
                 </span>
               )}
+              {item.equideFormule && (
+                <span className="text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-[#0C5C6C]">
+                  🐴 {EQUIDE_FORMULE_LABEL[item.equideFormule]}
+                </span>
+              )}
               {item.race && (
                 <span className="text-white/90 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-white/10 capitalize">
                   {item.race}
@@ -859,9 +873,11 @@ function FeedPageContent() {
                   {item.nom}
                 </h2>
               </div>
-              {item.prix != null && (
+              {(item.prix != null || item.equideFormule === 'valorisation') && (
                 <span className="text-white font-bold text-lg flex-shrink-0" style={{ textShadow: '0 1px 6px rgba(0,0,0,0.7)' }}>
-                  {item.prix} €
+                  {item.equideFormule === 'valorisation' && (item.prix == null || item.prix <= 0)
+                    ? 'À convenir'
+                    : `${item.prix} €${item.prixUnite === 'mois' ? '/mois' : item.prixUnite === 'semaine' ? '/sem.' : ''}`}
                 </span>
               )}
             </div>

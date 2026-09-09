@@ -24,6 +24,7 @@ interface Annonce {
   race?: string;
   type?: string;
   type_vente?: string;
+  prix_unite?: string;
   photos?: string[];
   prix?: number;
   saillie_prix?: number;
@@ -48,9 +49,9 @@ interface EleveurVerif {
   is_premium?: boolean;
 }
 
-const ESPECES = ['tous', 'chien', 'chat', 'lapin', 'oiseau', 'reptile', 'autre'];
+const ESPECES = ['tous', 'chien', 'chat', 'cheval', 'lapin', 'oiseau', 'reptile', 'autre'];
 const ESPECE_LABEL: Record<string, string> = {
-  tous: 'Toutes espèces', chien: 'Chien', chat: 'Chat', lapin: 'Lapin',
+  tous: 'Toutes espèces', chien: 'Chien', chat: 'Chat', cheval: 'Cheval', lapin: 'Lapin',
   oiseau: 'Oiseau', reptile: 'Reptile', autre: 'Autre',
 };
 const TYPES = [
@@ -99,7 +100,7 @@ export default function AnnoncesPage() {
   useEffect(() => {
     supabase
       .from('annonces')
-      .select('id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nombre_bebes, statut, created_at, uid_eleveur, profile_id, animaux_portee, profil_source')
+      .select('id, titre, espece, race, type, type_vente, prix_unite, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nombre_bebes, statut, created_at, uid_eleveur, profile_id, animaux_portee, profil_source')
       .eq('statut', 'disponible')
       .order('created_at', { ascending: false })
       .then(async ({ data }) => {
@@ -578,8 +579,19 @@ function AnnonceCard({
   const isAsso = a.profil_source === 'association';
   const bebes = (a.animaux_portee as RawBebe[] | undefined) ?? [];
 
+  const EQUIDE_FORMULE_LABEL: Record<string, string> = {
+    location: 'Location', demi_pension: 'Demi-pension',
+    pension_complete: 'Pension', valorisation: 'Valorisation',
+  };
+  const equideFormule = EQUIDE_FORMULE_LABEL[a.type_vente ?? ''];
+
   let prix: string | null = null;
-  if (isSaillie) {
+  if (equideFormule) {
+    const cad = a.prix_unite === 'mois' ? '/mois' : a.prix_unite === 'semaine' ? '/sem.' : '';
+    prix = a.type_vente === 'valorisation'
+      ? (a.prix != null && a.prix > 0 ? `${a.prix} €` : 'À convenir')
+      : (a.prix != null && a.prix > 0 ? `${a.prix} €${cad}` : 'À convenir');
+  } else if (isSaillie) {
     const sp = a.saillie_prix != null ? Number(a.saillie_prix) : null;
     prix = sp != null && !isNaN(sp) ? `${Math.round(sp)} €` : null;
   } else if (isPortee) {
@@ -602,8 +614,8 @@ function AnnonceCard({
         ) : (
           <div className="w-full h-full flex items-center justify-center text-5xl">🐾</div>
         )}
-        <span className={`absolute top-2 left-2 text-white text-xs font-semibold px-2 py-0.5 rounded-full ${isAsso ? 'bg-teal-600' : isSaillie ? 'bg-purple-500' : isPortee ? 'bg-amber-500' : 'bg-[#6E9E57]'}`}>
-          {isAsso ? '💚 Adoption' : isSaillie ? 'Saillie' : isPortee ? 'Portée' : 'Compagnon'}
+        <span className={`absolute top-2 left-2 text-white text-xs font-semibold px-2 py-0.5 rounded-full ${isAsso ? 'bg-teal-600' : isSaillie ? 'bg-purple-500' : equideFormule ? 'bg-[#0C5C6C]' : isPortee ? 'bg-amber-500' : 'bg-[#6E9E57]'}`}>
+          {isAsso ? '💚 Adoption' : isSaillie ? 'Saillie' : equideFormule ? `🐴 ${equideFormule}` : isPortee ? 'Portée' : 'Compagnon'}
         </span>
         <button
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleLike(a.id, null, a.uid_eleveur, a.profile_id); }}

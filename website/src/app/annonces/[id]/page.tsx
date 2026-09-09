@@ -28,9 +28,17 @@ interface Annonce {
   photos?: string[];
   animaux_portee?: Bebe[];
   prix?: number;
+  prix_unite?: string;
   saillie_prix?: number;
   prix_min_portee?: number;
   prix_max_portee?: number;
+  niveau_recommande?: string;
+  palmares?: string;
+  indice_iso?: number;
+  indice_idr?: number;
+  indice_icc?: number;
+  video_monte_url?: string;
+  video_libre_url?: string;
   ville_eleveur?: string;
   sexe?: string;
   couleur?: string;
@@ -679,6 +687,16 @@ function AnnonceDetailPageInner() {
   const bebes = (annonce.animaux_portee ?? []) as Bebe[];
   const isPortee = annonce.type === 'portee';
   const isSaillie = annonce.type_vente === 'saillie';
+  const EQUIDE_FORMULES: Record<string, string> = {
+    location: 'Location', demi_pension: 'Demi-pension',
+    pension_complete: 'Pension complète', valorisation: 'Valorisation',
+  };
+  const equideFormule = EQUIDE_FORMULES[annonce.type_vente ?? ''];
+  const prixCadence = annonce.prix_unite === 'mois' ? ' / mois'
+    : annonce.prix_unite === 'semaine' ? ' / semaine' : '';
+  const hasEquideSport = !!(annonce.niveau_recommande || annonce.palmares
+    || annonce.indice_iso || annonce.indice_idr || annonce.indice_icc
+    || annonce.video_monte_url || annonce.video_libre_url);
   const titre = annonce.titre || annonce.race || especeLabel(annonce.espece, annonce.espece_autre) || 'Annonce';
   const dateNaissStr = isPortee ? annonce.date_naissance : annonce.date_naissance_animal;
 
@@ -776,7 +794,17 @@ function AnnonceDetailPageInner() {
           )}
 
           {/* Prix */}
-          {!isPortee && !isSaillie && annonce.prix != null && (
+          {equideFormule && (
+            <div>
+              <span className="inline-block text-xs font-semibold px-2 py-0.5 rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C] mb-1">{equideFormule}</span>
+              <p className="font-['Galey'] font-bold text-2xl text-[#0C5C6C]">
+                {annonce.type_vente === 'valorisation'
+                  ? (annonce.prix != null && annonce.prix > 0 ? `${annonce.prix} €${prixCadence}` : 'Rémunération à convenir')
+                  : (annonce.prix != null && annonce.prix > 0 ? `${annonce.prix} €${prixCadence}` : 'Prix à convenir')}
+              </p>
+            </div>
+          )}
+          {!isPortee && !isSaillie && !equideFormule && annonce.prix != null && (
             <p className="font-['Galey'] font-bold text-2xl text-[#0C5C6C]">{annonce.prix} €</p>
           )}
           {isSaillie && annonce.saillie_prix != null && (
@@ -797,6 +825,42 @@ function AnnonceDetailPageInner() {
           <div className="bg-white rounded-2xl p-5 shadow-sm">
             <h2 className="font-['Galey'] font-bold text-sm text-[#0C5C6C] uppercase tracking-wide mb-3">Description</h2>
             <p className="font-['Galey'] text-[#444] text-sm leading-relaxed whitespace-pre-wrap">{annonce.description}</p>
+          </div>
+        )}
+
+        {/* Cheval — sport & vidéos */}
+        {annonce.espece === 'cheval' && hasEquideSport && (
+          <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
+            <h2 className="font-['Galey'] font-bold text-sm text-[#0C5C6C] uppercase tracking-wide">Cheval — sport</h2>
+            {annonce.niveau_recommande && (
+              <span className="inline-block text-xs font-semibold px-2.5 py-1 rounded-full bg-[#0C5C6C]/10 text-[#0C5C6C]">
+                Niveau : {annonce.niveau_recommande}
+              </span>
+            )}
+            {(annonce.indice_iso || annonce.indice_idr || annonce.indice_icc) && (
+              <p className="font-['Galey'] font-bold text-[#1F2A2E] text-sm">
+                {[
+                  annonce.indice_iso ? `ISO ${annonce.indice_iso}` : null,
+                  annonce.indice_idr ? `IDR ${annonce.indice_idr}` : null,
+                  annonce.indice_icc ? `ICC ${annonce.indice_icc}` : null,
+                ].filter(Boolean).join('  ·  ')}
+              </p>
+            )}
+            {annonce.palmares && (
+              <p className="font-['Galey'] text-[#444] text-sm leading-relaxed whitespace-pre-wrap">{annonce.palmares}</p>
+            )}
+            {annonce.video_monte_url && (
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-1">Sous selle</p>
+                <video src={annonce.video_monte_url} controls className="w-full max-w-md rounded-xl border border-gray-200" />
+              </div>
+            )}
+            {annonce.video_libre_url && (
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-1">En liberté</p>
+                <video src={annonce.video_libre_url} controls className="w-full max-w-md rounded-xl border border-gray-200" />
+              </div>
+            )}
           </div>
         )}
 

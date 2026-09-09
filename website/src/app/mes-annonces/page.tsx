@@ -16,6 +16,7 @@ interface Annonce {
   race?: string;
   type?: string;
   type_vente?: string;
+  prix_unite?: string;
   photos?: string[];
   prix?: number;
   saillie_prix?: number;
@@ -55,26 +56,37 @@ export default function MesAnnoncesPage() {
   const [statsAnnonceId, setStatsAnnonceId] = useState<string | null>(null);
   const [statsAnnonceTitle, setStatsAnnonceTitle] = useState<string | undefined>();
   const isPremium = plan === 'premium';
+  const isParticulier = !userData?.isElevage;
 
   useEffect(() => {
     if (loading) return;
     if (!user) { router.push('/connexion'); return; }
-    if (!userData?.isElevage) router.push('/');
-  }, [loading, user, userData, router]);
+  }, [loading, user, router]);
 
   useEffect(() => {
     if (!user || loading) return;
-    const SELECT = 'id, titre, espece, race, type, type_vente, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, statut, vues, contacts, created_at, expires_at';
+    const SELECT = 'id, titre, espece, race, type, type_vente, prix_unite, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, statut, vues, contacts, created_at, expires_at';
 
     async function load() {
-      // Vérifie si la migration profile_id a été jouée
-      const { data: check } = await supabase.from('annonces').select('id')
-        .eq('uid_eleveur', user!.uid).not('profile_id', 'is', null).limit(1);
       let q = supabase.from('annonces').select(SELECT).order('created_at', { ascending: false });
-      if ((check ?? []).length > 0 && activeProfileId) {
-        q = q.eq('profile_id', activeProfileId);
+      if (isParticulier) {
+        // Particulier : uniquement ses annonces cheval (profil_source='particulier')
+        q = q.eq('profil_source', 'particulier');
+        const { data: check } = await supabase.from('annonces').select('id')
+          .eq('uid_eleveur', user!.uid).eq('profil_source', 'particulier')
+          .not('profile_id', 'is', null).limit(1);
+        q = (check ?? []).length > 0 && activeProfileId
+          ? q.eq('profile_id', activeProfileId)
+          : q.eq('uid_eleveur', user!.uid);
       } else {
-        q = q.eq('uid_eleveur', user!.uid).or('profil_source.is.null,profil_source.neq.association');
+        // Vérifie si la migration profile_id a été jouée
+        const { data: check } = await supabase.from('annonces').select('id')
+          .eq('uid_eleveur', user!.uid).not('profile_id', 'is', null).limit(1);
+        if ((check ?? []).length > 0 && activeProfileId) {
+          q = q.eq('profile_id', activeProfileId);
+        } else {
+          q = q.eq('uid_eleveur', user!.uid).or('profil_source.is.null,profil_source.neq.association');
+        }
       }
       const { data } = await q;
       setAnnonces((data ?? []) as Annonce[]);
@@ -96,7 +108,7 @@ export default function MesAnnoncesPage() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user, loading, activeProfileId]);
+  }, [user, loading, activeProfileId, isParticulier]);
 
   async function handleDelete(id: string) {
     if (!confirm('Supprimer définitivement cette annonce ?')) return;
@@ -157,14 +169,14 @@ export default function MesAnnoncesPage() {
           </h1>
           <p className="text-gray-500 text-sm">{annonces.length} annonce{annonces.length !== 1 ? 's' : ''}</p>
         </div>
-        <Link href="/annonces/creer"
+        <Link href={isParticulier ? '/annonces/creer-cheval' : '/annonces/creer'}
           className="bg-[#6E9E57] hover:bg-[#5A8A45] text-white font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-2">
-          <span>+</span> Nouvelle annonce
+          <span>+</span> {isParticulier ? 'Annonce cheval' : 'Nouvelle annonce'}
         </Link>
       </div>
 
       {/* Quota plan */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-4 mb-5 flex items-center gap-4">
+      {!isParticulier && <div className="bg-white rounded-2xl border border-gray-100 p-4 mb-5 flex items-center gap-4">
         <div className="flex-1">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs font-semibold text-gray-600">
@@ -195,7 +207,7 @@ export default function MesAnnoncesPage() {
             Gérer →
           </Link>
         )}
-      </div>
+      </div>}
 
       {/* Filtres */}
       <div className="flex gap-2 mb-5 overflow-x-auto pb-1">
@@ -223,7 +235,7 @@ export default function MesAnnoncesPage() {
             {filter === 'toutes' ? "Vous n'avez pas encore d'annonce." : `Aucune annonce ${STATUT_LABEL[filter]?.toLowerCase()}.`}
           </p>
           {filter === 'toutes' && (
-            <Link href="/annonces/creer"
+            <Link href={isParticulier ? '/annonces/creer-cheval' : '/annonces/creer'}
               className="inline-block bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-semibold px-6 py-3 rounded-xl transition-colors mt-2">
               Créer ma première annonce
             </Link>
@@ -237,7 +249,17 @@ export default function MesAnnoncesPage() {
             const statut = a.statut ?? 'disponible';
             const photos = (a.photos as unknown as string[]) ?? [];
             const sailliePrixNum = a.saillie_prix != null ? Number(a.saillie_prix) : null;
-            const prix = isSaillie
+            const EQUIDE_FL: Record<string, string> = {
+              location: 'Location', demi_pension: 'Demi-pension',
+              pension_complete: 'Pension', valorisation: 'Valorisation',
+            };
+            const equideFl = EQUIDE_FL[a.type_vente ?? ''];
+            const cad = a.prix_unite === 'mois' ? '/mois' : a.prix_unite === 'semaine' ? '/sem.' : '';
+            const prix = equideFl
+              ? (a.type_vente === 'valorisation'
+                  ? (a.prix != null && a.prix > 0 ? `${a.prix} €` : 'À convenir')
+                  : (a.prix != null && a.prix > 0 ? `${equideFl} · ${a.prix} €${cad}` : `${equideFl} · à convenir`))
+              : isSaillie
               ? (sailliePrixNum != null && !isNaN(sailliePrixNum) ? `Saillie · ${Math.round(sailliePrixNum)} €` : 'Saillie')
               : isPortee
               ? (a.prix_min_portee != null || a.prix_max_portee != null
@@ -254,8 +276,8 @@ export default function MesAnnoncesPage() {
                     <div className="w-full h-full flex items-center justify-center text-5xl">🐾</div>
                   )}
                   <div className="absolute top-2 left-2 flex gap-1.5">
-                    <span className={`text-white text-xs font-semibold px-2 py-0.5 rounded-full ${isSaillie ? 'bg-purple-500' : isPortee ? 'bg-amber-500' : 'bg-[#6E9E57]'}`}>
-                      {isSaillie ? 'Saillie' : isPortee ? 'Portée' : 'Compagnon'}
+                    <span className={`text-white text-xs font-semibold px-2 py-0.5 rounded-full ${isSaillie ? 'bg-purple-500' : equideFl ? 'bg-[#0C5C6C]' : isPortee ? 'bg-amber-500' : 'bg-[#6E9E57]'}`}>
+                      {isSaillie ? 'Saillie' : equideFl ? `🐴 ${equideFl}` : isPortee ? 'Portée' : 'Compagnon'}
                     </span>
                   </div>
                   <div className="absolute top-2 right-2">
@@ -290,16 +312,18 @@ export default function MesAnnoncesPage() {
                       className="flex-1 text-center text-xs bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-medium py-2 rounded-xl transition-colors">
                       Voir
                     </Link>
-                    <Link href={`/annonces/${a.id}/modifier`}
+                    <Link href={isParticulier ? `/annonces/creer-cheval?edit=${a.id}` : `/annonces/${a.id}/modifier`}
                       className="flex-1 text-center text-xs border border-[#0C5C6C] text-[#0C5C6C] hover:bg-[#E8F4F6] font-medium py-2 rounded-xl transition-colors">
                       Modifier
                     </Link>
-                    <button
-                      onClick={() => { setStatsAnnonceId(a.id); setStatsAnnonceTitle(a.titre); }}
-                      title="Statistiques"
-                      className="px-2.5 py-2 text-xs border border-[#0C5C6C]/20 text-[#0C5C6C] hover:bg-[#E8F4F6] rounded-xl transition-colors">
-                      📊
-                    </button>
+                    {!isParticulier && (
+                      <button
+                        onClick={() => { setStatsAnnonceId(a.id); setStatsAnnonceTitle(a.titre); }}
+                        title="Statistiques"
+                        className="px-2.5 py-2 text-xs border border-[#0C5C6C]/20 text-[#0C5C6C] hover:bg-[#E8F4F6] rounded-xl transition-colors">
+                        📊
+                      </button>
+                    )}
                     <button
                       onClick={() => handlePause(a)}
                       title={statut === 'pause' ? 'Réactiver' : 'Mettre en pause'}

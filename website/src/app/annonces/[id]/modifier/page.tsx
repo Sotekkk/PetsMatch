@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
-import { uploadBlob } from '@/lib/upload-media';
+import { uploadBlob, uploadRawFile } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
 import Link from 'next/link';
 
@@ -107,6 +107,14 @@ export default function ModifierAnnoncePage() {
   const [semaines, setSemaines] = useState(8);
   const [clubPedigree, setClubPedigree] = useState('');
   const [numRegistre, setNumRegistre] = useState('');
+  // Cheval — sport & vidéos
+  const [prixUnite, setPrixUnite] = useState('total');
+  const [niveauEquide, setNiveauEquide] = useState('');
+  const [palmares, setPalmares] = useState('');
+  const [iso, setIso] = useState(''); const [idr, setIdr] = useState(''); const [icc, setIcc] = useState('');
+  const [videoMonteUrl, setVideoMonteUrl] = useState<string | null>(null);
+  const [videoLibreUrl, setVideoLibreUrl] = useState<string | null>(null);
+  const [uploadingVideo, setUploadingVideo] = useState<'monte' | 'libre' | null>(null);
 
   // Main annonce photos
   const [existingPhotos, setExistingPhotos] = useState<string[]>([]);
@@ -141,6 +149,14 @@ export default function ModifierAnnoncePage() {
         setSemaines(a.semaines ?? 8);
         setClubPedigree(a.club_pedigree ?? '');
         setNumRegistre(a.numero_registre ?? '');
+        setPrixUnite((a as unknown as Record<string, string>).prix_unite ?? 'total');
+        setNiveauEquide((a as unknown as Record<string, string>).niveau_recommande ?? '');
+        setPalmares((a as unknown as Record<string, string>).palmares ?? '');
+        setIso((a as unknown as Record<string, number>).indice_iso != null ? String((a as unknown as Record<string, number>).indice_iso) : '');
+        setIdr((a as unknown as Record<string, number>).indice_idr != null ? String((a as unknown as Record<string, number>).indice_idr) : '');
+        setIcc((a as unknown as Record<string, number>).indice_icc != null ? String((a as unknown as Record<string, number>).indice_icc) : '');
+        setVideoMonteUrl((a as unknown as Record<string, string>).video_monte_url ?? null);
+        setVideoLibreUrl((a as unknown as Record<string, string>).video_libre_url ?? null);
         setExistingPhotos((a.photos as unknown as string[]) ?? []);
         if (a.animaux_portee) {
           setBabies(a.animaux_portee.map(b => ({
@@ -187,6 +203,20 @@ export default function ModifierAnnoncePage() {
     if (!files.length || remaining <= 0) return;
     startCrop(files.slice(0, remaining), { type: 'baby', babyIdx });
     e.target.value = '';
+  }
+
+  async function handleEquideVideo(e: React.ChangeEvent<HTMLInputElement>, which: 'monte' | 'libre') {
+    const f = e.target.files?.[0]; e.target.value = '';
+    if (!f || !user) return;
+    if (f.size > 60 * 1024 * 1024) { setError('Vidéo trop lourde (max 60 Mo).'); return; }
+    setUploadingVideo(which); setError('');
+    try {
+      const ext = (f.name.split('.').pop() ?? 'mp4').toLowerCase();
+      const url = await uploadRawFile(f, `annonces/${user.uid}/video_${which}_${Date.now()}.${ext}`);
+      if (which === 'monte') setVideoMonteUrl(url); else setVideoLibreUrl(url);
+    } catch {
+      setError('Échec de l\'envoi de la vidéo.');
+    } finally { setUploadingVideo(null); }
   }
 
   function handleCropConfirm(blob: Blob) {
@@ -277,6 +307,9 @@ export default function ModifierAnnoncePage() {
         }
       }
 
+      const isEquide = annonce.espece === 'cheval';
+      const isEquideFormule = ['location', 'demi_pension', 'pension_complete', 'valorisation'].includes(annonce.type_vente ?? '');
+
       const { error: err } = await supabase.from('annonces').update({
         description: description || null,
         photos: allPhotos,
@@ -286,6 +319,16 @@ export default function ModifierAnnoncePage() {
         semaines: !isSaillie ? semaines : undefined,
         club_pedigree: clubPedigree || null,
         numero_registre: numRegistre || null,
+        ...(isEquide && {
+          niveau_recommande: niveauEquide || null,
+          palmares: palmares.trim() || null,
+          indice_iso: iso ? Number(iso) : null,
+          indice_idr: idr ? Number(idr) : null,
+          indice_icc: icc ? Number(icc) : null,
+          video_monte_url: videoMonteUrl,
+          video_libre_url: videoLibreUrl,
+        }),
+        ...(isEquideFormule && { prix_unite: annonce.type_vente === 'vente' ? null : prixUnite }),
         ...(isSaillie  && { saillie_prix: sailliePrix ? parseFloat(sailliePrix) : null }),
         ...(!isSaillie && !isPortee && { prix: prix ? Number(prix) : null }),
         ...(isPortee   && {
@@ -376,6 +419,56 @@ export default function ModifierAnnoncePage() {
           <div>
             <label className="text-xs text-gray-400 block mb-1">Prix (€)</label>
             <input type="number" min="0" className={iCls} value={prix} onChange={e => setPrix(e.target.value)} />
+          </div>
+        )}
+
+        {/* Cheval — cadence + sport & vidéos */}
+        {annonce.espece === 'cheval' && (
+          <div className="border border-gray-100 rounded-xl p-4 space-y-3">
+            {['location', 'demi_pension', 'pension_complete'].includes(annonce.type_vente ?? '') && (
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Cadence du prix</label>
+                <select className={iCls} value={prixUnite} onChange={e => setPrixUnite(e.target.value)}>
+                  <option value="mois">par mois</option>
+                  <option value="semaine">par semaine</option>
+                  <option value="convenir">à convenir</option>
+                </select>
+              </div>
+            )}
+            <p className="text-sm font-semibold text-gray-700">🏆 Niveau &amp; résultats</p>
+            <div className="flex flex-wrap gap-2">
+              {['Débutant', 'Galops 1-4', 'Galops 5-7', 'Club', 'Amateur', 'Pro', 'Tous niveaux'].map(n => (
+                <button key={n} type="button" onClick={() => setNiveauEquide(niveauEquide === n ? '' : n)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    niveauEquide === n ? 'border-[#0C5C6C] bg-[#0C5C6C] text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  }`}>{n}</button>
+              ))}
+            </div>
+            <textarea className={iCls + ' resize-none'} rows={3} value={palmares} onChange={e => setPalmares(e.target.value)}
+              placeholder="Palmarès / résultats (optionnel)" />
+            <div className="flex gap-3">
+              <input type="number" className={iCls} value={iso} onChange={e => setIso(e.target.value)} placeholder="ISO" />
+              <input type="number" className={iCls} value={idr} onChange={e => setIdr(e.target.value)} placeholder="IDR" />
+              <input type="number" className={iCls} value={icc} onChange={e => setIcc(e.target.value)} placeholder="ICC" />
+            </div>
+            {([['monte', 'Vidéo sous selle', videoMonteUrl] as const, ['libre', 'Vidéo en liberté', videoLibreUrl] as const]).map(([which, label, url]) => (
+              <div key={which}>
+                <label className="text-xs text-gray-400 block mb-1">{label}</label>
+                {url ? (
+                  <div className="flex items-center gap-2">
+                    <video src={url} controls className="w-40 rounded-lg border border-gray-200" />
+                    <button type="button" onClick={() => which === 'monte' ? setVideoMonteUrl(null) : setVideoLibreUrl(null)}
+                      className="text-xs text-red-500 hover:text-red-700 font-medium">Retirer</button>
+                  </div>
+                ) : (
+                  <label className="inline-flex items-center gap-2 px-3 py-2 border border-dashed border-gray-300 rounded-xl text-sm text-gray-500 cursor-pointer hover:border-[#0C5C6C] hover:text-[#0C5C6C]">
+                    {uploadingVideo === which ? 'Envoi…' : '＋ Ajouter une vidéo'}
+                    <input type="file" accept="video/*" className="hidden" disabled={uploadingVideo !== null}
+                      onChange={e => handleEquideVideo(e, which)} />
+                  </label>
+                )}
+              </div>
+            ))}
           </div>
         )}
 

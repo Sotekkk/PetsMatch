@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { uploadBlob } from '@/lib/upload-media';
+import { uploadBlob, uploadRawFile } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
 
 const PLAN_CONFIG: Record<string, { maxAnnonces: number; dureeDays: number; autoPublish: boolean }> = {
@@ -143,6 +143,18 @@ function CreerAnnoncePageInner() {
   const [numSIRE, setNumSIRE] = useState('');
   const [numPasseportEquin, setNumPasseportEquin] = useState('');
   const [numIdentification, setNumIdentification] = useState('');
+
+  // ── Cheval : formule (type_vente équin) + prix cadencé + sport
+  const [formuleEquine, setFormuleEquine] = useState<'vente' | 'location' | 'demi_pension' | 'pension_complete' | 'valorisation'>('vente');
+  const [prixUnite, setPrixUnite] = useState<'total' | 'mois' | 'semaine' | 'convenir'>('total');
+  const [niveauEquide, setNiveauEquide] = useState('');
+  const [palmares, setPalmares] = useState('');
+  const [indiceIso, setIndiceIso] = useState('');
+  const [indiceIdr, setIndiceIdr] = useState('');
+  const [indiceIcc, setIndiceIcc] = useState('');
+  const [videoMonteUrl, setVideoMonteUrl] = useState<string | null>(null);
+  const [videoLibreUrl, setVideoLibreUrl] = useState<string | null>(null);
+  const [uploadingVideo, setUploadingVideo] = useState<'monte' | 'libre' | null>(null);
 
   // ── Retraité d'élevage
   const [retraiteAnimalId, setRetraiteAnimalId] = useState<string | null>(null);
@@ -555,6 +567,29 @@ function CreerAnnoncePageInner() {
     }));
   }
 
+  // ── Vidéo cheval (sous selle / en liberté)
+  async function handleEquideVideo(e: React.ChangeEvent<HTMLInputElement>, which: 'monte' | 'libre') {
+    const f = e.target.files?.[0]; e.target.value = '';
+    if (!f) return;
+    if (f.size > 60 * 1024 * 1024) { setError('Vidéo trop lourde (max 60 Mo).'); return; }
+    setUploadingVideo(which); setError('');
+    try {
+      const ext = (f.name.split('.').pop() ?? 'mp4').toLowerCase();
+      const url = await uploadRawFile(f, `annonces/${user!.uid}/video_${which}_${Date.now()}.${ext}`);
+      if (which === 'monte') setVideoMonteUrl(url); else setVideoLibreUrl(url);
+    } catch {
+      setError('Échec de l\'envoi de la vidéo.');
+    } finally {
+      setUploadingVideo(null);
+    }
+  }
+
+  function selectFormuleEquine(v: typeof formuleEquine) {
+    setFormuleEquine(v);
+    setPrixUnite(v === 'location' || v === 'demi_pension' || v === 'pension_complete' ? 'mois'
+      : v === 'valorisation' ? 'convenir' : 'total');
+  }
+
   // ── Main photos
   function handlePhotos(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []).slice(0, 5);
@@ -706,12 +741,20 @@ function CreerAnnoncePageInner() {
       const PRIX_MAX: Record<string, number> = { chien: 20000, chat: 6000, cheval: 150000, lapin: 1000, oiseau: 5000, nac: 3000 };
       const BLACKLIST = ['bitcoin', 'crypto', 'western union', 'mandat cash', 'arnaque', 'don gratuit', 'livraison longue distance', 'visa gift', 'paypal friends'];
       const espDb = (ESPECE_DB[espece] ?? espece).toLowerCase();
+      // Formule équine (cheval « compagnon ») : vente ferme sinon location / demi-pension / valo
+      const isEquideFormule = espece === 'Cheval' && type === 'compagnon';
+      const effectiveTypeVente = type === 'saillie' ? 'saillie'
+        : type === 'retraite' ? 'retraite'
+        : isEquideFormule ? formuleEquine
+        : cession;
+      // Les bornes de prix ne valent que pour une vente ferme / une portée.
+      const checkPriceBand = !isEquideFormule || formuleEquine === 'vente';
       const suspectReasons: string[] = [];
       const fullText = `${titre} ${description}`.toLowerCase();
       const prixNum = prix ? Number(prix) : null;
       const prixMinPorteeNum = prixMin ? Number(prixMin) : null;
-      if (prixNum && prixNum > 0 && PRIX_MIN[espDb] && prixNum < PRIX_MIN[espDb]) suspectReasons.push('prix_tres_bas');
-      if (prixNum && PRIX_MAX[espDb] && prixNum > PRIX_MAX[espDb]) suspectReasons.push('prix_tres_eleve');
+      if (checkPriceBand && prixNum && prixNum > 0 && PRIX_MIN[espDb] && prixNum < PRIX_MIN[espDb]) suspectReasons.push('prix_tres_bas');
+      if (checkPriceBand && prixNum && PRIX_MAX[espDb] && prixNum > PRIX_MAX[espDb]) suspectReasons.push('prix_tres_eleve');
       if (prixMinPorteeNum && prixMinPorteeNum > 0 && PRIX_MIN[espDb] && prixMinPorteeNum < PRIX_MIN[espDb]) suspectReasons.push('prix_portee_bas');
       for (const w of BLACKLIST) { if (fullText.includes(w)) suspectReasons.push(`mot_suspect:${w}`); }
 
@@ -726,8 +769,18 @@ function CreerAnnoncePageInner() {
         espece: ESPECE_DB[espece] ?? espece.toLowerCase(), race,
         espece_autre: espece === 'Autre' ? (especeAutre.trim() || null) : null,
         type: type === 'portee' ? 'portee' : 'animal',
-        type_vente: type === 'saillie' ? 'saillie' : type === 'retraite' ? 'retraite' : cession,
+        type_vente: effectiveTypeVente,
         photos: photoUrls, statut: annonceStatut, expire_at: expireAt, description,
+        ...(isEquideFormule && {
+          prix_unite: formuleEquine === 'vente' ? null : prixUnite,
+          niveau_recommande: niveauEquide || null,
+          palmares: palmares.trim() || null,
+          indice_iso: indiceIso ? Number(indiceIso) : null,
+          indice_idr: indiceIdr ? Number(indiceIdr) : null,
+          indice_icc: indiceIcc ? Number(indiceIcc) : null,
+          video_monte_url: videoMonteUrl,
+          video_libre_url: videoLibreUrl,
+        }),
         ...(type === 'compagnon' && { prix: prix ? Number(prix) : null, sexe: sexeAnimal, couleur: couleurAnimal || null, sterilise }),
         ...(type === 'retraite' && { prix: prix ? Number(prix) : null, sexe: sexeAnimal, couleur: couleurAnimal || null, etalon_animal_id: retraiteAnimalId }),
         ...(type === 'portee' && {
@@ -977,6 +1030,84 @@ function CreerAnnoncePageInner() {
                 <input value={numPasseportEquin} onChange={e => setNumPasseportEquin(e.target.value)}
                   placeholder="Ex: FR123456789" className={iCls} />
               </div>
+            </div>
+          )}
+
+          {/* ── Cheval : formule + sport & vidéos ── */}
+          {espece === 'Cheval' && type === 'compagnon' && (
+            <div className="border border-gray-100 rounded-xl p-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-700">🐴 Formule</p>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  ['vente', 'Vente'], ['location', 'Location'], ['demi_pension', 'Demi-pension'],
+                  ['pension_complete', 'Pension complète'], ['valorisation', 'Valorisation'],
+                ] as [typeof formuleEquine, string][]).map(([v, l]) => (
+                  <button key={v} type="button" onClick={() => selectFormuleEquine(v)}
+                    className={`py-2 rounded-xl text-sm font-medium border-2 transition-colors ${
+                      formuleEquine === v ? 'border-[#0C5C6C] bg-[#E8F4F6] text-[#0C5C6C]' : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}>{l}</button>
+                ))}
+              </div>
+              {formuleEquine !== 'vente' && formuleEquine !== 'valorisation' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Cadence du prix</label>
+                  <select value={prixUnite} onChange={e => setPrixUnite(e.target.value as typeof prixUnite)} className={iSmCls}>
+                    <option value="mois">par mois</option>
+                    <option value="semaine">par semaine</option>
+                    <option value="convenir">à convenir</option>
+                  </select>
+                </div>
+              )}
+              {formuleEquine === 'valorisation' && (
+                <p className="text-xs text-gray-500">Valorisation : le prix (rémunération) est optionnel et « à convenir » par défaut.</p>
+              )}
+
+              <p className="text-sm font-semibold text-gray-700 pt-2">🏆 Niveau &amp; résultats</p>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Niveau recommandé</label>
+                <div className="flex flex-wrap gap-2">
+                  {['Débutant', 'Galops 1-4', 'Galops 5-7', 'Club', 'Amateur', 'Pro', 'Tous niveaux'].map(n => (
+                    <button key={n} type="button" onClick={() => setNiveauEquide(niveauEquide === n ? '' : n)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                        niveauEquide === n ? 'border-[#0C5C6C] bg-[#0C5C6C] text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                      }`}>{n}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Palmarès / résultats <span className="text-gray-400 font-normal">(optionnel)</span></label>
+                <textarea value={palmares} onChange={e => setPalmares(e.target.value)} rows={3}
+                  placeholder="Ex : 2e Amateur Elite GP Fontainebleau 2025…" className={`${iSmCls} resize-none`} />
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">ISO</label>
+                  <input type="number" value={indiceIso} onChange={e => setIndiceIso(e.target.value)} className={iSmCls} /></div>
+                <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">IDR</label>
+                  <input type="number" value={indiceIdr} onChange={e => setIndiceIdr(e.target.value)} className={iSmCls} /></div>
+                <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">ICC</label>
+                  <input type="number" value={indiceIcc} onChange={e => setIndiceIcc(e.target.value)} className={iSmCls} /></div>
+              </div>
+
+              <p className="text-sm font-semibold text-gray-700 pt-2">🎬 Vidéos</p>
+              {([['monte', 'Vidéo sous selle', videoMonteUrl] as const, ['libre', 'Vidéo en liberté', videoLibreUrl] as const]).map(([which, label, url]) => (
+                <div key={which}>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+                  {url ? (
+                    <div className="flex items-center gap-2">
+                      <video src={url} controls className="w-40 rounded-lg border border-gray-200" />
+                      <button type="button" onClick={() => which === 'monte' ? setVideoMonteUrl(null) : setVideoLibreUrl(null)}
+                        className="text-xs text-red-500 hover:text-red-700 font-medium">Retirer</button>
+                    </div>
+                  ) : (
+                    <label className="inline-flex items-center gap-2 px-3 py-2 border border-dashed border-gray-300 rounded-xl text-sm text-gray-500 cursor-pointer hover:border-[#0C5C6C] hover:text-[#0C5C6C]">
+                      {uploadingVideo === which ? 'Envoi…' : '＋ Ajouter une vidéo'}
+                      <input type="file" accept="video/*" className="hidden"
+                        disabled={uploadingVideo !== null}
+                        onChange={e => handleEquideVideo(e, which)} />
+                    </label>
+                  )}
+                </div>
+              ))}
             </div>
           )}
 

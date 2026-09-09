@@ -37,6 +37,25 @@ async function _upload(blob: Blob, storagePath: string): Promise<string> {
 }
 
 /**
+ * Upload any file (video, image…) to the `media` bucket, keeping its own MIME
+ * type (no compression). Used for annonce videos (sous selle / en liberté).
+ * Returns the public URL.
+ */
+export async function uploadRawFile(
+  file: File,
+  storagePath: string,
+): Promise<string> {
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .upload(storagePath, file, {
+      contentType: file.type || 'application/octet-stream',
+      upsert: true,
+    });
+  if (error) throw new Error(error.message);
+  return supabase.storage.from(BUCKET).getPublicUrl(storagePath).data.publicUrl;
+}
+
+/**
  * Upload a document (PDF or image) to the `documents` bucket.
  * Returns the public URL.
  */
