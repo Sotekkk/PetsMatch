@@ -17,6 +17,7 @@ import 'package:PetsMatch/utils/geocoding_helper.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/pages/pro/garde_facture_helper.dart';
+import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 import 'package:PetsMatch/pages/pro/creneaux_week_grid.dart';
 
 class ProAgendaPage extends StatefulWidget {
@@ -3243,10 +3244,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     rdvId: rdv['id']?.toString(),
                   )))
               : null,
-          // CR / Ordonnance est un flux médical (vétérinaire, pension…) — sans
-          // objet pour l'éducateur, qui a son propre rapport de séance
-          // (lié à l'animal, voir animal_fiche.dart / education_devis_page.dart).
-          onCompteRendu: (showProTools && User_Info.catPro != 'education')
+          // CR / Ordonnance est un flux médical (vétérinaire, pension, santé…) —
+          // sans objet pour l'éducateur (rapport de séance dédié) ni pour le
+          // pet-sitter (pas d'ordonnance → « Envoyer des nouvelles », ci-dessous).
+          onCompteRendu: (showProTools && User_Info.catPro != 'education' && User_Info.catPro != 'garde')
               ? () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => CompteRenduPage(
                     rdv: rdv,
@@ -3254,6 +3255,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     categoryColor: _teal,
                     isPension: User_Info.catPro == 'pension',
                   )))
+              : null,
+          // Pet-sitter : nouvelles / photo au propriétaire (rapport de visite ou
+          // journal de garde selon la prestation).
+          onNouvelles: (User_Info.catPro == 'garde' && hasAnimal)
+              ? () => sendGardeNews(context, rdv)
               : null,
           onContrat: (showProTools && User_Info.catPro == 'photographe')
               ? () => _genererContratPhoto(rdv)
@@ -3335,6 +3341,7 @@ class _RdvCard extends StatelessWidget {
   final VoidCallback onNotes;
   final VoidCallback? onCarnetSante;
   final VoidCallback? onCompteRendu;
+  final VoidCallback? onNouvelles;
   final VoidCallback? onContact;
   final VoidCallback? onDelete;
   final VoidCallback? onModifier;
@@ -3354,6 +3361,7 @@ class _RdvCard extends StatelessWidget {
     required this.onNotes,
     this.onCarnetSante,
     this.onCompteRendu,
+    this.onNouvelles,
     this.onContact,
     this.onDelete,
     this.onModifier,
@@ -3617,6 +3625,16 @@ class _RdvCard extends StatelessWidget {
                   onPressed: onCompteRendu,
                   icon: const Icon(Icons.description_outlined, size: 20, color: Color(0xFF6E9E57)),
                   tooltip: 'CR / Ordonnance',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+              if (onNouvelles != null) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  onPressed: onNouvelles,
+                  icon: const Icon(Icons.photo_camera_outlined, size: 20, color: Color(0xFF6E9E57)),
+                  tooltip: 'Envoyer des nouvelles au maître',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
