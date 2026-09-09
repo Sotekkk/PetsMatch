@@ -17,6 +17,26 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:share_plus/share_plus.dart';
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ⚠️  MULTI-PROFIL — NOTE POUR NABIL (et tout dev sur Pets Social)
+//
+// Un compte (uid) a PLUSIEURS profils (`user_profiles` : particulier, éleveur,
+// pro, association…). Dans Pets Social, l'identité = le **profil ACTIF** de
+// l'utilisateur (`User_Info.activeProfileId` / `activeType`), PAS son uid ni
+// « le profil particulier » ni `is_main`.
+//
+// Règles :
+//  • Écriture (post / commentaire / like / follow / repost / favori) → toujours
+//    `author_profile_id` = `_activeAuthorProfileId(uid)` (premium requis pour un
+//    profil non-particulier, sinon repli particulier).
+//  • Lecture : résoudre l'auteur par `author_profile_id` (clé `_authorKey`),
+//    JAMAIS par `uid` seul — deux profils d'un même uid se confondraient
+//    (ex. « Angelique » particulier vs « Pomsky de la Luna » éleveur).
+//  • « Mon profil / mes posts / mes abonnés / notifs » = scopés au profil actif
+//    (`_myProfileId`), pas à l'uid.
+//  • Les cosmétiques (`user_cosmetics`) restent par uid (porte-monnaie global).
+// ═══════════════════════════════════════════════════════════════════════════════
+
 // ─── Palette ──────────────────────────────────────────────────────────────────
 
 const _tealC  = Color(0xFF0C5C6C);
@@ -225,48 +245,61 @@ Future<void> _insertFollow(String followerUid, String followingUid) async {
   });
 }
 
-/// Résout les profils PARTICULIER auteurs de posts/commentaires via
-/// `author_profile_id` (repli : profil particulier de l'uid pour les anciennes
-/// lignes non rétro-remplies). Retourne une map uid -> ligne user_profiles.
+/// Clé d'auteur d'une ligne (post / commentaire / repost) : SON profil si
+/// connu, sinon l'uid préfixé (lignes legacy). Deux profils d'un même compte
+/// (ex. particulier + éleveur) ne se confondent plus.
+String _authorKey(Map row) {
+  final pid = (row['author_profile_id'] ?? row['_orig_author_profile_id']) as String?;
+  return (pid != null && pid.isNotEmpty) ? pid : 'u:${row['uid'] ?? row['original_uid']}';
+}
+
+/// Résout les profils auteurs de posts/commentaires. Retourne une map
+/// **`_authorKey` -> ligne user_profiles** (profil id, sinon `u:<uid>`).
 Future<Map<String, Map<String, dynamic>>> _resolveAuthors(List<dynamic> rows) async {
   final supa = Supabase.instance.client;
   final out = <String, Map<String, dynamic>>{};
-  final profIds = rows
-      .map((r) => r['author_profile_id'] as String?)
-      .whereType<String>()
-      .toSet()
-      .toList();
+  final profIds = <String>{
+    for (final r in rows) ...[
+      if ((r['author_profile_id'] as String?)?.isNotEmpty == true) r['author_profile_id'] as String,
+      if ((r['_orig_author_profile_id'] as String?)?.isNotEmpty == true) r['_orig_author_profile_id'] as String,
+    ],
+  }.toList();
   if (profIds.isNotEmpty) {
     final byId = await supa.from('user_profiles').select(_kAuthorCols).inFilter('id', profIds);
     for (final r in byId as List) {
-      out[r['uid'] as String] = Map<String, dynamic>.from(r as Map);
+      out[r['id'] as String] = Map<String, dynamic>.from(r as Map);
     }
   }
-  final missing = rows
-      .map((r) => r['uid'] as String)
-      .toSet()
-      .where((u) => !out.containsKey(u))
-      .toList();
-  if (missing.isNotEmpty) {
+  // Lignes sans profil connu → profil particulier de l'uid (legacy).
+  final legacyUids = <String>{
+    for (final r in rows)
+      if ((r['author_profile_id'] as String?)?.isNotEmpty != true
+          && (r['_orig_author_profile_id'] as String?)?.isNotEmpty != true)
+        (r['uid'] ?? r['original_uid']) as String,
+  }.where((u) => !out.containsKey('u:$u')).toList();
+  if (legacyUids.isNotEmpty) {
     final byUid = await supa.from('user_profiles').select(_kAuthorCols)
-        .inFilter('uid', missing).eq('profile_type', 'particulier');
+        .inFilter('uid', legacyUids).eq('profile_type', 'particulier');
     for (final r in byUid as List) {
-      out.putIfAbsent(r['uid'] as String, () => Map<String, dynamic>.from(r as Map));
+      out.putIfAbsent('u:${r['uid']}', () => Map<String, dynamic>.from(r as Map));
     }
   }
-  // Fetch avatar ring cosmetics for all resolved authors
-  final uids = out.keys.toList();
+  // Anneaux d'avatar (cosmetics) — par uid.
+  final uidByKey = {for (final e in out.entries) e.key: e.value['uid'] as String};
+  final uids = uidByKey.values.toSet().toList();
   if (uids.isNotEmpty) {
     try {
       final cosmetics = await supa.from('user_cosmetics')
           .select('uid, active_value')
           .inFilter('uid', uids)
           .eq('cosmetic_type', 'avatar_ring');
-      for (final c in cosmetics as List) {
-        final u = c['uid'] as String;
-        if (out.containsKey(u) && c['active_value'] != null) {
-          out[u]!['_ring'] = c['active_value'] as String;
-        }
+      final ringByUid = {
+        for (final c in cosmetics as List)
+          if (c['active_value'] != null) c['uid'] as String: c['active_value'] as String,
+      };
+      for (final e in out.entries) {
+        final ring = ringByUid[e.value['uid']];
+        if (ring != null) e.value['_ring'] = ring;
       }
     } catch (_) {}
   }
@@ -921,39 +954,30 @@ class _FeedListState extends State<_FeedList>
             p['is_repost'] == true || !repostOrigIds.contains(p['id'] as String)).toList();
       }
 
-      final postIds = posts.map((p) => p['id'] as String).toList();
-
-      _profiles = await _resolveAuthors(posts);
-
-      // Charge aussi les profils des auteurs originaux des reposts
-      final origUids = posts
-          .where((p) => p['is_repost'] == true && p['original_uid'] != null)
-          .map((p) => p['original_uid'] as String)
-          .where((u) => !_profiles.containsKey(u))
+      // Reposts : récupère le profil auteur du post ORIGINAL (author_profile_id),
+      // pas seulement l'uid — sinon un compte multi-profils s'affiche mal.
+      final origPostIds = posts
+          .where((p) => p['is_repost'] == true && p['original_post_id'] != null)
+          .map((p) => p['original_post_id'] as String)
           .toSet().toList();
-      if (origUids.isNotEmpty) {
+      if (origPostIds.isNotEmpty) {
         try {
-          final byUid = await _supa.from('user_profiles').select(_kAuthorCols)
-              .inFilter('uid', origUids).eq('profile_type', 'particulier');
-          for (final r in byUid as List) {
-            _profiles.putIfAbsent(r['uid'] as String, () => Map<String, dynamic>.from(r as Map));
-          }
-          // Fetch rings for these newly added profiles
-          final newUids = (byUid as List).map((r) => r['uid'] as String).toList();
-          if (newUids.isNotEmpty) {
-            final cosmetics = await _supa.from('user_cosmetics')
-                .select('uid, active_value')
-                .inFilter('uid', newUids)
-                .eq('cosmetic_type', 'avatar_ring');
-            for (final c in cosmetics as List) {
-              final u = c['uid'] as String;
-              if (_profiles.containsKey(u) && c['active_value'] != null) {
-                _profiles[u]!['_ring'] = c['active_value'] as String;
+          final origs = await _supa.from('posts_socialmedia')
+              .select('id, uid, author_profile_id').inFilter('id', origPostIds);
+          final byId = {for (final o in origs as List) o['id'] as String: o as Map};
+          for (final p in posts) {
+            if (p['is_repost'] == true) {
+              final o = byId[p['original_post_id']];
+              if (o != null) {
+                p['_orig_author_profile_id'] = o['author_profile_id'];
+                p['original_uid'] = o['uid'];
               }
             }
           }
         } catch (_) {}
       }
+
+      _profiles = await _resolveAuthors(posts);
 
       // Pour les reposts, les likes/commentaires sont sur l'ID original
       String effectiveId(dynamic p) {
@@ -1139,8 +1163,14 @@ class _FeedListState extends State<_FeedList>
           final isRepost    = post['is_repost'] == true;
           final reposterUid = post['uid'] as String;
           final originalUid = isRepost ? (post['original_uid'] as String? ?? reposterUid) : reposterUid;
-          final reposterProfile = isRepost ? _profiles[reposterUid] : null;
-          final displayProfile  = _profiles[originalUid];
+          // Profil qui a republié : son author_profile_id (ou u:<uid>).
+          final reposterProfile = isRepost ? _profiles[_authorKey(post)] : null;
+          // Profil de l'auteur affiché (original si repost).
+          final displayProfile = _profiles[isRepost
+              ? ((post['_orig_author_profile_id'] as String?)?.isNotEmpty == true
+                  ? post['_orig_author_profile_id'] as String
+                  : 'u:${post['original_uid'] ?? post['uid']}')
+              : _authorKey(post)];
           return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
             if (isRepost) Padding(
               padding: const EdgeInsets.only(left: 14, bottom: 6),
@@ -2482,7 +2512,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     final result  = <Map<String, dynamic>>[];
     for (final root in roots) {
       result.add(root);
-      final authorName = _profileName(_profiles[root['uid']]);
+      final authorName = _profileName(_profiles[_authorKey(root)]);
       final matched = replies
           .where((r) => (r['texte']?.toString() ?? '').startsWith('@$authorName ') ||
                         (r['texte']?.toString() ?? '') == '@$authorName')
@@ -2643,7 +2673,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                       itemCount: sorted.length,
                       itemBuilder: (_, i) {
                         final c       = sorted[i];
-                        final prof    = _profiles[c['uid']];
+                        final prof    = _profiles[_authorKey(c)];
                         final photo   = _profilePhoto(prof);
                         final cUid    = c['uid'] as String;
                         final text    = c['texte']?.toString() ?? '';
@@ -4289,7 +4319,19 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
 
   Future<void> _loadProfile() async {
     final uid = _authorUid;
-    final authorPid = widget.post['author_profile_id'] as String?;
+    // Pour un repost, l'auteur affiché est celui du post ORIGINAL — on résout
+    // son author_profile_id, pas celui du reposteur.
+    String? authorPid = widget.post['author_profile_id'] as String?;
+    if (widget.post['is_repost'] == true) {
+      authorPid = widget.post['_orig_author_profile_id'] as String?;
+      if (authorPid == null && widget.post['original_post_id'] != null) {
+        try {
+          final o = await _supa.from('posts_socialmedia')
+              .select('author_profile_id').eq('id', widget.post['original_post_id']).maybeSingle();
+          authorPid = o?['author_profile_id'] as String?;
+        } catch (_) {}
+      }
+    }
     final profQ = authorPid != null
         ? _supa.from('user_profiles').select(_kAuthorCols).eq('id', authorPid).maybeSingle()
         : _supa.from('user_profiles').select(_kAuthorCols)
