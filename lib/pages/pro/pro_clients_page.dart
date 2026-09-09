@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
+import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/pages/pro/education_suivi_page.dart';
 import 'package:PetsMatch/pages/pro/owner_contact.dart';
 import 'package:PetsMatch/widgets/pro_day_timeline.dart';
@@ -187,6 +188,7 @@ class _ProClientsPageState extends State<ProClientsPage>
             final ownerPid = extra['granted_by_profile_id'] as String?;
             return {
               ...a,
+              '_owner_uid': extra['owner_uid'],
               '_owner_profile_id': ownerPid,
               '_owner_name': ownerNames[ownerPid ?? ''] ?? 'Propriétaire',
               '_granted_at': extra['granted_at'],
@@ -402,15 +404,29 @@ class _ProClientsPageState extends State<ProClientsPage>
   }
 
   void _openCompteRendu(Map<String, dynamic> animal) {
-    final ownerUid = animal['_owner_uid']?.toString() ?? '';
+    final animalId = animal['id']?.toString() ?? '';
+    final ownerUidRaw = animal['_owner_uid']?.toString() ?? '';
+    final ownerUid = ownerUidRaw.isEmpty ? null : ownerUidRaw;
+    // Pet-sitter : pas de compte rendu médical → journal de garde.
+    if (User_Info.catPro == 'garde') {
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => PensionJournalPage(
+          animalId: animalId,
+          animalNom: animal['nom']?.toString() ?? 'Animal',
+          journalKind: 'garde',
+          clientUid: ownerUid,
+          clientProfileId: animal['_owner_profile_id']?.toString(),
+        ),
+      ));
+      return;
+    }
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => CompteRenduPage(
         rdv: null,
-        animalId: animal['id']?.toString() ?? '',
+        animalId: animalId,
         ownerUid: ownerUid,
         clientName: animal['_owner_name']?.toString() ?? 'Client',
         categoryColor: _color,
-        isPension: User_Info.catPro == 'garde',
       ),
     ));
   }

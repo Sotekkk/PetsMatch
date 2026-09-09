@@ -163,20 +163,25 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     setState(() => _crSaving = true);
     final rdvId    = widget.rdv?['id'];
     final animalId = widget.animalId ?? widget.rdv?['animal_id'];
-    final ownerUid = widget.ownerUid ?? widget.rdv?['client_uid'];
     try {
+      final owner = await _resolveOwner();
+      final proProfileId = User_Info.activeProfileId.isNotEmpty
+          ? User_Info.activeProfileId : _proProfileId;
       String? docUrl;
       if (_crFile != null) {
         final name = '${DateTime.now().millisecondsSinceEpoch}.${_crFile!.path.split('.').last}';
         docUrl = await uploadDocument(_crFile!, 'comptes_rendus/$proUid/$name');
       }
-      await _supa.from('comptes_rendus').insert({
+      await _insertRecord('comptes_rendus', {
         'pro_uid'   : proUid,
         'animal_id' : animalId,
-        'owner_uid' : ownerUid,
+        if (owner.uid != null) 'owner_uid': owner.uid,
         if (rdvId != null) 'rdv_id': rdvId,
         'contenu'   : contenu,
         if (docUrl != null) 'doc_url': docUrl,
+      }, {
+        if (proProfileId != null && proProfileId.isNotEmpty) 'pro_profile_id': proProfileId,
+        if (owner.profileId != null) 'owner_profile_id': owner.profileId,
       });
       await _notifyOwner(isOrdo: false);
       _crContenuCtrl.clear();
@@ -201,21 +206,76 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     }
   }
 
+  ({String? uid, String? profileId})? _owner;
+
+  /// Insert tolérant aux colonnes `*_profile_id` pas encore migrées : réessaie
+  /// sans elles si la BDD les rejette.
+  Future<void> _insertRecord(String table, Map<String, dynamic> base,
+      Map<String, dynamic> profileExtra) async {
+    try {
+      await _supa.from(table).insert({...base, ...profileExtra});
+    } catch (e) {
+      if (profileExtra.isEmpty) rethrow;
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('profile_id') || msg.contains('column') || msg.contains('schema cache')) {
+        await _supa.from(table).insert(base);
+      } else {
+        rethrow;
+      }
+    }
+  }
+
+  /// Résout un propriétaire VALIDE pour l'animal / le RDV : `owner_uid` doit
+  /// exister dans `users` (contrainte FK) sinon on le laisse nul ; `profile_id`
+  /// = profil particulier du propriétaire.
+  Future<({String? uid, String? profileId})> _resolveOwner() async {
+    if (_owner != null) return _owner!;
+    final animalId = (widget.animalId ?? widget.rdv?['animal_id'])?.toString();
+    String? uid = widget.ownerUid?.trim();
+    if (uid == null || uid.isEmpty) uid = widget.rdv?['client_uid']?.toString();
+    if (uid != null && uid.isEmpty) uid = null;
+    String? pid = widget.rdv?['client_profile_id']?.toString();
+    if (pid != null && pid.isEmpty) pid = null;
+
+    if ((uid == null || pid == null) && animalId != null && animalId.isNotEmpty) {
+      try {
+        final row = await _supa.from('animaux_proprietes')
+            .select('uid_proprio, profile_id_proprio')
+            .eq('animal_id', animalId).filter('date_fin', 'is', null)
+            .order('date_debut', ascending: false).limit(1).maybeSingle();
+        uid ??= row?['uid_proprio'] as String?;
+        pid ??= row?['profile_id_proprio'] as String?;
+      } catch (_) {}
+    }
+
+    // owner_uid doit être un uid réel (FK vers users).
+    if (uid != null) {
+      try {
+        final u = await _supa.from('users').select('uid').eq('uid', uid).maybeSingle();
+        if (u == null) uid = null;
+      } catch (_) { uid = null; }
+    }
+    // Profil particulier du propriétaire si non fourni.
+    if (pid == null && uid != null) {
+      try {
+        final p = await _supa.from('user_profiles')
+            .select('id').eq('uid', uid).eq('profile_type', 'particulier')
+            .order('is_main', ascending: false).limit(1).maybeSingle();
+        pid = p?['id'] as String?;
+      } catch (_) {}
+    }
+    _owner = (uid: uid, profileId: pid);
+    return _owner!;
+  }
+
   /// Prévient le propriétaire qu'un compte rendu / une ordonnance a été ajouté.
   Future<void> _notifyOwner({required bool isOrdo}) async {
     try {
-      final ownerUid = (widget.ownerUid ?? widget.rdv?['client_uid'])?.toString();
+      final owner = await _resolveOwner();
+      final ownerUid = owner.uid;
+      final ownerProfileId = owner.profileId;
       final animalId = (widget.animalId ?? widget.rdv?['animal_id'])?.toString();
       if (ownerUid == null || ownerUid.isEmpty) return;
-
-      // Profil PARTICULIER du propriétaire (is_main peut être un profil pro).
-      String? ownerProfileId = (widget.rdv?['client_profile_id'])?.toString();
-      if (ownerProfileId == null || ownerProfileId.isEmpty) {
-        final p = await _supa.from('user_profiles')
-            .select('id').eq('uid', ownerUid).eq('profile_type', 'particulier')
-            .order('is_main', ascending: false).limit(1).maybeSingle();
-        ownerProfileId = p?['id'] as String?;
-      }
 
       var animalNom = (widget.rdv?['_animal_nom'] ?? widget.rdv?['animal_nom'] ?? '').toString();
       if (animalNom.isEmpty && animalId != null) {
@@ -255,26 +315,24 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     setState(() => _ordoSaving = true);
     final rdvId    = widget.rdv?['id'];
     final animalId = widget.animalId ?? widget.rdv?['animal_id'];
-    final ownerUid = widget.ownerUid ?? widget.rdv?['client_uid'];
     try {
+      final owner = await _resolveOwner();
+      final proProfileId = User_Info.activeProfileId.isNotEmpty
+          ? User_Info.activeProfileId : _proProfileId;
       final name   = '${DateTime.now().millisecondsSinceEpoch}.${_ordoFile!.path.split('.').last}';
       final docUrl = await uploadDocument(_ordoFile!, 'ordonnances/$proUid/$name');
       final today  = DateTime.now();
-      String? ownerProfileId;
-      if (ownerUid != null) {
-        final row = await _supa.from('user_profiles').select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
-        ownerProfileId = row?['id'] as String?;
-      }
-      await _supa.from('ordonnances').insert({
+      await _insertRecord('ordonnances', {
         'pro_uid'  : proUid,
-        if (_proProfileId != null) 'pro_profile_id': _proProfileId,
         'animal_id': animalId,
-        'owner_uid': ownerUid,
-        if (ownerProfileId != null) 'owner_profile_id': ownerProfileId,
+        if (owner.uid != null) 'owner_uid': owner.uid,
         if (rdvId != null) 'rdv_id': rdvId,
         'doc_url'  : docUrl,
         'date_emit': '${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}',
         if (_ordoNotesCtrl.text.trim().isNotEmpty) 'notes': _ordoNotesCtrl.text.trim(),
+      }, {
+        if (proProfileId != null && proProfileId.isNotEmpty) 'pro_profile_id': proProfileId,
+        if (owner.profileId != null) 'owner_profile_id': owner.profileId,
       });
       await _notifyOwner(isOrdo: true);
       setState(() => _ordoFile = null);
