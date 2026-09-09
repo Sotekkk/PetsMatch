@@ -13,6 +13,7 @@ import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 /// déduite du motif du RDV.
 String gardePrestationKey(String? motif) {
   final m = (motif ?? '').toLowerCase();
+  if (m.contains('visite')) return 'visite';
   if (m.contains('promenade') && m.contains('30')) return 'promenade_30min';
   if (m.contains('promenade') && m.contains('2')) return 'promenade_2h';
   if (m.contains('promenade')) return 'promenade_1h';

@@ -54,6 +54,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   final Set<String> _slotDomicile = {};
   // Lien optionnel créneau → prestation (éducateur) — reporté à la réplication.
   final Map<String, String> _slotPrestationIds = {};
+  // Garde : type de créneau — 'journee' (hébergement) / 'prestation'
+  // (promenade-visite) / absent = les deux.
+  final Map<String, String> _slotTypeGarde = {};
+  // Garde : nombre de places par créneau (pour la réplication).
+  final Map<String, int> _slotCapacite = {};
   // Garde : la pet-sitter autorise-t-elle des prestations qui se chevauchent ?
   bool _gardeChevauchementOk = true;
 
@@ -2466,6 +2471,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         _slotTypes.clear();
         _slotDomicile.clear();
         _slotPrestationIds.clear();
+        _slotTypeGarde.clear();
+        _slotCapacite.clear();
         _gardeChevauchementOk = chevauchementOk;
         for (final row in rows) {
           final date = row['date'] as String;
@@ -2479,6 +2486,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           if (row['domicile_ok'] == true) _slotDomicile.add(key);
           final presId = row['prestation_id']?.toString();
           if (presId != null && presId.isNotEmpty) _slotPrestationIds[key] = presId;
+          final tg = row['type_garde']?.toString();
+          if (tg != null && tg.isNotEmpty) _slotTypeGarde[key] = tg;
+          final cap = (row['capacite'] as num?)?.toInt() ?? 1;
+          if (cap > 1) _slotCapacite[key] = cap;
         }
       });
     } catch (_) {}
@@ -2514,41 +2525,44 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   String _fmtTime(TimeOfDay t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-  List<({TimeOfDay start, TimeOfDay end, String statut, String? type, bool domicile})> _groupedRanges(String date) {
+  List<CreneauRange> _groupedRanges(String date) {
     final entries = _blockedSlots.entries
         .where((e) => e.key.startsWith('${date}_'))
         .map((e) {
           final tp = e.key.substring(date.length + 1).split(':');
           return (time: TimeOfDay(hour: int.parse(tp[0]), minute: int.parse(tp[1])),
-              statut: e.value, type: _slotTypes[e.key], domicile: _slotDomicile.contains(e.key));
+              statut: e.value, type: _slotTypes[e.key], domicile: _slotDomicile.contains(e.key),
+              typeGarde: _slotTypeGarde[e.key]);
         })
         .toList()
       ..sort((a, b) => (a.time.hour * 60 + a.time.minute).compareTo(b.time.hour * 60 + b.time.minute));
 
     if (entries.isEmpty) return [];
-    final ranges = <({TimeOfDay start, TimeOfDay end, String statut, String? type, bool domicile})>[];
+    final ranges = <CreneauRange>[];
     var rStart = entries.first.time;
     var prevMins = rStart.hour * 60 + rStart.minute;
     var curStatut = entries.first.statut;
     var curType = entries.first.type;
     var curDomicile = entries.first.domicile;
+    var curTypeGarde = entries.first.typeGarde;
 
     for (var i = 1; i < entries.length; i++) {
       final curMins = entries[i].time.hour * 60 + entries[i].time.minute;
-      if (entries[i].statut == curStatut && entries[i].type == curType && entries[i].domicile == curDomicile && curMins == prevMins + 15) {
+      if (entries[i].statut == curStatut && entries[i].type == curType && entries[i].domicile == curDomicile
+          && entries[i].typeGarde == curTypeGarde && curMins == prevMins + 15) {
         prevMins = curMins;
       } else {
         final endM = prevMins + 15;
-        ranges.add((start: rStart, end: TimeOfDay(hour: endM ~/ 60, minute: endM % 60), statut: curStatut, type: curType, domicile: curDomicile));
-        rStart = entries[i].time; prevMins = curMins; curStatut = entries[i].statut; curType = entries[i].type; curDomicile = entries[i].domicile;
+        ranges.add((start: rStart, end: TimeOfDay(hour: endM ~/ 60, minute: endM % 60), statut: curStatut, type: curType, domicile: curDomicile, typeGarde: curTypeGarde));
+        rStart = entries[i].time; prevMins = curMins; curStatut = entries[i].statut; curType = entries[i].type; curDomicile = entries[i].domicile; curTypeGarde = entries[i].typeGarde;
       }
     }
     final endM = prevMins + 15;
-    ranges.add((start: rStart, end: TimeOfDay(hour: endM ~/ 60, minute: endM % 60), statut: curStatut, type: curType, domicile: curDomicile));
+    ranges.add((start: rStart, end: TimeOfDay(hour: endM ~/ 60, minute: endM % 60), statut: curStatut, type: curType, domicile: curDomicile, typeGarde: curTypeGarde));
     return ranges;
   }
 
-  Future<void> _applyRange(String date, TimeOfDay start, TimeOfDay end, String statut, {String? type, bool domicileOk = false, String? prestationId, int capacite = 1}) async {
+  Future<void> _applyRange(String date, TimeOfDay start, TimeOfDay end, String statut, {String? type, bool domicileOk = false, String? prestationId, int capacite = 1, String? typeGarde}) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final pid = User_Info.activeProfileId;
@@ -2567,10 +2581,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         if (type != null) { _slotTypes[key] = type; } else { _slotTypes.remove(key); }
         if (domicileOk) { _slotDomicile.add(key); } else { _slotDomicile.remove(key); }
         if (prestationId != null) { _slotPrestationIds[key] = prestationId; } else { _slotPrestationIds.remove(key); }
+        if (typeGarde != null) { _slotTypeGarde[key] = typeGarde; } else { _slotTypeGarde.remove(key); }
+        if (capacite > 1) { _slotCapacite[key] = capacite; } else { _slotCapacite.remove(key); }
       });
       slots.add({'pro_uid': uid, 'pro_profile_id': pid, 'date': date,
           'heure_debut': hd, 'heure_fin': hf, 'statut': statut, 'type_prestation': type,
-          'domicile_ok': domicileOk, 'prestation_id': prestationId, 'capacite': capacite});
+          'domicile_ok': domicileOk, 'prestation_id': prestationId, 'capacite': capacite,
+          'type_garde': typeGarde});
       curMins = finMins;
     }
     try {
@@ -2599,7 +2616,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       keyList.add('${date}_${(curMins ~/ 60).toString().padLeft(2, '0')}:${(curMins % 60).toString().padLeft(2, '0')}');
       curMins += 15;
     }
-    if (mounted) setState(() { for (final k in keyList) { _blockedSlots.remove(k); _slotTypes.remove(k); _slotDomicile.remove(k); _slotPrestationIds.remove(k); } });
+    if (mounted) setState(() { for (final k in keyList) { _blockedSlots.remove(k); _slotTypes.remove(k); _slotDomicile.remove(k); _slotPrestationIds.remove(k); _slotTypeGarde.remove(k); } });
     try {
       await Supabase.instance.client.from('creneaux_pro').delete()
           .eq('pro_uid', uid).eq('pro_profile_id', pid).eq('date', date)
@@ -2622,6 +2639,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     bool domicileOk = false; // créneau proposable à domicile (éducateur uniquement)
     String? prestationId; // cours du catalogue (collectif) rattaché à ce créneau
     int capacite = 1; // nombre de places (garde à domicile : plusieurs animaux/jour)
+    String? typeGarde; // garde : 'journee' / 'prestation' / null = les deux
 
     List<Map<String, dynamic>> coursCollectifs = [];
     if (User_Info.catPro == 'education') {
@@ -2805,9 +2823,34 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   ]),
                 ),
               ],
-              // Garde à domicile : nombre de places sur cette plage
-              // (ex. 4 animaux le même jour).
+              // Garde : type de créneau + nombre de places.
               if (User_Info.catPro == 'garde' && isDisp) ...[
+                const SizedBox(height: 16),
+                const Align(alignment: Alignment.centerLeft, child: Text('Type de créneau',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                        fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C)))),
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 8, children: [
+                  for (final o in const [
+                    (null, 'Les deux'),
+                    ('journee', '🌙 Garde à la journée'),
+                    ('prestation', '🦮 Promenade & visite'),
+                  ])
+                    GestureDetector(
+                      onTap: () => setS(() => typeGarde = o.$1),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: typeGarde == o.$1 ? const Color(0xFF0C5C6C) : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: typeGarde == o.$1 ? const Color(0xFF0C5C6C) : Colors.grey.shade300),
+                        ),
+                        child: Text(o.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: typeGarde == o.$1 ? Colors.white : Colors.grey.shade700)),
+                      ),
+                    ),
+                ]),
                 const SizedBox(height: 16),
                 Container(
                   width: double.infinity,
@@ -2818,7 +2861,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     border: Border.all(color: const Color(0x330C5C6C)),
                   ),
                   child: Row(children: [
-                    const Expanded(child: Text('Nombre de places',
+                    Expanded(child: Text(typeGarde == 'prestation' ? 'Prestations simultanées' : 'Nombre de places',
                         style: TextStyle(fontFamily: 'Galey', fontSize: 13,
                             fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C)))),
                     IconButton(
@@ -2859,12 +2902,12 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           type: statut == 'disponible' ? type : null,
           domicileOk: statut == 'disponible' && domicileOk,
           prestationId: statut == 'disponible' && type == 'collectif' ? prestationId : null,
-          capacite: (User_Info.catPro == 'garde' && statut == 'disponible') ? capacite : 1);
+          capacite: (User_Info.catPro == 'garde' && statut == 'disponible') ? capacite : 1,
+          typeGarde: (User_Info.catPro == 'garde' && statut == 'disponible') ? typeGarde : null);
     }
   }
 
-  Future<void> _confirmDeleteRange(String date,
-      ({TimeOfDay start, TimeOfDay end, String statut, String? type, bool domicile}) r) async {
+  Future<void> _confirmDeleteRange(String date, CreneauRange r) async {
     final label = '${_fmtTime(r.start)} — ${_fmtTime(r.end)}';
     final ok = await showDialog<bool>(
       context: context,
@@ -3007,6 +3050,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             'statut':         'disponible',
             'type_prestation': _slotTypes[entry.key],
             'domicile_ok':    _slotDomicile.contains(entry.key),
+            'capacite':       _slotCapacite[entry.key] ?? 1,
+            if (_slotTypeGarde[entry.key] != null)
+              'type_garde': _slotTypeGarde[entry.key],
             if (_slotPrestationIds[entry.key] != null)
               'prestation_id': _slotPrestationIds[entry.key],
           });

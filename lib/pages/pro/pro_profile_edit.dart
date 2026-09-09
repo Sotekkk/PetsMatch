@@ -113,6 +113,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     ('promenade_30min', 'Promenade (30 min)'),
     ('promenade_1h',    'Promenade (1h)'),
     ('promenade_2h',    'Promenade (2h)'),
+    ('visite',          'Visite à domicile'),
     ('garde_journee',   'Garde à domicile (journée)'),
     ('autre',           'Autre prestation'),
   ];
@@ -161,7 +162,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   static const _defaultDureesByCatPro = <String, Map<String, int>>{
     'veterinaire': {'consultation': 30, 'vaccination': 20, 'bilan': 45, 'urgence': 60, 'chirurgie': 120, 'autre': 30},
     'pension':     {'visite': 30, 'arrivee': 60, 'depart': 30, 'autre': 30},
-    'garde':       {'promenade_30min': 30, 'promenade_1h': 60, 'promenade_2h': 120, 'garde_journee': 480, 'autre': 60},
+    'garde':       {'promenade_30min': 30, 'promenade_1h': 60, 'promenade_2h': 120, 'visite_domicile': 30, 'garde_journee': 480, 'autre': 60},
     'education':   {'cours_individuel': 60, 'cours_collectif': 90, 'evaluation': 45, 'autre': 60},
     'toilettage':  {'bain': 45, 'toilettage_complet': 90, 'coupe': 60, 'autre': 60},
     'sante':       {'consultation': 45, 'seance': 60, 'autre': 60},
@@ -172,7 +173,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     'bilan': 'Bilan annuel', 'urgence': 'Urgence', 'chirurgie': 'Chirurgie',
     'visite': 'Visite', 'arrivee': "Arrivée", 'depart': 'Départ',
     'promenade_30min': 'Promenade 30 min', 'promenade_1h': 'Promenade 1h',
-    'promenade_2h': 'Promenade 2h', 'garde_journee': 'Garde journée',
+    'promenade_2h': 'Promenade 2h', 'visite_domicile': 'Visite à domicile',
+    'garde_journee': 'Garde journée',
     'cours_individuel': 'Cours individuel', 'cours_collectif': 'Cours collectif',
     'evaluation': 'Évaluation', 'bain': 'Bain', 'toilettage_complet': 'Toilettage complet',
     'coupe': 'Coupe', 'seance': 'Séance', 'autre': 'Autre',

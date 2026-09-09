@@ -137,7 +137,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     'bilan': 'Bilan annuel', 'urgence': 'Urgence', 'chirurgie': 'Chirurgie',
     'visite': 'Visite', 'arrivee': 'Arrivée', 'depart': 'Départ',
     'promenade_30min': 'Promenade 30 min', 'promenade_1h': 'Promenade 1h',
-    'promenade_2h': 'Promenade 2h', 'garde_journee': 'Garde journée',
+    'promenade_2h': 'Promenade 2h', 'visite_domicile': 'Visite à domicile',
+    'garde_journee': 'Garde journée',
     'cours_individuel': 'Cours individuel', 'cours_collectif': 'Cours collectif',
     'evaluation': 'Évaluation', 'bain': 'Bain',
     'toilettage_complet': 'Toilettage complet', 'coupe': 'Coupe',
@@ -156,6 +157,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     'promenade_30min': Icons.directions_walk_outlined,
     'promenade_1h': Icons.directions_walk_outlined,
     'promenade_2h': Icons.directions_walk,
+    'visite_domicile': Icons.doorbell_outlined,
     'garde_journee': Icons.home_outlined,
     'cours_individuel': Icons.school_outlined,
     'cours_collectif': Icons.groups_outlined,
@@ -171,7 +173,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   static const _defaultDureesByCatPro = <String, Map<String, int>>{
     'veterinaire': {'consultation': 30, 'vaccination': 20, 'bilan': 45, 'urgence': 60, 'chirurgie': 120, 'autre': 30},
     'pension':     {'visite': 30, 'arrivee': 60, 'depart': 30, 'autre': 30},
-    'garde':       {'promenade_30min': 30, 'promenade_1h': 60, 'promenade_2h': 120, 'garde_journee': 480, 'autre': 60},
+    'garde':       {'promenade_30min': 30, 'promenade_1h': 60, 'promenade_2h': 120, 'visite_domicile': 30, 'garde_journee': 480, 'autre': 60},
     'education':   {'cours_individuel': 60, 'cours_collectif': 90, 'evaluation': 45, 'autre': 60},
     'toilettage':  {'bain': 45, 'toilettage_complet': 90, 'coupe': 60, 'autre': 60},
     'sante':       {'consultation': 45, 'seance': 60, 'autre': 60},
@@ -430,7 +432,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       for (var page = 0; page < 6; page++) {
         final rows = await Supabase.instance.client
             .from('creneaux_pro')
-            .select('date, heure_debut, heure_fin, type_prestation, capacite')
+            .select('date, heure_debut, heure_fin, type_prestation, capacite, type_garde')
             .eq('pro_uid', widget.proUid)
             .eq('statut', 'disponible')
             .eq('pro_profile_id', profileId)
@@ -459,12 +461,25 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     } catch (_) {}
   }
 
+  /// Un créneau accepte la garde-journée si `type_garde` est nul ou `'journee'`.
+  bool _slotForJournee(Map<String, dynamic> slot) {
+    final tg = slot['type_garde']?.toString();
+    return tg == null || tg.isEmpty || tg == 'journee';
+  }
+
+  /// Un créneau accepte une prestation courte (promenade/visite) si `type_garde`
+  /// est nul ou `'prestation'`.
+  bool _slotForPrestation(Map<String, dynamic> slot) {
+    final tg = slot['type_garde']?.toString();
+    return tg == null || tg.isEmpty || tg == 'prestation';
+  }
+
   /// Garde : capacité d'un jour = plus grande valeur `capacite` parmi les
-  /// créneaux disponibles de ce jour (défaut 1).
+  /// créneaux « journée » disponibles de ce jour (défaut 1).
   int _dayCapacity(String date) {
     var cap = 1;
     for (final slot in _availableSlots) {
-      if (slot['date'] != date) continue;
+      if (slot['date'] != date || !_slotForJournee(slot)) continue;
       final c = (slot['capacite'] as num?)?.toInt() ?? 1;
       if (c > cap) cap = c;
     }
@@ -502,6 +517,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     final creneauxByDate = <String, List<({int startMin, int endMin})>>{};
     for (final slot in _availableSlots) {
       if (_catPro == 'education' && slot['type_prestation'] == 'collectif') continue;
+      // Garde : la grille horaire (promenade / visite) n'utilise pas les plages
+      // réservées à la garde-journée.
+      if (_catPro == 'garde' && !_slotForPrestation(slot)) continue;
       final date = slot['date'] as String;
       final sp = (slot['heure_debut'] as String).split(':');
       final ep = (slot['heure_fin']   as String).split(':');
@@ -1139,7 +1157,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     final end = DateTime(_gardeFin!.year, _gardeFin!.month, _gardeFin!.day);
     while (!d.isAfter(end)) {
       final key = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-      final hasSlot = _availableSlots.any((s) => s['date'] == key);
+      final hasSlot = _availableSlots.any((s) => s['date'] == key && _slotForJournee(s));
       final ok = hasSlot && _gardeJourneeCount(d) < _dayCapacity(key);
       out.add((day: d, ok: ok));
       d = d.add(const Duration(days: 1));

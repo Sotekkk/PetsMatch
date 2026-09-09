@@ -518,6 +518,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
       'promenade_30min': 'Promenade (30 min)',
       'promenade_1h': 'Promenade (1h)',
       'promenade_2h': 'Promenade (2h)',
+      'visite': 'Visite à domicile',
       'garde_journee': 'Garde à domicile (journée)',
       'autre': 'Autre prestation',
     };

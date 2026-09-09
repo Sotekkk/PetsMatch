@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 /// Une plage groupée (créneaux_pro fusionnés) — même forme que le record
 /// retourné par `_ProAgendaPageState._groupedRanges` (pro_agenda.dart),
 /// compatible par structure (records Dart).
-typedef CreneauRange = ({TimeOfDay start, TimeOfDay end, String statut, String? type, bool domicile});
+typedef CreneauRange = ({TimeOfDay start, TimeOfDay end, String statut, String? type, bool domicile, String? typeGarde});
 
 const _kJoursCourts = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
@@ -236,7 +236,8 @@ class _DayColumnState extends State<_DayColumn> {
           ),
           child: Text(
             '${r.start.hour.toString().padLeft(2, '0')}:${r.start.minute.toString().padLeft(2, '0')}'
-            '${r.domicile ? ' 🏠' : ''}${r.type == 'collectif' ? ' 👥' : r.type == 'individuel' ? ' 🎓' : ''}',
+            '${r.domicile ? ' 🏠' : ''}${r.type == 'collectif' ? ' 👥' : r.type == 'individuel' ? ' 🎓' : ''}'
+            '${r.typeGarde == 'journee' ? ' 🌙' : r.typeGarde == 'prestation' ? ' 🦮' : ''}',
             maxLines: 2, overflow: TextOverflow.ellipsis,
             style: TextStyle(fontFamily: 'Galey', fontSize: 9, fontWeight: FontWeight.w700,
                 color: isDisp ? const Color(0xFF4A7A32) : const Color(0xFFE65100)),

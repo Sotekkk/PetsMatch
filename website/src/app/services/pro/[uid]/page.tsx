@@ -61,7 +61,7 @@ interface Prestation {
   id: string; nom: string; description?: string; duree_minutes?: number;
   prix?: number; prix_base?: number; grille_prix?: { prix: number }[];
 }
-interface Slot { date: string; heureDebut: string; heureFin: string; capacite?: number; }
+interface Slot { date: string; heureDebut: string; heureFin: string; capacite?: number; typeGarde?: string | null; }
 interface Animal { id: number; nom: string; espece: string; }
 interface CoursCollectif {
   id: string; titre: string; date_heure: string; capacite_max: number; lieu?: string | null;
@@ -94,10 +94,12 @@ const MOTIFS_BY_CAT: Record<string, { key: string; label: string; icon: string; 
     { key: 'autre',        label: 'Autre',         icon: '➕', duree: 60 },
   ],
   garde: [
-    { key: 'promenade_30min', label: 'Promenade 30 min', icon: '🦮', duree: 30 },
-    { key: 'promenade_1h',    label: 'Promenade 1h',     icon: '🦮', duree: 60 },
-    { key: 'garde_journee',   label: 'Garde journée',    icon: '🏠', duree: 480 },
-    { key: 'autre',           label: 'Autre',            icon: '➕', duree: 60 },
+    { key: 'promenade_30min',  label: 'Promenade 30 min',  icon: '🦮', duree: 30 },
+    { key: 'promenade_1h',     label: 'Promenade 1h',      icon: '🦮', duree: 60 },
+    { key: 'promenade_2h',     label: 'Promenade 2h',      icon: '🦮', duree: 120 },
+    { key: 'visite_domicile',  label: 'Visite à domicile', icon: '🏠', duree: 30 },
+    { key: 'garde_journee',    label: 'Garde journée',     icon: '🌙', duree: 480 },
+    { key: 'autre',            label: 'Autre',             icon: '➕', duree: 60 },
   ],
   pension: [
     { key: 'visite',   label: 'Visite de la pension', icon: '🏡', duree: 30 },
@@ -529,9 +531,9 @@ function ProDetailContent() {
     // Créneaux : PostgREST plafonne à 1000 lignes/réponse → un pro très chargé
     // ne verrait jamais les dates lointaines. On pagine.
     async function fetchAllSlots() {
-      const out: { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null; capacite?: number | null }[] = [];
+      const out: { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null; capacite?: number | null; type_garde?: string | null }[] = [];
       for (let page = 0; page < 6; page++) {
-        const { data } = await supabase.from('creneaux_pro').select('date, heure_debut, heure_fin, type_prestation, capacite')
+        const { data } = await supabase.from('creneaux_pro').select('date, heure_debut, heure_fin, type_prestation, capacite, type_garde')
           .eq('pro_uid', uid).eq('statut', 'disponible').eq('pro_profile_id', profileId)
           .gte('date', toDateStr(new Date()))
           .order('date').order('heure_debut')
@@ -557,13 +559,13 @@ function ProDetailContent() {
         .in('statut', ['confirme', 'termine']).limit(1);
       setIsFirstTimeEducationClient((priorRdv ?? []).length === 0);
     }
-    const rawSlots = (slotsRes.data ?? []) as { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null; capacite?: number | null }[];
+    const rawSlots = (slotsRes.data ?? []) as { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null; capacite?: number | null; type_garde?: string | null }[];
     // Un créneau marqué "collectif" par l'éducateur est réservé à ses cours
     // collectifs (planifiés séparément) — non proposé ici pour un RDV individuel.
     const individualSlots = pro?.cat_pro === 'education'
       ? rawSlots.filter(s => s.type_prestation !== 'collectif')
       : rawSlots;
-    setSlots(individualSlots.map(s => ({ date: s.date, heureDebut: s.heure_debut, heureFin: s.heure_fin, capacite: s.capacite ?? 1 })));
+    setSlots(individualSlots.map(s => ({ date: s.date, heureDebut: s.heure_debut, heureFin: s.heure_fin, capacite: s.capacite ?? 1, typeGarde: s.type_garde ?? null })));
 
     // Garde : gardes-journée déjà demandées/confirmées (pour la capacité/jour).
     if (pro?.cat_pro === 'garde') {
@@ -715,7 +717,12 @@ function ProDetailContent() {
   // qui commence avant « maintenant + délai » (repli 30 min si aucun délai).
   const delaiMinH = Number(pro?.delai_min_reservation_h) || 0;
   const earliestBookable = new Date(Date.now() + (delaiMinH > 0 ? delaiMinH * 3600_000 : 30 * 60_000));
+  // Garde : un créneau « journée » ne sert pas la grille horaire promenade/visite
+  // et inversement (typeGarde null = les deux).
+  const slotForJournee = (s: Slot) => !s.typeGarde || s.typeGarde === 'journee';
+  const slotForPrestation = (s: Slot) => !s.typeGarde || s.typeGarde === 'prestation';
   const slotsByDate = slots.reduce<Record<string, Slot[]>>((acc, s) => {
+    if (pro?.cat_pro === 'garde' && !slotForPrestation(s)) return acc;
     const [dy, dmo, dd] = s.date.split('-').map(Number);
     const [sh, sm] = s.heureDebut.split(':').map(Number);
     if (new Date(dy, dmo - 1, dd, sh || 0, sm || 0) < earliestBookable) return acc;
@@ -729,7 +736,7 @@ function ProDetailContent() {
   const isGardeJournee = pro?.cat_pro === 'garde' && motifKey === 'garde_journee';
   function dayCapacity(date: string): number {
     let cap = 1;
-    for (const s of slots) if (s.date === date && (s.capacite ?? 1) > cap) cap = s.capacite ?? 1;
+    for (const s of slots) if (s.date === date && slotForJournee(s) && (s.capacite ?? 1) > cap) cap = s.capacite ?? 1;
     return cap;
   }
   const gardeJourDays: { date: string; ok: boolean }[] = (() => {
@@ -739,7 +746,7 @@ function ProDetailContent() {
     const end = new Date(`${gardeFin}T00:00:00`);
     while (d <= end) {
       const key = toDateStr(d);
-      const hasSlot = slots.some(s => s.date === key);
+      const hasSlot = slots.some(s => s.date === key && slotForJournee(s));
       out.push({ date: key, ok: hasSlot && (gardeJourCounts[key] ?? 0) < dayCapacity(key) });
       d.setDate(d.getDate() + 1);
     }
@@ -773,6 +780,7 @@ function ProDetailContent() {
     promenade_30min: 'Promenade (30 min)',
     promenade_1h: 'Promenade (1h)',
     promenade_2h: 'Promenade (2h)',
+    visite: 'Visite à domicile',
     garde_journee: 'Garde à domicile (journée)',
     autre: 'Autre prestation',
   };
