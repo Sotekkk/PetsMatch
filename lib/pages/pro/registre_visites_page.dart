@@ -5,7 +5,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 import 'package:PetsMatch/pages/pro/garde_facture_helper.dart';
-import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 
 // ── Registre visites — liste des RDV (visites/promenades) du profil garde,
@@ -140,19 +139,11 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
         }
       }
 
-      // RDV déjà facturés (traçabilité factures.source_rdv_id).
-      final facturedIds = <String>{};
-      final rdvIds = list.map((r) => r['id']?.toString()).whereType<String>().toList();
-      if (rdvIds.isNotEmpty) {
-        try {
-          final fac = await _supa.from('factures')
-              .select('source_rdv_id').inFilter('source_rdv_id', rdvIds);
-          for (final f in fac as List) {
-            final rid = f['source_rdv_id']?.toString();
-            if (rid != null && rid.isNotEmpty) facturedIds.add(rid);
-          }
-        } catch (_) {}
-      }
+      // RDV déjà facturés — porté directement par `rdv.facture_id`.
+      final facturedIds = <String>{
+        for (final r in list)
+          if ((r['facture_id']?.toString() ?? '').isNotEmpty) r['id'].toString(),
+      };
 
       if (mounted) setState(() {
         _visites = list;
@@ -250,24 +241,10 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
   }
 
   /// Facture une prestation de garde via le moteur commun `factures`
-  /// (pré-remplie au tarif garde, reliée au RDV et à l'animal).
+  /// (garde-journée multi-jours → une facture pour toute la période).
   Future<void> _facturerVisite(Map<String, dynamic> rdv) async {
-    final prix = await gardeTarif(rdv);
-    if (!mounted) return;
-    await Navigator.push(context, MaterialPageRoute(
-      builder: (_) => CreerFacturePage(
-        clientNom: gardeClientNom(rdv),
-        clientEmail: rdv['_client_email']?.toString(),
-        lignesPrefill: [
-          FacturePrefillLigne(designation: gardeDesignation(rdv), prixHT: prix, tauxTVA: 20),
-        ],
-        sourceRdvId: rdv['id']?.toString(),
-        sourceAnimalId: rdv['animal_id']?.toString(),
-        clientUid: rdv['client_uid']?.toString(),
-        clientProfileId: rdv['client_profile_id']?.toString(),
-      ),
-    ));
-    await _load();
+    await facturerGardeDepuisRdv(context, rdv);
+    if (mounted) await _load();
   }
 
   @override

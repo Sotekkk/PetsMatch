@@ -1198,24 +1198,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   }
 
   // Garde / pet-sitting — facture d'une prestation (promenade / garde-journée)
-  // via le moteur commun `factures`, pré-remplie au tarif garde + reliée au
-  // RDV et à l'animal (traçabilité `factures.source_rdv_id`).
+  // via le moteur commun `factures` ; une garde-journée sur plusieurs jours
+  // propose de tout facturer en une fois.
   Future<void> _facturerGarde(Map<String, dynamic> rdv) async {
-    final prix = await gardeTarif(rdv);
-    if (!mounted) return;
-    await Navigator.push(context, MaterialPageRoute(
-      builder: (_) => CreerFacturePage(
-        clientNom: gardeClientNom(rdv),
-        clientEmail: (rdv['_client_email'] ?? rdv['client_email_manuel'])?.toString(),
-        lignesPrefill: [
-          FacturePrefillLigne(designation: gardeDesignation(rdv), prixHT: prix, tauxTVA: 20),
-        ],
-        sourceRdvId: rdv['id']?.toString(),
-        sourceAnimalId: rdv['animal_id']?.toString(),
-        clientUid: rdv['client_uid']?.toString(),
-        clientProfileId: rdv['client_profile_id']?.toString(),
-      ),
-    ));
+    await facturerGardeDepuisRdv(context, rdv);
   }
 
   // Santé animale (ostéo / paramédical), vétérinaire, maréchal-ferrant —

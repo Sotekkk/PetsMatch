@@ -533,7 +533,8 @@ class CreerFacturePage extends StatefulWidget {
   final String? factureParenteId; // facture corrigée (pour un avoir)
   final bool franchiseInitiale;
   // Traçabilité optionnelle (facture émise depuis un RDV / un animal — garde…).
-  final String? sourceRdvId;
+  final String? sourceRdvId;      // RDV « ancre »
+  final List<String> sourceRdvIds; // tous les RDV couverts (garde multi-jours)
   final String? sourceAnimalId;
   final String? clientUid;
   final String? clientProfileId;
@@ -550,6 +551,7 @@ class CreerFacturePage extends StatefulWidget {
     this.factureParenteId,
     this.franchiseInitiale = false,
     this.sourceRdvId,
+    this.sourceRdvIds = const [],
     this.sourceAnimalId,
     this.clientUid,
     this.clientProfileId,
@@ -786,6 +788,18 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
       final factureId = inserted['id'] as String;
       d['numeroAffichage'] = inserted['numero_affichage'];
       d['numeroFacture'] = inserted['numero_facture'];
+
+      // Marque les RDV couverts (garde de plusieurs jours = N lignes `rdv`).
+      final rdvIds = {
+        ...widget.sourceRdvIds,
+        if (widget.sourceRdvId != null) widget.sourceRdvId!,
+      }.where((s) => s.isNotEmpty).toList();
+      if (rdvIds.isNotEmpty) {
+        try {
+          await Supabase.instance.client.from('rdv')
+              .update({'facture_id': factureId}).inFilter('id', rdvIds);
+        } catch (_) {}
+      }
 
       // PDF figé : généré une fois, archivé (bucket privé) avec son empreinte
       // SHA-256, puis proposé au client par email.
