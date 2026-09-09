@@ -20,6 +20,7 @@ import 'package:PetsMatch/data/vaccin_types.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/particulier/partage_animal_sheet.dart';
 import 'package:PetsMatch/pages/particulier/proprietaires_animal_sheet.dart';
+import 'package:PetsMatch/pages/particulier/create_annonce_cheval_page.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:PetsMatch/widgets/rich_text_view.dart';
@@ -634,6 +635,14 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
             style: const TextStyle(
                 fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
         actions: [
+          if (_animalId != null && _espece == 'cheval')
+            IconButton(
+              icon: const Icon(Icons.campaign_outlined, size: 20),
+              tooltip: 'Publier une annonce',
+              onPressed: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => CreateAnnonceChevalPage(preselectedAnimalId: _animalId),
+              )),
+            ),
           if (_animalId != null) ...[
             IconButton(
               icon: const Icon(Icons.people_alt_outlined, size: 20),

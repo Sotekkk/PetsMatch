@@ -20,6 +20,7 @@ import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_en_accueil_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_associations_benevole.dart';
+import 'package:PetsMatch/pages/particulier/mes_annonces_particulier_page.dart';
 import 'package:PetsMatch/pages/nature/natural_places_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
 import 'package:PetsMatch/pages/association/post/annonces_asso_feed_page.dart';
@@ -281,6 +282,11 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
               label: 'Carte des associations',
               icon: Icons.map_outlined,
               onTap: () => _push(const AssociationsListPage()),
+            ),
+            _DrawerSubItem(
+              label: 'Mes annonces (cheval)',
+              icon: Icons.sell_outlined,
+              onTap: () => _push(const MesAnnoncesParticulierPage()),
             ),
           ],
         ),

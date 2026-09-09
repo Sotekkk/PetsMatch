@@ -7,6 +7,7 @@ import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
+import 'package:PetsMatch/widgets/inline_video.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -52,8 +53,22 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   final _descCtrl  = TextEditingController();
   final _prixCtrl  = TextEditingController();
   bool   _prixNegociable = false;
+  String _prixUnite = 'total'; // 'total' | 'mois' | 'semaine' | 'convenir'
   String _statut = 'disponible';
   int _dureeAnnonce = 30;
+
+  // ── Cheval (annonce équine) ──────────────────────────────────────────────────
+  static const _kNiveauxEquide = [
+    'Débutant', 'Galops 1-4', 'Galops 5-7', 'Club', 'Amateur', 'Pro', 'Tous niveaux',
+  ];
+  String _niveauEquide = '';
+  final _palmaresCtrl = TextEditingController();
+  final _isoCtrl = TextEditingController();
+  final _idrCtrl = TextEditingController();
+  final _iccCtrl = TextEditingController();
+  String? _videoMonteUrl;
+  String? _videoLibreUrl;
+  bool _uploadingVideo = false;
 
   // ── Portée ───────────────────────────────────────────────────────────────────
   DateTime? _dateNaissance;
@@ -225,6 +240,14 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     _numIdentCtrl.text    = d['num_identification'] ?? '';
     _numSIRECtrl.text     = d['num_sire'] ?? '';
     _numPasseportCtrl.text = d['num_passeport_equin'] ?? '';
+    _prixUnite     = d['prix_unite'] ?? d['prixUnite'] ?? 'total';
+    _niveauEquide  = d['niveau_recommande'] ?? d['niveauRecommande'] ?? '';
+    _palmaresCtrl.text = d['palmares'] ?? '';
+    _isoCtrl.text  = _toNum(d['indice_iso'])?.toInt().toString() ?? '';
+    _idrCtrl.text  = _toNum(d['indice_idr'])?.toInt().toString() ?? '';
+    _iccCtrl.text  = _toNum(d['indice_icc'])?.toInt().toString() ?? '';
+    _videoMonteUrl = (d['video_monte_url'] as String?)?.isNotEmpty == true ? d['video_monte_url'] : null;
+    _videoLibreUrl = (d['video_libre_url'] as String?)?.isNotEmpty == true ? d['video_libre_url'] : null;
   }
 
   @override
@@ -238,6 +261,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       _numRegistreCtrl, _clubPedigreeCtrl, _studbookCtrl, _couleurCtrl,
       _sailliePrixCtrl, _saillieCondCtrl, _prixMinPorteeCtrl, _prixMaxPorteeCtrl,
       _numIdentCtrl, _numSIRECtrl, _numPasseportCtrl,
+      _palmaresCtrl, _isoCtrl, _idrCtrl, _iccCtrl,
     ]) c.dispose();
     super.dispose();
   }
@@ -643,7 +667,13 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         'titre':                _titreCtrl.text.trim(),
         'description':          _descCtrl.text.trim(),
         'photos':               allPhotos,
-        'prix': (_typeVente == 'vente' || _typeVente == 'retraite') ? double.tryParse(_prixCtrl.text) : null,
+        'prix': const {'vente', 'retraite', 'location', 'demi_pension', 'pension_complete', 'valorisation'}
+                .contains(_typeVente)
+            ? double.tryParse(_prixCtrl.text)
+            : null,
+        'prix_unite': const {'location', 'demi_pension', 'pension_complete', 'valorisation'}.contains(_typeVente)
+            ? _prixUnite
+            : null,
         'prix_negociable':      _prixNegociable,
         'statut':               _statut,
         'date_naissance': _type == 'portee' && _dateNaissance != null
@@ -676,6 +706,16 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         'numero_registre':      _numRegistreCtrl.text.trim(),
         'club_pedigree':        _clubPedigreeCtrl.text.trim(),
         'studbook': _espece == 'cheval' ? _studbookCtrl.text.trim() : null,
+        // ── Cheval : sport & vidéos ──
+        'niveau_recommande': _espece == 'cheval' && _niveauEquide.isNotEmpty ? _niveauEquide : null,
+        'palmares': _espece == 'cheval' && _palmaresCtrl.text.trim().isNotEmpty
+            ? _palmaresCtrl.text.trim()
+            : null,
+        'indice_iso': _espece == 'cheval' ? int.tryParse(_isoCtrl.text.trim()) : null,
+        'indice_idr': _espece == 'cheval' ? int.tryParse(_idrCtrl.text.trim()) : null,
+        'indice_icc': _espece == 'cheval' ? int.tryParse(_iccCtrl.text.trim()) : null,
+        'video_monte_url': _espece == 'cheval' ? _videoMonteUrl : null,
+        'video_libre_url': _espece == 'cheval' ? _videoLibreUrl : null,
         'vaccines':             _vaccines,
         'vermifuge':            _vermifuge,
         'identification':       _identification,
@@ -700,7 +740,10 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
 
       // ── Auto-check annonce suspect ─────────────────────────────────────────
       final _suspectReasons = <String>[];
-      final _prixCheck = supaData['prix'] as double?;
+      // Les bornes de prix ne valent que pour une vente ferme : une location /
+      // demi-pension / valo de cheval a des montants (mensuels) hors barème.
+      final _checkPriceBand = _typeVente == 'vente' || _typeVente == 'retraite' || _type == 'portee';
+      final _prixCheck = _checkPriceBand ? supaData['prix'] as double? : null;
       final _prixPorteeCheck = supaData['prix_min_portee'] as double?;
       final _maxPrix = <String, double>{
         'chien': 20000, 'chat': 6000, 'cheval': 150000,
@@ -795,6 +838,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             _sectionPedigree(),     const SizedBox(height: 12),
             _sectionSante(),
             if (_espece == 'cheval') ...[const SizedBox(height: 12), _sectionIdentificationEquin()],
+            if (_espece == 'cheval' && !isSaillie) ...[const SizedBox(height: 12), _sectionEquide()],
             if ((_espece == 'chien' || _espece == 'chat') && _type != 'portee')
               ...[const SizedBox(height: 12), _sectionIdentificationAnimal()],
             if (_type == 'portee') ...[const SizedBox(height: 12), _sectionAnimauxPortee()],
@@ -1030,12 +1074,24 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     Wrap(spacing: 8, runSpacing: 6, children: [
       for (final v in [('vente', 'Vente €', Icons.sell_outlined),
                        ('adoption', 'Adoption / Don', Icons.favorite_outline),
+                       if (_espece == 'cheval') ...[
+                         ('location', 'Location', Icons.event_repeat_outlined),
+                         ('demi_pension', 'Demi-pension', Icons.groups_2_outlined),
+                         ('pension_complete', 'Pension complète', Icons.night_shelter_outlined),
+                         ('valorisation', 'Valorisation', Icons.trending_up_outlined),
+                       ],
                        ('saillie', 'Saillie', Icons.diversity_1_outlined),
                        ('retraite', 'Retraité d\'élevage', Icons.elderly_outlined)])
         GestureDetector(
           onTap: () => setState(() {
             _typeVente = v.$1;
-            if (v.$1 == 'saillie' || v.$1 == 'retraite') _type = 'animal';
+            const forceAnimal = {'saillie', 'retraite', 'location', 'demi_pension', 'pension_complete', 'valorisation'};
+            if (forceAnimal.contains(v.$1)) _type = 'animal';
+            _prixUnite = switch (v.$1) {
+              'location' || 'demi_pension' || 'pension_complete' => 'mois',
+              'valorisation' => 'convenir',
+              _ => 'total',
+            };
           }),
           child: AnimatedContainer(duration: const Duration(milliseconds: 150),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -1054,7 +1110,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         ),
     ]),
     const SizedBox(height: 14),
-    if (_typeVente != 'saillie' && _typeVente != 'retraite') ...[
+    if (!const {'saillie', 'retraite', 'location', 'demi_pension', 'pension_complete', 'valorisation'}.contains(_typeVente)) ...[
       _label('Que souhaitez-vous publier ?'),
       Row(children: [
         for (final t in [('portee', 'Portée', Icons.group_outlined),
@@ -1239,11 +1295,22 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     const SizedBox(height: 10),
     _label('Description'),
     _textField(_descCtrl, 'Décrivez l\'annonce, la famille, les conditions...', maxLines: 4),
-    if (_typeVente == 'vente' || _typeVente == 'retraite') ...[
+    if (const {'vente', 'retraite', 'location', 'demi_pension', 'pension_complete', 'valorisation'}.contains(_typeVente)) ...[
       const SizedBox(height: 10),
-      _label('Prix (€)'),
+      _label(_typeVente == 'valorisation' ? 'Rémunération (€, optionnel)' : 'Prix (€)'),
       Row(children: [
         Expanded(child: _textField(_prixCtrl, '0', keyboardType: TextInputType.number)),
+        if (const {'location', 'demi_pension', 'pension_complete'}.contains(_typeVente)) ...[
+          const SizedBox(width: 10),
+          DropdownButton<String>(
+            value: _prixUnite == 'total' || _prixUnite == 'convenir' ? 'mois' : _prixUnite,
+            items: const [
+              DropdownMenuItem(value: 'mois', child: Text('/ mois', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
+              DropdownMenuItem(value: 'semaine', child: Text('/ semaine', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
+            ],
+            onChanged: (v) => setState(() => _prixUnite = v ?? 'mois'),
+          ),
+        ],
         const SizedBox(width: 12),
         GestureDetector(onTap: () => setState(() => _prixNegociable = !_prixNegociable),
           child: Row(children: [
@@ -1396,6 +1463,86 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       ],
     ],
   );
+
+  // ── Bloc équin (niveau, palmarès, indices, vidéos) ───────────────────────────
+  Future<void> _pickAnnonceVideo({required bool monte}) async {
+    final picked = await ImagePicker().pickVideo(source: ImageSource.gallery);
+    if (picked == null) return;
+    final file = File(picked.path);
+    if (await file.length() > 60 * 1024 * 1024) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Vidéo trop lourde (max 60 Mo).', style: TextStyle(fontFamily: 'Galey'))));
+      return;
+    }
+    setState(() => _uploadingVideo = true);
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'x';
+      final ext = picked.path.split('.').last.toLowerCase();
+      final url = await uploadRawFile(file,
+          'annonces/$uid/video_${monte ? 'monte' : 'libre'}_${DateTime.now().millisecondsSinceEpoch}.$ext');
+      if (mounted) setState(() {
+        if (monte) { _videoMonteUrl = url; } else { _videoLibreUrl = url; }
+      });
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _uploadingVideo = false);
+    }
+  }
+
+  Widget _videoSlot(String label, String? url, {required bool monte}) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _label(label),
+      if (url != null) ...[
+        ClipRRect(borderRadius: BorderRadius.circular(10), child: InlineVideo(url: url, placeholderHeight: 140)),
+        TextButton.icon(
+          onPressed: () => setState(() { if (monte) { _videoMonteUrl = null; } else { _videoLibreUrl = null; } }),
+          icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
+          label: const Text('Retirer', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.red)),
+        ),
+      ] else
+        OutlinedButton.icon(
+          onPressed: _uploadingVideo ? null : () => _pickAnnonceVideo(monte: monte),
+          icon: _uploadingVideo
+              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.video_call_outlined, size: 18),
+          label: Text(_uploadingVideo ? 'Envoi…' : 'Ajouter une vidéo', style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+        ),
+      const SizedBox(height: 10),
+    ]);
+
+  Widget _sectionEquide() => _card('Cheval — sport & vidéos', Icons.sports_score_outlined, [
+    _label('Niveau recommandé'),
+    Wrap(spacing: 8, runSpacing: 6, children: [
+      for (final n in _kNiveauxEquide)
+        GestureDetector(
+          onTap: () => setState(() => _niveauEquide = _niveauEquide == n ? '' : n),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: _niveauEquide == n ? _teal : Colors.transparent,
+              border: Border.all(color: _niveauEquide == n ? _teal : Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(18)),
+            child: Text(n, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                fontWeight: FontWeight.w600, color: _niveauEquide == n ? Colors.white : Colors.grey.shade700)),
+          ),
+        ),
+    ]),
+    const SizedBox(height: 12),
+    _label('Palmarès / résultats (optionnel)'),
+    _textField(_palmaresCtrl, 'Ex: 2e Amateur Elite GP Fontainebleau 2025…', maxLines: 3),
+    const SizedBox(height: 12),
+    _label('Indices (optionnel)'),
+    Row(children: [
+      Expanded(child: _textField(_isoCtrl, 'ISO', keyboardType: TextInputType.number)),
+      const SizedBox(width: 8),
+      Expanded(child: _textField(_idrCtrl, 'IDR', keyboardType: TextInputType.number)),
+      const SizedBox(width: 8),
+      Expanded(child: _textField(_iccCtrl, 'ICC', keyboardType: TextInputType.number)),
+    ]),
+    const SizedBox(height: 14),
+    _videoSlot('Vidéo sous selle', _videoMonteUrl, monte: true),
+    _videoSlot('Vidéo en liberté', _videoLibreUrl, monte: false),
+  ]);
 
   Widget _sectionSaillie() => _card('Conditions de saillie', Icons.handshake_outlined, [
     _label('Prix de la saillie (€) — laisser vide si gratuit'),

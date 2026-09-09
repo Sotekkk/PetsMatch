@@ -5,9 +5,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:video_player/video_player.dart';
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/widgets/inline_video.dart';
 
 const int _kMaxVideoBytes = 50 * 1024 * 1024; // 50 Mo
 
@@ -290,7 +290,7 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
                             else if (u['video_url'] != null)
                               ClipRRect(
                                 borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                                child: _JournalVideo(url: u['video_url'] as String),
+                                child: InlineVideo(url: u['video_url'] as String),
                               ),
                             Padding(
                               padding: const EdgeInsets.all(14),
@@ -410,51 +410,3 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
   }
 }
 
-class _JournalVideo extends StatefulWidget {
-  final String url;
-  const _JournalVideo({required this.url});
-
-  @override
-  State<_JournalVideo> createState() => _JournalVideoState();
-}
-
-class _JournalVideoState extends State<_JournalVideo> {
-  VideoPlayerController? _controller;
-  bool _playing = false;
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  Future<void> _play() async {
-    final controller = VideoPlayerController.networkUrl(Uri.parse(widget.url));
-    await controller.initialize();
-    await controller.play();
-    if (!mounted) { controller.dispose(); return; }
-    setState(() { _controller = controller; _playing = true; });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_playing && _controller != null) {
-      return AspectRatio(
-        aspectRatio: _controller!.value.aspectRatio == 0 ? 16 / 9 : _controller!.value.aspectRatio,
-        child: GestureDetector(
-          onTap: () => setState(() {
-            _controller!.value.isPlaying ? _controller!.pause() : _controller!.play();
-          }),
-          child: VideoPlayer(_controller!),
-        ),
-      );
-    }
-    return GestureDetector(
-      onTap: _play,
-      child: Container(
-        height: 220, width: double.infinity, color: Colors.black87,
-        child: const Center(child: Icon(Icons.play_circle_fill, color: Colors.white, size: 56)),
-      ),
-    );
-  }
-}

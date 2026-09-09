@@ -8,6 +8,7 @@ import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
 import 'package:PetsMatch/pages/main_feed.dart' show UserSelected;
 import 'package:PetsMatch/pages/user_detail_page_feed.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/widgets/inline_video.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' show Timestamp;
@@ -485,6 +486,8 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
                       const SizedBox(height: 4),
                       if (desc.isNotEmpty)
                         ...[_DescCard(desc: desc), const SizedBox(height: 12)],
+                      if (espece == 'cheval' && _EquideCard.hasContent(data))
+                        ...[_EquideCard(data: data), const SizedBox(height: 12)],
                       if (type == 'portee')
                         ...[_PorteeCard(data: data, annonceId: widget.annonceId, uidEleveur: data['uidEleveur'] as String?), const SizedBox(height: 12)],
                       if (type != 'portee')
@@ -610,6 +613,18 @@ class _HeaderCard extends StatelessWidget {
     _ => Colors.redAccent,
   };
 
+  String _typeVenteLabel(String s) => switch (s) {
+    'vente'            => 'Vente',
+    'adoption'         => 'Adoption',
+    'saillie'          => 'Saillie',
+    'retraite'         => 'Retraité d\'élevage',
+    'location'         => 'Location',
+    'demi_pension'     => 'Demi-pension',
+    'pension_complete' => 'Pension complète',
+    'valorisation'     => 'Valorisation',
+    _                  => s,
+  };
+
   String _statutLabel(String s) => switch (s) {
     'disponible' => 'Disponible',
     'reserve' => 'Réservé',
@@ -665,16 +680,43 @@ class _HeaderCard extends StatelessWidget {
         Wrap(spacing: 8, runSpacing: 6, children: [
           _Badge(type == 'portee' ? 'Portée' : 'Animal individuel',
               type == 'portee' ? _teal : _green),
-          _Badge(
-            typeVente == 'vente' ? 'Vente'
-                : typeVente == 'adoption' ? 'Adoption' : 'Saillie',
-            typeVente == 'vente' ? const Color(0xFF6366F1)
-                : typeVente == 'adoption' ? _green : const Color(0xFFEC4899),
+          _Badge(_typeVenteLabel(typeVente),
+            const {
+              'vente': Color(0xFF6366F1),
+              'adoption': _green,
+              'saillie': Color(0xFFEC4899),
+            }[typeVente] ?? _teal,
           ),
           _Badge(_statutLabel(statut), _statutColor(statut)),
         ]),
         const SizedBox(height: 14),
-        if (typeVente == 'vente') ...[
+        if (const {'location', 'demi_pension', 'pension_complete', 'valorisation'}.contains(typeVente)) ...[
+          Builder(builder: (_) {
+            final unite = (data['prix_unite'] as String?) ?? 'total';
+            final suffix = switch (unite) { 'mois' => ' / mois', 'semaine' => ' / semaine', _ => '' };
+            if (typeVente == 'valorisation') {
+              return Text(
+                prix != null && prix > 0 ? '${prix.toStringAsFixed(0)} €$suffix' : 'Rémunération à convenir',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800,
+                    fontSize: 22, color: Color(0xFF5B8648)));
+            }
+            return Row(crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic, children: [
+              Text(prix != null && prix > 0 ? '${prix.toStringAsFixed(0)} €$suffix' : 'Prix à convenir',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800,
+                      fontSize: 26, color: _dark)),
+              if (prixNeg) ...[
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                  decoration: BoxDecoration(color: _green.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8)),
+                  child: const Text('Négociable', style: TextStyle(fontFamily: 'Galey',
+                      fontSize: 12, color: _green, fontWeight: FontWeight.w600))),
+              ],
+            ]);
+          }),
+        ] else if (typeVente == 'vente') ...[
           if (type == 'portee' && (prixMin != null || prixMax != null))
             Row(crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic, children: [
@@ -733,6 +775,84 @@ class _DescCard extends StatelessWidget {
     Text(desc, style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
         color: _dark, height: 1.6)),
   ]);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cheval — niveau, palmarès, indices, vidéos
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _EquideCard extends StatelessWidget {
+  final Map<String, dynamic> data;
+  const _EquideCard({required this.data});
+
+  static String _s(Map<String, dynamic> d, String k) => (d[k] ?? '').toString().trim();
+  static int? _i(Map<String, dynamic> d, String k) {
+    final v = d[k];
+    return v is num ? v.toInt() : (v is String ? int.tryParse(v) : null);
+  }
+
+  static bool hasContent(Map<String, dynamic> d) =>
+      _s(d, 'niveau_recommande').isNotEmpty ||
+      _s(d, 'palmares').isNotEmpty ||
+      _i(d, 'indice_iso') != null || _i(d, 'indice_idr') != null || _i(d, 'indice_icc') != null ||
+      _s(d, 'video_monte_url').isNotEmpty || _s(d, 'video_libre_url').isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    final niveau = _s(data, 'niveau_recommande');
+    final palmares = _s(data, 'palmares');
+    final iso = _i(data, 'indice_iso');
+    final idr = _i(data, 'indice_idr');
+    final icc = _i(data, 'indice_icc');
+    final vMonte = _s(data, 'video_monte_url');
+    final vLibre = _s(data, 'video_libre_url');
+    final indices = <String>[
+      if (iso != null) 'ISO $iso',
+      if (idr != null) 'IDR $idr',
+      if (icc != null) 'ICC $icc',
+    ];
+
+    return _sectionCard('Cheval — sport', Icons.sports_score_outlined, [
+      if (niveau.isNotEmpty)
+        Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+              color: _teal.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)),
+          child: Text('Niveau : $niveau',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
+                  fontWeight: FontWeight.w600, color: _teal)),
+        ),
+      if (indices.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text(indices.join('  ·  '),
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
+                  fontWeight: FontWeight.w700, color: _dark)),
+        ),
+      if (palmares.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text(palmares,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: _dark, height: 1.5)),
+        ),
+      if (vMonte.isNotEmpty) ...[
+        const Text('Sous selle', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+            fontWeight: FontWeight.w600, color: Color(0xFF6F767B))),
+        const SizedBox(height: 4),
+        ClipRRect(borderRadius: BorderRadius.circular(10),
+            child: InlineVideo(url: vMonte, placeholderHeight: 180)),
+        const SizedBox(height: 10),
+      ],
+      if (vLibre.isNotEmpty) ...[
+        const Text('En liberté', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+            fontWeight: FontWeight.w600, color: Color(0xFF6F767B))),
+        const SizedBox(height: 4),
+        ClipRRect(borderRadius: BorderRadius.circular(10),
+            child: InlineVideo(url: vLibre, placeholderHeight: 180)),
+      ],
+    ]);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

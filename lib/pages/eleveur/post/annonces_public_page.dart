@@ -1053,6 +1053,18 @@ class _AnnonceCard extends StatelessWidget {
       prixColor = const Color(0xFF7C3AED);
     } else if (typeVente == 'retraite') {
       prixLabel = prix != null && prix > 0 ? '${prix.toInt()} €' : 'Retraité';
+    } else if (typeVente == 'valorisation') {
+      prixLabel = prix != null && prix > 0 ? 'Valo · ${prix.toInt()} €' : 'Valorisation';
+      prixColor = _teal;
+    } else if (const {'location', 'demi_pension', 'pension_complete'}.contains(typeVente)) {
+      final unite = (data['prix_unite'] as String?) ?? 'mois';
+      final suffix = unite == 'semaine' ? '/sem.' : '/mois';
+      final label = typeVente == 'location' ? 'Loc.'
+          : typeVente == 'demi_pension' ? '½ pension' : 'Pension';
+      prixLabel = prix != null && prix > 0
+          ? '$label · ${prix.toInt()} €$suffix'
+          : '$label · à convenir';
+      prixColor = _teal;
     }
 
     return Container(

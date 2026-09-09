@@ -40,6 +40,8 @@ import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
 
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
+import 'package:PetsMatch/pages/particulier/create_annonce_cheval_page.dart';
+import 'package:PetsMatch/pages/particulier/mes_annonces_particulier_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
@@ -357,6 +359,21 @@ List<QuickAction> _all(BuildContext ctx) => [
     icon: Icons.diversity_1_outlined, group: 'Annonces',
     visible: () => _eleveur,
     open: (c) => _push(c, const AnnoncesPublicPage(typeFilter: 'saillie')),
+  ),
+  QuickAction(
+    label: 'Publier une annonce cheval',
+    keywords: ['vendre mon cheval', 'location cheval', 'demi-pension', 'pension cheval',
+      'valorisation', 'annonce équin', 'mettre en vente cheval'],
+    icon: Icons.sell_outlined, group: 'Annonces',
+    visible: () => _particulier,
+    open: (c) => _push(c, const CreateAnnonceChevalPage()),
+  ),
+  QuickAction(
+    label: 'Mes annonces (cheval)',
+    keywords: ['gérer mes annonces', 'mes ventes cheval', 'mes annonces équines'],
+    icon: Icons.campaign_outlined, group: 'Annonces',
+    visible: () => _particulier,
+    open: (c) => _push(c, const MesAnnoncesParticulierPage()),
   ),
 
   // ── Éleveur ────────────────────────────────────────────────────────────────

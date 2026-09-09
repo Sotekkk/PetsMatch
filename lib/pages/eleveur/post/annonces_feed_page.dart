@@ -1286,6 +1286,18 @@ class _FeedCardState extends State<_FeedCard> with SingleTickerProviderStateMixi
                       _FeedBadge(
                         label: '🏅 Retraité',
                         color: const Color(0xFFB45309).withValues(alpha: 0.80)),
+                    if (item.typeVente == 'location')
+                      _FeedBadge(label: '🐴 Location',
+                        color: const Color(0xFF0C5C6C).withValues(alpha: 0.80)),
+                    if (item.typeVente == 'demi_pension')
+                      _FeedBadge(label: '🐴 Demi-pension',
+                        color: const Color(0xFF0C5C6C).withValues(alpha: 0.80)),
+                    if (item.typeVente == 'pension_complete')
+                      _FeedBadge(label: '🐴 Pension',
+                        color: const Color(0xFF0C5C6C).withValues(alpha: 0.80)),
+                    if (item.typeVente == 'valorisation')
+                      _FeedBadge(label: '📈 Valorisation',
+                        color: const Color(0xFF6E9E57).withValues(alpha: 0.85)),
                     if (item.espece?.isNotEmpty == true)
                       _FeedBadge(
                         label: _especeLabel(item.espece!),
