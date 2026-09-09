@@ -518,9 +518,10 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
                 index: _tabIndex,
                 children: [
                   _FeedList(
-                      key: ValueKey('following_$_refresh'),
+                      key: ValueKey('following_${_refresh}_$_myProfileId'),
                       type: 'following',
-                      myUid: uid),
+                      myUid: uid,
+                      myProfileId: _myProfileId),
                   _FeedList(
                       key: ValueKey('discover_$_refresh'),
                       type: 'discover',
@@ -884,7 +885,8 @@ class _SuggestionsWidgetState extends State<_SuggestionsWidget> {
 class _FeedList extends StatefulWidget {
   final String type;
   final String myUid;
-  const _FeedList({super.key, required this.type, required this.myUid});
+  final String? myProfileId; // profil actif — scope le fil « Abonnements »
+  const _FeedList({super.key, required this.type, required this.myUid, this.myProfileId});
   @override
   State<_FeedList> createState() => _FeedListState();
 }
@@ -899,6 +901,7 @@ class _FeedListState extends State<_FeedList>
   Map<String, Map<String, dynamic>> _profiles = {};
   Set<String> _liked     = {};
   Set<String> _following = {};
+  Set<String> _followingPids = {}; // abonnements du profil actif (following_profile_id)
   bool   _loading   = true;
   String? _feedError;
 
@@ -914,13 +917,21 @@ class _FeedListState extends State<_FeedList>
     try {
       if (widget.myUid.isNotEmpty) {
         try {
-          final rows = await _supa
+          final base = _supa
               .from('follows')
-              .select('following_uid')
-              .eq('follower_uid', widget.myUid);
+              .select('following_uid, following_profile_id');
+          final rows = await (widget.myProfileId != null
+              ? base.eq('follower_profile_id', widget.myProfileId!)
+              : base.eq('follower_uid', widget.myUid));
           _following = {for (final r in rows as List) r['following_uid'] as String};
+          _followingPids = {
+            for (final r in rows as List)
+              if ((r['following_profile_id'] as String?)?.isNotEmpty == true)
+                r['following_profile_id'] as String,
+          };
         } catch (_) {
           _following = {};
+          _followingPids = {};
         }
       }
 
@@ -946,6 +957,20 @@ class _FeedListState extends State<_FeedList>
               .inFilter('uid', uids)
               .order('created_at', ascending: false)
               .limit(50);
+        }
+        // Scope au profil actif : on suit des PROFILS, pas des comptes. On garde
+        // les posts dont l'author_profile_id est suivi (+ les miens du profil
+        // actif) ; les lignes legacy sans profil restent filtrées par uid.
+        if (_followingPids.isNotEmpty) {
+          final keep = {
+            ..._followingPids,
+            if (widget.myProfileId != null) widget.myProfileId!,
+          };
+          posts = posts.where((p) {
+            final apid = p['author_profile_id'] as String?;
+            if (apid == null || apid.isEmpty) return true;
+            return keep.contains(apid);
+          }).toList();
         }
       } else {
         posts = await _supa
