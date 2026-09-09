@@ -23,6 +23,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart';
 import 'package:PetsMatch/services/promenade_notification_service.dart';
+import 'package:PetsMatch/services/deep_link_service.dart';
 import 'firebase_options.dart';
 
 const AndroidNotificationChannel channel = AndroidNotificationChannel(
@@ -671,6 +672,8 @@ Future<void> main() async {
     DeviceOrientation.portraitDown,
   ]).then((_) {
     runApp(MyApp());
+    // Liens de partage entrants (petsmatchapp.com/p/<id>).
+    DeepLinkService.instance.init();
   });
 
   await Future.delayed(const Duration(seconds: 1));
@@ -814,6 +817,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
             final needsValidation = User_Info.isElevage || User_Info.isPro;
 
             if (User_Info.isAdmin || User_Info.isValidate || !needsValidation || hasActiveProfile) {
+              // L'UI est prête : rejoue un éventuel lien de partage en attente.
+              WidgetsBinding.instance.addPostFrameCallback(
+                  (_) => DeepLinkService.instance.flushPending());
               return BottomNav();
             } else {
               return VerificationRegistrationPage();

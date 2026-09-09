@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.application.petsmatch",
+      "sha256_cert_fingerprints": [
+        "09:C6:DC:86:8D:0C:C7:AB:A2:8B:EE:BF:3E:67:75:5F:A4:5F:F2:C2:31:A1:E4:1F:CA:BF:49:53:A5:EB:A5:F4"
+      ]
+    }
+  }
+]

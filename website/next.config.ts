@@ -15,6 +15,15 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: 'lh3.googleusercontent.com' },
     ],
   },
+  async headers() {
+    return [
+      {
+        // Deep links : les fichiers .well-known doivent être servis en JSON.
+        source: '/.well-known/:file(assetlinks.json|apple-app-site-association)',
+        headers: [{ key: 'Content-Type', value: 'application/json' }],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

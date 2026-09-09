@@ -363,6 +363,26 @@ List<String> _mediaUrls(String? raw) {
   return [raw];
 }
 
+/// Ouvre le détail d'une publication à partir de son id — point d'entrée des
+/// liens de partage `petsmatchapp.com/p/<id>` (cf. `DeepLinkService`).
+Future<void> openSharedSocialPost(BuildContext context, String postId) async {
+  try {
+    final row = await Supabase.instance.client
+        .from('posts_socialmedia').select().eq('id', postId).maybeSingle();
+    if (row == null || !context.mounted) return;
+    final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    await showDialog(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 48),
+        child: _PostDetailSheet(post: Map<String, dynamic>.from(row), myUid: myUid),
+      ),
+    );
+  } catch (_) {}
+}
+
 String _fmtDate(String iso) {
   try {
     final dt   = DateTime.parse(iso).toLocal();

@@ -65,6 +65,16 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Liens de partage Pets Social : https://petsmatchapp.com/p/<id>.
+                 autoVerify => Android ouvre l'app directement si le fichier
+                 /.well-known/assetlinks.json du domaine référence cette app. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="petsmatchapp.com" android:pathPrefix="/p/"/>
+                <data android:scheme="https" android:host="www.petsmatchapp.com" android:pathPrefix="/p/"/>
+            </intent-filter>
         </activity>
         <!-- Cropper uCrop -->
         <activity
