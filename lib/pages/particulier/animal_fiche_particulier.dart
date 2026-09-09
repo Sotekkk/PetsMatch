@@ -23,6 +23,7 @@ import 'package:PetsMatch/pages/particulier/proprietaires_animal_sheet.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:PetsMatch/widgets/rich_text_view.dart';
+import 'package:PetsMatch/widgets/document_viewer_page.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class _ContactUrgenceP {
@@ -6270,11 +6271,6 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
     await widget.onChanged(next);
   }
 
-  Future<void> _open(String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
-
   @override
   Widget build(BuildContext context) {
     final libres = widget.documents;
@@ -6388,8 +6384,9 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
         ]),
         trailing: Row(mainAxisSize: MainAxisSize.min, children: [
           IconButton(
-            icon: const Icon(Icons.open_in_new, size: 18, color: _kTealDoc),
-            onPressed: () => _open(doc['url']?.toString() ?? ''),
+            icon: const Icon(Icons.visibility_outlined, size: 18, color: _kTealDoc),
+            onPressed: () => DocumentViewerPage.open(context, doc['url']?.toString() ?? '',
+                title: doc['nom']?.toString() ?? 'Document'),
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
@@ -6443,11 +6440,11 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
                         : isFinal ? Icons.visibility_outlined : Icons.draw_outlined,
                     size: 18, color: _kTealDoc),
                 tooltip: url != null
-                    ? 'Ouvrir le PDF'
+                    ? 'Lire le document'
                     : isFinal ? 'Consulter' : 'Lire et signer',
                 onPressed: () {
                   if (url != null) {
-                    _open(url);
+                    DocumentViewerPage.open(context, url, title: titre);
                   } else {
                     Navigator.push(context, MaterialPageRoute(
                         builder: (_) => ContratSignaturePage(token: token)));
@@ -6488,12 +6485,14 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
   /// Compte rendu ou ordonnance rédigé par un pro (véto, pension, ostéo…).
   Widget _consultCard(Map<String, dynamic> rec, {required bool isOrdo}) {
     final proUid = rec['pro_uid']?.toString() ?? '';
-    final proNom = _proNames[proUid] ?? (isOrdo ? 'Professionnel' : 'Professionnel');
+    final proNom = _proNames[proUid] ?? 'Professionnel';
     final rawDate = (rec['date'] ?? rec['date_emit'] ?? rec['created_at'])?.toString();
     final dt = rawDate != null ? DateTime.tryParse(rawDate) : null;
     final dateStr = dt != null ? DateFormat('dd/MM/yyyy').format(dt.toLocal()) : '';
     final contenu = (rec['contenu'] ?? rec['notes'] ?? '').toString().trim();
     final docUrl = rec['doc_url']?.toString() ?? '';
+    final titre = isOrdo ? 'Ordonnance' : 'Compte rendu';
+    final sousTitre = [proNom, if (dateStr.isNotEmpty) dateStr].join(' · ');
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
@@ -6507,19 +6506,10 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
             child: Icon(isOrdo ? Icons.medication_outlined : Icons.description_outlined,
                 color: _kTealDoc, size: 20),
           ),
-          title: Text(isOrdo ? 'Ordonnance' : 'Compte rendu',
+          title: Text(titre,
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
-          subtitle: Row(children: [
-            if (dateStr.isNotEmpty)
-              Text(dateStr, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
-            if (dateStr.isNotEmpty) const SizedBox(width: 8),
-            Flexible(child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(color: _kTealDoc.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
-              child: Text('🩺 $proNom', overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700, color: _kTealDoc)),
-            )),
-          ]),
+          subtitle: Text(sousTitre,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
           children: [
             if (contenu.isNotEmpty)
               Align(
@@ -6531,9 +6521,9 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: OutlinedButton.icon(
-                  onPressed: () => _open(docUrl),
-                  icon: const Icon(Icons.open_in_new, size: 16),
-                  label: const Text('Ouvrir le document', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  onPressed: () => DocumentViewerPage.open(context, docUrl, title: '$titre — $proNom'),
+                  icon: const Icon(Icons.visibility_outlined, size: 16),
+                  label: const Text('Lire le document', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
                   style: OutlinedButton.styleFrom(foregroundColor: _kTealDoc, side: const BorderSide(color: _kTealDoc)),
                 ),
               ),
