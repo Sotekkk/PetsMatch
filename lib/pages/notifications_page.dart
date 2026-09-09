@@ -281,6 +281,17 @@ class _NotificationsPageState extends State<NotificationsPage> {
       }
       return;
     }
+    // Compte rendu / ordonnance ajouté par un pro → onglet Documents de la
+    // fiche animal (particulier).
+    if (type == 'compte_rendu_recu') {
+      final animalId = data is Map ? data['animalId'] as String? : null;
+      if (animalId != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => AnimalFicheParticulierPage(animalId: animalId, initialTab: 3),
+        ));
+      }
+      return;
+    }
     // Rapport de garde / visite / promenade — nouvelle reçue par le
     // propriétaire (module garde / pet-sitting). Contenu dans pension_updates.
     if (type == 'visite_rapport' || type == 'garde_journal') {
@@ -887,6 +898,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'pension_journal_reply':
       case 'visite_rapport':
       case 'garde_journal':         return Icons.photo_camera_back_outlined;
+      case 'compte_rendu_recu':     return Icons.description_outlined;
       case 'education_rapport':     return Icons.school_outlined;
       case 'education_objectif_acquis': return Icons.flag_outlined;
       case 'education_exercice_assigne': return Icons.fitness_center_outlined;
@@ -962,6 +974,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'pension_journal_reply':
       case 'visite_rapport':
       case 'garde_journal':         return const Color(0xFF6E9E57);
+      case 'compte_rendu_recu':     return const Color(0xFF26A69A);
       case 'education_rapport':     return const Color(0xFF7B5EA7);
       case 'education_objectif_acquis': return const Color(0xFF6E9E57);
       case 'education_exercice_assigne': return const Color(0xFFEF6C00);

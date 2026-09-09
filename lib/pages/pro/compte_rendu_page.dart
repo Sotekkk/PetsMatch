@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 
 /// S06 — Pro : écrire un compte rendu et/ou créer une ordonnance après un RDV.
 /// Peut être ouvert avec un RDV précis (`rdv`) ou directement depuis la fiche
@@ -177,6 +178,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         'contenu'   : contenu,
         if (docUrl != null) 'doc_url': docUrl,
       });
+      await _notifyOwner(isOrdo: false);
       _crContenuCtrl.clear();
       setState(() => _crFile = null);
       await _loadExisting();
@@ -197,6 +199,47 @@ class _CompteRenduPageState extends State<CompteRenduPage>
     } finally {
       if (mounted) setState(() => _crSaving = false);
     }
+  }
+
+  /// Prévient le propriétaire qu'un compte rendu / une ordonnance a été ajouté.
+  Future<void> _notifyOwner({required bool isOrdo}) async {
+    try {
+      final ownerUid = (widget.ownerUid ?? widget.rdv?['client_uid'])?.toString();
+      final animalId = (widget.animalId ?? widget.rdv?['animal_id'])?.toString();
+      if (ownerUid == null || ownerUid.isEmpty) return;
+
+      // Profil PARTICULIER du propriétaire (is_main peut être un profil pro).
+      String? ownerProfileId = (widget.rdv?['client_profile_id'])?.toString();
+      if (ownerProfileId == null || ownerProfileId.isEmpty) {
+        final p = await _supa.from('user_profiles')
+            .select('id').eq('uid', ownerUid).eq('profile_type', 'particulier')
+            .order('is_main', ascending: false).limit(1).maybeSingle();
+        ownerProfileId = p?['id'] as String?;
+      }
+
+      var animalNom = (widget.rdv?['_animal_nom'] ?? widget.rdv?['animal_nom'] ?? '').toString();
+      if (animalNom.isEmpty && animalId != null) {
+        final a = await _supa.from('animaux').select('nom').eq('id', animalId).maybeSingle();
+        animalNom = (a?['nom'] as String?) ?? '';
+      }
+      final proNom = User_Info.nameElevage.isNotEmpty
+          ? User_Info.nameElevage
+          : '${User_Info.firstname} ${User_Info.lastname}'.trim();
+      final quoi = isOrdo ? 'une ordonnance' : 'un compte rendu';
+
+      await _supa.from('notifications').insert({
+        'uid': ownerUid,
+        'type': 'compte_rendu_recu',
+        'title': isOrdo
+            ? '💊 Ordonnance — ${animalNom.isEmpty ? 'votre animal' : animalNom}'
+            : '📄 Compte rendu — ${animalNom.isEmpty ? 'votre animal' : animalNom}',
+        'body': '${proNom.isEmpty ? 'Votre professionnel' : proNom} a ajouté $quoi'
+            '${animalNom.isEmpty ? '' : ' pour $animalNom'}.',
+        if (ownerProfileId != null && ownerProfileId.isNotEmpty) 'profile_id': ownerProfileId,
+        'data': {'animalId': animalId, 'animalNom': animalNom},
+        'read': false,
+      });
+    } catch (_) {}
   }
 
   Future<void> _saveOrdonnance() async {
@@ -233,6 +276,7 @@ class _CompteRenduPageState extends State<CompteRenduPage>
         'date_emit': '${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}',
         if (_ordoNotesCtrl.text.trim().isNotEmpty) 'notes': _ordoNotesCtrl.text.trim(),
       });
+      await _notifyOwner(isOrdo: true);
       setState(() => _ordoFile = null);
       _ordoNotesCtrl.clear();
       await _loadExisting();

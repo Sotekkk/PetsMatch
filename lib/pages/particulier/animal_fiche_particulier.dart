@@ -37,8 +37,9 @@ class _ContactUrgenceP {
 class AnimalFicheParticulierPage extends StatefulWidget {
   final String? animalId;
   final Map<String, dynamic>? initialData;
+  final int initialTab; // 0=Identité 1=Carnet 2=Alimentation 3=Documents
 
-  const AnimalFicheParticulierPage({super.key, this.animalId, this.initialData});
+  const AnimalFicheParticulierPage({super.key, this.animalId, this.initialData, this.initialTab = 0});
 
   @override
   State<AnimalFicheParticulierPage> createState() => _AnimalFicheParticulierPageState();
@@ -127,7 +128,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 4, vsync: this);
+    _tabs = TabController(length: 4, vsync: this,
+        initialIndex: widget.initialTab.clamp(0, 3));
     _animalId = widget.animalId;
     _editing = widget.animalId == null; // nouveau animal → direct en édition
     _fillFromData(widget.initialData);
@@ -6001,6 +6003,9 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
   final _supa = Supabase.instance.client;
   List<Map<String, dynamic>> _officiels = [];
   List<Map<String, dynamic>> _certs = [];
+  List<Map<String, dynamic>> _crs = [];       // comptes rendus (véto / pension…)
+  List<Map<String, dynamic>> _ordos = [];     // ordonnances
+  Map<String, String> _proNames = {};         // uid → nom du pro
   bool _loading = true;
   bool _uploading = false;
 
@@ -6012,14 +6017,48 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
 
   Future<void> _loadOfficiels() async {
     try {
-      final docs = await _supa.from('documents_animaux').select('*')
-          .eq('animal_id', widget.animalId).order('created_at', ascending: false);
-      final certs = await _supa.from('certificats_engagement')
-          .select('id, statut, date_remise, token_signature, date_signature_acquereur')
-          .eq('animal_id', widget.animalId).order('date_remise', ascending: false);
+      final results = await Future.wait([
+        _supa.from('documents_animaux').select('*')
+            .eq('animal_id', widget.animalId).order('created_at', ascending: false),
+        _supa.from('certificats_engagement')
+            .select('id, statut, date_remise, token_signature, date_signature_acquereur')
+            .eq('animal_id', widget.animalId).order('date_remise', ascending: false),
+        _supa.from('comptes_rendus').select('*')
+            .eq('animal_id', widget.animalId).order('created_at', ascending: false),
+        _supa.from('ordonnances').select('*')
+            .eq('animal_id', widget.animalId).order('created_at', ascending: false),
+      ]);
+      final crs   = List<Map<String, dynamic>>.from(results[2]);
+      final ordos = List<Map<String, dynamic>>.from(results[3]);
+
+      // Noms des pros émetteurs.
+      final proUids = {
+        for (final r in [...crs, ...ordos])
+          if ((r['pro_uid']?.toString() ?? '').isNotEmpty) r['pro_uid'].toString(),
+      }.toList();
+      final proNames = <String, String>{};
+      if (proUids.isNotEmpty) {
+        try {
+          final profs = await _supa.from('user_profiles')
+              .select('uid, nom, firstname, lastname, profile_type')
+              .inFilter('uid', proUids);
+          for (final p in profs as List) {
+            final nom = (p['nom'] as String?)?.trim() ?? '';
+            final full = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+            final isPro = (p['profile_type'] as String?)?.isNotEmpty == true
+                && p['profile_type'] != 'particulier';
+            final label = isPro && nom.isNotEmpty ? nom : (full.isNotEmpty ? full : nom);
+            if (label.isNotEmpty) proNames[p['uid'] as String] = label;
+          }
+        } catch (_) {}
+      }
+
       if (mounted) setState(() {
-        _officiels = List<Map<String, dynamic>>.from(docs);
-        _certs = List<Map<String, dynamic>>.from(certs);
+        _officiels = List<Map<String, dynamic>>.from(results[0]);
+        _certs = List<Map<String, dynamic>>.from(results[1]);
+        _crs = crs;
+        _ordos = ordos;
+        _proNames = proNames;
         _loading = false;
       });
     } catch (_) {
@@ -6281,10 +6320,17 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
             if (_certs.isNotEmpty) ...[
               _sectionTitle('Certificats d\'engagement'),
               ..._certs.map(_certCard),
+              const SizedBox(height: 16),
+            ],
+            if (_crs.isNotEmpty || _ordos.isNotEmpty) ...[
+              _sectionTitle('Comptes rendus & ordonnances'),
+              ..._crs.map((c) => _consultCard(c, isOrdo: false)),
+              ..._ordos.map((o) => _consultCard(o, isOrdo: true)),
             ],
           ],
 
-          if (libres.isEmpty && _officiels.isEmpty && _certs.isEmpty && !_loading)
+          if (libres.isEmpty && _officiels.isEmpty && _certs.isEmpty &&
+              _crs.isEmpty && _ordos.isEmpty && !_loading)
             const Padding(
               padding: EdgeInsets.only(top: 40),
               child: _TabEmptyState(
@@ -6435,6 +6481,68 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
           const SizedBox(width: 8),
           _statutBadge(signe ? 'signe' : 'en_attente'),
         ]),
+      ),
+    );
+  }
+
+  /// Compte rendu ou ordonnance rédigé par un pro (véto, pension, ostéo…).
+  Widget _consultCard(Map<String, dynamic> rec, {required bool isOrdo}) {
+    final proUid = rec['pro_uid']?.toString() ?? '';
+    final proNom = _proNames[proUid] ?? (isOrdo ? 'Professionnel' : 'Professionnel');
+    final rawDate = (rec['date'] ?? rec['date_emit'] ?? rec['created_at'])?.toString();
+    final dt = rawDate != null ? DateTime.tryParse(rawDate) : null;
+    final dateStr = dt != null ? DateFormat('dd/MM/yyyy').format(dt.toLocal()) : '';
+    final contenu = (rec['contenu'] ?? rec['notes'] ?? '').toString().trim();
+    final docUrl = rec['doc_url']?.toString() ?? '';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+          childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+          leading: CircleAvatar(
+            backgroundColor: _kTealDoc.withValues(alpha: 0.1),
+            child: Icon(isOrdo ? Icons.medication_outlined : Icons.description_outlined,
+                color: _kTealDoc, size: 20),
+          ),
+          title: Text(isOrdo ? 'Ordonnance' : 'Compte rendu',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+          subtitle: Row(children: [
+            if (dateStr.isNotEmpty)
+              Text(dateStr, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+            if (dateStr.isNotEmpty) const SizedBox(width: 8),
+            Flexible(child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(color: _kTealDoc.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
+              child: Text('🩺 $proNom', overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700, color: _kTealDoc)),
+            )),
+          ]),
+          children: [
+            if (contenu.isNotEmpty)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(contenu, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, height: 1.4)),
+              ),
+            if (docUrl.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: () => _open(docUrl),
+                  icon: const Icon(Icons.open_in_new, size: 16),
+                  label: const Text('Ouvrir le document', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  style: OutlinedButton.styleFrom(foregroundColor: _kTealDoc, side: const BorderSide(color: _kTealDoc)),
+                ),
+              ),
+            ],
+            if (contenu.isEmpty && docUrl.isEmpty)
+              const Align(alignment: Alignment.centerLeft,
+                  child: Text('Aucun détail', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey))),
+          ],
+        ),
       ),
     );
   }
