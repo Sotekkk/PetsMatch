@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/config.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 
 const _teal  = Color(0xFF0C5C6C);
@@ -51,8 +52,20 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
                   'metadata->>client_email.eq.${email ?? '-'}')
               : sel.or('metadata->>acquereur_email.eq.$email,metadata->>client_email.eq.$email'))
           .order('created_at', ascending: false);
+      // Multi-profil : ne montrer que les contrats destinés au profil ACTIF.
+      // Si le doc porte un profil destinataire (client_profile_id /
+      // acquereur_profile_id) et qu'il diffère du profil actif, il appartient à
+      // un autre de mes profils (ex. contrat de garde reçu en particulier, à ne
+      // pas afficher dans « Mes Achats » côté éleveur).
+      final activePid = User_Info.activeProfileId;
+      final filtered = List<Map<String, dynamic>>.from(rows).where((d) {
+        final meta = (d['metadata'] as Map?) ?? {};
+        final target = (meta['client_profile_id'] ?? meta['acquereur_profile_id']) as String?;
+        if (target == null || target.isEmpty || activePid.isEmpty) return true;
+        return target == activePid;
+      }).toList();
       if (mounted) {
-        setState(() { _docs = List<Map<String, dynamic>>.from(rows); _loading = false; });
+        setState(() { _docs = filtered; _loading = false; });
         _maybeOpenHighlight();
       }
     } catch (_) {

@@ -6366,8 +6366,13 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
       'contrat_vente': 'Contrat de vente', 'contrat_reservation': 'Contrat de réservation',
       'contrat_saillie': 'Contrat de saillie', 'contrat_adoption': 'Contrat d\'adoption',
       'contrat_education': 'Contrat (éducateur)', 'certificat_cession': 'Certificat de cession',
+      'contrat_garde': 'Contrat de prestation', 'contrat_pension': 'Contrat de pension',
+      'contrat_photographe': 'Contrat (photographe)',
       'devis': 'Devis', 'facture': 'Facture',
     };
+    final titreDoc = (doc['titre'] as String?)?.trim();
+    final titre = labels[type] ?? (titreDoc?.isNotEmpty == true ? titreDoc! : 'Document');
+    final isFinal = ['signe', 'refuse', 'annule', 'expire'].contains(statut);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
@@ -6377,7 +6382,7 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
           backgroundColor: _kTealDoc.withValues(alpha: 0.1),
           child: const Icon(Icons.description_outlined, color: _kTealDoc, size: 20),
         ),
-        title: Text(labels[type] ?? 'Document',
+        title: Text(titre,
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
         subtitle: Row(children: [
           Text(date, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
@@ -6386,8 +6391,14 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
         ]),
         trailing: (token != null || url != null)
             ? IconButton(
-                icon: Icon(url != null ? Icons.open_in_new : Icons.draw_outlined, size: 18, color: _kTealDoc),
-                tooltip: url != null ? 'Ouvrir' : 'Lire et signer',
+                icon: Icon(
+                    url != null
+                        ? Icons.open_in_new
+                        : isFinal ? Icons.visibility_outlined : Icons.draw_outlined,
+                    size: 18, color: _kTealDoc),
+                tooltip: url != null
+                    ? 'Ouvrir le PDF'
+                    : isFinal ? 'Consulter' : 'Lire et signer',
                 onPressed: () {
                   if (url != null) {
                     _open(url);

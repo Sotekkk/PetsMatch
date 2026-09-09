@@ -8,7 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// (particulier / éleveur / association), sinon `is_main`.
 Future<String?> _acquereurProfileId(
     dynamic supa, Map<String, dynamic> meta, String? acqUid) async {
-  final stored = meta['acquereur_profile_id'] as String?;
+  final stored = (meta['acquereur_profile_id'] ?? meta['client_profile_id']) as String?;
   if (stored != null && stored.isNotEmpty) return stored;
   if (acqUid == null || acqUid.isEmpty) return null;
   final qualite = (meta['qualite'] as String?) ?? 'particulier';
@@ -194,7 +194,11 @@ Future<void> notifierContratSignature({
       (isAdoption ? 'L\'adoptant(e)' : 'L\'acquéreur');
   final partieVendeur = isAdoption ? 'L\'association' : 'L\'éleveur';
   final eleveurUid = doc['uid_eleveur'] as String?;
-  var acqUid = meta['acquereur_uid'] as String? ?? doc['uid_acquereur'] as String?;
+  // Profil PRO qui a émis le contrat (garde, pension, éducation…) — la notif
+  // « signé » doit y atterrir, pas sur is_main (souvent un autre profil).
+  final proProfileId = doc['pro_profile_id'] as String?;
+  var acqUid = meta['acquereur_uid'] as String? ?? doc['uid_acquereur'] as String?
+      ?? meta['client_uid'] as String?;
   // Repli : retrouver l'acquéreur PetsMatch via son email si l'uid manque
   // (contrats créés avant l'ajout de uid_acquereur).
   if (acqUid == null || acqUid.isEmpty) {
@@ -224,7 +228,12 @@ Future<void> notifierContratSignature({
   Future<void> notif(String? uid, String type, String title, String body) async {
     if (uid == null || uid.isEmpty) return;
     try {
-      String? profId = (uid == acqUid) ? acqProfileId : null;
+      String? profId;
+      if (uid == acqUid) {
+        profId = acqProfileId;
+      } else if (uid == eleveurUid && proProfileId != null && proProfileId.isNotEmpty) {
+        profId = proProfileId; // profil pro émetteur (garde / pension / éducation…)
+      }
       if (profId == null) {
         final prof = await supa.from('user_profiles')
             .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
