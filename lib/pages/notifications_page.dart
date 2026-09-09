@@ -281,6 +281,22 @@ class _NotificationsPageState extends State<NotificationsPage> {
       }
       return;
     }
+    // Rapport de garde / visite / promenade — nouvelle reçue par le
+    // propriétaire (module garde / pet-sitting). Contenu dans pension_updates.
+    if (type == 'visite_rapport' || type == 'garde_journal') {
+      final animalId  = data is Map ? data['animalId'] as String? : null;
+      final animalNom = data is Map ? data['animalNom'] as String? : null;
+      if (animalId != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => PensionJournalPage(
+            animalId: animalId,
+            animalNom: animalNom ?? 'Animal',
+            readOnly: true,
+          ),
+        ));
+      }
+      return;
+    }
     // Journal de séjour — nouvelle reçue par le propriétaire (lecture seule)
     if (type == 'pension_journal') {
       final animalId  = data is Map ? data['animalId']  as String? : null;
@@ -868,7 +884,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'pension_acces':         return Icons.home_work_outlined;
       case 'pension_acces_reponse': return Icons.check_circle_outline;
       case 'pension_journal':
-      case 'pension_journal_reply': return Icons.photo_camera_back_outlined;
+      case 'pension_journal_reply':
+      case 'visite_rapport':
+      case 'garde_journal':         return Icons.photo_camera_back_outlined;
       case 'education_rapport':     return Icons.school_outlined;
       case 'education_objectif_acquis': return Icons.flag_outlined;
       case 'education_exercice_assigne': return Icons.fitness_center_outlined;
@@ -941,7 +959,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'pension_acces':         return const Color(0xFF7B5EA7);
       case 'pension_acces_reponse': return const Color(0xFF6E9E57);
       case 'pension_journal':
-      case 'pension_journal_reply': return const Color(0xFF6E9E57);
+      case 'pension_journal_reply':
+      case 'visite_rapport':
+      case 'garde_journal':         return const Color(0xFF6E9E57);
       case 'education_rapport':     return const Color(0xFF7B5EA7);
       case 'education_objectif_acquis': return const Color(0xFF6E9E57);
       case 'education_exercice_assigne': return const Color(0xFFEF6C00);

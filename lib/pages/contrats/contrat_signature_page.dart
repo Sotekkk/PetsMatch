@@ -632,14 +632,13 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       }
 
       if (acqUid != null && acqUid.isNotEmpty) {
-        final prof = await _supa.from('user_profiles')
-            .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
+        final destPid = await _destinataireProfileId(acqUid, const {});
         await _supa.from('notifications').insert({
           'uid': acqUid,
           'type': 'certificat_a_signer',
           'title': '📋 Certificat d\'engagement à signer — $animalNom',
           'body': 'Le cédant vous transmet le certificat d\'engagement et de connaissance à lire et signer.',
-          if (prof?['id'] != null) 'profile_id': prof!['id'],
+          if (destPid != null) 'profile_id': destPid,
           'data': {
             if (token != null) 'token': token,
             if (url != null) 'url': url,
@@ -681,6 +680,28 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
+  /// Profil du destinataire (acquéreur / client) pour scoper la notification.
+  /// Multi-profil : `is_main` renvoie souvent le profil éleveur/pro d'un compte
+  /// — un contrat de vente/garde/certificat s'adresse au profil PARTICULIER.
+  /// Priorité : profil enregistré sur le doc (metadata) → profil particulier →
+  /// is_main en dernier recours.
+  Future<String?> _destinataireProfileId(String uid, Map<String, dynamic> meta) async {
+    final recorded = (meta['client_profile_id'] ?? meta['acquereur_profile_id']) as String?;
+    if (recorded != null && recorded.isNotEmpty) return recorded;
+    try {
+      final part = await _supa.from('user_profiles')
+          .select('id').eq('uid', uid).eq('profile_type', 'particulier')
+          .order('is_main', ascending: false).limit(1).maybeSingle();
+      if (part?['id'] != null) return part!['id'] as String;
+    } catch (_) {}
+    try {
+      final main = await _supa.from('user_profiles')
+          .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+      return main?['id'] as String?;
+    } catch (_) {}
+    return null;
+  }
+
   /// Envoie (ou renvoie) le contrat à l'acquéreur : notification in-app + lien.
   Future<void> _envoyerAcquereur() async {
     setState(() => _saving = true);
@@ -711,14 +732,13 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       }
 
       if (acqUid != null && acqUid.isNotEmpty) {
-        final prof = await _supa.from('user_profiles')
-            .select('id').eq('uid', acqUid).eq('is_main', true).maybeSingle();
+        final destPid = await _destinataireProfileId(acqUid, meta);
         await _supa.from('notifications').insert({
           'uid': acqUid,
           'type': 'contrat_signe_eleveur',
           'title': '📄 Contrat à signer — ${_animal?['nom'] ?? 'Animal'}',
           'body': 'L\'éleveur vous a transmis ${_doc!['titre'] ?? 'un contrat'} — vérifiez et signez.',
-          if (prof?['id'] != null) 'profile_id': prof!['id'],
+          if (destPid != null) 'profile_id': destPid,
           'data': {
             if (token != null) 'token': token,
             'documentId': _doc!['id'],
