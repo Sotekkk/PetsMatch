@@ -15,6 +15,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:PetsMatch/pages/particulier/abonnements_achats_page.dart' show CreditPacksSheet;
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
 import 'package:share_plus/share_plus.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -143,6 +144,23 @@ String _profileName(Map<String, dynamic>? p) {
   if (type.isNotEmpty && type != 'particulier' && ne.isNotEmpty) return ne;
   if (n.isNotEmpty) return n;
   return ne.isNotEmpty ? ne : 'Membre';
+}
+
+/// Libellé lisible du type de profil (badge sous le nom dans les listes).
+String? _socialTypeLabel(String? type) {
+  switch (type) {
+    case 'particulier': return null;
+    case 'eleveur': return 'Éleveur';
+    case 'association': return 'Association';
+    case 'veterinaire':
+    case 'sante': return 'Vétérinaire / Ostéo';
+    case 'education': return 'Éducateur';
+    case 'garde': return 'Pet Sitter';
+    case 'toilettage': return 'Toiletteur';
+    case 'photographe': return 'Photographe';
+    case 'pension': return 'Pension';
+    default: return (type != null && type.isNotEmpty) ? 'Professionnel' : null;
+  }
 }
 
 const _kAuthorCols = 'id, uid, firstname, lastname, avatar_url, profile_picture_url_pro, profile_type, nom, is_influencer';
@@ -764,8 +782,9 @@ class _SkeletonFeedState extends State<_SkeletonFeed>
 
 class _SuggestionsWidget extends StatefulWidget {
   final String myUid;
+  final String? myProfileId; // profil actif — scope les abonnements
   final VoidCallback onFollowed;
-  const _SuggestionsWidget({required this.myUid, required this.onFollowed});
+  const _SuggestionsWidget({required this.myUid, this.myProfileId, required this.onFollowed});
   @override
   State<_SuggestionsWidget> createState() => _SuggestionsWidgetState();
 }
@@ -773,46 +792,73 @@ class _SuggestionsWidget extends StatefulWidget {
 class _SuggestionsWidgetState extends State<_SuggestionsWidget> {
   final _supa = Supabase.instance.client;
   List<Map<String, dynamic>> _suggestions = [];
-  Set<String> _followed = {};
+  final Set<String> _followedKeys = {}; // profil id, sinon 'u:<uid>'
   bool _loading = true;
 
   @override
   void initState() { super.initState(); _load(); }
 
   Future<void> _load() async {
-    final follows = await _supa.from('follows').select('following_uid').eq('follower_uid', widget.myUid);
-    _followed = {for (final r in follows as List) r['following_uid'] as String};
-    final excludeUids = [..._followed, widget.myUid];
+    // Abonnements du profil actif (on suit des PROFILS).
+    final fBase = _supa.from('follows').select('following_uid, following_profile_id');
+    final follows = await (widget.myProfileId != null
+        ? fBase.eq('follower_profile_id', widget.myProfileId!)
+        : fBase.eq('follower_uid', widget.myUid));
+    for (final r in follows as List) {
+      final pid = (r['following_profile_id'] as String?) ?? '';
+      _followedKeys.add(pid.isNotEmpty ? pid : 'u:${r['following_uid']}');
+    }
 
     final recent = await _supa.from('posts_socialmedia')
-        .select('uid')
+        .select('uid, author_profile_id')
         .order('created_at', ascending: false)
-        .limit(100);
-    final uidsSeen = <String>{};
-    final candidateUids = <String>[];
+        .limit(120);
+
+    // Candidats = profils distincts ayant publié récemment, hors moi / déjà suivis.
+    final seen = <String>{};
+    final candidatePids = <String>[];
+    final candidateLegacyUids = <String>[];
     for (final r in recent as List) {
       final uid = r['uid'] as String;
-      if (!excludeUids.contains(uid) && uidsSeen.add(uid)) {
-        candidateUids.add(uid);
-        if (candidateUids.length >= 10) break;
-      }
+      if (uid == widget.myUid) continue;
+      final pid = (r['author_profile_id'] as String?) ?? '';
+      final key = pid.isNotEmpty ? pid : 'u:$uid';
+      if (_followedKeys.contains(key) || !seen.add(key)) continue;
+      if (pid.isNotEmpty) { candidatePids.add(pid); } else { candidateLegacyUids.add(uid); }
+      if (candidatePids.length + candidateLegacyUids.length >= 12) break;
     }
-    if (candidateUids.isEmpty) { if (mounted) setState(() => _loading = false); return; }
-    final profRows = await _supa.from('user_profiles')
-        .select('uid, firstname, lastname, avatar_url, profile_type, nom')
-        .inFilter('uid', candidateUids)
-        .eq('profile_type', 'particulier');
+    if (candidatePids.isEmpty && candidateLegacyUids.isEmpty) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+
+    final out = <Map<String, dynamic>>[];
+    if (candidatePids.isNotEmpty) {
+      final rows = await _supa.from('user_profiles')
+          .select('id, uid, firstname, lastname, avatar_url, profile_picture_url_pro, profile_type, nom')
+          .inFilter('id', candidatePids);
+      out.addAll((rows as List).cast<Map<String, dynamic>>());
+    }
+    if (candidateLegacyUids.isNotEmpty) {
+      final rows = await _supa.from('user_profiles')
+          .select('id, uid, firstname, lastname, avatar_url, profile_picture_url_pro, profile_type, nom')
+          .inFilter('uid', candidateLegacyUids)
+          .eq('profile_type', 'particulier');
+      out.addAll((rows as List).cast<Map<String, dynamic>>());
+    }
     if (mounted) {
       setState(() {
-        _suggestions = (profRows as List).cast<Map<String, dynamic>>();
+        _suggestions = out;
         _loading = false;
       });
     }
   }
 
-  Future<void> _follow(String targetUid) async {
-    await _insertFollow(widget.myUid, targetUid);
-    setState(() => _followed.add(targetUid));
+  Future<void> _follow(Map<String, dynamic> prof) async {
+    final targetUid = prof['uid'] as String;
+    final pid = prof['id'] as String?;
+    await _insertFollow(widget.myUid, targetUid, followingProfileId: pid);
+    setState(() => _followedKeys.add((pid != null && pid.isNotEmpty) ? pid : 'u:$targetUid'));
     await Future.delayed(const Duration(milliseconds: 600));
     widget.onFollowed();
   }
@@ -842,8 +888,10 @@ class _SuggestionsWidgetState extends State<_SuggestionsWidget> {
           child: Text('Suggestions · À suivre', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Colors.white)),
         ),
         ..._suggestions.map((prof) {
-          final uid = prof['uid'] as String;
-          final isFollowed = _followed.contains(uid);
+          final pid = (prof['id'] as String?) ?? '';
+          final key = pid.isNotEmpty ? pid : 'u:${prof['uid']}';
+          final isFollowed = _followedKeys.contains(key);
+          final typeLabel = _socialTypeLabel((prof['profile_type'] ?? '').toString());
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
             decoration: BoxDecoration(
@@ -855,11 +903,11 @@ class _SuggestionsWidgetState extends State<_SuggestionsWidget> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               leading: _avatarWidget(_profilePhoto(prof), 22),
               title: Text(_profileName(prof), style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white)),
-              subtitle: prof['profile_type'] == 'eleveur'
-                  ? const Text('Éleveur Pro', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: _green))
+              subtitle: typeLabel != null
+                  ? Text(typeLabel, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _green))
                   : const Text('Particulier', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white54)),
               trailing: GestureDetector(
-                onTap: isFollowed ? null : () => _follow(uid),
+                onTap: isFollowed ? null : () => _follow(prof),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
@@ -1117,24 +1165,39 @@ class _FeedListState extends State<_FeedList>
     }
   }
 
-  Future<void> _toggleFollow(String targetUid) async {
-    final isFollowing = _following.contains(targetUid);
+  Future<void> _toggleFollow(String targetUid, {String? targetProfileId}) async {
+    final isFollowing = targetProfileId != null
+        ? _followingPids.contains(targetProfileId)
+        : _following.contains(targetUid);
     setState(() {
-      if (isFollowing) { _following.remove(targetUid); }
-      else { _following.add(targetUid); }
+      if (isFollowing) {
+        _following.remove(targetUid);
+        if (targetProfileId != null) _followingPids.remove(targetProfileId);
+      } else {
+        _following.add(targetUid);
+        if (targetProfileId != null) _followingPids.add(targetProfileId);
+      }
     });
     try {
       if (isFollowing) {
-        await _supa.from('follows').delete()
-            .eq('follower_uid', widget.myUid)
-            .eq('following_uid', targetUid);
+        var d = _supa.from('follows').delete().eq('following_uid', targetUid);
+        d = widget.myProfileId != null
+            ? d.eq('follower_profile_id', widget.myProfileId!)
+            : d.eq('follower_uid', widget.myUid);
+        if (targetProfileId != null) d = d.eq('following_profile_id', targetProfileId);
+        await d;
       } else {
-        await _insertFollow(widget.myUid, targetUid);
+        await _insertFollow(widget.myUid, targetUid, followingProfileId: targetProfileId);
       }
     } catch (_) {
       setState(() {
-        if (isFollowing) { _following.add(targetUid); }
-        else { _following.remove(targetUid); }
+        if (isFollowing) {
+          _following.add(targetUid);
+          if (targetProfileId != null) _followingPids.add(targetProfileId);
+        } else {
+          _following.remove(targetUid);
+          if (targetProfileId != null) _followingPids.remove(targetProfileId);
+        }
       });
     }
   }
@@ -1185,7 +1248,7 @@ class _FeedListState extends State<_FeedList>
     }
     if (_posts.isEmpty) {
       if (widget.type == 'following') {
-        return _SuggestionsWidget(myUid: widget.myUid, onFollowed: _load);
+        return _SuggestionsWidget(myUid: widget.myUid, myProfileId: widget.myProfileId, onFollowed: _load);
       }
       return Center(child: Padding(
         padding: const EdgeInsets.all(32),
@@ -1218,7 +1281,13 @@ class _FeedListState extends State<_FeedList>
           // Profil qui a republié : son author_profile_id (ou u:<uid>).
           final reposterProfile = isRepost ? _profiles[_authorKey(post)] : null;
           // Profil de l'auteur affiché (original si repost).
-          final displayProfile = _profiles[isRepost ? _origAuthorKey(post) : _authorKey(post)];
+          final origKey = isRepost ? _origAuthorKey(post) : _authorKey(post);
+          final displayProfile = _profiles[origKey];
+          final isLegacyKey = origKey.startsWith('u:');
+          final origProfileId = isLegacyKey ? null : origKey;
+          final isFollowingAuthor = isLegacyKey
+              ? _following.contains(originalUid)
+              : _followingPids.contains(origKey);
           return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
             if (isRepost) Padding(
               padding: const EdgeInsets.only(left: 14, bottom: 6),
@@ -1233,11 +1302,11 @@ class _FeedListState extends State<_FeedList>
             post: post,
             profile: displayProfile,
             isLiked: _liked.contains(effectiveId),
-            isFollowing: _following.contains(originalUid),
+            isFollowing: isFollowingAuthor,
             isMyPost: originalUid == widget.myUid,
             myUid: widget.myUid,
             onLike: () => _toggleLike(effectiveId),
-            onFollow: () => _toggleFollow(originalUid),
+            onFollow: () => _toggleFollow(originalUid, targetProfileId: origProfileId),
             onDelete: () => _deletePost(postId),
             onComment: () => showModalBottomSheet(
               context: context,
@@ -1369,9 +1438,16 @@ class _SocialPostCardState extends State<_SocialPostCard> {
     try {
       final text = widget.post['texte']?.toString() ?? '';
       final name = _profileName(widget.profile);
-      final content = text.isNotEmpty ? '"$text"\n\n— $name sur Pets Social' : '— $name sur Pets Social';
+      // Lien vers le post : l'original si c'est un repost.
+      final shareId = (widget.post['is_repost'] == true
+              ? widget.post['original_post_id']
+              : (widget.post['_effective_id'] ?? widget.post['id']))
+          ?.toString();
+      final url = shareId != null ? '$kSiteBaseUrl/p/$shareId' : null;
+      final body = text.isNotEmpty ? '"$text"\n\n— $name sur Pets Social' : '— $name sur Pets Social';
+      final content = url != null ? '$body\n$url' : body;
       if (content.isEmpty) return;
-      await Share.share(content);
+      await Share.share(content, subject: 'Pets Social — $name');
     } catch (_) {}
   }
 
@@ -1982,6 +2058,7 @@ class _MyPostsListState extends State<_MyPostsList>
   final _supa = Supabase.instance.client;
   List<Map<String, dynamic>> _posts = [];
   Map<String, dynamic>? _myProfile;
+  Map<String, Map<String, dynamic>> _origProfiles = {}; // auteurs originaux des reposts
   bool _loading = true;
 
   @override
@@ -2006,11 +2083,45 @@ class _MyPostsListState extends State<_MyPostsList>
           : _supa.from('user_profiles')
               .select(_kAuthorCols).eq('uid', widget.myUid).eq('profile_type', 'particulier').maybeSingle();
       final results = await Future.wait([postsQ, profQ]);
+      final posts = (results[0] as List).cast<Map<String, dynamic>>();
+
+      // Reposts : on affiche le contenu et l'auteur du post ORIGINAL, pas la
+      // ligne repost (vide) sous mon nom.
+      final origIds = posts
+          .where((p) => p['is_repost'] == true && p['original_post_id'] != null)
+          .map((p) => p['original_post_id'] as String).toSet().toList();
+      final origProfiles = <String, Map<String, dynamic>>{};
+      if (origIds.isNotEmpty) {
+        final origs = await _supa.from('posts_socialmedia')
+            .select('id, uid, texte, media_url, author_profile_id').inFilter('id', origIds);
+        final byId = {for (final o in origs as List) o['id'] as String: o as Map};
+        final origPids = <String>{};
+        for (final p in posts) {
+          if (p['is_repost'] != true) continue;
+          final o = byId[p['original_post_id']];
+          if (o == null) continue;
+          p['_orig_texte']     = o['texte'];
+          p['_orig_media_url']  = o['media_url'];
+          p['_orig_author_profile_id'] = o['author_profile_id'];
+          p['original_uid']     = o['uid'];
+          final apid = (o['author_profile_id'] as String?) ?? '';
+          if (apid.isNotEmpty) origPids.add(apid);
+        }
+        if (origPids.isNotEmpty) {
+          final profs = await _supa.from('user_profiles')
+              .select(_kAuthorCols).inFilter('id', origPids.toList());
+          for (final r in profs as List) {
+            origProfiles[r['id'] as String] = Map<String, dynamic>.from(r as Map);
+          }
+        }
+      }
+
       if (mounted) {
         setState(() {
-          _posts     = (results[0] as List).cast<Map<String, dynamic>>();
-          _myProfile = results[1] as Map<String, dynamic>?;
-          _loading   = false;
+          _posts        = posts;
+          _myProfile    = results[1] as Map<String, dynamic>?;
+          _origProfiles = origProfiles;
+          _loading      = false;
         });
       }
     } catch (_) {
@@ -2119,12 +2230,26 @@ class _MyPostsListState extends State<_MyPostsList>
         separatorBuilder: (_, __) => const SizedBox(height: 14),
         itemBuilder: (_, i) {
           final post     = _posts[i];
-          final text     = post['texte']?.toString() ?? '';
-          final mediaUrl = post['media_url']?.toString();
+          final isRepost = post['is_repost'] == true;
+          final origProf = isRepost ? _origProfiles[post['_orig_author_profile_id']] : null;
+          final text     = (isRepost ? post['_orig_texte'] : post['texte'])?.toString() ?? '';
+          final mediaUrl = (isRepost ? post['_orig_media_url'] : post['media_url'])?.toString();
           final date     = post['created_at']?.toString() ?? '';
-          final myName   = _profileName(_myProfile);
-          final myPhoto  = _profilePhoto(_myProfile);
-          return Container(
+          final headName  = isRepost ? _profileName(origProf) : _profileName(_myProfile);
+          final headPhoto = isRepost ? _profilePhoto(origProf) : _profilePhoto(_myProfile);
+          final myName = headName;
+          final myPhoto = headPhoto;
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          if (isRepost) Padding(
+            padding: const EdgeInsets.only(left: 14, bottom: 6),
+            child: Row(children: const [
+              Icon(Icons.repeat_rounded, size: 13, color: _greyC),
+              SizedBox(width: 5),
+              Text('Vous avez republié',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _greyC)),
+            ]),
+          ),
+          Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
@@ -2182,24 +2307,25 @@ class _MyPostsListState extends State<_MyPostsList>
                                 if (val == 'delete') { _delete(post['id'] as String); }
                               },
                               itemBuilder: (_) => [
+                                if (!isRepost)
+                                  PopupMenuItem(
+                                      value: 'edit',
+                                      child: Row(children: [
+                                        Icon(Icons.edit_outlined,
+                                            color: _tealC, size: 18),
+                                        const SizedBox(width: 8),
+                                        const Text('Modifier',
+                                            style: TextStyle(
+                                                fontFamily: 'Galey')),
+                                      ])),
                                 PopupMenuItem(
-                                    value: 'edit',
-                                    child: Row(children: [
-                                      Icon(Icons.edit_outlined,
-                                          color: _tealC, size: 18),
-                                      const SizedBox(width: 8),
-                                      const Text('Modifier',
-                                          style: TextStyle(
-                                              fontFamily: 'Galey')),
-                                    ])),
-                                const PopupMenuItem(
                                     value: 'delete',
                                     child: Row(children: [
-                                      Icon(Icons.delete_outline,
+                                      const Icon(Icons.delete_outline,
                                           color: Colors.red, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Supprimer',
-                                          style: TextStyle(
+                                      const SizedBox(width: 8),
+                                      Text(isRepost ? 'Retirer le repost' : 'Supprimer',
+                                          style: const TextStyle(
                                               fontFamily: 'Galey',
                                               color: Colors.red)),
                                     ])),
@@ -2226,7 +2352,8 @@ class _MyPostsListState extends State<_MyPostsList>
                 ),
               ),
             ),
-          );
+          ),
+          ]);
         },
       ),
     );
