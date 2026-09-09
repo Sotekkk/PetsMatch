@@ -16,7 +16,8 @@ import 'package:PetsMatch/pages/particulier/abonnements_achats_page.dart' show C
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
-import 'package:share_plus/share_plus.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ⚠️  MULTI-PROFIL — NOTE POUR NABIL (et tout dev sur Pets Social)
@@ -1454,21 +1455,21 @@ class _SocialPostCardState extends State<_SocialPostCard> {
     }
   }
 
-  Future<void> _share() async {
-    try {
-      final text = widget.post['texte']?.toString() ?? '';
-      final name = _profileName(widget.profile);
-      // Lien vers le post : l'original si c'est un repost.
-      final shareId = (widget.post['is_repost'] == true
-              ? widget.post['original_post_id']
-              : (widget.post['_effective_id'] ?? widget.post['id']))
-          ?.toString();
-      final url = shareId != null ? '$kSiteBaseUrl/p/$shareId' : null;
-      final body = text.isNotEmpty ? '"$text"\n\n— $name sur Pets Social' : '— $name sur Pets Social';
-      final content = url != null ? '$body\n$url' : body;
-      if (content.isEmpty) return;
-      await Share.share(content, subject: 'Pets Social — $name');
-    } catch (_) {}
+  void _share() {
+    final text = widget.post['texte']?.toString() ?? '';
+    final name = _profileName(widget.profile);
+    // Lien vers le post : l'original si c'est un repost.
+    final shareId = (widget.post['is_repost'] == true
+            ? widget.post['original_post_id']
+            : (widget.post['_effective_id'] ?? widget.post['id']))
+        ?.toString();
+    final url = '$kSiteBaseUrl/p/${shareId ?? widget.post['id']}';
+    final body = text.isNotEmpty ? '"$text"\n\n— $name sur Pets Social' : '— $name sur Pets Social';
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _SocialShareSheet(text: '$body\n$url', url: url, nom: name),
+    );
   }
 
   Future<void> _repost() async {
@@ -5232,4 +5233,104 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
       },
     );
   }
+}
+
+// ─── Feuille de partage (même approche que le feed des annonces : liens directs,
+// pas de Share.share OS qui plante sur certains appareils) ────────────────────
+
+class _SocialShareSheet extends StatelessWidget {
+  final String text, url, nom;
+  const _SocialShareSheet({required this.text, required this.url, required this.nom});
+
+  Future<void> _copy(BuildContext ctx) async {
+    await Clipboard.setData(ClipboardData(text: url));
+    if (ctx.mounted) {
+      Navigator.pop(ctx);
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        const SnackBar(content: Text('Lien copié !'), duration: Duration(seconds: 2)));
+    }
+  }
+
+  Future<void> _launch(BuildContext ctx, Uri uri) async {
+    try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
+    if (ctx.mounted) Navigator.pop(ctx);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final encoded  = Uri.encodeComponent(text);
+    final waUrl    = Uri.parse('https://wa.me/?text=$encoded');
+    final smsUrl   = Uri.parse('sms:?body=$encoded');
+    final emailUrl = Uri.parse('mailto:?subject=${Uri.encodeComponent('Pets Social — $nom')}&body=$encoded');
+    final safe     = MediaQuery.of(context).padding;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF102A2E),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.fromLTRB(24, 12, 24, safe.bottom + 24),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 40, height: 4,
+          decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 16),
+        Text('Partager la publication',
+          style: const TextStyle(color: Colors.white, fontFamily: 'Galey',
+              fontWeight: FontWeight.w700, fontSize: 15),
+          maxLines: 1, overflow: TextOverflow.ellipsis),
+        const SizedBox(height: 20),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+          _SocialShareBtn(
+            icon: const Icon(Icons.link_rounded, color: Colors.white, size: 24),
+            bg: const Color(0xFF3A3A4E),
+            label: 'Copier le lien',
+            onTap: () => _copy(context),
+          ),
+          _SocialShareBtn(
+            icon: const FaIcon(FontAwesomeIcons.whatsapp, color: Colors.white, size: 24),
+            bg: const Color(0xFF25D366),
+            label: 'WhatsApp',
+            onTap: () => _launch(context, waUrl),
+          ),
+          _SocialShareBtn(
+            icon: const Icon(Icons.sms_outlined, color: Colors.white, size: 24),
+            bg: const Color(0xFF4A90E2),
+            label: 'SMS',
+            onTap: () => _launch(context, smsUrl),
+          ),
+          _SocialShareBtn(
+            icon: const Icon(Icons.mail_outline_rounded, color: Colors.white, size: 24),
+            bg: const Color(0xFFEA4335),
+            label: 'Email',
+            onTap: () => _launch(context, emailUrl),
+          ),
+        ]),
+      ]),
+    );
+  }
+}
+
+class _SocialShareBtn extends StatelessWidget {
+  final Widget icon;
+  final Color bg;
+  final String label;
+  final VoidCallback onTap;
+  const _SocialShareBtn({required this.icon, required this.bg, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    child: Column(mainAxisSize: MainAxisSize.min, children: [
+      Container(
+        width: 56, height: 56,
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(16)),
+        child: Center(child: icon),
+      ),
+      const SizedBox(height: 6),
+      SizedBox(width: 60,
+        child: Text(label,
+          style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'Galey'),
+          textAlign: TextAlign.center, maxLines: 2)),
+    ]),
+  );
 }
