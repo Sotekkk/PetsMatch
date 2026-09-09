@@ -32,9 +32,12 @@ import 'package:share_plus/share_plus.dart';
 //  • Lecture : résoudre l'auteur par `author_profile_id` (clé `_authorKey`),
 //    JAMAIS par `uid` seul — deux profils d'un même uid se confondraient
 //    (ex. « Angelique » particulier vs « Pomsky de la Luna » éleveur).
-//  • « Mon profil / mes posts / mes abonnés / notifs » = scopés au profil actif
-//    (`_myProfileId`), pas à l'uid.
-//  • Les cosmétiques (`user_cosmetics`) restent par uid (porte-monnaie global).
+//  • « Mon profil / mes posts / mes abonnés / notifs / favoris » = scopés au
+//    profil actif (`_myProfileId`), pas à l'uid.
+//  • Favoris : `post_favorites.author_profile_id`.
+//  • Cosmétiques : `owned` reste global (acheté une fois) mais l'équipé est par
+//    profil → `user_cosmetics.active_by_profile` = { "<profile_id>": "<id>" }
+//    (repli `active_value` = profil principal / lignes anciennes).
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
@@ -284,21 +287,24 @@ Future<Map<String, Map<String, dynamic>>> _resolveAuthors(List<dynamic> rows) as
       out.putIfAbsent('u:${r['uid']}', () => Map<String, dynamic>.from(r as Map));
     }
   }
-  // Anneaux d'avatar (cosmetics) — par uid.
-  final uidByKey = {for (final e in out.entries) e.key: e.value['uid'] as String};
-  final uids = uidByKey.values.toSet().toList();
+  // Anneau d'avatar équipé — par PROFIL (active_by_profile[id]), repli
+  // active_value pour le profil principal / les lignes anciennes.
+  final uids = out.values.map((v) => v['uid'] as String).toSet().toList();
   if (uids.isNotEmpty) {
     try {
       final cosmetics = await supa.from('user_cosmetics')
-          .select('uid, active_value')
+          .select('uid, active_value, active_by_profile')
           .inFilter('uid', uids)
           .eq('cosmetic_type', 'avatar_ring');
-      final ringByUid = {
-        for (final c in cosmetics as List)
-          if (c['active_value'] != null) c['uid'] as String: c['active_value'] as String,
-      };
+      final byUid = {for (final c in cosmetics as List) c['uid'] as String: c as Map};
       for (final e in out.entries) {
-        final ring = ringByUid[e.value['uid']];
+        final c = byUid[e.value['uid']];
+        if (c == null) continue;
+        final abp = (c['active_by_profile'] as Map?) ?? {};
+        // e.key = profil id (ou 'u:<uid>') → on ne connaît le profil que si e.key
+        // n'est pas legacy.
+        final ring = (e.key.startsWith('u:') ? null : abp[e.key] as String?)
+            ?? c['active_value'] as String?;
         if (ring != null) e.value['_ring'] = ring;
       }
     } catch (_) {}
@@ -1280,8 +1286,11 @@ class _SocialPostCardState extends State<_SocialPostCard> {
 
   Future<void> _loadSaved() async {
     try {
-      final row = await _supa.from('post_favorites')
-          .select('id').eq('uid', widget.myUid).eq('post_id', _effectivePostId).maybeSingle();
+      final pid = await _activeAuthorProfileId(widget.myUid);
+      var q = _supa.from('post_favorites').select('id')
+          .eq('uid', widget.myUid).eq('post_id', _effectivePostId);
+      if (pid != null) q = q.eq('author_profile_id', pid);
+      final row = await q.maybeSingle();
       if (mounted) setState(() => _isSaved = row != null);
     } catch (_) {}
   }
@@ -1306,10 +1315,17 @@ class _SocialPostCardState extends State<_SocialPostCard> {
     final newVal = !_isSaved;
     setState(() => _isSaved = newVal);
     try {
+      final pid = await _activeAuthorProfileId(widget.myUid);
       if (newVal) {
-        await _supa.from('post_favorites').insert({'uid': widget.myUid, 'post_id': eid});
+        await _supa.from('post_favorites').insert({
+          'uid': widget.myUid, 'post_id': eid,
+          if (pid != null) 'author_profile_id': pid,
+        });
       } else {
-        await _supa.from('post_favorites').delete().eq('uid', widget.myUid).eq('post_id', eid);
+        var d = _supa.from('post_favorites').delete()
+            .eq('uid', widget.myUid).eq('post_id', eid);
+        if (pid != null) d = d.eq('author_profile_id', pid);
+        await d;
       }
     } catch (_) {
       if (mounted) setState(() => _isSaved = !newVal);
@@ -3650,6 +3666,7 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
       backgroundColor: Colors.transparent,
       builder: (_) => _CosmeticsShopSheet(
         myUid: widget.myUid,
+        myProfileId: _effectiveProfileId,
         ownedRings: _ownedRings,
         ownedBanners: _ownedBanners,
         activeRing: _activeRing,
@@ -3700,7 +3717,7 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
       followersQ,
       followingQ,
       _supa.from('user_cosmetics')
-          .select('cosmetic_type, active_value, owned')
+          .select('cosmetic_type, active_value, active_by_profile, owned')
           .eq('uid', widget.targetUid),
     ]);
 
@@ -3713,7 +3730,9 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
     List<String> ownedRings = []; List<String> ownedBanners = [];
     for (final c in (results[4] as List)) {
       final t = c['cosmetic_type'] as String;
-      final val = c['active_value'] as String?;
+      final abp = (c['active_by_profile'] as Map?) ?? {};
+      // Cosmétique équipé DU profil affiché (repli active_value = profil principal).
+      final val = (tpid != null ? abp[tpid] as String? : null) ?? c['active_value'] as String?;
       final owned = (c['owned'] as List?)?.cast<String>() ?? [];
       if (t == 'avatar_ring')    { ring = val; ownedRings = owned; }
       if (t == 'profile_banner') { banner = val; ownedBanners = owned; }
@@ -3758,12 +3777,13 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
       } catch (_) {}
     }
 
-    // Favoris (seulement si c'est mon profil)
+    // Favoris du profil actif (seulement sur mon profil)
     List<Map<String, dynamic>> savedPosts = [];
     if (widget.targetUid == widget.myUid) {
       try {
-        final favRows = await _supa.from('post_favorites')
-            .select('post_id').eq('uid', widget.myUid);
+        var favQ = _supa.from('post_favorites').select('post_id').eq('uid', widget.myUid);
+        if (mpid != null) favQ = favQ.eq('author_profile_id', mpid);
+        final favRows = await favQ;
         final postIds = (favRows as List).map((r) => r['post_id'] as String).toList();
         if (postIds.isNotEmpty) {
           final favPosts = await _supa.from('posts_socialmedia')
@@ -4392,7 +4412,7 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
       _supa.from('follows').select('follower_uid').eq('follower_uid', widget.myUid).eq('following_uid', uid).maybeSingle(),
       _supa.from('post_likes').select('uid').eq('post_id', _effectiveId),
       _supa.from('post_comments').select('id').eq('post_id', _effectiveId),
-      _supa.from('user_cosmetics').select('cosmetic_type, active_value')
+      _supa.from('user_cosmetics').select('active_value, active_by_profile')
           .eq('uid', uid).eq('cosmetic_type', 'avatar_ring').maybeSingle(),
     ]);
     if (mounted) {
@@ -4400,9 +4420,10 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
       widget.post['comment_count'] = (results[4] as List).length;
       final prof = (results[0] as Map?)?.cast<String, dynamic>();
       final cosmeticRow = results[5] as Map?;
-      if (prof != null && cosmeticRow?['active_value'] != null) {
-        prof['_ring'] = cosmeticRow!['active_value'] as String;
-      }
+      final abp = (cosmeticRow?['active_by_profile'] as Map?) ?? {};
+      final ring = (authorPid != null ? abp[authorPid] as String? : null)
+          ?? cosmeticRow?['active_value'] as String?;
+      if (prof != null && ring != null) prof['_ring'] = ring;
       setState(() {
         _profile     = prof;
         _isLiked     = results[1] != null;
@@ -4620,13 +4641,14 @@ typedef _OnEquip = void Function(
 
 class _CosmeticsShopSheet extends StatefulWidget {
   final String myUid;
+  final String? myProfileId; // profil qui équipe (active_by_profile)
   final List<String> ownedRings;
   final List<String> ownedBanners;
   final String? activeRing;
   final String? activeBanner;
   final _OnEquip onEquip;
   const _CosmeticsShopSheet({
-    required this.myUid, required this.ownedRings, required this.ownedBanners,
+    required this.myUid, this.myProfileId, required this.ownedRings, required this.ownedBanners,
     required this.activeRing, required this.activeBanner, required this.onEquip,
   });
   @override
@@ -4644,6 +4666,30 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
   late String? _activeBanner;
   int _solde = 0;
   List<Map<String, dynamic>> _packs = [];
+
+  /// Écrit le cosmétique équipé du profil courant. `owned` reste global.
+  /// `active_by_profile[<profileId>] = value` ; `active_value` suivi si on est
+  /// sur le profil principal (myProfileId nul) pour la compatibilité.
+  Future<void> _persistActive(String type, String? value, List<String> owned) async {
+    final pid = widget.myProfileId;
+    Map<String, dynamic> abp = {};
+    if (pid != null) {
+      try {
+        final row = await _supa.from('user_cosmetics')
+            .select('active_by_profile')
+            .eq('uid', widget.myUid).eq('cosmetic_type', type).maybeSingle();
+        abp = Map<String, dynamic>.from((row?['active_by_profile'] as Map?) ?? {});
+      } catch (_) {}
+      if (value == null) { abp.remove(pid); } else { abp[pid] = value; }
+    }
+    await _supa.from('user_cosmetics').upsert({
+      'uid': widget.myUid, 'cosmetic_type': type,
+      if (pid == null) 'active_value': value,
+      'active_by_profile': abp,
+      'owned': owned,
+      'updated_at': DateTime.now().toIso8601String(),
+    }, onConflict: 'uid,cosmetic_type');
+  }
 
   @override
   void initState() {
@@ -4791,11 +4837,7 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
           }
           return;
         }
-        await _supa.from('user_cosmetics').upsert({
-          'uid': widget.myUid, 'cosmetic_type': type,
-          'active_value': id, 'owned': newOwned,
-          'updated_at': DateTime.now().toIso8601String(),
-        }, onConflict: 'uid,cosmetic_type');
+        await _persistActive(type, id, newOwned);
         if (mounted) {
           setState(() {
             if (isRing) { _ownedRings = newOwned; _activeRing = id; }
@@ -4816,11 +4858,7 @@ class _CosmeticsShopSheetState extends State<_CosmeticsShopSheet>
       final isActive = isRing ? _activeRing == id : _activeBanner == id;
       final newActive = isActive ? null : id;
       try {
-        await _supa.from('user_cosmetics').upsert({
-          'uid': widget.myUid, 'cosmetic_type': type,
-          'active_value': newActive, 'owned': owned,
-          'updated_at': DateTime.now().toIso8601String(),
-        }, onConflict: 'uid,cosmetic_type');
+        await _persistActive(type, newActive, owned);
         if (mounted) {
           setState(() {
             if (isRing) { _activeRing = newActive; }
