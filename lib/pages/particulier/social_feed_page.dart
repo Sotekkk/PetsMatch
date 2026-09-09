@@ -13,6 +13,8 @@ import 'package:intl/intl.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import 'package:PetsMatch/pages/particulier/abonnements_achats_page.dart' show CreditPacksSheet;
+import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/services/plan_service.dart';
 import 'package:share_plus/share_plus.dart';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
@@ -111,13 +113,16 @@ const _cosmeticCatalog = <Map<String, Object>>[
 
 String _profileName(Map<String, dynamic>? p) {
   if (p == null) return 'Membre';
+  final ne = (p['nom'] ?? '').toString().trim();
   final n = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+  // Profil pro / éleveur / association : on affiche le nom de la structure.
+  final type = (p['profile_type'] ?? '').toString();
+  if (type.isNotEmpty && type != 'particulier' && ne.isNotEmpty) return ne;
   if (n.isNotEmpty) return n;
-  final ne = (p['nom'] ?? '').toString();
   return ne.isNotEmpty ? ne : 'Membre';
 }
 
-const _kAuthorCols = 'id, uid, firstname, lastname, avatar_url, profile_type, nom, is_influencer';
+const _kAuthorCols = 'id, uid, firstname, lastname, avatar_url, profile_picture_url_pro, profile_type, nom, is_influencer';
 
 /// Id du profil PARTICULIER d'un uid — identité utilisée dans le réseau social,
 /// jamais le profil pro / is_main. Mémoïsé (les inserts like/follow l'appellent
@@ -142,9 +147,63 @@ Future<String?> _particulierProfileId(String uid) async {
   }
 }
 
-/// Insère un like en renseignant le profil particulier du liker.
+/// Id du profil **actif** de l'utilisateur — c'est son identité dans Pets
+/// Social pour ce qu'il publie (post, commentaire, like, suivi).
+///
+/// - profil particulier → toujours autorisé ;
+/// - profil éleveur / pro / association → autorisé (l'accès à Pets Social est
+///   déjà réservé aux comptes premium à l'entrée de la page) ;
+/// - repli : profil particulier de l'uid (compte non premium, ou profil actif
+///   introuvable).
+final Map<String, bool> _socialProAllowedCache = {};
+
+/// Un profil non-particulier ne peut publier dans Pets Social que si le compte
+/// est premium (l'accès à la page l'exige déjà, ce contrôle est une sécurité).
+Future<bool> _socialProAllowed(String uid) async {
+  if (_socialProAllowedCache.containsKey(uid)) return _socialProAllowedCache[uid]!;
+  try {
+    final code = await PlanService.getPlanCode(uid);
+    final ok = code == 'premium';
+    _socialProAllowedCache[uid] = ok;
+    return ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+Future<String?> _activeAuthorProfileId(String uid) async {
+  if (uid.isEmpty) return null;
+  final activeId = User_Info.activeProfileId;
+  final activeType = User_Info.activeType;
+  try {
+    if (activeType.isNotEmpty && activeType != 'particulier') {
+      // Profil pro / éleveur / association : publie sous ce profil seulement si
+      // le compte est premium — sinon repli sur le profil particulier.
+      if (await _socialProAllowed(uid)) {
+        if (activeId.isNotEmpty) {
+          final r = await Supabase.instance.client
+              .from('user_profiles').select('id').eq('id', activeId).maybeSingle();
+          if (r != null) return r['id'] as String?;
+        } else {
+          final rows = await Supabase.instance.client
+              .from('user_profiles').select('id')
+              .eq('uid', uid).eq('is_main', true).limit(1);
+          if ((rows as List).isNotEmpty) return rows.first['id'] as String?;
+        }
+      }
+    } else if (activeId.isNotEmpty) {
+      // Profil particulier secondaire explicite.
+      final r = await Supabase.instance.client
+          .from('user_profiles').select('id, profile_type').eq('id', activeId).maybeSingle();
+      if (r != null && r['profile_type'] == 'particulier') return r['id'] as String?;
+    }
+  } catch (_) {}
+  return _particulierProfileId(uid);
+}
+
+/// Insère un like en renseignant le profil actif du liker.
 Future<void> _insertLike(String postId, String uid) async {
-  final pid = await _particulierProfileId(uid);
+  final pid = await _activeAuthorProfileId(uid);
   await Supabase.instance.client.from('post_likes').insert({
     'post_id': postId,
     'uid': uid,
@@ -152,10 +211,11 @@ Future<void> _insertLike(String postId, String uid) async {
   });
 }
 
-/// Insère une relation de suivi en renseignant les profils particulier des
-/// deux parties.
+/// Insère une relation de suivi. Le suiveur est renseigné avec SON profil
+/// actif ; la cible avec son profil particulier (identité d'affichage par
+/// défaut, résolue ensuite via l'auteur des posts).
 Future<void> _insertFollow(String followerUid, String followingUid) async {
-  final fp = await _particulierProfileId(followerUid);
+  final fp = await _activeAuthorProfileId(followerUid);
   final tp = await _particulierProfileId(followingUid);
   await Supabase.instance.client.from('follows').insert({
     'follower_uid': followerUid,
@@ -213,8 +273,18 @@ Future<Map<String, Map<String, dynamic>>> _resolveAuthors(List<dynamic> rows) as
   return out;
 }
 
-String? _profilePhoto(Map<String, dynamic>? p) =>
-    p?['avatar_url']?.toString();
+String? _profilePhoto(Map<String, dynamic>? p) {
+  if (p == null) return null;
+  final type = (p['profile_type'] ?? '').toString();
+  final pro = p['profile_picture_url_pro']?.toString();
+  final av  = p['avatar_url']?.toString();
+  // Profil pro / éleveur : photo « pro » d'abord (comme le bandeau de menu) ;
+  // particulier : avatar. Repli sur l'autre si vide.
+  if (type.isNotEmpty && type != 'particulier') {
+    return (pro != null && pro.isNotEmpty) ? pro : av;
+  }
+  return (av != null && av.isNotEmpty) ? av : pro;
+}
 
 List<String> _mediaUrls(String? raw) {
   if (raw == null || raw.isEmpty) return [];
@@ -1271,8 +1341,10 @@ class _SocialPostCardState extends State<_SocialPostCard> {
         // Si c'est déjà un repost, pointer vers l'original (pas un repost de repost)
         final origId  = orig['is_repost'] == true ? (orig['original_post_id'] as String) : (orig['id'] as String);
         final origUid = orig['is_repost'] == true ? (orig['original_uid'] as String) : (orig['uid'] as String);
+        final myPid = await _activeAuthorProfileId(widget.myUid);
         await _supa.from('posts_socialmedia').insert({
           'uid': widget.myUid,
+          if (myPid != null) 'author_profile_id': myPid,
           'texte': orig['texte'],
           'media_url': orig['media_url'],
           'is_repost': true,
@@ -2360,7 +2432,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   void initState() {
     super.initState();
     _load();
-    _particulierProfileId(widget.myUid).then((id) { if (mounted) _myProfileId = id; });
+    _activeAuthorProfileId(widget.myUid).then((id) { if (mounted) _myProfileId = id; });
   }
 
   @override
@@ -2452,7 +2524,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     if (text.isEmpty || _sending) return;
     setState(() => _sending = true);
     try {
-      final pid = _myProfileId ?? await _particulierProfileId(widget.myUid);
+      final pid = _myProfileId ?? await _activeAuthorProfileId(widget.myUid);
       final inserted = await _supa
           .from('post_comments')
           .insert({
@@ -2924,6 +2996,8 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   bool  _posting = false;
   int   _charCount = 0;
   String? _myProfileId;
+  String? _myProfileName;
+  String? _myProfileType;
 
   static const _maxChars = 2000;
 
@@ -2931,7 +3005,20 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   void initState() {
     super.initState();
     _ctrl.addListener(() { if (mounted) setState(() => _charCount = _ctrl.text.length); });
-    _particulierProfileId(widget.myUid).then((id) { if (mounted) _myProfileId = id; });
+    _activeAuthorProfileId(widget.myUid).then((id) async {
+      if (!mounted || id == null) return;
+      _myProfileId = id;
+      try {
+        final r = await _supa.from('user_profiles')
+            .select('firstname, lastname, nom, profile_type').eq('id', id).maybeSingle();
+        if (mounted && r != null) {
+          setState(() {
+            _myProfileType = r['profile_type'] as String?;
+            _myProfileName = _profileName(Map<String, dynamic>.from(r));
+          });
+        }
+      } catch (_) {}
+    });
   }
 
   @override
@@ -2975,7 +3062,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
           : urls.length == 1
               ? urls.first
               : jsonEncode(urls);
-      final pid = _myProfileId ?? await _particulierProfileId(widget.myUid);
+      final pid = _myProfileId ?? await _activeAuthorProfileId(widget.myUid);
       await _supa.from('posts_socialmedia').insert({
         'uid': widget.myUid,
         if (pid != null) 'author_profile_id': pid,
@@ -3064,6 +3151,25 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
               ),
           ]),
         ),
+        if (_myProfileName != null) ...[
+          const SizedBox(height: 10),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(children: [
+              Icon(
+                _myProfileType != null && _myProfileType != 'particulier'
+                    ? Icons.storefront_outlined : Icons.person_outline,
+                size: 15, color: Colors.white60,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text('Publier en tant que $_myProfileName',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.white60)),
+              ),
+            ]),
+          ),
+        ],
         const SizedBox(height: 16),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
