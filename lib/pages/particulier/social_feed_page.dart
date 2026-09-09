@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
@@ -243,29 +244,95 @@ Future<String?> _activeAuthorProfileId(String uid) async {
   return _particulierProfileId(uid);
 }
 
-/// Insère un like en renseignant le profil actif du liker.
+/// Insère un like et envoie une push notif à l'auteur du post.
 Future<void> _insertLike(String postId, String uid) async {
+  final supa = Supabase.instance.client;
   final pid = await _activeAuthorProfileId(uid);
-  await Supabase.instance.client.from('post_likes').insert({
+  await supa.from('post_likes').insert({
     'post_id': postId,
     'uid': uid,
     if (pid != null) 'author_profile_id': pid,
   });
+  // Notification push — fire-and-forget, erreurs silencieuses
+  _sendSocialNotif(
+    supa: supa,
+    actorUid: uid,
+    postId: postId,
+    type: 'social_like',
+    titleSuffix: 'a aimé votre post',
+    body: 'Votre publication vient de recevoir un nouveau like ❤️',
+  );
 }
 
-/// Insère une relation de suivi. Le suiveur = SON profil actif ; la cible =
-/// [followingProfileId] si fourni (on suit un profil pro précis), sinon son
-/// profil particulier.
+/// Envoie une notification sociale vers l'auteur du post (likes/commentaires)
+/// ou la personne ciblée (follows). Fire-and-forget.
+void _sendSocialNotif({
+  required SupabaseClient supa,
+  required String actorUid,
+  String? postId,
+  String? targetUid,
+  required String type,
+  required String titleSuffix,
+  required String body,
+}) async {
+  try {
+    // Récupérer le destinataire depuis le post si pas de targetUid direct
+    String? recipientUid = targetUid;
+    if (recipientUid == null && postId != null) {
+      final row = await supa
+          .from('posts_socialmedia')
+          .select('uid')
+          .eq('id', postId)
+          .maybeSingle();
+      recipientUid = row?['uid'] as String?;
+    }
+    if (recipientUid == null || recipientUid == actorUid) return;
+
+    // Nom de la personne qui agit
+    final actorRow = await supa
+        .from('user_profiles')
+        .select('firstname, lastname')
+        .eq('uid', actorUid)
+        .limit(1)
+        .maybeSingle();
+    final actorName = actorRow != null
+        ? '${actorRow['firstname'] ?? ''} ${actorRow['lastname'] ?? ''}'.trim()
+        : 'Quelqu\'un';
+
+    await supa.from('notifications').insert({
+      'uid': recipientUid,
+      'type': type,
+      'title': '$actorName $titleSuffix',
+      'body': body,
+      'data': {
+        if (postId != null) 'post_id': postId,
+        if (targetUid != null) 'actor_uid': actorUid,
+      },
+      'read': false,
+    });
+  } catch (_) {}
+}
+
+/// Insère une relation de suivi et envoie une push notif à la personne suivie.
 Future<void> _insertFollow(String followerUid, String followingUid,
     {String? followingProfileId}) async {
+  final supa = Supabase.instance.client;
   final fp = await _activeAuthorProfileId(followerUid);
   final tp = followingProfileId ?? await _particulierProfileId(followingUid);
-  await Supabase.instance.client.from('follows').insert({
+  await supa.from('follows').insert({
     'follower_uid': followerUid,
     'following_uid': followingUid,
     if (fp != null) 'follower_profile_id': fp,
     if (tp != null) 'following_profile_id': tp,
   });
+  _sendSocialNotif(
+    supa: supa,
+    actorUid: followerUid,
+    targetUid: followingUid,
+    type: 'social_follow',
+    titleSuffix: 'vous suit maintenant',
+    body: 'Découvrez son profil sur Pets Social 🐾',
+  );
 }
 
 /// Clé du profil AUTEUR d'une ligne (post / commentaire / repost). Pour un
@@ -1336,6 +1403,7 @@ class _FeedListState extends State<_FeedList>
               builder: (_) => _CommentsSheet(
                 postId: effectiveId,
                 myUid: widget.myUid,
+                postAuthorUid: originalUid,
                 onCommentAdded: () => setState(() {
                   final idx = _posts.indexWhere((p) => p['id'] == postId);
                   if (idx >= 0) {
@@ -2531,19 +2599,22 @@ class _ImagesDisplayState extends State<_ImagesDisplay> {
           builder: (_) => _PhotoViewScreen(urls: widget.urls, initialIndex: 0))),
         child: ClipRRect(
           borderRadius: radius,
-          child: CachedNetworkImage(
-            imageUrl: widget.urls.first,
-            width: double.infinity,
-            fit: BoxFit.cover,
-            placeholder: (_, __) => Container(
-              height: 260,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(colors: [Color(0xFFD4EDE8), Color(0xFFD8EDCC)])),
-              child: const Center(child: CircularProgressIndicator(color: _tealC, strokeWidth: 2)),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 400),
+            child: CachedNetworkImage(
+              imageUrl: widget.urls.first,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              placeholder: (_, __) => Container(
+                height: 280,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(colors: [Color(0xFFD4EDE8), Color(0xFFD8EDCC)])),
+                child: const Center(child: CircularProgressIndicator(color: _tealC, strokeWidth: 2)),
+              ),
+              errorWidget: (_, __, ___) => Container(
+                height: 280, color: const Color(0xFFF4F6F8),
+                child: const Icon(Icons.broken_image_outlined, color: _greyC, size: 40)),
             ),
-            errorWidget: (_, __, ___) => Container(
-              height: 260, color: const Color(0xFFF4F6F8),
-              child: const Icon(Icons.broken_image_outlined, color: _greyC, size: 40)),
           ),
         ),
       );
@@ -2614,13 +2685,40 @@ class _PhotoViewScreenState extends State<_PhotoViewScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: Colors.black,
-        iconTheme: const IconThemeData(color: Colors.white),
-        title: widget.urls.length > 1
-            ? Text('${_page + 1} / ${widget.urls.length}',
-                style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 14))
-            : null,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+        flexibleSpace: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(children: [
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+                ),
+              ),
+              const Spacer(),
+              if (widget.urls.length > 1)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text('${_page + 1} / ${widget.urls.length}',
+                      style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+                ),
+            ]),
+          ),
+        ),
       ),
       body: PageView.builder(
         controller: PageController(initialPage: widget.initialIndex),
@@ -2630,6 +2728,7 @@ class _PhotoViewScreenState extends State<_PhotoViewScreen> {
           imageProvider: CachedNetworkImageProvider(widget.urls[i]),
           minScale: PhotoViewComputedScale.contained,
           maxScale: PhotoViewComputedScale.covered * 4,
+          basePosition: Alignment.center,
           backgroundDecoration: const BoxDecoration(color: Colors.black),
           loadingBuilder: (_, __) => const Center(
               child: CircularProgressIndicator(color: Colors.white54, strokeWidth: 2)),
@@ -2646,10 +2745,12 @@ class _PhotoViewScreenState extends State<_PhotoViewScreen> {
 class _CommentsSheet extends StatefulWidget {
   final String postId;
   final String myUid;
+  final String postAuthorUid;
   final VoidCallback onCommentAdded;
   const _CommentsSheet(
       {required this.postId,
       required this.myUid,
+      required this.postAuthorUid,
       required this.onCommentAdded});
   @override
   State<_CommentsSheet> createState() => _CommentsSheetState();
@@ -2785,6 +2886,16 @@ class _CommentsSheetState extends State<_CommentsSheet> {
           _replyToId = null;
         });
       }
+      // Notification push à l'auteur du post — fire-and-forget
+      _sendSocialNotif(
+        supa: _supa,
+        actorUid: widget.myUid,
+        postId: widget.postId,
+        targetUid: widget.postAuthorUid,
+        type: 'social_comment',
+        titleSuffix: 'a commenté votre post',
+        body: text.length > 60 ? '${text.substring(0, 60)}…' : text,
+      );
     } catch (_) {
       if (mounted) setState(() => _sending = false);
     }
@@ -3266,16 +3377,53 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   Future<void> _pickImages(ImageSource source) async {
     if (source == ImageSource.camera) {
       final xFile = await ImagePicker()
-          .pickImage(source: ImageSource.camera, imageQuality: 80, maxWidth: 1080);
-      if (xFile != null && mounted) setState(() => _images.add(File(xFile.path)));
+          .pickImage(source: ImageSource.camera, imageQuality: 90, maxWidth: 1080);
+      if (xFile == null || !mounted) return;
+      // Ouvre le recadrage immédiatement après la prise de vue
+      final cropped = await _cropImage(xFile.path);
+      if (cropped != null && mounted) setState(() => _images.add(File(cropped.path)));
     } else {
       final files = await ImagePicker()
-          .pickMultiImage(imageQuality: 80, maxWidth: 1080);
+          .pickMultiImage(imageQuality: 90, maxWidth: 1080);
       if (files.isNotEmpty && mounted) {
+        // Ajout direct — le crop est accessible sur chaque miniature
         setState(() => _images.addAll(files.map((f) => File(f.path))));
       }
     }
   }
+
+  Future<CroppedFile?> _cropImage(String sourcePath) => ImageCropper().cropImage(
+    sourcePath: sourcePath,
+    uiSettings: [
+      AndroidUiSettings(
+        toolbarTitle: 'Recadrer',
+        toolbarColor: const Color(0xFF0C3535),
+        toolbarWidgetColor: Colors.white,
+        activeControlsWidgetColor: const Color(0xFF6E9E57),
+        initAspectRatio: CropAspectRatioPreset.square,
+        lockAspectRatio: false,
+        hideBottomControls: false,
+        aspectRatioPresets: [
+          CropAspectRatioPreset.original,
+          CropAspectRatioPreset.square,
+          CropAspectRatioPreset.ratio4x3,
+          CropAspectRatioPreset.ratio16x9,
+        ],
+      ),
+      IOSUiSettings(
+        title: 'Recadrer',
+        aspectRatioLockEnabled: false,
+        resetAspectRatioEnabled: true,
+        aspectRatioPickerButtonHidden: false,
+        aspectRatioPresets: [
+          CropAspectRatioPreset.original,
+          CropAspectRatioPreset.square,
+          CropAspectRatioPreset.ratio4x3,
+          CropAspectRatioPreset.ratio16x9,
+        ],
+      ),
+    ],
+  );
 
   Future<void> _post() async {
     final text = _ctrl.text.trim();
@@ -3324,26 +3472,33 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
     }
   }
 
+  int _imgPage = 0;
+
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    final bottom   = MediaQuery.of(context).viewInsets.bottom;
+    final hasImgs  = _images.isNotEmpty;
+
     return Container(
       margin: const EdgeInsets.only(top: 40),
       decoration: const BoxDecoration(
         color: Color(0xFF0C3535),
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      padding: EdgeInsets.only(bottom: bottom + 16),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
+
+        // ── Handle ───────────────────────────────────────────────
         const SizedBox(height: 12),
         Container(
-          width: 40, height: 4,
+          width: 36, height: 4,
           decoration: BoxDecoration(
             gradient: const LinearGradient(colors: [_tealC, _green]),
             borderRadius: BorderRadius.circular(2),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
+
+        // ── Header : titre + bouton Publier ──────────────────────
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(children: [
@@ -3351,141 +3506,197 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
               shaderCallback: (b) =>
                   const LinearGradient(colors: [_tealC, _green]).createShader(b),
               child: const Text('Nouvelle publication',
-                  style: TextStyle(
-                      fontFamily: 'Galey',
-                      fontWeight: FontWeight.w700,
-                      fontSize: 17,
-                      color: Colors.white)),
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17, color: Colors.white)),
             ),
             const Spacer(),
             if (_posting)
-              const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white54))
+              const SizedBox(width: 22, height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54))
             else
               GestureDetector(
                 onTap: _post,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(colors: [_tealC, _green]),
                     borderRadius: BorderRadius.circular(22),
-                    boxShadow: [
-                      BoxShadow(
-                          color: _tealC.withValues(alpha: 0.4),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4))
-                    ],
+                    boxShadow: [BoxShadow(color: _tealC.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 4))],
                   ),
                   child: const Text('Publier',
-                      style: TextStyle(
-                          fontFamily: 'Galey',
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                          color: Colors.white)),
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white)),
                 ),
               ),
           ]),
         ),
-        if (_myProfileName != null) ...[
-          const SizedBox(height: 10),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(children: [
-              Icon(
-                _myProfileType != null && _myProfileType != 'particulier'
-                    ? Icons.storefront_outlined : Icons.person_outline,
-                size: 15, color: Colors.white60,
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text('Publier en tant que $_myProfileName',
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.white60)),
-              ),
-            ]),
-          ),
-        ],
-        const SizedBox(height: 16),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-              child: TextField(
-                controller: _ctrl,
-                maxLines: 10,
-                minLines: 6,
-                maxLength: _maxChars,
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: 'Partagez quelque chose avec la communauté...',
-                  hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.45)),
-                  filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.10),
-                  counterStyle: TextStyle(
-                      fontFamily: 'Galey', fontSize: 11,
-                      color: _charCount > _maxChars * 0.9 ? Colors.orangeAccent : Colors.white38),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15))),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12))),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _tealC, width: 1.5)),
-                ),
-              ),
-            ),
-          ),
-        ),
-        // ── Barre d'icônes médias ─────────────────────────────────
-        const SizedBox(height: 10),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(children: [
-            _iconBtn(Icons.photo_library_outlined, 'Galerie', () => _pickImages(ImageSource.gallery)),
-            const SizedBox(width: 10),
-            _iconBtn(Icons.camera_alt_outlined, 'Photo', () => _pickImages(ImageSource.camera)),
-            const Spacer(),
-            if (_images.isNotEmpty)
-              Text('${_images.length} photo${_images.length > 1 ? 's' : ''}',
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _green)),
-          ]),
-        ),
+        const SizedBox(height: 14),
 
-        // ── Aperçu images ─────────────────────────────────────────
-        if (_images.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 190,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _images.length,
-              itemBuilder: (_, i) => Padding(
-                padding: EdgeInsets.only(right: i < _images.length - 1 ? 8 : 0),
-                child: Stack(children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Image.file(_images[i], height: 190, width: 160, fit: BoxFit.cover),
+        // ── Aperçu images EN HAUT — style Instagram ───────────────
+        if (hasImgs) ...[
+          Stack(children: [
+            // PageView des images
+            SizedBox(
+              height: 300,
+              child: PageView.builder(
+                itemCount: _images.length,
+                onPageChanged: (i) => setState(() => _imgPage = i),
+                itemBuilder: (_, i) => Stack(fit: StackFit.expand, children: [
+                  Image.file(_images[i], fit: BoxFit.cover),
+                  // Dégradé haut (pour les boutons)
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter, end: Alignment.center,
+                          colors: [Colors.black.withValues(alpha: 0.45), Colors.transparent],
+                        ),
+                      ),
+                    ),
                   ),
+                  // Dégradé bas (pour les indicateurs)
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter, end: Alignment.center,
+                          colors: [Colors.black.withValues(alpha: 0.45), Colors.transparent],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Supprimer (haut-gauche)
                   Positioned(
-                    top: 6, right: 6,
+                    top: 12, left: 12,
                     child: GestureDetector(
-                      onTap: () => setState(() => _images.removeAt(i)),
+                      onTap: () => setState(() { _images.removeAt(i); if (_imgPage >= _images.length && _imgPage > 0) _imgPage--; }),
                       child: Container(
-                        padding: const EdgeInsets.all(5),
+                        width: 32, height: 32,
                         decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                        child: const Icon(Icons.close, color: Colors.white, size: 14),
+                        child: const Icon(Icons.close, color: Colors.white, size: 16),
+                      ),
+                    ),
+                  ),
+                  // Recadrer (haut-droite)
+                  Positioned(
+                    top: 12, right: 12,
+                    child: GestureDetector(
+                      onTap: () async {
+                        final cropped = await _cropImage(_images[i].path);
+                        if (cropped != null && mounted) setState(() => _images[i] = File(cropped.path));
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.crop, color: Colors.white, size: 14),
+                          SizedBox(width: 4),
+                          Text('Recadrer', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white, fontWeight: FontWeight.w600)),
+                        ]),
                       ),
                     ),
                   ),
                 ]),
               ),
             ),
-          ),
+            // Indicateurs de pages (multi-images)
+            if (_images.length > 1)
+              Positioned(
+                bottom: 10, left: 0, right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(_images.length, (i) => AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: i == _imgPage ? 16 : 6, height: 6,
+                    decoration: BoxDecoration(
+                      color: i == _imgPage ? Colors.white : Colors.white38,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  )),
+                ),
+              ),
+          ]),
         ],
-        const SizedBox(height: 8),
+
+        // ── Contenu scrollable : profil + légende ─────────────────
+        SingleChildScrollView(
+            padding: EdgeInsets.only(bottom: bottom + 12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // "Publier en tant que"
+              if (_myProfileName != null) ...[
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(children: [
+                    Icon(
+                      _myProfileType != null && _myProfileType != 'particulier'
+                          ? Icons.storefront_outlined : Icons.person_outline,
+                      size: 14, color: Colors.white38,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text('Publier en tant que $_myProfileName',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white38)),
+                    ),
+                  ]),
+                ),
+              ],
+              const SizedBox(height: 12),
+
+              // Champ de texte
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                    child: TextField(
+                      controller: _ctrl,
+                      maxLines: hasImgs ? 4 : 10,
+                      minLines: hasImgs ? 3 : 6,
+                      maxLength: _maxChars,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: hasImgs
+                            ? 'Ajoutez une légende…'
+                            : 'Partagez quelque chose avec la communauté…',
+                        hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.40)),
+                        filled: true,
+                        fillColor: Colors.white.withValues(alpha: 0.10),
+                        counterStyle: TextStyle(
+                            fontFamily: 'Galey', fontSize: 11,
+                            color: _charCount > _maxChars * 0.9 ? Colors.orangeAccent : Colors.white38),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15))),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _tealC, width: 1.5)),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+
+        // ── Barre médias en bas ───────────────────────────────────
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.10))),
+          ),
+          child: Row(children: [
+            _iconBtn(Icons.photo_library_outlined, 'Galerie', () => _pickImages(ImageSource.gallery)),
+            const SizedBox(width: 10),
+            _iconBtn(Icons.camera_alt_outlined, 'Photo', () => _pickImages(ImageSource.camera)),
+            const Spacer(),
+            if (hasImgs)
+              Text('${_images.length} / 10',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _green, fontWeight: FontWeight.w600)),
+          ]),
+        ),
       ]),
     );
   }
@@ -4695,6 +4906,7 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
             builder: (_) => _CommentsSheet(
               postId: _effectiveId,
               myUid: widget.myUid,
+              postAuthorUid: _authorUid,
               onCommentAdded: () => setState(() {
                 widget.post['comment_count'] = ((widget.post['comment_count'] as int?) ?? 0) + 1;
               }))),
@@ -5246,8 +5458,13 @@ class _SocialShareSheet extends StatelessWidget {
     await Clipboard.setData(ClipboardData(text: url));
     if (ctx.mounted) {
       Navigator.pop(ctx);
-      ScaffoldMessenger.of(ctx).showSnackBar(
-        const SnackBar(content: Text('Lien copié !'), duration: Duration(seconds: 2)));
+      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+        content: const Text('Lien copié !', style: TextStyle(fontFamily: 'Galey')),
+        backgroundColor: const Color(0xFF0C5C6C),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 2),
+      ));
     }
   }
 
@@ -5264,73 +5481,127 @@ class _SocialShareSheet extends StatelessWidget {
     final emailUrl = Uri.parse('mailto:?subject=${Uri.encodeComponent('Pets Social — $nom')}&body=$encoded');
     final safe     = MediaQuery.of(context).padding;
 
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF102A2E),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF0C3535), Color(0xFF071C22)],
+            ),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          padding: EdgeInsets.fromLTRB(28, 14, 28, safe.bottom + 28),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            // Handle
+            Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [_tealC, _green]),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Titre avec gradient
+            ShaderMask(
+              shaderCallback: (b) => const LinearGradient(
+                colors: [Colors.white, Color(0xFF86D4C8)],
+              ).createShader(b),
+              child: const Text('Partager',
+                style: TextStyle(color: Colors.white, fontFamily: 'Galey',
+                    fontWeight: FontWeight.w800, fontSize: 18)),
+            ),
+            const SizedBox(height: 6),
+            Text(nom, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.45),
+                  fontFamily: 'Galey', fontSize: 12)),
+
+            const SizedBox(height: 28),
+
+            // Boutons
+            Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+              _SocialShareBtn(
+                icon: const Icon(Icons.link_rounded, color: Colors.white, size: 22),
+                gradient: const LinearGradient(colors: [Color(0xFF0C5C6C), Color(0xFF0E7A8E)]),
+                glowColor: const Color(0xFF0C5C6C),
+                label: 'Lien',
+                onTap: () => _copy(context),
+              ),
+              _SocialShareBtn(
+                icon: const FaIcon(FontAwesomeIcons.whatsapp, color: Colors.white, size: 22),
+                gradient: const LinearGradient(colors: [Color(0xFF1DAF54), Color(0xFF25D366)]),
+                glowColor: const Color(0xFF25D366),
+                label: 'WhatsApp',
+                onTap: () => _launch(context, waUrl),
+              ),
+              _SocialShareBtn(
+                icon: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.white, size: 22),
+                gradient: const LinearGradient(colors: [Color(0xFF3E78D8), Color(0xFF5B96F5)]),
+                glowColor: const Color(0xFF4A90E2),
+                label: 'SMS',
+                onTap: () => _launch(context, smsUrl),
+              ),
+              _SocialShareBtn(
+                icon: const Icon(Icons.mail_outline_rounded, color: Colors.white, size: 22),
+                gradient: const LinearGradient(colors: [Color(0xFFD93025), Color(0xFFEA4335)]),
+                glowColor: const Color(0xFFEA4335),
+                label: 'Email',
+                onTap: () => _launch(context, emailUrl),
+              ),
+            ]),
+          ]),
+        ),
       ),
-      padding: EdgeInsets.fromLTRB(24, 12, 24, safe.bottom + 24),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 40, height: 4,
-          decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-        const SizedBox(height: 16),
-        Text('Partager la publication',
-          style: const TextStyle(color: Colors.white, fontFamily: 'Galey',
-              fontWeight: FontWeight.w700, fontSize: 15),
-          maxLines: 1, overflow: TextOverflow.ellipsis),
-        const SizedBox(height: 20),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-          _SocialShareBtn(
-            icon: const Icon(Icons.link_rounded, color: Colors.white, size: 24),
-            bg: const Color(0xFF3A3A4E),
-            label: 'Copier le lien',
-            onTap: () => _copy(context),
-          ),
-          _SocialShareBtn(
-            icon: const FaIcon(FontAwesomeIcons.whatsapp, color: Colors.white, size: 24),
-            bg: const Color(0xFF25D366),
-            label: 'WhatsApp',
-            onTap: () => _launch(context, waUrl),
-          ),
-          _SocialShareBtn(
-            icon: const Icon(Icons.sms_outlined, color: Colors.white, size: 24),
-            bg: const Color(0xFF4A90E2),
-            label: 'SMS',
-            onTap: () => _launch(context, smsUrl),
-          ),
-          _SocialShareBtn(
-            icon: const Icon(Icons.mail_outline_rounded, color: Colors.white, size: 24),
-            bg: const Color(0xFFEA4335),
-            label: 'Email',
-            onTap: () => _launch(context, emailUrl),
-          ),
-        ]),
-      ]),
     );
   }
 }
 
 class _SocialShareBtn extends StatelessWidget {
   final Widget icon;
-  final Color bg;
+  final LinearGradient gradient;
+  final Color glowColor;
   final String label;
   final VoidCallback onTap;
-  const _SocialShareBtn({required this.icon, required this.bg, required this.label, required this.onTap});
+  const _SocialShareBtn({
+    required this.icon,
+    required this.gradient,
+    required this.glowColor,
+    required this.label,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
     child: Column(mainAxisSize: MainAxisSize.min, children: [
       Container(
-        width: 56, height: 56,
-        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(16)),
+        width: 62, height: 62,
+        decoration: BoxDecoration(
+          gradient: gradient,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: glowColor.withValues(alpha: 0.45),
+              blurRadius: 18,
+              spreadRadius: 0,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
         child: Center(child: icon),
       ),
-      const SizedBox(height: 6),
-      SizedBox(width: 60,
-        child: Text(label,
-          style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'Galey'),
-          textAlign: TextAlign.center, maxLines: 2)),
+      const SizedBox(height: 10),
+      Text(label,
+        style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.70),
+            fontSize: 11,
+            fontFamily: 'Galey',
+            fontWeight: FontWeight.w600),
+        textAlign: TextAlign.center),
     ]),
   );
 }
