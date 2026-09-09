@@ -385,12 +385,17 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
   int _refresh    = 0;
   int _notifCount = 0;
   final _supa = Supabase.instance.client;
+  String? _myProfileId; // profil ACTIF de l'utilisateur (identité Pets Social)
 
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
   @override
   void initState() {
     super.initState();
+    final uid = _uid;
+    if (uid != null) {
+      _activeAuthorProfileId(uid).then((id) { if (mounted) setState(() => _myProfileId = id); });
+    }
     _loadNotifCount();
   }
 
@@ -458,14 +463,17 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
   void _openNotifications() {
     if (_uid == null) return;
     Navigator.push(context, MaterialPageRoute(
-      builder: (_) => SocialNotificationsPage(myUid: _uid!),
+      builder: (_) => SocialNotificationsPage(myUid: _uid!, myProfileId: _myProfileId),
     ));
   }
 
   void _openMyProfile() {
     if (_uid == null) return;
     Navigator.push(context, MaterialPageRoute(
-      builder: (_) => SocialProfilePage(targetUid: _uid!, myUid: _uid!),
+      builder: (_) => SocialProfilePage(
+        targetUid: _uid!, myUid: _uid!,
+        targetProfileId: _myProfileId, myProfileId: _myProfileId,
+      ),
     ));
   }
 
@@ -500,8 +508,9 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
                       type: 'discover',
                       myUid: uid),
                   _MyPostsList(
-                      key: ValueKey('myposts_$_refresh'),
+                      key: ValueKey('myposts_${_refresh}_$_myProfileId'),
                       myUid: uid,
+                      myProfileId: _myProfileId,
                       onRefresh: () => setState(() => _refresh++)),
                 ],
               ),
@@ -1407,7 +1416,10 @@ class _SocialPostCardState extends State<_SocialPostCard> {
     final targetUid = widget.profile?['uid'] as String?;
     if (targetUid == null) return;
     Navigator.push(context, MaterialPageRoute(
-      builder: (_) => SocialProfilePage(targetUid: targetUid, myUid: widget.myUid)));
+      builder: (_) => SocialProfilePage(
+        targetUid: targetUid, myUid: widget.myUid,
+        targetProfileId: widget.profile?['id'] as String?,
+      )));
   }
 
   void _showReportDialog() {
@@ -1905,9 +1917,10 @@ class _SocialPostCardState extends State<_SocialPostCard> {
 
 class _MyPostsList extends StatefulWidget {
   final String myUid;
+  final String? myProfileId;
   final VoidCallback onRefresh;
   const _MyPostsList(
-      {super.key, required this.myUid, required this.onRefresh});
+      {super.key, required this.myUid, this.myProfileId, required this.onRefresh});
   @override
   State<_MyPostsList> createState() => _MyPostsListState();
 }
@@ -1932,19 +1945,18 @@ class _MyPostsListState extends State<_MyPostsList>
     if (!mounted) return;
     setState(() => _loading = true);
     try {
-      final results = await Future.wait([
-        _supa
-            .from('posts_socialmedia')
-            .select()
-            .eq('uid', widget.myUid)
-            .order('created_at', ascending: false),
-        _supa
-            .from('user_profiles')
-            .select('uid, firstname, lastname, avatar_url, profile_type, nom')
-            .eq('uid', widget.myUid)
-            .eq('profile_type', 'particulier')
-            .maybeSingle(),
-      ]);
+      // Scopé au profil ACTIF : ses posts + son identité.
+      final pid = widget.myProfileId ?? await _activeAuthorProfileId(widget.myUid);
+      final postsBase = _supa.from('posts_socialmedia').select();
+      final postsQ = (pid != null
+              ? postsBase.eq('author_profile_id', pid)
+              : postsBase.eq('uid', widget.myUid))
+          .order('created_at', ascending: false);
+      final profQ = pid != null
+          ? _supa.from('user_profiles').select(_kAuthorCols).eq('id', pid).maybeSingle()
+          : _supa.from('user_profiles')
+              .select(_kAuthorCols).eq('uid', widget.myUid).eq('profile_type', 'particulier').maybeSingle();
+      final results = await Future.wait([postsQ, profQ]);
       if (mounted) {
         setState(() {
           _posts     = (results[0] as List).cast<Map<String, dynamic>>();
@@ -3499,7 +3511,9 @@ class _SearchSheetState extends State<_SearchSheet> {
                           onTap: () {
                             Navigator.pop(context);
                             Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => SocialProfilePage(targetUid: uid, myUid: widget.myUid)));
+                              builder: (_) => SocialProfilePage(
+                                targetUid: uid, myUid: widget.myUid,
+                                targetProfileId: r['id'] as String?)));
                           },
                           child: Padding(
                           padding: const EdgeInsets.only(bottom: 10),
@@ -3599,7 +3613,10 @@ class _SearchSheetState extends State<_SearchSheet> {
 class SocialProfilePage extends StatefulWidget {
   final String targetUid;
   final String myUid;
-  const SocialProfilePage({super.key, required this.targetUid, required this.myUid});
+  final String? targetProfileId; // profil social affiché (auteur du post d'où on vient)
+  final String? myProfileId;     // mon profil actif
+  const SocialProfilePage({super.key, required this.targetUid, required this.myUid,
+      this.targetProfileId, this.myProfileId});
   @override
   State<SocialProfilePage> createState() => _SocialProfilePageState();
 }
@@ -3608,6 +3625,7 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
   final _supa = Supabase.instance.client;
 
   Map<String, dynamic>? _profile;
+  String? _effectiveProfileId; // profil social affiché (résolu dans _load)
   List<Map<String, dynamic>> _posts = [];
   List<Map<String, dynamic>> _repostPosts = [];
   List<Map<String, dynamic>> _savedPosts = [];
@@ -3655,28 +3673,41 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
   }
 
   Future<void> _load() async {
+    // Profil social affiché : celui passé (auteur du post d'où on vient) ; pour
+    // « mon profil » = mon profil actif ; sinon repli particulier de l'uid.
+    final tpid = widget.targetProfileId
+        ?? (_isMyProfile
+            ? (widget.myProfileId ?? await _activeAuthorProfileId(widget.targetUid))
+            : null);
+    _effectiveProfileId = tpid;
+    final mpid = widget.myProfileId ?? await _activeAuthorProfileId(widget.myUid);
+
+    final profQ = tpid != null
+        ? _supa.from('user_profiles').select(_kAuthorCols).eq('id', tpid).maybeSingle()
+        : _supa.from('user_profiles')
+            .select(_kAuthorCols).eq('uid', widget.targetUid).eq('profile_type', 'particulier').maybeSingle();
+    final postsBase = _supa.from('posts_socialmedia').select();
+    final postsQ = (tpid != null ? postsBase.eq('author_profile_id', tpid) : postsBase.eq('uid', widget.targetUid))
+        .order('created_at', ascending: false);
+    final folBase = _supa.from('follows').select('follower_uid, follower_profile_id');
+    final followersQ = tpid != null ? folBase.eq('following_profile_id', tpid) : folBase.eq('following_uid', widget.targetUid);
+    final folBase2 = _supa.from('follows').select('following_uid, following_profile_id');
+    final followingQ = tpid != null ? folBase2.eq('follower_profile_id', tpid) : folBase2.eq('follower_uid', widget.targetUid);
+
     final results = await Future.wait([
-      _supa.from('user_profiles')
-          .select('uid, firstname, lastname, avatar_url, profile_type, nom')
-          .eq('uid', widget.targetUid)
-          .eq('profile_type', 'particulier')
-          .maybeSingle(),
-      _supa.from('posts_socialmedia')
-          .select()
-          .eq('uid', widget.targetUid)
-          .order('created_at', ascending: false),
-      _supa.from('follows').select('follower_uid').eq('following_uid', widget.targetUid),
-      _supa.from('follows').select('following_uid').eq('follower_uid', widget.targetUid),
+      profQ,
+      postsQ,
+      followersQ,
+      followingQ,
       _supa.from('user_cosmetics')
           .select('cosmetic_type, active_value, owned')
           .eq('uid', widget.targetUid),
     ]);
 
-    final followCheck = await _supa.from('follows')
-        .select('follower_uid')
-        .eq('follower_uid', widget.myUid)
-        .eq('following_uid', widget.targetUid)
-        .maybeSingle();
+    var followCheckQ = _supa.from('follows').select('follower_uid');
+    followCheckQ = mpid != null ? followCheckQ.eq('follower_profile_id', mpid) : followCheckQ.eq('follower_uid', widget.myUid);
+    followCheckQ = tpid != null ? followCheckQ.eq('following_profile_id', tpid) : followCheckQ.eq('following_uid', widget.targetUid);
+    final followCheck = await followCheckQ.maybeSingle();
 
     String? ring; String? banner;
     List<String> ownedRings = []; List<String> ownedBanners = [];
@@ -3898,12 +3929,14 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
                             Container(width: 1, height: 36, color: Colors.white30),
                             GestureDetector(
                               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
-                                  _FollowListPage(targetUid: widget.targetUid, myUid: widget.myUid, type: 'followers'))),
+                                  _FollowListPage(targetUid: widget.targetUid, myUid: widget.myUid,
+                                      targetProfileId: _effectiveProfileId, type: 'followers'))),
                               child: _statCol('Abonnés', _followersCount)),
                             Container(width: 1, height: 36, color: Colors.white30),
                             GestureDetector(
                               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
-                                  _FollowListPage(targetUid: widget.targetUid, myUid: widget.myUid, type: 'following'))),
+                                  _FollowListPage(targetUid: widget.targetUid, myUid: widget.myUid,
+                                      targetProfileId: _effectiveProfileId, type: 'following'))),
                               child: _statCol('Abonnements', _followingCount)),
                           ]),
                         ),
@@ -4099,7 +4132,8 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
 
 class SocialNotificationsPage extends StatefulWidget {
   final String myUid;
-  const SocialNotificationsPage({super.key, required this.myUid});
+  final String? myProfileId; // profil actif — scope les notifs
+  const SocialNotificationsPage({super.key, required this.myUid, this.myProfileId});
   @override
   State<SocialNotificationsPage> createState() => _SocialNotificationsPageState();
 }
@@ -4116,10 +4150,12 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
   }
 
   Future<void> _load() async {
-    // 1. Mes posts → commentaires reçus
-    final myPosts = await _supa.from('posts_socialmedia')
-        .select('id')
-        .eq('uid', widget.myUid);
+    final pid = widget.myProfileId ?? await _activeAuthorProfileId(widget.myUid);
+
+    // 1. Posts du profil actif → commentaires reçus
+    var myPostsQ = _supa.from('posts_socialmedia').select('id');
+    myPostsQ = pid != null ? myPostsQ.eq('author_profile_id', pid) : myPostsQ.eq('uid', widget.myUid);
+    final myPosts = await myPostsQ;
     final postIds = (myPosts as List).map((p) => p['id'] as String).toList();
 
     List<Map<String, dynamic>> comments = [];
@@ -4133,46 +4169,58 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
       comments = (rows as List).cast<Map<String, dynamic>>();
     }
 
-    // 2. Nouveaux abonnés
-    final followers = await _supa.from('follows')
-        .select()
-        .eq('following_uid', widget.myUid)
-        .order('created_at', ascending: false)
-        .limit(20);
+    // 2. Nouveaux abonnés du profil actif
+    final followBase = _supa.from('follows').select();
+    final followQ = (pid != null
+            ? followBase.eq('following_profile_id', pid)
+            : followBase.eq('following_uid', widget.myUid))
+        .order('created_at', ascending: false).limit(20);
+    final followers = await followQ;
     final followerRows = (followers as List).cast<Map<String, dynamic>>();
 
-    // 3. Profils
-    final uids = {
-      ...comments.map((c) => c['uid'] as String),
-      ...followerRows.map((f) => f['follower_uid'] as String),
+    // 3. Profils des acteurs — résolus par leur author_profile_id / follower_profile_id.
+    final actorProfIds = <String>{
+      for (final c in comments)
+        if ((c['author_profile_id'] as String?)?.isNotEmpty == true) c['author_profile_id'] as String,
+      for (final f in followerRows)
+        if ((f['follower_profile_id'] as String?)?.isNotEmpty == true) f['follower_profile_id'] as String,
     }.toList();
-    Map<String, Map<String, dynamic>> profiles = {};
-    if (uids.isNotEmpty) {
-      final profRows = await _supa.from('user_profiles')
-          .select('uid, firstname, lastname, avatar_url, profile_type, nom')
-          .inFilter('uid', uids)
-          .eq('profile_type', 'particulier');
-      profiles = { for (final r in profRows as List) r['uid'] as String: r as Map<String, dynamic> };
+    final legacyUids = <String>{
+      for (final c in comments) if ((c['author_profile_id'] as String?)?.isNotEmpty != true) c['uid'] as String,
+      for (final f in followerRows) if ((f['follower_profile_id'] as String?)?.isNotEmpty != true) f['follower_uid'] as String,
+    }.toList();
+    final profByKey = <String, Map<String, dynamic>>{};
+    if (actorProfIds.isNotEmpty) {
+      final rows = await _supa.from('user_profiles').select(_kAuthorCols).inFilter('id', actorProfIds);
+      for (final r in rows as List) { profByKey[r['id'] as String] = Map<String, dynamic>.from(r as Map); }
+    }
+    if (legacyUids.isNotEmpty) {
+      final rows = await _supa.from('user_profiles').select(_kAuthorCols)
+          .inFilter('uid', legacyUids).eq('profile_type', 'particulier');
+      for (final r in rows as List) { profByKey['u:${r['uid']}'] = Map<String, dynamic>.from(r as Map); }
+    }
+    Map<String, dynamic>? actorOf(Map row, {bool follower = false}) {
+      final k = (follower ? row['follower_profile_id'] : row['author_profile_id']) as String?;
+      if (k != null && profByKey.containsKey(k)) return profByKey[k];
+      return profByKey['u:${follower ? row['follower_uid'] : row['uid']}'];
     }
 
     // Merge en une liste triée par date
     final all = <Map<String, dynamic>>[];
     for (final c in comments) {
-      final prof = profiles[c['uid'] as String];
       all.add({
         'type': 'comment',
         'created_at': c['created_at'],
-        'profile': prof,
+        'profile': actorOf(c),
         'texte': c['texte'],
         'post_id': c['post_id'],
       });
     }
     for (final f in followerRows) {
-      final prof = profiles[f['follower_uid'] as String];
       all.add({
         'type': 'follow',
         'created_at': f['created_at'],
-        'profile': prof,
+        'profile': actorOf(f, follower: true),
         'follower_uid': f['follower_uid'],
       });
     }
@@ -4236,7 +4284,9 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
                                     final uid = prof?['uid'] as String?;
                                     if (uid == null) return;
                                     Navigator.push(context, MaterialPageRoute(
-                                      builder: (_) => SocialProfilePage(targetUid: uid, myUid: widget.myUid)));
+                                      builder: (_) => SocialProfilePage(
+                                        targetUid: uid, myUid: widget.myUid,
+                                        targetProfileId: prof?['id'] as String?)));
                                   },
                                   child: _avatarWidget(photo, 22),
                                 ),
@@ -4431,8 +4481,10 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
 class _FollowListPage extends StatefulWidget {
   final String targetUid;
   final String myUid;
+  final String? targetProfileId; // profil dont on liste les abonnés / abonnements
   final String type; // 'followers' or 'following'
-  const _FollowListPage({required this.targetUid, required this.myUid, required this.type});
+  const _FollowListPage({required this.targetUid, required this.myUid,
+      this.targetProfileId, required this.type});
   @override
   State<_FollowListPage> createState() => _FollowListPageState();
 }
@@ -4447,25 +4499,39 @@ class _FollowListPageState extends State<_FollowListPage> {
   void initState() { super.initState(); _load(); }
 
   Future<void> _load() async {
+    final tpid = widget.targetProfileId;
+    // Colonne côté "eux" et côté "profil cible" selon followers/following.
+    final theirUidCol   = widget.type == 'followers' ? 'follower_uid' : 'following_uid';
+    final theirPidCol   = widget.type == 'followers' ? 'follower_profile_id' : 'following_profile_id';
+    final targetUidCol  = widget.type == 'followers' ? 'following_uid' : 'follower_uid';
+    final targetPidCol  = widget.type == 'followers' ? 'following_profile_id' : 'follower_profile_id';
+
+    final listBase = _supa.from('follows').select('$theirUidCol, $theirPidCol');
+    final listQ = tpid != null
+        ? listBase.eq(targetPidCol, tpid)
+        : listBase.eq(targetUidCol, widget.targetUid);
     final results = await Future.wait([
-      widget.type == 'followers'
-          ? _supa.from('follows').select('follower_uid').eq('following_uid', widget.targetUid)
-          : _supa.from('follows').select('following_uid').eq('follower_uid', widget.targetUid),
+      listQ,
       _supa.from('follows').select('following_uid').eq('follower_uid', widget.myUid),
     ]);
-    final uids = (results[0] as List).map((r) {
-      return (widget.type == 'followers' ? r['follower_uid'] : r['following_uid']) as String;
-    }).toList();
     _myFollowing = {for (final r in results[1] as List) r['following_uid'] as String};
-    if (uids.isEmpty) { if (mounted) setState(() => _loading = false); return; }
-    final profRows = await _supa.from('user_profiles')
-        .select('uid, firstname, lastname, avatar_url, profile_type, nom')
-        .inFilter('uid', uids).eq('profile_type', 'particulier');
+
+    final rows = (results[0] as List);
+    final pids = <String>{for (final r in rows) if ((r[theirPidCol] as String?)?.isNotEmpty == true) r[theirPidCol] as String}.toList();
+    final legacyUids = <String>{for (final r in rows) if ((r[theirPidCol] as String?)?.isNotEmpty != true) r[theirUidCol] as String}.toList();
+    if (pids.isEmpty && legacyUids.isEmpty) { if (mounted) setState(() => _loading = false); return; }
+    final users = <Map<String, dynamic>>[];
+    if (pids.isNotEmpty) {
+      final r = await _supa.from('user_profiles').select(_kAuthorCols).inFilter('id', pids);
+      users.addAll((r as List).cast<Map<String, dynamic>>());
+    }
+    if (legacyUids.isNotEmpty) {
+      final r = await _supa.from('user_profiles').select(_kAuthorCols)
+          .inFilter('uid', legacyUids).eq('profile_type', 'particulier');
+      users.addAll((r as List).cast<Map<String, dynamic>>());
+    }
     if (mounted) {
-      setState(() {
-        _users = (profRows as List).cast<Map<String, dynamic>>();
-        _loading = false;
-      });
+      setState(() { _users = users; _loading = false; });
     }
   }
 
@@ -4512,7 +4578,8 @@ class _FollowListPageState extends State<_FollowListPage> {
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                           leading: GestureDetector(
                             onTap: () => Navigator.push(context, MaterialPageRoute(
-                                builder: (_) => SocialProfilePage(targetUid: uid, myUid: widget.myUid))),
+                                builder: (_) => SocialProfilePage(targetUid: uid, myUid: widget.myUid,
+                                    targetProfileId: prof['id'] as String?))),
                             child: _avatarWidget(_profilePhoto(prof), 22)),
                           title: Text(_profileName(prof), style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14, color: Colors.white)),
                           subtitle: prof['profile_type'] == 'eleveur'
