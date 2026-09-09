@@ -234,12 +234,13 @@ Future<void> _insertLike(String postId, String uid) async {
   });
 }
 
-/// Insère une relation de suivi. Le suiveur est renseigné avec SON profil
-/// actif ; la cible avec son profil particulier (identité d'affichage par
-/// défaut, résolue ensuite via l'auteur des posts).
-Future<void> _insertFollow(String followerUid, String followingUid) async {
+/// Insère une relation de suivi. Le suiveur = SON profil actif ; la cible =
+/// [followingProfileId] si fourni (on suit un profil pro précis), sinon son
+/// profil particulier.
+Future<void> _insertFollow(String followerUid, String followingUid,
+    {String? followingProfileId}) async {
   final fp = await _activeAuthorProfileId(followerUid);
-  final tp = await _particulierProfileId(followingUid);
+  final tp = followingProfileId ?? await _particulierProfileId(followingUid);
   await Supabase.instance.client.from('follows').insert({
     'follower_uid': followerUid,
     'following_uid': followingUid,
@@ -3382,32 +3383,51 @@ class _SearchSheetState extends State<_SearchSheet> {
   Future<void> _doSearch(String q) async {
     if (!mounted) return;
     try {
+      // Particuliers + profils pro/éleveur (uniquement ceux qui ont déjà publié
+      // → réellement présents sur Pets Social).
       final rows = await _supa
           .from('user_profiles')
-          .select('uid, firstname, lastname, avatar_url, profile_type, nom')
+          .select(_kAuthorCols)
           .or('firstname.ilike.%$q%,lastname.ilike.%$q%,nom.ilike.%$q%')
-          .eq('profile_type', 'particulier')
+          .inFilter('profile_type', ['particulier', 'eleveur', 'association',
+            'veterinaire', 'sante', 'education', 'garde', 'toilettage', 'photographe'])
           .neq('uid', widget.myUid)
-          .limit(20);
-      final results = (rows as List).cast<Map<String, dynamic>>();
+          .limit(30);
+      var results = (rows as List).cast<Map<String, dynamic>>();
 
-      // Fetch rings pour afficher les contours custom
-      Map<String, String?> rings = {};
+      final proIds = results
+          .where((r) => r['profile_type'] != 'particulier')
+          .map((r) => r['id'] as String).toList();
+      if (proIds.isNotEmpty) {
+        final posted = await _supa.from('posts_socialmedia')
+            .select('author_profile_id').inFilter('author_profile_id', proIds);
+        final activePro = {for (final p in posted as List) p['author_profile_id'] as String};
+        results = results.where((r) =>
+            r['profile_type'] == 'particulier' || activePro.contains(r['id'])).toList();
+      }
+      results = results.take(20).toList();
+
+      // Anneaux — par profil (active_by_profile[id]).
+      final ringsById = <String, String?>{};
       if (results.isNotEmpty) {
-        final uids = results.map((r) => r['uid'] as String).toList();
+        final uids = results.map((r) => r['uid'] as String).toSet().toList();
         final cosRows = await _supa.from('user_cosmetics')
-            .select('uid, cosmetic_type, active_value')
+            .select('uid, active_value, active_by_profile')
             .inFilter('uid', uids)
             .eq('cosmetic_type', 'avatar_ring');
-        for (final c in cosRows as List) {
-          rings[c['uid'] as String] = c['active_value'] as String?;
+        final byUid = {for (final c in cosRows as List) c['uid'] as String: c as Map};
+        for (final r in results) {
+          final c = byUid[r['uid']];
+          if (c == null) continue;
+          final abp = (c['active_by_profile'] as Map?) ?? {};
+          ringsById[r['id'] as String] = (abp[r['id']] as String?) ?? c['active_value'] as String?;
         }
       }
 
       if (mounted) {
         setState(() {
           _results   = results;
-          _rings     = rings;
+          _rings     = ringsById;
           _searching = false;
         });
       }
@@ -3416,7 +3436,7 @@ class _SearchSheetState extends State<_SearchSheet> {
     }
   }
 
-  Future<void> _toggleFollow(String targetUid) async {
+  Future<void> _toggleFollow(String targetUid, {String? targetProfileId}) async {
     final isFollowing = _following.contains(targetUid);
     setState(() {
       if (isFollowing) { _following.remove(targetUid); }
@@ -3424,11 +3444,13 @@ class _SearchSheetState extends State<_SearchSheet> {
     });
     try {
       if (isFollowing) {
-        await _supa.from('follows').delete()
+        var d = _supa.from('follows').delete()
             .eq('follower_uid', widget.myUid)
             .eq('following_uid', targetUid);
+        if (targetProfileId != null) d = d.eq('following_profile_id', targetProfileId);
+        await d;
       } else {
-        await _insertFollow(widget.myUid, targetUid);
+        await _insertFollow(widget.myUid, targetUid, followingProfileId: targetProfileId);
       }
     } catch (_) {
       setState(() {
@@ -3518,18 +3540,24 @@ class _SearchSheetState extends State<_SearchSheet> {
                       itemBuilder: (_, i) {
                         final r    = _results[i];
                         final uid  = r['uid'] as String;
+                        final rpid = r['id'] as String?;
                         final name = _profileName(r);
                         final photo = _profilePhoto(r);
-                        final isPro = r['profile_type'] == 'eleveur';
+                        final ptype = (r['profile_type'] ?? '').toString();
+                        final isPro = ptype.isNotEmpty && ptype != 'particulier';
+                        final proLabel = ptype == 'eleveur' ? 'Éleveur certifié'
+                            : ptype == 'association' ? 'Association'
+                            : ptype == 'veterinaire' || ptype == 'sante' ? 'Vétérinaire / Ostéo'
+                            : 'Professionnel';
                         final isFollowing = _following.contains(uid);
-                        final ringStyle = _rings[uid];
+                        final ringStyle = _rings[rpid];
                         return GestureDetector(
                           onTap: () {
                             Navigator.pop(context);
                             Navigator.push(context, MaterialPageRoute(
                               builder: (_) => SocialProfilePage(
                                 targetUid: uid, myUid: widget.myUid,
-                                targetProfileId: r['id'] as String?)));
+                                targetProfileId: rpid)));
                           },
                           child: Padding(
                           padding: const EdgeInsets.only(bottom: 10),
@@ -3563,15 +3591,15 @@ class _SearchSheetState extends State<_SearchSheet> {
                                                   fontSize: 14,
                                                   color: Colors.white)),
                                           if (isPro)
-                                            Text('Éleveur certifié',
-                                                style: TextStyle(
+                                            Text(proLabel,
+                                                style: const TextStyle(
                                                     fontFamily: 'Galey',
                                                     fontSize: 11,
                                                     color: _green)),
                                         ]),
                                   ),
                                   GestureDetector(
-                                    onTap: () => _toggleFollow(uid),
+                                    onTap: () => _toggleFollow(uid, targetProfileId: rpid),
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 14, vertical: 7),
