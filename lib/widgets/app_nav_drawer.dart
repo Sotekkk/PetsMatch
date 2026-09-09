@@ -46,6 +46,11 @@ import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
 import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
+import 'package:PetsMatch/pages/pro/registre_visites_page.dart';
+import 'package:PetsMatch/pages/pro/tournee_page.dart';
+import 'package:PetsMatch/pages/pro/education_devis_page.dart';
+import 'package:PetsMatch/pages/pro/cles_clients_page.dart';
+import 'package:PetsMatch/pages/pro/tarifs_clients_page.dart';
 
 class AppNavDrawer extends StatefulWidget {
   const AppNavDrawer({super.key});
@@ -499,6 +504,38 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
             label: 'Mon agenda RDV',
             onTap: () => _push(const ProAgendaPage()),
           ),
+          if (User_Info.catPro == 'garde') ...[
+            _DrawerItem(
+              icon: Icons.checklist_outlined,
+              label: 'Registre des visites',
+              onTap: () => _push(const RegistreVisitesPage()),
+            ),
+            _DrawerItem(
+              icon: Icons.route_outlined,
+              label: 'Ma tournée',
+              onTap: () => _push(const TourneePage()),
+            ),
+            _DrawerItem(
+              icon: Icons.request_quote_outlined,
+              label: 'Devis',
+              onTap: () => _push(const DevisPage()),
+            ),
+            _DrawerItem(
+              icon: Icons.description_outlined,
+              label: 'Mes contrats',
+              onTap: () => _push(const RegistreVisitesPage(initialTab: 2)),
+            ),
+            _DrawerItem(
+              icon: Icons.vpn_key_outlined,
+              label: 'Gestion des clés',
+              onTap: () => _push(const ClesClientsPage()),
+            ),
+            _DrawerItem(
+              icon: Icons.sell_outlined,
+              label: 'Tarifs clients',
+              onTap: () => _push(const TarifsClientsPage()),
+            ),
+          ],
           // Facturation : moteur commun `factures` (la pension a son propre
           // circuit — table `pension_factures` + PensionFacturesPage).
           if (const {

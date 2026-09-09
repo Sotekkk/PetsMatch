@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
+import 'package:PetsMatch/pages/pro/garde_facture_helper.dart';
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 
 // ── Registre visites — liste des RDV (visites/promenades) du profil garde,
@@ -12,7 +14,8 @@ import 'package:PetsMatch/main.dart' show User_Info;
 // est déjà un RDV dans le système agenda générique (table `rdv`).
 
 class RegistreVisitesPage extends StatefulWidget {
-  const RegistreVisitesPage({super.key});
+  final int initialTab; // 0 = À venir, 1 = Passées, 2 = Mes contrats
+  const RegistreVisitesPage({super.key, this.initialTab = 0});
 
   @override
   State<RegistreVisitesPage> createState() => _RegistreVisitesPageState();
@@ -25,13 +28,15 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
 
   bool _loading = true;
   List<Map<String, dynamic>> _visites = [];
-  int _tab = 0; // 0 = À venir, 1 = Passées, 2 = Contrats clients
+  late int _tab; // 0 = À venir, 1 = Passées, 2 = Mes contrats
   // client_uid → {nom, email, profile_id, doc_token, doc_statut}
   Map<String, Map<String, dynamic>> _clients = {};
+  Set<String> _facturedRdvIds = {};
 
   @override
   void initState() {
     super.initState();
+    _tab = widget.initialTab.clamp(0, 2);
     _load();
   }
 
@@ -120,6 +125,7 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
       final clients = <String, Map<String, dynamic>>{};
       for (final r in list) {
         r['_client_nom'] = clientName(r);
+        r['_client_email'] = clientEmail(r);
         r['_animal_nom'] = animalNames[r['animal_id']?.toString()] ?? '';
         final cu = r['client_uid']?.toString();
         if (cu != null && cu.isNotEmpty && !clients.containsKey(cu)) {
@@ -134,7 +140,26 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
         }
       }
 
-      if (mounted) setState(() { _visites = list; _clients = clients; _loading = false; });
+      // RDV déjà facturés (traçabilité factures.source_rdv_id).
+      final facturedIds = <String>{};
+      final rdvIds = list.map((r) => r['id']?.toString()).whereType<String>().toList();
+      if (rdvIds.isNotEmpty) {
+        try {
+          final fac = await _supa.from('factures')
+              .select('source_rdv_id').inFilter('source_rdv_id', rdvIds);
+          for (final f in fac as List) {
+            final rid = f['source_rdv_id']?.toString();
+            if (rid != null && rid.isNotEmpty) facturedIds.add(rid);
+          }
+        } catch (_) {}
+      }
+
+      if (mounted) setState(() {
+        _visites = list;
+        _clients = clients;
+        _facturedRdvIds = facturedIds;
+        _loading = false;
+      });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -224,6 +249,27 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
     }
   }
 
+  /// Facture une prestation de garde via le moteur commun `factures`
+  /// (pré-remplie au tarif garde, reliée au RDV et à l'animal).
+  Future<void> _facturerVisite(Map<String, dynamic> rdv) async {
+    final prix = await gardeTarif(rdv);
+    if (!mounted) return;
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => CreerFacturePage(
+        clientNom: gardeClientNom(rdv),
+        clientEmail: rdv['_client_email']?.toString(),
+        lignesPrefill: [
+          FacturePrefillLigne(designation: gardeDesignation(rdv), prixHT: prix, tauxTVA: 20),
+        ],
+        sourceRdvId: rdv['id']?.toString(),
+        sourceAnimalId: rdv['animal_id']?.toString(),
+        clientUid: rdv['client_uid']?.toString(),
+        clientProfileId: rdv['client_profile_id']?.toString(),
+      ),
+    ));
+    await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
@@ -269,8 +315,12 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
               itemCount: displayed.length,
               itemBuilder: (_, i) => _VisiteCard(
                 rdv: displayed[i],
+                factured: _facturedRdvIds.contains(displayed[i]['id']?.toString()),
                 onTerminer: () => _marquerTermine(displayed[i]),
                 onRapport: () => sendGardeNews(context, displayed[i]),
+                onFacturer: displayed[i]['statut'] == 'termine'
+                    ? () => _facturerVisite(displayed[i])
+                    : null,
                 onContrat: () {
                   final cu = displayed[i]['client_uid']?.toString();
                   if (cu != null && cu.isNotEmpty) _openClientContrat(cu, displayed[i]);
@@ -295,7 +345,7 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
               for (final t in [
                 (0, 'À venir (${aVenir.length})'),
                 (1, 'Passées (${passees.length})'),
-                (2, 'Contrats (${clientsList.length})'),
+                (2, 'Mes contrats (${clientsList.length})'),
               ]) ...[
                 Expanded(
                   child: _TabChip(label: t.$2, selected: _tab == t.$1,
@@ -378,12 +428,22 @@ class _TabChip extends StatelessWidget {
 
 class _VisiteCard extends StatelessWidget {
   final Map<String, dynamic> rdv;
+  final bool factured;
   final VoidCallback onTerminer;
   final VoidCallback onRapport;
+  final VoidCallback? onFacturer;
   final VoidCallback onContrat;
   static const _teal = Color(0xFF0C5C6C);
+  static const _green = Color(0xFF6E9E57);
 
-  const _VisiteCard({required this.rdv, required this.onTerminer, required this.onRapport, required this.onContrat});
+  const _VisiteCard({
+    required this.rdv,
+    required this.onTerminer,
+    required this.onRapport,
+    required this.onContrat,
+    this.onFacturer,
+    this.factured = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -446,6 +506,29 @@ class _VisiteCard extends StatelessWidget {
               icon: const Icon(Icons.draw_outlined, size: 18, color: _teal),
             ),
           ]),
+          if (isTermine && (onFacturer != null || factured)) ...[
+            const SizedBox(height: 8),
+            factured
+                ? Row(children: const [
+                    Icon(Icons.check_circle_outline, size: 16, color: _green),
+                    SizedBox(width: 6),
+                    Text('Facturé', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                        fontWeight: FontWeight.w600, color: _green)),
+                  ])
+                : SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: onFacturer,
+                      icon: const Icon(Icons.receipt_long_outlined, size: 16),
+                      label: const Text('Facturer', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _green,
+                        side: const BorderSide(color: _green),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                      ),
+                    ),
+                  ),
+          ],
         ]),
       ),
     );

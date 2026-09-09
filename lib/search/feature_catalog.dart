@@ -678,6 +678,24 @@ List<QuickAction> _all(BuildContext ctx) => [
     icon: Icons.groups_outlined, group: 'Mon espace pro',
     visible: () => _catPro == 'garde', open: (c) => _push(c, const EmployesPage(profileType: 'garde')),
   ),
+  QuickAction(
+    label: 'Mon agenda RDV (garde)',
+    keywords: ['rendez-vous', 'planning', 'demandes', 'à confirmer'],
+    icon: Icons.event_outlined, group: 'Mon espace pro',
+    visible: () => _catPro == 'garde', open: (c) => _push(c, const ProAgendaPage()),
+  ),
+  QuickAction(
+    label: 'Mes créneaux (garde)',
+    keywords: ['disponibilités', 'horaires', 'réservation en ligne', 'capacité'],
+    icon: Icons.schedule_outlined, group: 'Mon espace pro',
+    visible: () => _catPro == 'garde', open: (c) => _push(c, const ProAgendaPage(initialTabIndex: 3)),
+  ),
+  QuickAction(
+    label: 'Mes contrats (garde)',
+    keywords: ['contrat de prestation', 'signature', 'client', 'cadre'],
+    icon: Icons.description_outlined, group: 'Administratif',
+    visible: () => _catPro == 'garde', open: (c) => _push(c, const RegistreVisitesPage(initialTab: 2)),
+  ),
 
   // ── Taxi animalier ─────────────────────────────────────────────────────────
   QuickAction(

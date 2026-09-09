@@ -27,7 +27,7 @@ import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/tournee_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
 import 'package:PetsMatch/pages/pro/cles_clients_page.dart';
-import 'package:PetsMatch/pages/pro/tarifs_clients_page.dart';
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FacturationPage;
 import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
@@ -590,14 +590,14 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
             onTap: () => go(const RegistreVisitesPage())),
         _QuickTile(icon: Icons.route_outlined, label: 'Ma\ntournée', color: const Color(0xFF5F9EAA),
             onTap: () => go(const TourneePage())),
+        _QuickTile(icon: Icons.calendar_month_outlined, label: 'Mon\nagenda', color: _teal,
+            onTap: () => go(AgendaPage(initialViewMode: 1, onBack: () => Navigator.pop(context)))),
         _QuickTile(icon: Icons.request_quote_outlined, label: 'Devis', color: const Color(0xFF5B8648),
             onTap: () => go(const DevisPage())),
         _QuickTile(icon: Icons.vpn_key_outlined, label: 'Gestion\ndes clés', color: const Color(0xFFB8860B),
             onTap: () => go(const ClesClientsPage())),
-        _QuickTile(icon: Icons.sell_outlined, label: 'Tarifs\nclients', color: const Color(0xFF7B5EA7),
-            onTap: () => go(const TarifsClientsPage())),
-        _QuickTile(icon: Icons.calendar_month_outlined, label: 'Mon\nagenda', color: _teal,
-            onTap: () => go(AgendaPage(initialViewMode: 1, onBack: () => Navigator.pop(context)))),
+        _QuickTile(icon: Icons.receipt_long_outlined, label: 'Factu-\nration', color: const Color(0xFF6E9E57),
+            onTap: () => go(const FacturationPage())),
       ],
     );
   }

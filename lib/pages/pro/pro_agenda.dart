@@ -16,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/utils/geocoding_helper.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
+import 'package:PetsMatch/pages/pro/garde_facture_helper.dart';
 import 'package:PetsMatch/pages/pro/creneaux_week_grid.dart';
 
 class ProAgendaPage extends StatefulWidget {
@@ -1192,6 +1193,27 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         lignesPrefill: [
           FacturePrefillLigne(designation: 'Prestation de toilettage', prixHT: prixCalcule, tauxTVA: 20),
         ],
+      ),
+    ));
+  }
+
+  // Garde / pet-sitting — facture d'une prestation (promenade / garde-journée)
+  // via le moteur commun `factures`, pré-remplie au tarif garde + reliée au
+  // RDV et à l'animal (traçabilité `factures.source_rdv_id`).
+  Future<void> _facturerGarde(Map<String, dynamic> rdv) async {
+    final prix = await gardeTarif(rdv);
+    if (!mounted) return;
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => CreerFacturePage(
+        clientNom: gardeClientNom(rdv),
+        clientEmail: (rdv['_client_email'] ?? rdv['client_email_manuel'])?.toString(),
+        lignesPrefill: [
+          FacturePrefillLigne(designation: gardeDesignation(rdv), prixHT: prix, tauxTVA: 20),
+        ],
+        sourceRdvId: rdv['id']?.toString(),
+        sourceAnimalId: rdv['animal_id']?.toString(),
+        clientUid: rdv['client_uid']?.toString(),
+        clientProfileId: rdv['client_profile_id']?.toString(),
       ),
     ));
   }
@@ -3253,7 +3275,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           onFacturer: (showProTools && rdv['statut'] == 'termine' &&
                   const {
                     'photographe', 'toilettage',
-                    'sante', 'veterinaire', 'marechal_ferrant',
+                    'sante', 'veterinaire', 'marechal_ferrant', 'garde',
                   }.contains(User_Info.catPro))
               ? () {
                   switch (User_Info.catPro) {
@@ -3261,6 +3283,8 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       _facturerToilettage(rdv);
                     case 'photographe':
                       _facturerPhoto(rdv);
+                    case 'garde':
+                      _facturerGarde(rdv);
                     default:
                       _facturerConsultation(rdv);
                   }

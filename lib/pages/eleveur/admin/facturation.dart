@@ -532,6 +532,11 @@ class CreerFacturePage extends StatefulWidget {
   final String? typeFacture; // 'acompte' | 'solde' | 'avoir' | null
   final String? factureParenteId; // facture corrigée (pour un avoir)
   final bool franchiseInitiale;
+  // Traçabilité optionnelle (facture émise depuis un RDV / un animal — garde…).
+  final String? sourceRdvId;
+  final String? sourceAnimalId;
+  final String? clientUid;
+  final String? clientProfileId;
 
   const CreerFacturePage({
     super.key,
@@ -544,6 +549,10 @@ class CreerFacturePage extends StatefulWidget {
     this.typeFacture,
     this.factureParenteId,
     this.franchiseInitiale = false,
+    this.sourceRdvId,
+    this.sourceAnimalId,
+    this.clientUid,
+    this.clientProfileId,
   });
 
   @override
@@ -733,6 +742,10 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
                 : 'eleveur',
         if (widget.typeFacture != null) 'type_facture': widget.typeFacture,
         if (widget.factureParenteId != null) 'facture_parente_id': widget.factureParenteId,
+        if (widget.sourceRdvId != null) 'source_rdv_id': widget.sourceRdvId,
+        if (widget.sourceAnimalId != null) 'source_animal_id': widget.sourceAnimalId,
+        if (widget.clientUid != null) 'client_uid': widget.clientUid,
+        if (widget.clientProfileId != null) 'client_profile_id': widget.clientProfileId,
         'date_facture':        _frToIso(d['dateFacture']),
         'date_prestation':     _frToIso(d['datePrestation']),
         'date_echeance':       _frToIso(d['dateEcheance']),
