@@ -26,6 +26,9 @@ export interface Repro {
   club_registre: string | null;
   description: string | null;
   is_retraite: boolean | null;
+  nb_petits_produits?: number | null;
+  historique_fertilite?: string | null;
+  profil_adn_etabli?: boolean | null;
 }
 
 export const UUID_RE =

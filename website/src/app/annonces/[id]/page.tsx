@@ -9,6 +9,7 @@ import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
+import { resultatChipClass, testChipLabel, type TestGenetique } from '@/lib/genetics';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -50,6 +51,9 @@ interface Annonce {
   date_naissance_animal?: string;
   age_estime?: boolean;
   saillie_conditions?: string;
+  saillie_genetique?: string;
+  etalon_animal_id?: string;
+  pere_animal_id?: string;
   mere_nom?: string; mere_puce?: string; mere_race?: string;
   mere_photo_url?: string; mere_couleur?: string; mere_description?: string; mere_registre?: string;
   pere_nom?: string; pere_puce?: string; pere_race?: string;
@@ -425,6 +429,8 @@ function AnnonceDetailPageInner() {
   const [imgIdx, setImgIdx] = useState(0);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [etalonTests, setEtalonTests] = useState<TestGenetique[]>([]);
+  const [etalonInfo, setEtalonInfo] = useState<{ nb_petits_produits?: number | null; historique_fertilite?: string | null; profil_adn_etabli?: boolean | null } | null>(null);
 
   // Likes / favoris
   const [likeCount, setLikeCount] = useState(0);
@@ -557,6 +563,23 @@ function AnnonceDetailPageInner() {
         .then(({ count }) => { if (count != null) setFavoriCount(count); });
     }
   }, [id, user]);
+
+  // Étalon lié : tests génétiques + fertilité (saillie)
+  useEffect(() => {
+    const etalonId = annonce?.etalon_animal_id ?? annonce?.pere_animal_id;
+    if (!annonce || annonce.type_vente !== 'saillie' || !etalonId) return;
+    (async () => {
+      const [{ data: a }, { data: tg }] = await Promise.all([
+        supabase.from('animaux')
+          .select('nb_petits_produits, historique_fertilite, profil_adn_etabli')
+          .eq('id', etalonId).maybeSingle(),
+        supabase.from('tests_genetiques')
+          .select('categorie, code, nom, resultat, genotype').eq('animal_id', etalonId),
+      ]);
+      setEtalonInfo(a ?? null);
+      setEtalonTests((tg ?? []) as TestGenetique[]);
+    })();
+  }, [annonce]);
 
   // Scroll vers le bébé ciblé (navigation depuis une notification like)
   useEffect(() => {
@@ -871,6 +894,49 @@ function AnnonceDetailPageInner() {
             <p className="font-['Galey'] text-[#444] text-sm leading-relaxed">{annonce.saillie_conditions}</p>
           </div>
         )}
+
+        {/* Saillie — statut génétique de l'étalon + fertilité */}
+        {isSaillie && (() => {
+          const maladies = etalonTests.filter(t => t.categorie === 'maladie');
+          const adnEtabli = etalonInfo?.profil_adn_etabli === true
+            || etalonTests.some(t => t.categorie === 'adn' && t.resultat === 'etabli');
+          const genLibre = (annonce.saillie_genetique ?? '').trim();
+          const hasGen = maladies.length > 0 || adnEtabli || genLibre.length > 0;
+          const nb = etalonInfo?.nb_petits_produits;
+          const hist = (etalonInfo?.historique_fertilite ?? '').trim();
+          const hasFert = nb != null || hist.length > 0;
+          if (!hasGen && !hasFert) return null;
+          return (
+            <div className="bg-white rounded-2xl p-5 shadow-sm space-y-4">
+              {hasGen && (
+                <div>
+                  <h2 className="font-['Galey'] font-bold text-sm text-[#0C5C6C] uppercase tracking-wide mb-2">Statut génétique de l&apos;étalon</h2>
+                  {(maladies.length > 0 || adnEtabli) ? (
+                    <div className="flex flex-wrap gap-2">
+                      {adnEtabli && (
+                        <span className="inline-flex items-center gap-1 bg-[#EEF5EA] text-[#4d7a3c] text-xs font-semibold px-2.5 py-1 rounded-full">✓ Profil ADN établi</span>
+                      )}
+                      {maladies.map((t, i) => (
+                        <span key={i} className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full ${resultatChipClass(t.resultat)}`}>
+                          {testChipLabel(t)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="font-['Galey'] text-[#444] text-sm leading-relaxed whitespace-pre-line">{genLibre}</p>
+                  )}
+                </div>
+              )}
+              {hasFert && (
+                <div>
+                  <h2 className="font-['Galey'] font-bold text-sm text-[#0C5C6C] uppercase tracking-wide mb-1">Fertilité</h2>
+                  {nb != null && <p className="text-sm font-semibold text-[#1F2A2E]">{nb} poulains produits</p>}
+                  {hist && <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line mt-1">{hist}</p>}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Bébés portée */}
         {isPortee && bebes.length > 0 && (

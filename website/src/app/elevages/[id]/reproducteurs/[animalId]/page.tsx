@@ -6,11 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { ESPECE_LABEL, UUID_RE, ageLabel, type Repro } from '@/lib/repro';
-
-const TEST_LABEL: Record<string, string> = {
-  adn: 'Test ADN', hanches: 'Test hanches',
-  sante_repro: 'Santé reproducteur', filiation: 'Filiation',
-};
+import { offspringWord, resultatChipClass, testChipLabel, type TestGenetique } from '@/lib/genetics';
 
 function fmtDate(iso?: string | null) {
   if (!iso) return '';
@@ -23,7 +19,7 @@ export default function ReproDetailPage() {
   const id = String(params.id ?? '');
   const animalId = String(params.animalId ?? '');
   const [repro, setRepro] = useState<Repro | null>(null);
-  const [tests, setTests] = useState<string[]>([]);
+  const [tests, setTests] = useState<TestGenetique[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -41,15 +37,16 @@ export default function ReproDetailPage() {
 
       const { data: a } = await supabase.from('animaux')
         .select('id, nom, nom_pedigree, espece, race, sexe, photo_url, date_naissance, '
-          + 'couleur, pedigree_lof, pedigree_numero, club_registre, description, is_retraite')
+          + 'couleur, pedigree_lof, pedigree_numero, club_registre, description, is_retraite, '
+          + 'nb_petits_produits, historique_fertilite, profil_adn_etabli')
         .eq('id', animalId).eq('profile_id', prof.id).eq('uid_eleveur', euid)
         .eq('reproducteur_public', true).maybeSingle();
       if (!a) { setLoading(false); return; }
       setRepro(a as unknown as Repro);
 
-      const { data: docs } = await supabase.from('documents_animaux')
-        .select('type').eq('animal_id', animalId).in('type', Object.keys(TEST_LABEL));
-      setTests([...new Set((docs ?? []).map(d => d.type as string))]);
+      const { data: tg } = await supabase.from('tests_genetiques')
+        .select('categorie, code, nom, resultat, genotype').eq('animal_id', animalId);
+      setTests((tg ?? []) as TestGenetique[]);
       setLoading(false);
     })();
   }, [id, animalId]);
@@ -125,16 +122,47 @@ export default function ReproDetailPage() {
               </div>
             )}
 
-            {tests.length > 0 && (
-              <div className="mt-5">
-                <h2 className="font-['Galey'] font-bold text-[#1F2A2E] text-sm mb-2">Tests renseignés</h2>
-                <div className="flex flex-wrap gap-2">
-                  {tests.map(t => (
-                    <span key={t} className="inline-flex items-center gap-1.5 bg-[#EEF5EA] text-[#4d7a3c] text-xs font-semibold px-2.5 py-1 rounded-full">
-                      ✓ {TEST_LABEL[t] ?? t}
-                    </span>
-                  ))}
+            {(() => {
+              const maladies = tests.filter(t => t.categorie === 'maladie');
+              const robes = tests.filter(t => t.categorie === 'robe');
+              const adnEtabli = repro.profil_adn_etabli === true
+                || tests.some(t => t.categorie === 'adn' && t.resultat === 'etabli');
+              if (maladies.length === 0 && robes.length === 0 && !adnEtabli) return null;
+              return (
+                <div className="mt-5">
+                  <h2 className="font-['Galey'] font-bold text-[#1F2A2E] text-sm mb-2">Statut génétique</h2>
+                  <div className="flex flex-wrap gap-2">
+                    {adnEtabli && (
+                      <span className="inline-flex items-center gap-1.5 bg-[#EEF5EA] text-[#4d7a3c] text-xs font-semibold px-2.5 py-1 rounded-full">
+                        ✓ Profil ADN établi
+                      </span>
+                    )}
+                    {maladies.map((t, i) => (
+                      <span key={i} className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-full ${resultatChipClass(t.resultat)}`}>
+                        {testChipLabel(t)}
+                      </span>
+                    ))}
+                  </div>
+                  {robes.length > 0 && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      Robe : {robes.map(t => `${t.nom}${t.genotype ? ` ${t.genotype}` : ''}`).join(' · ')}
+                    </p>
+                  )}
                 </div>
+              );
+            })()}
+
+            {(repro.nb_petits_produits != null || (repro.historique_fertilite ?? '').trim()) && (
+              <div className="mt-5">
+                <h2 className="font-['Galey'] font-bold text-[#1F2A2E] text-sm mb-1">Fertilité</h2>
+                {repro.nb_petits_produits != null && (
+                  <p className="text-sm font-semibold text-[#1F2A2E] capitalize">
+                    {repro.nb_petits_produits} {offspringWord(repro.espece)} produits
+                  </p>
+                )}
+                {(repro.historique_fertilite ?? '').trim() && (
+                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line mt-1">{repro.historique_fertilite}</p>
+                )}
               </div>
             )}
           </div>

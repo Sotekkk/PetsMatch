@@ -174,3 +174,50 @@ ALTER TABLE poids             ALTER COLUMN id SET DEFAULT gen_random_uuid()::tex
 --    sélecteur de thème ne sauvegarde rien), tables message_reactions et
 --    conversation_reports inexistantes (réactions et signalement muets).
 -- ────────────────────────────────────────────────────────────
+
+
+-- ────────────────────────────────────────────────────────────
+-- 10. Génétique équine/canine/féline : tests génétiques + statut porteur,
+--     profil ADN, historique de fertilité / nombre de petits produits.
+--     - tests_genetiques : sous-collection par animal (pattern carnet santé),
+--       affichée dans l'onglet Repro (éleveur) / Carnet de santé (particulier)
+--       pour cheval / chien / chat.
+--     - animaux.nb_petits_produits + historique_fertilite : bilan repro manuel
+--       (avec suggestion calculée depuis gestations).
+--     - animaux.profil_adn_etabli : raccourci vitrine / annonce saillie.
+--     - annonces.saillie_genetique : statut génétique libre de l'étalon quand
+--       il n'est pas fiché dans PetsMatch.
+--     Sans cette migration : la section Génétique et le bilan repro échouent
+--     silencieusement (colonnes/table absentes), la vitrine garde ses badges
+--     vides.
+-- ────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS tests_genetiques (
+  id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  animal_id     TEXT NOT NULL REFERENCES animaux(id) ON DELETE CASCADE,
+  uid           TEXT,
+  profile_id    UUID,
+  espece        TEXT,
+  categorie     TEXT NOT NULL DEFAULT 'maladie',
+  code          TEXT,
+  nom           TEXT NOT NULL,
+  resultat      TEXT,
+  genotype      TEXT,
+  laboratoire   TEXT,
+  date_test     DATE,
+  url           TEXT,
+  notes         TEXT,
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tests_genetiques_animal ON tests_genetiques (animal_id);
+
+ALTER TABLE tests_genetiques ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "tg_all" ON tests_genetiques;
+CREATE POLICY "tg_all" ON tests_genetiques FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE animaux ADD COLUMN IF NOT EXISTS nb_petits_produits   INTEGER;
+ALTER TABLE animaux ADD COLUMN IF NOT EXISTS historique_fertilite TEXT;
+ALTER TABLE animaux ADD COLUMN IF NOT EXISTS profil_adn_etabli    BOOLEAN DEFAULT FALSE;
+
+ALTER TABLE annonces ADD COLUMN IF NOT EXISTS saillie_genetique TEXT;

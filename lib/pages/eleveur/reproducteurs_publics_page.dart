@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart'
     show speciesLabel, speciesColor, speciesIcon;
+import 'package:PetsMatch/data/genetic_tests.dart';
 
 const _teal = Color(0xFF0C5C6C);
 const _dark = Color(0xFF1F2A2E);
@@ -51,7 +52,8 @@ class _ReproducteursPublicsPageState extends State<ReproducteursPublicsPage> {
           .from('animaux')
           .select('id, nom, nom_pedigree, espece, espece_autre, race, sexe, '
               'photo_url, date_naissance, couleur, pedigree_lof, pedigree_numero, '
-              'club_registre, description, is_retraite')
+              'club_registre, description, is_retraite, '
+              'nb_petits_produits, historique_fertilite, profil_adn_etabli')
           .eq('profile_id', profileId)
           .eq('uid_eleveur', widget.uid)
           .eq('reproducteur_public', true)
@@ -366,11 +368,31 @@ class _ReproFichePublique extends StatelessWidget {
             Text(desc, style: const TextStyle(fontSize: 13, height: 1.5, color: Colors.black87)),
           ],
           const SizedBox(height: 14),
-          _TestsBadges(animalId: data['id'] as String),
+          _TestsBadges(animalId: data['id'] as String, profilAdnEtabli: data['profil_adn_etabli'] == true),
+          if (_hasFertilite) ...[
+            const SizedBox(height: 14),
+            const Text('Fertilité',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _dark)),
+            const SizedBox(height: 4),
+            if ((data['nb_petits_produits'] as num?) != null)
+              _line('${_capitalize(offspringWord(espece))} produits', '${data['nb_petits_produits']}'),
+            if (_fertiliteTexte.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(_fertiliteTexte,
+                    style: const TextStyle(fontSize: 13, height: 1.5, color: Colors.black87)),
+              ),
+          ],
         ],
       ),
     );
   }
+
+  bool get _hasFertilite =>
+      (data['nb_petits_produits'] as num?) != null || _fertiliteTexte.isNotEmpty;
+  String get _fertiliteTexte => (data['historique_fertilite'] as String?)?.trim() ?? '';
+
+  static String _capitalize(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
   Widget _line(String label, String value) {
     if (value.trim().isEmpty) return const SizedBox.shrink();
@@ -391,67 +413,85 @@ class _ReproFichePublique extends StatelessWidget {
   }
 }
 
-/// Badges des tests de santé renseignés (ADN, hanches, santé reproducteur,
-/// filiation) — d'après `documents_animaux`, sans exposer les fichiers.
+/// Statut génétique public d'un reproducteur — d'après `tests_genetiques`,
+/// sans exposer les fichiers. Puces colorées par résultat (indemne / porteur /
+/// atteint) + « Profil ADN établi ».
 class _TestsBadges extends StatefulWidget {
   final String animalId;
-  const _TestsBadges({required this.animalId});
+  final bool profilAdnEtabli;
+  const _TestsBadges({required this.animalId, this.profilAdnEtabli = false});
   @override
   State<_TestsBadges> createState() => _TestsBadgesState();
 }
 
 class _TestsBadgesState extends State<_TestsBadges> {
-  static const _labels = {
-    'adn': 'Test ADN',
-    'hanches': 'Test hanches',
-    'sante_repro': 'Santé reproducteur',
-    'filiation': 'Filiation',
-  };
-  Set<String> _types = {};
+  List<Map<String, dynamic>> _tests = [];
+  bool _adnEtabli = false;
 
   @override
   void initState() {
     super.initState();
+    _adnEtabli = widget.profilAdnEtabli;
     _load();
   }
 
   Future<void> _load() async {
     try {
       final rows = await Supabase.instance.client
-          .from('documents_animaux')
-          .select('type')
-          .eq('animal_id', widget.animalId)
-          .inFilter('type', _labels.keys.toList());
+          .from('tests_genetiques')
+          .select('categorie, code, nom, resultat, genotype')
+          .eq('animal_id', widget.animalId);
       if (mounted) {
-        setState(() => _types =
-            {for (final r in (rows as List)) r['type'] as String});
+        setState(() {
+          _tests = List<Map<String, dynamic>>.from(rows as List);
+          _adnEtabli = _adnEtabli ||
+              _tests.any((t) => t['categorie'] == 'adn' && t['resultat'] == 'etabli');
+        });
       }
     } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_types.isEmpty) return const SizedBox.shrink();
+    final maladies = _tests.where((t) => t['categorie'] == 'maladie').toList();
+    final robes = _tests.where((t) => t['categorie'] == 'robe').toList();
+    if (maladies.isEmpty && robes.isEmpty && !_adnEtabli) return const SizedBox.shrink();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Text('Tests renseignés',
+      const Text('Statut génétique',
           style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _dark)),
       const SizedBox(height: 6),
       Wrap(spacing: 8, runSpacing: 8, children: [
-        for (final t in _types)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEEF5EA),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.check_circle, size: 13, color: Color(0xFF6E9E57)),
-              const SizedBox(width: 5),
-              Text(_labels[t] ?? t,
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF4d7a3c))),
-            ]),
+        if (_adnEtabli)
+          _chip('Profil ADN établi', const Color(0xFFEEF5EA), const Color(0xFF4d7a3c)),
+        for (final t in maladies)
+          _chip(
+            _testChipLabel(t),
+            resultatBg(t['resultat'] as String?),
+            resultatColor(t['resultat'] as String?),
           ),
       ]),
+      if (robes.isNotEmpty) ...[
+        const SizedBox(height: 6),
+        Text(
+          'Robe : ${robes.map((t) => '${t['nom']}${(t['genotype'] as String?)?.isNotEmpty == true ? ' ${t['genotype']}' : ''}').join(' · ')}',
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Color(0xFF6F767B)),
+        ),
+      ],
     ]);
   }
+
+  String _testChipLabel(Map<String, dynamic> t) {
+    final nom = (t['nom'] as String?) ?? 'Test';
+    final geno = (t['genotype'] as String?)?.trim() ?? '';
+    if (geno.isNotEmpty) return '$nom ($geno)';
+    final res = t['resultat'] as String?;
+    return res != null ? '$nom — ${kResultatsGenetiques[res] ?? res}' : nom;
+  }
+
+  Widget _chip(String label, Color bg, Color fg) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+        child: Text(label,
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: fg)),
+      );
 }

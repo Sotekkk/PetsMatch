@@ -165,13 +165,14 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     'numeroRegistre':    row['numero_registre'] ?? '',
     'clubPedigree':      row['club_pedigree'] ?? '',
     'bilanSante':        row['bilan_sante'] ?? false,
-    'etalonAnimalId':    row['etalon_animal_id'],
+    'etalonAnimalId':    row['etalon_animal_id'] ?? row['pere_animal_id'],
     'sailliePrix': row['saillie_prix'] != null
         ? (row['saillie_prix'] is num
             ? (row['saillie_prix'] as num).toInt().toString()
             : double.tryParse(row['saillie_prix'].toString())?.toInt().toString() ?? '')
         : '',
     'saillieConditions': row['saillie_conditions'] ?? '',
+    'saillieGenetique': row['saillie_genetique'] ?? '',
     'dateNaissanceAnimal': _isoToTs(row['date_naissance_animal']),
     'createdAt':         _isoToTs(row['created_at']),
     'updatedAt':         _isoToTs(row['updated_at']),
@@ -1329,14 +1330,61 @@ class _AnimalCard extends StatelessWidget {
 // Saillie conditions
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _SaillieCard extends StatelessWidget {
+class _SaillieCard extends StatefulWidget {
   final Map<String, dynamic> data;
   const _SaillieCard({required this.data});
+  @override
+  State<_SaillieCard> createState() => _SaillieCardState();
+}
+
+class _SaillieCardState extends State<_SaillieCard> {
+  List<Map<String, dynamic>> _tests = [];
+  bool _adnEtabli = false;
+  num? _nbPetits;
+  String _histFertilite = '';
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadEtalon();
+  }
+
+  Future<void> _loadEtalon() async {
+    final etalonId = widget.data['etalonAnimalId']?.toString();
+    if (etalonId == null || etalonId.isEmpty) { setState(() => _loaded = true); return; }
+    try {
+      final supa = Supabase.instance.client;
+      final animal = await supa.from('animaux')
+          .select('nb_petits_produits, historique_fertilite, profil_adn_etabli')
+          .eq('id', etalonId).maybeSingle();
+      final tests = await supa.from('tests_genetiques')
+          .select('categorie, nom, resultat, genotype')
+          .eq('animal_id', etalonId);
+      if (mounted) {
+        setState(() {
+          _tests = List<Map<String, dynamic>>.from(tests as List);
+          _adnEtabli = (animal?['profil_adn_etabli'] == true) ||
+              _tests.any((t) => t['categorie'] == 'adn' && t['resultat'] == 'etabli');
+          _nbPetits = animal?['nb_petits_produits'] as num?;
+          _histFertilite = (animal?['historique_fertilite'] as String?)?.trim() ?? '';
+          _loaded = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loaded = true);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final data = widget.data;
     final prix = (data['sailliePrix'] as String?) ?? '';
     final cond = (data['saillieConditions'] as String?) ?? '';
+    final genLibre = (data['saillieGenetique'] as String?)?.trim() ?? '';
+    final maladies = _tests.where((t) => t['categorie'] == 'maladie').toList();
+    final hasGen = _adnEtabli || maladies.isNotEmpty || genLibre.isNotEmpty;
+    final hasFertilite = _nbPetits != null || _histFertilite.isNotEmpty;
 
     return _sectionCard('Conditions de saillie', Icons.handshake_outlined, [
       if (prix.isNotEmpty) ...[
@@ -1347,17 +1395,77 @@ class _SaillieCard extends StatelessWidget {
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                   fontSize: 18, color: _dark)),
         ]),
-        if (cond.isNotEmpty) const SizedBox(height: 10),
+        if (cond.isNotEmpty || hasGen || hasFertilite) const SizedBox(height: 10),
       ],
       if (cond.isNotEmpty)
         Text(cond, style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
             color: _dark, height: 1.5)),
-      if (prix.isEmpty && cond.isEmpty)
+      if (!_loaded && (data['etalonAnimalId']?.toString().isNotEmpty ?? false))
+        const Padding(padding: EdgeInsets.only(top: 10),
+          child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
+      if (hasGen) ...[
+        const SizedBox(height: 12),
+        const Text('Statut génétique de l\'étalon',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _dark)),
+        const SizedBox(height: 6),
+        if (maladies.isNotEmpty || _adnEtabli)
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            if (_adnEtabli) _genChip('Profil ADN établi', const Color(0xFFEEF5EA), const Color(0xFF4d7a3c)),
+            for (final t in maladies)
+              _genChip(_testLabel(t), _resBg(t['resultat'] as String?), _resFg(t['resultat'] as String?)),
+          ])
+        else
+          Text(genLibre, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _dark, height: 1.5)),
+      ],
+      if (hasFertilite) ...[
+        const SizedBox(height: 12),
+        const Text('Fertilité',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _dark)),
+        const SizedBox(height: 4),
+        if (_nbPetits != null)
+          Text('$_nbPetits poulains produits',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: _dark)),
+        if (_histFertilite.isNotEmpty)
+          Padding(padding: const EdgeInsets.only(top: 4),
+            child: Text(_histFertilite, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _dark, height: 1.5))),
+      ],
+      if (prix.isEmpty && cond.isEmpty && !hasGen && !hasFertilite)
         Text('Conditions à préciser',
             style: TextStyle(fontFamily: 'Galey', fontSize: 13,
                 color: Colors.grey.shade400, fontStyle: FontStyle.italic)),
     ]);
   }
+
+  String _testLabel(Map<String, dynamic> t) {
+    final nom = (t['nom'] as String?) ?? 'Test';
+    final geno = (t['genotype'] as String?)?.trim() ?? '';
+    if (geno.isNotEmpty) return '$nom ($geno)';
+    final res = t['resultat'] as String?;
+    const labels = {
+      'clair': 'indemne', 'porteur': 'porteur', 'homozygote': 'homozygote', 'atteint': 'atteint',
+    };
+    return res != null ? '$nom — ${labels[res] ?? res}' : nom;
+  }
+
+  Color _resBg(String? r) => switch (r) {
+    'clair' || 'etabli' => const Color(0xFFEEF5EA),
+    'porteur' => const Color(0xFFFFF4E5),
+    'atteint' || 'homozygote' => const Color(0xFFFDECEC),
+    _ => const Color(0xFFF1F1F1),
+  };
+  Color _resFg(String? r) => switch (r) {
+    'clair' || 'etabli' => const Color(0xFF4d7a3c),
+    'porteur' => const Color(0xFFB45309),
+    'atteint' || 'homozygote' => const Color(0xFFC0392B),
+    _ => const Color(0xFF6F767B),
+  };
+
+  Widget _genChip(String label, Color bg, Color fg) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+        child: Text(label,
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: fg)),
+      );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

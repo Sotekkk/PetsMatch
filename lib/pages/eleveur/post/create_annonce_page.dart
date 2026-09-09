@@ -128,6 +128,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   bool _sterilise = false;
   final _sailliePrixCtrl = TextEditingController();
   final _saillieCondCtrl = TextEditingController();
+  final _saillieGenetiqueCtrl = TextEditingController();
 
   bool _saving = false;
   Map<String, List<String>> _allBreeds = {};
@@ -232,6 +233,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     _couleurCtrl.text     = d['couleur'] ?? '';
     _sailliePrixCtrl.text = (d['saillie_prix'] ?? d['sailliePrix'])?.toString() ?? '';
     _saillieCondCtrl.text = d['saillie_conditions'] ?? d['saillieConditions'] ?? '';
+    _saillieGenetiqueCtrl.text = d['saillie_genetique'] ?? d['saillieGenetique'] ?? '';
     // Date naissance animal : Timestamp (Firestore) ou String ISO (Supabase)
     final dnaRaw = d['date_naissance_animal'] ?? d['dateNaissanceAnimal'];
     if (dnaRaw is Timestamp) _dateNaissanceAnimal = dnaRaw.toDate();
@@ -259,7 +261,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       _mereNomCtrl, _merePuceCtrl, _mereRaceCtrl, _mereCouleurCtrl, _mereDescCtrl,
       _pereNomCtrl, _perePuceCtrl, _pereRaceCtrl, _pereCouleurCtrl, _pereDescCtrl,
       _numRegistreCtrl, _clubPedigreeCtrl, _studbookCtrl, _couleurCtrl,
-      _sailliePrixCtrl, _saillieCondCtrl, _prixMinPorteeCtrl, _prixMaxPorteeCtrl,
+      _sailliePrixCtrl, _saillieCondCtrl, _saillieGenetiqueCtrl, _prixMinPorteeCtrl, _prixMaxPorteeCtrl,
       _numIdentCtrl, _numSIRECtrl, _numPasseportCtrl,
       _palmaresCtrl, _isoCtrl, _idrCtrl, _iccCtrl,
     ]) c.dispose();
@@ -728,6 +730,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             ? _dateNaissanceAnimal!.toIso8601String().substring(0, 10) : null,
         'sterilise': _type != 'portee' ? _sterilise : null,
         'saillie_prix': _typeVente == 'saillie' ? double.tryParse(_sailliePrixCtrl.text) : null,
+        'saillie_genetique': _typeVente == 'saillie' && _saillieGenetiqueCtrl.text.trim().isNotEmpty
+            ? _saillieGenetiqueCtrl.text.trim()
+            : null,
         'saillie_conditions':
             _typeVente == 'saillie' ? _saillieCondCtrl.text.trim() : null,
         // Champs légaux obligatoires
@@ -1551,6 +1556,19 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     _label('Conditions & informations complémentaires'),
     _textField(_saillieCondCtrl,
         'Ex: Droit au chiot, contrat de saillie, tests génétiques requis...', maxLines: 3),
+    if (_espece == 'cheval') ...[
+      const SizedBox(height: 10),
+      _label('Statut génétique de l\'étalon (optionnel)'),
+      _textField(_saillieGenetiqueCtrl,
+          'Ex: WFFS N/N, PSSM1 N/N, profil ADN établi — si l\'étalon n\'est pas fiché dans PetsMatch',
+          maxLines: 3),
+      if (_etalonAnimalId != null)
+        const Padding(
+          padding: EdgeInsets.only(top: 6),
+          child: Text('Les tests génétiques fichés sur cet étalon s\'afficheront automatiquement.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
+        ),
+    ],
   ]);
 
   Widget _sectionMere() => _card('Mère', Icons.female, [

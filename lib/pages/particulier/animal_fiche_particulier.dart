@@ -17,6 +17,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/data/vaccin_types.dart';
+import 'package:PetsMatch/data/genetic_tests.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/particulier/partage_animal_sheet.dart';
 import 'package:PetsMatch/pages/particulier/proprietaires_animal_sheet.dart';
@@ -118,6 +119,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   List<Map<String, dynamic>> _antiparasitaires = [];
   List<Map<String, dynamic>> _allergies = [];
   List<Map<String, dynamic>> _chirurgies = [];
+  List<Map<String, dynamic>> _testsGenetiques = [];
   List<Map<String, dynamic>> _poids = [];
 
   Map<String, List<String>> _allBreeds = {};
@@ -399,6 +401,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         _supa.from('allergies').select().eq('animal_id', _animalId!).order('date', ascending: false),
         _supa.from('poids').select().eq('animal_id', _animalId!).order('date', ascending: false),
         _supa.from('chirurgies').select().eq('animal_id', _animalId!).order('date', ascending: false),
+        _supa.from('tests_genetiques').select().eq('animal_id', _animalId!).order('date_test', ascending: false),
       ]);
       if (!mounted) return;
       setState(() {
@@ -410,6 +413,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         _allergies = List<Map<String, dynamic>>.from(results[5]);
         _poids = List<Map<String, dynamic>>.from(results[6]);
         _chirurgies = List<Map<String, dynamic>>.from(results[7]);
+        _testsGenetiques = List<Map<String, dynamic>>.from(results[8]);
         _loadingHealth = false;
       });
     } catch (_) {
@@ -1727,6 +1731,26 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
         children: [
+          if (especeHasGenetics(_espece))
+            _HealthSection(
+              title: 'Génétique & tests',
+              icon: Icons.biotech_outlined,
+              color: const Color(0xFF7C3AED),
+              records: _testsGenetiques,
+              onAdd: _showTestGenetiqueSheet,
+              renderRecord: (r) => _RecordTile(
+                title: r['nom'] ?? 'Test',
+                subtitle: [r['laboratoire'], _fmtDate(r['date_test']?.toString())]
+                    .where((e) => e != null && '$e'.isNotEmpty).join(' · '),
+                trailing: kResultatsGenetiques[r['resultat']] ?? (r['genotype'] as String?),
+                onDelete: () => _deleteRecord('tests_genetiques', r['id'], _testsGenetiques),
+                onTap: () => _showRecordDetail('Test génétique', r, const [
+                  ('Test', 'nom'), ('Catégorie', 'categorie'), ('Résultat', 'resultat'),
+                  ('Génotype', 'genotype'), ('Laboratoire', 'laboratoire'),
+                  ('Date', 'date_test'), ('Notes', 'notes'),
+                ]),
+              ),
+            ),
           _HealthSection(
             title: 'Vaccinations',
             icon: Icons.vaccines,
@@ -2253,6 +2277,130 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           dateRappel: date!,
           titre: '${type == 'hospitalisation' ? 'Hospitalisation' : 'Chirurgie'} prévue — ${intitule.text.trim()} (${_nomCtrl.text})',
         );
+      }
+      await _loadHealthRecords();
+    });
+  }
+
+  void _showTestGenetiqueSheet() {
+    final nomCtrl = TextEditingController(), genoCtrl = TextEditingController(),
+        laboCtrl = TextEditingController(), notesCtrl = TextEditingController();
+    DateTime? date;
+    String categorie = 'maladie';
+    String? selectedCode;
+    String resultat = 'clair';
+    String? url;
+    bool uploading = false;
+
+    List<GeneticTest> presetsFor(String cat) =>
+        (kGeneticTests[_espece] ?? const []).where((t) => t.categorie == cat).toList();
+
+    void syncPreset(StateSetter ss) {
+      final list = presetsFor(categorie);
+      if (list.isNotEmpty) {
+        selectedCode = list.first.code;
+        nomCtrl.text = list.first.nom;
+      } else {
+        selectedCode = '';
+        nomCtrl.text = '';
+      }
+      if (categorie == 'adn') resultat = 'etabli';
+    }
+
+    Future<void> pickFile(StateSetter ss) async {
+      final choice = await showModalBottomSheet<String>(
+        context: context,
+        builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('Galerie'),
+              onTap: () => Navigator.pop(context, 'gallery')),
+          ListTile(leading: const Icon(Icons.camera_alt_outlined), title: const Text('Appareil photo'),
+              onTap: () => Navigator.pop(context, 'camera')),
+          ListTile(leading: const Icon(Icons.insert_drive_file_outlined), title: const Text('Fichier (PDF, image)'),
+              onTap: () => Navigator.pop(context, 'file')),
+        ])),
+      );
+      if (choice == null) return;
+      File? f;
+      if (choice == 'file') {
+        final r = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png']);
+        if (r?.files.single.path == null) return;
+        f = File(r!.files.single.path!);
+      } else {
+        final p = await ImagePicker().pickImage(
+            source: choice == 'camera' ? ImageSource.camera : ImageSource.gallery, imageQuality: 85);
+        if (p == null) return;
+        f = File(p.path);
+      }
+      ss(() => uploading = true);
+      try {
+        final uid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
+        final name = '${DateTime.now().millisecondsSinceEpoch}_${f.path.split('/').last}';
+        url = await uploadRawFile(f, 'documents/$uid/$name');
+      } catch (_) {}
+      ss(() => uploading = false);
+    }
+
+    _openSheet('Test génétique', (ss) {
+      final presets = presetsFor(categorie);
+      return [
+        _SDrop(label: 'Catégorie', value: categorie, options: kGeneticTestCategories,
+            onChanged: (v) => ss(() { categorie = v ?? 'maladie'; syncPreset(ss); })),
+        if (presets.isNotEmpty)
+          _SDrop(label: 'Test', value: selectedCode == '' ? 'Autre (saisie libre)' : selectedCode,
+              options: [...presets.map((t) => t.code), 'Autre (saisie libre)'],
+              onChanged: (v) => ss(() {
+                if (v == null || v == 'Autre (saisie libre)') {
+                  selectedCode = ''; nomCtrl.text = '';
+                } else {
+                  selectedCode = v;
+                  nomCtrl.text = presets.firstWhere((t) => t.code == v).nom;
+                }
+              })),
+        if (presets.isEmpty || selectedCode == '')
+          _SFld(ctrl: nomCtrl, label: 'Nom du test', hint: 'Ex : WFFS, MDR1, PKD…'),
+        if (categorie != 'robe')
+          _SDrop(label: 'Résultat', value: resultat, options: kResultatsGenetiques.keys.toList(),
+              onChanged: (v) => ss(() => resultat = v ?? 'clair')),
+        _SFld(ctrl: genoCtrl, label: 'Génotype / notation labo', hint: 'N/N, N/WFFS, HD-A/A…'),
+        _SFld(ctrl: laboCtrl, label: 'Laboratoire', hint: 'Labéo, Antagene, UC Davis…'),
+        _SDate(label: 'Date du test', date: date, onPicked: (d) => ss(() => date = d)),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: OutlinedButton.icon(
+            onPressed: uploading ? null : () => pickFile(ss),
+            icon: uploading
+                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                : Icon(url != null ? Icons.check_circle_outline : Icons.attach_file, size: 16),
+            label: Text(url != null ? 'Résultat joint' : 'Joindre le résultat (PDF/photo)',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+          ),
+        ),
+        _SFld(ctrl: notesCtrl, label: 'Notes', hint: 'Notes', maxLines: 2),
+      ];
+    }, () async {
+      final nom = nomCtrl.text.trim();
+      if (nom.isEmpty) return;
+      final hit = presetsFor(categorie).where((t) => t.code == selectedCode).toList();
+      await _supa.from('tests_genetiques').insert({
+        'id': '${DateTime.now().millisecondsSinceEpoch}',
+        'animal_id': _animalId!,
+        'uid': FirebaseAuth.instance.currentUser?.uid,
+        'espece': _espece,
+        'categorie': categorie,
+        'code': hit.isNotEmpty ? hit.first.code : null,
+        'nom': nom,
+        'resultat': categorie == 'robe' ? null : resultat,
+        'genotype': genoCtrl.text.trim().isEmpty ? null : genoCtrl.text.trim(),
+        'laboratoire': laboCtrl.text.trim().isEmpty ? null : laboCtrl.text.trim(),
+        'date_test': date?.toIso8601String().substring(0, 10),
+        'url': url,
+        'notes': notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
+        'created_at': DateTime.now().toIso8601String(),
+      });
+      if (categorie == 'adn' && resultat == 'etabli') {
+        try {
+          await _supa.from('animaux').update({'profil_adn_etabli': true}).eq('id', _animalId!);
+        } catch (_) {}
       }
       await _loadHealthRecords();
     });

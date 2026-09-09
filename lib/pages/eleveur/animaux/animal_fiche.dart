@@ -35,6 +35,7 @@ import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:PetsMatch/widgets/rich_text_view.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/data/vaccin_types.dart';
+import 'package:PetsMatch/data/genetic_tests.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
 // ─── Contact urgence ─────────────────────────────────────────────────────────
@@ -4071,30 +4072,35 @@ class _SuiviReproTab extends StatelessWidget {
     if (animalId == null) return const _SaveFirstPrompt(message: 'Enregistrez d\'abord la fiche pour accéder au suivi reproducteur.');
 
     final isMale = sexe == 'male';
+    final hasGen = especeHasGenetics(espece);
 
-    final tabs = isMale
-        ? const [Tab(text: 'Saillies')]
-        : const [Tab(text: 'Chaleurs'), Tab(text: 'Saillies'), Tab(text: 'Gestations')];
+    final tabs = <Tab>[
+      if (!isMale) const Tab(text: 'Chaleurs'),
+      const Tab(text: 'Saillies'),
+      if (!isMale) const Tab(text: 'Gestations'),
+      if (hasGen) const Tab(text: 'Génétique'),
+    ];
 
-    final views = isMale
-        ? [_ReproList(
-            animalId: animalId!, collection: 'saillies', readOnly: readOnly,
-            addBuilder: (ctx) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe),
-            editBuilder: (ctx, d) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe, existing: d),
-          )]
-        : [
-            _ChaleursTab(animalId: animalId!, espece: espece, intervalleCustom: intervalleChaleursCustom, readOnly: readOnly),
-            _ReproList(
-              animalId: animalId!, collection: 'saillies', readOnly: readOnly,
-              addBuilder: (ctx) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe),
-              editBuilder: (ctx, d) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe, existing: d),
-            ),
-            _ReproList(
-              animalId: animalId!, collection: 'gestations', readOnly: readOnly,
-              addBuilder: (ctx) => _AddGestationDialog(animalId: animalId!, espece: espece),
-              editBuilder: (ctx, d) => _AddGestationDialog(animalId: animalId!, espece: espece, existing: d),
-            ),
-          ];
+    final views = <Widget>[
+      if (!isMale)
+        _ChaleursTab(animalId: animalId!, espece: espece, intervalleCustom: intervalleChaleursCustom, readOnly: readOnly),
+      _ReproList(
+        animalId: animalId!, collection: 'saillies', readOnly: readOnly,
+        addBuilder: (ctx) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe),
+        editBuilder: (ctx, d) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe, existing: d),
+      ),
+      if (!isMale)
+        _ReproList(
+          animalId: animalId!, collection: 'gestations', readOnly: readOnly,
+          addBuilder: (ctx) => _AddGestationDialog(animalId: animalId!, espece: espece),
+          editBuilder: (ctx, d) => _AddGestationDialog(animalId: animalId!, espece: espece, existing: d),
+        ),
+      if (hasGen)
+        ListView(padding: const EdgeInsets.only(bottom: 24), children: [
+          _GenetiqueSection(animalId: animalId!, espece: espece, readOnly: readOnly),
+          _BilanReproCard(animalId: animalId!, espece: espece, readOnly: readOnly),
+        ]),
+    ];
 
     return DefaultTabController(
       length: tabs.length,
@@ -6760,6 +6766,468 @@ class _AddChirurgieDialogState extends State<AddChirurgieDialog> {
       return true;
     },
   );
+}
+
+// ─── Génétique & bilan reproduction (onglet Repro) ───────────────────────────
+
+class _GenetiqueSection extends StatefulWidget {
+  final String animalId;
+  final String espece;
+  final bool readOnly;
+  const _GenetiqueSection({required this.animalId, required this.espece, this.readOnly = false});
+  @override
+  State<_GenetiqueSection> createState() => _GenetiqueSectionState();
+}
+
+class _GenetiqueSectionState extends State<_GenetiqueSection> {
+  final _supa = Supabase.instance.client;
+  List<Map<String, dynamic>> _tests = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final rows = await _supa
+          .from('tests_genetiques')
+          .select()
+          .eq('animal_id', widget.animalId)
+          .order('date_test', ascending: false);
+      if (mounted) {
+        setState(() {
+          _tests = List<Map<String, dynamic>>.from(rows as List);
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _syncAdnFlag() async {
+    final etabli = _tests.any((t) => t['categorie'] == 'adn' && t['resultat'] == 'etabli');
+    try {
+      await _supa.from('animaux').update({'profil_adn_etabli': etabli}).eq('id', widget.animalId);
+    } catch (_) {}
+  }
+
+  Future<void> _add() async {
+    final added = await showDialog<bool>(
+      context: context,
+      builder: (_) => _AddTestGenetiqueDialog(animalId: widget.animalId, espece: widget.espece),
+    );
+    if (added == true) {
+      await _load();
+      await _syncAdnFlag();
+    }
+  }
+
+  Future<void> _delete(String id) async {
+    try {
+      await _supa.from('tests_genetiques').delete().eq('id', id);
+      await _load();
+      await _syncAdnFlag();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey'))));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.biotech_outlined, size: 18, color: Color(0xFF7C3AED)),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('Génétique & tests',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2A2E)))),
+          if (!widget.readOnly)
+            IconButton(
+              icon: const Icon(Icons.add, color: Color(0xFF6E9E57)),
+              padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+              onPressed: _add,
+            ),
+        ]),
+        const SizedBox(height: 8),
+        if (_loading)
+          const Padding(padding: EdgeInsets.symmetric(vertical: 12),
+              child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))))
+        else if (_tests.isEmpty)
+          Text('Aucun test renseigné', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400))
+        else
+          ..._tests.map((t) {
+            final res = t['resultat'] as String?;
+            final geno = (t['genotype'] as String?)?.trim() ?? '';
+            final sub = [t['laboratoire'], _fmtTgDate(t['date_test'])]
+                .where((e) => e != null && '$e'.isNotEmpty).join(' · ');
+            return Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(t['nom'] ?? 'Test',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600)),
+                  if (sub.isNotEmpty)
+                    Text(sub, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
+                ])),
+                if (res != null || geno.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(color: resultatBg(res), borderRadius: BorderRadius.circular(20)),
+                    child: Text(
+                      res != null ? (kResultatsGenetiques[res] ?? res) : geno,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, fontWeight: FontWeight.w600, color: resultatColor(res)),
+                    ),
+                  ),
+                if ((t['url'] as String?)?.isNotEmpty == true)
+                  IconButton(
+                    icon: const Icon(Icons.open_in_new, size: 16, color: Color(0xFF0C5C6C)),
+                    padding: const EdgeInsets.only(left: 4), constraints: const BoxConstraints(),
+                    onPressed: () => _openDoc(context, t['url'] as String),
+                  ),
+                if (!widget.readOnly)
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
+                    padding: const EdgeInsets.only(left: 4), constraints: const BoxConstraints(),
+                    onPressed: () => _delete(t['id'] as String),
+                  ),
+              ]),
+            );
+          }),
+      ]),
+    );
+  }
+}
+
+String _fmtTgDate(dynamic v) {
+  if (v == null) return '';
+  final d = DateTime.tryParse(v.toString());
+  return d == null ? '' : DateFormat('dd/MM/yyyy').format(d);
+}
+
+class _AddTestGenetiqueDialog extends StatefulWidget {
+  final String animalId;
+  final String espece;
+  const _AddTestGenetiqueDialog({required this.animalId, required this.espece});
+  @override
+  State<_AddTestGenetiqueDialog> createState() => _AddTestGenetiqueDialogState();
+}
+
+class _AddTestGenetiqueDialogState extends State<_AddTestGenetiqueDialog> {
+  final _nomCtrl   = TextEditingController();
+  final _genoCtrl  = TextEditingController();
+  final _laboCtrl  = TextEditingController();
+  final _notesCtrl = TextEditingController();
+  String _categorie = 'maladie';
+  String? _selectedCode; // '' = saisie libre
+  String _resultat = 'clair';
+  DateTime? _date;
+  String? _url;
+  bool _uploading = false;
+
+  List<GeneticTest> get _presets =>
+      (kGeneticTests[widget.espece] ?? const []).where((t) => t.categorie == _categorie).toList();
+
+  @override
+  void initState() {
+    super.initState();
+    _syncPreset();
+  }
+
+  void _syncPreset() {
+    final list = _presets;
+    if (list.isNotEmpty) {
+      _selectedCode = list.first.code;
+      _nomCtrl.text = list.first.nom;
+    } else {
+      _selectedCode = '';
+      _nomCtrl.text = '';
+    }
+    if (_categorie == 'adn') _resultat = 'etabli';
+  }
+
+  @override
+  void dispose() {
+    _nomCtrl.dispose(); _genoCtrl.dispose(); _laboCtrl.dispose(); _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickFile() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('Galerie'),
+            onTap: () => Navigator.pop(context, 'gallery')),
+        ListTile(leading: const Icon(Icons.camera_alt_outlined), title: const Text('Appareil photo'),
+            onTap: () => Navigator.pop(context, 'camera')),
+        ListTile(leading: const Icon(Icons.insert_drive_file_outlined), title: const Text('Fichier (PDF, image)'),
+            onTap: () => Navigator.pop(context, 'file')),
+      ])),
+    );
+    if (choice == null || !mounted) return;
+    File? f;
+    if (choice == 'file') {
+      final r = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png']);
+      if (r?.files.single.path == null) return;
+      f = File(r!.files.single.path!);
+    } else {
+      final p = await ImagePicker().pickImage(
+          source: choice == 'camera' ? ImageSource.camera : ImageSource.gallery, imageQuality: 85);
+      if (p == null) return;
+      f = File(p.path);
+    }
+    setState(() => _uploading = true);
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
+      final name = '${DateTime.now().millisecondsSinceEpoch}_${f.path.split('/').last}';
+      final url = await uploadRawFile(f, 'documents/$uid/$name');
+      if (mounted) setState(() => _url = url);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur upload : $e')));
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => _BaseDialog(
+    title: 'Test génétique',
+    fields: [
+      _DDrop('Catégorie', _categorie, kGeneticTestCategories,
+          (v) => setState(() { _categorie = v ?? 'maladie'; _syncPreset(); })),
+      if (_presets.isNotEmpty)
+        _DDrop('Test', _selectedCode == '' ? '' : _selectedCode,
+            ['', ..._presets.map((t) => t.code)],
+            (v) => setState(() {
+              _selectedCode = v;
+              if (v != null && v.isNotEmpty) {
+                _nomCtrl.text = _presets.firstWhere((t) => t.code == v).nom;
+              } else {
+                _nomCtrl.text = '';
+              }
+            })),
+      if (_presets.isEmpty || _selectedCode == '')
+        _DF('Nom du test *', _nomCtrl),
+      if (_categorie != 'robe')
+        _DDrop('Résultat', _resultat, kResultatsGenetiques.keys.toList(),
+            (v) => setState(() => _resultat = v ?? 'clair')),
+      _DF('Génotype / notation labo', _genoCtrl),
+      _DF('Laboratoire', _laboCtrl),
+      _DD('Date du test', _date, (d) => setState(() => _date = d)),
+      _DCustom(Align(
+        alignment: Alignment.centerLeft,
+        child: OutlinedButton.icon(
+          onPressed: _uploading ? null : _pickFile,
+          icon: _uploading
+              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+              : Icon(_url != null ? Icons.check_circle_outline : Icons.attach_file, size: 16),
+          label: Text(_url != null ? 'Résultat joint' : 'Joindre le résultat (PDF/photo)',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+        ),
+      )),
+      _DF('Notes', _notesCtrl, maxLines: 2),
+    ],
+    onSave: () async {
+      final nom = _nomCtrl.text.trim();
+      if (nom.isEmpty) return false;
+      final presetHit = _presets.where((t) => t.code == _selectedCode).toList();
+      await Supabase.instance.client.from('tests_genetiques').insert({
+        'id': DateTime.now().microsecondsSinceEpoch.toString(),
+        'animal_id': widget.animalId,
+        'uid': FirebaseAuth.instance.currentUser?.uid,
+        if (User_Info.activeProfileId.isNotEmpty) 'profile_id': User_Info.activeProfileId,
+        'espece': widget.espece,
+        'categorie': _categorie,
+        'code': presetHit.isNotEmpty ? presetHit.first.code : null,
+        'nom': nom,
+        'resultat': _categorie == 'robe' ? null : _resultat,
+        'genotype': _genoCtrl.text.trim().isEmpty ? null : _genoCtrl.text.trim(),
+        'laboratoire': _laboCtrl.text.trim().isEmpty ? null : _laboCtrl.text.trim(),
+        'date_test': _date?.toIso8601String().substring(0, 10),
+        'url': _url,
+        'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+      });
+      return true;
+    },
+  );
+}
+
+class _BilanReproCard extends StatefulWidget {
+  final String animalId;
+  final String espece;
+  final bool readOnly;
+  const _BilanReproCard({required this.animalId, required this.espece, this.readOnly = false});
+  @override
+  State<_BilanReproCard> createState() => _BilanReproCardState();
+}
+
+class _BilanReproCardState extends State<_BilanReproCard> {
+  final _supa = Supabase.instance.client;
+  final _nbCtrl = TextEditingController();
+  final _histCtrl = TextEditingController();
+  bool _loading = true;
+  bool _saving = false;
+  int _gestConfirmees = 0;
+  int _petitsNes = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _nbCtrl.dispose(); _histCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final animal = await _supa.from('animaux')
+          .select('nb_petits_produits, historique_fertilite')
+          .eq('id', widget.animalId).maybeSingle();
+      final gests = await _supa.from('gestations')
+          .select('nb_nes, gestation_confirmee')
+          .eq('animal_id', widget.animalId);
+      var conf = 0, nes = 0;
+      for (final g in (gests as List)) {
+        if (g['gestation_confirmee'] == true) conf++;
+        final n = g['nb_nes'];
+        if (n is num) nes += n.toInt();
+      }
+      if (mounted) {
+        setState(() {
+          _nbCtrl.text = animal?['nb_petits_produits']?.toString() ?? '';
+          _histCtrl.text = (animal?['historique_fertilite'] as String?) ?? '';
+          _gestConfirmees = conf;
+          _petitsNes = nes;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await _supa.from('animaux').update({
+        'nb_petits_produits': int.tryParse(_nbCtrl.text.trim()),
+        'historique_fertilite': _histCtrl.text.trim().isEmpty ? null : _histCtrl.text.trim(),
+      }).eq('id', widget.animalId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Bilan enregistré', style: TextStyle(fontFamily: 'Galey'))));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey'))));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final word = offspringWord(widget.espece);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: _loading
+          ? const Center(child: Padding(padding: EdgeInsets.all(8),
+              child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))))
+          : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Row(children: [
+                Icon(Icons.insights_outlined, size: 18, color: Color(0xFF6E9E57)),
+                SizedBox(width: 8),
+                Text('Bilan reproduction',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2A2E))),
+              ]),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _nbCtrl,
+                readOnly: widget.readOnly,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                decoration: InputDecoration(
+                  labelText: 'Nombre de $word produits',
+                  labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _histCtrl,
+                readOnly: widget.readOnly,
+                maxLines: 3,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                decoration: InputDecoration(
+                  labelText: 'Historique de fertilité',
+                  hintText: 'Ex : 12 saillies 2024, 9 poulains vivants, jument facile à suivre…',
+                  hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF9CA3AF)),
+                  labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                ),
+              ),
+              if (_gestConfirmees > 0 || _petitsNes > 0) ...[
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(child: Text(
+                    'Suggéré d\'après le suivi : $_gestConfirmees gestation(s) confirmée(s) · $_petitsNes $word nés',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B)))),
+                  if (!widget.readOnly)
+                    TextButton(
+                      onPressed: () => setState(() {
+                        if (_petitsNes > 0) _nbCtrl.text = _petitsNes.toString();
+                      }),
+                      child: const Text('Utiliser', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                    ),
+                ]),
+              ],
+              if (!widget.readOnly) ...[
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ElevatedButton(
+                    onPressed: _saving ? null : _save,
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF6E9E57), foregroundColor: Colors.white),
+                    child: _saving
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey')),
+                  ),
+                ),
+              ],
+            ]),
+    );
+  }
 }
 
 class _AddAllergieDialog extends StatefulWidget {

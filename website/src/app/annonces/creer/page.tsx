@@ -138,6 +138,7 @@ function CreerAnnoncePageInner() {
   // ── Saillie
   const [sailliePrix, setSailliePrix] = useState('');
   const [saillieConditions, setSaillieConditions] = useState('');
+  const [saillieGenetique, setSaillieGenetique] = useState('');
 
   // ── Identification légale (champs obligatoires selon Code rural)
   const [numSIRE, setNumSIRE] = useState('');
@@ -790,7 +791,12 @@ function CreerAnnoncePageInner() {
           prix_max_portee: prixMax ? Number(prixMax) : null,
           animaux_portee: animauxSaved.length > 0 ? animauxSaved : null,
         }),
-        ...(type === 'saillie' && { saillie_prix: sailliePrix ? parseFloat(sailliePrix) : null, saillie_conditions: saillieConditions || null }),
+        ...(type === 'saillie' && {
+          saillie_prix: sailliePrix ? parseFloat(sailliePrix) : null,
+          saillie_conditions: saillieConditions || null,
+          saillie_genetique: saillieGenetique.trim() || null,
+          etalon_animal_id: pereAnimalId,
+        }),
         vaccines, vermifuge, identification: identificationSante, bilan_sante: bilanSante,
         semaines: type !== 'saillie' ? semaines : null,
         club_pedigree: clubPedigree || null, numero_registre: numRegistre || null,
@@ -1234,6 +1240,19 @@ function CreerAnnoncePageInner() {
                 <textarea value={saillieConditions} onChange={e => setSaillieConditions(e.target.value)} rows={3}
                   placeholder="Ex: Droit au chiot, contrat de saillie, tests génétiques requis…" className={`${iCls} resize-none`} />
               </div>
+              {espece === 'Cheval' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Statut génétique de l&apos;étalon <span className="text-gray-400 font-normal">(optionnel)</span>
+                  </label>
+                  <textarea value={saillieGenetique} onChange={e => setSaillieGenetique(e.target.value)} rows={3}
+                    placeholder="Ex: WFFS N/N, PSSM1 N/N, profil ADN établi — si l'étalon n'est pas fiché dans PetsMatch"
+                    className={`${iCls} resize-none`} />
+                  {pereAnimalId && (
+                    <p className="text-xs text-gray-400 mt-1">Les tests fichés sur cet étalon s&apos;afficheront automatiquement.</p>
+                  )}
+                </div>
+              )}
             </>
           )}
 
