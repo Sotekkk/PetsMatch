@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { uploadPhoto } from '@/lib/upload-media';
-import { fromPostalCode } from '@/lib/french-geo';
+import { fromPostalCode, REGIONS_BY_PAYS, departmentsInRegion } from '@/lib/french-geo';
 import {
   ANNONCE_OBJET_CATEGORIES, ANNONCE_OBJET_TRANSACTIONS, ANNONCE_OBJET_ETATS,
 } from '@/lib/annonce-objet-categories';
@@ -30,6 +30,10 @@ function CreerObjetInner() {
   const [etat, setEtat] = useState('');
   const [ville, setVille] = useState('');
   const [cp, setCp] = useState('');
+  const [communes, setCommunes] = useState<string[]>([]);
+  const [loadingCommunes, setLoadingCommunes] = useState(false);
+  const [region, setRegion] = useState('');
+  const [departement, setDepartement] = useState('');
   const [existingPhotos, setExistingPhotos] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
@@ -50,9 +54,29 @@ function CreerObjetInner() {
       setEtat(data.etat ?? '');
       setVille(data.ville ?? '');
       setCp(data.code_postal ?? '');
+      setRegion(data.region ?? '');
+      setDepartement(data.departement ?? '');
+      if (data.ville) setCommunes([data.ville]);
       setExistingPhotos(data.photos ?? []);
     });
   }, [editId]);
+
+  // Code postal → communes + région/département
+  useEffect(() => {
+    if (cp.length !== 5) { setCommunes([]); return; }
+    const geo = fromPostalCode(cp);
+    if (geo) { setRegion(geo.region); setDepartement(geo.departement); }
+    setLoadingCommunes(true);
+    fetch(`https://geo.api.gouv.fr/communes?codePostal=${cp}&fields=nom&format=json`)
+      .then(r => r.json())
+      .then((list: { nom: string }[]) => {
+        const names = [...new Set((list ?? []).map(c => c.nom))].sort();
+        setCommunes(names);
+        setVille(v => (names.includes(v) ? v : names.length === 1 ? names[0] : ''));
+      })
+      .catch(() => setCommunes([]))
+      .finally(() => setLoadingCommunes(false));
+  }, [cp]);
 
   if (loading) return <div className="py-32 text-center text-gray-400">Chargement…</div>;
   if (!user) { router.push('/connexion'); return null; }
@@ -69,6 +93,8 @@ function CreerObjetInner() {
     setErr('');
     if (!titre.trim()) { setErr('Donnez un titre à votre annonce.'); return; }
     if (totalPhotos === 0) { setErr('Ajoutez au moins une photo.'); return; }
+    if (cp.trim().length !== 5) { setErr('Indiquez un code postal.'); return; }
+    if (!ville.trim()) { setErr('Sélectionnez votre commune.'); return; }
     const txt = `${titre} ${description}`.toLowerCase();
     if (INTERDITS.some(w => txt.includes(w))) {
       setErr('Cette rubrique est réservée au matériel. Pour un animal, utilisez « Trouver un compagnon ».');
@@ -95,8 +121,8 @@ function CreerObjetInner() {
         photos: [...existingPhotos, ...uploaded],
         ville: ville.trim(),
         code_postal: cp.trim(),
-        departement: geo?.departement ?? null,
-        region: geo?.region ?? null,
+        departement: departement || geo?.departement || null,
+        region: region || geo?.region || null,
         nom_vendeur: user!.displayName || 'Particulier',
         statut: 'disponible',
         updated_at: new Date().toISOString(),
@@ -210,17 +236,49 @@ function CreerObjetInner() {
           className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:border-[#0C5C6C]" />
       </Field>
 
+      <h2 className="text-sm font-bold text-[#0C5C6C] mt-2 mb-2">📍 Localisation</h2>
+
       <div className="grid grid-cols-3 gap-3">
-        <div className="col-span-2">
-          <Field label="Ville">
-            <input value={ville} onChange={e => setVille(e.target.value)}
-              className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
-          </Field>
-        </div>
         <Field label="Code postal">
           <input value={cp} onChange={e => setCp(e.target.value.replace(/\D/g, '').slice(0, 5))}
-            inputMode="numeric"
+            inputMode="numeric" placeholder="5 chiffres"
             className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+        </Field>
+        <div className="col-span-2">
+          <Field label="Commune">
+            {loadingCommunes ? (
+              <p className="text-sm text-gray-400 py-2.5">Recherche des communes…</p>
+            ) : communes.length === 0 ? (
+              <p className="text-sm text-gray-400 py-2.5">
+                {cp.length === 5 ? 'Aucune commune pour ce code postal.' : 'Saisissez d’abord le code postal.'}
+              </p>
+            ) : communes.length === 1 ? (
+              <div className="w-full border border-gray-200 bg-gray-50 rounded-xl px-3 py-2.5 text-sm font-medium">📍 {communes[0]}</div>
+            ) : (
+              <select value={ville} onChange={e => setVille(e.target.value)}
+                className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
+                <option value="">Sélectionnez votre commune</option>
+                {communes.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            )}
+          </Field>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Région">
+          <select value={region} onChange={e => { setRegion(e.target.value); setDepartement(''); }}
+            className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
+            <option value="">Région</option>
+            {REGIONS_BY_PAYS.France.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </Field>
+        <Field label="Département">
+          <select value={departement} onChange={e => setDepartement(e.target.value)} disabled={!region}
+            className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:border-[#0C5C6C]">
+            <option value="">{region ? 'Département' : 'Choisissez une région'}</option>
+            {region && departmentsInRegion(region).map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
         </Field>
       </div>
 

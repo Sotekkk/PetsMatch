@@ -156,12 +156,15 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => StatefulBuilder(
+      builder: (_) {
+        final kwCtrl = TextEditingController(text: _kw);
+        return StatefulBuilder(
         builder: (ctx, setSheet) {
           final depts = _region != null
               ? FrenchGeo.departmentsInRegion(_region!)
               : const <String>[];
-          return Padding(
+          return SingleChildScrollView(
+            child: Padding(
             padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
               Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(
@@ -172,15 +175,41 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
                 const Spacer(),
                 TextButton(
                   onPressed: () {
-                    setSheet(() {});
-                    setState(() { _region = null; _departement = null; _ville = ''; _tri = 'recent'; });
+                    _searchCtrl.clear();
+                    setState(() {
+                      _kw = ''; _cat = 'tous';
+                      _region = null; _departement = null; _ville = ''; _tri = 'recent';
+                    });
                     _load();
                     Navigator.pop(ctx);
                   },
-                  child: const Text('Réinitialiser', style: TextStyle(fontFamily: 'Galey')),
+                  child: const Text('Tout effacer', style: TextStyle(fontFamily: 'Galey')),
                 ),
               ]),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
+
+              _sheetLabel('Mots-clés'),
+              TextField(
+                controller: kwCtrl,
+                decoration: _sheetDec('Ex : cage lapin, foin, harnais…').copyWith(
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              _sheetLabel('Catégorie'),
+              DropdownButtonFormField<String>(
+                initialValue: _cat,
+                isExpanded: true,
+                decoration: _sheetDec('Toutes les catégories'),
+                items: [
+                  const DropdownMenuItem(value: 'tous', child: Text('Toutes les catégories')),
+                  for (final c in kAnnonceObjetCategories)
+                    DropdownMenuItem(value: c.slug, child: Text('${c.emoji}  ${c.label}', overflow: TextOverflow.ellipsis)),
+                ],
+                onChanged: (v) => setSheet(() => _cat = v ?? 'tous'),
+              ),
+              const SizedBox(height: 16),
 
               OutlinedButton.icon(
                 onPressed: _locating ? null : () { Navigator.pop(ctx); _autourDeMoi(); },
@@ -245,7 +274,13 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
               SizedBox(
                 width: double.infinity, height: 48,
                 child: ElevatedButton(
-                  onPressed: () { Navigator.pop(ctx); setState(() {}); _load(); },
+                  onPressed: () {
+                    final kw = kwCtrl.text.trim();
+                    _searchCtrl.text = kw;
+                    setState(() => _kw = kw);
+                    Navigator.pop(ctx);
+                    _load();
+                  },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _teal, foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -255,9 +290,11 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
                 ),
               ),
             ]),
+          ),
           );
         },
-      ),
+      );
+      },
     );
   }
 
