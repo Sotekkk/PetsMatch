@@ -666,6 +666,13 @@ Future<void> main() async {
     await requestPermissions();
   } catch (_) {}
 
+  // iOS : afficher les banners push même quand l'app est au premier plan
+  await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+    alert: true,
+    badge: true,
+    sound: true,
+  );
+
   // Sauvegarde immédiate si l'user est déjà connecté (timeout 5s max)
   try {
     await saveFcmTokenToFirestore().timeout(const Duration(seconds: 5));

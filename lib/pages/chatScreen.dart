@@ -508,7 +508,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           if (p == uid) continue;
           _supa.from('notifications').insert({
             'uid':   p,
-            'type':  'new_message',
+            'type':  'message',
             'title': myName.isEmpty ? 'Nouveau message' : myName,
             'body':  previewText,
             'data':  {'conversation_id': widget.conversationId},

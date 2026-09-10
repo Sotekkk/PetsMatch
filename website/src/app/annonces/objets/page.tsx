@@ -48,6 +48,8 @@ export default function AnnoncesObjetsFeedPage() {
   const [region, setRegion] = useState('');
   const [dept, setDept] = useState('');
   const [ville, setVille] = useState('');
+  const [cp, setCp] = useState('');
+  const [communes, setCommunes] = useState<string[]>([]);
   const [tri, setTri] = useState('recent');
   const [locating, setLocating] = useState(false);
 
@@ -57,8 +59,23 @@ export default function AnnoncesObjetsFeedPage() {
     return () => clearTimeout(t);
   }, [kwInput]);
 
+  // Code postal → communes. Un filtre par CP remplace le filtre région/dépt
+  // (sinon on exclut les annonces sans région/département renseignés).
+  useEffect(() => {
+    if (cp.length !== 5) { setCommunes([]); return; }
+    setRegion(''); setDept('');
+    fetch(`https://geo.api.gouv.fr/communes?codePostal=${cp}&fields=nom&format=json`)
+      .then(r => r.json())
+      .then((list: { nom: string }[]) => {
+        const names = [...new Set((list ?? []).map(c => c.nom))].sort();
+        setCommunes(names);
+        setVille(v => (names.includes(v) ? v : ''));
+      })
+      .catch(() => setCommunes([]));
+  }, [cp]);
+
   const depts = useMemo(() => (region ? departmentsInRegion(region) : []), [region]);
-  const activeFilters = (region ? 1 : 0) + (dept ? 1 : 0) + (ville ? 1 : 0) + (tri !== 'recent' ? 1 : 0);
+  const activeFilters = (region ? 1 : 0) + (dept ? 1 : 0) + (ville ? 1 : 0) + (cp ? 1 : 0) + (tri !== 'recent' ? 1 : 0);
 
   useEffect(() => {
     setLoading(true);
@@ -70,8 +87,12 @@ export default function AnnoncesObjetsFeedPage() {
       const safe = kw.replace(/[%,]/g, ' ');
       q = q.or(`titre.ilike.%${safe}%,description.ilike.%${safe}%`);
     }
-    if (region) q = q.eq('region', region);
-    if (dept) q = q.eq('departement', dept);
+    if (cp.length === 5) {
+      q = q.eq('code_postal', cp);
+    } else {
+      if (region) q = q.eq('region', region);
+      if (dept) q = q.eq('departement', dept);
+    }
     if (ville) q = q.ilike('ville', `%${ville}%`);
     q = tri === 'prix_asc'
       ? q.order('prix', { ascending: true, nullsFirst: false })
@@ -85,7 +106,7 @@ export default function AnnoncesObjetsFeedPage() {
         : list);
       setLoading(false);
     });
-  }, [cat, kw, region, dept, ville, tri]);
+  }, [cat, kw, region, dept, cp, ville, tri]);
 
   function autourDeMoi() {
     if (!navigator.geolocation) return;
@@ -140,23 +161,36 @@ export default function AnnoncesObjetsFeedPage() {
         ))}
       </div>
 
-      {/* Filtres géo + tri */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+      {/* Filtres : code postal → commune */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
+        <input value={cp} onChange={e => setCp(e.target.value.replace(/\D/g, '').slice(0, 5))}
+          inputMode="numeric" placeholder="Code postal"
+          className="border border-gray-200 rounded-xl px-2.5 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+        {communes.length > 0 ? (
+          <select value={ville} onChange={e => setVille(e.target.value)}
+            className="border border-gray-200 rounded-xl px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
+            <option value="">Toutes les communes</option>
+            {communes.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        ) : (
+          <input value={ville} onChange={e => setVille(e.target.value)} placeholder="Commune"
+            className="border border-gray-200 rounded-xl px-2.5 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+        )}
+        <select value={tri} onChange={e => setTri(e.target.value)}
+          className="border border-gray-200 rounded-xl px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
+          {TRIS.map(t => <option key={t.k} value={t.k}>{t.label}</option>)}
+        </select>
+      </div>
+      <div className="grid grid-cols-2 gap-2 mb-2">
         <select value={region} onChange={e => { setRegion(e.target.value); setDept(''); }}
           className="border border-gray-200 rounded-xl px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
-          <option value="">Toutes régions</option>
+          <option value="">Ou : toutes régions</option>
           {REGIONS_BY_PAYS.France.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
         <select value={dept} onChange={e => setDept(e.target.value)} disabled={!region}
           className="border border-gray-200 rounded-xl px-2.5 py-2 text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400 focus:outline-none focus:border-[#0C5C6C]">
           <option value="">Tous départements</option>
           {depts.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-        <input value={ville} onChange={e => setVille(e.target.value)} placeholder="Ville"
-          className="border border-gray-200 rounded-xl px-2.5 py-2 text-sm focus:outline-none focus:border-[#0C5C6C]" />
-        <select value={tri} onChange={e => setTri(e.target.value)}
-          className="border border-gray-200 rounded-xl px-2.5 py-2 text-sm bg-white focus:outline-none focus:border-[#0C5C6C]">
-          {TRIS.map(t => <option key={t.k} value={t.k}>{t.label}</option>)}
         </select>
       </div>
       <div className="flex items-center gap-3 mb-5 text-sm">
@@ -165,7 +199,7 @@ export default function AnnoncesObjetsFeedPage() {
           📍 {locating ? 'Localisation…' : 'Autour de moi'}
         </button>
         {activeFilters > 0 && (
-          <button onClick={() => { setRegion(''); setDept(''); setVille(''); setTri('recent'); }}
+          <button onClick={() => { setRegion(''); setDept(''); setVille(''); setCp(''); setCommunes([]); setTri('recent'); }}
             className="text-gray-400 hover:text-gray-600">Réinitialiser les filtres</button>
         )}
       </div>
