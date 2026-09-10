@@ -75,13 +75,14 @@ Future<void> saveFcmTokenToFirestore() async {
     // iOS : `getToken()` renvoie null (ou lève) tant que le token APNs n'est pas
     // encore remonté du système. On l'attend d'abord, avec quelques essais, sinon
     // le token FCM n'est jamais généré et l'iPhone ne reçoit aucune notif.
+    String? apnsToken;
     if (Platform.isIOS) {
-      String? apns = await FirebaseMessaging.instance.getAPNSToken();
-      for (int i = 0; apns == null && i < 5; i++) {
+      apnsToken = await FirebaseMessaging.instance.getAPNSToken();
+      for (int i = 0; apnsToken == null && i < 5; i++) {
         await Future.delayed(const Duration(seconds: 1));
-        apns = await FirebaseMessaging.instance.getAPNSToken();
+        apnsToken = await FirebaseMessaging.instance.getAPNSToken();
       }
-      if (apns == null) {
+      if (apnsToken == null) {
         // Pas d'APNs = capability Push absente / profil non provisionné /
         // permission refusée : inutile d'insister, on réessaiera au refresh.
         return;
@@ -98,9 +99,11 @@ Future<void> saveFcmTokenToFirestore() async {
           {'fcmToken': token}, SetOptions(merge: true));
         // Supabase (notifications push likes/alertes)
         try {
+          final updates = <String, dynamic>{'fcm_token': token};
+          if (apnsToken != null) updates['apns_token'] = apnsToken;
           await Supabase.instance.client
               .from('users')
-              .update({'fcm_token': token})
+              .update(updates)
               .eq('uid', user.uid);
         } catch (_) {}
       }
@@ -685,8 +688,13 @@ Future<void> main() async {
     try {
       await FirebaseFirestore.instance.collection('users').doc(user.uid)
           .set({'fcmToken': newToken}, SetOptions(merge: true));
+      final updates = <String, dynamic>{'fcm_token': newToken};
+      if (Platform.isIOS) {
+        final apns = await FirebaseMessaging.instance.getAPNSToken();
+        if (apns != null) updates['apns_token'] = apns;
+      }
       await Supabase.instance.client.from('users')
-          .update({'fcm_token': newToken}).eq('uid', user.uid);
+          .update(updates).eq('uid', user.uid);
     } catch (_) {}
   });
   await Future.delayed(const Duration(seconds: 1));
