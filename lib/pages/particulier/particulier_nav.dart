@@ -362,7 +362,7 @@ class _ParticulierNavState extends State<ParticulierNav> {
                   label: 'Perdus & Trouvés',
                   children: [
                     _DrawerSubItem(
-                      label: 'Mes déclarations perdues/trouvées',
+                      label: 'Mes déclarations',
                       icon: Icons.manage_search_outlined,
                       onTap: () {
                         Navigator.pop(context);
