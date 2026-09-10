@@ -38,6 +38,7 @@ interface UserProfile {
 
 const NAV_GUEST = [
   { href: '/annonces',       label: 'Annonces' },
+  { href: '/annonces/objets', label: '📦 Matériel' },
   { href: '/adoptions',      label: '💚 Adoptions' },
   { href: '/elevages',       label: 'Élevages' },
   { href: '/associations',   label: 'Associations' },
@@ -78,6 +79,7 @@ const NAV_PARTICULIER = [
   { href: '/',                     label: 'Accueil' },
   { href: '/mes-animaux',          label: 'Mes Animaux' },
   { href: '/annonces',             label: 'Annonces' },
+  { href: '/annonces/objets',      label: 'Matériel' },
   { href: '/animaux-perdus',       label: 'Animaux perdus' },
   { href: '/communaute',           label: 'Communauté' },
   { href: '/services',             label: 'Annuaire des professionnels' },
@@ -478,6 +480,9 @@ const SEARCH_KEYWORDS: Record<string, string[]> = {
   '/mes-contrats': ['contrats recus', 'mes contrats'],
   '/elevage/facturation': ['factures', 'devis', 'tva', 'comptabilite', 'facturation'],
   '/mes-annonces': ['mes annonces', 'portees', 'chiots a vendre'],
+  '/annonces/objets': ['materiel', 'objets', 'cage', 'harnais', 'foin', 'fourrage', 'tracteur', 'remorque', 'location prairie', 'parcelle', 'petites annonces', 'accessoires'],
+  '/mes-annonces-materiel': ['mes annonces materiel', 'mes objets', 'vendre du materiel'],
+  '/annonces/creer-objet': ['publier du materiel', 'vendre une cage', 'vendre un harnais', 'louer une prairie'],
   '/annonces/creer': ['publier une annonce', 'deposer une annonce', 'nouvelle portee', 'vendre', 'nouvelle annonce'],
   '/annonces': ['trouver un chien', 'adopter', 'acheter', 'chiot', 'chaton', 'compagnon', 'annonces'],
   '/elevages': ['carte des elevages', 'eleveurs'],
@@ -837,7 +842,7 @@ export default function Header() {
   // "Mes employeurs"/"Mes associations" ne concerne que le profil particulier
   // (on ne peut être employé/bénévole qu'en tant que particulier — jamais en
   // tant que profil pro/éleveur/association).
-  const menuSections = (effectiveType === 'particulier' && (isEmploye || isBenevole))
+  const withEmployeurs = (effectiveType === 'particulier' && (isEmploye || isBenevole))
     ? baseMenuSections.map((sec, i) => i === 0
         ? {
             ...sec,
@@ -849,6 +854,23 @@ export default function Header() {
           }
         : sec)
     : baseMenuSections;
+  // Petites annonces « matériel & objets » liées aux animaux — accessible à
+  // tous les profils (particulier, éleveur, association, pro). Section propre
+  // pour éviter toute confusion avec les annonces d'animaux.
+  const menuSections = user
+    ? [
+        ...withEmployeurs,
+        {
+          section: 'Petites annonces (matériel)',
+          icon: '📦',
+          items: [
+            { href: '/annonces/objets',        label: 'Parcourir le matériel', icon: '🔎' },
+            { href: '/mes-annonces-materiel',  label: 'Mes annonces matériel', icon: '📋' },
+            { href: '/annonces/creer-objet',   label: 'Publier du matériel',   icon: '➕' },
+          ],
+        },
+      ]
+    : withEmployeurs;
 
   // ── Index de recherche rapide (loupe) ────────────────────────────────────
   // À plat : tous les items du menu du profil actif + les liens de nav + les
