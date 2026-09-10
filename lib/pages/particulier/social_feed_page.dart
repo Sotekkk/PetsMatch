@@ -502,33 +502,74 @@ List<String> _mediaUrls(String? raw) {
 // fiche d'un animal, un bouton ouvre `AnimalTaggedPostsPage` — toutes les
 // publications du réseau où cet animal est tagué.
 
-/// IDs d'animaux taguables : ceux dont l'utilisateur est propriétaire actif
-/// (`animaux_proprietes`) + ses animaux d'élevage (`animaux.uid_eleveur`).
+const _kAnimalSortiStatuts = ['sorti', 'decede', 'cede', 'vendu', 'mort', 'retraite'];
+
+/// Animaux taguables sur une publication : **uniquement ceux du PROFIL ACTIF**
+/// (particulier ↔ éleveur strictement séparés) et **dont on est encore
+/// propriétaire** (jamais un animal cédé). Aligné sur la logique de « Mes
+/// Animaux » : `animaux_proprietes` filtré par `profile_id_proprio` + `date_fin`
+/// NULL, complété par les animaux d'élevage du profil éleveur.
 Future<List<Map<String, dynamic>>> _loadTaggableAnimals(String uid) async {
   if (uid.isEmpty) return [];
   final supa = Supabase.instance.client;
+  // Profil actif résolu à un id concret (jamais null) → scope strict même
+  // quand on est sur le profil principal (activeProfileId == '').
+  final effectivePid = await _activeAuthorProfileId(uid);
+  final activeType = User_Info.activeType;
   final ids = <String>{};
+
+  // 1. Propriété ACTIVE (date_fin NULL) du profil actif.
   try {
-    final rows = await supa.from('animaux_proprietes')
-        .select('animal_id').eq('uid_proprio', uid).eq('statut', 'actif');
-    for (final r in rows as List) {
+    var migrated = false;
+    if (effectivePid != null) {
+      final check = await supa.from('animaux_proprietes').select('animal_id')
+          .eq('uid_proprio', uid)
+          .not('profile_id_proprio', 'is', null).limit(1);
+      migrated = (check as List).isNotEmpty;
+    }
+    var q = supa.from('animaux_proprietes')
+        .select('animal_id, profile_id_proprio, date_fin')
+        .eq('uid_proprio', uid)
+        .eq('statut', 'actif')
+        .isFilter('date_fin', null);
+    if (migrated && effectivePid != null) {
+      q = q.eq('profile_id_proprio', effectivePid);
+    }
+    for (final r in await q as List) {
       final id = r['animal_id'] as String?;
       if (id != null && id.isNotEmpty) ids.add(id);
     }
   } catch (_) {}
-  try {
-    final rows = await supa.from('animaux').select('id').eq('uid_eleveur', uid);
-    for (final r in rows as List) {
-      final id = r['id'] as String?;
-      if (id != null && id.isNotEmpty) ids.add(id);
-    }
-  } catch (_) {}
+
+  // 2. Animaux d'élevage — SEULEMENT depuis un profil éleveur/pro/asso, jamais
+  //    depuis un profil particulier. Exclut les animaux sortis / cédés.
+  if (activeType.isNotEmpty && activeType != 'particulier') {
+    try {
+      var q = supa.from('animaux')
+          .select('id, profile_id, statut, date_sortie')
+          .eq('uid_eleveur', uid);
+      if (effectivePid != null) q = q.eq('profile_id', effectivePid);
+      for (final r in await q as List) {
+        final id = r['id'] as String?;
+        final statut = (r['statut'] ?? '').toString();
+        if (id == null || id.isEmpty) continue;
+        if (_kAnimalSortiStatuts.contains(statut)) continue;
+        if (r['date_sortie'] != null) continue;
+        ids.add(id);
+      }
+    } catch (_) {}
+  }
+
   if (ids.isEmpty) return [];
   try {
     final rows = await supa.from('animaux')
-        .select('id, nom, espece, race, photo_url, sexe')
+        .select('id, nom, espece, race, photo_url, sexe, statut, date_sortie')
         .inFilter('id', ids.toList());
-    final list = List<Map<String, dynamic>>.from(rows as List);
+    final list = List<Map<String, dynamic>>.from(rows as List)
+        // Filet de sécurité : jamais un animal sorti / cédé / décédé.
+        .where((a) => a['date_sortie'] == null &&
+            !_kAnimalSortiStatuts.contains((a['statut'] ?? '').toString()))
+        .toList();
     list.sort((a, b) => (a['nom'] ?? '').toString().toLowerCase()
         .compareTo((b['nom'] ?? '').toString().toLowerCase()));
     return list;
@@ -4117,10 +4158,28 @@ class _AnimalTagSheet extends StatefulWidget {
 
 class _AnimalTagSheetState extends State<_AnimalTagSheet> {
   late final Set<String> _sel = Set<String>.from(widget.selected);
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() { _searchCtrl.dispose(); super.dispose(); }
+
+  List<Map<String, dynamic>> get _filtered {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return widget.animals;
+    return widget.animals.where((a) {
+      final hay = [a['nom'], a['espece'], a['race']]
+          .map((v) => (v ?? '').toString().toLowerCase()).join(' ');
+      return hay.contains(q);
+    }).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final filtered = _filtered;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
       margin: const EdgeInsets.only(top: 80),
       decoration: const BoxDecoration(
         color: Color(0xFF0C3535),
@@ -4153,14 +4212,44 @@ class _AnimalTagSheetState extends State<_AnimalTagSheet> {
             ),
           ]),
         ),
+        const SizedBox(height: 10),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextField(
+            controller: _searchCtrl,
+            onChanged: (v) => setState(() => _query = v),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Rechercher un animal…',
+              hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white38),
+              prefixIcon: const Icon(Icons.search, size: 18, color: Colors.white38),
+              suffixIcon: _query.isEmpty ? null : IconButton(
+                icon: const Icon(Icons.close, size: 16, color: Colors.white38),
+                onPressed: () => setState(() { _query = ''; _searchCtrl.clear(); }),
+              ),
+              isDense: true,
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.06),
+              contentPadding: const EdgeInsets.symmetric(vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+            ),
+          ),
+        ),
         const SizedBox(height: 8),
+        if (filtered.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 28),
+            child: Text('Aucun animal',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white38)),
+          ),
         Flexible(
           child: ListView.builder(
             shrinkWrap: true,
             padding: const EdgeInsets.fromLTRB(8, 4, 8, 24),
-            itemCount: widget.animals.length,
+            itemCount: filtered.length,
             itemBuilder: (_, i) {
-              final a = widget.animals[i];
+              final a = filtered[i];
               final id = a['id'] as String;
               final checked = _sel.contains(id);
               final photo = (a['photo_url'] as String?) ?? '';
@@ -4191,6 +4280,7 @@ class _AnimalTagSheetState extends State<_AnimalTagSheet> {
           ),
         ),
       ]),
+    ),
     );
   }
 }
