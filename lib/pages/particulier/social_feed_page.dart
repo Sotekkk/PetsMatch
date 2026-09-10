@@ -139,6 +139,9 @@ const _cosmeticCatalog = <Map<String, Object>>[
 
 String _profileName(Map<String, dynamic>? p) {
   if (p == null) return 'Membre';
+  // Pseudo Pets Social choisi → il prime sur le vrai nom (tous types de profil).
+  final pseudo = (p['social_pseudo'] ?? '').toString().trim();
+  if (pseudo.isNotEmpty) return pseudo;
   final ne = (p['nom'] ?? '').toString().trim();
   final n = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
   // Profil pro / éleveur / association : on affiche le nom de la structure.
@@ -165,7 +168,7 @@ String? _socialTypeLabel(String? type) {
   }
 }
 
-const _kAuthorCols = 'id, uid, firstname, lastname, avatar_url, profile_picture_url_pro, profile_type, nom, is_influencer';
+const _kAuthorCols = 'id, uid, firstname, lastname, avatar_url, profile_picture_url_pro, profile_type, nom, is_influencer, social_pseudo';
 
 /// Id du profil PARTICULIER d'un uid — identité utilisée dans le réseau social,
 /// jamais le profil pro / is_main. Mémoïsé (les inserts like/follow l'appellent
@@ -322,16 +325,19 @@ void _sendSocialNotif({
     }
     if (recipientUid == null || recipientUid == actorUid) return;
 
-    // Nom de la personne qui agit
+    // Nom de la personne qui agit (pseudo Pets Social s'il est défini)
     final actorRow = await supa
         .from('user_profiles')
-        .select('firstname, lastname')
+        .select('firstname, lastname, social_pseudo')
         .eq('uid', actorUid)
         .limit(1)
         .maybeSingle();
-    final actorName = actorRow != null
-        ? '${actorRow['firstname'] ?? ''} ${actorRow['lastname'] ?? ''}'.trim()
-        : 'Quelqu\'un';
+    final actorPseudo = (actorRow?['social_pseudo'] as String? ?? '').trim();
+    final actorName = actorPseudo.isNotEmpty
+        ? actorPseudo
+        : (actorRow != null
+            ? '${actorRow['firstname'] ?? ''} ${actorRow['lastname'] ?? ''}'.trim()
+            : 'Quelqu\'un');
 
     await supa.from('notifications').insert({
       'uid': recipientUid,
@@ -991,13 +997,13 @@ class _SuggestionsWidgetState extends State<_SuggestionsWidget> {
     final out = <Map<String, dynamic>>[];
     if (candidatePids.isNotEmpty) {
       final rows = await _supa.from('user_profiles')
-          .select('id, uid, firstname, lastname, avatar_url, profile_picture_url_pro, profile_type, nom')
+          .select('id, uid, firstname, lastname, avatar_url, profile_picture_url_pro, profile_type, nom, social_pseudo')
           .inFilter('id', candidatePids);
       out.addAll((rows as List).cast<Map<String, dynamic>>());
     }
     if (candidateLegacyUids.isNotEmpty) {
       final rows = await _supa.from('user_profiles')
-          .select('id, uid, firstname, lastname, avatar_url, profile_picture_url_pro, profile_type, nom')
+          .select('id, uid, firstname, lastname, avatar_url, profile_picture_url_pro, profile_type, nom, social_pseudo')
           .inFilter('uid', candidateLegacyUids)
           .eq('profile_type', 'particulier');
       out.addAll((rows as List).cast<Map<String, dynamic>>());
@@ -2129,6 +2135,21 @@ class _SocialPostCardState extends State<_SocialPostCard> {
                   ),
                 ],
 
+                // ── « Aimé par … » (tap → liste des personnes) ───────
+                if (likeCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: GestureDetector(
+                      onTap: () => _showPostLikes(context, widget.post['id'] as String, widget.myUid),
+                      child: Text(
+                        likeCount == 1 ? '1 j’aime' : '$likeCount j’aime',
+                        style: const TextStyle(
+                            fontFamily: 'Galey', fontSize: 12,
+                            fontWeight: FontWeight.w600, color: Color(0xFF6B7A72)),
+                      ),
+                    ),
+                  ),
+
                 // ── Actions ──────────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
@@ -2136,6 +2157,9 @@ class _SocialPostCardState extends State<_SocialPostCard> {
                     _ActionBtn(
                       icon: widget.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                       label: likeCount > 0 ? '$likeCount' : '',
+                      onLongPress: likeCount > 0
+                          ? () => _showPostLikes(context, widget.post['id'] as String, widget.myUid)
+                          : null,
                       color: widget.isLiked ? const Color(0xFFE03055) : _greyC,
                       onTap: widget.onLike,
                     ),
@@ -2215,6 +2239,7 @@ class _MyPostsListState extends State<_MyPostsList>
   List<Map<String, dynamic>> _posts = [];
   Map<String, dynamic>? _myProfile;
   Map<String, Map<String, dynamic>> _origProfiles = {}; // auteurs originaux des reposts
+  final Map<String, int> _likeCounts = {}; // post_id -> nb de j'aime
   bool _loading = true;
 
   @override
@@ -2270,6 +2295,20 @@ class _MyPostsListState extends State<_MyPostsList>
             origProfiles[r['id'] as String] = Map<String, dynamic>.from(r as Map);
           }
         }
+      }
+
+      // Nombre de j'aime par post (pour la ligne « N j'aime » tappable).
+      _likeCounts.clear();
+      final postIds = posts.map((p) => p['id'] as String).toList();
+      if (postIds.isNotEmpty) {
+        try {
+          final likes = await _supa.from('post_likes')
+              .select('post_id').inFilter('post_id', postIds) as List;
+          for (final l in likes) {
+            final pid = l['post_id'] as String;
+            _likeCounts[pid] = (_likeCounts[pid] ?? 0) + 1;
+          }
+        } catch (_) {}
       }
 
       if (mounted) {
@@ -2503,7 +2542,23 @@ class _MyPostsListState extends State<_MyPostsList>
                           const SizedBox(height: 12),
                           _ImagesDisplay(urls: _mediaUrls(mediaUrl)),
                         ],
-                        if (mediaUrl == null) const SizedBox(height: 14),
+                        Builder(builder: (ctx) {
+                          final lc = _likeCounts[post['id']] ?? 0;
+                          if (lc == 0) return const SizedBox(height: 14);
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                            child: GestureDetector(
+                              onTap: () => _showPostLikes(ctx, post['id'] as String, widget.myUid),
+                              child: Row(children: [
+                                const Icon(Icons.favorite_rounded, size: 14, color: Color(0xFFE03055)),
+                                const SizedBox(width: 6),
+                                Text(lc == 1 ? '1 j’aime' : '$lc j’aime',
+                                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                        fontWeight: FontWeight.w600, color: Color(0xFF6B7A72))),
+                              ]),
+                            ),
+                          );
+                        }),
                       ]),
                 ),
               ),
@@ -2614,16 +2669,19 @@ class _ActionBtn extends StatelessWidget {
   final String   label;
   final Color    color;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   const _ActionBtn(
       {required this.icon,
       required this.label,
       required this.color,
-      required this.onTap});
+      required this.onTap,
+      this.onLongPress});
 
   @override
   Widget build(BuildContext context) => Expanded(
         child: InkWell(
           onTap: onTap,
+          onLongPress: onLongPress,
           borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
@@ -3423,7 +3481,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
       _myProfileId = id;
       try {
         final r = await _supa.from('user_profiles')
-            .select('firstname, lastname, nom, profile_type').eq('id', id).maybeSingle();
+            .select('firstname, lastname, nom, profile_type, social_pseudo').eq('id', id).maybeSingle();
         if (mounted && r != null) {
           setState(() {
             _myProfileType = r['profile_type'] as String?;
@@ -4231,17 +4289,18 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
         if (commonUids.isNotEmpty) {
           final sample = commonUids.take(6).toList();
           final profRows = await _supa.from('user_profiles')
-              .select('uid, firstname, lastname, nom, avatar_url')
+              .select('uid, firstname, lastname, nom, avatar_url, social_pseudo')
               .inFilter('uid', sample);
           final seen = <String>{};
           for (final r in profRows as List) {
             final uid = r['uid'] as String;
             if (seen.contains(uid)) continue;
             seen.add(uid);
+            final pseudo = (r['social_pseudo'] as String? ?? '').trim();
             final fn  = r['firstname'] as String? ?? '';
             final nom = r['nom'] as String? ?? '';
             final ln  = r['lastname'] as String? ?? '';
-            final name = fn.isNotEmpty ? fn : (nom.isNotEmpty ? nom : ln);
+            final name = pseudo.isNotEmpty ? pseudo : (fn.isNotEmpty ? fn : (nom.isNotEmpty ? nom : ln));
             if (name.isNotEmpty) {
               mutualProfiles.add({'name': name, 'avatar': r['avatar_url'] as String?});
             }
@@ -5103,6 +5162,143 @@ class _FollowListPageState extends State<_FollowListPage> {
                     )),
         ])),
       ]),
+    );
+  }
+}
+
+// ─── Liste des personnes qui ont aimé un post ────────────────────────────────
+
+void _showPostLikes(BuildContext context, String postId, String myUid) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _PostLikesSheet(postId: postId, myUid: myUid),
+  );
+}
+
+class _PostLikesSheet extends StatefulWidget {
+  final String postId;
+  final String myUid;
+  const _PostLikesSheet({required this.postId, required this.myUid});
+  @override
+  State<_PostLikesSheet> createState() => _PostLikesSheetState();
+}
+
+class _PostLikesSheetState extends State<_PostLikesSheet> {
+  final _supa = Supabase.instance.client;
+  List<Map<String, dynamic>> _users = [];
+  bool _loading = true;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    try {
+      final likes = await _supa.from('post_likes')
+          .select('uid, author_profile_id, created_at')
+          .eq('post_id', widget.postId)
+          .order('created_at', ascending: false) as List;
+      final pids = <String>{
+        for (final l in likes)
+          if ((l['author_profile_id'] as String?)?.isNotEmpty == true)
+            l['author_profile_id'] as String,
+      }.toList();
+      final legacyUids = <String>{
+        for (final l in likes)
+          if ((l['author_profile_id'] as String?)?.isNotEmpty != true)
+            l['uid'] as String,
+      }.toList();
+      final byKey = <String, Map<String, dynamic>>{};
+      if (pids.isNotEmpty) {
+        final r = await _supa.from('user_profiles').select(_kAuthorCols).inFilter('id', pids);
+        for (final p in r as List) {
+          byKey[p['id'] as String] = Map<String, dynamic>.from(p as Map);
+        }
+      }
+      if (legacyUids.isNotEmpty) {
+        final r = await _supa.from('user_profiles').select(_kAuthorCols)
+            .inFilter('uid', legacyUids).eq('profile_type', 'particulier');
+        for (final p in r as List) {
+          byKey['u:${p['uid']}'] = Map<String, dynamic>.from(p as Map);
+        }
+      }
+      final ordered = <Map<String, dynamic>>[];
+      final seen = <String>{};
+      for (final l in likes) {
+        final apid = (l['author_profile_id'] as String?) ?? '';
+        final key = apid.isNotEmpty ? apid : 'u:${l['uid']}';
+        if (!seen.add(key)) continue;
+        final p = byKey[key];
+        if (p != null) ordered.add(p);
+      }
+      if (mounted) setState(() { _users = ordered; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.5,
+      maxChildSize: 0.9,
+      minChildSize: 0.3,
+      builder: (_, scroll) => Container(
+        decoration: const BoxDecoration(
+          gradient: _bgGrad,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(children: [
+          const SizedBox(height: 10),
+          Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 14, 20, 10),
+            child: Align(alignment: Alignment.centerLeft,
+              child: Text('J’aime', style: TextStyle(fontFamily: 'Galey',
+                  fontWeight: FontWeight.w700, fontSize: 18, color: Colors.white))),
+          ),
+          const Divider(color: Colors.white12, height: 1),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: _tealC))
+                : _users.isEmpty
+                    ? const Center(child: Text('Personne pour l’instant',
+                        style: TextStyle(fontFamily: 'Galey', color: Colors.white54)))
+                    : ListView.separated(
+                        controller: scroll,
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        separatorBuilder: (_, __) =>
+                            const Divider(color: Colors.white10, height: 1, indent: 70),
+                        itemCount: _users.length,
+                        itemBuilder: (_, i) {
+                          final prof = _users[i];
+                          final uid = prof['uid'] as String;
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                            leading: _avatarWidget(_profilePhoto(prof), 22),
+                            title: Text(_profileName(prof),
+                                style: const TextStyle(fontFamily: 'Galey',
+                                    fontWeight: FontWeight.w600, fontSize: 14, color: Colors.white)),
+                            subtitle: _socialTypeLabel(prof['profile_type'] as String?) != null
+                                ? Text(_socialTypeLabel(prof['profile_type'] as String?)!,
+                                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _green))
+                                : null,
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.push(context, MaterialPageRoute(
+                                  builder: (_) => SocialProfilePage(
+                                      targetUid: uid, myUid: widget.myUid,
+                                      targetProfileId: prof['id'] as String?)));
+                            },
+                          );
+                        },
+                      ),
+          ),
+        ]),
+      ),
     );
   }
 }

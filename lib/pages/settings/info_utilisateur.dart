@@ -32,6 +32,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _elevagePhoneController = TextEditingController();
   final TextEditingController _dobController = TextEditingController();
+  final TextEditingController _pseudoController = TextEditingController(); // pseudo Pets Social
   final TextEditingController _rueController = TextEditingController();
   final TextEditingController _villeController = TextEditingController();
   final TextEditingController _codePostalController = TextEditingController();
@@ -91,6 +92,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
   void dispose() {
     _searchDebounce?.cancel();
     _addressSearchCtrl.dispose();
+    _pseudoController.dispose();
     super.dispose();
   }
 
@@ -183,6 +185,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
     _lastnameController.text =
         (row['lastname'] ?? User_Info.lastname).toString();
     _dobController.text = (row['date_of_birth'] ?? '').toString();
+    _pseudoController.text = (row['social_pseudo'] ?? '').toString();
     _phoneISOCodeController.text = User_Info.codeISO;
     _phoneController.text =
         (row['phone_number'] ?? row['telephone'] ?? '').toString();
@@ -209,6 +212,13 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
   Future<void> _pickPhoto() async {
     final f = await pickAndCropSquare();
     if (f != null && mounted) setState(() => _photoFile = f);
+  }
+
+  /// Date de naissance pour une colonne SQL `date` : null si vide — Postgres
+  /// refuse la chaîne '' (« invalid input syntax for type date »).
+  String? get _dobOrNull {
+    final v = _dobController.text.trim();
+    return v.isEmpty ? null : v;
   }
 
   Future<void> _updateParticulierProfile() async {
@@ -256,7 +266,8 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
     final payload = <String, dynamic>{
       'firstname': _firstnameController.text.trim(),
       'lastname': _lastnameController.text.trim(),
-      'date_of_birth': _dobController.text.trim(),
+      'date_of_birth': _dobOrNull,
+      'social_pseudo': _pseudoController.text.trim().isEmpty ? null : _pseudoController.text.trim(),
       'phone_number': _phoneController.text.trim(),
       'telephone': _phoneController.text.trim(),
       'rue': rue,
@@ -301,6 +312,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
           'lastname': _lastnameController.text.trim(),
           'dateofbirth': _dobController.text.trim(),
           'phone_number': _phoneController.text.trim(),
+          // (Firestore tolère '' ; les colonnes SQL non → voir _dobOrNull)
           'rue': rue,
           'ville': ville,
           'codePostal': cp,
@@ -316,7 +328,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
         await supa.from('users').update({
           'firstname': _firstnameController.text.trim(),
           'lastname': _lastnameController.text.trim(),
-          'date_of_birth': _dobController.text.trim(),
+          'date_of_birth': _dobOrNull,
           'phone_number': _phoneController.text.trim(),
           'rue': rue,
           'ville': ville,
@@ -474,7 +486,7 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
     final supaPayload = <String, dynamic>{
       'firstname': _firstnameController.text,
       'lastname': _lastnameController.text,
-      'date_of_birth': _dobController.text,
+      'date_of_birth': _dobOrNull,
     };
     if (!User_Info.isElevage && !User_Info.isPro) {
       supaPayload['phone_number'] = _phoneController.text;
@@ -637,6 +649,16 @@ class _InfoUserSettingsState extends State<InfoUserSettings> {
               _field('Nom *', _lastnameController),
               _dateField('Date de naissance', _dobController),
               _readOnlyField('Email', User_Info.email, Icons.email_outlined),
+              if (_isParticulierProfile) ...[
+                _field('Pseudo Pets Social', _pseudoController),
+                const Padding(
+                  padding: EdgeInsets.only(left: 4, top: 2, bottom: 4),
+                  child: Text(
+                    'Affiché sur Pets Social à la place de votre nom. Laissez vide pour utiliser votre prénom et nom.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF8A938C)),
+                  ),
+                ),
+              ],
             ]),
             const SizedBox(height: 12),
             _card('Coordonnées', [
