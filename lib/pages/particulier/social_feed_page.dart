@@ -498,8 +498,9 @@ List<String> _mediaUrls(String? raw) {
 // ─── Tag animaux sur une publication ─────────────────────────────────────────
 //
 // Un post peut « taguer » un ou plusieurs animaux du compte (particulier OU
-// pro/éleveur) via `posts_socialmedia.tagged_animal_ids uuid[]`. Depuis la
-// fiche d'un animal, un bouton ouvre `AnimalTaggedPostsPage` — toutes les
+// pro/éleveur) via `posts_socialmedia.tagged_animal_ids text[]` (text et non
+// uuid : beaucoup d'IDs d'animaux sont hérités / non-UUID). Depuis la fiche
+// d'un animal, un bouton ouvre `AnimalTaggedPostsPage` — toutes les
 // publications du réseau où cet animal est tagué.
 
 const _kAnimalSortiStatuts = ['sorti', 'decede', 'cede', 'vendu', 'mort', 'retraite'];
