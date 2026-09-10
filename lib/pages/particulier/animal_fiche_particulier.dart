@@ -68,6 +68,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   final _raceCtrl     = TextEditingController();
   final _couleurCtrl  = TextEditingController();
   final _identCtrl    = TextEditingController();
+  final _sireCtrl       = TextEditingController();
+  final _carteImmatCtrl = TextEditingController();
+  final _livretCtrl     = TextEditingController();
   final _notesCtrl    = TextEditingController();
   final _descCtrl     = TextEditingController();
   final _passeportCtrl = TextEditingController();
@@ -149,6 +152,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     _raceCtrl.dispose();
     _couleurCtrl.dispose();
     _identCtrl.dispose();
+    _sireCtrl.dispose();
+    _carteImmatCtrl.dispose();
+    _livretCtrl.dispose();
     _notesCtrl.dispose();
     _descCtrl.dispose();
     _passeportCtrl.dispose();
@@ -329,6 +335,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     _raceCtrl.text     = d['race'] ?? '';
     _couleurCtrl.text  = d['couleur'] ?? '';
     _identCtrl.text    = d['identification'] ?? '';
+    _sireCtrl.text       = d['num_sire'] ?? '';
+    _carteImmatCtrl.text = d['carte_immatriculation'] ?? '';
+    _livretCtrl.text     = d['livret_signaletique'] ?? '';
     _notesCtrl.text    = d['notes'] ?? '';
     _descCtrl.text     = d['description'] ?? '';
     _passeportCtrl.text    = d['passeport_europeen'] ?? '';
@@ -454,6 +463,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'couleur': _couleurCtrl.text.trim().isEmpty ? null : _couleurCtrl.text.trim(),
         'identification': _identCtrl.text.trim().isEmpty ? null : _identCtrl.text.trim(),
         'passeport_europeen': _passeportCtrl.text.trim().isEmpty ? null : _passeportCtrl.text.trim(),
+        'num_sire': _espece == 'cheval' && _sireCtrl.text.trim().isNotEmpty ? _sireCtrl.text.trim() : null,
+        'carte_immatriculation': _espece == 'cheval' && _carteImmatCtrl.text.trim().isNotEmpty ? _carteImmatCtrl.text.trim() : null,
+        'livret_signaletique': _espece == 'cheval' && _livretCtrl.text.trim().isNotEmpty ? _livretCtrl.text.trim() : null,
         'type_poil': _typePoil,
         'taille': _tailleCtrl.text.trim().isEmpty ? null : double.tryParse(_tailleCtrl.text.trim()),
         'poids': _poidsCtrl.text.trim().isEmpty ? null : double.tryParse(_poidsCtrl.text.trim()),
@@ -917,11 +929,18 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         _infoRow('Sexe',
             _sexe == 'male' ? 'Mâle' : _sexe == 'femelle' ? 'Femelle' : 'Inconnu'),
         _infoRow('Couleur / robe', _couleurCtrl.text, empty: _couleurCtrl.text.trim().isEmpty),
-        _infoRow('Identification (puce / tatouage)', _identCtrl.text,
-            empty: _identCtrl.text.trim().isEmpty),
+        if (_espece == 'cheval') ...[
+          _infoRow('N° de transpondeur (puce)', _identCtrl.text, empty: _identCtrl.text.trim().isEmpty),
+          _infoRow('N° SIRE', _sireCtrl.text, empty: _sireCtrl.text.trim().isEmpty),
+          _infoRow('N° carte d\'immatriculation', _carteImmatCtrl.text, empty: _carteImmatCtrl.text.trim().isEmpty),
+          _infoRow('N° livret / document d\'identification', _livretCtrl.text, empty: _livretCtrl.text.trim().isEmpty),
+        ] else
+          _infoRow('Identification (puce / tatouage)', _identCtrl.text,
+              empty: _identCtrl.text.trim().isEmpty),
         _infoRow('Stérilisation', _sterilise ? 'Stérilisé(e)' : 'Non stérilisé(e)'),
-        _infoRow('Passeport européen', _passeportCtrl.text,
-            empty: _passeportCtrl.text.trim().isEmpty),
+        if (_espece != 'cheval')
+          _infoRow('Passeport européen', _passeportCtrl.text,
+              empty: _passeportCtrl.text.trim().isEmpty),
         if (_espece == 'chien' || _espece == 'chat')
           _infoRow('Type de poil', _typePoil ?? '',
               empty: _typePoil == null || _typePoil!.isEmpty),
@@ -1307,10 +1326,29 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           _FField(controller: _couleurCtrl, hint: 'Ex: Roux, Noir et blanc...'),
           const SizedBox(height: 18),
 
-          _FLabel('Identification (puce / tatouage)'),
-          const SizedBox(height: 6),
-          _FField(controller: _identCtrl, hint: 'Numéro de puce ou tatouage'),
-          const SizedBox(height: 18),
+          if (_espece == 'cheval') ...[
+            _FLabel('N° de transpondeur (puce)'),
+            const SizedBox(height: 6),
+            _FField(controller: _identCtrl, hint: 'Numéro de transpondeur'),
+            const SizedBox(height: 18),
+            _FLabel('N° SIRE'),
+            const SizedBox(height: 6),
+            _FField(controller: _sireCtrl, hint: 'Ex: 250 00X XXX XXX XXX'),
+            const SizedBox(height: 18),
+            _FLabel('N° carte d\'immatriculation'),
+            const SizedBox(height: 6),
+            _FField(controller: _carteImmatCtrl, hint: 'Numéro de la carte'),
+            const SizedBox(height: 18),
+            _FLabel('N° livret / document d\'identification'),
+            const SizedBox(height: 6),
+            _FField(controller: _livretCtrl, hint: 'Numéro du livret signalétique'),
+            const SizedBox(height: 18),
+          ] else ...[
+            _FLabel('Identification (puce / tatouage)'),
+            const SizedBox(height: 6),
+            _FField(controller: _identCtrl, hint: 'Numéro de puce ou tatouage'),
+            const SizedBox(height: 18),
+          ],
 
           Row(children: [
             _FLabel('Stérilisé(e)'),

@@ -25,6 +25,7 @@ import { typesVaccinPour, categorieOptions, suggestFromCategorie } from '@/lib/v
 interface Animal {
   id: string; nom?: string; nom_pedigree?: string; espece?: string; espece_autre?: string; race?: string; sexe?: string;
   date_naissance?: string; couleur?: string; identification?: string;
+  num_sire?: string; carte_immatriculation?: string; livret_signaletique?: string;
   sterilise?: boolean; description?: string; notes?: string; photo_url?: string;
   statut?: string; passeport_europeen?: string; type_poil?: string; taille?: string; poids?: string;
   pedigree?: boolean; pedigree_lof?: string; pedigree_numero?: string; club_registre?: string; pedigree_url?: string;
@@ -2675,6 +2676,9 @@ function AnimalFichePageInner() {
         race: animal.race, sexe: animal.sexe,
         date_naissance: animal.date_naissance || undefined, couleur: animal.couleur,
         identification: animal.identification, sterilise: animal.sterilise,
+        num_sire: animal.espece === 'cheval' ? (animal.num_sire || undefined) : undefined,
+        carte_immatriculation: animal.espece === 'cheval' ? (animal.carte_immatriculation || undefined) : undefined,
+        livret_signaletique: animal.espece === 'cheval' ? (animal.livret_signaletique || undefined) : undefined,
         description: animal.description, notes: animal.notes,
         type_poil: animal.type_poil, taille: animal.taille, poids: animal.poids,
         pedigree: animal.pedigree, pedigree_lof: animal.pedigree_lof, pedigree_numero: animal.pedigree_numero,
@@ -3586,8 +3590,19 @@ function AnimalFichePageInner() {
                 </div>
                 <Field label="Date de naissance" value={animal.date_naissance??''} onChange={v=>set('date_naissance',v)} type="date" />
                 <Field label="Couleur / Robe" value={animal.couleur??''} onChange={v=>set('couleur',v)} />
-                <Field label={['cheval'].includes(animal.espece??'') ? 'SIRE / Puce' : 'Identification (puce / tatouage)'} value={animal.identification??''} onChange={v=>set('identification',v)} />
-                {animal.espece !== 'oiseau' && <Field label="Passeport européen n°" value={animal.passeport_europeen??''} onChange={v=>set('passeport_europeen',v)} />}
+                {animal.espece === 'cheval' ? (
+                  <>
+                    <Field label="N° de transpondeur (puce)" value={animal.identification??''} onChange={v=>set('identification',v)} />
+                    <Field label="N° SIRE" value={animal.num_sire??''} onChange={v=>set('num_sire',v)} />
+                    <Field label="N° carte d'immatriculation" value={animal.carte_immatriculation??''} onChange={v=>set('carte_immatriculation',v)} />
+                    <Field label="N° livret / document d'identification" value={animal.livret_signaletique??''} onChange={v=>set('livret_signaletique',v)} />
+                  </>
+                ) : (
+                  <>
+                    <Field label="Identification (puce / tatouage)" value={animal.identification??''} onChange={v=>set('identification',v)} />
+                    {animal.espece !== 'oiseau' && <Field label="Passeport européen n°" value={animal.passeport_europeen??''} onChange={v=>set('passeport_europeen',v)} />}
+                  </>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-700">Stérilisé(e)</span>
                   <button onClick={()=>set('sterilise',!animal.sterilise)}
@@ -3619,8 +3634,11 @@ function AnimalFichePageInner() {
                   { label:'Sexe', value:animal.sexe==='male'?'♂ Mâle':animal.sexe==='femelle'?'♀ Femelle':'Inconnu' },
                   { label:'Naissance', value: animal.date_naissance ? `${fmtDate(animal.date_naissance)} (${age(animal.date_naissance)})` : undefined },
                   { label:'Couleur', value:animal.couleur },
-                  { label:'Identification', value:animal.identification },
-                  { label:'Passeport', value:animal.passeport_europeen, show: animal.espece !== 'oiseau' },
+                  { label: animal.espece === 'cheval' ? 'Transpondeur' : 'Identification', value:animal.identification },
+                  { label:'N° SIRE', value:animal.num_sire, show: animal.espece === 'cheval' },
+                  { label:'Carte immat.', value:animal.carte_immatriculation, show: animal.espece === 'cheval' },
+                  { label:'Livret', value:animal.livret_signaletique, show: animal.espece === 'cheval' },
+                  { label:'Passeport', value:animal.passeport_europeen, show: animal.espece !== 'oiseau' && animal.espece !== 'cheval' },
                   { label:'Stérilisé(e)', value:animal.sterilise===true?'Oui':'Non' },
                   { label:'Type de poil', value:animal.type_poil, show: showPoil },
                   { label:'Taille', value:animal.taille ? animal.taille+' cm' : undefined, show: showTaille },

@@ -112,6 +112,10 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   final _raceCtrl   = TextEditingController();
   final _couleurCtrl = TextEditingController();
   final _identCtrl  = TextEditingController();
+  // Identification équidé (cheval)
+  final _sireCtrl        = TextEditingController();
+  final _carteImmatCtrl  = TextEditingController();
+  final _livretCtrl      = TextEditingController();
   final _tailleCtrl = TextEditingController();
   final _poidsCtrl  = TextEditingController();
   final _notesCtrl  = TextEditingController();
@@ -846,6 +850,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _raceCtrl.text  = d['race'] ?? '';
     _couleurCtrl.text = d['couleur'] ?? '';
     _identCtrl.text = d['identification'] ?? '';
+    _sireCtrl.text       = d['num_sire'] ?? '';
+    _carteImmatCtrl.text = d['carte_immatriculation'] ?? '';
+    _livretCtrl.text     = d['livret_signaletique'] ?? '';
     _tailleCtrl.text = d['taille']?.toString() ?? '';
     _poidsCtrl.text  = d['poids']?.toString() ?? '';
     _notesCtrl.text  = d['notes'] ?? '';
@@ -953,6 +960,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _pucePereCtrl.removeListener(_onPucePereChanged);
     _puceMereCtrl.removeListener(_onPuceMereChanged);
     for (final c in [_nomCtrl, _nomPedigreeCtrl, _raceCtrl, _couleurCtrl, _identCtrl,
+      _sireCtrl, _carteImmatCtrl, _livretCtrl,
       _tailleCtrl, _poidsCtrl, _notesCtrl, _nomPereCtrl, _pucePereCtrl, _racePereCtrl,
       _nomMereCtrl, _puceMereCtrl, _passeportCtrl, _clubRegistreCtrl, _pedigreeNumeroCtrl, _descriptionCtrl,
       _provenanceNomCtrl, _provenanceAdresseCtrl, _importationRefCtrl,
@@ -995,6 +1003,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'race':                _raceCtrl.text.trim(),
         'couleur':             _couleurCtrl.text.trim(),
         'identification':      _identCtrl.text.trim(),
+        'num_sire':              _espece == 'cheval' ? _sireCtrl.text.trim() : null,
+        'carte_immatriculation': _espece == 'cheval' ? _carteImmatCtrl.text.trim() : null,
+        'livret_signaletique':   _espece == 'cheval' ? _livretCtrl.text.trim() : null,
         'taille':              _tailleCtrl.text.trim(),
         'poids':               _poidsCtrl.text.trim(),
         'nom_pere':            _nomPereCtrl.text.trim(),
@@ -1856,9 +1867,27 @@ class _IdentiteTab extends StatelessWidget {
                   _field('Nom de pedigree / affixe', s._nomPedigreeCtrl),
                   _hasBreeds ? _raceAutocomplete(context) : _field('Race', s._raceCtrl),
                   _field('Couleur / Robe', s._couleurCtrl),
-                  _field(_identLabel, s._identCtrl),
-                  _field('Passeport européen n°', s._passeportCtrl),
+                  if (s._espece == 'cheval') ...[
+                    _field('N° de transpondeur (puce)', s._identCtrl),
+                  ] else ...[
+                    _field(_identLabel, s._identCtrl),
+                    _field('Passeport européen n°', s._passeportCtrl),
+                  ],
                 ]),
+                if (s._espece == 'cheval') ...[
+                  const SizedBox(height: 12),
+                  _card([
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 6),
+                      child: Text('Identification équidé (SIRE)',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                              fontSize: 14, color: Color(0xFF1F2A2E))),
+                    ),
+                    _field('N° SIRE', s._sireCtrl),
+                    _field('N° carte d\'immatriculation', s._carteImmatCtrl),
+                    _field('N° livret / document d\'identification', s._livretCtrl),
+                  ]),
+                ],
                 const SizedBox(height: 12),
                 _card([
                   _dateField(context),

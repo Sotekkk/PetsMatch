@@ -221,3 +221,16 @@ ALTER TABLE animaux ADD COLUMN IF NOT EXISTS historique_fertilite TEXT;
 ALTER TABLE animaux ADD COLUMN IF NOT EXISTS profil_adn_etabli    BOOLEAN DEFAULT FALSE;
 
 ALTER TABLE annonces ADD COLUMN IF NOT EXISTS saillie_genetique TEXT;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 11. Identification équidé sur la fiche animal : N° SIRE, carte
+--     d'immatriculation, livret / document d'identification (le n° de
+--     transpondeur reste dans animaux.identification). Appli + site.
+--     Sans cette migration : la carte « Identification équidé (SIRE) »
+--     ne sauvegarde rien (colonnes absentes).
+-- ────────────────────────────────────────────────────────────
+
+ALTER TABLE animaux ADD COLUMN IF NOT EXISTS num_sire              text;
+ALTER TABLE animaux ADD COLUMN IF NOT EXISTS carte_immatriculation text;
+ALTER TABLE animaux ADD COLUMN IF NOT EXISTS livret_signaletique   text;
