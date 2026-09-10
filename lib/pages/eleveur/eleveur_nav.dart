@@ -810,6 +810,46 @@ class _EleveurNavState extends State<EleveurNav> {
                     ],
                   ),
                 ],
+                // Profils pro (pension, véto, éducateur…) : mêmes autorisations
+                // d'annonces que les particuliers — petites annonces « matériel »
+                // (jamais d'animaux vivants).
+                if (User_Info.isPro)
+                  _DrawerSection(
+                    icon: Icons.campaign_outlined,
+                    label: 'Annonces',
+                    children: [
+                      _DrawerSubItem(
+                        label: 'Petites annonces (matériel)',
+                        icon: Icons.inventory_2_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const AnnoncesObjetsFeedPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes annonces (matériel)',
+                        icon: Icons.sell_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const MesAnnoncesObjetsPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Trouver un compagnon',
+                        icon: Icons.pets_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const TrouverCompagnonPage(),
+                          ));
+                        },
+                      ),
+                    ],
+                  ),
                 _DrawerSection(
                   icon: Icons.search_off_rounded,
                   label: 'Animaux perdus / trouvés',
