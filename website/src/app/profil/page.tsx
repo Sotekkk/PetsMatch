@@ -2064,6 +2064,17 @@ export default function ProfilPage() {
     : !(userData?.isElevage === true);
   const isEleveur = userData?.isElevage === true && !editingParticulier;
 
+  // « Mes annonces » (particulier) : lien visible seulement si le particulier
+  // a déjà au moins une annonce cheval. La création reste accessible depuis
+  // la fiche du cheval.
+  const [hasParticulierAnnonce, setHasParticulierAnnonce] = useState(false);
+  useEffect(() => {
+    if (isEleveur || !user) { setHasParticulierAnnonce(false); return; }
+    supabase.from('annonces').select('id')
+      .eq('uid_eleveur', user.uid).eq('profil_source', 'particulier').limit(1)
+      .then(({ data }) => setHasParticulierAnnonce(!!data && data.length > 0));
+  }, [user, isEleveur]);
+
 
   useEffect(() => {
     if (!loading && !user) router.push('/connexion');
@@ -2674,7 +2685,7 @@ export default function ProfilPage() {
               <p className="text-xs text-gray-400">Créer un autre profil</p>
             </div>
           </Link>
-        ) : (
+        ) : hasParticulierAnnonce ? (
           <Link href="/mes-annonces"
             className="flex items-center gap-2 bg-white border border-gray-100 shadow-sm rounded-2xl px-4 py-3 hover:shadow-md transition-shadow">
             <span className="text-xl">📋</span>
@@ -2683,7 +2694,7 @@ export default function ProfilPage() {
               <p className="text-xs text-gray-400">Gérer</p>
             </div>
           </Link>
-        )}
+        ) : null}
       </div>
 
       {/* Mes employeurs — visible si l'utilisateur est employé dans un élevage */}

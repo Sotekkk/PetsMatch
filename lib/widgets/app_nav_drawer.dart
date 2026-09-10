@@ -64,6 +64,7 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
   bool _isEmploye = false;
   bool _isBenevole = false;
   bool _isFa = false;
+  bool _hasChevalAnnonce = false;
   String _planCode = 'free';
 
   @override
@@ -104,11 +105,27 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
       planCode = await PlanService.getPlanCode(uid);
     }
 
+    // « Mes annonces (cheval) » n'apparaît que si le particulier a déjà publié
+    // (ou mis en brouillon) au moins une annonce cheval. La création reste
+    // accessible depuis la fiche du cheval.
+    bool hasChevalAnnonce = false;
+    if (!User_Info.isElevage && !User_Info.isPro && !User_Info.isAssociation) {
+      try {
+        final rows = await supa.from('annonces')
+            .select('id')
+            .eq('uid_eleveur', uid)
+            .eq('profil_source', 'particulier')
+            .limit(1);
+        hasChevalAnnonce = (rows as List).isNotEmpty;
+      } catch (_) {}
+    }
+
     if (mounted) {
       setState(() {
         _isEmploye = isEmploye;
         _isBenevole = isBenevole;
         _isFa = isFa;
+        _hasChevalAnnonce = hasChevalAnnonce;
         _planCode = planCode;
       });
     }
@@ -283,11 +300,12 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
               icon: Icons.map_outlined,
               onTap: () => _push(const AssociationsListPage()),
             ),
-            _DrawerSubItem(
-              label: 'Mes annonces (cheval)',
-              icon: Icons.sell_outlined,
-              onTap: () => _push(const MesAnnoncesParticulierPage()),
-            ),
+            if (_hasChevalAnnonce)
+              _DrawerSubItem(
+                label: 'Mes annonces (cheval)',
+                icon: Icons.sell_outlined,
+                onTap: () => _push(const MesAnnoncesParticulierPage()),
+              ),
           ],
         ),
         if (_isEmploye)

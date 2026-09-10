@@ -75,6 +75,68 @@ class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage>
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
+  // Paiement in-app interdit : le boost se finalise sur le site (fiche annonce).
+  Future<void> _boost(Map<String, dynamic> r) async {
+    final id = r['id'] as String?;
+    final until = DateTime.tryParse(r['boost_until']?.toString() ?? '');
+    final active = until != null && until.isAfter(DateTime.now());
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).padding.bottom + 20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(
+                color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 18),
+            Row(children: [
+              const Icon(Icons.bolt, color: Color(0xFFFF8A00), size: 22),
+              const SizedBox(width: 8),
+              Text(active ? 'Annonce boostée' : 'Booster mon annonce',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: _teal)),
+            ]),
+            const SizedBox(height: 8),
+            Text(
+              active
+                  ? 'Votre annonce est mise en avant jusqu\'au '
+                      '${DateFormat('dd/MM/yyyy à HH:mm').format(until.toLocal())}. '
+                      'Vous pouvez prolonger la mise en avant sur le site.'
+                  : 'Un boost place votre annonce en tête des résultats de recherche '
+                      'et du fil. Le paiement se fait sur le site, en quelques secondes.',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Color(0xFF41525A), height: 1.4),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(width: double.infinity, child: ElevatedButton.icon(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final uri = Uri.parse('${PlanService.kWebsiteUrl}/annonces/${id ?? ''}');
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              },
+              icon: const Icon(Icons.open_in_new, size: 18),
+              label: Text(active ? 'Prolonger sur le site' : 'Booster sur le site',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFF8A00), foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            )),
+            const SizedBox(height: 6),
+            Center(child: TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Plus tard',
+                  style: TextStyle(fontFamily: 'Galey', color: Color(0xFF9CA3AF))),
+            )),
+          ]),
+        ),
+      ),
+    );
+  }
+
   Future<void> _togglePause(Map<String, dynamic> r) async {
     final next = (r['statut'] == 'pause') ? 'disponible' : 'pause';
     try {
@@ -176,6 +238,8 @@ class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage>
     final isPause = statut == 'pause';
     final isBrouillon = statut == 'brouillon';
     final created = DateTime.tryParse(r['created_at']?.toString() ?? '');
+    final boostUntil = DateTime.tryParse(r['boost_until']?.toString() ?? '');
+    final isBoosted = boostUntil != null && boostUntil.isAfter(DateTime.now());
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -209,6 +273,7 @@ class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage>
                         : isPause ? 'En pause' : 'En ligne',
                     isBrouillon ? const Color(0xFFB45309)
                         : isPause ? const Color(0xFF9CA3AF) : _green),
+                  if (isBoosted) _badge('⚡ Boostée', const Color(0xFFFF8A00)),
                 ]),
                 const SizedBox(height: 6),
                 Text(titre.isEmpty ? 'Cheval' : titre,
@@ -238,10 +303,14 @@ class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage>
             if (isBrouillon)
               _act(Icons.open_in_new, 'Finaliser sur le site', const Color(0xFFB45309),
                   _finaliserSurSite)
-            else
+            else ...[
               _act(isPause ? Icons.play_arrow_outlined : Icons.pause_outlined,
                   isPause ? 'Activer' : 'Pause', isPause ? _green : const Color(0xFF9CA3AF),
                   () => _togglePause(r)),
+              const SizedBox(width: 6),
+              _act(Icons.bolt, isBoosted ? 'Boostée' : 'Booster',
+                  const Color(0xFFFF8A00), () => _boost(r)),
+            ],
             const Spacer(),
             _act(Icons.delete_outline, 'Supprimer', Colors.redAccent, () => _delete(r)),
           ]),

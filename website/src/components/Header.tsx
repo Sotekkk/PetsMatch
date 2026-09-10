@@ -748,6 +748,7 @@ export default function Header() {
   const [isFa, setIsFa] = useState(false);
   const [isEmploye, setIsEmploye] = useState(false);
   const [isBenevole, setIsBenevole] = useState(false);
+  const [hasParticulierAnnonce, setHasParticulierAnnonce] = useState(false);
   const activeProfileId = authActiveId;
   const cachedProfileType: string | null =
     typeof window !== 'undefined' ? (localStorage.getItem(ACTIVE_PROFILE_TYPE_KEY) ?? null) : null;
@@ -819,11 +820,15 @@ export default function Header() {
     : effectiveIsAssociation ? NAV_ASSOCIATION
     : effectiveIsEleveur ? NAV_ELEVEUR
     : NAV_PARTICULIER;
-  const baseMenuParticulier = isFa
-    ? MENU_PARTICULIER.map(sec => sec.section === 'Mon Profil'
-        ? { ...sec, items: [...sec.items, { href: '/mes-animaux-accueil', label: 'Animaux en accueil', icon: '🏡' }] }
-        : sec)
-    : MENU_PARTICULIER;
+  const baseMenuParticulier = MENU_PARTICULIER.map(sec => {
+    if (isFa && sec.section === 'Mon Profil') {
+      return { ...sec, items: [...sec.items, { href: '/mes-animaux-accueil', label: 'Animaux en accueil', icon: '🏡' }] };
+    }
+    if (hasParticulierAnnonce && sec.section === 'Annonces') {
+      return { ...sec, items: [{ href: '/mes-annonces', label: 'Mes annonces (cheval)', icon: '📋' }, ...sec.items] };
+    }
+    return sec;
+  });
   const baseMenuSections = isEffectivelyPro
     ? (effectiveIsPension ? MENU_PENSION : effectiveIsVet ? MENU_VET : effectiveIsEducation ? MENU_EDUCATION : effectiveIsGarde ? MENU_GARDE : MENU_PRO)
     : effectiveIsAssociation ? MENU_ASSOCIATION
@@ -876,9 +881,14 @@ export default function Header() {
 
   // ── Détection famille d'accueil & employé/bénévole ───────────────────────
   useEffect(() => {
-    if (!user) { setIsFa(false); setIsEmploye(false); return; }
+    if (!user) { setIsFa(false); setIsEmploye(false); setHasParticulierAnnonce(false); return; }
     supabase.from('familles_accueil').select('id').eq('fa_uid', user.uid).eq('actif', true).limit(1)
       .then(({ data }) => setIsFa((data ?? []).length > 0));
+    // « Mes annonces (cheval) » n'apparaît dans le menu particulier que si la
+    // personne a déjà au moins une annonce (création via la fiche du cheval).
+    supabase.from('annonces').select('id')
+      .eq('uid_eleveur', user.uid).eq('profil_source', 'particulier').limit(1)
+      .then(({ data }) => setHasParticulierAnnonce((data ?? []).length > 0));
     // Les relations employé/bénévole sont toujours rattachées au profil
     // particulier de la personne : on résout ce profile_id avant d'interroger
     // `employes`, pour éviter que le même employeur n'apparaisse dans tous
