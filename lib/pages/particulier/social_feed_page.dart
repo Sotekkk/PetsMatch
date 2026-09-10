@@ -3707,6 +3707,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   String? _myProfileId;
   String? _myProfileName;
   String? _myProfileType;
+  String? _error;
 
   // Animaux du compte que l'on peut taguer sur la publication.
   List<Map<String, dynamic>> _myAnimals = [];
@@ -3792,9 +3793,13 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   );
 
   Future<void> _post() async {
+    FocusScope.of(context).unfocus();
     final text = _ctrl.text.trim();
-    if (text.isEmpty && _images.isEmpty) return;
-    setState(() => _posting = true);
+    if (text.isEmpty && _images.isEmpty && _taggedAnimalIds.isEmpty) {
+      setState(() => _error = 'Ajoutez un texte, une photo ou un animal tagué.');
+      return;
+    }
+    setState(() { _posting = true; _error = null; });
     try {
       final urls = <String>[];
       for (final img in _images) {
@@ -3830,10 +3835,11 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
         widget.onPosted();
       }
     } catch (e) {
+      final msg = e is PostgrestException ? '[${e.code}] ${e.message}' : e.toString();
       if (mounted) {
-        setState(() => _posting = false);
+        setState(() { _posting = false; _error = msg; });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Erreur: $e',
+            content: Text('Erreur : $msg',
                 style: const TextStyle(fontFamily: 'Galey')),
             duration: const Duration(seconds: 8)));
       }
@@ -3847,7 +3853,9 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
     final bottom   = MediaQuery.of(context).viewInsets.bottom;
     final hasImgs  = _images.isNotEmpty;
 
-    return Container(
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottom),
+      child: Container(
       margin: const EdgeInsets.only(top: 40),
       decoration: const BoxDecoration(
         color: Color(0xFF0C3535),
@@ -3989,9 +3997,27 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
           ]),
         ],
 
+        // ── Erreur de publication (visible : la feuille couvre l'écran) ──
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.red.withValues(alpha: 0.4)),
+              ),
+              child: Text(_error!,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFFFFB4B4))),
+            ),
+          ),
+
         // ── Contenu scrollable : profil + légende ─────────────────
-        SingleChildScrollView(
-            padding: EdgeInsets.only(bottom: bottom + 12),
+        Flexible(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.only(bottom: 12),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               // "Publier en tant que"
               if (_myProfileName != null) ...[
@@ -4048,6 +4074,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
               ),
             ]),
           ),
+        ),
 
         // ── Chips animaux tagués ──────────────────────────────────
         if (_taggedAnimalIds.isNotEmpty)
@@ -4104,6 +4131,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
           ]),
         ),
       ]),
+    ),
     );
   }
 
