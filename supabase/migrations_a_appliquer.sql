@@ -234,3 +234,18 @@ ALTER TABLE annonces ADD COLUMN IF NOT EXISTS saillie_genetique TEXT;
 ALTER TABLE animaux ADD COLUMN IF NOT EXISTS num_sire              text;
 ALTER TABLE animaux ADD COLUMN IF NOT EXISTS carte_immatriculation text;
 ALTER TABLE animaux ADD COLUMN IF NOT EXISTS livret_signaletique   text;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 12. Pets Social — taguer des animaux du compte sur une publication.
+--     Sans cette migration : le bouton « Taguer mes animaux » du
+--     composer plante à la publication (colonne absente) et la page
+--     « Publications Pets Social » de la fiche animal reste vide.
+--     Détail : supabase/migration_social_animal_tags.sql
+-- ────────────────────────────────────────────────────────────
+
+ALTER TABLE public.posts_socialmedia
+  ADD COLUMN IF NOT EXISTS tagged_animal_ids uuid[] DEFAULT '{}'::uuid[];
+
+CREATE INDEX IF NOT EXISTS idx_posts_socialmedia_tagged_animals
+  ON public.posts_socialmedia USING GIN (tagged_animal_ids);

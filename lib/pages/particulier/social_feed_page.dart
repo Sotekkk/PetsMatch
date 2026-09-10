@@ -489,6 +489,79 @@ List<String> _mediaUrls(String? raw) {
   return [raw];
 }
 
+// ─── Tag animaux sur une publication ─────────────────────────────────────────
+//
+// Un post peut « taguer » un ou plusieurs animaux du compte (particulier OU
+// pro/éleveur) via `posts_socialmedia.tagged_animal_ids uuid[]`. Depuis la
+// fiche d'un animal, un bouton ouvre `AnimalTaggedPostsPage` — toutes les
+// publications du réseau où cet animal est tagué.
+
+/// IDs d'animaux taguables : ceux dont l'utilisateur est propriétaire actif
+/// (`animaux_proprietes`) + ses animaux d'élevage (`animaux.uid_eleveur`).
+Future<List<Map<String, dynamic>>> _loadTaggableAnimals(String uid) async {
+  if (uid.isEmpty) return [];
+  final supa = Supabase.instance.client;
+  final ids = <String>{};
+  try {
+    final rows = await supa.from('animaux_proprietes')
+        .select('animal_id').eq('uid_proprio', uid).eq('statut', 'actif');
+    for (final r in rows as List) {
+      final id = r['animal_id'] as String?;
+      if (id != null && id.isNotEmpty) ids.add(id);
+    }
+  } catch (_) {}
+  try {
+    final rows = await supa.from('animaux').select('id').eq('uid_eleveur', uid);
+    for (final r in rows as List) {
+      final id = r['id'] as String?;
+      if (id != null && id.isNotEmpty) ids.add(id);
+    }
+  } catch (_) {}
+  if (ids.isEmpty) return [];
+  try {
+    final rows = await supa.from('animaux')
+        .select('id, nom, espece, race, photo_url, sexe')
+        .inFilter('id', ids.toList());
+    final list = List<Map<String, dynamic>>.from(rows as List);
+    list.sort((a, b) => (a['nom'] ?? '').toString().toLowerCase()
+        .compareTo((b['nom'] ?? '').toString().toLowerCase()));
+    return list;
+  } catch (_) {
+    return [];
+  }
+}
+
+/// Résout {id: {nom, photo_url}} pour une liste d'ids d'animaux tagués.
+Future<Map<String, Map<String, dynamic>>> _resolveTaggedAnimals(
+    List<String> ids) async {
+  if (ids.isEmpty) return {};
+  try {
+    final rows = await Supabase.instance.client.from('animaux')
+        .select('id, nom, photo_url, espece').inFilter('id', ids);
+    return {
+      for (final r in rows as List)
+        r['id'] as String: Map<String, dynamic>.from(r as Map),
+    };
+  } catch (_) {
+    return {};
+  }
+}
+
+/// Extrait proprement la liste d'ids depuis la valeur brute `tagged_animal_ids`
+/// (peut arriver en `List<dynamic>` ou en chaîne PostgREST `{a,b}`).
+List<String> _taggedIds(dynamic raw) {
+  if (raw == null) return const [];
+  if (raw is List) {
+    return raw.map((e) => e.toString()).where((s) => s.isNotEmpty).toList();
+  }
+  if (raw is String && raw.length > 2 && raw.startsWith('{')) {
+    return raw.substring(1, raw.length - 1)
+        .split(',').map((s) => s.replaceAll('"', '').trim())
+        .where((s) => s.isNotEmpty).toList();
+  }
+  return const [];
+}
+
 /// Ouvre le détail d'une publication à partir de son id — point d'entrée des
 /// liens de partage `petsmatchapp.com/p/<id>` (cf. `DeepLinkService`).
 Future<void> openSharedSocialPost(BuildContext context, String postId) async {
@@ -1090,7 +1163,8 @@ class _FeedList extends StatefulWidget {
   final String type;
   final String myUid;
   final String? myProfileId; // profil actif — scope le fil « Abonnements »
-  const _FeedList({super.key, required this.type, required this.myUid, this.myProfileId});
+  final String? animalId;    // type == 'animal' : posts où cet animal est tagué
+  const _FeedList({super.key, required this.type, required this.myUid, this.myProfileId, this.animalId});
   @override
   State<_FeedList> createState() => _FeedListState();
 }
@@ -1144,7 +1218,17 @@ class _FeedListState extends State<_FeedList>
       }
 
       List<dynamic> posts;
-      if (widget.type == 'following') {
+      if (widget.type == 'animal') {
+        // Toutes les publications du réseau où cet animal est tagué.
+        posts = widget.animalId == null
+            ? []
+            : await _supa
+                .from('posts_socialmedia')
+                .select()
+                .contains('tagged_animal_ids', [widget.animalId!])
+                .order('created_at', ascending: false)
+                .limit(100);
+      } else if (widget.type == 'following') {
         final uids = <String>{
           ..._following,
           if (widget.myUid.isNotEmpty) widget.myUid,
@@ -2120,6 +2204,10 @@ class _SocialPostCardState extends State<_SocialPostCard> {
                         color: Color(0xFF0D2A2E), height: 1.5)),
                   ),
 
+                // ── Animaux tagués ───────────────────────────────────
+                _TaggedAnimalsRow(
+                    ids: _taggedIds(widget.post['tagged_animal_ids'])),
+
                 // ── Photo(s) double-tap to like ───────────────────
                 if (urls.isNotEmpty) ...[
                   const SizedBox(height: 12),
@@ -2188,6 +2276,125 @@ class _SocialPostCardState extends State<_SocialPostCard> {
                 ),
             ]),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Ligne « animaux tagués » sous une publication ───────────────────────────
+
+class _TaggedAnimalsRow extends StatefulWidget {
+  final List<String> ids;
+  const _TaggedAnimalsRow({required this.ids});
+  @override
+  State<_TaggedAnimalsRow> createState() => _TaggedAnimalsRowState();
+}
+
+class _TaggedAnimalsRowState extends State<_TaggedAnimalsRow> {
+  Map<String, Map<String, dynamic>> _animals = {};
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.ids.isNotEmpty) {
+      _resolveTaggedAnimals(widget.ids).then((m) {
+        if (mounted) setState(() => _animals = m);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.ids.isEmpty || _animals.isEmpty) return const SizedBox.shrink();
+    final ordered = widget.ids.where(_animals.containsKey).toList();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+      child: Wrap(
+        spacing: 6, runSpacing: 6,
+        children: [
+          for (final id in ordered)
+            GestureDetector(
+              onTap: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => AnimalTaggedPostsPage(
+                  animalId: id,
+                  animalName: (_animals[id]?['nom'] ?? 'cet animal').toString(),
+                ),
+              )),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE7F1EC),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFBFDDD1)),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  ClipOval(
+                    child: SizedBox(
+                      width: 18, height: 18,
+                      child: (_animals[id]?['photo_url'] as String?)?.isNotEmpty == true
+                          ? Image.network(_animals[id]!['photo_url'] as String,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  const Icon(Icons.pets, size: 14, color: _tealC))
+                          : const Icon(Icons.pets, size: 14, color: _tealC),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text((_animals[id]?['nom'] ?? '').toString(),
+                      style: const TextStyle(
+                          fontFamily: 'Galey', fontSize: 12,
+                          fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C))),
+                ]),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Publications où un animal est tagué ─────────────────────────────────────
+
+class AnimalTaggedPostsPage extends StatelessWidget {
+  final String animalId;
+  final String animalName;
+  const AnimalTaggedPostsPage(
+      {super.key, required this.animalId, required this.animalName});
+
+  @override
+  Widget build(BuildContext context) {
+    final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(gradient: _bgGrad),
+        child: SafeArea(
+          child: Column(children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 6, 16, 6),
+              child: Row(children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                      color: Colors.white, size: 20),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('Pets Social',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white54)),
+                    Text('Publications où $animalName est tagué',
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontFamily: 'Galey', fontSize: 15,
+                            fontWeight: FontWeight.w700, color: Colors.white)),
+                  ]),
+                ),
+              ]),
+            ),
+            Expanded(
+              child: _FeedList(type: 'animal', animalId: animalId, myUid: myUid),
+            ),
+          ]),
         ),
       ),
     );
@@ -3412,12 +3619,19 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   String? _myProfileName;
   String? _myProfileType;
 
+  // Animaux du compte que l'on peut taguer sur la publication.
+  List<Map<String, dynamic>> _myAnimals = [];
+  final Set<String> _taggedAnimalIds = {};
+
   static const _maxChars = 2000;
 
   @override
   void initState() {
     super.initState();
     _ctrl.addListener(() { if (mounted) setState(() => _charCount = _ctrl.text.length); });
+    _loadTaggableAnimals(widget.myUid).then((list) {
+      if (mounted) setState(() => _myAnimals = list);
+    });
     _activeAuthorProfileId(widget.myUid).then((id) async {
       if (!mounted || id == null) return;
       _myProfileId = id;
@@ -3518,6 +3732,8 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
         if (pid != null) 'author_profile_id': pid,
         if (text.isNotEmpty) 'texte': text,
         if (mediaValue != null) 'media_url': mediaValue,
+        if (_taggedAnimalIds.isNotEmpty)
+          'tagged_animal_ids': _taggedAnimalIds.toList(),
       });
       if (mounted) {
         Navigator.pop(context);
@@ -3744,6 +3960,28 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
             ]),
           ),
 
+        // ── Chips animaux tagués ──────────────────────────────────
+        if (_taggedAnimalIds.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final a in _myAnimals.where((a) => _taggedAnimalIds.contains(a['id'])))
+                  Chip(
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    backgroundColor: Colors.white.withValues(alpha: 0.12),
+                    side: BorderSide(color: Colors.white.withValues(alpha: 0.20)),
+                    avatar: const Icon(Icons.pets, size: 14, color: _green),
+                    label: Text((a['nom'] ?? '').toString(),
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white)),
+                    deleteIcon: const Icon(Icons.close, size: 14, color: Colors.white70),
+                    onDeleted: () => setState(() => _taggedAnimalIds.remove(a['id'])),
+                  ),
+              ]),
+            ),
+          ),
+
         // ── Barre médias en bas ───────────────────────────────────
         Container(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
@@ -3751,13 +3989,29 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
             border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.10))),
           ),
           child: Row(children: [
-            _iconBtn(Icons.photo_library_outlined, 'Galerie', () => _pickImages(ImageSource.gallery)),
-            const SizedBox(width: 10),
-            _iconBtn(Icons.camera_alt_outlined, 'Photo', () => _pickImages(ImageSource.camera)),
-            const Spacer(),
-            if (hasImgs)
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(children: [
+                  _iconBtn(Icons.photo_library_outlined, 'Galerie', () => _pickImages(ImageSource.gallery)),
+                  const SizedBox(width: 10),
+                  _iconBtn(Icons.camera_alt_outlined, 'Photo', () => _pickImages(ImageSource.camera)),
+                  if (_myAnimals.isNotEmpty) ...[
+                    const SizedBox(width: 10),
+                    _iconBtn(
+                      Icons.pets_outlined,
+                      _taggedAnimalIds.isEmpty ? 'Taguer' : 'Taguer (${_taggedAnimalIds.length})',
+                      _openAnimalTagSheet,
+                    ),
+                  ],
+                ]),
+              ),
+            ),
+            if (hasImgs) ...[
+              const SizedBox(width: 8),
               Text('${_images.length} / 10',
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _green, fontWeight: FontWeight.w600)),
+            ],
           ]),
         ),
       ]),
@@ -3780,6 +4034,116 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
           Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white, fontWeight: FontWeight.w600)),
         ]),
       ),
+    );
+  }
+
+  Future<void> _openAnimalTagSheet() async {
+    FocusScope.of(context).unfocus();
+    final result = await showModalBottomSheet<Set<String>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AnimalTagSheet(
+        animals: _myAnimals,
+        selected: Set<String>.from(_taggedAnimalIds),
+      ),
+    );
+    if (result != null && mounted) {
+      setState(() {
+        _taggedAnimalIds
+          ..clear()
+          ..addAll(result);
+      });
+    }
+  }
+}
+
+// ─── Feuille de sélection des animaux à taguer ───────────────────────────────
+
+class _AnimalTagSheet extends StatefulWidget {
+  final List<Map<String, dynamic>> animals;
+  final Set<String> selected;
+  const _AnimalTagSheet({required this.animals, required this.selected});
+  @override
+  State<_AnimalTagSheet> createState() => _AnimalTagSheetState();
+}
+
+class _AnimalTagSheetState extends State<_AnimalTagSheet> {
+  late final Set<String> _sel = Set<String>.from(widget.selected);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 80),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0C3535),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const SizedBox(height: 12),
+        Container(width: 36, height: 4,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [_tealC, _green]),
+              borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 14),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(children: [
+            const Text('Taguer mes animaux',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Colors.white)),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => Navigator.pop(context, _sel),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [_tealC, _green]),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text('OK',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Colors.white)),
+              ),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 8),
+        Flexible(
+          child: ListView.builder(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 24),
+            itemCount: widget.animals.length,
+            itemBuilder: (_, i) {
+              final a = widget.animals[i];
+              final id = a['id'] as String;
+              final checked = _sel.contains(id);
+              final photo = (a['photo_url'] as String?) ?? '';
+              final sub = [a['espece'], a['race']]
+                  .where((v) => v != null && v.toString().isNotEmpty)
+                  .join(' · ');
+              return ListTile(
+                onTap: () => setState(() =>
+                    checked ? _sel.remove(id) : _sel.add(id)),
+                leading: CircleAvatar(
+                  radius: 20,
+                  backgroundColor: Colors.white12,
+                  backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null,
+                  child: photo.isEmpty
+                      ? const Icon(Icons.pets, size: 18, color: Colors.white70)
+                      : null,
+                ),
+                title: Text((a['nom'] ?? 'Sans nom').toString(),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white, fontWeight: FontWeight.w600)),
+                subtitle: sub.isEmpty ? null : Text(sub,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white38)),
+                trailing: Icon(
+                  checked ? Icons.check_circle_rounded : Icons.circle_outlined,
+                  color: checked ? _green : Colors.white30,
+                ),
+              );
+            },
+          ),
+        ),
+      ]),
     );
   }
 }

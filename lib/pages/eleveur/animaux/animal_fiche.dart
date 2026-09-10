@@ -23,6 +23,7 @@ import 'package:PetsMatch/pages/pro/animal_devis_page.dart';
 import 'package:PetsMatch/pages/pro/education_rapports_page.dart';
 import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show AnimalTaggedPostsPage;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/config.dart';
@@ -1920,6 +1921,29 @@ class _IdentiteTab extends StatelessWidget {
             _documentsSection(context),
             const SizedBox(height: 12),
             _alerteSection(context),
+            if (s.widget.animalId != null) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => AnimalTaggedPostsPage(
+                      animalId: s.widget.animalId!,
+                      animalName: s._nomCtrl.text.trim().isEmpty ? 'cet animal' : s._nomCtrl.text.trim(),
+                    ),
+                  )),
+                  icon: const Icon(Icons.grid_view_rounded, size: 16),
+                  label: const Text('Publications Pets Social',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF0C5C6C),
+                    side: const BorderSide(color: Color(0xFF0C5C6C)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
           ],
           if (s._hasPensionUpdates && !s.widget.vetMode) ...[
             const SizedBox(height: 12),

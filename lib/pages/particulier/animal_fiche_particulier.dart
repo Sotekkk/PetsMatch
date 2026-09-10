@@ -22,6 +22,7 @@ import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/particulier/partage_animal_sheet.dart';
 import 'package:PetsMatch/pages/particulier/proprietaires_animal_sheet.dart';
 import 'package:PetsMatch/pages/particulier/create_annonce_cheval_page.dart';
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show AnimalTaggedPostsPage;
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:PetsMatch/widgets/rich_text_view.dart';
@@ -915,6 +916,30 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         const SizedBox(height: 16),
 
         if (_sterilRequise && !_sterilise) _sterilisationBanner(),
+
+        if (_animalId != null) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => AnimalTaggedPostsPage(
+                  animalId: _animalId!,
+                  animalName: _nomCtrl.text.trim().isEmpty ? 'cet animal' : _nomCtrl.text.trim(),
+                ),
+              )),
+              icon: const Icon(Icons.grid_view_rounded, size: 16),
+              label: const Text('Publications Pets Social',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _teal,
+                side: const BorderSide(color: _teal),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ],
 
         const SizedBox(height: 8),
 
