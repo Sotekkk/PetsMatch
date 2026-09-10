@@ -1,10 +1,13 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/data/annonce_objet_categories.dart';
+import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 
 /// Publier / modifier une petite annonce « objet & matériel » liée aux animaux.
@@ -27,7 +30,6 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
   final _titreCtrl = TextEditingController();
   final _descCtrl  = TextEditingController();
   final _prixCtrl  = TextEditingController();
-  final _villeCtrl = TextEditingController();
   final _cpCtrl    = TextEditingController();
 
   String  _categorie   = kAnnonceObjetCategories.first.slug;
@@ -37,6 +39,14 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
   final List<String> _photosUrls  = [];
   final List<File>   _photosFiles = [];
   bool _saving = false;
+
+  // Localisation : on saisit le code postal, puis on choisit la commune.
+  // Région + département sont pré-remplis depuis le code postal (modifiables).
+  List<String> _villes = [];
+  String? _ville;
+  String? _region;
+  String? _departement;
+  bool _loadingVilles = false;
 
   bool get _isEdit => widget.annonceId != null;
   bool get _priced => _transaction == 'vente' || _transaction == 'location';
@@ -53,12 +63,52 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
       _etat        = d['etat'] as String?;
       _negociable  = d['prix_negociable'] == true;
       if (d['prix'] != null) _prixCtrl.text = (d['prix'] as num).toString();
-      _villeCtrl.text = (d['ville'] ?? User_Info.ville).toString();
-      _cpCtrl.text    = (d['code_postal'] ?? User_Info.codePostal).toString();
+      _ville       = (d['ville'] ?? User_Info.ville).toString().trim();
+      _cpCtrl.text = (d['code_postal'] ?? User_Info.codePostal).toString();
       _photosUrls.addAll(List<String>.from(d['photos'] ?? const []));
     } else {
-      _villeCtrl.text = User_Info.ville;
-      _cpCtrl.text    = User_Info.codePostal;
+      _ville       = User_Info.ville.trim();
+      _cpCtrl.text = User_Info.codePostal;
+    }
+    if (_ville != null && _ville!.isNotEmpty) _villes = [_ville!];
+    _region      = (d?['region'] as String?)?.trim();
+    _departement = (d?['departement'] as String?)?.trim();
+    _applyGeoFromCp(_cpCtrl.text.trim());
+    if (_cpCtrl.text.trim().length == 5) _fetchVilles(_cpCtrl.text.trim());
+  }
+
+  void _applyGeoFromCp(String cp) {
+    final geo = FrenchGeo.fromPostalCode(cp);
+    if (geo == null) return;
+    _region ??= geo.region;
+    _departement ??= geo.departement;
+    // Si le CP change et ne colle plus, on recale.
+    if (_region != geo.region) { _region = geo.region; _departement = geo.departement; }
+  }
+
+  Future<void> _fetchVilles(String cp) async {
+    setState(() => _loadingVilles = true);
+    try {
+      final uri = Uri.https('geo.api.gouv.fr', '/communes',
+          {'codePostal': cp, 'fields': 'nom', 'format': 'json'});
+      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      final list = (jsonDecode(res.body) as List)
+          .map((e) => (e['nom'] ?? '').toString())
+          .where((s) => s.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+      if (!mounted) return;
+      setState(() {
+        _villes = list;
+        if (_ville == null || !list.contains(_ville)) {
+          _ville = list.length == 1 ? list.first : null;
+        }
+      });
+    } catch (_) {
+      // Repli : on garde la saisie libre existante.
+    } finally {
+      if (mounted) setState(() => _loadingVilles = false);
     }
   }
 
@@ -67,7 +117,6 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
     _titreCtrl.dispose();
     _descCtrl.dispose();
     _prixCtrl.dispose();
-    _villeCtrl.dispose();
     _cpCtrl.dispose();
     super.dispose();
   }
@@ -92,6 +141,8 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
     if (_photosUrls.isEmpty && _photosFiles.isEmpty) {
       _snack('Ajoutez au moins une photo.'); return;
     }
+    if (_cpCtrl.text.trim().length != 5) { _snack('Indiquez un code postal.'); return; }
+    if ((_ville ?? '').isEmpty) { _snack('Sélectionnez votre commune.'); return; }
     // Garde-fou : cette rubrique ne concerne pas les animaux vivants.
     final txt = '$titre ${_descCtrl.text}'.toLowerCase();
     const interdits = [
@@ -115,6 +166,7 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
       final nom = '${User_Info.firstname} ${User_Info.lastname}'.trim();
       final now = DateTime.now().toIso8601String();
       final prix = _priced ? double.tryParse(_prixCtrl.text.trim().replaceAll(',', '.')) : null;
+      final geo = FrenchGeo.fromPostalCode(_cpCtrl.text.trim());
 
       final data = <String, dynamic>{
         'uid': uid,
@@ -130,8 +182,10 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
         'etat': _priced ? _etat : null,
         'description': _descCtrl.text.trim(),
         'photos': [..._photosUrls, ...newUrls],
-        'ville': _villeCtrl.text.trim(),
+        'ville': _ville ?? '',
         'code_postal': _cpCtrl.text.trim(),
+        'departement': _departement ?? geo?.departement,
+        'region': _region ?? geo?.region,
         'nom_vendeur': nom.isEmpty ? 'Particulier' : nom,
         'statut': 'disponible',
         'updated_at': now,
@@ -287,17 +341,83 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
           _field(_descCtrl, hint: 'Dimensions, marque, état, retrait sur place / envoi…', maxLines: 5),
           const SizedBox(height: 16),
 
-          Row(children: [
-            Expanded(flex: 2, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              _label('Ville'), _field(_villeCtrl),
-            ])),
-            const SizedBox(width: 10),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              _label('Code postal'),
-              _field(_cpCtrl, keyboard: TextInputType.number,
-                  formatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(5)]),
-            ])),
-          ]),
+          _sectionTitle('📍 Localisation'),
+          const SizedBox(height: 10),
+          _label('Code postal'),
+          _field(_cpCtrl, hint: '5 chiffres', keyboard: TextInputType.number,
+              formatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(5)],
+              onChanged: (v) {
+                final cp = v.trim();
+                if (cp.length == 5) {
+                  setState(() => _applyGeoFromCp(cp));
+                  _fetchVilles(cp);
+                } else {
+                  setState(() { _villes = []; _ville = null; });
+                }
+              }),
+          const SizedBox(height: 12),
+          _label('Commune'),
+          const SizedBox(height: 6),
+          if (_loadingVilles)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Row(children: [
+                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                SizedBox(width: 10),
+                Text('Recherche des communes…', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+              ]),
+            )
+          else if (_villes.isEmpty)
+            Text(
+              _cpCtrl.text.trim().length == 5
+                  ? 'Aucune commune trouvée pour ce code postal.'
+                  : 'Saisissez d\'abord le code postal.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: Colors.grey.shade500),
+            )
+          else if (_villes.length == 1)
+            _readonlyBox(_villes.first)
+          else
+            DropdownButtonFormField<String>(
+              initialValue: _villes.contains(_ville) ? _ville : null,
+              isExpanded: true,
+              decoration: _dec(hint: 'Sélectionnez votre commune'),
+              items: [
+                for (final v in _villes) DropdownMenuItem(value: v, child: Text(v, overflow: TextOverflow.ellipsis)),
+              ],
+              onChanged: (v) => setState(() => _ville = v),
+            ),
+          const SizedBox(height: 12),
+
+          _label('Région'),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            initialValue: FrenchGeo.regions.contains(_region) ? _region : null,
+            isExpanded: true,
+            decoration: _dec(hint: 'Région'),
+            items: [
+              for (final r in FrenchGeo.regions)
+                DropdownMenuItem(value: r, child: Text(r, overflow: TextOverflow.ellipsis)),
+            ],
+            onChanged: (v) => setState(() { _region = v; _departement = null; }),
+          ),
+          const SizedBox(height: 12),
+
+          _label('Département'),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            initialValue: (_region != null &&
+                    FrenchGeo.departmentsInRegion(_region!).contains(_departement))
+                ? _departement
+                : null,
+            isExpanded: true,
+            decoration: _dec(hint: _region == null ? 'Choisissez d\'abord une région' : 'Département'),
+            items: [
+              if (_region != null)
+                for (final d in FrenchGeo.departmentsInRegion(_region!))
+                  DropdownMenuItem(value: d, child: Text(d, overflow: TextOverflow.ellipsis)),
+            ],
+            onChanged: _region == null ? null : (v) => setState(() => _departement = v),
+          ),
           const SizedBox(height: 24),
 
           SizedBox(
@@ -323,6 +443,9 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
   Widget _label(String t) => Text(t,
       style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1F2A2E)));
 
+  Widget _sectionTitle(String t) => Text(t,
+      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 15, color: _teal));
+
   InputDecoration _dec({String? hint}) => InputDecoration(
         hintText: hint,
         hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade400, fontSize: 13),
@@ -335,7 +458,8 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
       );
 
   Widget _field(TextEditingController c,
-      {String? hint, int maxLines = 1, TextInputType? keyboard, List<TextInputFormatter>? formatters}) {
+      {String? hint, int maxLines = 1, TextInputType? keyboard,
+      List<TextInputFormatter>? formatters, ValueChanged<String>? onChanged}) {
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: TextField(
@@ -343,11 +467,27 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
         maxLines: maxLines,
         keyboardType: keyboard,
         inputFormatters: formatters,
+        onChanged: onChanged,
         style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
         decoration: _dec(hint: hint),
       ),
     );
   }
+
+  Widget _readonlyBox(String text) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F6F5),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Row(children: [
+          const Icon(Icons.place_outlined, size: 16, color: _teal),
+          const SizedBox(width: 8),
+          Text(text, style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w600)),
+        ]),
+      );
 
   Widget _thumb({required Widget child, required VoidCallback onRemove}) => Container(
         margin: const EdgeInsets.only(right: 8),
