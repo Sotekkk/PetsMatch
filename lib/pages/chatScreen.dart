@@ -515,7 +515,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
         // Notif push fire-and-forget pour chaque destinataire pas déjà dans la conv
         final previewText = imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : (animalData != null ? '🐾 ${animalData['nom'] ?? 'Animal'}' : (text.length > 80 ? '${text.substring(0, 80)}…' : text)));
-        final recipients = members.where((p) => p != uid).toList();
+        final recipients = members.where((p) => p != uid).toSet().toList();
         if (recipients.isNotEmpty) {
           final activeRows = await _supa
               .from('users')
