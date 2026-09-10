@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
@@ -22,6 +25,24 @@ const _kTris = <String, String>{
   'prix_asc': 'Prix croissant',
   'prix_desc': 'Prix décroissant',
 };
+
+/// Communes d'un code postal (API open data geo.api.gouv.fr).
+Future<List<String>> fetchCommunes(String cp) async {
+  if (cp.length != 5) return const [];
+  try {
+    final uri = Uri.https('geo.api.gouv.fr', '/communes',
+        {'codePostal': cp, 'fields': 'nom', 'format': 'json'});
+    final res = await http.get(uri).timeout(const Duration(seconds: 8));
+    return (jsonDecode(res.body) as List)
+        .map((e) => (e['nom'] ?? '').toString())
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+  } catch (_) {
+    return const [];
+  }
+}
 
 /// Fil public des petites annonces « objets & matériel » liées aux animaux —
 /// style « petites annonces » : recherche mot-clé, catégories, filtres
@@ -46,14 +67,30 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
   String _kw = '';
   String? _region;
   String? _departement;
-  String _ville = '';
+  String _ville = '';        // commune sélectionnée
+  String _cpFilter = '';     // code postal saisi dans les filtres
+  List<String> _communes = [];
+  bool _loadingCommunes = false;
   String _tri = 'recent';
 
   int get _activeFilters =>
       (_region != null ? 1 : 0) +
       (_departement != null ? 1 : 0) +
       (_ville.isNotEmpty ? 1 : 0) +
+      (_cpFilter.isNotEmpty ? 1 : 0) +
       (_tri != 'recent' ? 1 : 0);
+
+  Future<void> _loadCommunesFilter(String cp, void Function(void Function()) setSheet) async {
+    setSheet(() { _loadingCommunes = true; _cpFilter = cp; });
+    final geo = FrenchGeo.fromPostalCode(cp);
+    final list = await fetchCommunes(cp);
+    setSheet(() {
+      _communes = list;
+      _loadingCommunes = false;
+      if (geo != null) { _region = geo.region; _departement = geo.departement; }
+      if (!list.contains(_ville)) _ville = list.length == 1 ? list.first : '';
+    });
+  }
 
   @override
   void initState() {
@@ -87,6 +124,7 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
       }
       if (_region != null) q = q.eq('region', _region!);
       if (_departement != null) q = q.eq('departement', _departement!);
+      if (_cpFilter.length == 5) q = q.eq('code_postal', _cpFilter);
       if (_ville.isNotEmpty) q = q.ilike('ville', '%$_ville%');
 
       final PostgrestList data;
@@ -158,6 +196,7 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) {
         final kwCtrl = TextEditingController(text: _kw);
+        final cpCtrl = TextEditingController(text: _cpFilter);
         return StatefulBuilder(
         builder: (ctx, setSheet) {
           final depts = _region != null
@@ -178,7 +217,9 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
                     _searchCtrl.clear();
                     setState(() {
                       _kw = ''; _cat = 'tous';
-                      _region = null; _departement = null; _ville = ''; _tri = 'recent';
+                      _region = null; _departement = null;
+                      _ville = ''; _cpFilter = ''; _communes = [];
+                      _tri = 'recent';
                     });
                     _load();
                     Navigator.pop(ctx);
@@ -221,7 +262,57 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
               ),
               const SizedBox(height: 14),
 
-              _sheetLabel('Région'),
+              _sheetLabel('Code postal'),
+              TextField(
+                controller: cpCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(5),
+                ],
+                decoration: _sheetDec('5 chiffres — puis choisissez la commune'),
+                onChanged: (v) {
+                  final cp = v.trim();
+                  if (cp.length == 5) {
+                    _loadCommunesFilter(cp, setSheet);
+                  } else {
+                    setSheet(() { _communes = []; _cpFilter = ''; _ville = ''; });
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+
+              _sheetLabel('Commune'),
+              if (_loadingCommunes)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 10),
+                  child: Row(children: [
+                    SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                    SizedBox(width: 8),
+                    Text('Recherche des communes…', style: TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+                  ]),
+                )
+              else if (_communes.isEmpty)
+                Text(
+                  cpCtrl.text.trim().length == 5
+                      ? 'Aucune commune pour ce code postal.'
+                      : 'Saisissez le code postal pour choisir une commune.',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                )
+              else
+                DropdownButtonFormField<String>(
+                  initialValue: _communes.contains(_ville) ? _ville : null,
+                  isExpanded: true,
+                  decoration: _sheetDec('Toutes les communes du code postal'),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('Toutes les communes')),
+                    for (final c in _communes) DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis)),
+                  ],
+                  onChanged: (v) => setSheet(() => _ville = v ?? ''),
+                ),
+              const SizedBox(height: 12),
+
+              _sheetLabel('Ou par région / département'),
               DropdownButtonFormField<String>(
                 initialValue: _region,
                 isExpanded: true,
@@ -232,26 +323,16 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
                 ],
                 onChanged: (v) => setSheet(() { _region = v; _departement = null; }),
               ),
-              const SizedBox(height: 12),
-
-              _sheetLabel('Département'),
+              const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 initialValue: _departement,
                 isExpanded: true,
-                decoration: _sheetDec(_region == null ? 'Choisissez d\'abord une région' : 'Tous les départements'),
+                decoration: _sheetDec(_region == null ? 'Département — choisissez une région' : 'Tous les départements'),
                 items: [
                   const DropdownMenuItem(value: null, child: Text('Tous les départements')),
                   for (final d in depts) DropdownMenuItem(value: d, child: Text(d, overflow: TextOverflow.ellipsis)),
                 ],
                 onChanged: _region == null ? null : (v) => setSheet(() => _departement = v),
-              ),
-              const SizedBox(height: 12),
-
-              _sheetLabel('Ville'),
-              TextFormField(
-                initialValue: _ville,
-                decoration: _sheetDec('Nom de la ville'),
-                onChanged: (v) => _ville = v.trim(),
               ),
               const SizedBox(height: 12),
 
@@ -315,7 +396,7 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
 
   @override
   Widget build(BuildContext context) {
-    final locLabel = _departement ?? _region;
+    final locLabel = _ville.isNotEmpty ? _ville : (_departement ?? _region);
     return Scaffold(
       backgroundColor: const Color(0xFFF6F6F4),
       appBar: AppBar(
@@ -411,7 +492,13 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
               Expanded(child: Text('Localisation : $locLabel',
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _teal, fontWeight: FontWeight.w600))),
               GestureDetector(
-                onTap: () { setState(() { _region = null; _departement = null; }); _load(); },
+                onTap: () {
+                  setState(() {
+                    _region = null; _departement = null;
+                    _ville = ''; _cpFilter = ''; _communes = [];
+                  });
+                  _load();
+                },
                 child: const Icon(Icons.close, size: 16, color: _teal),
               ),
             ]),

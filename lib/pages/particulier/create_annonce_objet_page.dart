@@ -126,13 +126,26 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
       );
 
   Future<void> _addPhoto() async {
-    if (_photosUrls.length + _photosFiles.length >= _maxPhotos) {
+    final room = _maxPhotos - (_photosUrls.length + _photosFiles.length);
+    if (room <= 0) {
       _snack('$_maxPhotos photos maximum.');
       return;
     }
-    final picked = await ImagePicker()
-        .pickImage(source: ImageSource.gallery, imageQuality: 88, maxWidth: 1600);
-    if (picked != null && mounted) setState(() => _photosFiles.add(File(picked.path)));
+    try {
+      // pickMultiImage + requestFullMetadata:false : évite le blocage iOS avec
+      // les photos iCloud et permet d'en choisir plusieurs d'un coup.
+      final picked = await ImagePicker().pickMultiImage(
+        imageQuality: 88,
+        maxWidth: 1600,
+        requestFullMetadata: false,
+      );
+      if (picked.isEmpty || !mounted) return;
+      setState(() => _photosFiles.addAll(
+            picked.take(room).map((x) => File(x.path)),
+          ));
+    } catch (e) {
+      if (mounted) _snack('Impossible d\'ouvrir la galerie : $e');
+    }
   }
 
   Future<void> _save() async {
