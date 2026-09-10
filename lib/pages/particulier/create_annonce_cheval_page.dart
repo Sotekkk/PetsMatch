@@ -39,10 +39,6 @@ String _genUuid() {
   return '${h(8)}-${h(4)}-4${h(3)}-${(8 + r.nextInt(4)).toRadixString(16)}${h(3)}-${h(12)}';
 }
 
-final _uuidRe = RegExp(
-    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
-String? _toUuidOrNull(String? s) => (s != null && _uuidRe.hasMatch(s)) ? s : null;
-
 class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
@@ -349,7 +345,9 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
         'indice_icc':          int.tryParse(_iccCtrl.text.trim()),
         'video_monte_url':     _videoMonteUrl,
         'video_libre_url':     _videoLibreUrl,
-        'animal_id':           _toUuidOrNull(_linkedAnimalId),
+        // `annonces.animal_id` est TEXT (migration_annonces_animal_id_text) :
+        // on stocke l'ID tel quel, y compris les anciens IDs courts (timestamp).
+        'animal_id':           (_linkedAnimalId?.isNotEmpty ?? false) ? _linkedAnimalId : null,
         'updated_at':          now,
       };
 
