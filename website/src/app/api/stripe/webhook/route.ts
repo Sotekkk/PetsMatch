@@ -100,8 +100,19 @@ export async function POST(req: NextRequest) {
                 stripe_payment_intent_id: typeof session.payment_intent === 'string' ? session.payment_intent : null,
                 statut: 'paye', date_expiration: expiration,
               });
-              if (annonce_id && expiration) {
-                await supabase.from('annonces').update({ boost_until: expiration }).eq('id', annonce_id);
+              if (annonce_id) {
+                if (produit_code === 'annonce_cheval_particulier') {
+                  // Publication payante d'une annonce cheval particulier : on
+                  // sort le brouillon et on (re)cale l'expiration à +60 j.
+                  const expiresAt = new Date(
+                    Date.now() + (produit.duree_heures ?? 1440) * 3600_000,
+                  ).toISOString();
+                  await supabase.from('annonces').update({
+                    statut: 'disponible', paiement_statut: 'paye', expires_at: expiresAt,
+                  }).eq('id', annonce_id);
+                } else if (expiration) {
+                  await supabase.from('annonces').update({ boost_until: expiration }).eq('id', annonce_id);
+                }
               }
             }
           }

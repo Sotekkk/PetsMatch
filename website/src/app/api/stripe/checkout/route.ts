@@ -71,11 +71,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Price ID boost non configuré dans la table produits_ponctuels.' }, { status: 503 });
       }
 
+      // Retour paramétrable : la publication payante d'une annonce cheval
+      // particulier revient sur /mes-annonces ; les boosts gardent leur retour.
+      const ponctuelBack = (returnPath as string | undefined) ?? '/mes-annonces';
+      const isAnnonceChevalParticulier = produit_code === 'annonce_cheval_particulier';
       const session = await stripe.checkout.sessions.create({
         mode: 'payment',
         line_items: [{ price: priceId, quantity: 1 }],
-        success_url: `${origin}/mes-annonces?boost_success=1`,
-        cancel_url:  `${origin}/mes-annonces`,
+        success_url: isAnnonceChevalParticulier
+          ? `${origin}${ponctuelBack}?paye=1`
+          : `${origin}/mes-annonces?boost_success=1`,
+        cancel_url: isAnnonceChevalParticulier
+          ? `${origin}${ponctuelBack}?paiement=annule`
+          : `${origin}/mes-annonces`,
         metadata: { uid, produit_code, annonce_id: annonce_id ?? '' },
       });
 

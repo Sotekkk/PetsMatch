@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
@@ -12,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Publication d'une annonce **cheval** par un particulier (cavalier /
 /// propriétaire). La reproduction reste réservée aux éleveurs ; ici : vente,
@@ -88,6 +90,10 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
   List<Map<String, dynamic>> _mesChevaux = [];
   bool _loadingChevaux = true;
 
+  // Statut de paiement de l'annonce éditée ('paye' = déjà publiée → édition
+  // simple ; sinon on repasse par le paiement web).
+  String? _paiementStatut;
+
   bool _saving = false;
 
   @override
@@ -129,6 +135,7 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
     _videoMonteUrl = (d['video_monte_url'] as String?)?.isNotEmpty == true ? d['video_monte_url'] : null;
     _videoLibreUrl = (d['video_libre_url'] as String?)?.isNotEmpty == true ? d['video_libre_url'] : null;
     _linkedAnimalId = d['animal_id']?.toString();
+    _paiementStatut = d['paiement_statut']?.toString();
     final dn = d['date_naissance_animal']?.toString();
     if (dn != null && dn.isNotEmpty) _dateNaissance = DateTime.tryParse(dn);
   }
@@ -269,8 +276,10 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
     try {
       final uid = FirebaseAuth.instance.currentUser!.uid;
       final pid = User_Info.activeProfileId;
+      // Annonce déjà payée en édition → mise à jour simple, pas de re-paiement.
+      final dejaPayee = widget.annonceId != null && _paiementStatut == 'paye';
 
-      // Quota : max 5 annonces actives pour ce profil.
+      // Chaque annonce est payante → plafond souple à 10 actives.
       if (widget.annonceId == null) {
         final actives = await Supabase.instance.client
             .from('annonces')
@@ -278,8 +287,8 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
             .eq('uid_eleveur', uid)
             .eq('profil_source', 'particulier')
             .inFilter('statut', ['disponible', 'reserve']);
-        if ((actives as List).length >= 5) {
-          _snack('Limite de 5 annonces actives atteinte. Mettez-en une en pause d\'abord.');
+        if ((actives as List).length >= 10) {
+          _snack('Limite de 10 annonces actives atteinte. Mettez-en une en pause d\'abord.');
           setState(() => _saving = false);
           return;
         }
@@ -333,7 +342,10 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
         'prix':                prix,
         'prix_unite':          _typeVente == 'vente' ? null : _prixUnite,
         'prix_negociable':     _prixNegociable,
-        'statut':              'disponible',
+        // Publiée seulement si déjà payée ; sinon brouillon (masqué des feeds)
+        // jusqu'au paiement, qui se fait sur le site.
+        'statut':              dejaPayee ? 'disponible' : 'brouillon',
+        'paiement_statut':     dejaPayee ? 'paye' : 'attente',
         'sexe':                _sexe,
         'couleur':             _couleurCtrl.text.trim(),
         'date_naissance_animal': _dateNaissance?.toIso8601String().substring(0, 10),
@@ -375,9 +387,13 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
         await Supabase.instance.client.from('annonces').insert(data);
       }
 
-      if (mounted) {
-        _snack('Annonce publiée !');
+      if (!mounted) return;
+      if (dejaPayee) {
+        _snack('Modifications enregistrées.');
         Navigator.pop(context, true);
+      } else {
+        await _showFinaliserSurSite();
+        if (mounted) Navigator.pop(context, true);
       }
     } catch (e) {
       final msg = e is PostgrestException ? '[${e.code}] ${e.message}' : e.toString();
@@ -394,6 +410,59 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// Le paiement d'une annonce se fait sur le site (commission Apple/Google
+  /// interdite in-app). L'annonce est enregistrée en brouillon ; on invite
+  /// l'utilisateur à finaliser sur petsmatchapp.com.
+  Future<void> _showFinaliserSurSite() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(
+                color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 18),
+            const Text('Dernière étape', style: TextStyle(
+                fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: _teal)),
+            const SizedBox(height: 8),
+            const Text(
+              'Votre brouillon est enregistré. La publication d’une annonce cheval '
+              'se finalise sur le site avec un paiement sécurisé (4,99 €, visible 60 jours).',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Color(0xFF41525A), height: 1.4),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(width: double.infinity, child: ElevatedButton.icon(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final uri = Uri.parse('${PlanService.kWebsiteUrl}/mes-annonces');
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              },
+              icon: const Icon(Icons.open_in_new, size: 18),
+              label: const Text('Finaliser sur le site',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _teal, foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            )),
+            const SizedBox(height: 6),
+            Center(child: TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Plus tard',
+                  style: TextStyle(fontFamily: 'Galey', color: Color(0xFF9CA3AF))),
+            )),
+          ]),
+        ),
+      ),
+    );
   }
 
   void _selectAnimal() {

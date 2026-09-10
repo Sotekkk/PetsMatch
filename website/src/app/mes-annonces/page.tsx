@@ -28,11 +28,13 @@ interface Annonce {
   vues?: number;
   contacts?: number;
   expires_at?: string;
+  paiement_statut?: string;
 }
 
 const STATUT_LABEL: Record<string, string> = {
   disponible: 'Disponible', reserve: 'Réservé', vendu: 'Vendu',
   archivee: 'Archivée', pause: 'En pause', expiree: 'Expirée',
+  brouillon: 'Brouillon · non payée',
 };
 const STATUT_COLOR: Record<string, string> = {
   disponible: 'bg-green-100 text-green-700',
@@ -41,6 +43,7 @@ const STATUT_COLOR: Record<string, string> = {
   archivee:   'bg-gray-100 text-gray-500',
   pause:      'bg-gray-100 text-gray-500',
   expiree:    'bg-red-100 text-red-500',
+  brouillon:  'bg-amber-100 text-amber-700',
 };
 
 type FilterKey = 'toutes' | 'disponible' | 'archivee' | 'pause';
@@ -65,7 +68,7 @@ export default function MesAnnoncesPage() {
 
   useEffect(() => {
     if (!user || loading) return;
-    const SELECT = 'id, titre, espece, race, type, type_vente, prix_unite, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, statut, vues, contacts, created_at, expires_at';
+    const SELECT = 'id, titre, espece, race, type, type_vente, prix_unite, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, statut, vues, contacts, created_at, expires_at, paiement_statut';
 
     async function load() {
       let q = supabase.from('annonces').select(SELECT).order('created_at', { ascending: false });
@@ -135,6 +138,44 @@ export default function MesAnnoncesPage() {
     setAnnonces(prev => prev.map(x => x.id === a.id ? { ...x, statut: 'disponible', expires_at: newExpiresIso } : x));
   }
 
+  const [payingId, setPayingId] = useState<string | null>(null);
+  async function handlePayerPublier(a: Annonce) {
+    if (!user) return;
+    setPayingId(a.id);
+    try {
+      const res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: user.uid, email: user.email ?? '',
+          produit_code: 'annonce_cheval_particulier',
+          annonce_id: a.id, returnPath: '/mes-annonces',
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.url) throw new Error(json.error ?? 'Paiement indisponible.');
+      window.location.assign(json.url as string);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Paiement indisponible pour le moment.');
+      setPayingId(null);
+    }
+  }
+
+  // Retour de Stripe Checkout — lu une seule fois au montage.
+  const [notice] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const p = new URLSearchParams(window.location.search);
+    if (p.get('paye') === '1') return '✅ Paiement reçu — votre annonce est en cours de publication.';
+    if (p.get('paiement') === 'annule') return 'Paiement annulé — votre annonce reste en brouillon.';
+    return null;
+  });
+  useEffect(() => {
+    const s = window.location.search;
+    if (s.includes('paye=') || s.includes('paiement=')) {
+      window.history.replaceState({}, '', '/mes-annonces');
+    }
+  }, []);
+
   // Renouvellement proposé dès J-7, pas seulement une fois l'annonce
   // effectivement expirée — utile pour anticiper avant la coupure.
   function expiresWithinDays(a: Annonce, days: number): boolean {
@@ -161,6 +202,11 @@ export default function MesAnnoncesPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
+      {notice && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {notice}
+        </div>
+      )}
       {/* En-tête */}
       <div className="flex items-center justify-between mb-4">
         <div>
@@ -307,6 +353,26 @@ export default function MesAnnoncesPage() {
                     </p>
                   )}
 
+                  {statut === 'brouillon' ? (
+                    <div className="flex gap-1.5 mt-3 pt-3 border-t border-gray-50">
+                      <button
+                        onClick={() => handlePayerPublier(a)}
+                        disabled={payingId === a.id}
+                        className="flex-1 text-center text-xs bg-[#6E9E57] hover:bg-[#5A8A45] disabled:opacity-60 text-white font-semibold py-2 rounded-xl transition-colors">
+                        {payingId === a.id ? 'Redirection…' : 'Payer et publier — 4,99 €'}
+                      </button>
+                      <Link href={`/annonces/creer-cheval?edit=${a.id}`}
+                        className="text-center text-xs border border-[#0C5C6C] text-[#0C5C6C] hover:bg-[#E8F4F6] font-medium py-2 px-3 rounded-xl transition-colors">
+                        Modifier
+                      </Link>
+                      <button
+                        onClick={() => handleDelete(a.id)}
+                        disabled={deleting === a.id}
+                        className="px-2.5 py-2 text-xs border border-red-100 hover:bg-red-50 text-red-400 rounded-xl transition-colors disabled:opacity-50">
+                        {deleting === a.id ? '…' : '🗑'}
+                      </button>
+                    </div>
+                  ) : (
                   <div className="flex gap-1.5 mt-3 pt-3 border-t border-gray-50">
                     <Link href={`/annonces/${a.id}`}
                       className="flex-1 text-center text-xs bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-medium py-2 rounded-xl transition-colors">
@@ -345,6 +411,7 @@ export default function MesAnnoncesPage() {
                       {deleting === a.id ? '…' : '🗑'}
                     </button>
                   </div>
+                  )}
                 </div>
               </div>
             );

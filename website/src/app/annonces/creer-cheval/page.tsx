@@ -68,6 +68,9 @@ function CreerAnnonceChevalInner() {
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // Statut de paiement de l'annonce en cours d'édition ('paye' = déjà publiée
+  // et payée → édition simple ; sinon on (re)passe par le paiement).
+  const [paiementStatut, setPaiementStatut] = useState<string | null>(null);
 
   const iCls = 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white';
   const iSm = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white';
@@ -112,6 +115,7 @@ function CreerAnnonceChevalInner() {
       setVideoMonteUrl(data.video_monte_url ?? null);
       setVideoLibreUrl(data.video_libre_url ?? null);
       setLinkedId(data.animal_id ?? null);
+      setPaiementStatut((data.paiement_statut as string | null) ?? null);
     })();
   }, [editId, user]);
 
@@ -180,12 +184,14 @@ function CreerAnnonceChevalInner() {
     try {
       const pid = activeProfileId || null;
 
+      // Chaque annonce est payante → plafond souple à 10 actives.
+      const dejaPayee = editId != null && paiementStatut === 'paye';
       if (!editId) {
         const { count } = await supabase.from('annonces')
           .select('id', { count: 'exact', head: true })
           .eq('uid_eleveur', user!.uid).eq('profil_source', 'particulier')
           .in('statut', ['disponible', 'reserve']);
-        if ((count ?? 0) >= 5) { setError('Limite de 5 annonces actives atteinte.'); setSaving(false); return; }
+        if ((count ?? 0) >= 10) { setError('Limite de 10 annonces actives atteinte.'); setSaving(false); return; }
       }
 
       // Profil particulier actif → géo + nom
@@ -233,7 +239,9 @@ function CreerAnnonceChevalInner() {
         prix: prixNum,
         prix_unite: formule === 'vente' ? null : prixUnite,
         prix_negociable: prixNegociable,
-        statut: 'disponible',
+        // Publiée seulement si déjà payée ; sinon brouillon jusqu'au paiement web.
+        statut: dejaPayee ? 'disponible' : 'brouillon',
+        paiement_statut: dejaPayee ? 'paye' : 'attente',
         sexe,
         couleur: robe.trim() || null,
         date_naissance_animal: dateNaissance || null,
@@ -251,20 +259,41 @@ function CreerAnnonceChevalInner() {
         updated_at: new Date().toISOString(),
       };
 
+      let annonceId = editId;
       if (editId) {
         const { error: e2 } = await supabase.from('annonces').update(payload).eq('id', editId);
         if (e2) throw new Error(e2.message);
       } else {
+        annonceId = genId();
         const { error: e2 } = await supabase.from('annonces').insert({
           ...payload,
-          id: genId(),
+          id: annonceId,
           created_at: new Date().toISOString(),
           expires_at: new Date(Date.now() + 60 * 86400000).toISOString(),
           vues: 0, contacts: 0,
         });
         if (e2) throw new Error(e2.message);
       }
-      router.push('/mes-annonces');
+
+      // Annonce déjà payée en édition → simple mise à jour, on reste sur place.
+      if (dejaPayee) { router.push('/mes-annonces'); return; }
+
+      // Sinon : paiement obligatoire pour publier (Stripe Checkout).
+      const res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: user!.uid, email: user!.email ?? '',
+          produit_code: 'annonce_cheval_particulier',
+          annonce_id: annonceId, returnPath: '/mes-annonces',
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.url) {
+        throw new Error(json.error ?? 'Paiement indisponible pour le moment.');
+      }
+      window.location.href = json.url as string;
+      return;
     } catch (err) {
       setError(`Erreur : ${err instanceof Error ? err.message : String(err)}`);
     } finally { setSaving(false); }
@@ -457,9 +486,20 @@ function CreerAnnonceChevalInner() {
 
           {error && <p className="text-red-500 text-sm">{error}</p>}
 
+          {paiementStatut !== 'paye' && (
+            <p className="text-xs text-gray-500 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
+              Publier une annonce cheval est payant&nbsp;: <b>4,99&nbsp;€</b>, visible 60&nbsp;jours.
+              Le paiement sécurisé se fait juste après.
+            </p>
+          )}
+
           <button type="submit" disabled={saving}
             className="w-full bg-[#0C5C6C] hover:bg-[#094F5D] disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors">
-            {saving ? 'Publication…' : editId ? 'Enregistrer' : 'Publier l\'annonce'}
+            {saving
+              ? 'Un instant…'
+              : paiementStatut === 'paye'
+                ? 'Enregistrer'
+                : 'Payer et publier — 4,99 €'}
           </button>
         </form>
       </div>

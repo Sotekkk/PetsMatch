@@ -1,11 +1,13 @@
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/particulier/create_annonce_cheval_page.dart';
+import 'package:PetsMatch/services/plan_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Mes annonces (particulier) — aujourd'hui uniquement les annonces chevaux
 /// (vente / location / demi-pension / pension / valorisation) publiées via
@@ -66,6 +68,11 @@ class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage>
       ),
     ));
     if (changed == true && mounted) _load();
+  }
+
+  Future<void> _finaliserSurSite() async {
+    final uri = Uri.parse('${PlanService.kWebsiteUrl}/mes-annonces');
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   Future<void> _togglePause(Map<String, dynamic> r) async {
@@ -167,6 +174,7 @@ class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage>
     final titre  = (r['titre'] as String?) ?? '';
     final statut = (r['statut'] as String?) ?? 'disponible';
     final isPause = statut == 'pause';
+    final isBrouillon = statut == 'brouillon';
     final created = DateTime.tryParse(r['created_at']?.toString() ?? '');
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -196,7 +204,11 @@ class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage>
               padding: const EdgeInsets.fromLTRB(12, 10, 10, 8),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Wrap(spacing: 6, runSpacing: 4, children: [
-                  _badge(isPause ? 'En pause' : 'En ligne', isPause ? const Color(0xFF9CA3AF) : _green),
+                  _badge(
+                    isBrouillon ? 'Brouillon · à publier'
+                        : isPause ? 'En pause' : 'En ligne',
+                    isBrouillon ? const Color(0xFFB45309)
+                        : isPause ? const Color(0xFF9CA3AF) : _green),
                 ]),
                 const SizedBox(height: 6),
                 Text(titre.isEmpty ? 'Cheval' : titre,
@@ -223,9 +235,13 @@ class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage>
           child: Row(children: [
             _act(Icons.edit_outlined, 'Modifier', _teal, () => _openCreate(edit: r)),
             const SizedBox(width: 6),
-            _act(isPause ? Icons.play_arrow_outlined : Icons.pause_outlined,
-                isPause ? 'Activer' : 'Pause', isPause ? _green : const Color(0xFF9CA3AF),
-                () => _togglePause(r)),
+            if (isBrouillon)
+              _act(Icons.open_in_new, 'Finaliser sur le site', const Color(0xFFB45309),
+                  _finaliserSurSite)
+            else
+              _act(isPause ? Icons.play_arrow_outlined : Icons.pause_outlined,
+                  isPause ? 'Activer' : 'Pause', isPause ? _green : const Color(0xFF9CA3AF),
+                  () => _togglePause(r)),
             const Spacer(),
             _act(Icons.delete_outline, 'Supprimer', Colors.redAccent, () => _delete(r)),
           ]),
