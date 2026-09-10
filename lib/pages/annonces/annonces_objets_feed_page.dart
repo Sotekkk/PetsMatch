@@ -81,14 +81,19 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
       (_tri != 'recent' ? 1 : 0);
 
   Future<void> _loadCommunesFilter(String cp, void Function(void Function()) setSheet) async {
-    setSheet(() { _loadingCommunes = true; _cpFilter = cp; });
-    final geo = FrenchGeo.fromPostalCode(cp);
+    setSheet(() {
+      _loadingCommunes = true;
+      _cpFilter = cp;
+      // Un filtre par code postal remplace le filtre région/département
+      // (sinon les annonces sans région/département renseignés sont exclues).
+      _region = null;
+      _departement = null;
+    });
     final list = await fetchCommunes(cp);
     setSheet(() {
       _communes = list;
       _loadingCommunes = false;
-      if (geo != null) { _region = geo.region; _departement = geo.departement; }
-      if (!list.contains(_ville)) _ville = list.length == 1 ? list.first : '';
+      if (!list.contains(_ville)) _ville = '';
     });
   }
 
@@ -122,9 +127,14 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
         final safe = _kw.replaceAll('%', '').replaceAll(',', ' ');
         q = q.or('titre.ilike.%$safe%,description.ilike.%$safe%');
       }
-      if (_region != null) q = q.eq('region', _region!);
-      if (_departement != null) q = q.eq('departement', _departement!);
-      if (_cpFilter.length == 5) q = q.eq('code_postal', _cpFilter);
+      // Priorité au code postal : filtre précis, sans exclure les annonces
+      // dont la région/le département ne sont pas renseignés.
+      if (_cpFilter.length == 5) {
+        q = q.eq('code_postal', _cpFilter);
+      } else {
+        if (_region != null) q = q.eq('region', _region!);
+        if (_departement != null) q = q.eq('departement', _departement!);
+      }
       if (_ville.isNotEmpty) q = q.ilike('ville', '%$_ville%');
 
       final PostgrestList data;

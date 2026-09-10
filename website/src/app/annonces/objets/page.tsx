@@ -59,17 +59,17 @@ export default function AnnoncesObjetsFeedPage() {
     return () => clearTimeout(t);
   }, [kwInput]);
 
-  // Code postal → communes + région/département
+  // Code postal → communes. Un filtre par CP remplace le filtre région/dépt
+  // (sinon on exclut les annonces sans région/département renseignés).
   useEffect(() => {
     if (cp.length !== 5) { setCommunes([]); return; }
-    const geo = fromPostalCode(cp);
-    if (geo) { setRegion(geo.region); setDept(geo.departement); }
+    setRegion(''); setDept('');
     fetch(`https://geo.api.gouv.fr/communes?codePostal=${cp}&fields=nom&format=json`)
       .then(r => r.json())
       .then((list: { nom: string }[]) => {
         const names = [...new Set((list ?? []).map(c => c.nom))].sort();
         setCommunes(names);
-        setVille(v => (names.includes(v) ? v : names.length === 1 ? names[0] : ''));
+        setVille(v => (names.includes(v) ? v : ''));
       })
       .catch(() => setCommunes([]));
   }, [cp]);
@@ -87,9 +87,12 @@ export default function AnnoncesObjetsFeedPage() {
       const safe = kw.replace(/[%,]/g, ' ');
       q = q.or(`titre.ilike.%${safe}%,description.ilike.%${safe}%`);
     }
-    if (region) q = q.eq('region', region);
-    if (dept) q = q.eq('departement', dept);
-    if (cp.length === 5) q = q.eq('code_postal', cp);
+    if (cp.length === 5) {
+      q = q.eq('code_postal', cp);
+    } else {
+      if (region) q = q.eq('region', region);
+      if (dept) q = q.eq('departement', dept);
+    }
     if (ville) q = q.ilike('ville', `%${ville}%`);
     q = tri === 'prix_asc'
       ? q.order('prix', { ascending: true, nullsFirst: false })
