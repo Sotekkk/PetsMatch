@@ -686,15 +686,20 @@ Future<void> main() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
     try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid)
-          .set({'fcmToken': newToken}, SetOptions(merge: true));
-      final updates = <String, dynamic>{'fcm_token': newToken};
+      // iOS : ne sauvegarder que si APNs disponible (bloque le simulateur)
       if (Platform.isIOS) {
         final apns = await FirebaseMessaging.instance.getAPNSToken();
-        if (apns != null) updates['apns_token'] = apns;
+        if (apns == null) return;
+        await FirebaseFirestore.instance.collection('users').doc(user.uid)
+            .set({'fcmToken': newToken}, SetOptions(merge: true));
+        await Supabase.instance.client.from('users')
+            .update({'fcm_token': newToken, 'apns_token': apns}).eq('uid', user.uid);
+      } else {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid)
+            .set({'fcmToken': newToken}, SetOptions(merge: true));
+        await Supabase.instance.client.from('users')
+            .update({'fcm_token': newToken}).eq('uid', user.uid);
       }
-      await Supabase.instance.client.from('users')
-          .update(updates).eq('uid', user.uid);
     } catch (_) {}
   });
   await Future.delayed(const Duration(seconds: 1));

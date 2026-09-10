@@ -66,9 +66,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _loadTheme();
     _subscribeRealtime();
     _markAsRead();
+    _setActiveConversation(widget.conversationId);
     if (widget.isNewConversation && widget.alerteId != null) {
       SchedulerBinding.instance.addPostFrameCallback((_) => _sendAlertRefMessage());
     }
+  }
+
+  void _setActiveConversation(String? convId) {
+    final uid = _uid;
+    if (uid.isEmpty) return;
+    _supa.from('users')
+        .update({'active_conversation_id': convId})
+        .eq('uid', uid)
+        .then((_) {}).catchError((_) {});
   }
 
   @override
@@ -87,6 +97,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _setActiveConversation(null);
     WidgetsBinding.instance.removeObserver(this);
     _reactionOverlay?.remove();
     _channel?.unsubscribe();
@@ -502,18 +513,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           'deleted_for':       {},
         }).eq('id', widget.conversationId);
 
-        // Notif push fire-and-forget pour chaque destinataire
+        // Notif push fire-and-forget pour chaque destinataire pas déjà dans la conv
         final previewText = imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : (animalData != null ? '🐾 ${animalData['nom'] ?? 'Animal'}' : (text.length > 80 ? '${text.substring(0, 80)}…' : text)));
-        for (final p in members) {
-          if (p == uid) continue;
-          _supa.from('notifications').insert({
-            'uid':   p,
-            'type':  'message',
-            'title': myName.isEmpty ? 'Nouveau message' : myName,
-            'body':  previewText,
-            'data':  {'conversation_id': widget.conversationId},
-            'read':  false,
-          }).then((_) {}).catchError((_) {});
+        final recipients = members.where((p) => p != uid).toList();
+        if (recipients.isNotEmpty) {
+          final activeRows = await _supa
+              .from('users')
+              .select('uid, active_conversation_id')
+              .inFilter('uid', recipients);
+          final activeMap = { for (final r in (activeRows as List)) r['uid'] as String: r['active_conversation_id'] as String? };
+          for (final p in recipients) {
+            if (activeMap[p] == widget.conversationId) continue;
+            _supa.from('notifications').insert({
+              'uid':   p,
+              'type':  'message',
+              'title': myName.isEmpty ? 'Nouveau message' : myName,
+              'body':  previewText,
+              'data':  {'conversation_id': widget.conversationId},
+              'read':  false,
+            }).then((_) {}).catchError((_) {});
+          }
         }
       }
 
