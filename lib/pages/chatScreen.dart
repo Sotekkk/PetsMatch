@@ -1188,7 +1188,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                       color: theme.isDark ? Colors.white : const Color(0xFF1E2025)),
                   maxLines: 3, minLines: 1,
                   textInputAction: TextInputAction.send,
-                  onSubmitted: (v) { if (v.trim().isNotEmpty) { _sendMessage(v); } },
+                  onSubmitted: (v) { if (v.trim().isNotEmpty && !_sending) { _sendMessage(v); } },
                   decoration: InputDecoration(
                     hintText: 'Votre message...',
                     hintStyle: TextStyle(
