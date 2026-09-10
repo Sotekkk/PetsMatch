@@ -298,26 +298,25 @@ exports.sendNotificationOnNewMessage = functions
                     },
                 };
 
-                if (fcmToken) {
-                    // 🎯 Envoi via Firebase Cloud Messaging (Android)
-                    message.token = fcmToken;
-                    message.android = {priority: "high"};
-                } else if (apnsToken) {
-                    // 🍏 Envoi via Apple Push Notification Service (iOS)
-                    message.token = apnsToken;
-                    message.apns = {
-                        payload: {
-                            aps: {
-                                alert: {
-                                    title: "Nouveau message",
-                                    body: text,
-                                },
-                                sound: "default",
-                                badge: 1,
+                // Un seul token (fcmToken sur Android ET iOS ; apnsToken en repli
+                // historique). On attache TOUJOURS le bloc `apns` : sans lui,
+                // l'iPhone reçoit un message data-only silencieux qui ne
+                // s'affiche pas. Harmless pour Android (FCM route par plateforme).
+                message.token = fcmToken || apnsToken;
+                message.android = {priority: "high"};
+                message.apns = {
+                    headers: {"apns-priority": "10"},
+                    payload: {
+                        aps: {
+                            alert: {
+                                title: "Nouveau message",
+                                body: text,
                             },
+                            sound: "default",
+                            badge: 1,
                         },
-                    };
-                }
+                    },
+                };
 
                 // 🚀 Envoi de la notification
                 try {

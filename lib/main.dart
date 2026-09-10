@@ -72,6 +72,22 @@ Future<void> setupNotifications() async {
 bool isRequestingPermission = false;
 Future<void> saveFcmTokenToFirestore() async {
   try {
+    // iOS : `getToken()` renvoie null (ou lève) tant que le token APNs n'est pas
+    // encore remonté du système. On l'attend d'abord, avec quelques essais, sinon
+    // le token FCM n'est jamais généré et l'iPhone ne reçoit aucune notif.
+    if (Platform.isIOS) {
+      String? apns = await FirebaseMessaging.instance.getAPNSToken();
+      for (int i = 0; apns == null && i < 5; i++) {
+        await Future.delayed(const Duration(seconds: 1));
+        apns = await FirebaseMessaging.instance.getAPNSToken();
+      }
+      if (apns == null) {
+        // Pas d'APNs = capability Push absente / profil non provisionné /
+        // permission refusée : inutile d'insister, on réessaiera au refresh.
+        return;
+      }
+    }
+
     String? token = await FirebaseMessaging.instance.getToken();
 
     if (token != null) {
