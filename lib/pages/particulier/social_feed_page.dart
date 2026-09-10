@@ -190,6 +190,38 @@ Future<String?> _particulierProfileId(String uid) async {
   }
 }
 
+/// Id du profil "social" d'un uid : son profil particulier s'il en a un, sinon
+/// son profil principal (is_main). **Jamais null pour un compte existant** —
+/// sert de cible aux follows / notifs même pour un compte pro-only.
+final Map<String, String?> _socialPidCache = {};
+Future<String?> _socialProfileId(String uid) async {
+  if (uid.isEmpty) return null;
+  if (_socialPidCache.containsKey(uid)) return _socialPidCache[uid];
+  try {
+    final rows = await Supabase.instance.client
+        .from('user_profiles')
+        .select('id, profile_type, is_main')
+        .eq('uid', uid);
+    final list = (rows as List).cast<Map<String, dynamic>>();
+    String? id;
+    if (list.isNotEmpty) {
+      list.sort((a, b) {
+        final ap = (a['profile_type'] == 'particulier') ? 0 : 1;
+        final bp = (b['profile_type'] == 'particulier') ? 0 : 1;
+        if (ap != bp) return ap - bp;
+        final am = (a['is_main'] == true) ? 0 : 1;
+        final bm = (b['is_main'] == true) ? 0 : 1;
+        return am - bm;
+      });
+      id = list.first['id'] as String?;
+    }
+    _socialPidCache[uid] = id;
+    return id;
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Id du profil **actif** de l'utilisateur — c'est son identité dans Pets
 /// Social pour ce qu'il publie (post, commentaire, like, suivi).
 ///
@@ -214,34 +246,36 @@ Future<bool> _socialProAllowed(String uid) async {
   }
 }
 
+/// Identité du profil **actif** de l'utilisateur dans Pets Social (posts,
+/// commentaires, likes, suivis, ET scope de lecture des abonnements/notifs).
+/// Ne renvoie **jamais null** pour un compte connecté existant.
 Future<String?> _activeAuthorProfileId(String uid) async {
   if (uid.isEmpty) return null;
   final activeId = User_Info.activeProfileId;
   final activeType = User_Info.activeType;
   try {
     if (activeType.isNotEmpty && activeType != 'particulier') {
-      // Profil pro / éleveur / association : publie sous ce profil seulement si
-      // le compte est premium — sinon repli sur le profil particulier.
+      // Profil pro / éleveur / association : identité = ce profil **si** le
+      // compte est premium ; sinon repli sur le profil particulier (s'il
+      // existe), et à défaut on garde ce profil.
       if (await _socialProAllowed(uid)) {
-        if (activeId.isNotEmpty) {
-          final r = await Supabase.instance.client
-              .from('user_profiles').select('id').eq('id', activeId).maybeSingle();
-          if (r != null) return r['id'] as String?;
-        } else {
-          final rows = await Supabase.instance.client
-              .from('user_profiles').select('id')
-              .eq('uid', uid).eq('is_main', true).limit(1);
-          if ((rows as List).isNotEmpty) return rows.first['id'] as String?;
-        }
+        if (activeId.isNotEmpty) return activeId;
+        final rows = await Supabase.instance.client
+            .from('user_profiles').select('id')
+            .eq('uid', uid).eq('is_main', true).limit(1);
+        if ((rows as List).isNotEmpty) return rows.first['id'] as String?;
+      } else {
+        final part = await _particulierProfileId(uid);
+        if (part != null) return part;
+        if (activeId.isNotEmpty) return activeId;
       }
     } else if (activeId.isNotEmpty) {
       // Profil particulier secondaire explicite.
-      final r = await Supabase.instance.client
-          .from('user_profiles').select('id, profile_type').eq('id', activeId).maybeSingle();
-      if (r != null && r['profile_type'] == 'particulier') return r['id'] as String?;
+      return activeId;
     }
   } catch (_) {}
-  return _particulierProfileId(uid);
+  // Repli : particulier sinon is_main — jamais null pour un compte existant.
+  return _socialProfileId(uid);
 }
 
 /// Insère un like et envoie une push notif à l'auteur du post.
@@ -318,7 +352,7 @@ Future<void> _insertFollow(String followerUid, String followingUid,
     {String? followingProfileId}) async {
   final supa = Supabase.instance.client;
   final fp = await _activeAuthorProfileId(followerUid);
-  final tp = followingProfileId ?? await _particulierProfileId(followingUid);
+  final tp = followingProfileId ?? await _socialProfileId(followingUid);
   await supa.from('follows').insert({
     'follower_uid': followerUid,
     'following_uid': followingUid,
@@ -333,6 +367,30 @@ Future<void> _insertFollow(String followerUid, String followingUid,
     titleSuffix: 'vous suit maintenant',
     body: 'Découvrez son profil sur Pets Social 🐾',
   );
+}
+
+/// Désabonne le profil ACTIF de la cible — scopé par `follower_profile_id`,
+/// ne touche jamais les abonnements des autres profils du compte.
+Future<void> _removeFollow(String followerUid, String followingUid,
+    {String? followingProfileId}) async {
+  final fp = await _activeAuthorProfileId(followerUid);
+  var d = Supabase.instance.client.from('follows').delete().eq('following_uid', followingUid);
+  d = fp != null ? d.eq('follower_profile_id', fp) : d.eq('follower_uid', followerUid);
+  if (followingProfileId != null) d = d.eq('following_profile_id', followingProfileId);
+  await d;
+}
+
+/// UIDs suivis par le profil ACTIF de l'utilisateur (pour les boutons « Suivre »).
+Future<Set<String>> _activeFollowingUids(String uid) async {
+  final pid = await _activeAuthorProfileId(uid);
+  if (pid == null) return <String>{};
+  try {
+    final rows = await Supabase.instance.client
+        .from('follows').select('following_uid').eq('follower_profile_id', pid);
+    return {for (final r in rows as List) r['following_uid'] as String};
+  } catch (_) {
+    return <String>{};
+  }
 }
 
 /// Clé du profil AUTEUR d'une ligne (post / commentaire / repost). Pour un
@@ -518,7 +576,11 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
     super.initState();
     final uid = _uid;
     if (uid != null) {
-      _activeAuthorProfileId(uid).then((id) { if (mounted) setState(() => _myProfileId = id); });
+      _activeAuthorProfileId(uid).then((id) {
+        if (!mounted) return;
+        setState(() => _myProfileId = id);
+        _loadNotifCount(); // recompte avec le bon profil une fois résolu
+      });
     }
     _loadNotifCount();
   }
@@ -527,11 +589,14 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
     final uid = _uid;
     if (uid == null) return;
     try {
+      final pid = _myProfileId ?? await _activeAuthorProfileId(uid);
+      if (pid == null) return;
       final prefs = await SharedPreferences.getInstance();
       final lastSeenStr = prefs.getString('notif_seen_at_$uid');
       final lastSeen = lastSeenStr != null ? DateTime.tryParse(lastSeenStr) : null;
 
-      final myPosts = await _supa.from('posts_socialmedia').select('id').eq('uid', uid);
+      final myPosts = await _supa.from('posts_socialmedia').select('id')
+          .eq('author_profile_id', pid);
       final postIds = (myPosts as List).map((p) => p['id'] as String).toList();
       int count = 0;
       if (postIds.isNotEmpty) {
@@ -545,7 +610,8 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
         final comments = await q.limit(99);
         count += (comments as List).length;
       }
-      var fq = _supa.from('follows').select('follower_uid').eq('following_uid', uid);
+      var fq = _supa.from('follows').select('follower_uid')
+          .eq('following_profile_id', pid);
       if (lastSeen != null) {
         fq = fq.gt('created_at', lastSeen.toIso8601String());
       }
@@ -887,11 +953,13 @@ class _SuggestionsWidgetState extends State<_SuggestionsWidget> {
   void initState() { super.initState(); _load(); }
 
   Future<void> _load() async {
-    // Abonnements du profil actif (on suit des PROFILS).
-    final fBase = _supa.from('follows').select('following_uid, following_profile_id');
-    final follows = await (widget.myProfileId != null
-        ? fBase.eq('follower_profile_id', widget.myProfileId!)
-        : fBase.eq('follower_uid', widget.myUid));
+    // Abonnements du profil ACTIF (on suit des PROFILS) — strictement scopé,
+    // jamais de repli sur l'uid (fuiterait les abonnements des autres profils).
+    final pid = widget.myProfileId ?? await _activeAuthorProfileId(widget.myUid);
+    if (pid == null) { if (mounted) setState(() => _loading = false); return; }
+    final follows = await _supa.from('follows')
+        .select('following_uid, following_profile_id')
+        .eq('follower_profile_id', pid);
     for (final r in follows as List) {
       final pid = (r['following_profile_id'] as String?) ?? '';
       _followedKeys.add(pid.isNotEmpty ? pid : 'u:${r['following_uid']}');
@@ -1050,18 +1118,22 @@ class _FeedListState extends State<_FeedList>
   Future<void> _load() async {
     if (!mounted) return;
     setState(() { _loading = true; _feedError = null; });
+    String? activePid;
     try {
       if (widget.myUid.isNotEmpty) {
         try {
-          final base = _supa
-              .from('follows')
-              .select('following_uid, following_profile_id');
-          final rows = await (widget.myProfileId != null
-              ? base.eq('follower_profile_id', widget.myProfileId!)
-              : base.eq('follower_uid', widget.myUid));
-          _following = {for (final r in rows as List) r['following_uid'] as String};
+          // Abonnements du profil ACTIF uniquement (scope strict par profil).
+          final pid = widget.myProfileId ?? await _activeAuthorProfileId(widget.myUid);
+          activePid = pid;
+          final rows = pid == null
+              ? const <dynamic>[]
+              : await _supa
+                  .from('follows')
+                  .select('following_uid, following_profile_id')
+                  .eq('follower_profile_id', pid);
+          _following = {for (final r in rows) r['following_uid'] as String};
           _followingPids = {
-            for (final r in rows as List)
+            for (final r in rows)
               if ((r['following_profile_id'] as String?)?.isNotEmpty == true)
                 r['following_profile_id'] as String,
           };
@@ -1096,12 +1168,12 @@ class _FeedListState extends State<_FeedList>
         }
         // Scope au profil actif : on suit des PROFILS, pas des comptes. On garde
         // les posts dont l'author_profile_id est suivi (+ les miens du profil
-        // actif) ; les lignes legacy sans profil restent filtrées par uid.
-        if (_followingPids.isNotEmpty) {
-          final keep = {
-            ..._followingPids,
-            if (widget.myProfileId != null) widget.myProfileId!,
-          };
+        // actif) ; les lignes legacy sans profil restent tolérées.
+        final keep = {
+          ..._followingPids,
+          if (activePid != null) activePid,
+        };
+        if (keep.isNotEmpty) {
           posts = posts.where((p) {
             final apid = p['author_profile_id'] as String?;
             if (apid == null || apid.isEmpty) return true;
@@ -1268,12 +1340,7 @@ class _FeedListState extends State<_FeedList>
     });
     try {
       if (isFollowing) {
-        var d = _supa.from('follows').delete().eq('following_uid', targetUid);
-        d = widget.myProfileId != null
-            ? d.eq('follower_profile_id', widget.myProfileId!)
-            : d.eq('follower_uid', widget.myUid);
-        if (targetProfileId != null) d = d.eq('following_profile_id', targetProfileId);
-        await d;
+        await _removeFollow(widget.myUid, targetUid, followingProfileId: targetProfileId);
       } else {
         await _insertFollow(widget.myUid, targetUid, followingProfileId: targetProfileId);
       }
@@ -2779,13 +2846,9 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   void dispose() { _ctrl.dispose(); super.dispose(); }
 
   Future<void> _load() async {
-    final results = await Future.wait([
-      _supa.from('post_comments').select().eq('post_id', widget.postId).order('created_at'),
-      _supa.from('follows').select('following_uid').eq('follower_uid', widget.myUid),
-    ]);
-    final rows       = results[0] as List;
-    final followRows = results[1] as List;
-    _following = {for (final r in followRows) r['following_uid'] as String};
+    final rows = await _supa.from('post_comments').select()
+        .eq('post_id', widget.postId).order('created_at') as List;
+    _following = await _activeFollowingUids(widget.myUid);
     if (rows.isNotEmpty) {
       _profiles = await _resolveAuthors(rows);
     }
@@ -3749,15 +3812,8 @@ class _SearchSheetState extends State<_SearchSheet> {
   Future<void> _loadFollowing() async {
     if (widget.myUid.isEmpty) return;
     try {
-      final rows = await _supa
-          .from('follows')
-          .select('following_uid')
-          .eq('follower_uid', widget.myUid);
-      if (mounted) {
-        setState(() {
-          _following = {for (final r in rows as List) r['following_uid'] as String};
-        });
-      }
+      final set = await _activeFollowingUids(widget.myUid);
+      if (mounted) setState(() => _following = set);
     } catch (_) {}
   }
 
@@ -3835,11 +3891,7 @@ class _SearchSheetState extends State<_SearchSheet> {
     });
     try {
       if (isFollowing) {
-        var d = _supa.from('follows').delete()
-            .eq('follower_uid', widget.myUid)
-            .eq('following_uid', targetUid);
-        if (targetProfileId != null) d = d.eq('following_profile_id', targetProfileId);
-        await d;
+        await _removeFollow(widget.myUid, targetUid, followingProfileId: targetProfileId);
       } else {
         await _insertFollow(widget.myUid, targetUid, followingProfileId: targetProfileId);
       }
@@ -4111,10 +4163,13 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
   Future<void> _load() async {
     // Profil social affiché : celui passé (auteur du post d'où on vient) ; pour
     // « mon profil » = mon profil actif ; sinon repli particulier de l'uid.
+    // Profil social affiché : celui passé (auteur du post d'où on vient) ; pour
+    // « mon profil » = mon profil actif ; sinon profil social de la cible.
+    // Toujours résolu à un id concret → scope strict par profil, pas d'uid.
     final tpid = widget.targetProfileId
         ?? (_isMyProfile
             ? (widget.myProfileId ?? await _activeAuthorProfileId(widget.targetUid))
-            : null);
+            : await _socialProfileId(widget.targetUid));
     _effectiveProfileId = tpid;
     final mpid = widget.myProfileId ?? await _activeAuthorProfileId(widget.myUid);
 
@@ -4165,10 +4220,10 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
         final targetFollowerUids = (results[2] as List)
             .map((r) => r['follower_uid'] as String)
             .toSet();
-        final myFollowingRows = await _supa.from('follows')
-            .select('following_uid')
-            .eq('follower_uid', widget.myUid);
-        final myFollowingUids = (myFollowingRows as List)
+        final List myFollowingRows = mpid != null
+            ? await _supa.from('follows').select('following_uid').eq('follower_profile_id', mpid)
+            : const [];
+        final myFollowingUids = myFollowingRows
             .map((r) => r['following_uid'] as String)
             .toSet();
         final commonUids = targetFollowerUids.intersection(myFollowingUids).toList();
@@ -4234,14 +4289,15 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
 
   Future<void> _toggleFollow() async {
     if (_isMyProfile) return;
+    // On suit / désuit le PROFIL affiché (_effectiveProfileId), scopé au profil
+    // actif de l'utilisateur.
     if (_isFollowing) {
-      await _supa.from('follows')
-          .delete()
-          .eq('follower_uid', widget.myUid)
-          .eq('following_uid', widget.targetUid);
+      await _removeFollow(widget.myUid, widget.targetUid,
+          followingProfileId: _effectiveProfileId);
       setState(() { _isFollowing = false; _followersCount--; });
     } else {
-      await _insertFollow(widget.myUid, widget.targetUid);
+      await _insertFollow(widget.myUid, widget.targetUid,
+          followingProfileId: _effectiveProfileId);
       setState(() { _isFollowing = true; _followersCount++; });
     }
   }
@@ -4590,11 +4646,11 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
 
   Future<void> _load() async {
     final pid = widget.myProfileId ?? await _activeAuthorProfileId(widget.myUid);
+    if (pid == null) { if (mounted) setState(() => _loading = false); return; }
 
-    // 1. Posts du profil actif → commentaires reçus
-    var myPostsQ = _supa.from('posts_socialmedia').select('id');
-    myPostsQ = pid != null ? myPostsQ.eq('author_profile_id', pid) : myPostsQ.eq('uid', widget.myUid);
-    final myPosts = await myPostsQ;
+    // 1. Posts du profil ACTIF → commentaires reçus (scope strict par profil).
+    final myPosts = await _supa.from('posts_socialmedia').select('id')
+        .eq('author_profile_id', pid);
     final postIds = (myPosts as List).map((p) => p['id'] as String).toList();
 
     List<Map<String, dynamic>> comments = [];
@@ -4608,13 +4664,10 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
       comments = (rows as List).cast<Map<String, dynamic>>();
     }
 
-    // 2. Nouveaux abonnés du profil actif
-    final followBase = _supa.from('follows').select();
-    final followQ = (pid != null
-            ? followBase.eq('following_profile_id', pid)
-            : followBase.eq('following_uid', widget.myUid))
+    // 2. Nouveaux abonnés du profil ACTIF (scope strict par profil).
+    final followers = await _supa.from('follows').select()
+        .eq('following_profile_id', pid)
         .order('created_at', ascending: false).limit(20);
-    final followers = await followQ;
     final followerRows = (followers as List).cast<Map<String, dynamic>>();
 
     // 3. Profils des acteurs — résolus par leur author_profile_id / follower_profile_id.
@@ -4784,6 +4837,7 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
   bool _isLiked    = false;
   bool _isFollowing = false;
   bool _loading    = true;
+  String? _authorProfileId; // profil de l'auteur affiché (pour suivre/désuivre)
 
   String get _effectiveId {
     if (widget.post['_effective_id'] != null) return widget.post['_effective_id'] as String;
@@ -4825,10 +4879,16 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
         ? _supa.from('user_profiles').select(_kAuthorCols).eq('id', authorPid).maybeSingle()
         : _supa.from('user_profiles').select(_kAuthorCols)
             .eq('uid', uid).eq('profile_type', 'particulier').maybeSingle();
+    final myPid = await _activeAuthorProfileId(widget.myUid);
+    var followCheckQ = _supa.from('follows').select('follower_uid').eq('following_uid', uid);
+    followCheckQ = myPid != null
+        ? followCheckQ.eq('follower_profile_id', myPid)
+        : followCheckQ.eq('follower_uid', widget.myUid);
+    if (authorPid != null) followCheckQ = followCheckQ.eq('following_profile_id', authorPid);
     final results = await Future.wait<dynamic>([
       profQ,
       _supa.from('post_likes').select('uid').eq('post_id', _effectiveId).eq('uid', widget.myUid).maybeSingle(),
-      _supa.from('follows').select('follower_uid').eq('follower_uid', widget.myUid).eq('following_uid', uid).maybeSingle(),
+      followCheckQ.maybeSingle(),
       _supa.from('post_likes').select('uid').eq('post_id', _effectiveId),
       _supa.from('post_comments').select('id').eq('post_id', _effectiveId),
       _supa.from('user_cosmetics').select('active_value, active_by_profile')
@@ -4845,6 +4905,7 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
       if (prof != null && ring != null) prof['_ring'] = ring;
       setState(() {
         _profile     = prof;
+        _authorProfileId = authorPid ?? prof?['id'] as String?;
         _isLiked     = results[1] != null;
         _isFollowing = results[2] != null;
         _loading     = false;
@@ -4892,11 +4953,10 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
           onFollow: () async {
             final uid = _authorUid;
             if (_isFollowing) {
-              await _supa.from('follows').delete()
-                  .eq('follower_uid', widget.myUid).eq('following_uid', uid);
+              await _removeFollow(widget.myUid, uid, followingProfileId: _authorProfileId);
               setState(() => _isFollowing = false);
             } else {
-              await _insertFollow(widget.myUid, uid);
+              await _insertFollow(widget.myUid, uid, followingProfileId: _authorProfileId);
               setState(() => _isFollowing = true);
             }
           },
@@ -4940,7 +5000,9 @@ class _FollowListPageState extends State<_FollowListPage> {
   void initState() { super.initState(); _load(); }
 
   Future<void> _load() async {
-    final tpid = widget.targetProfileId;
+    // Profil dont on liste abonnés/abonnements : toujours résolu à un id
+    // concret (transmis par SocialProfilePage, sinon profil social de la cible).
+    final tpid = widget.targetProfileId ?? await _socialProfileId(widget.targetUid);
     // Colonne côté "eux" et côté "profil cible" selon followers/following.
     final theirUidCol   = widget.type == 'followers' ? 'follower_uid' : 'following_uid';
     final theirPidCol   = widget.type == 'followers' ? 'follower_profile_id' : 'following_profile_id';
@@ -4951,13 +5013,9 @@ class _FollowListPageState extends State<_FollowListPage> {
     final listQ = tpid != null
         ? listBase.eq(targetPidCol, tpid)
         : listBase.eq(targetUidCol, widget.targetUid);
-    final results = await Future.wait([
-      listQ,
-      _supa.from('follows').select('following_uid').eq('follower_uid', widget.myUid),
-    ]);
-    _myFollowing = {for (final r in results[1] as List) r['following_uid'] as String};
+    final rows = await listQ as List;
+    _myFollowing = await _activeFollowingUids(widget.myUid);
 
-    final rows = (results[0] as List);
     final pids = <String>{for (final r in rows) if ((r[theirPidCol] as String?)?.isNotEmpty == true) r[theirPidCol] as String}.toList();
     final legacyUids = <String>{for (final r in rows) if ((r[theirPidCol] as String?)?.isNotEmpty != true) r[theirUidCol] as String}.toList();
     if (pids.isEmpty && legacyUids.isEmpty) { if (mounted) setState(() => _loading = false); return; }
@@ -4978,7 +5036,7 @@ class _FollowListPageState extends State<_FollowListPage> {
 
   Future<void> _toggleFollow(String targetUid) async {
     if (_myFollowing.contains(targetUid)) {
-      await _supa.from('follows').delete().eq('follower_uid', widget.myUid).eq('following_uid', targetUid);
+      await _removeFollow(widget.myUid, targetUid);
       setState(() => _myFollowing.remove(targetUid));
     } else {
       await _insertFollow(widget.myUid, targetUid);
