@@ -16,6 +16,8 @@ import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
 import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
 import 'package:PetsMatch/pages/association/post/create_annonce_asso_page.dart';
+import 'package:PetsMatch/pages/annonces/annonces_objets_feed_page.dart';
+import 'package:PetsMatch/pages/annonces/mes_annonces_objets_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
@@ -259,6 +261,26 @@ class _AssociationNavState extends State<AssociationNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const CreateAnnonceAssoPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Petites annonces (matériel)',
+                      icon: Icons.inventory_2_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const AnnoncesObjetsFeedPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Mes annonces (matériel)',
+                      icon: Icons.sell_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const MesAnnoncesObjetsPage(),
                         ));
                       },
                     ),

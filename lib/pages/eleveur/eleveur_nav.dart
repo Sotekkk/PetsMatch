@@ -12,6 +12,8 @@ import 'package:PetsMatch/pages/eleveur/eleveur_home.dart';
 import 'package:PetsMatch/pages/pro/restauration/restauration_home_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
+import 'package:PetsMatch/pages/annonces/annonces_objets_feed_page.dart';
+import 'package:PetsMatch/pages/annonces/mes_annonces_objets_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
 import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
@@ -752,6 +754,26 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => const CreateAnnoncePage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Petites annonces (matériel)',
+                        icon: Icons.inventory_2_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const AnnoncesObjetsFeedPage(),
+                          ));
+                        },
+                      ),
+                      _DrawerSubItem(
+                        label: 'Mes annonces (matériel)',
+                        icon: Icons.sell_outlined,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (_) => const MesAnnoncesObjetsPage(),
                           ));
                         },
                       ),

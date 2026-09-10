@@ -21,6 +21,8 @@ import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_en_accueil_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_associations_benevole.dart';
 import 'package:PetsMatch/pages/particulier/mes_annonces_particulier_page.dart';
+import 'package:PetsMatch/pages/annonces/annonces_objets_feed_page.dart';
+import 'package:PetsMatch/pages/annonces/mes_annonces_objets_page.dart';
 import 'package:PetsMatch/pages/nature/natural_places_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
 import 'package:PetsMatch/pages/association/post/annonces_asso_feed_page.dart';
@@ -300,10 +302,20 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
               icon: Icons.map_outlined,
               onTap: () => _push(const AssociationsListPage()),
             ),
+            _DrawerSubItem(
+              label: 'Petites annonces (matériel)',
+              icon: Icons.inventory_2_outlined,
+              onTap: () => _push(const AnnoncesObjetsFeedPage()),
+            ),
+            _DrawerSubItem(
+              label: 'Mes annonces (matériel)',
+              icon: Icons.sell_outlined,
+              onTap: () => _push(const MesAnnoncesObjetsPage()),
+            ),
             if (_hasChevalAnnonce)
               _DrawerSubItem(
                 label: 'Mes annonces (cheval)',
-                icon: Icons.sell_outlined,
+                icon: Icons.pets_outlined,
                 onTap: () => _push(const MesAnnoncesParticulierPage()),
               ),
           ],

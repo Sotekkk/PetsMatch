@@ -6,6 +6,8 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_annonces_particulier_page.dart';
+import 'package:PetsMatch/pages/annonces/annonces_objets_feed_page.dart';
+import 'package:PetsMatch/pages/annonces/mes_annonces_objets_page.dart';
 import 'package:PetsMatch/pages/association/associations_list_page.dart';
 import 'package:PetsMatch/pages/association/post/annonces_asso_feed_page.dart';
 import 'package:PetsMatch/pages/liked_page.dart';
@@ -313,10 +315,30 @@ class _ParticulierNavState extends State<ParticulierNav> {
                         ));
                       },
                     ),
+                    _DrawerSubItem(
+                      label: 'Petites annonces (matériel)',
+                      icon: Icons.inventory_2_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const AnnoncesObjetsFeedPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Mes annonces (matériel)',
+                      icon: Icons.sell_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const MesAnnoncesObjetsPage(),
+                        ));
+                      },
+                    ),
                     if (_hasChevalAnnonce)
                       _DrawerSubItem(
                         label: 'Mes annonces (cheval)',
-                        icon: Icons.sell_outlined,
+                        icon: Icons.pets_outlined,
                         onTap: () {
                           Navigator.pop(context);
                           Navigator.push(context, MaterialPageRoute(

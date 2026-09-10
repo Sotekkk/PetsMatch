@@ -266,3 +266,49 @@ CREATE INDEX IF NOT EXISTS idx_posts_socialmedia_tagged_animals
 ALTER TABLE public.annonces ADD COLUMN IF NOT EXISTS boost_until TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_annonces_boost_until
   ON public.annonces (boost_until) WHERE boost_until IS NOT NULL;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 14. Petites annonces « objets & matériel » liées aux animaux (particulier).
+--     Publication GRATUITE : cage, harnais, foin, location de prairie/parcelle,
+--     matériel agricole… JAMAIS un animal. App + site (création + fil public).
+--     Sans cette migration : « Publier une annonce (matériel) » plante et le
+--     fil « Petites annonces » reste vide.
+--     Détail : supabase/migration_annonces_objets.sql
+-- ────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.annonces_objets (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  uid              text NOT NULL,
+  profile_id       uuid,
+  titre            text NOT NULL,
+  categorie        text NOT NULL,
+  type_transaction text NOT NULL DEFAULT 'vente',
+  prix             numeric,
+  prix_unite       text,
+  prix_negociable  boolean DEFAULT false,
+  etat             text,
+  description      text,
+  photos           text[] DEFAULT '{}'::text[],
+  ville            text,
+  code_postal      text,
+  departement      text,
+  region           text,
+  nom_vendeur      text,
+  statut           text NOT NULL DEFAULT 'disponible',
+  boost_until      timestamptz,
+  vues             integer DEFAULT 0,
+  contacts         integer DEFAULT 0,
+  is_suspect       boolean DEFAULT false,
+  suspect_reasons  text[],
+  created_at       timestamptz DEFAULT now(),
+  updated_at       timestamptz DEFAULT now(),
+  expires_at       timestamptz
+);
+CREATE INDEX IF NOT EXISTS idx_annonces_objets_statut    ON public.annonces_objets (statut, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_annonces_objets_uid       ON public.annonces_objets (uid);
+CREATE INDEX IF NOT EXISTS idx_annonces_objets_categorie ON public.annonces_objets (categorie);
+CREATE INDEX IF NOT EXISTS idx_annonces_objets_boost     ON public.annonces_objets (boost_until) WHERE boost_until IS NOT NULL;
+ALTER TABLE public.annonces_objets ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "annonces_objets_all" ON public.annonces_objets;
+CREATE POLICY "annonces_objets_all" ON public.annonces_objets FOR ALL USING (true) WITH CHECK (true);
