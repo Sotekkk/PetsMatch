@@ -54,6 +54,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _messages = [];
   Map<String, List<Map<String, dynamic>>> _reactions = {};
   bool _sending = false;
+  bool _msgLock = false;
   RealtimeChannel? _channel;
   String _themeId = 'default';
   OverlayEntry? _reactionOverlay;
@@ -460,6 +461,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   Future<void> _sendMessage(String text, {String? imageUrl, double? lat, double? lng, String? alerteId, Map<String, dynamic>? animalData}) async {
     if (text.trim().isEmpty && imageUrl == null && lat == null && animalData == null) return;
+    if (_msgLock) return;
+    _msgLock = true;
     final uid = _uid;
     setState(() => _sending = true);
 
@@ -542,6 +545,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       _controller.clear();
     } catch (_) {}
+    _msgLock = false;
     if (mounted) setState(() => _sending = false);
   }
 
