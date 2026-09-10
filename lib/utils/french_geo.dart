@@ -126,6 +126,15 @@ class FrenchGeo {
     return null;
   }
 
+  /// Liste des régions françaises (métropole + DROM), pour les filtres.
+  static const List<String> regions = [
+    'Auvergne-Rhône-Alpes', 'Bourgogne-Franche-Comté', 'Bretagne',
+    'Centre-Val de Loire', 'Corse', 'Grand Est', 'Hauts-de-France',
+    'Île-de-France', 'Normandie', 'Nouvelle-Aquitaine', 'Occitanie',
+    'Pays de la Loire', "Provence-Alpes-Côte d'Azur",
+    'Guadeloupe', 'Martinique', 'Guyane', 'La Réunion', 'Mayotte',
+  ];
+
   /// Retourne la liste triée des noms de départements appartenant à une région.
   static List<String> departmentsInRegion(String region) {
     return _departments.values

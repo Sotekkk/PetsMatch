@@ -1,11 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/data/annonce_objet_categories.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/pages/particulier/create_annonce_objet_page.dart';
 
@@ -13,8 +17,15 @@ const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
 const _orange = Color(0xFFFF8A00);
 
-/// Fil public des petites annonces « objets & matériel » liées aux animaux.
-/// Ouvert à tous les profils.
+const _kTris = <String, String>{
+  'recent': 'Plus récentes',
+  'prix_asc': 'Prix croissant',
+  'prix_desc': 'Prix décroissant',
+};
+
+/// Fil public des petites annonces « objets & matériel » liées aux animaux —
+/// style « petites annonces » : recherche mot-clé, catégories, filtres
+/// région / département / ville, géolocalisation, tri. Ouvert à tous.
 class AnnoncesObjetsFeedPage extends StatefulWidget {
   const AnnoncesObjetsFeedPage({super.key});
   @override
@@ -23,9 +34,26 @@ class AnnoncesObjetsFeedPage extends StatefulWidget {
 
 class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
   final _supa = Supabase.instance.client;
+  final _searchCtrl = TextEditingController();
+  Timer? _debounce;
+
   List<Map<String, dynamic>> _rows = [];
   bool _loading = true;
+  bool _locating = false;
+
+  // Filtres
   String _cat = 'tous';
+  String _kw = '';
+  String? _region;
+  String? _departement;
+  String _ville = '';
+  String _tri = 'recent';
+
+  int get _activeFilters =>
+      (_region != null ? 1 : 0) +
+      (_departement != null ? 1 : 0) +
+      (_ville.isNotEmpty ? 1 : 0) +
+      (_tri != 'recent' ? 1 : 0);
 
   @override
   void initState() {
@@ -33,25 +61,224 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String v) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      setState(() => _kw = v.trim());
+      _load();
+    });
+  }
+
   Future<void> _load() async {
     if (mounted) setState(() => _loading = true);
     try {
       var q = _supa.from('annonces_objets').select().eq('statut', 'disponible');
       if (_cat != 'tous') q = q.eq('categorie', _cat);
-      final data = await q.order('created_at', ascending: false).limit(120);
-      var rows = List<Map<String, dynamic>>.from(data as List);
-      rows = [
-        ...rows.where((r) => annonceObjetBoostActif(r['boost_until'])),
-        ...rows.where((r) => !annonceObjetBoostActif(r['boost_until'])),
-      ];
+      if (_kw.isNotEmpty) {
+        final safe = _kw.replaceAll('%', '').replaceAll(',', ' ');
+        q = q.or('titre.ilike.%$safe%,description.ilike.%$safe%');
+      }
+      if (_region != null) q = q.eq('region', _region!);
+      if (_departement != null) q = q.eq('departement', _departement!);
+      if (_ville.isNotEmpty) q = q.ilike('ville', '%$_ville%');
+
+      final PostgrestList data;
+      if (_tri == 'prix_asc') {
+        data = await q.order('prix', ascending: true, nullsFirst: false).limit(200);
+      } else if (_tri == 'prix_desc') {
+        data = await q.order('prix', ascending: false, nullsFirst: false).limit(200);
+      } else {
+        data = await q.order('created_at', ascending: false).limit(200);
+      }
+
+      var rows = List<Map<String, dynamic>>.from(data);
+      if (_tri == 'recent') {
+        rows = [
+          ...rows.where((r) => annonceObjetBoostActif(r['boost_until'])),
+          ...rows.where((r) => !annonceObjetBoostActif(r['boost_until'])),
+        ];
+      }
       if (mounted) setState(() { _rows = rows; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
   }
 
+  Future<void> _autourDeMoi() async {
+    setState(() => _locating = true);
+    try {
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+        _snack('Autorisez la localisation pour utiliser « Autour de moi ».');
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.low),
+      );
+      final marks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      final cp = marks.isNotEmpty ? (marks.first.postalCode ?? '') : '';
+      final geo = FrenchGeo.fromPostalCode(cp);
+      if (geo == null) {
+        _snack('Localisation introuvable.');
+        return;
+      }
+      setState(() {
+        _region = geo.region;
+        _departement = geo.departement;
+      });
+      _load();
+      _snack('📍 ${geo.departement}');
+    } catch (_) {
+      _snack('Impossible de récupérer votre position.');
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(m, style: const TextStyle(fontFamily: 'Galey'))),
+      );
+
+  Future<void> _openFilters() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final depts = _region != null
+              ? FrenchGeo.departmentsInRegion(_region!)
+              : const <String>[];
+          return Padding(
+            padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(
+                  color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 16),
+              Row(children: [
+                const Text('Filtres', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+                const Spacer(),
+                TextButton(
+                  onPressed: () {
+                    setSheet(() {});
+                    setState(() { _region = null; _departement = null; _ville = ''; _tri = 'recent'; });
+                    _load();
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('Réinitialiser', style: TextStyle(fontFamily: 'Galey')),
+                ),
+              ]),
+              const SizedBox(height: 8),
+
+              OutlinedButton.icon(
+                onPressed: _locating ? null : () { Navigator.pop(ctx); _autourDeMoi(); },
+                icon: _locating
+                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.my_location, size: 16),
+                label: const Text('Autour de moi', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal)),
+              ),
+              const SizedBox(height: 14),
+
+              _sheetLabel('Région'),
+              DropdownButtonFormField<String>(
+                initialValue: _region,
+                isExpanded: true,
+                decoration: _sheetDec('Toutes les régions'),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('Toutes les régions')),
+                  for (final r in FrenchGeo.regions) DropdownMenuItem(value: r, child: Text(r, overflow: TextOverflow.ellipsis)),
+                ],
+                onChanged: (v) => setSheet(() { _region = v; _departement = null; }),
+              ),
+              const SizedBox(height: 12),
+
+              _sheetLabel('Département'),
+              DropdownButtonFormField<String>(
+                initialValue: _departement,
+                isExpanded: true,
+                decoration: _sheetDec(_region == null ? 'Choisissez d\'abord une région' : 'Tous les départements'),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('Tous les départements')),
+                  for (final d in depts) DropdownMenuItem(value: d, child: Text(d, overflow: TextOverflow.ellipsis)),
+                ],
+                onChanged: _region == null ? null : (v) => setSheet(() => _departement = v),
+              ),
+              const SizedBox(height: 12),
+
+              _sheetLabel('Ville'),
+              TextFormField(
+                initialValue: _ville,
+                decoration: _sheetDec('Nom de la ville'),
+                onChanged: (v) => _ville = v.trim(),
+              ),
+              const SizedBox(height: 12),
+
+              _sheetLabel('Trier par'),
+              Wrap(spacing: 8, children: [
+                for (final e in _kTris.entries)
+                  ChoiceChip(
+                    label: Text(e.value),
+                    selected: _tri == e.key,
+                    onSelected: (_) => setSheet(() => _tri = e.key),
+                    selectedColor: _teal.withValues(alpha: 0.15),
+                    labelStyle: TextStyle(
+                        fontFamily: 'Galey',
+                        color: _tri == e.key ? _teal : Colors.grey.shade700,
+                        fontWeight: FontWeight.w600),
+                  ),
+              ]),
+              const SizedBox(height: 20),
+
+              SizedBox(
+                width: double.infinity, height: 48,
+                child: ElevatedButton(
+                  onPressed: () { Navigator.pop(ctx); setState(() {}); _load(); },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _teal, foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text('Voir les résultats',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                ),
+              ),
+            ]),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _sheetLabel(String t) => Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(t, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1F2A2E))),
+      );
+
+  InputDecoration _sheetDec(String hint) => InputDecoration(
+        hintText: hint,
+        hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade400, fontSize: 13),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _teal, width: 1.5)),
+      );
+
   @override
   Widget build(BuildContext context) {
+    final locLabel = _departement ?? _region;
     return Scaffold(
       backgroundColor: const Color(0xFFF6F6F4),
       appBar: AppBar(
@@ -71,33 +298,112 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
         label: const Text('Publier', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
       ),
       body: Column(children: [
-        SizedBox(
-          height: 46,
+        // ── Recherche + bouton filtres ─────────────────────────────
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          child: Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _searchCtrl,
+                onChanged: _onSearchChanged,
+                textInputAction: TextInputAction.search,
+                onSubmitted: (v) { setState(() => _kw = v.trim()); _load(); },
+                decoration: InputDecoration(
+                  hintText: 'Rechercher (cage, foin, harnais…)',
+                  hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade400, fontSize: 13),
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _searchCtrl.text.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () { _searchCtrl.clear(); setState(() => _kw = ''); _load(); },
+                        ),
+                  isDense: true,
+                  filled: true,
+                  fillColor: const Color(0xFFF1F3F2),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Stack(children: [
+              IconButton.filledTonal(
+                onPressed: _openFilters,
+                icon: const Icon(Icons.tune, size: 20),
+                style: IconButton.styleFrom(backgroundColor: _teal.withValues(alpha: 0.10), foregroundColor: _teal),
+              ),
+              if (_activeFilters > 0)
+                Positioned(
+                  right: 2, top: 2,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(color: _orange, shape: BoxShape.circle),
+                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    child: Text('$_activeFilters',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+            ]),
+          ]),
+        ),
+        // ── Catégories ─────────────────────────────────────────────
+        Container(
+          color: Colors.white,
+          height: 44,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
             children: [
               _catChip('tous', 'Tout', '🔎'),
               for (final c in kAnnonceObjetCategories) _catChip(c.slug, c.label, c.emoji),
             ],
           ),
         ),
+        // ── Barre localisation active ──────────────────────────────
+        if (locLabel != null)
+          Container(
+            width: double.infinity,
+            color: _teal.withValues(alpha: 0.06),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Row(children: [
+              const Icon(Icons.place_outlined, size: 15, color: _teal),
+              const SizedBox(width: 6),
+              Expanded(child: Text('Localisation : $locLabel',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _teal, fontWeight: FontWeight.w600))),
+              GestureDetector(
+                onTap: () { setState(() { _region = null; _departement = null; }); _load(); },
+                child: const Icon(Icons.close, size: 16, color: _teal),
+              ),
+            ]),
+          ),
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator(color: _teal))
               : _rows.isEmpty
-                  ? const Center(child: Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Text('Aucune annonce dans cette catégorie.',
+                  ? Center(child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        const Text('🔎', style: TextStyle(fontSize: 40)),
+                        const SizedBox(height: 10),
+                        Text(
+                          _kw.isNotEmpty || _activeFilters > 0 || _cat != 'tous'
+                              ? 'Aucune annonce ne correspond à votre recherche.'
+                              : 'Aucune annonce pour le moment.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(fontFamily: 'Galey', color: Colors.grey))))
+                          style: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+                        ),
+                      ]),
+                    ))
                   : RefreshIndicator(
                       onRefresh: _load,
                       child: GridView.builder(
-                        padding: const EdgeInsets.fromLTRB(12, 4, 12, 90),
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 90),
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12,
-                          childAspectRatio: 0.72,
+                          childAspectRatio: 0.70,
                         ),
                         itemCount: _rows.length,
                         itemBuilder: (_, i) => _card(_rows[i]),
@@ -125,6 +431,8 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
   Widget _card(Map<String, dynamic> r) {
     final photos = List<String>.from(r['photos'] ?? const []);
     final boosted = annonceObjetBoostActif(r['boost_until']);
+    final loc = [r['ville'], r['departement']]
+        .where((s) => (s ?? '').toString().isNotEmpty).join(', ');
     return GestureDetector(
       onTap: () => Navigator.push(context,
           MaterialPageRoute(builder: (_) => AnnonceObjetDetailPage(data: r))),
@@ -162,9 +470,9 @@ class _AnnoncesObjetsFeedPageState extends State<AnnoncesObjetsFeedPage> {
               const SizedBox(height: 4),
               Text(annonceObjetPrixLabel(r),
                   style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _teal)),
-              if ((r['ville'] ?? '').toString().isNotEmpty) ...[
+              if (loc.isNotEmpty) ...[
                 const SizedBox(height: 2),
-                Text('📍 ${r['ville']}',
+                Text('📍 $loc',
                     maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
               ],
@@ -262,6 +570,8 @@ class _AnnonceObjetDetailPageState extends State<AnnonceObjetDetailPage> {
     final d = widget.data;
     final photos = List<String>.from(d['photos'] ?? const []);
     final created = DateTime.tryParse(d['created_at']?.toString() ?? '');
+    final loc = [d['ville'], d['code_postal'], d['departement'], d['region']]
+        .where((s) => (s ?? '').toString().isNotEmpty).join(' · ');
     return Scaffold(
       backgroundColor: const Color(0xFFF6F6F4),
       appBar: AppBar(
@@ -331,11 +641,11 @@ class _AnnonceObjetDetailPageState extends State<AnnonceObjetDetailPage> {
               Text(d['description'].toString(),
                   style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5, color: Color(0xFF2C3A40))),
             const SizedBox(height: 16),
-            Row(children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Icon(Icons.place_outlined, size: 16, color: Colors.grey),
               const SizedBox(width: 4),
-              Text([d['ville'], d['code_postal']].where((s) => (s ?? '').toString().isNotEmpty).join(' · '),
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600)),
+              Expanded(child: Text(loc,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600))),
             ]),
             const SizedBox(height: 4),
             Row(children: [

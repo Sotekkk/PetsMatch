@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/data/annonce_objet_categories.dart';
+import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
 
 /// Publier / modifier une petite annonce « objet & matériel » liée aux animaux.
@@ -115,6 +116,7 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
       final nom = '${User_Info.firstname} ${User_Info.lastname}'.trim();
       final now = DateTime.now().toIso8601String();
       final prix = _priced ? double.tryParse(_prixCtrl.text.trim().replaceAll(',', '.')) : null;
+      final geo = FrenchGeo.fromPostalCode(_cpCtrl.text.trim());
 
       final data = <String, dynamic>{
         'uid': uid,
@@ -132,6 +134,8 @@ class _CreateAnnonceObjetPageState extends State<CreateAnnonceObjetPage> {
         'photos': [..._photosUrls, ...newUrls],
         'ville': _villeCtrl.text.trim(),
         'code_postal': _cpCtrl.text.trim(),
+        'departement': geo?.departement,
+        'region': geo?.region,
         'nom_vendeur': nom.isEmpty ? 'Particulier' : nom,
         'statut': 'disponible',
         'updated_at': now,

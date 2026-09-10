@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { uploadPhoto } from '@/lib/upload-media';
+import { fromPostalCode } from '@/lib/french-geo';
 import {
   ANNONCE_OBJET_CATEGORIES, ANNONCE_OBJET_TRANSACTIONS, ANNONCE_OBJET_ETATS,
 } from '@/lib/annonce-objet-categories';
@@ -79,6 +80,7 @@ function CreerObjetInner() {
       for (const f of files) {
         uploaded.push(await uploadPhoto(f, `annonces_objets/${user!.uid}/${Date.now()}_${uploaded.length}.jpg`));
       }
+      const geo = fromPostalCode(cp.trim());
       const payload: Record<string, unknown> = {
         uid: user!.uid,
         ...(activeProfileId ? { profile_id: activeProfileId } : {}),
@@ -93,6 +95,8 @@ function CreerObjetInner() {
         photos: [...existingPhotos, ...uploaded],
         ville: ville.trim(),
         code_postal: cp.trim(),
+        departement: geo?.departement ?? null,
+        region: geo?.region ?? null,
         nom_vendeur: user!.displayName || 'Particulier',
         statut: 'disponible',
         updated_at: new Date().toISOString(),
