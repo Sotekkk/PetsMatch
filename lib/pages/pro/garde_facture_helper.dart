@@ -29,6 +29,27 @@ String gardeDesignation(Map<String, dynamic> rdv) {
   return animal.isNotEmpty ? '$base — $animal' : base;
 }
 
+/// Libellé d'affichage d'un motif de garde, adapté à l'espèce : pour un équidé,
+/// « Promenade … » devient « Sortie au paddock … ». **Affichage uniquement** —
+/// la clé (`promenade_*`) et la valeur stockée dans `rdv.motif` ne changent pas,
+/// donc la facturation (`gardePrestationKey`) et les rapports restent intacts.
+String gardeMotifLabel(String keyOrLabel, String? espece) {
+  final e = (espece ?? '').toLowerCase().trim();
+  final isEquide = e == 'cheval' || e == 'poney' || e == 'ane' || e == 'âne';
+  const fallback = <String, String>{
+    'promenade_30min': 'Promenade 30 min', 'promenade_1h': 'Promenade 1h',
+    'promenade_2h': 'Promenade 2h', 'visite_domicile': 'Visite à domicile',
+    'garde_journee': 'Garde journée',
+  };
+  final base = fallback[keyOrLabel] ?? keyOrLabel;
+  if (!isEquide) return base;
+  final s = base.toLowerCase();
+  if (!s.contains('promenade') && !s.contains('balade')) return base;
+  if (s.contains('30')) return 'Sortie au paddock (30 min)';
+  if (s.contains('2')) return 'Sortie au paddock (2 h)';
+  return 'Sortie au paddock (1 h)';
+}
+
 /// Nom du client tel que stocké selon la page appelante (`_client_nom` côté
 /// registre, `_client_name` côté agenda).
 String? gardeClientNom(Map<String, dynamic> rdv) =>

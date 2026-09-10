@@ -62,6 +62,34 @@ bool especeMatchesLogement(String? animalEspece, List? logementEspeces) {
   });
 }
 
+/// Types de logement d'une pension (`enclos_chenil.type`, texte libre).
+/// Box / Pré / Paddock d'abord (trio équin), puis les logements classiques.
+const List<(String, String)> kPensionLogementTypes = [
+  ('box', 'Box'),
+  ('pre', 'Pré'),
+  ('paddock', 'Paddock'),
+  ('enclos', 'Enclos'),
+  ('parc', 'Parc'),
+  ('chatterie', 'Chatterie'),
+  ('cage', 'Cage'),
+];
+
+const Map<String, String> kPensionLogementTypeLabels = {
+  'box': 'Box', 'pre': 'Pré', 'paddock': 'Paddock', 'enclos': 'Enclos',
+  'parc': 'Parc', 'chatterie': 'Chatterie', 'cage': 'Cage',
+};
+
+String pensionLogementTypeLabel(String? type) =>
+    kPensionLogementTypeLabels[(type ?? '').toLowerCase().trim()] ?? (type ?? '');
+
+/// L'alimentation « pour ce séjour » (foin / granulés / compléments) est-elle
+/// pertinente pour cette espèce ? Équidés + animaux de la ferme.
+bool pensionAlimentationSejourApplicable(String? espece) {
+  final k = pensionTarifKeyForEspece(espece)
+      ?? (espece ?? '').toLowerCase().trim();
+  return k == 'cheval' || k == 'ane' || k == 'poney' || k == 'animaux_ferme';
+}
+
 class PensionTarifsPage extends StatefulWidget {
   const PensionTarifsPage({super.key});
 

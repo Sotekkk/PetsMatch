@@ -58,13 +58,26 @@ Future<void> showVisiteRapportSheet(BuildContext context, Map<String, dynamic> r
       : int.tryParse(rdv['duree_minutes']?.toString() ?? '') ?? 0;
   final isPromenade = motif.contains('promenade') || motif.contains('balade');
   final isGarde = motif.contains('garde') || motif.contains('journ') || dureeMin >= 24 * 60;
+
+  // Équidé : « promenade » → « sortie au paddock » dans les libellés.
+  var isEquide = false;
+  final animalId = rdv['animal_id']?.toString();
+  if (isPromenade && animalId != null && animalId.isNotEmpty) {
+    try {
+      final row = await supa.from('animaux').select('espece').eq('id', animalId).maybeSingle();
+      final e = (row?['espece'] as String?)?.toLowerCase().trim() ?? '';
+      isEquide = e == 'cheval' || e == 'poney' || e == 'ane' || e == 'âne';
+    } catch (_) {}
+  }
+
   final kindLabel = isPromenade
-      ? 'Rapport de promenade'
+      ? (isEquide ? 'Rapport de sortie au paddock' : 'Rapport de promenade')
       : isGarde
           ? 'Journal de garde'
           : 'Rapport de visite';
   final kindHint = isPromenade
-      ? 'Comment s\'est passée la promenade…'
+      ? (isEquide ? 'Comment s\'est passée la sortie au paddock (foin, comportement…)…'
+                  : 'Comment s\'est passée la promenade…')
       : isGarde
           ? 'Nouvelles de la garde (repas, comportement, sorties…)'
           : 'Comment s\'est passée la visite…';
@@ -135,6 +148,7 @@ Future<void> showVisiteRapportSheet(BuildContext context, Map<String, dynamic> r
     }
   }
 
+  if (!context.mounted) return;
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,

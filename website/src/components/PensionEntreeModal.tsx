@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { lookupAnimalByChip, requestAnimalAccess } from '@/lib/pension-chip-lookup';
-import { especeMatchesLogement } from '@/lib/pension-especes';
+import { especeMatchesLogement, pensionAlimentationSejourApplicable, type AlimentationSejour } from '@/lib/pension-especes';
+import { LOGEMENT_TYPE_LABEL } from '@/lib/pension-logements';
 
 export interface PensionEntree {
   id: string;
@@ -24,6 +25,7 @@ export interface PensionEntree {
   animal_id?: string | null;
   seul_dans_logement?: boolean;
   notes?: string | null;
+  alimentation_sejour?: AlimentationSejour | null;
   statut: 'en_pension' | 'sorti';
   created_at: string;
 }
@@ -31,9 +33,13 @@ export interface PensionEntree {
 const TEAL  = '#0C5C6C';
 const GREEN = '#6E9E57';
 
-const TYPE_LABEL: Record<string, string> = {
-  box: 'Box', enclos: 'Enclos', parc: 'Parc', chatterie: 'Chatterie', cage: 'Cage',
-};
+const TYPE_LABEL = LOGEMENT_TYPE_LABEL;
+
+const FOURNIS_PAR = [
+  { value: 'pension', label: 'Par la pension' },
+  { value: 'proprietaire', label: 'Par le propriétaire' },
+  { value: 'mixte', label: 'Partagée' },
+];
 
 export interface PensionEntreePrefill {
   animal_id?: string;
@@ -75,6 +81,12 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
     statut:                entree?.statut ?? 'en_pension',
     notes:                 entree?.notes ?? '',
     seul_dans_logement:    entree?.seul_dans_logement ?? false,
+    alim_fournis_par:      String(entree?.alimentation_sejour?.fournis_par ?? 'mixte'),
+    alim_foin:             entree?.alimentation_sejour?.foin ?? '',
+    alim_granules:         entree?.alimentation_sejour?.granules ?? '',
+    alim_complements:      entree?.alimentation_sejour?.complements ?? '',
+    alim_autres:           entree?.alimentation_sejour?.autres ?? '',
+    alim_consignes:        entree?.alimentation_sejour?.consignes ?? '',
   });
   const [animalId, setAnimalId] = useState<string | null | undefined>(entree?.animal_id ?? prefill?.animal_id);
   const [logementId, setLogementId] = useState<string | null>(entree?.logement_id ?? initialLogementId ?? null);
@@ -275,6 +287,19 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
 
   function set(field: string, value: string) { setForm(f => ({ ...f, [field]: value })); }
 
+  function buildAlimSejour(): AlimentationSejour | null {
+    if (!pensionAlimentationSejourApplicable(form.espece)) return null;
+    const m: AlimentationSejour = {};
+    if (form.alim_foin.trim()) m.foin = form.alim_foin.trim();
+    if (form.alim_granules.trim()) m.granules = form.alim_granules.trim();
+    if (form.alim_complements.trim()) m.complements = form.alim_complements.trim();
+    if (form.alim_autres.trim()) m.autres = form.alim_autres.trim();
+    if (form.alim_consignes.trim()) m.consignes = form.alim_consignes.trim();
+    if (Object.keys(m).length === 0) return null;
+    m.fournis_par = (form.alim_fournis_par as AlimentationSejour['fournis_par']);
+    return m;
+  }
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!form.animal_nom.trim()) { setError('Le nom est obligatoire.'); return; }
@@ -319,6 +344,7 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
       date_sortie_prevue:   form.date_sortie_prevue || null,
       date_sortie_effective: form.statut === 'sorti' ? (form.date_sortie_effective || null) : null,
       notes:                form.notes.trim() || null,
+      alimentation_sejour:  buildAlimSejour(),
       statut:               form.statut,
       seul_dans_logement:   form.seul_dans_logement,
       logement_id:          logementId,
@@ -596,12 +622,45 @@ export function PensionEntreeModal({ proUid, proProfileId, entree, initialLogeme
             </p>
           </div>
 
-          <div style={{ marginBottom: 24 }}>
+          <div style={{ marginBottom: 16 }}>
             <label style={lbl}>Notes</label>
             <textarea style={{ ...inp, resize: 'vertical', minHeight: 80 }}
-              placeholder="Alimentation, médicaments, comportement…" value={form.notes}
+              placeholder="Consignes, médicaments, comportement…" value={form.notes}
               onChange={e => set('notes', e.target.value)} />
           </div>
+
+          {pensionAlimentationSejourApplicable(form.espece) && (
+            <div style={{ marginBottom: 24, padding: 12, background: '#F6F8F5',
+              border: '1px solid #E0E7DD', borderRadius: 12 }}>
+              <p style={{ margin: '0 0 10px', fontFamily: 'Galey, sans-serif', fontSize: 13,
+                fontWeight: 700, color: '#1F2A2E' }}>🌾 Alimentation pour ce séjour</p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                {FOURNIS_PAR.map(o => (
+                  <button key={o.value} type="button" onClick={() => set('alim_fournis_par', o.value)}
+                    style={{
+                      padding: '7px 12px', borderRadius: 18, fontFamily: 'Galey, sans-serif', fontSize: 12,
+                      cursor: 'pointer',
+                      border: `1px solid ${form.alim_fournis_par === o.value ? TEAL : '#d1d5db'}`,
+                      background: form.alim_fournis_par === o.value ? TEAL : 'white',
+                      color: form.alim_fournis_par === o.value ? 'white' : '#1F2A2E',
+                    }}>{o.label}</button>
+                ))}
+              </div>
+              {([
+                ['alim_foin', 'Foin (type / quantité / fréquence)'],
+                ['alim_granules', 'Granulés / concentrés (marque, dose, nb de repas)'],
+                ['alim_complements', 'Compléments (CMV, huile, électrolytes…)'],
+                ['alim_autres', 'Autres (carottes, mash…)'],
+                ['alim_consignes', 'Consignes de distribution / horaires'],
+              ] as const).map(([k, label]) => (
+                <div key={k} style={{ marginBottom: 8 }}>
+                  <label style={{ ...lbl, fontSize: 11 }}>{label}</label>
+                  <textarea style={{ ...inp, resize: 'vertical', minHeight: 44, fontSize: 13 }}
+                    value={form[k]} onChange={e => set(k, e.target.value)} />
+                </div>
+              ))}
+            </div>
+          )}
 
           {error && (
             <p style={{ color: 'red', fontFamily: 'Galey, sans-serif', fontSize: 13, marginBottom: 12 }}>{error}</p>

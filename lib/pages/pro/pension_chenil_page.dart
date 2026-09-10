@@ -4,7 +4,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
-import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show kPensionEspeces;
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart'
+    show kPensionEspeces, kPensionLogementTypes, kPensionLogementTypeLabels;
 
 class PensionChenilPage extends StatefulWidget {
   const PensionChenilPage({super.key});
@@ -23,14 +24,6 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
   String? _uid;
   String _planCode = 'free';
 
-  static const _types = [
-    ('box', 'Box'),
-    ('enclos', 'Enclos'),
-    ('parc', 'Parc'),
-    ('chatterie', 'Chatterie'),
-    ('cage', 'Cage'),
-  ];
-  static const _typeLabels = {'box': 'Box', 'enclos': 'Enclos', 'parc': 'Parc', 'chatterie': 'Chatterie', 'cage': 'Cage'};
   // Espèces proposées pour un logement = espèces acceptées par la pension
   // (repli sur la liste canonique si le profil n'en a pas encore défini).
   List<String> get _especesList => User_Info.especesAcceptees.isNotEmpty
@@ -237,7 +230,7 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
             const SizedBox(height: 12),
             TextField(controller: nomCtrl, decoration: const InputDecoration(labelText: 'Nom (ex : Box 3)', border: OutlineInputBorder())),
             const SizedBox(height: 12),
-            Wrap(spacing: 8, runSpacing: 8, children: _types.map((t) {
+            Wrap(spacing: 8, runSpacing: 8, children: kPensionLogementTypes.map((t) {
               final active = type == t.$1;
               return GestureDetector(
                 onTap: () => setSheet(() => type = t.$1),
@@ -444,7 +437,7 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
                             style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade500)),
                         const SizedBox(height: 4),
                         if (_logements.isEmpty)
-                          Text('Créez vos box, enclos ou chatterie pour suivre l\'occupation.',
+                          Text('Créez vos box, prés, paddocks ou enclos pour suivre l\'occupation.',
                               textAlign: TextAlign.center,
                               style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400)),
                       ])),
@@ -470,7 +463,7 @@ class _PensionChenilPageState extends State<PensionChenilPage> {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(color: _teal.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                                child: Text(_typeLabels[l['type']] ?? l['type']?.toString() ?? '',
+                                child: Text(kPensionLogementTypeLabels[l['type']] ?? l['type']?.toString() ?? '',
                                     style: const TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: _teal)),
                               ),
                               const SizedBox(width: 8),

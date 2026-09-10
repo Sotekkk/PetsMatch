@@ -17,7 +17,9 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
-import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show pensionTarifKeyForEspece, especeMatchesLogement;
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart'
+    show pensionTarifKeyForEspece, especeMatchesLogement,
+        pensionLogementTypeLabel, pensionAlimentationSejourApplicable;
 
 class RegistrePensionPage extends StatefulWidget {
   const RegistrePensionPage({super.key});
@@ -335,6 +337,8 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
                'Le propriétaire fournit le carnet de vaccination à jour (typhus, coryza, leucose recommandée).';
       case 'cheval':
       case 'poney':
+      case 'ane':
+      case 'âne':
         return 'Le propriétaire certifie que l\'équidé est à jour de ferrure et de vermifugation. '
                'Une assurance équine (responsabilité civile et mortalité) est obligatoire et une attestation doit être fournie à l\'admission. '
                'Les frais de maréchal-ferrant, vétérinaire et dentiste restent à la charge exclusive du propriétaire. '
@@ -1427,6 +1431,19 @@ class _PensionCard extends StatelessWidget {
                     ]),
                   ),
                 ],
+                if (entree['alimentation_sejour'] != null) ...[
+                  const SizedBox(height: 5),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F5EC),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text('🌾 Alimentation séjour renseignée',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                            fontWeight: FontWeight.w600, color: Color(0xFF4d7a3c))),
+                  ),
+                ],
                 // Menu Actions — regroupe journal / contrat / signature /
                 // lien de réclamation / facturation / sortie sur un seul bouton.
                 if (_hasActions) ...[
@@ -1529,6 +1546,7 @@ class PensionEditSheetState extends State<PensionEditSheet> {
   bool _saving = false;
   bool _linkingFiche = false;
   late bool _seul;
+  Map<String, dynamic> _alimSejour = {};
   String? _animalId;
   String? _accessStatus; // null = pas de demande, 'pending' | 'active' | 'refused'
   bool _checkingAccess = false;
@@ -1549,6 +1567,7 @@ class PensionEditSheetState extends State<PensionEditSheet> {
     _emailCtrl   = TextEditingController(text: d['proprietaire_email'] as String? ?? '');
     _notesCtrl   = TextEditingController(text: d['notes'] as String? ?? '');
     _seul        = d['seul_dans_logement'] as bool? ?? false;
+    _alimSejour  = alimSejourFromRaw(d['alimentation_sejour']);
     _animalId    = d['animal_id'] as String?;
     if (_animalId != null) _checkAccessStatus();
   }
@@ -1854,6 +1873,8 @@ class PensionEditSheetState extends State<PensionEditSheet> {
         'date_sortie_effective': _statut == 'sorti' && _dateSortieEff != null
             ? DateFormat('yyyy-MM-dd').format(_dateSortieEff!) : null,
         'seul_dans_logement':    _seul,
+        'alimentation_sejour':   pensionAlimentationSejourApplicable(_especeCtrl.text) && _alimSejour.isNotEmpty
+            ? _alimSejour : null,
       }).eq('id', widget.entree['id']);
       if (mounted) Navigator.pop(context);
     } catch (e) {
@@ -2082,8 +2103,16 @@ class PensionEditSheetState extends State<PensionEditSheet> {
               // Notes
               _sectionTitle('Notes'),
               const SizedBox(height: 10),
-              _card([_tf('Alimentation, médicaments, comportement…', _notesCtrl,
+              _card([_tf('Consignes, médicaments, comportement…', _notesCtrl,
                   maxLines: 3)]),
+
+              if (pensionAlimentationSejourApplicable(_especeCtrl.text)) ...[
+                const SizedBox(height: 12),
+                AlimentationSejourFields(
+                  initial: _alimSejour,
+                  onChanged: (m) => _alimSejour = m,
+                ),
+              ],
               const SizedBox(height: 20),
 
               SizedBox(
@@ -2395,6 +2424,141 @@ Future<Map<String, dynamic>> _lookupAnimalByChip(String chip) async {
   };
 }
 
+// ── Alimentation « pour ce séjour » (équidés / ferme) ─────────────────────────
+
+const List<(String, String)> kAlimSejourFournisPar = [
+  ('pension', 'Par la pension'),
+  ('proprietaire', 'Par le propriétaire'),
+  ('mixte', 'Partagée'),
+];
+
+String alimSejourFournisParLabel(String? v) => switch (v) {
+      'pension' => 'Fournie par la pension',
+      'proprietaire' => 'Fournie par le propriétaire',
+      'mixte' => 'Alimentation partagée',
+      _ => '',
+    };
+
+/// Parse la valeur DB (Map JSONB ou String JSON) en Map.
+Map<String, dynamic> alimSejourFromRaw(dynamic raw) {
+  if (raw is Map) return Map<String, dynamic>.from(raw);
+  if (raw is String && raw.trim().isNotEmpty) {
+    try {
+      final d = jsonDecode(raw);
+      if (d is Map) return Map<String, dynamic>.from(d);
+    } catch (_) {}
+  }
+  return {};
+}
+
+/// Bloc éditable réutilisé par PensionEntreeSheet + PensionEditSheet.
+/// `onChanged` reçoit le Map courant (vide si tous les champs sont vides).
+class AlimentationSejourFields extends StatefulWidget {
+  final Map<String, dynamic> initial;
+  final ValueChanged<Map<String, dynamic>> onChanged;
+  const AlimentationSejourFields({super.key, required this.initial, required this.onChanged});
+  @override
+  State<AlimentationSejourFields> createState() => _AlimentationSejourFieldsState();
+}
+
+class _AlimentationSejourFieldsState extends State<AlimentationSejourFields> {
+  static const _teal = Color(0xFF0C5C6C);
+  late String _fournisPar;
+  late final TextEditingController _foin;
+  late final TextEditingController _granules;
+  late final TextEditingController _complements;
+  late final TextEditingController _autres;
+  late final TextEditingController _consignes;
+
+  @override
+  void initState() {
+    super.initState();
+    final d = widget.initial;
+    _fournisPar  = (d['fournis_par'] as String?) ?? 'mixte';
+    _foin        = TextEditingController(text: d['foin']?.toString() ?? '');
+    _granules    = TextEditingController(text: d['granules']?.toString() ?? '');
+    _complements = TextEditingController(text: d['complements']?.toString() ?? '');
+    _autres      = TextEditingController(text: d['autres']?.toString() ?? '');
+    _consignes   = TextEditingController(text: d['consignes']?.toString() ?? '');
+  }
+
+  @override
+  void dispose() {
+    _foin.dispose(); _granules.dispose(); _complements.dispose();
+    _autres.dispose(); _consignes.dispose();
+    super.dispose();
+  }
+
+  void _emit() {
+    final m = <String, dynamic>{
+      if (_foin.text.trim().isNotEmpty) 'foin': _foin.text.trim(),
+      if (_granules.text.trim().isNotEmpty) 'granules': _granules.text.trim(),
+      if (_complements.text.trim().isNotEmpty) 'complements': _complements.text.trim(),
+      if (_autres.text.trim().isNotEmpty) 'autres': _autres.text.trim(),
+      if (_consignes.text.trim().isNotEmpty) 'consignes': _consignes.text.trim(),
+    };
+    if (m.isNotEmpty) m['fournis_par'] = _fournisPar;
+    widget.onChanged(m);
+  }
+
+  Widget _fld(String label, TextEditingController c) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: TextField(
+          controller: c,
+          maxLines: 2,
+          onChanged: (_) => _emit(),
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+            border: const OutlineInputBorder(),
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          ),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 6, bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F8F5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE0E7DD)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('🌾  Alimentation pour ce séjour',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1F2A2E))),
+        const SizedBox(height: 10),
+        Wrap(spacing: 8, runSpacing: 8, children: kAlimSejourFournisPar.map((o) {
+          final active = _fournisPar == o.$1;
+          return GestureDetector(
+            onTap: () { setState(() => _fournisPar = o.$1); _emit(); },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: active ? _teal : Colors.white,
+                border: Border.all(color: active ? _teal : Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Text(o.$2, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                  color: active ? Colors.white : Colors.black87)),
+            ),
+          );
+        }).toList()),
+        const SizedBox(height: 12),
+        _fld('Foin (type / quantité / fréquence)', _foin),
+        _fld('Granulés / concentrés (marque, dose, nb de repas)', _granules),
+        _fld('Compléments (CMV, huile, électrolytes…)', _complements),
+        _fld('Autres (carottes, mash…)', _autres),
+        _fld('Consignes de distribution / horaires', _consignes),
+      ]),
+    );
+  }
+}
+
 // ── Sheet ajout nouvelle entrée ────────────────────────────────────────────────
 
 class PensionEntreeSheet extends StatefulWidget {
@@ -2450,6 +2614,7 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
   DateTime? _dateSortiePrevue;
   bool _seul = false;
   String? _logementId;
+  Map<String, dynamic> _alimSejour = {};
   List<Map<String, dynamic>> _logements = [];
   // Séjours non sortis assignés à un logement, avec leurs dates.
   List<Map<String, dynamic>> _occupants = [];
@@ -2615,6 +2780,8 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
         if (_dateSortiePrevue != null)
           'date_sortie_prevue': DateFormat('yyyy-MM-dd').format(_dateSortiePrevue!),
         'notes':   _notesCtrl.text.trim(),
+        if (pensionAlimentationSejourApplicable(_especeCtrl.text) && _alimSejour.isNotEmpty)
+          'alimentation_sejour': _alimSejour,
         'statut':  'en_pension',
         'created_at': DateTime.now().toIso8601String(),
       });
@@ -2847,10 +3014,11 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
                         final raison = !compatible ? ' · espèce non acceptée'
                             : !libre ? ' · complet sur la période' : '';
                         final grise = (!compatible || !libre) && !isCurrent;
+                        final typeLbl = pensionLogementTypeLabel(l['type']?.toString());
                         return DropdownMenuItem<String?>(
                           value: l['id'] as String,
                           enabled: !grise,
-                          child: Text('${l['nom']} (${m['occ']}/${m['cap']} places)$raison',
+                          child: Text('${l['nom']}${typeLbl.isNotEmpty ? ' · $typeLbl' : ''} (${m['occ']}/${m['cap']} places)$raison',
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: grise ? Colors.grey : null)),
                         );
@@ -2870,7 +3038,15 @@ class _PensionEntreeSheetState extends State<PensionEntreeSheet> {
 
           _lbl('Notes'),
           TextFormField(controller: _notesCtrl,
-              decoration: _dec('Alimentation, médicaments, comportement…'), maxLines: 3),
+              decoration: _dec('Consignes, médicaments, comportement…'), maxLines: 3),
+
+          if (pensionAlimentationSejourApplicable(_especeCtrl.text)) ...[
+            const SizedBox(height: 14),
+            AlimentationSejourFields(
+              initial: _alimSejour,
+              onChanged: (m) => _alimSejour = m,
+            ),
+          ],
           const SizedBox(height: 24),
 
           SizedBox(

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
 import { PENSION_ESPECES } from '@/lib/pension-especes';
+import { PENSION_LOGEMENT_TYPES, LOGEMENT_TYPE_LABEL } from '@/lib/pension-logements';
 
 interface Logement {
   id: string;
@@ -22,14 +23,8 @@ interface Entree {
   logement_id?: string | null;
 }
 
-const TYPES = [
-  { value: 'box', label: 'Box' },
-  { value: 'enclos', label: 'Enclos' },
-  { value: 'parc', label: 'Parc' },
-  { value: 'chatterie', label: 'Chatterie' },
-  { value: 'cage', label: 'Cage' },
-];
-const TYPE_LABEL = Object.fromEntries(TYPES.map(t => [t.value, t.label]));
+const TYPES = PENSION_LOGEMENT_TYPES;
+const TYPE_LABEL = LOGEMENT_TYPE_LABEL;
 const ESPECES_FALLBACK = PENSION_ESPECES.map(e => e.label);
 
 const EMPTY_FORM = { nom: '', type: 'box', capacite: 1, notes: '', especes: [] as string[] };
@@ -337,7 +332,7 @@ export default function PensionChenilPage() {
           <p className="text-4xl mb-3">🏘️</p>
           <p className="font-galey">{logements.length === 0 ? 'Aucun logement enregistré' : 'Aucun logement pour cette espèce'}</p>
           {logements.length === 0 && (
-            <p className="text-sm font-galey mt-1">Créez vos box, enclos ou chatterie pour suivre l&apos;occupation.</p>
+            <p className="text-sm font-galey mt-1">Créez vos box, prés, paddocks ou enclos pour suivre l&apos;occupation.</p>
           )}
         </div>
       ) : (

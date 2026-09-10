@@ -62,6 +62,33 @@ export function especeMatchesLogement(
   });
 }
 
+/**
+ * L'alimentation « pour ce séjour » (foin / granulés / compléments) est-elle
+ * pertinente pour cette espèce ? Équidés + animaux de la ferme.
+ */
+export function pensionAlimentationSejourApplicable(espece?: string | null): boolean {
+  const k = pensionTarifKeyForEspece(espece) ?? (espece ?? '').toLowerCase().trim();
+  return k === 'cheval' || k === 'ane' || k === 'poney' || k === 'animaux_ferme';
+}
+
+export interface AlimentationSejour {
+  fournis_par?: 'pension' | 'proprietaire' | 'mixte';
+  foin?: string;
+  granules?: string;
+  complements?: string;
+  autres?: string;
+  consignes?: string;
+}
+
+export function alimSejourFournisParLabel(v?: string | null): string {
+  switch (v) {
+    case 'pension': return 'Fournie par la pension';
+    case 'proprietaire': return 'Fournie par le propriétaire';
+    case 'mixte': return 'Alimentation partagée';
+    default: return '';
+  }
+}
+
 export interface EspeceTarif {
   espece: string;
   prix_seul: number;

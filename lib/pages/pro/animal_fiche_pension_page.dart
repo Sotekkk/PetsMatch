@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AddVermifugeDialog, AddAntiparasitaireDialog;
+import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show pensionLogementTypeLabel;
+import 'package:PetsMatch/pages/pro/registre_pension_page.dart' show alimSejourFromRaw, alimSejourFournisParLabel;
 import 'package:PetsMatch/main.dart' show User_Info;
 
 class AnimalFichePensionPage extends StatefulWidget {
@@ -52,6 +54,7 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
   // (pension_entrees) — au lieu du texte libre saisi manuellement à l'entrée.
   Map<String, dynamic>? _proprietaire;
   Map<String, dynamic>? _sejourActuel;
+  Map<String, dynamic>? _sejourLogement; // enclos_chenil {nom, type} du séjour
 
   @override
   void initState() {
@@ -158,9 +161,19 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
           .eq('animal_id', widget.animalId).eq('statut', 'en_pension')
           .order('date_entree', ascending: false).limit(1).maybeSingle();
 
+      Map<String, dynamic>? logement;
+      final logementId = sejour?['logement_id']?.toString();
+      if (logementId != null && logementId.isNotEmpty) {
+        try {
+          logement = await _supa.from('enclos_chenil')
+              .select('nom, type').eq('id', logementId).maybeSingle();
+        } catch (_) {}
+      }
+
       if (mounted) setState(() {
         _proprietaire = profil;
         _sejourActuel = sejour;
+        _sejourLogement = logement;
       });
     } catch (_) {}
   }
@@ -286,7 +299,7 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
                   _ReadOnlyBanner(espece: espece, photoUrl: photoUrl),
                   Expanded(
                     child: TabBarView(controller: _tabs, children: [
-                      _IdentiteTab(animal: _animal, proprietaire: _proprietaire, sejourActuel: _sejourActuel),
+                      _IdentiteTab(animal: _animal, proprietaire: _proprietaire, sejourActuel: _sejourActuel, sejourLogement: _sejourLogement),
                       _SanteTab(
                         vaccinations: _vaccinations,
                         vermifuges: _vermifuges,
@@ -300,7 +313,7 @@ class _AnimalFichePensionPageState extends State<AnimalFichePensionPage>
                         onAddVermifuge: ({renouvellementDe}) => _addVermifuge(renouvellementDe: renouvellementDe),
                         onAddAntiparasitaire: ({renouvellementDe}) => _addAntiparasitaire(renouvellementDe: renouvellementDe),
                       ),
-                      _AlimentationTab(alimentation: _alimentation),
+                      _AlimentationTab(alimentation: _alimentation, alimentationSejour: _sejourActuel?['alimentation_sejour']),
                     ]),
                   ),
                 ]),
@@ -368,8 +381,9 @@ class _IdentiteTab extends StatelessWidget {
   final Map<String, dynamic>? animal;
   final Map<String, dynamic>? proprietaire;
   final Map<String, dynamic>? sejourActuel;
+  final Map<String, dynamic>? sejourLogement;
 
-  const _IdentiteTab({required this.animal, this.proprietaire, this.sejourActuel});
+  const _IdentiteTab({required this.animal, this.proprietaire, this.sejourActuel, this.sejourLogement});
 
   // Le nom d'affichage diffère selon le type de profil propriétaire :
   // un éleveur/asso a un nom d'établissement (colonne "nom"), un particulier
@@ -433,7 +447,11 @@ class _IdentiteTab extends StatelessWidget {
         _Section(title: 'Séjour en cours', children: [
           _Row('Entré le', _fmt(sejourActuel!['date_entree']?.toString())),
           _Row('Sortie prévue', _fmt(sejourActuel!['date_sortie_prevue']?.toString())),
-          _Row('Logement', sejourActuel!['logement_id']?.toString()),
+          if (sejourLogement != null)
+            _Row('Logement', [
+              sejourLogement!['nom']?.toString(),
+              pensionLogementTypeLabel(sejourLogement!['type']?.toString()),
+            ].where((s) => (s ?? '').isNotEmpty).join(' · ')),
         ]),
         const SizedBox(height: 16),
       ],
@@ -750,10 +768,50 @@ class _PoidsSectionState extends State<_PoidsSection> {
 
 class _AlimentationTab extends StatelessWidget {
   final Map<String, dynamic>? alimentation;
+  final Map<String, dynamic>? alimentationSejour;
 
-  const _AlimentationTab({required this.alimentation});
+  const _AlimentationTab({required this.alimentation, this.alimentationSejour});
 
   static const _teal = Color(0xFF0C5C6C);
+
+  Map<String, dynamic> get _sejour => alimSejourFromRaw(alimentationSejour);
+
+  Widget _sejourCard() {
+    final s = _sejour;
+    final rows = <(String, String)>[
+      if ((s['fournis_par'] as String?)?.isNotEmpty ?? false)
+        ('Prise en charge', alimSejourFournisParLabel(s['fournis_par'] as String?)),
+      if ((s['foin'] as String?)?.isNotEmpty ?? false) ('Foin', s['foin'] as String),
+      if ((s['granules'] as String?)?.isNotEmpty ?? false) ('Granulés / concentrés', s['granules'] as String),
+      if ((s['complements'] as String?)?.isNotEmpty ?? false) ('Compléments', s['complements'] as String),
+      if ((s['autres'] as String?)?.isNotEmpty ?? false) ('Autres', s['autres'] as String),
+      if ((s['consignes'] as String?)?.isNotEmpty ?? false) ('Consignes', s['consignes'] as String),
+    ];
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F5EC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFDDE8D4)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('🌾  Alimentation pour ce séjour (pension)',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2A2E))),
+        const SizedBox(height: 8),
+        for (final r in rows)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              SizedBox(width: 130, child: Text(r.$1,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600))),
+              Expanded(child: Text(r.$2,
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E)))),
+            ]),
+          ),
+      ]),
+    );
+  }
 
   static Widget _statChip(String label, String value) => Expanded(
     child: Container(
@@ -797,7 +855,18 @@ class _AlimentationTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasSejour = _sejour.isNotEmpty;
     if (alimentation == null) {
+      if (hasSejour) {
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
+          children: [
+            _sejourCard(),
+            Text('Régime habituel non renseigné par le propriétaire.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+          ],
+        );
+      }
       return const Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.restaurant_menu_outlined, size: 48, color: Color(0xFFCCCCCC)),
@@ -876,6 +945,14 @@ class _AlimentationTab extends StatelessWidget {
     }[ration ?? ''] ?? '🍽️';
 
     return ListView(padding: const EdgeInsets.fromLTRB(16, 20, 16, 40), children: [
+
+      if (hasSejour) _sejourCard(),
+      if (hasSejour)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text('Régime habituel — renseigné par le propriétaire',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
+        ),
 
       // ── Carte produit ─────────────────────────────────────────────────────
       Container(

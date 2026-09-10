@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { alimSejourFournisParLabel, type AlimentationSejour } from '@/lib/pension-especes';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,8 @@ interface PensionEntry {
   date_entree?: string;
   date_sortie_prevue?: string;
   statut?: string;
+  logement_id?: string | null;
+  alimentation_sejour?: AlimentationSejour | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -178,11 +181,11 @@ export default function AnimalFichePensionWebPage() {
     // Entrée pension active pour ce pro (proProfileId peut être celui de l'employeur si vue employé)
     const entQuery = proProfileId
       ? supabase.from('pension_entrees')
-          .select('id, notes, date_entree, date_sortie_prevue, statut')
+          .select('id, notes, date_entree, date_sortie_prevue, statut, logement_id, alimentation_sejour')
           .eq('statut', 'en_pension').eq('pro_profile_id', proProfileId)
           .order('date_entree', { ascending: false }).limit(1)
       : supabase.from('pension_entrees')
-          .select('id, notes, date_entree, date_sortie_prevue, statut')
+          .select('id, notes, date_entree, date_sortie_prevue, statut, logement_id, alimentation_sejour')
           .eq('statut', 'en_pension').eq('pro_uid', user.uid)
           .order('date_entree', { ascending: false }).limit(1);
     const { data: entList } = await entQuery;
@@ -291,7 +294,7 @@ export default function AnimalFichePensionWebPage() {
             onPoidsAdded={() => load()}
           />
         )}
-        {tab === 'alimentation' && <AlimentationTab alimentation={alimentation} />}
+        {tab === 'alimentation' && <AlimentationTab alimentation={alimentation} pensionEntry={pensionEntry} />}
         {tab === 'journal' && (
           <JournalTab
             animalId={animalId}
@@ -515,16 +518,54 @@ function SanteTab({ animalId, allergies, vaccinations, vermifuges, antipara, tra
 
 // ── Onglet Alimentation ───────────────────────────────────────────────────────
 
-function AlimentationTab({ alimentation }: { alimentation: Alimentation | null }) {
+function AlimSejourCard({ s }: { s: AlimentationSejour }) {
+  const rows: [string, string][] = [];
+  if (s.fournis_par) rows.push(['Prise en charge', alimSejourFournisParLabel(s.fournis_par)]);
+  if (s.foin) rows.push(['Foin', s.foin]);
+  if (s.granules) rows.push(['Granulés / concentrés', s.granules]);
+  if (s.complements) rows.push(['Compléments', s.complements]);
+  if (s.autres) rows.push(['Autres', s.autres]);
+  if (s.consignes) rows.push(['Consignes', s.consignes]);
+  return (
+    <div style={{ background: '#F0F5EC', border: '1px solid #DDE8D4', borderRadius: 14, padding: 14 }}>
+      <p style={{ margin: '0 0 8px', fontFamily: 'Galey, sans-serif', fontSize: 14, fontWeight: 700, color: '#1F2A2E' }}>
+        🌾 Alimentation pour ce séjour (pension)
+      </p>
+      {rows.map(([k, v]) => (
+        <div key={k} style={{ display: 'flex', gap: 12, padding: '3px 0', fontFamily: 'Galey, sans-serif', fontSize: 13 }}>
+          <span style={{ width: 140, flexShrink: 0, color: '#6b7280' }}>{k}</span>
+          <span style={{ fontWeight: 600, color: '#1F2A2E' }}>{v}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AlimentationTab({ alimentation, pensionEntry }: { alimentation: Alimentation | null; pensionEntry: PensionEntry | null }) {
+  const sejour = pensionEntry?.alimentation_sejour ?? null;
+  const hasSejour = !!sejour && Object.keys(sejour).some(k => k !== 'fournis_par' && (sejour as Record<string, string>)[k]);
   if (!alimentation) return (
-    <div style={{ textAlign: 'center', padding: 60, color: '#aaa' }}>
-      <div style={{ fontSize: 40, marginBottom: 12 }}>🍽️</div>
-      <p style={{ fontFamily: 'Galey, sans-serif', fontSize: 15 }}>Aucune information sur l&apos;alimentation</p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {hasSejour && <AlimSejourCard s={sejour!} />}
+      {hasSejour
+        ? <p style={{ fontFamily: 'Galey, sans-serif', fontSize: 13, color: '#9ca3af' }}>Régime habituel non renseigné par le propriétaire.</p>
+        : (
+          <div style={{ textAlign: 'center', padding: 60, color: '#aaa' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>🍽️</div>
+            <p style={{ fontFamily: 'Galey, sans-serif', fontSize: 15 }}>Aucune information sur l&apos;alimentation</p>
+          </div>
+        )}
     </div>
   );
   const a = alimentation;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {hasSejour && <AlimSejourCard s={sejour!} />}
+      {hasSejour && (
+        <p style={{ fontFamily: 'Galey, sans-serif', fontSize: 12, fontWeight: 600, color: '#6b7280', margin: 0 }}>
+          Régime habituel — renseigné par le propriétaire
+        </p>
+      )}
       <Section title="Régime alimentaire">
         <Row label="Type de ration" value={RATION_LABEL[a.type_ration ?? ''] ?? a.type_ration} />
         <Row label="Niveau d'activité" value={ACTIVITE_LABEL[a.niveau_activite ?? ''] ?? a.niveau_activite} />

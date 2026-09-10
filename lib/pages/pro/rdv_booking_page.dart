@@ -8,6 +8,7 @@ import 'package:google_maps_webservice/places.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/main.dart' show User_Info, getApiKey;
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart' show prixPourAnimal;
+import 'package:PetsMatch/pages/pro/garde_facture_helper.dart' show gardeMotifLabel;
 
 class RdvBookingPage extends StatefulWidget {
   final String proUid;
@@ -1541,7 +1542,9 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         spacing: 8, runSpacing: 8,
         children: _dureesMotifs.entries.map((e) {
           final sel = _selectedMotifKey == e.key;
-          final label = _motifLabels[e.key] ?? e.key;
+          final label = widget.isGarde
+              ? gardeMotifLabel(e.key, _selectedAnimal?['espece']?.toString())
+              : (_motifLabels[e.key] ?? e.key);
           final icon  = _motifIcons[e.key] ?? Icons.more_horiz_outlined;
           return GestureDetector(
             onTap: () => setState(() {

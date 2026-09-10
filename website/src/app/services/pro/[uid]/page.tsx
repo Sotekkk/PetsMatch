@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
 import { PENSION_ESPECES } from '@/lib/pension-especes';
+import { gardeMotifLabel } from '@/lib/garde-labels';
 import EducationReservationModal from '@/components/education/EducationReservationModal';
 
 // photos_galerie (jsonb) : liste de string (URL) OU {url, legende}
@@ -803,6 +804,9 @@ function ProDetailContent() {
     ? (MOTIFS_BY_CAT.education ?? []).filter(m => m.key === 'evaluation')
     : MOTIFS_BY_CAT[pro?.cat_pro ?? ''] ?? DEFAULT_MOTIFS;
   const catColor = CAT_COLORS[pro?.cat_pro ?? ''] ?? '#0C5C6C';
+  const selectedEspece = animaux.find(a => a.id === selectedAnimalId)?.espece;
+  const motifLabelFor = (key: string, fallback: string) =>
+    pro?.cat_pro === 'garde' ? gardeMotifLabel(key, selectedEspece) : fallback;
 
   const premiereRequise = ['veterinaire', 'sante', 'pension', 'garde'].includes(pro?.cat_pro ?? '');
   const canConfirm = !!motifKey &&
@@ -1355,7 +1359,7 @@ function ProDetailContent() {
                             color: motifKey === m.key ? catColor : '#6B7280',
                           }}>
                           <span className="flex-shrink-0">{m.icon}</span>
-                          <span>{m.label}</span>
+                          <span>{motifLabelFor(m.key, m.label)}</span>
                         </button>
                       ))}
                     </div>
@@ -1570,7 +1574,7 @@ function ProDetailContent() {
                           : `📅 ${fmtDate(selectedSlot!.date)} à ${fmtTime(selectedSlot!.heureDebut)}`}
                       </p>
                       <p className="text-gray-600" style={{ fontFamily: 'Galey, sans-serif' }}>
-                        📋 {motifs.find(m => m.key === motifKey)?.label}
+                        📋 {motifLabelFor(motifKey, motifs.find(m => m.key === motifKey)?.label ?? '')}
                         {premiereVisite === true ? ' — 1ère visite' : ''}
                       </p>
                       {selectedAnimalId && !isTaxi && (

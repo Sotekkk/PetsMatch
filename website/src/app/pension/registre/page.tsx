@@ -619,6 +619,18 @@ function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, log
             </div>
           )}
 
+          {entree.alimentation_sejour && (
+            <div style={{ marginTop: 6 }}>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+                fontFamily: 'Galey, sans-serif', background: '#F0F5EC', color: '#4d7a3c',
+              }}>
+                🌾 Alimentation séjour renseignée
+              </span>
+            </div>
+          )}
+
           {/* Notes */}
           {entree.notes && (
             <p style={{ margin: '6px 0 0', fontFamily: 'Galey, sans-serif', fontSize: 12, color: '#6b7280',
