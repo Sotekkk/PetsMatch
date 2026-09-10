@@ -501,6 +501,20 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           'participants_info': info,
           'deleted_for':       {},
         }).eq('id', widget.conversationId);
+
+        // Notif push fire-and-forget pour chaque destinataire
+        final previewText = imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : (animalData != null ? '🐾 ${animalData['nom'] ?? 'Animal'}' : (text.length > 80 ? '${text.substring(0, 80)}…' : text)));
+        for (final p in members) {
+          if (p == uid) continue;
+          _supa.from('notifications').insert({
+            'uid':   p,
+            'type':  'new_message',
+            'title': myName.isEmpty ? 'Nouveau message' : myName,
+            'body':  previewText,
+            'data':  {'conversation_id': widget.conversationId},
+            'read':  false,
+          }).then((_) {}).catchError((_) {});
+        }
       }
 
       _controller.clear();

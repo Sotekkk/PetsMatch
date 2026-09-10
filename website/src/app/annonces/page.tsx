@@ -41,6 +41,7 @@ interface Annonce {
   profile_id?: string;
   animaux_portee?: RawBebe[];
   profil_source?: string;
+  boost_until?: string;
 }
 
 interface EleveurVerif {
@@ -100,7 +101,7 @@ export default function AnnoncesPage() {
   useEffect(() => {
     supabase
       .from('annonces')
-      .select('id, titre, espece, race, type, type_vente, prix_unite, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nombre_bebes, statut, created_at, uid_eleveur, profile_id, animaux_portee, profil_source')
+      .select('id, titre, espece, race, type, type_vente, prix_unite, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, region_eleveur, departement_eleveur, pays_eleveur, nombre_bebes, statut, created_at, uid_eleveur, profile_id, animaux_portee, profil_source, boost_until')
       .eq('statut', 'disponible')
       .order('created_at', { ascending: false })
       .then(async ({ data }) => {
@@ -210,6 +211,11 @@ export default function AnnoncesPage() {
     if (filtreDept && a.departement_eleveur && !a.departement_eleveur.toLowerCase().includes(filtreDept.toLowerCase())) return false;
     if (filtreVille && a.ville_eleveur && !a.ville_eleveur.toLowerCase().includes(filtreVille.toLowerCase())) return false;
     return true;
+  }).sort((a, b) => {
+    // Annonces boostées en tête (le tri par date vient déjà de la requête).
+    const ab = a.boost_until && new Date(a.boost_until) > new Date() ? 1 : 0;
+    const bb = b.boost_until && new Date(b.boost_until) > new Date() ? 1 : 0;
+    return bb - ab;
   });
 
   function onRaceInput(val: string) {
@@ -617,6 +623,11 @@ function AnnonceCard({
         <span className={`absolute top-2 left-2 text-white text-xs font-semibold px-2 py-0.5 rounded-full ${isAsso ? 'bg-teal-600' : isSaillie ? 'bg-purple-500' : equideFormule ? 'bg-[#0C5C6C]' : isPortee ? 'bg-amber-500' : 'bg-[#6E9E57]'}`}>
           {isAsso ? '💚 Adoption' : isSaillie ? 'Saillie' : equideFormule ? `🐴 ${equideFormule}` : isPortee ? 'Portée' : 'Compagnon'}
         </span>
+        {a.boost_until && new Date(a.boost_until) > new Date() && (
+          <span className="absolute bottom-2 left-2 text-white text-xs font-bold px-2 py-0.5 rounded-full bg-[#FF8A00]">
+            ⚡ Boostée
+          </span>
+        )}
         <button
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleLike(a.id, null, a.uid_eleveur, a.profile_id); }}
           disabled={!currentUser}

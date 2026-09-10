@@ -29,6 +29,7 @@ interface Annonce {
   contacts?: number;
   expires_at?: string;
   paiement_statut?: string;
+  boost_until?: string;
 }
 
 const STATUT_LABEL: Record<string, string> = {
@@ -68,7 +69,7 @@ export default function MesAnnoncesPage() {
 
   useEffect(() => {
     if (!user || loading) return;
-    const SELECT = 'id, titre, espece, race, type, type_vente, prix_unite, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, statut, vues, contacts, created_at, expires_at, paiement_statut';
+    const SELECT = 'id, titre, espece, race, type, type_vente, prix_unite, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, statut, vues, contacts, created_at, expires_at, paiement_statut, boost_until';
 
     async function load() {
       let q = supabase.from('annonces').select(SELECT).order('created_at', { ascending: false });
@@ -377,6 +378,11 @@ export default function MesAnnoncesPage() {
                     <Link href={`/annonces/${a.id}`}
                       className="flex-1 text-center text-xs bg-[#0C5C6C] hover:bg-[#094F5D] text-white font-medium py-2 rounded-xl transition-colors">
                       Voir
+                    </Link>
+                    <Link href={`/annonces/${a.id}`}
+                      title={a.boost_until && new Date(a.boost_until) > new Date() ? 'Annonce boostée' : 'Booster cette annonce'}
+                      className={`px-2.5 py-2 text-xs border rounded-xl transition-colors ${a.boost_until && new Date(a.boost_until) > new Date() ? 'border-[#FF8A00] bg-[#FFF4E6] text-[#FF8A00]' : 'border-gray-200 text-gray-400 hover:border-[#FF8A00] hover:text-[#FF8A00]'}`}>
+                      ⚡
                     </Link>
                     <Link href={isParticulier ? `/annonces/creer-cheval?edit=${a.id}` : `/annonces/${a.id}/modifier`}
                       className="flex-1 text-center text-xs border border-[#0C5C6C] text-[#0C5C6C] hover:bg-[#E8F4F6] font-medium py-2 rounded-xl transition-colors">

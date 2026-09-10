@@ -37,6 +37,7 @@ const _kProTypes = {
 
 class _BottomNavState extends State<BottomNav> {
   int _selectedIndex = 0;
+  int _msgRefreshKey = 0; // incrémenté pour forcer un rebuild de MessagePage
   // '' = rôles réels, 'eleveur', 'pro', 'particulier'
   String _previewRole = '';
   // Vrai seulement si le switch vient du tiroir BottomNav (affiche le bandeau).
@@ -140,7 +141,7 @@ class _BottomNavState extends State<BottomNav> {
     switch (index) {
       case 0: return FeedPage();
       case 1: return LikesPage();
-      case 2: return MessagePage();
+      case 2: return MessagePage(key: ValueKey(_msgRefreshKey));
       case 3: return const EleveurListPage();
       case 4: return const ServicesPage();
       case 5: return _asElevage ? UserElevageFeed() : UserParticulierFeed();
@@ -149,8 +150,12 @@ class _BottomNavState extends State<BottomNav> {
   }
 
   void _onItemTapped(int index) {
-    // Garde l'index valide si le nb d'items change selon le rôle
-    setState(() => _selectedIndex = index);
+    if (index == 2 && _selectedIndex == 2) {
+      // Re-tap sur Messages → force un refresh
+      setState(() => _msgRefreshKey++);
+    } else {
+      setState(() => _selectedIndex = index);
+    }
   }
 
   void _showAdminMenu() {

@@ -9,6 +9,7 @@ import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'chatScreen.dart';
 
 class MessagePage extends StatefulWidget {
+  const MessagePage({super.key});
   @override
   _MessagePageState createState() => _MessagePageState();
 }
@@ -133,7 +134,6 @@ class _MessagePageState extends State<MessagePage> {
     setState(() => _loading = true);
     try {
       final pid = User_Info.activeProfileId;
-      final isMainOrEleveur = User_Info.activeType != 'particulier' && User_Info.activeType != 'association';
 
       final rows = await _supa
           .from('conversations')
@@ -146,8 +146,8 @@ class _MessagePageState extends State<MessagePage> {
         final cPro = (c['pro_profile_id'] as String?) ?? '';
         final cCon = (c['consumer_profile_id'] as String?) ?? '';
         if (cPro == pid || cCon == pid) return true;
-        // Conversations sans profil : visibles uniquement pour le profil éleveur principal
-        if (cPro.isEmpty && cCon.isEmpty && isMainOrEleveur) return true;
+        // Conversations sans profil : toujours visibles (conversations directes particulier-particulier)
+        if (cPro.isEmpty && cCon.isEmpty) return true;
         return false;
       }).toList();
 

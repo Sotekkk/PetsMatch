@@ -46,6 +46,7 @@ class _FeedItem {
   final bool eleveurPremium;
   final bool isAssociation;
   final String? profilSource;
+  final bool boosted;
 
   bool get isParticulier => profilSource == 'particulier';
 
@@ -60,6 +61,7 @@ class _FeedItem {
     this.eleveurVerifie = false, this.eleveurPremium = false,
     this.isAssociation = false,
     this.profilSource,
+    this.boosted = false,
   });
 
   _FeedItem withPhoto(String? p) => _FeedItem(
@@ -70,7 +72,7 @@ class _FeedItem {
     nomEleveur: nomEleveur, photoEleveur: p, pedigree: pedigree,
     dateNaissance: dateNaissance, typeVente: typeVente,
     eleveurVerifie: eleveurVerifie, eleveurPremium: eleveurPremium,
-    isAssociation: isAssociation, profilSource: profilSource,
+    isAssociation: isAssociation, profilSource: profilSource, boosted: boosted,
   );
 
   _FeedItem withVerification({required bool verifie, required bool premium}) => _FeedItem(
@@ -81,8 +83,14 @@ class _FeedItem {
     nomEleveur: nomEleveur, photoEleveur: photoEleveur, pedigree: pedigree,
     dateNaissance: dateNaissance, typeVente: typeVente,
     eleveurVerifie: verifie, eleveurPremium: premium,
-    isAssociation: isAssociation, profilSource: profilSource,
+    isAssociation: isAssociation, profilSource: profilSource, boosted: boosted,
   );
+}
+
+bool _isBoostActive(dynamic raw) {
+  if (raw is! String || raw.isEmpty) return false;
+  final dt = DateTime.tryParse(raw);
+  return dt != null && dt.isAfter(DateTime.now());
 }
 
 String? _ageLabel(DateTime? date) {
@@ -127,6 +135,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
         ? DateTime.tryParse(a['date_naissance'] as String) : null;
     final dateNaissanceAnimal = a['date_naissance_animal'] is String
         ? DateTime.tryParse(a['date_naissance_animal'] as String) : null;
+    final boosted = _isBoostActive(a['boost_until']);
 
     if (a['type'] == 'portee' && bebes.isNotEmpty) {
       for (int i = 0; i < bebes.length; i++) {
@@ -150,6 +159,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
           typeVente: a['type_vente'] as String?,
           isAssociation: isAsso,
           profilSource: a['profil_source'] as String?,
+          boosted: boosted,
         ));
       }
     } else if (aPhotos.isNotEmpty) {
@@ -172,6 +182,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
         typeVente: a['type_vente'] as String?,
         isAssociation: isAsso,
         profilSource: a['profil_source'] as String?,
+        boosted: boosted,
       ));
     }
   }
@@ -284,7 +295,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
     try {
       var q = Supabase.instance.client
           .from('annonces')
-          .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, ville_eleveur, sexe, nom_eleveur, uid_eleveur, profile_id, description, registre_type, date_naissance, date_naissance_animal, profil_source')
+          .select('id, titre, espece, race, type, type_vente, photos, animaux_portee, prix, saillie_prix, ville_eleveur, sexe, nom_eleveur, uid_eleveur, profile_id, description, registre_type, date_naissance, date_naissance_animal, profil_source, boost_until')
           .eq('statut', 'disponible');
       if (widget.isAssociationFeed) {
         q = q.eq('profil_source', 'association');
@@ -298,6 +309,12 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
 
       final rows = await q.order('created_at', ascending: false);
       var items = _buildFeedItems(List<Map<String, dynamic>>.from(rows));
+      // Les annonces boostées remontent en tête (l'ordre par date est conservé
+      // à l'intérieur de chaque groupe).
+      items = [
+        ...items.where((i) => i.boosted),
+        ...items.where((i) => !i.boosted),
+      ];
 
       // Batch photos éleveurs
       final uids = items.map((i) => i.uidEleveur).whereType<String>().toSet().toList();
@@ -1343,6 +1360,10 @@ class _FeedCardState extends State<_FeedCard> with SingleTickerProviderStateMixi
                   const SizedBox(height: 10),
                   // Ligne 2 : Badges
                   Wrap(spacing: 6, runSpacing: 6, children: [
+                    if (item.boosted)
+                      _FeedBadge(
+                        label: '⚡ Boostée',
+                        color: const Color(0xFFFF8A00).withValues(alpha: 0.92)),
                     if (!item.isAssociation && !item.isParticulier)
                       VerificationBadge(
                         level: item.eleveurPremium

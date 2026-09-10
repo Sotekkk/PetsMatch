@@ -234,3 +234,35 @@ ALTER TABLE annonces ADD COLUMN IF NOT EXISTS saillie_genetique TEXT;
 ALTER TABLE animaux ADD COLUMN IF NOT EXISTS num_sire              text;
 ALTER TABLE animaux ADD COLUMN IF NOT EXISTS carte_immatriculation text;
 ALTER TABLE animaux ADD COLUMN IF NOT EXISTS livret_signaletique   text;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 12. Pets Social — taguer des animaux du compte sur une publication.
+--     Sans cette migration : le bouton « Taguer mes animaux » du
+--     composer plante à la publication (colonne absente) et la page
+--     « Publications Pets Social » de la fiche animal reste vide.
+--     Détail : supabase/migration_social_animal_tags.sql
+-- ────────────────────────────────────────────────────────────
+
+ALTER TABLE public.posts_socialmedia
+  ADD COLUMN IF NOT EXISTS tagged_animal_ids uuid[] DEFAULT '{}'::uuid[];
+
+CREATE INDEX IF NOT EXISTS idx_posts_socialmedia_tagged_animals
+  ON public.posts_socialmedia USING GIN (tagged_animal_ids);
+
+
+-- ────────────────────────────────────────────────────────────
+-- 13. Boost d'annonce activable par le propriétaire (éleveur & particulier
+--     cheval), appli + site. La colonne annonces.boost_until existe déjà en
+--     prod (webhook Stripe + RPC admin) — ce bloc est une sécurité idempotente.
+--     Le flux : bouton « Booster » sur la fiche annonce du propriétaire →
+--     /api/stripe/checkout (produit boost_48h / mise_une) → webhook pose
+--     boost_until. Les fils d'annonces (app + web) remontent les annonces
+--     dont boost_until > now() en tête + badge « ⚡ Boostée ».
+--     Pré-requis admin : renseigner produits_ponctuels.stripe_price_id pour
+--     les codes 'boost_48h' et 'mise_une'.
+-- ────────────────────────────────────────────────────────────
+
+ALTER TABLE public.annonces ADD COLUMN IF NOT EXISTS boost_until TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_annonces_boost_until
+  ON public.annonces (boost_until) WHERE boost_until IS NOT NULL;

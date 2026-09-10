@@ -144,6 +144,18 @@ serve(async (req) => {
                 sound: 'default',
               },
             },
+            apns: {
+              headers: { 'apns-priority': '10' },
+              payload: {
+                aps: {
+                  alert: { title, body: (notifBody ?? '') + profileSuffix },
+                  sound: 'default',
+                  badge: 1,
+                  'content-available': 1,
+                  'mutable-content': 1,
+                },
+              },
+            },
           },
         }),
       },
