@@ -517,13 +517,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         final previewText = imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : (animalData != null ? '🐾 ${animalData['nom'] ?? 'Animal'}' : (text.length > 80 ? '${text.substring(0, 80)}…' : text)));
         final recipients = members.where((p) => p != uid).toSet().toList();
         if (recipients.isNotEmpty) {
-          final activeRows = await _supa
+          final userRows = await _supa
               .from('users')
-              .select('uid, active_conversation_id')
+              .select('uid, active_conversation_id, fcm_token')
               .inFilter('uid', recipients);
-          final activeMap = { for (final r in (activeRows as List)) r['uid'] as String: r['active_conversation_id'] as String? };
-          for (final p in recipients) {
-            if (activeMap[p] == widget.conversationId) continue;
+          final seenTokens = <String>{};
+          for (final r in (userRows as List)) {
+            final p          = r['uid'] as String;
+            final activeConv = r['active_conversation_id'] as String?;
+            final fcmToken   = r['fcm_token'] as String?;
+            if (activeConv == widget.conversationId) continue;
+            if (fcmToken != null && !seenTokens.add(fcmToken)) continue; // même device
             _supa.from('notifications').insert({
               'uid':   p,
               'type':  'message',
