@@ -2921,59 +2921,49 @@ class _ImagesDisplay extends StatefulWidget {
 class _ImagesDisplayState extends State<_ImagesDisplay> {
   int _page = 0;
 
+  Widget _img(String url) => CachedNetworkImage(
+        imageUrl: url,
+        width: double.infinity,
+        height: double.infinity,
+        fit: BoxFit.cover,
+        placeholder: (_, __) => Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(colors: [Color(0xFFD4EDE8), Color(0xFFD8EDCC)])),
+          child: const Center(child: CircularProgressIndicator(color: _tealC, strokeWidth: 2)),
+        ),
+        errorWidget: (_, __, ___) => Container(
+          color: const Color(0xFFF4F6F8),
+          child: const Icon(Icons.broken_image_outlined, color: _greyC, size: 40)),
+      );
+
   @override
   Widget build(BuildContext context) {
-    const radius = BorderRadius.only(
-      bottomLeft: Radius.circular(24), bottomRight: Radius.circular(24));
+    const radius = BorderRadius.all(Radius.circular(12));
+    const ratio  = 1.0; // Carré 1:1 — BoxFit.cover centre et remplit parfaitement
+
     if (widget.urls.length == 1) {
       return GestureDetector(
         onTap: () => Navigator.push(context, MaterialPageRoute(
           builder: (_) => _PhotoViewScreen(urls: widget.urls, initialIndex: 0))),
         child: ClipRRect(
           borderRadius: radius,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 400),
-            child: CachedNetworkImage(
-              imageUrl: widget.urls.first,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              placeholder: (_, __) => Container(
-                height: 280,
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(colors: [Color(0xFFD4EDE8), Color(0xFFD8EDCC)])),
-                child: const Center(child: CircularProgressIndicator(color: _tealC, strokeWidth: 2)),
-              ),
-              errorWidget: (_, __, ___) => Container(
-                height: 280, color: const Color(0xFFF4F6F8),
-                child: const Icon(Icons.broken_image_outlined, color: _greyC, size: 40)),
-            ),
-          ),
+          child: AspectRatio(aspectRatio: ratio, child: _img(widget.urls.first)),
         ),
       );
     }
+
     return Stack(children: [
       ClipRRect(
         borderRadius: radius,
-        child: SizedBox(
-          height: 280,
+        child: AspectRatio(
+          aspectRatio: ratio,
           child: PageView.builder(
             itemCount: widget.urls.length,
             onPageChanged: (i) => setState(() => _page = i),
             itemBuilder: (_, i) => GestureDetector(
               onTap: () => Navigator.push(context, MaterialPageRoute(
                 builder: (_) => _PhotoViewScreen(urls: widget.urls, initialIndex: i))),
-              child: CachedNetworkImage(
-                imageUrl: widget.urls[i],
-                width: double.infinity,
-                fit: BoxFit.cover,
-                placeholder: (_, __) => Container(
-                  color: const Color(0xFFD4EDE8),
-                  child: const Center(child: CircularProgressIndicator(color: _tealC, strokeWidth: 2)),
-                ),
-                errorWidget: (_, __, ___) => Container(
-                  color: const Color(0xFFF4F6F8),
-                  child: const Icon(Icons.broken_image_outlined, color: _greyC, size: 40)),
-              ),
+              child: _img(widget.urls[i]),
             ),
           ),
         ),
@@ -2985,8 +2975,7 @@ class _ImagesDisplayState extends State<_ImagesDisplay> {
           children: List.generate(widget.urls.length, (i) => AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             margin: const EdgeInsets.symmetric(horizontal: 3),
-            width: i == _page ? 16 : 6,
-            height: 6,
+            width: i == _page ? 16 : 6, height: 6,
             decoration: BoxDecoration(
               color: i == _page ? Colors.white : Colors.white.withValues(alpha: 0.50),
               borderRadius: BorderRadius.circular(3),
