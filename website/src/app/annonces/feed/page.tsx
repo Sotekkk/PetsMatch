@@ -48,6 +48,7 @@ interface RawAnnonce {
   date_naissance?: string;
   date_naissance_animal?: string;
   profil_source?: string;
+  boost_until?: string;
 }
 
 interface FeedItem {
@@ -73,6 +74,11 @@ interface FeedItem {
   pedigree?: boolean;
   registreType?: string;
   profilSource?: string;
+  boosted?: boolean;
+}
+
+function isBoostActive(raw?: string): boolean {
+  return !!raw && new Date(raw) > new Date();
 }
 
 const EQUIDE_FORMULE_LABEL: Record<string, string> = {
@@ -120,6 +126,7 @@ function buildFeedItems(annonces: RawAnnonce[]): FeedItem[] {
     const bebes = (a.animaux_portee as RawBebe[] | undefined) ?? [];
     const aPhotos = (a.photos as string[] | undefined) ?? [];
     const isSaillie = a.type_vente === 'saillie';
+    const boosted = isBoostActive(a.boost_until);
 
     if (a.type === 'portee' && bebes.length > 0) {
       bebes.forEach((b, i) => {
@@ -138,6 +145,7 @@ function buildFeedItems(annonces: RawAnnonce[]): FeedItem[] {
             dateNaissance: a.date_naissance,
             pedigree: b.pedigree ?? false,
             profilSource: a.profil_source,
+            boosted,
           });
         }
       });
@@ -157,6 +165,7 @@ function buildFeedItems(annonces: RawAnnonce[]): FeedItem[] {
         dateNaissance: a.date_naissance_animal,
         registreType: a.registre_type,
         profilSource: a.profil_source,
+        boosted,
       });
     }
   }
@@ -239,7 +248,7 @@ function FeedPageContent() {
     setLoading(true);
     let q = supabase
       .from('annonces')
-      .select('id, titre, espece, race, type, type_vente, prix_unite, photos, animaux_portee, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, sexe, nom_eleveur, uid_eleveur, profile_id, description, registre_type, date_naissance, date_naissance_animal, profil_source')
+      .select('id, titre, espece, race, type, type_vente, prix_unite, photos, animaux_portee, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, sexe, nom_eleveur, uid_eleveur, profile_id, description, registre_type, date_naissance, date_naissance_animal, profil_source, boost_until')
       .eq('statut', 'disponible')
       .order('created_at', { ascending: false });
 
@@ -252,6 +261,8 @@ function FeedPageContent() {
 
     const { data } = await q;
     let feed = buildFeedItems((data ?? []) as RawAnnonce[]);
+    // Annonces boostées en tête (ordre par date conservé dans chaque groupe).
+    feed = [...feed.filter(f => f.boosted), ...feed.filter(f => !f.boosted)];
 
     // Batch fetch photos éleveur
     const uids = [...new Set(feed.map(f => f.uidEleveur).filter(Boolean))] as string[];
@@ -829,6 +840,11 @@ function FeedPageContent() {
 
             {/* Badges espèce / saillie / race / pedigree / âge */}
             <div className="flex flex-wrap gap-1.5 mb-2">
+              {item.boosted && (
+                <span className="text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-[#FF8A00]">
+                  ⚡ Boostée
+                </span>
+              )}
               {item.espece && (
                 <span className="text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-white/15">
                   {especeLabel(item.espece)}

@@ -64,6 +64,8 @@ interface Annonce {
   expire_at?: string;
   created_at?: string;
   profil_source?: string;
+  profile_id?: string;
+  boost_until?: string;
 }
 
 interface AssoData {
@@ -447,6 +449,47 @@ function AnnonceDetailPageInner() {
   const [showSigModal, setShowSigModal] = useState(false);
   const [sigRaison, setSigRaison] = useState('contenu_inapproprie');
   const [sigDesc, setSigDesc] = useState('');
+
+  // Boost (propriétaire de l'annonce uniquement)
+  const [showBoostModal, setShowBoostModal] = useState(false);
+  const [boostProducts, setBoostProducts] = useState<{ code: string; label: string; prix: number; duree_heures: number | null }[]>([]);
+  const [boosting, setBoosting] = useState(false);
+
+  const isBoostActive = !!annonce?.boost_until && new Date(annonce.boost_until) > new Date();
+  const isOwner = !!user && !!annonce && user.uid === annonce.uid_eleveur
+    && (!annonce.profile_id || !activeProfileId || annonce.profile_id === activeProfileId);
+
+  useEffect(() => {
+    if (!showBoostModal || boostProducts.length) return;
+    supabase.from('produits_ponctuels')
+      .select('code, label, prix, duree_heures')
+      .eq('actif', true)
+      .not('duree_heures', 'is', null)
+      .in('code', ['boost_48h', 'mise_une'])
+      .then(({ data }) => setBoostProducts((data as typeof boostProducts) ?? []));
+  }, [showBoostModal, boostProducts.length]);
+
+  async function boostAnnonce(produitCode: string) {
+    if (!user || !annonce) return;
+    setBoosting(true);
+    try {
+      const res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: user.uid, email: user.email ?? '',
+          produit_code: produitCode, annonce_id: annonce.id,
+          returnPath: `/annonces/${annonce.id}`,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.url) throw new Error(json.error ?? 'Boost indisponible pour le moment.');
+      window.location.assign(json.url as string);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Boost indisponible pour le moment.');
+      setBoosting(false);
+    }
+  }
   const [sigLoading, setSigLoading] = useState(false);
   const [sigSent, setSigSent] = useState(false);
 
@@ -1157,6 +1200,38 @@ function AnnonceDetailPageInner() {
           </div>
         ) : null}
 
+        {/* Boost — propriétaire de l'annonce */}
+        {isOwner && (
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-amber-100">
+            {isBoostActive ? (
+              <div className="flex items-center gap-3">
+                <span className="text-xl">⚡</span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-['Galey'] font-bold text-[#1E2025] text-sm">Annonce boostée</p>
+                  <p className="text-xs text-gray-500">
+                    Mise en avant jusqu&apos;au {new Date(annonce.boost_until!).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowBoostModal(true)}
+                  className="text-xs font-semibold text-amber-700 border border-amber-500 px-3 py-1.5 rounded-xl hover:bg-amber-500 hover:text-white transition-colors">
+                  Prolonger
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowBoostModal(true)}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-['Galey'] font-bold text-white text-sm transition-opacity hover:opacity-90"
+                style={{ background: '#FF8A00' }}>
+                ⚡ Booster mon annonce
+              </button>
+            )}
+            <p className="text-[11px] text-gray-400 mt-2 leading-snug">
+              Un boost place votre annonce en tête des résultats de recherche et du fil.
+            </p>
+          </div>
+        )}
+
         {/* Bouton contact */}
         {annonce.statut === 'disponible' && user?.uid !== annonce.uid_eleveur && (
           <button
@@ -1244,6 +1319,51 @@ function AnnonceDetailPageInner() {
               {sigLoading ? 'Envoi…' : 'Envoyer'}
             </button>
           </div>
+        </div>
+      </div>
+    )}
+
+    {/* Modal boost */}
+    {showBoostModal && (
+      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+          <h3 className="font-['Galey'] font-bold text-[#1F2A2E] mb-1 flex items-center gap-2">
+            <span>⚡</span> Booster mon annonce
+          </h3>
+          <p className="text-xs text-gray-500 mb-4">
+            Paiement sécurisé via Stripe. Le boost démarre dès le paiement confirmé.
+          </p>
+          <div className="space-y-2 mb-4">
+            {boostProducts.length === 0 && (
+              <p className="text-sm text-gray-400 py-2">Chargement des offres…</p>
+            )}
+            {boostProducts.map(p => (
+              <button
+                key={p.code}
+                disabled={boosting}
+                onClick={() => boostAnnonce(p.code)}
+                className="w-full flex items-center justify-between border border-gray-200 rounded-xl px-4 py-3 text-left hover:border-[#FF8A00] hover:bg-amber-50 transition-colors disabled:opacity-60"
+              >
+                <span>
+                  <span className="block text-sm font-semibold text-[#1F2A2E]">{p.label}</span>
+                  {p.duree_heures != null && (
+                    <span className="block text-xs text-gray-400">
+                      {p.duree_heures >= 24 ? `${Math.round(p.duree_heures / 24)} j` : `${p.duree_heures} h`} de mise en avant
+                    </span>
+                  )}
+                </span>
+                <span className="text-sm font-bold text-[#FF8A00]">{p.prix.toFixed(2)} €</span>
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowBoostModal(false)}
+            disabled={boosting}
+            className="w-full border border-gray-200 text-gray-600 text-sm font-medium py-2.5 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-60"
+          >
+            {boosting ? 'Redirection…' : 'Annuler'}
+          </button>
         </div>
       </div>
     )}

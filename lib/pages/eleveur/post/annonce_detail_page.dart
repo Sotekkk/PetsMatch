@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/pages/association/association_detail_page.dart';
@@ -1959,6 +1960,76 @@ class _BottomBar extends StatefulWidget {
 class _BottomBarState extends State<_BottomBar> {
   bool _loading = false;
 
+  bool get _isBoosted {
+    final raw = widget.data['boost_until']?.toString();
+    if (raw == null || raw.isEmpty) return false;
+    final dt = DateTime.tryParse(raw);
+    return dt != null && dt.isAfter(DateTime.now());
+  }
+
+  // Le paiement in-app est interdit (commission Apple/Google) : le boost se
+  // finalise sur le site, comme la publication payante d'une annonce.
+  Future<void> _showBoostSheet() async {
+    final until = widget.data['boost_until']?.toString();
+    final untilDt = until != null ? DateTime.tryParse(until) : null;
+    final active = untilDt != null && untilDt.isAfter(DateTime.now());
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).padding.bottom + 20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(
+                color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 18),
+            Row(children: [
+              const Icon(Icons.bolt, color: Color(0xFFFF8A00), size: 22),
+              const SizedBox(width: 8),
+              Text(active ? 'Annonce boostée' : 'Booster mon annonce',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18, color: _teal)),
+            ]),
+            const SizedBox(height: 8),
+            Text(
+              active
+                  ? 'Votre annonce est mise en avant jusqu\'au '
+                      '${DateFormat('dd/MM/yyyy à HH:mm').format(untilDt.toLocal())}. '
+                      'Vous pouvez prolonger la mise en avant sur le site.'
+                  : 'Un boost place votre annonce en tête des résultats de recherche '
+                      'et dans le fil. Le paiement se fait sur le site, en quelques secondes.',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13.5, color: Color(0xFF41525A), height: 1.4),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(width: double.infinity, child: ElevatedButton.icon(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final uri = Uri.parse('$kSiteBaseUrl/annonces/${widget.annonceId}');
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              },
+              icon: const Icon(Icons.open_in_new, size: 18),
+              label: Text(active ? 'Prolonger sur le site' : 'Booster sur le site',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFF8A00), foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            )),
+            const SizedBox(height: 6),
+            Center(child: TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Plus tard',
+                  style: TextStyle(fontFamily: 'Galey', color: Color(0xFF9CA3AF))),
+            )),
+          ]),
+        ),
+      ),
+    );
+  }
+
   void _share() {
     final data = widget.data;
     final espece    = (data['espece'] as String?) ?? '';
@@ -2076,22 +2147,44 @@ class _BottomBarState extends State<_BottomBar> {
             color: Colors.black12, blurRadius: 12, offset: Offset(0, -3))],
       ),
       child: Row(children: [
+        if (widget.isOwner) ...[
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => CreateAnnoncePage(
+                      annonceId: widget.annonceId, initialData: widget.data))),
+              icon: const Icon(Icons.edit_outlined, size: 18, color: _teal),
+              label: const Text('Modifier',
+                  style: TextStyle(fontFamily: 'Galey',
+                      fontWeight: FontWeight.w700, fontSize: 15, color: _teal)),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: _teal),
+                minimumSize: const Size(0, 50),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: _showBoostSheet,
+              icon: Icon(_isBoosted ? Icons.bolt : Icons.bolt_outlined, size: 18),
+              label: Text(_isBoosted ? 'Boostée' : 'Booster',
+                  style: const TextStyle(fontFamily: 'Galey',
+                      fontWeight: FontWeight.w700, fontSize: 15)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _isBoosted ? _green : const Color(0xFFFF8A00),
+                foregroundColor: Colors.white,
+                minimumSize: const Size(0, 50),
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+          ),
+        ],
+        if (!widget.isOwner)
         Expanded(
-          child: widget.isOwner
-              ? OutlinedButton.icon(
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => CreateAnnoncePage(
-                          annonceId: widget.annonceId, initialData: widget.data))),
-                  icon: const Icon(Icons.edit_outlined, size: 18, color: _teal),
-                  label: const Text('Modifier l\'annonce',
-                      style: TextStyle(fontFamily: 'Galey',
-                          fontWeight: FontWeight.w700, fontSize: 15, color: _teal)),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: _teal),
-                    minimumSize: const Size(0, 50),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ))
-              : ElevatedButton(
+          child: ElevatedButton(
                   onPressed: _loading ? null : _openChat,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _teal, foregroundColor: Colors.white,
