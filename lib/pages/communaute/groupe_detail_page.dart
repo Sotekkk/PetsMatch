@@ -6,6 +6,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 
 const _tealC = Color(0xFF00ACC1);
@@ -867,6 +869,32 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
     );
   }
 
+  // Ouvre (ou crée) une conversation privée avec un membre du groupe,
+  // puis navigue vers l'écran de messagerie.
+  Future<void> _openMessageWithMember(String memberUid) async {
+    if (_uid.isEmpty || memberUid == _uid) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator(color: _tealC)),
+    );
+    try {
+      final convId = await MessagingHelper.openOrCreateConversation(otherUid: memberUid);
+      if (!mounted) return;
+      Navigator.pop(context); // ferme le loader
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => ChatScreen(conversationId: convId, eleveurId: memberUid),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Impossible d\'ouvrir la messagerie : $e'),
+        backgroundColor: Colors.red,
+      ));
+    }
+  }
+
   // ── Section membres / équipe ───────────────────────────────────────────────
   Widget _buildMembresSection() {
     // Sur un groupe privé, un non-membre ne voit que l'équipe (admins + modérateurs).
@@ -919,27 +947,35 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
               final isMe = uid == _uid;
               final name = _profileName(prof, isMe: isMe);
               final photo = _profilePhoto(prof);
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Row(children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: _tealC.withValues(alpha: 0.15),
-                    backgroundImage: photo != null ? NetworkImage(photo) : null,
-                    child: photo == null
-                        ? const Icon(Icons.person_outline, size: 18, color: _tealC)
-                        : null,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(name,
-                        style: const TextStyle(
-                            fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: _darkC),
-                        overflow: TextOverflow.ellipsis),
-                  ),
-                  if (role == 'admin') _roleBadge('Admin', const Color(0xFF00838F)),
-                  if (role == 'moderateur') _roleBadge('Modérateur', const Color(0xFF8E24AA)),
-                ]),
+              return InkWell(
+                onTap: isMe ? null : () => _openMessageWithMember(uid),
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(children: [
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundColor: _tealC.withValues(alpha: 0.15),
+                      backgroundImage: photo != null ? NetworkImage(photo) : null,
+                      child: photo == null
+                          ? const Icon(Icons.person_outline, size: 18, color: _tealC)
+                          : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(name,
+                          style: const TextStyle(
+                              fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: _darkC),
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    if (role == 'admin') _roleBadge('Admin', const Color(0xFF00838F)),
+                    if (role == 'moderateur') _roleBadge('Modérateur', const Color(0xFF8E24AA)),
+                    if (!isMe) ...[
+                      const SizedBox(width: 8),
+                      const Icon(Icons.chat_bubble_outline_rounded, size: 18, color: _tealC),
+                    ],
+                  ]),
+                ),
               );
             }),
           ],
@@ -1431,8 +1467,16 @@ class _CommentsSheetState extends State<_CommentsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.75,
+    final mq = MediaQuery.of(context);
+    final bottomInset = mq.viewInsets.bottom;
+    // Le clavier Android recouvrait la zone de saisie : on remonte la feuille
+    // au-dessus du clavier et on réduit sa hauteur d'autant pour ne pas déborder.
+    final sheetH = (mq.size.height * 0.75)
+        .clamp(0.0, mq.size.height - mq.padding.top - bottomInset - 12.0);
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: Container(
+      height: sheetH,
       decoration: const BoxDecoration(
           color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       child: Column(children: [
@@ -1566,7 +1610,10 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         if (widget.isMember && _uid.isNotEmpty)
           Container(
             padding: EdgeInsets.only(
-                left: 12, right: 12, top: 10, bottom: MediaQuery.of(context).padding.bottom + 10),
+                left: 12,
+                right: 12,
+                top: 10,
+                bottom: bottomInset > 0 ? 12 : mq.padding.bottom + 10),
             decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFEEEEEE)))),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               // Prévisualisation image
@@ -1640,6 +1687,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
             ]),
           ),
       ]),
+      ),
     );
   }
 }
