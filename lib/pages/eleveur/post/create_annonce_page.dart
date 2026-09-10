@@ -1215,6 +1215,13 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             .map((s) => GestureDetector(
           onTap: () => setState(() {
             _espece = s.value; _registreType = ''; _mereRegistre = ''; _pereRegistre = '';
+            // Le vocabulaire de sexe diffère pour les équidés (jument/hongre/
+            // entier) : on remet une valeur valide au changement d'espèce.
+            if (_espece == 'cheval' && !const ['jument', 'hongre', 'entier'].contains(_sexe)) {
+              _sexe = 'jument';
+            } else if (_espece != 'cheval' && !const ['male', 'femelle'].contains(_sexe)) {
+              _sexe = 'male';
+            }
           }),
           child: AnimatedContainer(duration: const Duration(milliseconds: 150),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -1442,7 +1449,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       ],
       _label('Sexe'),
       Wrap(spacing: 8, children: [
-        for (final s in [('male', '♂ Mâle'), ('femelle', '♀ Femelle')])
+        for (final s in (_espece == 'cheval'
+            ? const [('jument', '♀ Jument'), ('hongre', '♂ Hongre'), ('entier', '♂ Entier')]
+            : const [('male', '♂ Mâle'), ('femelle', '♀ Femelle')]))
           GestureDetector(onTap: () => setState(() => _sexe = s.$1),
             child: AnimatedContainer(duration: const Duration(milliseconds: 150),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),

@@ -203,7 +203,14 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     _loadFavoriState();
     final uid = widget.initialData?['uidEleveur'] as String?
         ?? widget.initialData?['uid_eleveur'] as String?;
-    if (uid != null) { _eleveurLoaded = true; _loadEleveur(uid); }
+    if (uid != null) {
+      _eleveurLoaded = true;
+      _loadEleveur(uid,
+          profilSource: widget.initialData?['profilSource'] as String?
+              ?? widget.initialData?['profil_source'] as String?,
+          profileId: widget.initialData?['profileId'] as String?
+              ?? widget.initialData?['profile_id'] as String?);
+    }
   }
 
   Future<void> _loadLikeState() async {
@@ -299,7 +306,9 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
       if (!_eleveurLoaded && uid != null) {
         _eleveurLoaded = true;
         _loadEleveur(uid, profilSource: profilSource, profileId: profileId);
-      } else if (uid != null && profilSource == 'association' && profileId != null && profileId.isNotEmpty) {
+      } else if (uid != null &&
+          (profilSource == 'association' || profilSource == 'particulier') &&
+          profileId != null && profileId.isNotEmpty) {
         // initState a appelé _loadEleveur sans profile_id → recharger avec le bon UUID
         _loadEleveur(uid, profilSource: profilSource, profileId: profileId);
       }
@@ -317,35 +326,44 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
           ?? _annonceData?['profil_source'] as String?
           ?? widget.initialData?['profil_source'] as String?;
 
-      if (src == 'association') {
+      // Association ET particulier : l'annonce n'est PAS portée par le profil
+      // `is_main` (souvent l'élevage). On résout le profil réel via `profile_id`
+      // stocké dans l'annonce, sinon on retombe sur le profil du bon type.
+      if (src == 'association' || src == 'particulier') {
         try {
           Map<String, dynamic>? p;
           if (profileId != null && profileId.isNotEmpty) {
             // Query directe par profile UUID (bypass RLS) — profile_id stocké dans l'annonce
             p = await Supabase.instance.client
                 .from('user_profiles')
-                .select('id, nom, profile_label, avatar_url, ville')
+                .select('id, profile_type, nom, firstname, lastname, profile_label, avatar_url, ville')
                 .eq('id', profileId)
                 .maybeSingle();
           } else {
             // Fallback : query par uid sans filtre profile_type, filtre client-side
             final profiles = await Supabase.instance.client
                 .from('user_profiles')
-                .select('id, profile_type, nom, profile_label, avatar_url, ville')
+                .select('id, profile_type, nom, firstname, lastname, profile_label, avatar_url, ville')
                 .eq('uid', uid) as List;
             p = profiles.firstWhere(
-              (r) => (r['profile_type'] as String?) == 'association',
+              (r) => (r['profile_type'] as String?) == src,
               orElse: () => profiles.isNotEmpty ? profiles.first : null,
             ) as Map<String, dynamic>?;
           }
           if (p != null) {
             final n     = (p['nom'] as String?)?.trim();
             final label = (p['profile_label'] as String?)?.trim();
-            final assoName = (n?.isNotEmpty == true) ? n! : (label?.isNotEmpty == true ? label! : null);
-            if (assoName != null) normalized['nameElevage'] = assoName;
+            final full  = '${(p['firstname'] as String?)?.trim() ?? ''} '
+                '${(p['lastname'] as String?)?.trim() ?? ''}'.trim();
+            final displayName = (n?.isNotEmpty == true)
+                ? n!
+                : (full.isNotEmpty ? full : (label?.isNotEmpty == true ? label! : null));
+            if (displayName != null) normalized['nameElevage'] = displayName;
             if ((p['avatar_url'] as String?)?.isNotEmpty == true) normalized['profilePictureUrlElevage'] = p['avatar_url'];
             if ((p['ville'] as String?)?.isNotEmpty == true) normalized['villeElevage'] = p['ville'];
-            if ((p['id'] as String?)?.isNotEmpty == true) normalized['assoProfileId'] = p['id'];
+            if (src == 'association' && (p['id'] as String?)?.isNotEmpty == true) {
+              normalized['assoProfileId'] = p['id'];
+            }
           }
         } catch (_) {}
       }

@@ -45,6 +45,9 @@ class _FeedItem {
   final bool eleveurVerifie;
   final bool eleveurPremium;
   final bool isAssociation;
+  final String? profilSource;
+
+  bool get isParticulier => profilSource == 'particulier';
 
   const _FeedItem({
     required this.annonceId, required this.bebeIndex,
@@ -56,6 +59,7 @@ class _FeedItem {
     this.typeVente,
     this.eleveurVerifie = false, this.eleveurPremium = false,
     this.isAssociation = false,
+    this.profilSource,
   });
 
   _FeedItem withPhoto(String? p) => _FeedItem(
@@ -66,7 +70,7 @@ class _FeedItem {
     nomEleveur: nomEleveur, photoEleveur: p, pedigree: pedigree,
     dateNaissance: dateNaissance, typeVente: typeVente,
     eleveurVerifie: eleveurVerifie, eleveurPremium: eleveurPremium,
-    isAssociation: isAssociation,
+    isAssociation: isAssociation, profilSource: profilSource,
   );
 
   _FeedItem withVerification({required bool verifie, required bool premium}) => _FeedItem(
@@ -77,7 +81,7 @@ class _FeedItem {
     nomEleveur: nomEleveur, photoEleveur: photoEleveur, pedigree: pedigree,
     dateNaissance: dateNaissance, typeVente: typeVente,
     eleveurVerifie: verifie, eleveurPremium: premium,
-    isAssociation: isAssociation,
+    isAssociation: isAssociation, profilSource: profilSource,
   );
 }
 
@@ -145,6 +149,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
           dateNaissance: dateNaissancePortee,
           typeVente: a['type_vente'] as String?,
           isAssociation: isAsso,
+          profilSource: a['profil_source'] as String?,
         ));
       }
     } else if (aPhotos.isNotEmpty) {
@@ -166,6 +171,7 @@ List<_FeedItem> _buildFeedItems(List<Map<String, dynamic>> rows) {
         dateNaissance: dateNaissanceAnimal,
         typeVente: a['type_vente'] as String?,
         isAssociation: isAsso,
+        profilSource: a['profil_source'] as String?,
       ));
     }
   }
@@ -319,6 +325,10 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
             premiumMap[id]  = premiumByUid[id] ?? false;
           }
           items = items.map((i) {
+            // Une annonce particulier/association n'est pas portée par le profil
+            // `is_main` (l'élevage) : ni sa photo, ni son badge « pro vérifié »,
+            // ni son premium ne doivent s'y appliquer.
+            if (i.isParticulier || i.isAssociation) return i;
             final uid = i.uidEleveur;
             return i
               .withPhoto(uid != null ? photoMap[uid] : null)
@@ -327,6 +337,51 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
                 premium: uid != null && (premiumMap[uid] ?? false),
               );
           }).toList();
+
+          // Annonces particulier : photo/ville depuis le profil particulier réel
+          // (via profile_id de l'annonce), jamais l'élevage.
+          final partPids = items
+              .where((i) => i.isParticulier && (i.profileId ?? '').isNotEmpty)
+              .map((i) => i.profileId!)
+              .toSet().toList();
+          if (partPids.isNotEmpty) {
+            try {
+              final profiles = await Supabase.instance.client
+                  .from('user_profiles')
+                  .select('id, avatar_url, ville, firstname, lastname, nom')
+                  .inFilter('id', partPids);
+              final partPhoto = <String, String>{};
+              final partVille = <String, String>{};
+              final partName  = <String, String>{};
+              for (final p in List<Map<String, dynamic>>.from(profiles)) {
+                final id = p['id'] as String?; if (id == null) continue;
+                final av = (p['avatar_url'] as String?) ?? '';
+                if (av.isNotEmpty) partPhoto[id] = av;
+                final v = (p['ville'] as String?) ?? '';
+                if (v.isNotEmpty) partVille[id] = v;
+                final full = '${(p['firstname'] as String?)?.trim() ?? ''} '
+                    '${(p['lastname'] as String?)?.trim() ?? ''}'.trim();
+                final n = (p['nom'] as String?)?.trim();
+                final nm = full.isNotEmpty ? full : (n?.isNotEmpty == true ? n! : null);
+                if (nm != null) partName[id] = nm;
+              }
+              items = items.map((i) {
+                if (!i.isParticulier || (i.profileId ?? '').isEmpty) return i;
+                final pid = i.profileId!;
+                return _FeedItem(
+                  annonceId: i.annonceId, bebeIndex: i.bebeIndex,
+                  photos: i.photos, nom: i.nom, race: i.race, espece: i.espece,
+                  sexe: i.sexe, prix: i.prix, statut: i.statut,
+                  description: i.description, ville: partVille[pid] ?? i.ville,
+                  uidEleveur: i.uidEleveur, profileId: i.profileId,
+                  nomEleveur: partName[pid] ?? i.nomEleveur,
+                  photoEleveur: partPhoto[pid] ?? i.photoEleveur,
+                  pedigree: i.pedigree, dateNaissance: i.dateNaissance,
+                  typeVente: i.typeVente, profilSource: 'particulier',
+                );
+              }).toList();
+            } catch (_) {}
+          }
 
           // Pour les annonces association, remplace photo/nom par user_profiles
           final assoUids = items
@@ -538,7 +593,8 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
       if (item.race?.isNotEmpty == true) item.race!,
       if (item.prix != null) '${item.prix!.toInt()} €',
       if (item.ville?.isNotEmpty == true) '📍 ${item.ville!}',
-      if (item.nomEleveur?.isNotEmpty == true) '🏡 ${item.nomEleveur!}',
+      if (item.nomEleveur?.isNotEmpty == true)
+        '${item.isParticulier ? '👤' : '🏡'} ${item.nomEleveur!}',
     ];
     final text = '${parts.join(' · ')}\n\n$url';
     showModalBottomSheet(
@@ -571,6 +627,20 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
         ville:  item.ville ?? '',
       ),
     ));
+  }
+
+  // Annonce particulier : on ouvre la fiche du particulier (nom/photo/ville du
+  // profil particulier), jamais la fiche élevage `users/{uid}`.
+  void _navigateToParticulierProfile(_FeedItem item) {
+    final user = UserSelected.fromMap({
+      'nameElevage': item.nomEleveur ?? 'Particulier',
+      'profilePictureUrlElevage': item.photoEleveur ?? '',
+      'villeElevage': item.ville ?? '',
+      'isElevage': false,
+      'isPro': false,
+    }, item.uidEleveur ?? '');
+    Navigator.push(context, MaterialPageRoute(
+        builder: (_) => UserDetailPageFeed(user: user)));
   }
 
   // ── Chat ────────────────────────────────────────────────────────────────────
@@ -880,7 +950,9 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
               onEleveurTap: item.uidEleveur != null
                   ? () => item.isAssociation
                       ? _navigateToAssoProfile(item)
-                      : _navigateToEleveurProfile(item.uidEleveur!)
+                      : item.isParticulier
+                          ? _navigateToParticulierProfile(item)
+                          : _navigateToEleveurProfile(item.uidEleveur!)
                   : null,
               onShare: () => _shareItem(item),
               onBack:   () => setState(() => _feedStarted = false),
@@ -1133,7 +1205,9 @@ class _FeedCardState extends State<_FeedCard> with SingleTickerProviderStateMixi
                   child: ClipOval(child: item.photoEleveur?.isNotEmpty == true
                       ? CachedNetworkImage(imageUrl: item.photoEleveur!, fit: BoxFit.cover)
                       : Container(color: const Color(0xFF0C5C6C),
-                          child: const Icon(Icons.store_outlined, color: Colors.white, size: 18))),
+                          child: Icon(
+                              item.isParticulier ? Icons.person : Icons.store_outlined,
+                              color: Colors.white, size: 18))),
                 ),
               ),
               const SizedBox(width: 10),
@@ -1269,7 +1343,7 @@ class _FeedCardState extends State<_FeedCard> with SingleTickerProviderStateMixi
                   const SizedBox(height: 10),
                   // Ligne 2 : Badges
                   Wrap(spacing: 6, runSpacing: 6, children: [
-                    if (!item.isAssociation)
+                    if (!item.isAssociation && !item.isParticulier)
                       VerificationBadge(
                         level: item.eleveurPremium
                             ? VerificationLevel.premium
