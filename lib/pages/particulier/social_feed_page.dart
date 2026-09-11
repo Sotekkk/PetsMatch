@@ -294,6 +294,7 @@ Future<void> _insertLike(String postId, String uid) async {
   _sendSocialNotif(
     supa: supa,
     actorUid: uid,
+    actorProfileId: pid,
     postId: postId,
     type: 'social_like',
     titleSuffix: 'a aimé votre post',
@@ -303,9 +304,18 @@ Future<void> _insertLike(String postId, String uid) async {
 
 /// Envoie une notification sociale vers l'auteur du post (likes/commentaires)
 /// ou la personne ciblée (follows). Fire-and-forget.
+///
+/// [actorProfileId] : profil ACTIF qui a agi (ex. le `follower_profile_id`
+/// du follow). Sans lui, la résolution du nom tombait sur `user_profiles`
+/// filtré par `uid` seul avec `.limit(1)` — non déterministe sur un compte
+/// multi-profils (éleveur/particulier/pro) : le nom affiché pouvait être
+/// vide ou appartenir au mauvais profil (« vous suit maintenant » sans nom,
+/// ou le mauvais type de profil). Avec l'id exact du profil qui a agi, le
+/// nom est toujours le bon.
 void _sendSocialNotif({
   required SupabaseClient supa,
   required String actorUid,
+  String? actorProfileId,
   String? postId,
   String? targetUid,
   required String type,
@@ -325,19 +335,27 @@ void _sendSocialNotif({
     }
     if (recipientUid == null || recipientUid == actorUid) return;
 
-    // Nom de la personne qui agit (pseudo Pets Social s'il est défini)
-    final actorRow = await supa
-        .from('user_profiles')
-        .select('firstname, lastname, social_pseudo')
-        .eq('uid', actorUid)
-        .limit(1)
-        .maybeSingle();
-    final actorPseudo = (actorRow?['social_pseudo'] as String? ?? '').trim();
-    final actorName = actorPseudo.isNotEmpty
-        ? actorPseudo
-        : (actorRow != null
-            ? '${actorRow['firstname'] ?? ''} ${actorRow['lastname'] ?? ''}'.trim()
-            : 'Quelqu\'un');
+    // Garde-fou anti-doublon : un appui multiple sur « Suivre »/like (avant
+    // que l'UI ne se mette à jour, ou un double envoi réseau) créait jusqu'à
+    // 3-4 notifications identiques en quelques secondes — donc autant de
+    // push. On ignore un nouvel envoi si un même (destinataire, type,
+    // auteur[, post]) existe déjà dans les 60 dernières secondes.
+    final since = DateTime.now().toUtc().subtract(const Duration(seconds: 60)).toIso8601String();
+    var dupQ = supa.from('notifications').select('id')
+        .eq('uid', recipientUid).eq('type', type).gte('created_at', since);
+    if (postId != null) dupQ = dupQ.contains('data', {'post_id': postId});
+    if (targetUid != null) dupQ = dupQ.contains('data', {'actor_uid': actorUid});
+    final dup = await dupQ.limit(1).maybeSingle();
+    if (dup != null) return;
+
+    // Nom de la personne qui agit — profil exact si connu, sinon repli sur
+    // le profil principal (is_main) de l'uid (déterministe, jamais un profil
+    // secondaire au hasard).
+    const cols = 'firstname, lastname, nom, social_pseudo, profile_type';
+    final actorRow = actorProfileId != null
+        ? await supa.from('user_profiles').select(cols).eq('id', actorProfileId).maybeSingle()
+        : await supa.from('user_profiles').select(cols).eq('uid', actorUid).eq('is_main', true).maybeSingle();
+    final actorName = _profileName(actorRow);
 
     await supa.from('notifications').insert({
       'uid': recipientUid,
@@ -377,6 +395,7 @@ Future<void> _insertFollow(String followerUid, String followingUid,
   _sendSocialNotif(
     supa: supa,
     actorUid: followerUid,
+    actorProfileId: fp,
     targetUid: followingUid,
     type: 'social_follow',
     titleSuffix: 'vous suit maintenant',
@@ -1085,6 +1104,7 @@ class _SuggestionsWidgetState extends State<_SuggestionsWidget> {
   final _supa = Supabase.instance.client;
   List<Map<String, dynamic>> _suggestions = [];
   final Set<String> _followedKeys = {}; // profil id, sinon 'u:<uid>'
+  final Set<String> _pendingFollow = {}; // anti-double-tap
   bool _loading = true;
 
   @override
@@ -1151,6 +1171,10 @@ class _SuggestionsWidgetState extends State<_SuggestionsWidget> {
   Future<void> _follow(Map<String, dynamic> prof) async {
     final targetUid = prof['uid'] as String;
     final pid = prof['id'] as String?;
+    // Anti-double-tap : un second appui avant la fin de la requête créait un
+    // follow (et une notif) en double pour la même cible.
+    if (_pendingFollow.contains(targetUid)) return;
+    _pendingFollow.add(targetUid);
     try {
       await _insertFollow(widget.myUid, targetUid, followingProfileId: pid);
     } catch (e) {
@@ -1161,6 +1185,8 @@ class _SuggestionsWidgetState extends State<_SuggestionsWidget> {
         ));
       }
       return;
+    } finally {
+      _pendingFollow.remove(targetUid);
     }
     if (!mounted) return;
     setState(() => _followedKeys.add((pid != null && pid.isNotEmpty) ? pid : 'u:$targetUid'));
@@ -1258,6 +1284,9 @@ class _FeedListState extends State<_FeedList>
   Set<String> _followingPids = {}; // abonnements du profil actif (following_profile_id)
   bool   _loading   = true;
   String? _feedError;
+  // Anti-double-tap : un appui répété sur « Suivre » avant la mise à jour de
+  // l'UI créait plusieurs lignes follow/notification pour la même cible.
+  final Set<String> _pendingFollow = {};
 
   @override
   void initState() {
@@ -1486,6 +1515,11 @@ class _FeedListState extends State<_FeedList>
   }
 
   Future<void> _toggleFollow(String targetUid, {String? targetProfileId}) async {
+    // Anti-double-tap : ignore un second appui sur la même cible tant que la
+    // requête précédente n'est pas terminée (créait des follows/notifs en
+    // double si on retapait avant la mise à jour visuelle du bouton).
+    if (_pendingFollow.contains(targetUid)) return;
+    _pendingFollow.add(targetUid);
     final isFollowing = targetProfileId != null
         ? _followingPids.contains(targetProfileId)
         : _following.contains(targetUid);
@@ -1519,6 +1553,8 @@ class _FeedListState extends State<_FeedList>
         content: Text('Action impossible : $e', style: const TextStyle(fontFamily: 'Galey')),
         backgroundColor: Colors.redAccent,
       ));
+    } finally {
+      _pendingFollow.remove(targetUid);
     }
   }
 
@@ -3282,6 +3318,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       _sendSocialNotif(
         supa: _supa,
         actorUid: widget.myUid,
+        actorProfileId: pid,
         postId: widget.postId,
         targetUid: widget.postAuthorUid,
         type: 'social_comment',
