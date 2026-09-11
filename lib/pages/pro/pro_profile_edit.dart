@@ -620,6 +620,24 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
       return;
     }
 
+    // ACACED obligatoire (Code rural, art. L214-6-1) pour garde (pet-sitter)
+    // et éducateur — la section est marquée « ACACED * » mais rien ne
+    // l'empêchait d'être enregistrée sans le justificatif.
+    if (_catPro == 'garde' || _catPro == 'education') {
+      final hasDoc = _acacedDocFile != null || (_acacedDocUrl?.isNotEmpty ?? false);
+      if (_acacedCtrl.text.trim().isEmpty || !hasDoc) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Justificatif manquant : le n° ACACED et son justificatif sont obligatoires.',
+                style: TextStyle(fontFamily: 'Galey')),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() => _saving = true);
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid;

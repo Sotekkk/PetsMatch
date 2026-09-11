@@ -1115,6 +1115,17 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   }
 
   async function handleSave() {
+    // ACACED obligatoire (Code rural, art. L214-6-1) pour garde (pet-sitter)
+    // et éducateur — le champ + le justificatif étaient collectés mais rien
+    // n'empêchait d'enregistrer sans les avoir renseignés.
+    if (['garde', 'education'].includes((data?.profile_type ?? data?.cat_pro) ?? '')) {
+      const hasDoc = !!acacedDocFile || !!acacedDocUrl;
+      if (!acacedNum.trim() || !hasDoc) {
+        alert('Justificatif manquant : le n° ACACED et son justificatif sont obligatoires.');
+        return;
+      }
+    }
+
     setSaving(true);
     // Géocode "l'autre domicile" (éducateur, trajet à domicile) si une
     // adresse est saisie — refait à chaque save pour rester à jour. Variable
