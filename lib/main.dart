@@ -783,11 +783,26 @@ class MyApp extends StatelessWidget {
             GlobalCupertinoLocalizations.delegate,
           ],
 
-          builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(context).copyWith(
-              textScaler: TextScaler.linear(1.0),
+          // GestureDetector translucide global : un tap en dehors d'un champ
+          // ferme le clavier, sur tous les écrans / profils sans devoir le
+          // gérer page par page (récurrent : le clavier numérique en
+          // particulier n'a souvent pas de bouton de fermeture visible sur
+          // Android). `translucent` laisse les taps passer normalement aux
+          // boutons/widgets en dessous — rien n'est bloqué.
+          builder: (context, child) => GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () {
+              final focus = FocusScope.of(context);
+              if (!focus.hasPrimaryFocus && focus.focusedChild != null) {
+                FocusManager.instance.primaryFocus?.unfocus();
+              }
+            },
+            child: MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: TextScaler.linear(1.0),
+              ),
+              child: child!,
             ),
-            child: child!,
           ),
 
           theme: ThemeData(
