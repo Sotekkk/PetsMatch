@@ -216,8 +216,8 @@ function calcScore(perdu, trouve) {
     }
 
     // Dates compatibles : date trouvée ≥ date perdue (+15)
-    if (perdu.date_disparition && trouve.date_decouverte) {
-        const dP = new Date(perdu.date_disparition);
+    if (perdu.date_perte && trouve.date_decouverte) {
+        const dP = new Date(perdu.date_perte);
         const dT = new Date(trouve.date_decouverte);
         if (!isNaN(dP) && !isNaN(dT) && dT >= dP) score += 15;
     }
@@ -328,7 +328,7 @@ exports.matchLostFound = functions
                     "espece": `eq.${trouve.espece}`,
                     "created_at": `gte.${cutoff90}`,
                     "select": "id,uid_proprietaire,espece,race,sexe,couleur," +
-                        "identification,date_disparition,lat,lng,nom_animal",
+                        "identification,date_perte,lat,lng,nom_animal",
                 });
 
                 for (const perdu of candidats) {

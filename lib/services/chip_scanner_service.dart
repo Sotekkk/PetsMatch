@@ -178,7 +178,7 @@ class ChipScannerService {
       if (animal == null) {
         final rows = await _supa
             .from('alertes_perdus')
-            .select('id,nom_animal,espece,race,sexe,couleur,identification,uid_proprietaire,date_disparition,ville')
+            .select('id,nom_animal,espece,race,sexe,couleur,identification,uid_proprietaire,date_perte,ville')
             .limit(200);
         for (final row in rows as List) {
           final id = ((row as Map)['identification'] ?? '').toString()
