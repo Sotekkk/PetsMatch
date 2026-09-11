@@ -358,3 +358,52 @@ ALTER TABLE public.plan_templates DROP CONSTRAINT IF EXISTS plan_templates_type_
 ALTER TABLE public.plan_templates
   ADD CONSTRAINT plan_templates_type_chekck
   CHECK (type IN ('sanitaire', 'nettoyage', 'promenade', 'socialisation', 'alimentaire'));
+
+
+-- ────────────────────────────────────────────────────────────
+-- 17. Balades ludiques — colonnes *_profile_id manquantes sur TOUTES
+--     les tables du module (balades_ludiques, ..._progressions,
+--     ..._validations, ..._avis, ..._favoris, badges_obtenus,
+--     joueurs_xp). Même cause que les sections 15/16 : la table
+--     existait déjà quand la colonne a été ajoutée au CREATE TABLE
+--     IF NOT EXISTS, qui ne modifie donc pas une table existante.
+--     Résultat : création de balade / progression / avis / favori
+--     échouait avec PGRST204 "column ... does not exist". Les 8
+--     tables du module étaient vides en prod (fonctionnalité jamais
+--     utilisée avec succès) → ADD COLUMN sans risque de backfill.
+--     Détail : supabase/migration_balades_ludiques_profile_id.sql
+-- ────────────────────────────────────────────────────────────
+
+ALTER TABLE public.balades_ludiques
+  ADD COLUMN IF NOT EXISTS createur_profile_id uuid REFERENCES public.user_profiles(id) ON DELETE SET NULL;
+
+ALTER TABLE public.balades_ludiques_progressions
+  ADD COLUMN IF NOT EXISTS joueur_profile_id uuid REFERENCES public.user_profiles(id) ON DELETE CASCADE;
+ALTER TABLE public.balades_ludiques_progressions
+  ALTER COLUMN joueur_profile_id SET NOT NULL;
+
+ALTER TABLE public.balades_ludiques_validations
+  ADD COLUMN IF NOT EXISTS joueur_profile_id uuid REFERENCES public.user_profiles(id) ON DELETE SET NULL;
+
+ALTER TABLE public.balades_ludiques_avis
+  ADD COLUMN IF NOT EXISTS profile_id uuid REFERENCES public.user_profiles(id) ON DELETE CASCADE;
+ALTER TABLE public.balades_ludiques_avis
+  ALTER COLUMN profile_id SET NOT NULL;
+
+ALTER TABLE public.balades_ludiques_favoris
+  ADD COLUMN IF NOT EXISTS profile_id uuid REFERENCES public.user_profiles(id) ON DELETE CASCADE;
+ALTER TABLE public.balades_ludiques_favoris
+  ALTER COLUMN profile_id SET NOT NULL;
+
+ALTER TABLE public.badges_obtenus
+  ADD COLUMN IF NOT EXISTS profile_id uuid REFERENCES public.user_profiles(id) ON DELETE CASCADE;
+ALTER TABLE public.badges_obtenus
+  ALTER COLUMN profile_id SET NOT NULL;
+
+ALTER TABLE public.joueurs_xp
+  ADD COLUMN IF NOT EXISTS profile_id uuid REFERENCES public.user_profiles(id) ON DELETE CASCADE;
+
+CREATE INDEX IF NOT EXISTS idx_bl_createur_profile ON public.balades_ludiques (createur_profile_id);
+CREATE INDEX IF NOT EXISTS idx_blpr_joueur_profile ON public.balades_ludiques_progressions (joueur_profile_id);
+CREATE INDEX IF NOT EXISTS idx_bla_profile ON public.balades_ludiques_avis (profile_id);
+CREATE INDEX IF NOT EXISTS idx_bo_profile ON public.badges_obtenus (profile_id);
