@@ -1,6 +1,6 @@
 const functions = require("firebase-functions/v1");
-const admin = require("firebase-admin");
 const {createClient} = require("@supabase/supabase-js");
+const {sendPush} = require("./push_helpers");
 
 function getSupabase() {
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY ||
@@ -93,19 +93,11 @@ exports.sendRetardNotification = functions
 
             // Push FCM
             try {
-                const tokenDoc = await admin.firestore()
-                    .collection("users").doc(clientUid).get();
-                const fcmToken = tokenDoc.data()?.fcmToken;
-                if (fcmToken) {
-                    const retardTitle = `Retard de ${delaiText}`;
-                    await admin.messaging().send({
-                        token: fcmToken,
-                        data: {type: "rdv_retard", title: retardTitle, body, pro_uid: proUid},
-                        android: {priority: "high"},
-                        apns: {payload: {aps: {alert: {title: retardTitle, body}, sound: "default"}}},
-                    });
-                    notified++;
-                }
+                const retardTitle = `Retard de ${delaiText}`;
+                const sent = await sendPush(clientUid, retardTitle, body,
+                    {type: "rdv_retard", pro_uid: proUid},
+                    {profileId: profileIdByClient[clientUid] || null});
+                if (sent) notified++;
             } catch (_) {/* noop */}
         }
 

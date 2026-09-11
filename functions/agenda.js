@@ -123,39 +123,7 @@ async function getUserNom(uid) {
  * @param {object} data - Données supplémentaires FCM.
  * @return {Promise<boolean>}
  */
-async function sendPush(uid, title, body, data = {}) {
-    try {
-        const doc = await admin.firestore().collection("users").doc(uid).get();
-        if (!doc.exists) return false;
-        const userData = doc.data();
-        const tokens = [userData.fcmToken, userData.webFcmToken].filter(Boolean);
-        if (!tokens.length) return false;
-
-        let sent = false;
-        for (const token of tokens) {
-            try {
-                await admin.messaging().send({
-                    token,
-                    data: {type: "rdv_reminder", title, body, ...data},
-                    android: {
-                        priority: "high",
-                    },
-                    apns: {
-                        headers: {"apns-priority": "10"},
-                        payload: {aps: {alert: {title, body}, sound: "default", badge: 1}},
-                    },
-                });
-                sent = true;
-            } catch (e) {
-                console.warn(`sendPush token error for ${uid}:`, e.message);
-            }
-        }
-        return sent;
-    } catch (e) {
-        console.error(`sendPush error for ${uid}:`, e);
-        return false;
-    }
-}
+const {sendPush, resolveProfileId} = require("./push_helpers");
 
 /**
  * UID des co-propriétaires ACTIFS d'un animal (hors excludeUid).
@@ -169,8 +137,8 @@ async function getCoproprietaires(animalId, excludeUid) {
         const rows = await supabaseSelect("animaux_proprietes",
             `animal_id=eq.${animalId}&date_fin=is.null&statut=eq.actif`);
         return rows
-            .map((r) => r.uid_proprio)
-            .filter((u) => u && u !== excludeUid);
+            .filter((r) => r.uid_proprio && r.uid_proprio !== excludeUid)
+            .map((r) => ({uid: r.uid_proprio, profileId: r.profile_id_proprio || null}));
     } catch (_) {
         return [];
     }
@@ -186,8 +154,8 @@ async function getCoproprietaires(animalId, excludeUid) {
  */
 async function pushCoproRdv(rdv, title, body, data) {
     const copros = await getCoproprietaires(rdv.animal_id, rdv.client_uid);
-    for (const uid of copros) {
-        await sendPush(uid, title, body, data);
+    for (const copro of copros) {
+        await sendPush(copro.uid, title, body, data, {profileId: copro.profileId});
     }
 }
 
@@ -219,7 +187,8 @@ exports.notifyProNewRdv = functions
             `${clientName || "Un client"} souhaite un RDV le ${dateStr}${motifPart}` :
             `${clientName || "Un client"} souhaite prendre un RDV avec vous${motifPart}`;
 
-        await sendPush(proUid, title, body, {type: "rdv_demande"});
+        await sendPush(proUid, title, body, {type: "rdv_demande"},
+            {profileId: await resolveProfileId(proUid, "pro")});
         console.log(`notifyProNewRdv: push envoyé à ${proUid}`);
         return {sent: true};
     });
@@ -267,6 +236,7 @@ exports.sendRdvReminders = functions
                 "📅 Rappel RDV — dans 2 jours",
                 `Votre RDV${animalPart} chez ${prestataire} est prévu le ${dateStr}`,
                 rdvData,
+                {profileId: rdv.client_profile_id || null},
             );
             await pushCoproRdv(rdv, "📅 Rappel RDV — dans 2 jours",
                 `RDV${animalPart} chez ${prestataire} prévu le ${dateStr}`, rdvData);
@@ -305,6 +275,7 @@ exports.sendRdvReminders = functions
                 "⏰ Rappel RDV — demain",
                 `Votre RDV${animalPart} chez ${proNom || "votre prestataire"} est prévu le ${dateStr}`,
                 rdvData,
+                {profileId: rdv.client_profile_id || null},
             );
             await pushCoproRdv(rdv, "⏰ Rappel RDV — demain",
                 `RDV${animalPart} chez ${proNom || "votre prestataire"} prévu le ${dateStr}`, rdvData);
@@ -315,6 +286,7 @@ exports.sendRdvReminders = functions
                 "⏰ RDV demain",
                 `RDV avec ${clientNom || "un client"}${animalPart} — le ${dateStr}`,
                 rdvData,
+                {profileId: rdv.pro_profile_id || null},
             );
 
             await supabasePatch("rdv", rdv.id, {reminder_24h_sent: true});
@@ -347,14 +319,14 @@ exports.sendRdvReminders = functions
             await sendPush(rdv.client_uid,
                 "⏰ Rappel RDV — dans 1 heure",
                 `Votre RDV${animalPart} chez ${proNom || "votre prestataire"} est à ${timeStr}`,
-                rdvData);
+                rdvData, {profileId: rdv.client_profile_id || null});
             await pushCoproRdv(rdv, "⏰ Rappel RDV — dans 1 heure",
                 `RDV${animalPart} chez ${proNom || "votre prestataire"} à ${timeStr}`, rdvData);
             // → Pro
             await sendPush(rdv.pro_uid,
                 "⏰ RDV dans 1 heure",
                 `RDV avec ${clientNom || "un client"}${animalPart} — à ${timeStr}`,
-                rdvData);
+                rdvData, {profileId: rdv.pro_profile_id || null});
 
             await supabasePatch("rdv", rdv.id, {reminder_2h_sent: true});
             sent2h++;
@@ -385,13 +357,13 @@ exports.sendRdvReminders = functions
             await sendPush(rdv.client_uid,
                 "⏰ Rappel RDV — dans 30 minutes",
                 `Votre RDV${animalPart} chez ${proNom || "votre prestataire"} commence bientôt (${timeStr})`,
-                rdvData);
+                rdvData, {profileId: rdv.client_profile_id || null});
             await pushCoproRdv(rdv, "⏰ Rappel RDV — dans 30 minutes",
                 `RDV${animalPart} chez ${proNom || "votre prestataire"} bientôt (${timeStr})`, rdvData);
             await sendPush(rdv.pro_uid,
                 "⏰ RDV dans 30 minutes",
                 `RDV avec ${clientNom || "un client"}${animalPart} — à ${timeStr}`,
-                rdvData);
+                rdvData, {profileId: rdv.pro_profile_id || null});
 
             await supabasePatch("rdv", rdv.id, {reminder_30min_sent: true});
             sent30++;
@@ -478,6 +450,7 @@ exports.sendMiseBasReminders = functions
                     title,
                     body,
                     {type: "mise_bas", animalId: String(g.animal_id)},
+                    {profileId},
                 );
 
                 try {
@@ -573,6 +546,7 @@ async function sendOverdueMiseBasReminders() {
         const pushed = await sendPush(
             animal.uid_eleveur, title, body,
             {type: "mise_bas", animalId: String(g.animal_id), overdue: true},
+            {profileId},
         );
         if (pushed) sent++;
 
@@ -649,7 +623,7 @@ exports.sendExerciceReminders = functions
                 type: "education_exercice_rappel",
                 animalId: String(ex.animal_id),
                 url: `/mes-animaux/${ex.animal_id}?tab=education`,
-            });
+            }, {profileId: ex.owner_profile_id || null});
             if (pushed) sent++;
 
             try {

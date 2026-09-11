@@ -1,5 +1,4 @@
 const functions = require("firebase-functions/v1");
-const admin = require("firebase-admin");
 const https = require("https");
 
 const SUPABASE_URL = "https://zyvpngcvzrkdytypjlyq.supabase.co";
@@ -52,6 +51,10 @@ async function supabaseGet(table, filters) {
     const qs = Object.entries(filters).map(([k, v]) => `${k}=${v}`).join("&");
     return supabaseRequest("GET", `/rest/v1/${table}${qs ? "?" + qs : ""}`, null);
 }
+
+// ─── FCM helper (partagé) ──────────────────────────────────────────────────────
+
+const {sendPush, resolveProfileId} = require("./push_helpers");
 
 /**
  * Insert into alertes_correspondances with duplicate-ignore on (alerte_id, trouve_id).
@@ -120,16 +123,7 @@ async function markNotified(alerteId, trouveId) {
     });
 }
 
-async function insertNotification(uid, title, body, data) {
-    // Ancré sur le profil particulier du destinataire (matching perdu/trouvé
-    // est une préoccupation personnelle, pas un contexte pro).
-    let profileId = null;
-    try {
-        const profiles = await supabaseGet("user_profiles", {
-            select: "id", uid: `eq.${uid}`, profile_type: "eq.particulier", limit: "1",
-        });
-        if (profiles[0]) profileId = profiles[0].id;
-    } catch (_) {/* silencieux */}
+async function insertNotification(uid, title, body, data, profileId) {
     return new Promise((resolve) => {
         const payload = JSON.stringify([{
             uid, type: "matching_perdu_trouve", title, body, data, read: false,
@@ -242,30 +236,17 @@ function calcScore(perdu, trouve) {
 // ─── Envoi notification FCM + in-app ─────────────────────────────────────────
 
 async function notify(ownerUid, title, body, extraData) {
+    // Ancré sur le profil particulier du destinataire (matching perdu/trouvé
+    // est une préoccupation personnelle, pas un contexte pro).
+    const profileId = await resolveProfileId(ownerUid, "particulier");
+
     // In-app (Supabase)
-    insertNotification(ownerUid, title, body, extraData).catch(() => {});
+    insertNotification(ownerUid, title, body, extraData, profileId).catch(() => {});
 
     // FCM push
-    try {
-        const doc = await admin.firestore().collection("users").doc(ownerUid).get();
-        const token = doc.exists ? doc.data().fcmToken : null;
-        if (!token) return;
-        // Pas de notification top-level / android.notification (voir
-        // sante.js pour l'explication du doublon Android) — iOS inchangé.
-        await admin.messaging().send({
-            token,
-            data: {...extraData, type: "matching_perdu_trouve", title, body},
-            android: {
-                priority: "high",
-            },
-            apns: {
-                headers: {"apns-priority": "10"},
-                payload: {aps: {alert: {title, body}, sound: "default", badge: 1}},
-            },
-        });
-    } catch (e) {
-        console.error("notify FCM error:", e.message);
-    }
+    await sendPush(ownerUid, title, body,
+        {...extraData, type: "matching_perdu_trouve"},
+        {profileId});
 }
 
 // ─── Cloud Function ───────────────────────────────────────────────────────────

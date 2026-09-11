@@ -1,6 +1,7 @@
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const https = require("https");
+const {sendPush} = require("./push_helpers");
 
 if (!admin.apps.length) admin.initializeApp();
 
@@ -241,10 +242,6 @@ exports.sendRdvReminders = functions
 
                     if (rdv.client_uid) {
                         // Client avec compte : notif in-app + push FCM
-                        const clientDoc = await admin.firestore()
-                            .collection("users").doc(rdv.client_uid).get();
-                        const fcmToken = clientDoc.exists ? clientDoc.data()?.fcmToken : null;
-
                         await supabaseInsert("notifications", [{
                             uid: rdv.client_uid,
                             type: "rdv_rappel",
@@ -255,17 +252,9 @@ exports.sendRdvReminders = functions
                             ...(rdv.client_profile_id ? {profile_id: rdv.client_profile_id} : {}),
                         }]);
 
-                        if (fcmToken) {
-                            await admin.messaging().send({
-                                token: fcmToken,
-                                data: {type: "rdv_rappel", title, body, rdv_id: rdv.id},
-                                android: {priority: "high"},
-                                apns: {
-                                    headers: {"apns-priority": "10"},
-                                    payload: {aps: {alert: {title, body}, sound: "default"}},
-                                },
-                            });
-                        }
+                        await sendPush(rdv.client_uid, title, body,
+                            {type: "rdv_rappel", rdv_id: rdv.id},
+                            {profileId: rdv.client_profile_id || null});
                     } else if (rdv.client_email_manuel) {
                         // Client sans compte : email de rappel
                         await sitePost("/api/rdv/reminder-email", {
@@ -317,8 +306,6 @@ exports.sendRdvReminders = functions
                         }
                         const extra = [animalNom, rdv.lieu].filter(Boolean).join(" · ");
 
-                        const proFcm = proDoc.exists ?
-                            proDoc.data()?.fcmToken : null;
                         const proTitle = win.proTitle || win.title;
                         const proBody = win.proBody ?
                             win.proBody(who, extra) :
@@ -334,17 +321,9 @@ exports.sendRdvReminders = functions
                             ...(rdv.pro_profile_id ? {profile_id: rdv.pro_profile_id} : {}),
                         }]);
 
-                        if (proFcm) {
-                            await admin.messaging().send({
-                                token: proFcm,
-                                data: {type: "rdv_rappel", title: proTitle, body: proBody, rdv_id: rdv.id},
-                                android: {priority: "high"},
-                                apns: {
-                                    headers: {"apns-priority": "10"},
-                                    payload: {aps: {alert: {title: proTitle, body: proBody}, sound: "default"}},
-                                },
-                            });
-                        }
+                        await sendPush(rdv.pro_uid, proTitle, proBody,
+                            {type: "rdv_rappel", rdv_id: rdv.id, role: "pro"},
+                            {profileId: rdv.pro_profile_id || null});
                     } catch (e) {
                         console.error(`sendRdvReminders [${win.label}] pro notif error ${rdv.id}:`, e);
                     }

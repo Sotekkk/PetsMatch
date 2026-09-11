@@ -1,5 +1,4 @@
 const functions = require("firebase-functions/v1");
-const admin = require("firebase-admin");
 const https = require("https");
 
 const SUPABASE_URL = "https://zyvpngcvzrkdytypjlyq.supabase.co";
@@ -68,39 +67,9 @@ async function supabasePatch(table, query, patch) {
     return res.status;
 }
 
-// ─── FCM helper ───────────────────────────────────────────────────────────────
+// ─── FCM helper (partagé) ──────────────────────────────────────────────────────
 
-async function sendPush(uid, title, body, data = {}) {
-    try {
-        const doc = await admin.firestore().collection("users").doc(uid).get();
-        if (!doc.exists) return false;
-        const userData = doc.data();
-        const tokens = [userData.fcmToken, userData.webFcmToken].filter(Boolean);
-        if (!tokens.length) return false;
-
-        let sent = false;
-        for (const token of tokens) {
-            try {
-                await admin.messaging().send({
-                    token,
-                    data: {type: "cession_sterilisation", title, body, ...data},
-                    android: {priority: "high"},
-                    apns: {
-                        headers: {"apns-priority": "10"},
-                        payload: {aps: {alert: {title, body}, sound: "default", badge: 1}},
-                    },
-                });
-                sent = true;
-            } catch (e) {
-                console.warn(`sendPush token error for ${uid}:`, e.message);
-            }
-        }
-        return sent;
-    } catch (e) {
-        console.error(`sendPush error for ${uid}:`, e);
-        return false;
-    }
-}
+const {sendPush} = require("./push_helpers");
 
 // ─── Date helpers (heure locale Paris) ────────────────────────────────────────
 
@@ -214,7 +183,9 @@ exports.sendSterilisationReminders = functions
                 const title = `✂️ À valider — ${nom}`;
                 const body = `Le propriétaire de ${nom} a déclaré la stérilisation. ` +
                     "Validez-la dans le suivi des cessions.";
-                if (await sendPush(eleveurUid, title, body, {animalId: String(a.id), tab: "suivi_cessions"})) sent++;
+                if (await sendPush(eleveurUid, title, body,
+                    {type: "sterilisation_a_valider", animalId: String(a.id), tab: "suivi_cessions"},
+                    {profileId: eleveurProfileId})) sent++;
                 try {
                     await supabaseInsert("notifications", [{
                         uid: eleveurUid,
@@ -270,7 +241,9 @@ exports.sendSterilisationReminders = functions
             const bodyEleveur = `Stérilisation de ${nom} cédé à ${acquereur} : échéance ${echStr} — ${phrase}.`;
 
             if (proprioUid) {
-                if (await sendPush(proprioUid, titleProprio, bodyProprio, {animalId: String(a.id)})) sent++;
+                if (await sendPush(proprioUid, titleProprio, bodyProprio,
+                    {type: "sterilisation_rappel", animalId: String(a.id)},
+                    {profileId: proprioProfileId})) sent++;
                 try {
                     await supabaseInsert("notifications", [{
                         uid: proprioUid,
@@ -287,7 +260,8 @@ exports.sendSterilisationReminders = functions
 
             const pushedElv = await sendPush(
                 eleveurUid, titleEleveur, bodyEleveur,
-                {animalId: String(a.id), tab: "suivi_cessions"},
+                {type: "sterilisation_rappel", animalId: String(a.id), tab: "suivi_cessions"},
+                {profileId: eleveurProfileId},
             );
             if (pushedElv) sent++;
             try {
@@ -411,7 +385,9 @@ exports.sendCessionBirthdayReminders = functions
             // Rappel à l'éleveur.
             const title = `🎂 Anniversaire de ${nom}`;
             const body = `${nom} a ${age} an${age > 1 ? "s" : ""} aujourd'hui — envoyez vos vœux à ${acquereur}.`;
-            if (await sendPush(eleveurUid, title, body, {animalId: String(a.id), tab: "suivi_cessions"})) sent++;
+            if (await sendPush(eleveurUid, title, body,
+                {type: "cession_anniversaire", animalId: String(a.id), tab: "suivi_cessions"},
+                {profileId: eleveurProfileId})) sent++;
             try {
                 await supabaseInsert("notifications", [{
                     uid: eleveurUid,
@@ -464,7 +440,8 @@ exports.sendCessionBirthdayReminders = functions
                         const acqProfileId = acqProfile && acqProfile.id ? acqProfile.id : null;
                         await sendPush(
                             a.uid_acquereur, `💬 ${profileName(eleveurProfile)}`, texte,
-                            {conversationId: String(convId)},
+                            {type: "message", conversationId: String(convId)},
+                            {profileId: acqProfileId},
                         );
                         try {
                             await supabaseInsert("notifications", [{

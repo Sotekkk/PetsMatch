@@ -1,5 +1,6 @@
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
+const {sendPush, resolveProfileId} = require("./push_helpers");
 
 if (!admin.apps.length) admin.initializeApp();
 
@@ -14,30 +15,12 @@ exports.notifyEmployeeAdded = functions
         if (!employeUid || !nomElevage) return {success: false, reason: "missing_params"};
 
         try {
-            const userDoc = await admin.firestore().collection("users").doc(employeUid).get();
-            const fcmToken = userDoc.exists ? userDoc.data()?.fcmToken : null;
-
-            if (!fcmToken) return {success: false, reason: "no_fcm_token"};
-
             const employeTitle = "Invitation à rejoindre un élevage";
             const employeBody = `Vous avez été ajouté à l'équipe de ${nomElevage}`;
-            await admin.messaging().send({
-                token: fcmToken,
-                data: {
-                    type: "employee_invite",
-                    title: employeTitle,
-                    body: employeBody,
-                    click_action: "FLUTTER_NOTIFICATION_CLICK",
-                },
-                android: {
-                    priority: "high",
-                },
-                apns: {
-                    headers: {"apns-priority": "10"},
-                    payload: {aps: {alert: {title: employeTitle, body: employeBody}, sound: "default"}},
-                },
-            });
-
+            const sent = await sendPush(employeUid, employeTitle, employeBody,
+                {type: "employee_invite", click_action: "FLUTTER_NOTIFICATION_CLICK"},
+                {profileId: await resolveProfileId(employeUid, "pro")});
+            if (!sent) return {success: false, reason: "no_fcm_token"};
             return {success: true};
         } catch (e) {
             console.error("notifyEmployeeAdded error:", e);

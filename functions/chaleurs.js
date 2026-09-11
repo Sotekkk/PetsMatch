@@ -1,5 +1,4 @@
 const functions = require("firebase-functions/v1");
-const admin = require("firebase-admin");
 const https = require("https");
 
 const SUPABASE_URL = "https://zyvpngcvzrkdytypjlyq.supabase.co";
@@ -58,41 +57,9 @@ async function supabaseInsert(table, rows) {
     return res.status;
 }
 
-// ─── FCM helper ───────────────────────────────────────────────────────────────
+// ─── FCM helper (partagé — préfixe le profil concerné + bascule au tap) ──────
 
-async function sendPush(uid, title, body, data = {}) {
-    try {
-        const doc = await admin.firestore().collection("users").doc(uid).get();
-        if (!doc.exists) return false;
-        const userData = doc.data();
-        const tokens = [userData.fcmToken, userData.webFcmToken].filter(Boolean);
-        if (!tokens.length) return false;
-
-        let sent = false;
-        for (const token of tokens) {
-            try {
-                await admin.messaging().send({
-                    token,
-                    data: {type: "chaleur", title, body, ...data},
-                    android: {
-                        priority: "high",
-                    },
-                    apns: {
-                        headers: {"apns-priority": "10"},
-                        payload: {aps: {alert: {title, body}, sound: "default", badge: 1}},
-                    },
-                });
-                sent = true;
-            } catch (e) {
-                console.warn(`sendPush token error for ${uid}:`, e.message);
-            }
-        }
-        return sent;
-    } catch (e) {
-        console.error(`sendPush error for ${uid}:`, e);
-        return false;
-    }
-}
+const {sendPush} = require("./push_helpers");
 
 // ─── Domaine : chaleurs ───────────────────────────────────────────────────────
 
@@ -249,11 +216,14 @@ exports.sendChaleursNotifications = functions
                 animal.uid_eleveur,
                 title,
                 body,
-                {animalId: String(animal.id)},
+                {type: "chaleur", animalId: String(animal.id)},
+                {profileId: profileIdByAnimal[animal.id] || null},
             );
             if (pushed) sent++;
             if (assigneA) {
-                await sendPush(assigneA, title, body, {animalId: String(animal.id)});
+                await sendPush(assigneA, title, body,
+                    {type: "chaleur", animalId: String(animal.id)},
+                    {profileId: assigneProfileId});
             }
 
             // Insert in-app notification into Supabase — idem, propriétaire + employé assigné.

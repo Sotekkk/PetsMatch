@@ -1,6 +1,7 @@
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const https = require("https");
+const {sendPush} = require("./push_helpers");
 
 if (!admin.apps.length) admin.initializeApp();
 
@@ -138,21 +139,9 @@ exports.notifyOwnerVetEntry = functions
 
         // Push FCM
         try {
-            const userDoc = await admin.firestore().collection("users").doc(ownerUid).get();
-            const fcmToken = userDoc.exists ? userDoc.data()?.fcmToken : null;
-            if (fcmToken) {
-                await admin.messaging().send({
-                    token: fcmToken,
-                    data: {type: "vet_entry", title, body, animal_id: animalId},
-                    android: {
-                        priority: "high",
-                    },
-                    apns: {
-                        headers: {"apns-priority": "10"},
-                        payload: {aps: {alert: {title, body}, sound: "default"}},
-                    },
-                });
-            }
+            await sendPush(ownerUid, title, body,
+                {type: "vet_entry", animal_id: animalId},
+                {profileId});
         } catch (e) {
             console.error("notifyOwnerVetEntry: FCM error", e);
         }

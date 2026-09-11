@@ -1,5 +1,6 @@
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
+const {sendPush, resolveProfileId} = require("./push_helpers");
 
 if (!admin.apps.length) admin.initializeApp();
 
@@ -14,29 +15,11 @@ exports.notifyTacheAssignee = functions
         if (!assigneUid || !titre) return {success: false, reason: "missing_params"};
 
         try {
-            const userDoc = await admin.firestore().collection("users").doc(assigneUid).get();
-            const fcmToken = userDoc.exists ? userDoc.data()?.fcmToken : null;
-
-            if (!fcmToken) return {success: false, reason: "no_fcm_token"};
-
             const tacheTitle = "Nouvelle tâche assignée";
-            await admin.messaging().send({
-                token: fcmToken,
-                data: {
-                    type: "tache",
-                    title: tacheTitle,
-                    body: titre,
-                    click_action: "FLUTTER_NOTIFICATION_CLICK",
-                },
-                android: {
-                    priority: "high",
-                },
-                apns: {
-                    headers: {"apns-priority": "10"},
-                    payload: {aps: {alert: {title: tacheTitle, body: titre}, sound: "default"}},
-                },
-            });
-
+            const sent = await sendPush(assigneUid, tacheTitle, titre,
+                {type: "tache", click_action: "FLUTTER_NOTIFICATION_CLICK"},
+                {profileId: await resolveProfileId(assigneUid, "pro")});
+            if (!sent) return {success: false, reason: "no_fcm_token"};
             return {success: true};
         } catch (e) {
             console.error("notifyTacheAssignee error:", e);

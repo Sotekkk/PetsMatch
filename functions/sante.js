@@ -1,5 +1,4 @@
 const functions = require("firebase-functions/v1");
-const admin = require("firebase-admin");
 const https = require("https");
 
 const SUPABASE_URL = "https://zyvpngcvzrkdytypjlyq.supabase.co";
@@ -147,7 +146,8 @@ async function notifyAndMirrorPension({
             // Garde-fou : ne jamais re-notifier le propriétaire lui-même.
             if (proUid === ownerUid) continue;
 
-            await sendPush(proUid, title, body, {animalId: String(animalId)});
+            await sendPush(proUid, title, body, {type: "sante", animalId: String(animalId)},
+                {profileId: proProfileId});
             try {
                 await supabaseInsert("notifications", [{
                     uid: proUid,
@@ -191,39 +191,12 @@ async function notifyAndMirrorPension({
     }
 }
 
-// ─── FCM helper ───────────────────────────────────────────────────────────────
+// ─── FCM helper (partagé — préfixe le profil concerné + bascule au tap) ──────
+// (data-only, pas de bloc `notification`/`android.notification` : sur
+// Android le système affichait sinon un doublon en plus de l'affichage
+// manuel app — voir push_helpers.js)
 
-async function sendPush(uid, title, body, data = {}) {
-    try {
-        const doc = await admin.firestore().collection("users").doc(uid).get();
-        const token = doc.exists ? doc.data().fcmToken : null;
-        if (!token) return false;
-
-        // Pas de bloc `notification` top-level ni `android.notification` :
-        // sur Android, le système affichait automatiquement CETTE notif en
-        // plus de celle affichée manuellement par l'app (onMessage/
-        // onBackgroundMessage) — doublon constaté en prod. title/body
-        // passent par `data` ; l'app les affiche elle-même sur Android.
-        // iOS inchangé (apns.payload.aps.alert), aucun doublon rapporté
-        // dessus, et l'app ne réaffiche pas manuellement côté iOS en
-        // arrière-plan (voir _firebaseMessagingBackgroundHandler).
-        await admin.messaging().send({
-            token,
-            data: {type: "sante", title, body, ...data},
-            android: {
-                priority: "high",
-            },
-            apns: {
-                headers: {"apns-priority": "10"},
-                payload: {aps: {alert: {title, body}, sound: "default", badge: 1}},
-            },
-        });
-        return true;
-    } catch (e) {
-        console.error(`sendPush error uid=${uid}:`, e.message);
-        return false;
-    }
-}
+const {sendPush} = require("./push_helpers");
 
 // ─── Date helper (heure locale Paris pour éviter les décalages UTC) ───────────
 
@@ -295,9 +268,10 @@ exports.sendSanteReminders = functions
                     const body = `Rappel ${phrase} : ${produit} pour ${nomAnimal}.`;
 
                     const pushed = await sendPush(uid, title, body, {
+                        type: "sante",
                         animalId: String(row.animal_id),
                         table,
-                    });
+                    }, {profileId});
                     if (pushed) sent++;
 
                     // Notification en base
@@ -456,11 +430,13 @@ async function sendOverdueSanteReminders() {
             } catch (_) {/* pas bloquant */}
 
             const pushed = await sendPush(uid, title, body, {
-                animalId: String(row.animal_id), table, overdue: true,
-            });
+                type: "sante", animalId: String(row.animal_id), table, overdue: true,
+            }, {profileId});
             if (pushed) sent++;
             if (assigneA) {
-                await sendPush(assigneA, title, body, {animalId: String(row.animal_id), table, overdue: true});
+                await sendPush(assigneA, title, body,
+                    {type: "sante", animalId: String(row.animal_id), table, overdue: true},
+                    {profileId: assigneProfileId});
             }
 
             try {
@@ -581,9 +557,10 @@ exports.sendTraitementReminders = functions
                 (row.posologie ? ` — ${row.posologie}` : "");
 
             const pushed = await sendPush(uid, title, body, {
+                type: "sante",
                 animalId: String(row.animal_id),
                 table: "traitements",
-            });
+            }, {profileId});
             if (pushed) sent++;
 
             try {
@@ -679,8 +656,8 @@ exports.sendInventaireReminders = functions
                 "Pensez à commander.";
 
             const pushed = await sendPush(item.uid_eleveur, title, body, {
-                itemId: String(item.id), table: "inventaire_items",
-            });
+                type: "inventaire_alerte", itemId: String(item.id), table: "inventaire_items",
+            }, {profileId: item.eleveur_profile_id || null});
             if (pushed) sent++;
 
             try {

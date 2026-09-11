@@ -1,5 +1,4 @@
 const functions = require("firebase-functions/v1");
-const admin = require("firebase-admin");
 const https = require("https");
 
 const SUPABASE_URL = "https://zyvpngcvzrkdytypjlyq.supabase.co";
@@ -56,30 +55,9 @@ async function supabaseInsert(table, rows) {
     return supabaseReq("POST", table, rows);
 }
 
-// ─── FCM helper ───────────────────────────────────────────────────────────────
+// ─── FCM helper (partagé) ──────────────────────────────────────────────────────
 
-async function sendPush(uid, title, body, data = {}) {
-    try {
-        const doc = await admin.firestore().collection("users").doc(uid).get();
-        const token = doc.exists ? doc.data().fcmToken : null;
-        if (!token) return false;
-        await admin.messaging().send({
-            token,
-            data: {type: "annonce_expiration", title, body, ...data},
-            android: {
-                priority: "high",
-            },
-            apns: {
-                headers: {"apns-priority": "10"},
-                payload: {aps: {alert: {title, body}, sound: "default", badge: 1}},
-            },
-        });
-        return true;
-    } catch (e) {
-        console.error(`sendPush uid=${uid}:`, e.message);
-        return false;
-    }
-}
+const {sendPush} = require("./push_helpers");
 
 // ─── Helpers date ─────────────────────────────────────────────────────────────
 
@@ -152,7 +130,9 @@ exports.sendAnnonceExpirationReminders = functions
                 const title = `⏳ Annonce expirant ${phrase}`;
                 const body = `Votre annonce "${label}" expire ${phrase}. Renouvelez-la pour rester visible.`;
 
-                const pushed = await sendPush(a.uid_eleveur, title, body, {annonceId: String(a.id)});
+                const pushed = await sendPush(a.uid_eleveur, title, body,
+                    {type: "annonce_expiration", annonceId: String(a.id)},
+                    {profileId: a.profile_id || null});
                 if (pushed) reminders++;
 
                 try {
