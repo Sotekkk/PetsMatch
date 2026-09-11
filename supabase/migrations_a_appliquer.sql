@@ -344,3 +344,17 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS idx_follows_follower_uid  ON public.follows (follower_uid);
 CREATE INDEX IF NOT EXISTS idx_follows_following_uid ON public.follows (following_uid);
+
+
+-- ────────────────────────────────────────────────────────────
+-- 16. Protocoles (plan_templates) — type « Alimentaire » manquant du CHECK.
+--     Le formulaire propose ce type depuis le début, la contrainte ne
+--     l'autorisait pas → toute création plantait (23514
+--     plan_templates_type_chekck).
+--     Détail : supabase/migration_plan_templates_type_alimentaire.sql
+-- ────────────────────────────────────────────────────────────
+
+ALTER TABLE public.plan_templates DROP CONSTRAINT IF EXISTS plan_templates_type_chekck;
+ALTER TABLE public.plan_templates
+  ADD CONSTRAINT plan_templates_type_chekck
+  CHECK (type IN ('sanitaire', 'nettoyage', 'promenade', 'socialisation', 'alimentaire'));
