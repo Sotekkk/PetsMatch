@@ -3,9 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_trouve_form_page.dart';
+import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 
 // ─── Service ──────────────────────────────────────────────────────────────────
@@ -151,6 +154,9 @@ class ChipScannerService {
     Map<String, dynamic>? animal;
     Map<String, dynamic>? alerte;
     Map<String, dynamic>? trouve;
+    Map<String, dynamic>? autreAnimal;
+    Map<String, dynamic>? autreOwnerProfile;
+    String? autreOwnerUid;
 
     try {
       // 1. Animaux de l'éleveur/association (Supabase)
@@ -199,6 +205,65 @@ class ChipScannerService {
           }
         }
       }
+
+      // 4. Puce déjà enregistrée sur un animal d'un AUTRE propriétaire (pas le
+      // mien, pas une alerte perdu/trouvé) — identité en lecture seule +
+      // fiche du propriétaire actuel, jamais la fiche complète (données
+      // santé/repro privées d'un tiers).
+      if (animal == null && alerte == null && trouve == null) {
+        const cols = 'id,nom,espece,race,sexe,couleur,date_naissance,photo_url,'
+            'identification,uid_eleveur,uid_proprietaire';
+        final exact = await _supa
+            .from('animaux')
+            .select(cols)
+            .eq('identification', normalized)
+            .limit(1)
+            .maybeSingle();
+        if (exact != null) {
+          autreAnimal = Map<String, dynamic>.from(exact);
+        } else {
+          final rows = await _supa.from('animaux').select(cols)
+              .ilike('identification', '%$normalized%').limit(20);
+          for (final row in rows as List) {
+            final id = ((row as Map)['identification'] ?? '').toString()
+                .replaceAll(RegExp(r'[\s\-]'), '');
+            if (id == normalized) {
+              autreAnimal = Map<String, dynamic>.from(row);
+              break;
+            }
+          }
+        }
+
+        if (autreAnimal != null) {
+          // Propriétaire courant résolu via animaux_proprietes (ligne active)
+          // — animaux.uid_eleveur/uid_proprietaire peut être périmé après une
+          // cession, voir migration_fix_animaux_proprietes_unique_constraint.sql.
+          String? ownerProfileId;
+          try {
+            final propRows = await _supa
+                .from('animaux_proprietes')
+                .select('uid_proprio, profile_id_proprio')
+                .eq('animal_id', autreAnimal['id'].toString())
+                .isFilter('date_fin', null)
+                .limit(1);
+            if ((propRows as List).isNotEmpty) {
+              autreOwnerUid = propRows.first['uid_proprio'] as String?;
+              ownerProfileId = propRows.first['profile_id_proprio'] as String?;
+            }
+          } catch (_) {}
+          autreOwnerUid ??= (autreAnimal['uid_eleveur'] ?? autreAnimal['uid_proprietaire'])?.toString();
+
+          const pcols = 'id,uid,profile_type,nom,firstname,lastname,photo_url';
+          if (ownerProfileId != null) {
+            autreOwnerProfile = await _supa.from('user_profiles')
+                .select(pcols).eq('id', ownerProfileId).maybeSingle();
+          }
+          if (autreOwnerProfile == null && autreOwnerUid != null) {
+            autreOwnerProfile = await _supa.from('user_profiles')
+                .select(pcols).eq('uid', autreOwnerUid).eq('is_main', true).maybeSingle();
+          }
+        }
+      }
     } catch (_) {}
 
     if (!context.mounted) return;
@@ -212,6 +277,21 @@ class ChipScannerService {
           initialData: animal,
         ),
       ));
+      return;
+    }
+
+    if (autreAnimal != null) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (_) => _OwnerAnimalResultSheet(
+          animal: autreAnimal!,
+          ownerProfile: autreOwnerProfile,
+          ownerUid: autreOwnerUid,
+        ),
+      );
       return;
     }
 
@@ -901,6 +981,189 @@ class _VetResultSheetState extends State<_VetResultSheet> {
               ),
             ),
           ],
+        ]),
+      ),
+    );
+  }
+}
+
+// ─── Puce reconnue — animal d'un autre propriétaire ────────────────────────────
+// Identité en lecture seule uniquement (jamais la fiche complète d'un tiers :
+// pas de données santé/reproduction) + carte du propriétaire actuel.
+
+const Map<String, String> _ownerProfileTypeLabels = {
+  'particulier': 'Particulier',
+  'eleveur': 'Éleveur',
+  'association': 'Association',
+  'veterinaire': 'Vétérinaire',
+  'sante': 'Ostéo/Vétérinaire',
+  'education': 'Éducateur',
+  'garde': 'Pet Sitter',
+  'toilettage': 'Toiletteur',
+  'photographe': 'Photographe',
+  'pension': 'Pension',
+};
+
+class _OwnerAnimalResultSheet extends StatelessWidget {
+  final Map<String, dynamic> animal;
+  final Map<String, dynamic>? ownerProfile;
+  final String? ownerUid;
+
+  const _OwnerAnimalResultSheet({required this.animal, this.ownerProfile, this.ownerUid});
+
+  static const _teal = Color(0xFF0C5C6C);
+
+  String get _age {
+    final dob = animal['date_naissance']?.toString();
+    if (dob == null) return '';
+    final date = DateTime.tryParse(dob);
+    if (date == null) return '';
+    final diff = DateTime.now().difference(date);
+    final years = (diff.inDays / 365).floor();
+    final months = ((diff.inDays % 365) / 30).floor();
+    return years > 0 ? '$years an${years > 1 ? "s" : ""}' : '$months mois';
+  }
+
+  String get _ownerName {
+    final p = ownerProfile;
+    if (p == null) return 'Propriétaire inconnu';
+    if (p['profile_type'] == 'particulier') {
+      final n = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+      return n.isNotEmpty ? n : 'Particulier';
+    }
+    final nom = (p['nom'] as String?)?.trim();
+    return (nom != null && nom.isNotEmpty) ? nom : 'Professionnel';
+  }
+
+  Future<void> _contacter(BuildContext context) async {
+    if (ownerUid == null || ownerUid!.isEmpty) return;
+    try {
+      final convId = await MessagingHelper.openOrCreateConversation(
+        otherUid: ownerUid!,
+        categorie: 'communaute',
+        myProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+      );
+      if (!context.mounted) return;
+      Navigator.pop(context);
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => ChatScreen(conversationId: convId, eleveurId: ownerUid!),
+      ));
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final photo = animal['photo_url']?.toString() ?? '';
+    final nom = animal['nom']?.toString() ?? 'Animal';
+    final espece = animal['espece']?.toString() ?? '';
+    final race = animal['race']?.toString() ?? '';
+    final couleur = animal['couleur']?.toString() ?? '';
+    final puce = animal['identification']?.toString() ?? '';
+    final subtitle = [espece, race].where((s) => s.isNotEmpty).join(' · ');
+    final ownerPhoto = ownerProfile?['photo_url']?.toString() ?? '';
+    final ownerType = ownerProfile?['profile_type']?.toString() ?? '';
+    final ownerLabel = _ownerProfileTypeLabels[ownerType] ?? '';
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Center(child: Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: const Color(0xFFDDE1E7), borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 20),
+
+          Row(children: [
+            const Icon(Icons.check_circle_rounded, color: Color(0xFF6E9E57), size: 22),
+            const SizedBox(width: 8),
+            Expanded(child: Text('Puce $puce',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E)))),
+          ]),
+          const SizedBox(height: 4),
+          const Text('Cet animal appartient à un autre compte PetsMatch — identité en lecture seule.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B), height: 1.4)),
+          const SizedBox(height: 16),
+
+          // ── Identité de l'animal (lecture seule) ──
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: _teal.withValues(alpha: 0.07),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _teal.withValues(alpha: 0.25)),
+            ),
+            child: Row(children: [
+              Container(
+                width: 56, height: 56,
+                decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: _teal.withValues(alpha: 0.15)),
+                child: photo.isNotEmpty
+                    ? ClipRRect(borderRadius: BorderRadius.circular(12),
+                        child: CachedNetworkImage(imageUrl: photo, fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => const Icon(Icons.pets, color: _teal, size: 28)))
+                    : const Icon(Icons.pets, color: _teal, size: 28),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(nom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1F2A2E))),
+                if (subtitle.isNotEmpty)
+                  Text(subtitle, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal, fontWeight: FontWeight.w600)),
+                if (_age.isNotEmpty || couleur.isNotEmpty)
+                  Text([_age, couleur].where((s) => s.isNotEmpty).join(' · '),
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+              ])),
+            ]),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Propriétaire actuel ──
+          const Text('Propriétaire', style: TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1F2A2E))),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: const Color(0xFFF4F6F5), borderRadius: BorderRadius.circular(12)),
+            child: Row(children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: _teal.withValues(alpha: 0.15),
+                backgroundImage: ownerPhoto.isNotEmpty ? CachedNetworkImageProvider(ownerPhoto) : null,
+                child: ownerPhoto.isEmpty ? const Icon(Icons.person, color: _teal) : null,
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(_ownerName, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1F2A2E))),
+                if (ownerLabel.isNotEmpty)
+                  Text(ownerLabel, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+              ])),
+            ]),
+          ),
+          const SizedBox(height: 20),
+
+          if (ownerUid != null && ownerUid!.isNotEmpty)
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _contacter(context),
+                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                label: const Text('Contacter le propriétaire', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _teal, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14), elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            )
+          else
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF6F767B),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text('Fermer', style: TextStyle(fontFamily: 'Galey')),
+              ),
+            ),
         ]),
       ),
     );
