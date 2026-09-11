@@ -234,6 +234,12 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
       'taxi_animalier'   => 'Mon activité de transport',
       _                  => 'Mon profil',
     };
+    // Pré-remplit la profession avec le premier choix (ex : « Pet sitter »
+    // pour Garde) — l'utilisateur vient déjà de choisir la catégorie sur
+    // l'étape précédente, inutile de lui reposer la question à vide.
+    if (_hasSubProfession) {
+      _subProfession = _subProfessions[widget.typeInfo.type]!.first;
+    }
   }
 
   @override
