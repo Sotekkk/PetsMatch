@@ -827,6 +827,25 @@ function ProDetailContent() {
     </div>
   );
 
+  // Un profil pro non activé n'est visible que par son propriétaire (pour
+  // qu'il puisse voir son brouillon) — pas dans les listings (déjà filtré
+  // ailleurs) ni via un lien direct vers cette page.
+  const isOwner = user?.uid === pro.uid;
+  if (!['actif', 'validated'].includes(pro.statut_pro || '') && !isOwner) {
+    return (
+      <div className="min-h-screen bg-[#F8F8F8] flex flex-col items-center justify-center gap-3 px-4 text-center">
+        <span className="text-5xl">⏳</span>
+        <p className="text-gray-700 font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Ce profil est en cours de validation
+        </p>
+        <p className="text-gray-500 text-sm max-w-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Il sera visible dès que notre équipe l&apos;aura approuvé.
+        </p>
+        <Link href="/services/carte" className="text-[#0C5C6C] text-sm underline">← Retour aux services</Link>
+      </div>
+    );
+  }
+
   const fullAddress = [pro.adresse, pro.code_postal, pro.ville].filter(Boolean).join(' ');
 
   return (

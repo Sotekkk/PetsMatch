@@ -36,6 +36,43 @@ class _VerificationDetailState extends State<VerificationDetail> {
     } catch (_) {}
   }
 
+  static const _profileLabels = <String, String>{
+    'eleveur': 'Éleveur', 'association': 'Association', 'veterinaire': 'Vétérinaire',
+    'sante': 'Santé animale', 'education': 'Éducation', 'garde': 'Garde',
+    'pension': 'Pension', 'toilettage': 'Toilettage', 'photographe': 'Photographe',
+    'marechal_ferrant': 'Maréchal-ferrant', 'taxi_animalier': 'Taxi animalier',
+  };
+
+  /// Notification in-app (+ push via le webhook Supabase sur `notifications`)
+  /// — même convention que l'admin web (website/src/lib/notifications.ts) :
+  /// types `profil_valide` / `profil_refuse`, ancrée sur le profil particulier.
+  Future<void> _notifyProfileStatus({required bool approved, String? reason}) async {
+    try {
+      final supa = Supabase.instance.client;
+      final profileType = (widget.data['isElevage'] == true)
+          ? 'eleveur'
+          : (widget.data['catPro'] as String? ?? '');
+      final label = _profileLabels[profileType] ?? profileType;
+      final prof = await supa.from('user_profiles')
+          .select('id').eq('uid', widget.uid).eq('profile_type', 'particulier').maybeSingle();
+      await supa.from('notifications').insert({
+        'uid': widget.uid,
+        'type': approved ? 'profil_valide' : 'profil_refuse',
+        'title': approved ? 'Profil validé !' : 'Profil non approuvé',
+        'body': approved
+            ? 'Votre profil $label a été validé. Vous pouvez maintenant publier des annonces '
+                'et utiliser toutes les fonctionnalités.'
+            : (reason != null && reason.isNotEmpty
+                ? 'Votre profil $label n\'a pas été approuvé. Motif : $reason'
+                : 'Votre profil $label n\'a pas été approuvé. Contactez le support pour plus d\'informations.'),
+        'profile_type': profileType,
+        if (prof != null) 'profile_id': prof['id'],
+        'data': {},
+        'read': false,
+      });
+    } catch (_) {}
+  }
+
   Future<void> _sendApprovalEmail(String toEmail, String firstname) {
     return _sendEmail(
       toEmail: toEmail,
@@ -110,10 +147,11 @@ petsmatch.contact@gmail.com
       if (email.isNotEmpty) {
         await _sendApprovalEmail(email, firstname);
       }
+      await _notifyProfileStatus(approved: true);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Compte approuvé et e-mail envoyé.'),
+            content: Text('Compte approuvé, e-mail et notification envoyés.'),
             backgroundColor: Colors.green,
           ),
         );
@@ -166,10 +204,11 @@ petsmatch.contact@gmail.com
       if (email.isNotEmpty) {
         await _sendRejectionEmail(email, firstname, reason);
       }
+      await _notifyProfileStatus(approved: false, reason: reason);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Compte refusé et e-mail envoyé.'),
+            content: Text('Compte refusé, e-mail et notification envoyés.'),
             backgroundColor: Colors.red,
           ),
         );

@@ -487,6 +487,12 @@ export default function AdminPage() {
       }
       const profileType = d.isElevage ? 'eleveur' : (d.catPro ?? '');
       await notifyProfileValidated(d.uid, profileType);
+      if (d.email) {
+        fetch('/api/admin/profil-notify-email', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: d.email, firstname: d.firstname, approved: true }),
+        }).catch(() => {});
+      }
       setDossiers(prev => prev.filter(x =>
         x.profileTableId !== d.profileTableId
       ));
@@ -525,6 +531,12 @@ export default function AdminPage() {
           : `Votre profil ${LABELS[profileType] ?? profileType} n'a pas été approuvé. Contactez le support pour plus d'informations.`,
         profileType,
       });
+      if (d.email) {
+        fetch('/api/admin/profil-notify-email', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: d.email, firstname: d.firstname, approved: false, reason: motif.trim() }),
+        }).catch(() => {});
+      }
       setDossiers(prev => prev.filter(x =>
         x.profileTableId !== d.profileTableId
       ));

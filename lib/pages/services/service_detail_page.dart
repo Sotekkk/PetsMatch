@@ -604,7 +604,9 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF6E9E57)))
           : _proData == null
               ? _emptyState()
-              : NestedScrollView(
+              : (!_isActivated && !_isOwner)
+                  ? _pendingState()
+                  : NestedScrollView(
                   headerSliverBuilder: (ctx, _) => [
                     // Simple barre de navigation (pas d'expanded)
                     SliverAppBar(
@@ -638,7 +640,35 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                     ],
                   ),
                 ),
-      bottomNavigationBar: _proData == null ? null : _buildBottomBar(),
+      bottomNavigationBar: (_proData == null || (!_isActivated && !_isOwner)) ? null : _buildBottomBar(),
+    );
+  }
+
+  // Un profil pro non activé n'est visible que par son propriétaire (pour
+  // qu'il puisse voir son brouillon) — pas dans les listings (déjà filtré
+  // ailleurs) ni via un accès direct à cette page.
+  bool get _isActivated =>
+      const ['actif', 'validated'].contains((_proData?['statut_pro'] as String?) ?? '');
+  bool get _isOwner =>
+      FirebaseAuth.instance.currentUser?.uid != null &&
+      FirebaseAuth.instance.currentUser!.uid == (_proData?['uid'] as String?);
+
+  Widget _pendingState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.hourglass_top_outlined, size: 64, color: Colors.grey.shade300),
+          const SizedBox(height: 12),
+          Text('Ce profil est en cours de validation',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Colors.grey.shade700)),
+          const SizedBox(height: 6),
+          Text('Il sera visible dès que notre équipe l\'aura approuvé.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+        ]),
+      ),
     );
   }
 
