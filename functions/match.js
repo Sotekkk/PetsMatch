@@ -216,9 +216,9 @@ function calcScore(perdu, trouve) {
     }
 
     // Dates compatibles : date trouvée ≥ date perdue (+15)
-    if (perdu.date_perte && trouve.date_decouverte) {
+    if (perdu.date_perte && trouve.date_trouve) {
         const dP = new Date(perdu.date_perte);
-        const dT = new Date(trouve.date_decouverte);
+        const dT = new Date(trouve.date_trouve);
         if (!isNaN(dP) && !isNaN(dT) && dT >= dP) score += 15;
     }
 
@@ -290,7 +290,7 @@ exports.matchLostFound = functions
                 const candidats = await supabaseGet("animaux_trouves", {
                     "espece": `eq.${perdu.espece}`,
                     "created_at": `gte.${cutoff30}`,
-                    "select": "id,espece,race,sexe,couleur,numero_puce,date_decouverte,lat,lng,statut,user_uid",
+                    "select": "id,espece,race,sexe,couleur,numero_puce,date_trouve,lat,lng,statut,user_uid",
                 });
 
                 for (const trouve of candidats) {

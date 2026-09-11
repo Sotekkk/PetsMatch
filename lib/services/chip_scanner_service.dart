@@ -178,7 +178,7 @@ class ChipScannerService {
       if (animal == null) {
         final rows = await _supa
             .from('alertes_perdus')
-            .select('id,nom_animal,espece,race,sexe,couleur,identification,uid_proprietaire,date_perte,ville')
+            .select('id,nom_animal,espece,race,sexe,couleur,identification,uid_proprietaire,date_perte,derniere_localisation')
             .limit(200);
         for (final row in rows as List) {
           final id = ((row as Map)['identification'] ?? '').toString()
@@ -194,7 +194,7 @@ class ChipScannerService {
       if (animal == null) {
         final rows = await _supa
             .from('animaux_trouves')
-            .select('id,espece,race,sexe,couleur,numero_puce,date_decouverte,ville,statut')
+            .select('id,espece,race,sexe,couleur,numero_puce,date_trouve,localisation_ville,statut')
             .limit(200);
         for (final row in rows as List) {
           final puce = ((row as Map)['numero_puce'] ?? '').toString()
@@ -253,7 +253,7 @@ class ChipScannerService {
           } catch (_) {}
           autreOwnerUid ??= (autreAnimal['uid_eleveur'] ?? autreAnimal['uid_proprietaire'])?.toString();
 
-          const pcols = 'id,uid,profile_type,nom,firstname,lastname,photo_url';
+          const pcols = 'id,uid,profile_type,nom,firstname,lastname,avatar_url';
           if (ownerProfileId != null) {
             autreOwnerProfile = await _supa.from('user_profiles')
                 .select(pcols).eq('id', ownerProfileId).maybeSingle();
@@ -566,7 +566,7 @@ class _ResultSheet extends StatelessWidget {
               lines: [
                 alerte!['nom_animal']?.toString() ?? 'Animal sans nom',
                 '${alerte!['espece'] ?? ''} · ${alerte!['race'] ?? ''}',
-                alerte!['ville']?.toString() ?? '',
+                alerte!['derniere_localisation']?.toString() ?? '',
               ],
             ),
             const SizedBox(height: 12),
@@ -579,8 +579,8 @@ class _ResultSheet extends StatelessWidget {
               label: 'Animal trouvé déclaré',
               lines: [
                 '${trouve!['espece'] ?? ''} · ${trouve!['race'] ?? ''}',
-                'Trouvé le ${trouve!['date_decouverte'] ?? ''}',
-                trouve!['ville']?.toString() ?? '',
+                'Trouvé le ${trouve!['date_trouve'] ?? ''}',
+                trouve!['localisation_ville']?.toString() ?? '',
               ],
             ),
             const SizedBox(height: 12),
@@ -1060,7 +1060,7 @@ class _OwnerAnimalResultSheet extends StatelessWidget {
     final couleur = animal['couleur']?.toString() ?? '';
     final puce = animal['identification']?.toString() ?? '';
     final subtitle = [espece, race].where((s) => s.isNotEmpty).join(' · ');
-    final ownerPhoto = ownerProfile?['photo_url']?.toString() ?? '';
+    final ownerPhoto = ownerProfile?['avatar_url']?.toString() ?? '';
     final ownerType = ownerProfile?['profile_type']?.toString() ?? '';
     final ownerLabel = _ownerProfileTypeLabels[ownerType] ?? '';
 
