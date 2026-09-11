@@ -110,9 +110,11 @@ exports.sendChaleursNotifications = functions
         let sent = 0;
         let inApp = 0;
 
-        // 1. Fetch all female animals (not departed/deceased)
+        // 1. Fetch all female animals (not departed/deceased, not stérilisées —
+        // une femelle stérilisée n'a plus de cycle de chaleurs à suivre)
         const animaux = await supabaseSelect("animaux",
             "sexe=eq.femelle" +
+            "&sterilise=eq.false" +
             "&statut=not.in.(sorti,decede)" +
             "&select=id,nom,race,espece,uid_eleveur,intervalle_chaleurs_jours," +
             "chaleurs_responsable_uid,chaleurs_responsable_profile_id");
