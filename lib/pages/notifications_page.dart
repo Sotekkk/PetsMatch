@@ -35,6 +35,7 @@ import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/promenades/promenade_detail_page.dart';
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
+import 'package:PetsMatch/pages/chatScreen.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -162,6 +163,21 @@ class _NotificationsPageState extends State<NotificationsPage> {
     }
 
     if (!mounted) return;
+
+    // Message de chat → ouvre directement la conversation plutôt que de
+    // rester sur la liste des notifications.
+    if (type == 'message') {
+      final conversationId = data is Map ? data['conversation_id'] as String? : null;
+      if (conversationId != null && conversationId.isNotEmpty) {
+        final otherUid = await resolveConversationOtherUid(conversationId);
+        if (otherUid != null && mounted) {
+          await Navigator.push(context, MaterialPageRoute(
+            builder: (_) => ChatScreen(conversationId: conversationId, eleveurId: otherUid),
+          ));
+        }
+      }
+      return;
+    }
 
     // RDV notifications → pages agenda
     if (type == 'rdv_demande' || type == 'rdv_annule_client' || type == 'rdv_contre_proposition') {

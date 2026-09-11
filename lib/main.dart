@@ -10,6 +10,7 @@ import 'package:PetsMatch/pages/eleveur/verification_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_bootstrap.dart';
+import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -43,7 +44,26 @@ GlobalKey<ScaffoldState> drawerKey = GlobalKey<ScaffoldState>();
 // dépendre d'un pull-to-refresh manuel.
 final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
 
-void _handleNotifNavigation(Map<String, dynamic> data) {
+// Résout l'autre participant d'une conversation (Firestore
+// conversations/{id}.participants) pour ouvrir ChatScreen directement
+// depuis une notif — celle-ci ne transporte que le conversationId.
+Future<String?> resolveConversationOtherUid(String conversationId) async {
+  try {
+    final myUid = FirebaseAuth.instance.currentUser?.uid;
+    if (myUid == null) return null;
+    final doc = await FirebaseFirestore.instance
+        .collection('conversations').doc(conversationId).get();
+    final participants = (doc.data()?['participants'] as List? ?? [])
+        .map((p) => p.toString())
+        .where((p) => p != myUid)
+        .toList();
+    return participants.isNotEmpty ? participants.first : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<void> _handleNotifNavigation(Map<String, dynamic> data) async {
   final ctx = navigatorKey.currentState;
   if (ctx == null) return;
 
@@ -54,6 +74,20 @@ void _handleNotifNavigation(Map<String, dynamic> data) {
     final target = profiles.where((p) => p['id']?.toString() == recipientProfileId).firstOrNull;
     if (target != null) {
       User_Info.applyProfile(target);
+    }
+  }
+
+  // Message de chat : ouvre directement la conversation plutôt que la
+  // page Notifications générique.
+  final type = data['type'] as String?;
+  final conversationId = data['conversationId'] as String? ?? '';
+  if ((type == 'chat_message' || type == 'message') && conversationId.isNotEmpty) {
+    final otherUid = await resolveConversationOtherUid(conversationId);
+    if (otherUid != null) {
+      ctx.push(MaterialPageRoute(
+        builder: (_) => ChatScreen(conversationId: conversationId, eleveurId: otherUid),
+      ));
+      return;
     }
   }
 
@@ -619,8 +653,20 @@ Future<void> main() async {
     await flutterLocalNotificationsPlugin.initialize(
       settings: initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) async {
-        if (response.payload != null) {
-          print('Notification cliquée avec payload : ${response.payload}');
+        // Notif locale affichée par l'app (Android, message reçu en premier
+        // plan/arrière-plan) : le payload est le conversationId brut (voir
+        // flutterLocalNotificationsPlugin.show plus bas) — ouvre directement
+        // la conversation au tap, comme _handleNotifNavigation pour les
+        // notifs OS natives (onMessageOpenedApp).
+        final conversationId = response.payload;
+        if (conversationId != null && conversationId.isNotEmpty) {
+          final ctx = navigatorKey.currentState;
+          final otherUid = await resolveConversationOtherUid(conversationId);
+          if (ctx != null && otherUid != null) {
+            ctx.push(MaterialPageRoute(
+              builder: (_) => ChatScreen(conversationId: conversationId, eleveurId: otherUid),
+            ));
+          }
         }
       },
     );
