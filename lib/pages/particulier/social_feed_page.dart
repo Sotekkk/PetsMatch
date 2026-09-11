@@ -854,9 +854,17 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
   }
 
   Widget _buildHeader() {
+    // Éleveur/pro/association : accessible depuis le tiroir (Navigator.push),
+    // il faut un retour explicite — sinon ni bouton ni barre de nav du bas.
+    // Particulier : c'est un onglet de sa nav principale (rien à empiler).
+    final canPop = Navigator.canPop(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 16, 10),
       child: Row(children: [
+        if (canPop) ...[
+          _headerBtn(Icons.arrow_back_ios_new_rounded, () => Navigator.pop(context)),
+          const SizedBox(width: 10),
+        ],
         // ── Titre "Pets Social" — INTOUCHÉ ──────────────────────
         Expanded(
           child: Row(children: [
