@@ -63,6 +63,18 @@ const {sendPush} = require("./push_helpers");
 
 // ─── Domaine : chaleurs ───────────────────────────────────────────────────────
 
+// Âge de retraite (années) par espèce — même convention que la fiche animal
+// (bannière « Bientôt à la retraite »). Une femelle à/après cet âge n'a plus
+// de cycle de chaleurs à suivre.
+const AGES_RETRAITE = {
+    chien: 7, chat: 8, lapin: 5,
+    cheval: 18, ovin: 8, caprin: 8, porcin: 5, ane: 15,
+};
+
+// Fenêtre post mise-bas (jours) pendant laquelle le cycle est suspendu —
+// même seuil que « lactation récente » utilisé ailleurs dans l'app (< 8 sem).
+const JOURS_LACTATION = 56;
+
 function intervalChaleurs(espece) {
     switch ((espece || "").toLowerCase()) {
     case "chien": return 182;
@@ -116,7 +128,7 @@ exports.sendChaleursNotifications = functions
             "sexe=eq.femelle" +
             "&sterilise=eq.false" +
             "&statut=not.in.(sorti,decede)" +
-            "&select=id,nom,race,espece,uid_eleveur,intervalle_chaleurs_jours," +
+            "&select=id,nom,race,espece,uid_eleveur,intervalle_chaleurs_jours,date_naissance," +
             "chaleurs_responsable_uid,chaleurs_responsable_profile_id");
 
         if (!animaux.length) {
@@ -147,8 +159,35 @@ exports.sendChaleursNotifications = functions
             }
         }
 
+        // Dernière mise-bas par animal — cycle suspendu pendant l'allaitement.
+        const gestationsRaw = await supabaseSelect("gestations",
+            `animal_id=in.(${femIds.join(",")})&date_naissance=not.is.null&order=date_naissance.desc`);
+        const lastMiseBas = {};
+        for (const g of gestationsRaw) {
+            if (!lastMiseBas[g.animal_id]) {
+                const d = g.date_naissance ? new Date(g.date_naissance) : null;
+                if (d && !isNaN(d.getTime())) lastMiseBas[g.animal_id] = d;
+            }
+        }
+
         // 3. Process each animal
         for (const animal of animaux) {
+            // Retraite : au-delà de l'âge de reproduction, plus de cycle à suivre.
+            const naissance = animal.date_naissance ? new Date(animal.date_naissance) : null;
+            const ageRetraite = AGES_RETRAITE[(animal.espece || "").toLowerCase()];
+            if (naissance && !isNaN(naissance.getTime()) && ageRetraite) {
+                const dateRetraite = new Date(naissance.getTime());
+                dateRetraite.setFullYear(dateRetraite.getFullYear() + ageRetraite);
+                if (now.getTime() >= dateRetraite.getTime()) continue;
+            }
+
+            // Mise-bas récente : cycle suspendu pendant l'allaitement.
+            const miseBas = lastMiseBas[animal.id];
+            if (miseBas) {
+                const joursDepuis = Math.trunc((now.getTime() - miseBas.getTime()) / 86400000);
+                if (joursDepuis < JOURS_LACTATION) continue;
+            }
+
             const last = lastChaleur[animal.id];
             if (!last) continue;
 

@@ -7,6 +7,18 @@ class ChaleursNotifService {
   static const _channelId   = 'chaleurs_channel';
   static const _channelName = 'Chaleurs animaux';
 
+  // Âge de retraite (années) par espèce — même convention que la fiche
+  // animal (bannière « Bientôt à la retraite »). Une femelle à/après cet âge
+  // n'a plus de cycle de chaleurs à suivre.
+  static const _agesRetraite = <String, int>{
+    'chien': 7, 'chat': 8, 'lapin': 5,
+    'cheval': 18, 'ovin': 8, 'caprin': 8, 'porcin': 5, 'ane': 15,
+  };
+
+  // Fenêtre post mise-bas (jours) pendant laquelle le cycle est suspendu —
+  // même seuil que « lactation récente » utilisé ailleurs dans l'app (< 8 sem).
+  static const _joursLactation = 56;
+
   static int _intervalChaleurs(String espece) {
     switch (espece.toLowerCase()) {
       case 'chien':  return 182;
@@ -46,9 +58,10 @@ class ChaleursNotifService {
     try {
       animaux = await supa
           .from('animaux')
-          .select('id, nom, race, espece, intervalle_chaleurs_jours')
+          .select('id, nom, race, espece, intervalle_chaleurs_jours, date_naissance')
           .eq('uid_eleveur', uid)
           .eq('sexe', 'femelle')
+          .eq('sterilise', false)
           .not('statut', 'in', '("sorti","decede")');
     } catch (_) { return; }
 
@@ -71,6 +84,23 @@ class ChaleursNotifService {
       final d = DateTime.tryParse(c['date'] as String? ?? '');
       if (d != null) lastChaleur[aid] = d;
     }
+
+    // Dernière mise-bas par animal — cycle suspendu pendant l'allaitement.
+    final Map<String, DateTime> lastMiseBas = {};
+    try {
+      final gestations = await supa
+          .from('gestations')
+          .select('animal_id, date_naissance')
+          .inFilter('animal_id', femIds)
+          .not('date_naissance', 'is', null)
+          .order('date_naissance', ascending: false);
+      for (final g in gestations) {
+        final aid = (g as Map)['animal_id'] as String? ?? '';
+        if (lastMiseBas.containsKey(aid)) continue;
+        final d = DateTime.tryParse(g['date_naissance'] as String? ?? '');
+        if (d != null) lastMiseBas[aid] = d;
+      }
+    } catch (_) {}
 
     final now = DateTime.now();
     int notifId = 2000;
@@ -95,6 +125,18 @@ class ChaleursNotifService {
       final custom  = a['intervalle_chaleurs_jours'] as int?;
       final interval = custom ?? _intervalChaleurs(espece);
       if (interval == 0) continue;
+
+      // Retraite : au-delà de l'âge de reproduction, plus de cycle à suivre.
+      final naissance = DateTime.tryParse(a['date_naissance'] as String? ?? '');
+      final ageRetraite = _agesRetraite[espece.toLowerCase()];
+      if (naissance != null && ageRetraite != null) {
+        final dateRetraite = DateTime(naissance.year + ageRetraite, naissance.month, naissance.day);
+        if (!now.isBefore(dateRetraite)) continue;
+      }
+
+      // Mise-bas récente : cycle suspendu pendant l'allaitement.
+      final miseBas = lastMiseBas[id];
+      if (miseBas != null && now.difference(miseBas).inDays < _joursLactation) continue;
 
       final last = lastChaleur[id];
       if (last == null) continue;
