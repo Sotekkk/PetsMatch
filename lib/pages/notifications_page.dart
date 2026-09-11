@@ -1400,11 +1400,29 @@ class _MsgBadgeState extends State<MsgBadge> with WidgetsBindingObserver {
     try {
       final rows = await _supa
           .from('conversations')
-          .select('unread_count')
+          .select('unread_count, pro_profile_id, consumer_profile_id')
           .filter('participants', 'cs', '["$_uid"]')
           .eq('type', 'direct');
+      // Même filtrage que la liste de messagerie (message.dart _buildList) —
+      // sinon la bulle compte des conversations d'un AUTRE profil (compte
+      // multi-profils), invisibles dans la liste du profil actif : bulle
+      // affichée mais aucun message non lu visible.
+      final activePid = User_Info.activeProfileId;
+      final myProfileIds = User_Info.availableProfiles
+          .map((p) => p['id']?.toString() ?? '').toList();
       int total = 0;
       for (final row in rows as List) {
+        final convProPid = row['pro_profile_id']?.toString() ?? '';
+        final convConsumerPid = row['consumer_profile_id']?.toString() ?? '';
+        if (activePid.isNotEmpty) {
+          final isMePro = convProPid == activePid;
+          final isMeConsumer = convConsumerPid == activePid;
+          final isUntagged = convProPid.isEmpty && convConsumerPid.isEmpty;
+          if (!isMePro && !isMeConsumer && !isUntagged) continue;
+        } else {
+          if (convProPid.isNotEmpty && myProfileIds.contains(convProPid)) continue;
+          if (convConsumerPid.isNotEmpty && myProfileIds.contains(convConsumerPid)) continue;
+        }
         final m = row['unread_count'];
         if (m is Map && m[_uid] is int) total += m[_uid] as int;
       }
