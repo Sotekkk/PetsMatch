@@ -1733,7 +1733,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             ? [
                 _IdentiteTab(this),
                 _CarnetSanteTab(animalId: widget.animalId, vetMode: true, espece: _espece),
-                _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly('write_repro')),
+                _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly('write_repro'), sterilise: _sterilise, dateNaissance: _dateNaissance),
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
                 _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId),
                 if (User_Info.catPro == 'sante' || User_Info.catPro == 'marechal_ferrant')
@@ -1768,7 +1768,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                         : [
                             _IdentiteTab(this),
                             _DocumentsTab(animalId: widget.animalId ?? ''),
-                            _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly('write_repro')),
+                            _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly('write_repro'), sterilise: _sterilise, dateNaissance: _dateNaissance),
                             _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
                             _AlimentationTab(this),
                             _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
@@ -4118,7 +4118,9 @@ class _SuiviReproTab extends StatelessWidget {
   final String sexe;
   final int? intervalleChaleursCustom;
   final bool readOnly;
-  const _SuiviReproTab({this.animalId, required this.espece, required this.sexe, this.intervalleChaleursCustom, this.readOnly = false});
+  final bool sterilise;
+  final DateTime? dateNaissance;
+  const _SuiviReproTab({this.animalId, required this.espece, required this.sexe, this.intervalleChaleursCustom, this.readOnly = false, this.sterilise = false, this.dateNaissance});
 
   @override
   Widget build(BuildContext context) {
@@ -4136,7 +4138,8 @@ class _SuiviReproTab extends StatelessWidget {
 
     final views = <Widget>[
       if (!isMale)
-        _ChaleursTab(animalId: animalId!, espece: espece, intervalleCustom: intervalleChaleursCustom, readOnly: readOnly),
+        _ChaleursTab(animalId: animalId!, espece: espece, intervalleCustom: intervalleChaleursCustom, readOnly: readOnly,
+            sterilise: sterilise, dateNaissance: dateNaissance),
       _ReproList(
         animalId: animalId!, collection: 'saillies', readOnly: readOnly,
         addBuilder: (ctx) => _AddSaillieDialog(animalId: animalId!, espece: espece, sexeAnimal: sexe),
@@ -7558,6 +7561,33 @@ DateTime? _nextHeatDate(List<Map<String, dynamic>> data, String espece) {
   return last.add(Duration(days: interval));
 }
 
+// ─── Bannière cycle suspendu (stérilisée / retraite / lactation) ─────────────
+
+class _CycleSuspenduBanner extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _CycleSuspenduBanner({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF5EA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF6E9E57)),
+      ),
+      child: Row(children: [
+        Icon(icon, color: const Color(0xFF4A7A3A), size: 20),
+        const SizedBox(width: 10),
+        Expanded(child: Text(label,
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12.5, color: Color(0xFF4A7A3A)))),
+      ]),
+    );
+  }
+}
+
 // ─── Bannière prochaine chaleur ───────────────────────────────────────────────
 
 class _NextHeatBanner extends StatelessWidget {
@@ -7634,7 +7664,10 @@ class _ChaleursTab extends StatefulWidget {
   final String espece;
   final int? intervalleCustom;
   final bool readOnly;
-  const _ChaleursTab({required this.animalId, required this.espece, this.intervalleCustom, this.readOnly = false});
+  final bool sterilise;
+  final DateTime? dateNaissance;
+  const _ChaleursTab({required this.animalId, required this.espece, this.intervalleCustom, this.readOnly = false,
+      this.sterilise = false, this.dateNaissance});
   @override State<_ChaleursTab> createState() => _ChaleursTabState();
 }
 
@@ -7643,6 +7676,29 @@ class _ChaleursTabState extends State<_ChaleursTab> {
   List<Map<String, dynamic>> _data = [];
   bool _loading = true;
   int? _intervalleCustom; // local copy, editable
+  DateTime? _lastMiseBas;
+
+  // Même convention que le rappel de chaleurs (chaleurs_notif_service.dart) :
+  // âge de retraite par espèce + fenêtre de lactation suspendant le cycle.
+  static const _agesRetraite = <String, int>{
+    'chien': 7, 'chat': 8, 'lapin': 5,
+    'cheval': 18, 'ovin': 8, 'caprin': 8, 'porcin': 5, 'ane': 15,
+  };
+  static const _joursLactation = 56;
+
+  bool get _enRetraite {
+    final naissance = widget.dateNaissance;
+    final age = _agesRetraite[widget.espece.toLowerCase()];
+    if (naissance == null || age == null) return false;
+    final dateRetraite = DateTime(naissance.year + age, naissance.month, naissance.day);
+    return !DateTime.now().isBefore(dateRetraite);
+  }
+
+  bool get _enLactation {
+    final miseBas = _lastMiseBas;
+    if (miseBas == null) return false;
+    return DateTime.now().difference(miseBas).inDays < _joursLactation;
+  }
 
   @override
   void initState() {
@@ -7658,7 +7714,22 @@ class _ChaleursTabState extends State<_ChaleursTab> {
           .select()
           .eq('animal_id', widget.animalId)
           .order('date', ascending: false);
-      if (mounted) setState(() { _data = List<Map<String, dynamic>>.from(rows); _loading = false; });
+      DateTime? lastMiseBas;
+      try {
+        final gest = await _supa.from('gestations')
+            .select('date_naissance')
+            .eq('animal_id', widget.animalId)
+            .not('date_naissance', 'is', null)
+            .order('date_naissance', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        if (gest != null) lastMiseBas = DateTime.tryParse(gest['date_naissance'] ?? '');
+      } catch (_) {}
+      if (mounted) setState(() {
+        _data = List<Map<String, dynamic>>.from(rows);
+        _lastMiseBas = lastMiseBas;
+        _loading = false;
+      });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -7716,7 +7787,10 @@ class _ChaleursTabState extends State<_ChaleursTab> {
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: Color(0xFF6E9E57)));
     final effectiveInterval = _intervalleCustom ?? _intervalChaleursJours(widget.espece);
-    final nextHeat = _data.isNotEmpty && effectiveInterval > 0
+    // Stérilisée / en retraite / mise-bas récente (< 8 sem., allaitement) :
+    // le cycle est suspendu ou terminé — pas d'alerte « chaleurs » trompeuse.
+    final cycleSuspendu = widget.sterilise || _enRetraite || _enLactation;
+    final nextHeat = !cycleSuspendu && _data.isNotEmpty && effectiveInterval > 0
         ? (() {
             final sorted = [..._data]..sort((a, b) {
                 final da = DateTime.tryParse(a['date'] ?? '') ?? DateTime(2000);
@@ -7742,7 +7816,17 @@ class _ChaleursTabState extends State<_ChaleursTab> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
         children: [
-          if (nextHeat != null)
+          if (widget.sterilise)
+            _CycleSuspenduBanner(
+                icon: Icons.block, label: 'Stérilisée — plus de cycle de chaleurs à suivre.')
+          else if (_enRetraite)
+            _CycleSuspenduBanner(
+                icon: Icons.eco_outlined, label: 'En retraite reproductive — plus de cycle à suivre.')
+          else if (_enLactation)
+            _CycleSuspenduBanner(
+                icon: Icons.child_friendly_outlined,
+                label: 'Mise-bas récente — cycle suspendu pendant l\'allaitement.')
+          else if (nextHeat != null)
             _NextHeatBanner(nextHeat: nextHeat, espece: widget.espece),
           // Intervalle row
           GestureDetector(

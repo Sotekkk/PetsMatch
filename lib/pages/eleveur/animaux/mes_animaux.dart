@@ -126,6 +126,18 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     }
   }
 
+  // Âge de retraite (années) par espèce — même convention que la fiche
+  // animal / le rappel de chaleurs. Une femelle à/après cet âge n'a plus de
+  // cycle de chaleurs à suivre.
+  static const _agesRetraite = <String, int>{
+    'chien': 7, 'chat': 8, 'lapin': 5,
+    'cheval': 18, 'ovin': 8, 'caprin': 8, 'porcin': 5, 'ane': 15,
+  };
+
+  // Fenêtre post mise-bas (jours) pendant laquelle le cycle est suspendu —
+  // même seuil que « lactation récente » utilisé ailleurs dans l'app (< 8 sem).
+  static const _joursLactation = 56;
+
   Future<void> _loadAnimaux() async {
     if (_uid == null) { setState(() => _loading = false); return; }
     if (_animauxData.isEmpty) setState(() => _loading = true);
@@ -184,9 +196,12 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       _currentOwnerIds = currentIds;
       _formerOwnerIds  = formerIds;
 
-      // IDs des femelles présentes
+      // IDs des femelles présentes — stérilisées exclues (plus de cycle à
+      // suivre) : ce filtre manquait, une femelle stérilisée pouvait encore
+      // afficher le badge « chaleurs ».
       final femIds = animaux
           .where((a) => a['sexe'] == 'femelle' &&
+              a['sterilise'] != true &&
               !['sorti','decede'].contains(a['statut'] ?? ''))
           .map((a) => a['id'] as String)
           .toList();
@@ -208,6 +223,23 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           if (d != null && !lastChaleur.containsKey(aid)) lastChaleur[aid] = d;
         }
 
+        // Dernière mise-bas par animal — cycle suspendu pendant l'allaitement
+        // (ex. Ana ne doit pas être signalée « en chaleurs » juste après avoir mis bas).
+        final Map<String, DateTime> lastMiseBas = {};
+        try {
+          final naissances = await supa.from('gestations')
+              .select('animal_id, date_naissance')
+              .inFilter('animal_id', femIds)
+              .not('date_naissance', 'is', null)
+              .order('date_naissance', ascending: false);
+          for (final n in naissances) {
+            final aid = n['animal_id']?.toString() ?? '';
+            if (lastMiseBas.containsKey(aid)) continue;
+            final d = DateTime.tryParse(n['date_naissance'] ?? '');
+            if (d != null) lastMiseBas[aid] = d;
+          }
+        } catch (_) {}
+
         final now = DateTime.now();
         for (final a in animaux) {
           final id = a['id'] as String? ?? '';
@@ -216,6 +248,19 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           final customInterval = a['intervalle_chaleurs_jours'] as int?;
           final interval = customInterval ?? _intervalChaleurs(espece);
           if (interval == 0) continue;
+
+          // Retraite : au-delà de l'âge de reproduction, plus de cycle à suivre.
+          final naissance = DateTime.tryParse(a['date_naissance'] as String? ?? '');
+          final ageRetraite = _agesRetraite[espece.toLowerCase()];
+          if (naissance != null && ageRetraite != null) {
+            final dateRetraite = DateTime(naissance.year + ageRetraite, naissance.month, naissance.day);
+            if (!now.isBefore(dateRetraite)) continue;
+          }
+
+          // Mise-bas récente : cycle suspendu pendant l'allaitement.
+          final miseBas = lastMiseBas[id];
+          if (miseBas != null && now.difference(miseBas).inDays < _joursLactation) continue;
+
           final last = lastChaleur[id];
           if (last == null) continue;
           final diff = last.add(Duration(days: interval)).difference(now).inDays;
