@@ -8210,18 +8210,26 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Le dialogue entier (titre + champs + boutons) défile en un seul bloc, avec
+    // une hauteur qui tient compte du clavier ouvert (viewInsets.bottom) : le
+    // bouton « Enregistrer » reste toujours atteignable en faisant défiler, pas
+    // besoin de fermer le clavier numérique pour l'atteindre.
+    final mq = MediaQuery.of(context);
+    final dialogMaxHeight = (mq.size.height - mq.viewInsets.bottom - mq.padding.vertical - 48)
+        .clamp(200.0, mq.size.height);
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: dialogMaxHeight),
+        child: Scrollbar(
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
           Text(widget.existing != null ? 'Modifier la saillie' : 'Ajouter une saillie',
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF0C5C6C))),
           const SizedBox(height: 16),
-          ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
-            child: SingleChildScrollView(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 ..._datesSection(),
                 if (_loadingPartenaires)
                   const Center(child: Padding(
@@ -8279,8 +8287,6 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
                 ),
                 _textField('Notes', _notes, maxLines: 2),
               ]),
-            ),
-          ),
           const SizedBox(height: 16),
           Row(mainAxisAlignment: MainAxisAlignment.end, children: [
             TextButton(onPressed: () => Navigator.pop(context),
@@ -8357,7 +8363,9 @@ class _AddSaillieDialogState extends State<_AddSaillieDialog> {
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6E9E57), foregroundColor: Colors.white),
               child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey'))),
           ]),
-        ]),
+            ]),
+          ),
+        ),
       ),
     );
   }
@@ -8482,18 +8490,26 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
     final jours = _gestationJours(widget.espece);
     final hasCalcul = jours > 0;
 
+    // Le dialogue entier (titre + champs + boutons) défile en un seul bloc, avec
+    // une hauteur qui tient compte du clavier ouvert (viewInsets.bottom) : le
+    // bouton « Enregistrer » reste toujours atteignable en faisant défiler, pas
+    // besoin de fermer le clavier numérique pour l'atteindre.
+    final mq = MediaQuery.of(context);
+    final dialogMaxHeight = (mq.size.height - mq.viewInsets.bottom - mq.padding.vertical - 48)
+        .clamp(200.0, mq.size.height);
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: dialogMaxHeight),
+        child: Scrollbar(
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
           Text(widget.existing != null ? 'Modifier la gestation' : 'Ajouter une gestation',
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF0C5C6C))),
           const SizedBox(height: 16),
-          ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
-            child: SingleChildScrollView(
-              child: Column(children: [
+          Column(children: [
                 _dateRow('Date de conception / 1re saillie *', _dateConception, _onConceptionPicked),
                 _dateRow(
                   _datePrevueFin != null
@@ -8569,8 +8585,6 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
                     ]),
                   ),
               ]),
-            ),
-          ),
           const SizedBox(height: 16),
           Row(mainAxisAlignment: MainAxisAlignment.end, children: [
             TextButton(onPressed: () => Navigator.pop(context),
@@ -8613,7 +8627,9 @@ class _AddGestationDialogState extends State<_AddGestationDialog> {
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6E9E57), foregroundColor: Colors.white),
               child: const Text('Enregistrer', style: TextStyle(fontFamily: 'Galey'))),
           ]),
-        ]),
+            ]),
+          ),
+        ),
       ),
     );
   }
