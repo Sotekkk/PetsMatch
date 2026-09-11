@@ -312,3 +312,35 @@ CREATE INDEX IF NOT EXISTS idx_annonces_objets_boost     ON public.annonces_obje
 ALTER TABLE public.annonces_objets ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "annonces_objets_all" ON public.annonces_objets;
 CREATE POLICY "annonces_objets_all" ON public.annonces_objets FOR ALL USING (true) WITH CHECK (true);
+
+
+-- ────────────────────────────────────────────────────────────
+-- 15. Pets Social — « Suivre » bloqué pour un compte multi-profils.
+--     Cause : la PK de `follows` ne porte que sur (follower_uid,
+--     following_uid) → dès qu'un profil du compte suit déjà quelqu'un,
+--     aucun autre profil du même compte ne peut le suivre (insert 23505,
+--     avalé côté app, le bouton « Suivre » revient en arrière sans rien
+--     faire). Remplace la PK par un id + UNIQUE sur les 4 colonnes
+--     (follower_uid, following_uid, follower_profile_id, following_profile_id).
+--     Détail : supabase/migration_follows_multiprofil_pk.sql
+-- ────────────────────────────────────────────────────────────
+
+ALTER TABLE public.follows DROP CONSTRAINT IF EXISTS follows_pkey;
+ALTER TABLE public.follows ADD COLUMN IF NOT EXISTS id uuid DEFAULT gen_random_uuid();
+UPDATE public.follows SET id = gen_random_uuid() WHERE id IS NULL;
+ALTER TABLE public.follows ALTER COLUMN id SET NOT NULL;
+
+DO $$ BEGIN
+  ALTER TABLE public.follows ADD CONSTRAINT follows_pkey PRIMARY KEY (id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE public.follows
+    ADD CONSTRAINT follows_unique_per_profile
+    UNIQUE (follower_uid, following_uid, follower_profile_id, following_profile_id);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_follows_follower_uid  ON public.follows (follower_uid);
+CREATE INDEX IF NOT EXISTS idx_follows_following_uid ON public.follows (following_uid);

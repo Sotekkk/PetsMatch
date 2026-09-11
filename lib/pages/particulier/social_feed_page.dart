@@ -359,12 +359,21 @@ Future<void> _insertFollow(String followerUid, String followingUid,
   final supa = Supabase.instance.client;
   final fp = await _activeAuthorProfileId(followerUid);
   final tp = followingProfileId ?? await _socialProfileId(followingUid);
-  await supa.from('follows').insert({
-    'follower_uid': followerUid,
-    'following_uid': followingUid,
-    if (fp != null) 'follower_profile_id': fp,
-    if (tp != null) 'following_profile_id': tp,
-  });
+  try {
+    await supa.from('follows').insert({
+      'follower_uid': followerUid,
+      'following_uid': followingUid,
+      if (fp != null) 'follower_profile_id': fp,
+      if (tp != null) 'following_profile_id': tp,
+    });
+  } on PostgrestException catch (e) {
+    // 23505 = déjà suivi (ce profil précis suit déjà cette cible) — pas une
+    // vraie erreur, on ne relance pas. Toute autre erreur remonte à l'appelant
+    // (ex. avant la migration follows_multiprofil_pk : un autre profil du
+    // même compte suit déjà cette cible → PK trop stricte, doit être visible).
+    if (e.code != '23505') rethrow;
+    return;
+  }
   _sendSocialNotif(
     supa: supa,
     actorUid: followerUid,
@@ -1142,7 +1151,18 @@ class _SuggestionsWidgetState extends State<_SuggestionsWidget> {
   Future<void> _follow(Map<String, dynamic> prof) async {
     final targetUid = prof['uid'] as String;
     final pid = prof['id'] as String?;
-    await _insertFollow(widget.myUid, targetUid, followingProfileId: pid);
+    try {
+      await _insertFollow(widget.myUid, targetUid, followingProfileId: pid);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Action impossible : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.redAccent,
+        ));
+      }
+      return;
+    }
+    if (!mounted) return;
     setState(() => _followedKeys.add((pid != null && pid.isNotEmpty) ? pid : 'u:$targetUid'));
     await Future.delayed(const Duration(milliseconds: 600));
     widget.onFollowed();
@@ -1484,7 +1504,8 @@ class _FeedListState extends State<_FeedList>
       } else {
         await _insertFollow(widget.myUid, targetUid, followingProfileId: targetProfileId);
       }
-    } catch (_) {
+    } catch (e) {
+      if (!mounted) return;
       setState(() {
         if (isFollowing) {
           _following.add(targetUid);
@@ -1494,6 +1515,10 @@ class _FeedListState extends State<_FeedList>
           if (targetProfileId != null) _followingPids.remove(targetProfileId);
         }
       });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Action impossible : $e', style: const TextStyle(fontFamily: 'Galey')),
+        backgroundColor: Colors.redAccent,
+      ));
     }
   }
 
