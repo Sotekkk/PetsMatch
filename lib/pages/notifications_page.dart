@@ -245,7 +245,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
           final row = await _supa.from('factures').select().eq('id', factureId).maybeSingle();
           if (row != null && mounted) {
             await Navigator.push(context, MaterialPageRoute(
-              builder: (_) => FactureDetailPage(data: _factureToUi(row), docId: factureId),
+              builder: (_) => FactureDetailPage(data: _factureToUi(row), docId: factureId, readOnly: true),
             ));
           }
         } catch (_) {}

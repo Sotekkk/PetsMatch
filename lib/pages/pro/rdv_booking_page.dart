@@ -49,6 +49,22 @@ class RdvBookingPage extends StatefulWidget {
 class _RdvBookingPageState extends State<RdvBookingPage> {
   static const _bg = Color(0xFFF8F8F8);
 
+  // Profil du client réservant le RDV. `User_Info.activeProfileId` est vide
+  // quand le profil principal du compte est actif (convention utilisée dans
+  // toute l'appli) — sans ce repli, `rdv.client_profile_id` restait NULL et
+  // la facture/notif générées ensuite (garde_facture_helper.dart) n'étaient
+  // scopées à aucun profil : elles fuitaient sur tous les profils du compte
+  // (facture visible depuis n'importe quel profil, notif partout).
+  String? _resolveClientProfileId() {
+    if (User_Info.activeProfileId.isNotEmpty) return User_Info.activeProfileId;
+    final main = User_Info.availableProfiles.firstWhere(
+      (p) => p['is_main'] == true,
+      orElse: () => const {},
+    );
+    final id = main['id']?.toString();
+    return (id != null && id.isNotEmpty) ? id : null;
+  }
+
   // Common
   bool _loadingData = true;
   bool _saving = false;
@@ -783,7 +799,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           'pro_uid':        widget.proUid,
           if ((widget.proProfileId ?? '').isNotEmpty) 'pro_profile_id': widget.proProfileId,
           'client_uid': uid,
-          if (User_Info.activeProfileId.isNotEmpty) 'client_profile_id': User_Info.activeProfileId,
+          if (_resolveClientProfileId() != null) 'client_profile_id': _resolveClientProfileId(),
           if (animalId != null && animalId.isNotEmpty) 'animal_id': animalId,
           'date_heure': dh.toIso8601String(),
           'motif':      motif,
@@ -895,7 +911,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           'pro_uid': widget.proUid,
           if ((widget.proProfileId ?? '').isNotEmpty) 'pro_profile_id': widget.proProfileId,
           'client_uid': uid,
-          if (User_Info.activeProfileId.isNotEmpty) 'client_profile_id': User_Info.activeProfileId,
+          if (_resolveClientProfileId() != null) 'client_profile_id': _resolveClientProfileId(),
           if (animalId != null && animalId.isNotEmpty) 'animal_id': animalId,
           'date_heure': dh.toIso8601String(),
           'motif': 'Garde journée',

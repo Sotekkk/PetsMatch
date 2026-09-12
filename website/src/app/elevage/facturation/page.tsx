@@ -657,6 +657,43 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
       // enregistrée et consultable via /facture/[token].
     }
 
+    // Notification in-app (si le client a un compte PetsMatch) + email —
+    // même comportement que l'appli (CreerFacturePage._archiverEtEnvoyer) :
+    // jusqu'ici une facture créée depuis le site n'avertissait jamais le
+    // client, il fallait cliquer sur « Envoyer par email » après coup.
+    const emailTrim = emailClient.trim();
+    if (emailTrim) {
+      try {
+        const { data: target } = await supabase.from('users').select('uid').eq('email', emailTrim).maybeSingle();
+        const clientUid = target?.uid as string | undefined;
+        if (clientUid) {
+          await supabase.from('notifications').insert({
+            uid: clientUid,
+            type: 'facture_recue',
+            title: `Nouvelle facture — ${emNom.trim() || 'votre prestataire'}`,
+            body: `Facture n° ${numero} · ${totalTTC.toFixed(2)} €`,
+            data: { facture_id: f.id, ...(f.pdf_url ? { url: f.pdf_url } : {}) },
+            read: false,
+          });
+        }
+      } catch { /* la notif est un bonus, ne bloque pas l'émission */ }
+      try {
+        await fetch('/api/facture/notify-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: emailTrim,
+            client_nom: `${prenomClient} ${nomClient}`.trim() || 'Client',
+            pro_nom: emNom.trim() || 'Votre prestataire',
+            numero_facture: numero,
+            total_ttc: totalTTC,
+            facture_url: `${window.location.origin}/facture/${f.token}`,
+            ...(f.pdf_url ? { pdf_url: f.pdf_url } : {}),
+          }),
+        });
+      } catch { /* l'email est un bonus, ne bloque pas l'émission */ }
+    }
+
     onSaved(f);
     setSaving(false);
   }

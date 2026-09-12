@@ -144,7 +144,20 @@ class _FacturationPageState extends State<FacturationPage> {
     if (uid == null) return [];
     // Profil actif, pas "is_main" — sinon la page affiche les factures
     // d'un AUTRE profil du même compte (ex. association vue depuis éleveur).
-    final profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+    // Repli quand activeProfileId est vide (profil principal) : le profil dont
+    // profile_type correspond au catPro réellement actif (association pour
+    // widget.isAssociation) — jamais un fallback direct sur uid_eleveur seul,
+    // qui remontait aussi les factures émises depuis un AUTRE profil pro du
+    // même compte (ex. facture pet-sitting visible depuis le profil association).
+    var profileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+    if (profileId == null && User_Info.availableProfiles.isNotEmpty) {
+      final match = User_Info.availableProfiles.firstWhere(
+        (p) => widget.isAssociation ? p['profile_type'] == 'association' : p['profile_type'] == User_Info.catPro,
+        orElse: () => const {},
+      );
+      final id = match['id']?.toString();
+      if (id != null && id.isNotEmpty) profileId = id;
+    }
 
     dynamic q = profileId != null
         ? _supa.from('factures').select().eq('profile_id', profileId)
@@ -338,8 +351,12 @@ class _FactureCard extends StatelessWidget {
 class FactureDetailPage extends StatelessWidget {
   final Map<String, dynamic> data;
   final String docId;
+  // true quand on consulte une facture REÇUE (le payeur) — une fois émise,
+  // seul l'émetteur peut en changer le statut ou la corriger par un avoir ;
+  // le payeur ne doit avoir accès qu'à la consultation et à l'impression.
+  final bool readOnly;
 
-  const FactureDetailPage({super.key, required this.data, required this.docId});
+  const FactureDetailPage({super.key, required this.data, required this.docId, this.readOnly = false});
 
   @override
   Widget build(BuildContext context) {
@@ -365,20 +382,21 @@ class FactureDetailPage extends StatelessWidget {
               await Printing.layoutPdf(onLayout: (_) async => bytes);
             },
           ),
-          PopupMenuButton<String>(
-            onSelected: (v) async {
-              await Supabase.instance.client
-                  .from('factures')
-                  .update({'statut': v})
-                  .eq('id', docId);
-              if (context.mounted) Navigator.pop(context);
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'emise', child: Text('Marquer Émise')),
-              const PopupMenuItem(value: 'payee', child: Text('Marquer Payée')),
-              const PopupMenuItem(value: 'annulee', child: Text('Annuler')),
-            ],
-          ),
+          if (!readOnly)
+            PopupMenuButton<String>(
+              onSelected: (v) async {
+                await Supabase.instance.client
+                    .from('factures')
+                    .update({'statut': v})
+                    .eq('id', docId);
+                if (context.mounted) Navigator.pop(context);
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'emise', child: Text('Marquer Émise')),
+                const PopupMenuItem(value: 'payee', child: Text('Marquer Payée')),
+                const PopupMenuItem(value: 'annulee', child: Text('Annuler')),
+              ],
+            ),
         ],
       ),
       body: SingleChildScrollView(
@@ -468,7 +486,7 @@ class FactureDetailPage extends StatelessWidget {
               },
             ),
           ),
-          if ((data['typeFacture'] ?? '') != 'avoir' && (data['statut'] ?? 'emise') != 'annulee') ...[
+          if (!readOnly && (data['typeFacture'] ?? '') != 'avoir' && (data['statut'] ?? 'emise') != 'annulee') ...[
             const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
@@ -660,9 +678,19 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     // y compris dans la notif « Nouvelle facture — … » envoyée au client.
     var activePid = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
     if (activePid == null && User_Info.availableProfiles.isNotEmpty) {
+      // « Premier profil non-particulier » est ambigu dès que le compte a
+      // PLUSIEURS profils pro secondaires (ex. garde + association) : l'ordre
+      // de la liste est arbitraire et peut désigner le mauvais profil (facture
+      // pet-sitting émise avec le profil_id de l'association). User_Info.catPro
+      // reflète le sous-type réellement actif, y compris quand ce profil est
+      // le profil principal du compte (activeProfileId vide) — on le préfère,
+      // et on ne retombe sur « premier non-particulier » que s'il ne matche rien.
       final proProfile = User_Info.availableProfiles.firstWhere(
-        (p) => p['profile_type'] != 'particulier',
-        orElse: () => User_Info.availableProfiles.first,
+        (p) => p['profile_type'] == User_Info.catPro,
+        orElse: () => User_Info.availableProfiles.firstWhere(
+          (p) => p['profile_type'] != 'particulier',
+          orElse: () => User_Info.availableProfiles.first,
+        ),
       );
       activePid = proProfile['id']?.toString();
       if (activePid != null && activePid.isEmpty) activePid = null;

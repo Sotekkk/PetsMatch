@@ -151,7 +151,7 @@ class _MesFacturesParticulierPageState extends State<MesFacturesParticulierPage>
                 return GestureDetector(
                   onTap: () async {
                     await Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => FactureDetailPage(data: d, docId: d['id'].toString()),
+                      builder: (_) => FactureDetailPage(data: d, docId: d['id'].toString(), readOnly: true),
                     ));
                     _refresh();
                   },
