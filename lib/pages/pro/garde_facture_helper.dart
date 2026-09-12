@@ -195,6 +195,7 @@ Future<void> facturerGardeDepuisRdv(BuildContext context, Map<String, dynamic> r
     builder: (_) => CreerFacturePage(
       clientNom: gardeClientNom(rdv),
       clientEmail: (rdv['_client_email'] ?? rdv['client_email_manuel'])?.toString(),
+      clientTel: (rdv['_client_tel'] ?? rdv['client_tel_manuel'])?.toString(),
       lignesPrefill: [
         FacturePrefillLigne(designation: designation, prixHT: prixJour, quantite: n.toDouble(), tauxTVA: 20),
       ],

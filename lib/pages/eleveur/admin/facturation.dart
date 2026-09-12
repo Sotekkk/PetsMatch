@@ -638,7 +638,20 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     final d = doc.data() ?? {};
 
     // Profil actif (pas is_main) : un pro secondaire facture avec sa propre identité.
-    final activePid = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+    // User_Info.activeProfileId peut être vide (même piège que pro_agenda.dart
+    // _resolveProProfileId) — un repli direct sur is_main donnait alors le nom
+    // du profil PRINCIPAL du compte (souvent l'élevage), pas celui du pro qui
+    // facture réellement (ex. pet-sitter secondaire) → mauvais nom émetteur,
+    // y compris dans la notif « Nouvelle facture — … » envoyée au client.
+    var activePid = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
+    if (activePid == null && User_Info.availableProfiles.isNotEmpty) {
+      final proProfile = User_Info.availableProfiles.firstWhere(
+        (p) => p['profile_type'] != 'particulier',
+        orElse: () => User_Info.availableProfiles.first,
+      );
+      activePid = proProfile['id']?.toString();
+      if (activePid != null && activePid.isEmpty) activePid = null;
+    }
     Map<String, dynamic>? prof;
     try {
       final pq = supa.from('user_profiles').select(
@@ -696,6 +709,54 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
         _noteComplementaire.text = 'Règlement par virement — IBAN $iban${bic.isNotEmpty ? ' · BIC $bic' : ''}';
       }
     });
+    await _loadClientData();
+  }
+
+  /// Complète l'adresse/téléphone/SIRET du client depuis son profil
+  /// (clientProfileId, à défaut clientUid → profil principal) — jusqu'ici
+  /// seuls nom/prénom/email/téléphone passés en paramètre étaient pré-remplis,
+  /// le reste restait vide même quand le client est un compte PetsMatch connu
+  /// (ex. un élevage qui réserve une prestation de garde).
+  Future<void> _loadClientData() async {
+    if (widget.clientProfileId == null && widget.clientUid == null) return;
+    final supa = Supabase.instance.client;
+    try {
+      const cols = 'rue, code_postal, ville, pays, phone, rue_pro, code_postal_pro, '
+          'ville_pro, pays_pro, phone_number, siret, numero_tva';
+      final cprof = widget.clientProfileId != null
+          ? await supa.from('user_profiles').select(cols)
+              .eq('id', widget.clientProfileId!).maybeSingle()
+          : await supa.from('user_profiles').select(cols)
+              .eq('uid', widget.clientUid!).eq('is_main', true).maybeSingle();
+      if (cprof == null || !mounted) return;
+      // Les colonnes génériques (rue/ville/…) sont renseignées pour tous les
+      // types de profil (particulier ou pro) ; les "_pro" ne le sont que
+      // pour certains flux d'édition — repli si les génériques sont vides.
+      String pickC(String? generic, String? pro) =>
+          (generic != null && generic.trim().isNotEmpty) ? generic : (pro?.trim() ?? '');
+      setState(() {
+        if (_rueClient.text.trim().isEmpty) {
+          _rueClient.text = pickC(cprof['rue'] as String?, cprof['rue_pro'] as String?);
+        }
+        if (_cpClient.text.trim().isEmpty) {
+          _cpClient.text = pickC(cprof['code_postal'] as String?, cprof['code_postal_pro'] as String?);
+        }
+        if (_villeClient.text.trim().isEmpty) {
+          _villeClient.text = pickC(cprof['ville'] as String?, cprof['ville_pro'] as String?);
+        }
+        if (_paysClient.text.trim().isEmpty) {
+          final p = pickC(cprof['pays'] as String?, cprof['pays_pro'] as String?);
+          if (p.isNotEmpty) _paysClient.text = p;
+        }
+        if (_telClient.text.trim().isEmpty) {
+          _telClient.text = pickC(cprof['phone'] as String?, cprof['phone_number'] as String?);
+        }
+        final siret = (cprof['siret'] as String?)?.trim() ?? '';
+        if (_siretClient.text.trim().isEmpty && siret.isNotEmpty) _siretClient.text = siret;
+        final tva = (cprof['numero_tva'] as String?)?.trim() ?? '';
+        if (_tvaClient.text.trim().isEmpty && tva.isNotEmpty) _tvaClient.text = tva;
+      });
+    } catch (_) {}
   }
 
   Future<void> _pickDate(String field) async {
