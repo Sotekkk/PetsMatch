@@ -195,6 +195,11 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ ok: true, stripeUpdated: Object.keys(stripeUpdates).length > 0 });
   } catch (err) {
     console.error('[admin/tarification]', err);
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
+    // Remonte le message réel (souvent une erreur Stripe — clé API, produit/prix
+    // introuvable…) plutôt qu'un message générique : sans ça, un échec de
+    // création automatique du produit/prix Stripe (getOrCreatePlanProduct)
+    // était invisible pour l'admin, qui voyait juste « rien ne se passe ».
+    const message = err instanceof Error ? err.message : 'Erreur serveur inconnue';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -990,10 +990,20 @@ export default function AdminPage() {
           },
         }),
       });
+      const json = await res.json().catch(() => ({}));
       if (res.ok) {
-        setPlans(prev => prev.map(p => p.id === plan.id ? plan : p));
+        // Ne PAS ré-écrire localement avec `plan` : si un price ID Stripe a été
+        // créé automatiquement côté serveur (getOrCreatePlanProduct), la valeur
+        // saisie par l'admin ne le contient pas encore — sans ce rechargement,
+        // le nouveau price ID reste invisible tant qu'on ne clique pas sur
+        // « Rafraîchir » (le plan a pourtant bien été sauvegardé).
+        await loadTarification();
         setEditingPlan(null);
+      } else {
+        alert(`Erreur lors de l'enregistrement : ${json.error ?? res.statusText}`);
       }
+    } catch (err) {
+      alert(`Erreur réseau : ${err instanceof Error ? err.message : String(err)}`);
     } finally { setTarifSaving(false); }
   }
 
