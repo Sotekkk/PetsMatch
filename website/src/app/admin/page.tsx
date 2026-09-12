@@ -83,6 +83,7 @@ const CAT_LABELS: Record<string, string> = {
   garde: 'Pet sitter / Promeneur', pension: 'Pension', toilettage: 'Toilettage',
   photographe: 'Photographe', marechal_ferrant: 'Maréchal-ferrant',
   referencement: 'Commerce / Animalerie', autre: 'Autre',
+  eleveur: 'Éleveur', association: 'Association', taxi_animalier: 'Taxi animalier',
 };
 
 // `profile_type` sert de catégorie pro pour les vrais métiers (veterinaire,
@@ -199,6 +200,7 @@ export default function AdminPage() {
   interface ProduitAdmin { id: string; code: string; label: string; prix: number; duree_heures?: number; description?: string; stripe_price_id?: string; actif: boolean; }
   const [plans, setPlans] = useState<PlanAdmin[]>([]);
   const [produits, setProduits] = useState<ProduitAdmin[]>([]);
+  const [tarifCatFilter, setTarifCatFilter] = useState<string>('tous');
   const [tarifLoading, setTarifLoading] = useState(false);
   const [editingPlan, setEditingPlan] = useState<PlanAdmin | null>(null);
   const [editingProduit, setEditingProduit] = useState<ProduitAdmin | null>(null);
@@ -2003,8 +2005,59 @@ export default function AdminPage() {
                     </h2>
                     <button onClick={loadTarification} className="text-xs text-gray-400 hover:text-[#0C5C6C]">↺ Rafraîchir</button>
                   </div>
-                  <div className="flex flex-col gap-4">
-                    {plans.map(plan => editingPlan?.id === plan.id ? (
+
+                  {/* Filtre par catégorie — évite de faire défiler toutes les
+                      lignes quand on ne veut voir qu'un seul profil. */}
+                  {(() => {
+                    const cats = Array.from(new Set(plans.map(p => p.profil_type)));
+                    return (
+                      <div className="flex flex-wrap gap-2 mb-5">
+                        <button onClick={() => setTarifCatFilter('tous')}
+                          className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                            tarifCatFilter === 'tous'
+                              ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
+                              : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
+                          }`}>
+                          Toutes ({plans.length})
+                        </button>
+                        {cats.map(cat => {
+                          const count = plans.filter(p => p.profil_type === cat).length;
+                          return (
+                            <button key={cat} onClick={() => setTarifCatFilter(cat)}
+                              className={`text-xs font-semibold px-3 py-1.5 rounded-full border capitalize transition-colors ${
+                                tarifCatFilter === cat
+                                  ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
+                                  : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
+                              }`}>
+                              {CAT_LABELS[cat] ?? cat} ({count})
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+
+                  {(() => {
+                    const filtered = tarifCatFilter === 'tous' ? plans : plans.filter(p => p.profil_type === tarifCatFilter);
+                    const groups: { cat: string; items: PlanAdmin[] }[] = [];
+                    for (const plan of filtered) {
+                      const g = groups.find(x => x.cat === plan.profil_type);
+                      if (g) g.items.push(plan); else groups.push({ cat: plan.profil_type, items: [plan] });
+                    }
+                    if (groups.length === 0) {
+                      return <p className="text-center text-gray-400 py-6">Aucun plan trouvé — vérifiez que la table plans_tarifaires existe et contient des données.</p>;
+                    }
+                    return (
+                      <div className="flex flex-col gap-6">
+                        {groups.map(({ cat, items }) => (
+                          <div key={cat}>
+                            {tarifCatFilter === 'tous' && (
+                              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2 pl-1">
+                                {CAT_LABELS[cat] ?? cat} · {items.length} formule{items.length > 1 ? 's' : ''}
+                              </h3>
+                            )}
+                            <div className="flex flex-col gap-3">
+                              {items.map(plan => editingPlan?.id === plan.id ? (
                       <div key={plan.id} className="bg-white rounded-2xl border-2 border-[#0C5C6C] p-5 space-y-3">
                         <p className="font-bold text-[#0C5C6C]" style={{ fontFamily: 'Galey, sans-serif' }}>Éditer — {plan.plan_code}</p>
                         <div className="grid grid-cols-2 gap-3">
@@ -2100,9 +2153,13 @@ export default function AdminPage() {
                           ✏️ Modifier
                         </button>
                       </div>
-                    ))}
-                    {plans.length === 0 && <p className="text-center text-gray-400 py-6">Aucun plan trouvé — vérifiez que la table plans_tarifaires existe et contient des données.</p>}
-                  </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </section>
 
                 {/* Produits ponctuels */}
