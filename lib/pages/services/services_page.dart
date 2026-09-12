@@ -79,6 +79,9 @@ final _gardeItems = [
     color: Color(0xFFE65100),
     catProValues: ['garde'],
     professionValues: ['Promeneur de chiens'],
+    // Un pet-sitter qui propose aussi des créneaux promenade/mixte apparaît
+    // ici même si sa profession affichée est « Pet sitter ».
+    matchCreneauTypeGarde: ['prestation'],
   ),
   const AnnuaireSubItem(
     label: 'Pensions',

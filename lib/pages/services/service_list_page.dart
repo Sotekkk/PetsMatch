@@ -17,6 +17,7 @@ class ServiceListPage extends StatefulWidget {
   final IconData categoryIcon;
   final List<String> catProValues;
   final List<String>? professionValues;
+  final List<String>? matchCreneauTypeGarde;
   final String? searchQuery;
 
   const ServiceListPage({
@@ -26,6 +27,7 @@ class ServiceListPage extends StatefulWidget {
     required this.categoryIcon,
     required this.catProValues,
     this.professionValues,
+    this.matchCreneauTypeGarde,
     this.searchQuery,
   });
 
@@ -96,45 +98,52 @@ class _ServiceListPageState extends State<ServiceListPage> {
 
       final seenUids = <String>{};
       final merged = <Map<String, dynamic>>[];
+      // Repli matchCreneauTypeGarde : profils dont la profession affichée ne
+      // matche pas profFilter (ex. « Pet sitter ») mais dont le profil est
+      // du bon type_garde côté catProValues — à vérifier via creneaux_pro.
+      final pendingCreneauCheck = <Map<String, dynamic>>[];
 
       for (final row in secondaryRows) {
         final uid = row['uid']?.toString() ?? '';
-        if (!seenUids.add(uid)) continue;
-        if (profFilter.isNotEmpty &&
-            !profFilter.contains(((row['profession_pro'] ?? '') as String).toLowerCase())) {
-          continue;
+        if (seenUids.contains(uid)) continue;
+        final matchesProfession = profFilter.isEmpty ||
+            profFilter.contains(((row['profession_pro'] ?? '') as String).toLowerCase());
+        if (matchesProfession) {
+          seenUids.add(uid);
+          merged.add(_buildProEntry(row));
+        } else if (widget.matchCreneauTypeGarde != null) {
+          pendingCreneauCheck.add(row);
         }
-        final nomVal = row['nom'] ?? row['name_elevage'] ?? '';
-        final villeVal = row['ville_pro'] ?? row['ville'] ?? '';
-        merged.add({
-          'uid': uid,
-          '_profile_table_id': row['id']?.toString(),
-          'name_elevage': nomVal,
-          'firstname': row['firstname'] ?? '',
-          'cat_pro': row['profile_type'] ?? row['cat_pro'] ?? '',
-          'profession_pro': row['profession_pro'] ?? '',
-          'ville': villeVal,
-          'ville_elevage': villeVal,
-          'profile_picture_url': row['avatar_url'] ?? '',
-          'profile_picture_url_elevage': row['avatar_url'] ?? '',
-          'lat': row['latitude'] ?? row['lat'],
-          'lng': row['longitude'] ?? row['lng'],
-          'especes_acceptees': row['especes_acceptees'] ?? [],
-          'accept_new_clients': row['accept_new_clients'] ?? true,
-          'banner_url': row['banner_url'] ?? '',
-          'desc_entreprise': row['desc_entreprise'] ?? row['description'] ?? '',
-          'site_web': row['site_web'] ?? '',
-          'instagram': row['instagram'] ?? '',
-          'facebook': row['facebook'] ?? '',
-          'rayon_intervention': row['rayon_intervention'] ?? 20,
-          'region': row['region'] ?? '',
-          'departement': row['departement'] ?? '',
-          'region_elevage': row['region'] ?? '',
-          'departement_elevage': row['departement'] ?? '',
-          'horaires': row['horaires'] ?? {},
-          'certifications': row['certifications'] ?? [],
-          'tarifs': row['tarifs'] ?? '',
-        });
+      }
+
+      if (pendingCreneauCheck.isNotEmpty && widget.matchCreneauTypeGarde != null) {
+        try {
+          final ids = pendingCreneauCheck
+              .map((r) => r['id']?.toString() ?? '')
+              .where((s) => s.isNotEmpty)
+              .toList();
+          final creneauxRows = await _supa
+              .from('creneaux_pro')
+              .select('pro_profile_id, type_garde')
+              .inFilter('pro_profile_id', ids)
+              .eq('statut', 'disponible');
+          final qualifyingProfileIds = <String>{};
+          for (final c in creneauxRows as List) {
+            final tg = c['type_garde']?.toString();
+            // type_garde nul = créneau proposé pour les deux usages (journée
+            // ET promenade) → compte comme qualifiant.
+            if (tg == null || tg.isEmpty || widget.matchCreneauTypeGarde!.contains(tg)) {
+              qualifyingProfileIds.add(c['pro_profile_id']?.toString() ?? '');
+            }
+          }
+          for (final row in pendingCreneauCheck) {
+            final pid = row['id']?.toString() ?? '';
+            final uid = row['uid']?.toString() ?? '';
+            if (qualifyingProfileIds.contains(pid) && seenUids.add(uid)) {
+              merged.add(_buildProEntry(row));
+            }
+          }
+        } catch (_) {}
       }
 
       if (mounted) {
@@ -151,6 +160,40 @@ class _ServiceListPageState extends State<ServiceListPage> {
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Map<String, dynamic> _buildProEntry(Map<String, dynamic> row) {
+    final nomVal = row['nom'] ?? row['name_elevage'] ?? '';
+    final villeVal = row['ville_pro'] ?? row['ville'] ?? '';
+    return {
+      'uid': row['uid']?.toString() ?? '',
+      '_profile_table_id': row['id']?.toString(),
+      'name_elevage': nomVal,
+      'firstname': row['firstname'] ?? '',
+      'cat_pro': row['profile_type'] ?? row['cat_pro'] ?? '',
+      'profession_pro': row['profession_pro'] ?? '',
+      'ville': villeVal,
+      'ville_elevage': villeVal,
+      'profile_picture_url': row['avatar_url'] ?? '',
+      'profile_picture_url_elevage': row['avatar_url'] ?? '',
+      'lat': row['latitude'] ?? row['lat'],
+      'lng': row['longitude'] ?? row['lng'],
+      'especes_acceptees': row['especes_acceptees'] ?? [],
+      'accept_new_clients': row['accept_new_clients'] ?? true,
+      'banner_url': row['banner_url'] ?? '',
+      'desc_entreprise': row['desc_entreprise'] ?? row['description'] ?? '',
+      'site_web': row['site_web'] ?? '',
+      'instagram': row['instagram'] ?? '',
+      'facebook': row['facebook'] ?? '',
+      'rayon_intervention': row['rayon_intervention'] ?? 20,
+      'region': row['region'] ?? '',
+      'departement': row['departement'] ?? '',
+      'region_elevage': row['region'] ?? '',
+      'departement_elevage': row['departement'] ?? '',
+      'horaires': row['horaires'] ?? {},
+      'certifications': row['certifications'] ?? [],
+      'tarifs': row['tarifs'] ?? '',
+    };
   }
 
   // ── Markers ────────────────────────────────────────────────────────────────

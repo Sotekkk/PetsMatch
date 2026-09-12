@@ -57,6 +57,7 @@ class AnnuaireSubCategoryPage extends StatelessWidget {
             categoryIcon: item.icon,
             catProValues: item.catProValues,
             professionValues: item.professionValues,
+            matchCreneauTypeGarde: item.matchCreneauTypeGarde,
           ),
         ),
       ),
@@ -162,6 +163,11 @@ class AnnuaireSubItem {
   final Color? color;
   final List<String> catProValues;
   final List<String>? professionValues;
+  // Repli : inclut aussi les profils dont la profession affichée ne matche
+  // pas professionValues, mais qui ont au moins un créneau (creneaux_pro)
+  // avec type_garde dans cette liste (ou nul = « les deux ») — ex. un
+  // pet-sitter qui propose aussi des promenades apparaît dans « Promeneurs ».
+  final List<String>? matchCreneauTypeGarde;
 
   const AnnuaireSubItem({
     required this.label,
@@ -170,5 +176,6 @@ class AnnuaireSubItem {
     this.color,
     required this.catProValues,
     this.professionValues,
+    this.matchCreneauTypeGarde,
   });
 }
