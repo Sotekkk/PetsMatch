@@ -67,7 +67,6 @@ import 'package:PetsMatch/pages/pro/pension_chenil_page.dart';
 import 'package:PetsMatch/pages/pro/pension_planning_page.dart';
 import 'package:PetsMatch/pages/pro/pension_entree_sortie_page.dart';
 import 'package:PetsMatch/pages/pro/pension_mes_taches_page.dart';
-import 'package:PetsMatch/pages/pro/pension_factures_page.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
@@ -527,7 +526,7 @@ List<QuickAction> _all(BuildContext ctx) => [
     label: 'Facturation (pension)',
     keywords: ['factures', 'acompte', 'paiement', 'devis'],
     icon: Icons.receipt_long_outlined, group: 'Administratif',
-    visible: () => _catPro == 'pension', open: (c) => _push(c, const PensionFacturesPage()),
+    visible: () => _catPro == 'pension', open: (c) => _push(c, const FacturationPage()),
   ),
   QuickAction(
     label: 'Tarification (pension)',

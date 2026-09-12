@@ -247,7 +247,7 @@ const MENU_PENSION = [
     icon: '📁',
     items: [
       { href: '/pension/contrat',    label: 'Contrats',      icon: '✍️', pro: true },
-      { href: '/pension/factures',   label: 'Facturation',   icon: '🧾' },
+      { href: '/elevage/facturation', label: 'Facturation',  icon: '🧾', premium: true },
       { href: '/pension/tarifs',     label: 'Tarification',  icon: '💶' },
     ],
   },
@@ -301,7 +301,7 @@ const MENU_GARDE = [
       { href: '/elevage/inventaire',  label: 'Inventaire',          icon: '📦', pro: true },
       { href: '/elevage/employes',            label: 'Mes employés',        icon: '👥', pro: true },
       { href: '/mes-taches',          label: 'Mes tâches',          icon: '✅', pro: true },
-      { href: '/elevage/facturation', label: 'Facturation',         icon: '🧾' },
+      { href: '/elevage/facturation', label: 'Facturation',         icon: '🧾', premium: true },
       { href: '/garde/abonnement',    label: 'Mon abonnement',      icon: '💳' },
     ],
   },
@@ -1428,14 +1428,22 @@ export default function Header() {
                                 : effectiveType === 'eleveur' ? eleveurPlan === 'free'
                                 : false
                               );
-                              const isPremiumLocked = effectiveType === 'eleveur' && !!it.premium && eleveurPlan !== 'premium';
+                              // Pension/garde : la facturation est incluse dès le
+                              // premier plan payant (comme sur /elevage/facturation) ;
+                              // éleveur exige le plan Premium.
+                              const isPremiumLocked = !!it.premium && (
+                                effectiveIsPension ? pensionPlan === 'free'
+                                : effectiveIsGarde ? gardePlan === 'free'
+                                : effectiveType === 'eleveur' ? eleveurPlan !== 'premium'
+                                : false
+                              );
                               const isLocked = isProLocked || isPremiumLocked;
                               const badge = isPremiumLocked ? 'Premium' : 'Pro';
                               const badgeCls = isPremiumLocked
                                 ? 'text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full mr-1'
                                 : 'text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full mr-1';
                               return isLocked ? (
-                                <Link key={it.href} href={effectiveIsPension ? '/pension/abonnement' : '/abonnement'}
+                                <Link key={it.href} href={effectiveIsPension ? '/pension/abonnement' : effectiveIsGarde ? '/garde/abonnement' : '/abonnement'}
                                   onClick={() => setDropdownOpen(false)}
                                   className="flex items-center gap-3 pl-10 pr-4 py-2 text-sm text-gray-400 hover:bg-gray-50 transition-colors">
                                   <span className="text-base opacity-50">{it.icon}</span>
@@ -1600,11 +1608,16 @@ export default function Header() {
                           : effectiveType === 'eleveur' ? eleveurPlan === 'free'
                           : false
                         );
-                        const isPremiumLocked = effectiveType === 'eleveur' && !!it.premium && eleveurPlan !== 'premium';
+                        const isPremiumLocked = !!it.premium && (
+                          effectiveIsPension ? pensionPlan === 'free'
+                          : effectiveIsGarde ? gardePlan === 'free'
+                          : effectiveType === 'eleveur' ? eleveurPlan !== 'premium'
+                          : false
+                        );
                         const isLocked = isProLocked || isPremiumLocked;
                         const badge = isPremiumLocked ? 'Premium' : 'Pro';
                         return isLocked ? (
-                          <Link key={it.href} href={effectiveIsPension ? '/pension/abonnement' : '/abonnement'} onClick={() => setMenuOpen(false)}
+                          <Link key={it.href} href={effectiveIsPension ? '/pension/abonnement' : effectiveIsGarde ? '/garde/abonnement' : '/abonnement'} onClick={() => setMenuOpen(false)}
                             className="flex items-center gap-2 py-2 text-white/40 text-sm">
                             <span className="opacity-50">{it.icon}</span>
                             <span className="flex-1 opacity-60">{it.label}</span>

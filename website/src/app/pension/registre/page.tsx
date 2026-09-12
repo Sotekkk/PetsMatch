@@ -396,11 +396,9 @@ export default function RegistrePensionPage() {
       {facturationFor && (
         <PensionFacturationModal
           entree={facturationFor}
-          proUid={user.uid}
           proProfileId={activeProfileId || null}
           pensionNom={userData?.nameElevage || userData?.firstname || 'Votre pension'}
           onClose={() => setFacturationFor(null)}
-          onSaved={() => { setFacturationFor(null); load(); }}
         />
       )}
       {showImpayees && (

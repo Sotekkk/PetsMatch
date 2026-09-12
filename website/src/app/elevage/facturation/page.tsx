@@ -7,7 +7,8 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
-import { usePlan, usePensionPlan } from '@/lib/use-plan';
+import { useGardeAccess } from '@/hooks/useGardeAccess';
+import { usePlan, usePensionPlan, usePlanGarde } from '@/lib/use-plan';
 import { facturePdfBlob } from '@/lib/facture-pdf';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -46,6 +47,19 @@ interface Facture {
   pdf_hash?: string;
 }
 
+// Facture préparée hors de cette page (ex : registre pension) et déposée en
+// sessionStorage avant la navigation — voir l'effet plus bas et
+// PensionFacturationModal.
+interface FacturePrefill {
+  nomClient?: string;
+  prenomClient?: string;
+  emailClient?: string;
+  telClient?: string;
+  note?: string;
+  lignes?: { description: string; quantite: number; prixUnitaire: number; tva: number }[];
+  sourcePensionEntreeId?: string;
+}
+
 const STATUT_STYLE: Record<string, string> = {
   emise: 'bg-amber-100 text-amber-700',
   payee: 'bg-green-100 text-green-700',
@@ -77,11 +91,17 @@ export default function FacturationPage() {
   const activeProfileId = useActiveProfile();
   const { config: planConfig, loading: planLoading } = usePlan();
   const { isPension: isPensionSource } = usePensionAccess();
+  const { isGarde: isGardeSource } = useGardeAccess();
   const { plan: pensionPlan, loading: pensionPlanLoading } = usePensionPlan();
-  // La pension a son propre abonnement — la facturation est incluse dès le plan payant.
-  // On ne touche pas au filtrage des données (profilSource), seulement au verrou de plan.
-  const planGateLoading = isPensionSource ? pensionPlanLoading : planLoading;
-  const hasFacturationAccess = isPensionSource ? pensionPlan !== 'free' : planConfig.hasPremiumFeatures;
+  const { plan: gardePlan, loading: gardePlanLoading } = usePlanGarde();
+  // Pension et garde ont chacun leur propre abonnement — la facturation est
+  // incluse dès leur plan payant respectif, indépendamment du plan éleveur.
+  // On ne touche pas au filtrage des données (profilSource), seulement au
+  // verrou de plan.
+  const planGateLoading = isPensionSource ? pensionPlanLoading : isGardeSource ? gardePlanLoading : planLoading;
+  const hasFacturationAccess = isPensionSource ? pensionPlan !== 'free'
+    : isGardeSource ? gardePlan !== 'free'
+    : planConfig.hasPremiumFeatures;
 
   const [factures, setFactures] = useState<Facture[]>([]);
   const [fetching, setFetching] = useState(true);
@@ -90,15 +110,25 @@ export default function FacturationPage() {
   const [showForm, setShowForm] = useState(false);
   const [avoirSource, setAvoirSource] = useState<Facture | null>(null);
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [prefill, setPrefill] = useState<FacturePrefill | null>(null);
 
   useEffect(() => {
     if (!loading && !user) router.push('/connexion');
   }, [loading, user, router]);
 
-  // La pension a sa propre facturation (table pension_factures).
+  // Prise en charge d'une facture préparée ailleurs (ex : « Facturer ce
+  // séjour » depuis le registre pension) — déposée en sessionStorage juste
+  // avant la navigation vers cette page, puis consommée une seule fois.
   useEffect(() => {
-    if (isPensionSource) router.replace('/pension/factures');
-  }, [isPensionSource, router]);
+    try {
+      const raw = sessionStorage.getItem('pm_facture_prefill');
+      if (raw) {
+        setPrefill(JSON.parse(raw) as FacturePrefill);
+        setShowForm(true);
+        sessionStorage.removeItem('pm_facture_prefill');
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -220,6 +250,13 @@ export default function FacturationPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          {isPensionSource && (
+            <Link href="/pension/factures"
+              className="border border-gray-200 hover:bg-gray-50 text-gray-600 font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-2"
+              title="Factures envoyées avant le passage au système commun">
+              🕘 Historique (avant migration)
+            </Link>
+          )}
           <button onClick={exportCsv} disabled={filtered.length === 0}
             className="border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed text-gray-600 font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-2"
             title="Export CSV — compatible avec la plupart des logiciels comptables">
@@ -390,8 +427,9 @@ export default function FacturationPage() {
           profileId={activeProfileId}
           profilSource={profilSource}
           avoirDe={avoirSource}
-          onClose={() => { setShowForm(false); setAvoirSource(null); }}
-          onSaved={(f) => { setFactures((prev) => [f, ...prev]); setShowForm(false); setAvoirSource(null); }}
+          prefill={prefill}
+          onClose={() => { setShowForm(false); setAvoirSource(null); setPrefill(null); }}
+          onSaved={(f) => { setFactures((prev) => [f, ...prev]); setShowForm(false); setAvoirSource(null); setPrefill(null); }}
         />
       )}
     </div>
@@ -400,11 +438,12 @@ export default function FacturationPage() {
 
 // ── Formulaire nouvelle facture ───────────────────────────────────────────────
 
-function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe, onClose, onSaved }: {
+function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe, prefill, onClose, onSaved }: {
   uid: string;
   profileId: string;
   profilSource?: string;
   avoirDe?: Facture | null;
+  prefill?: FacturePrefill | null;
   onClose: () => void;
   onSaved: (f: Facture) => void;
 }) {
@@ -424,10 +463,10 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
   const [emRcs, setEmRcs] = useState('');
   const [emRm, setEmRm] = useState('');
 
-  const [nomClient, setNomClient] = useState(avoirDe?.nom_client ?? '');
-  const [prenomClient, setPrenomClient] = useState(avoirDe?.prenom_client ?? '');
-  const [emailClient, setEmailClient] = useState(avoirDe?.email_client ?? '');
-  const [telClient, setTelClient] = useState(avoirDe?.telephone_client ?? '');
+  const [nomClient, setNomClient] = useState(avoirDe?.nom_client ?? prefill?.nomClient ?? '');
+  const [prenomClient, setPrenomClient] = useState(avoirDe?.prenom_client ?? prefill?.prenomClient ?? '');
+  const [emailClient, setEmailClient] = useState(avoirDe?.email_client ?? prefill?.emailClient ?? '');
+  const [telClient, setTelClient] = useState(avoirDe?.telephone_client ?? prefill?.telClient ?? '');
   const [rueClient, setRueClient] = useState(avoirDe?.rue_client ?? '');
   const [cpClient, setCpClient] = useState(avoirDe?.cp_client ?? '');
   const [villeClient, setVilleClient] = useState(avoirDe?.ville_client ?? '');
@@ -441,7 +480,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
   const [modePaiement, setModePaiement] = useState('Virement bancaire');
   const [delaiPaiement, setDelaiPaiement] = useState('30');
   const [escompte, setEscompte] = useState('Escompte pour paiement anticipé : néant.');
-  const [note, setNote] = useState(isAvoir ? `Avoir sur la facture n° ${numLabel(avoirDe!)}.` : '');
+  const [note, setNote] = useState(isAvoir ? `Avoir sur la facture n° ${numLabel(avoirDe!)}.` : (prefill?.note ?? ''));
   const [lignes, setLignes] = useState<Ligne[]>(
     isAvoir && (avoirDe!.lignes ?? []).length > 0
       ? (avoirDe!.lignes ?? []).map(l => {
@@ -453,7 +492,9 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
             tva: Number(ll.tauxTVA ?? ll.tva ?? 20),
           };
         })
-      : [{ description: '', quantite: 1, prixUnitaire: 0, tva: 20 }]
+      : prefill?.lignes?.length
+        ? prefill.lignes
+        : [{ description: '', quantite: 1, prixUnitaire: 0, tva: 20 }]
   );
   const [saving, setSaving] = useState(false);
 
@@ -533,6 +574,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
       profil_source:  profilSource,
       regime_tva:     franchise ? 'franchise' : 'normal',
       ...(isAvoir ? { type_facture: 'avoir', facture_parente_id: avoirDe!.id } : {}),
+      ...(prefill?.sourcePensionEntreeId ? { source_pension_entree_id: prefill.sourcePensionEntreeId } : {}),
       nom_client:     nomClient,
       prenom_client:  prenomClient || null,
       email_client:   emailClient || null,

@@ -572,8 +572,8 @@ class _AppNavDrawerState extends State<AppNavDrawer> {
               onTap: () => _push(const TarifsClientsPage()),
             ),
           ],
-          // Facturation : moteur commun `factures` (la pension a son propre
-          // circuit — table `pension_factures` + PensionFacturesPage).
+          // Facturation : moteur commun `factures` (pension y a migré aussi,
+          // mais reste pilotée depuis son propre registre, pas ce drawer).
           if (const {
             'garde', 'education', 'sante', 'veterinaire',
             'marechal_ferrant', 'taxi_animalier', 'photographe', 'toilettage',

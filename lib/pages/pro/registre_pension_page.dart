@@ -1,6 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -17,6 +16,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart'
     show pensionTarifKeyForEspece, especeMatchesLogement,
         pensionLogementTypeLabel, pensionAlimentationSejourApplicable;
@@ -64,28 +64,44 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       var qEntrees = _supa.from('pension_entrees').select().eq('pro_uid', _uid);
       qEntrees = qEntrees.eq('pro_profile_id', pid);
       var qAcces = _supa.from('animal_access').select('animal_id').eq('pro_profile_id', pid).eq('statut', 'active');
-      var qFactures = _supa.from('pension_factures').select().eq('pro_uid', _uid).eq('pro_profile_id', pid);
+      // Factures pension : anciennes (table dédiée, envoyées avant la
+      // migration vers le moteur commun) + nouvelles (table `factures`,
+      // reliées via source_pension_entree_id).
+      var qFacturesLegacy = _supa.from('pension_factures').select().eq('pro_uid', _uid).eq('pro_profile_id', pid);
+      var qFacturesNew = _supa.from('factures').select().eq('profile_id', pid).not('source_pension_entree_id', 'is', null);
       final results = await Future.wait([
         qEntrees.order('date_entree', ascending: false),
         qAcces,
-        qFactures,
+        qFacturesLegacy,
         _supa.from('enclos_chenil').select('id, nom').eq('uid_eleveur', _uid),
+        qFacturesNew,
       ]);
 
       final entrees  = List<Map<String, dynamic>>.from(results[0] as List);
       final approved = List<Map<String, dynamic>>.from(results[1] as List);
-      final factures = List<Map<String, dynamic>>.from(results[2] as List);
+      final facturesLegacy = List<Map<String, dynamic>>.from(results[2] as List);
+      final facturesNew    = List<Map<String, dynamic>>.from(results[4] as List);
       final logementNoms = <String, String>{
         for (final l in (results[3] as List))
           (l as Map)['id'].toString(): (l['nom'] ?? '').toString(),
       };
-      final entreesFacturees = factures.map((f) => f['entree_id'].toString()).toSet();
+      final entreesFacturees = <String>{
+        ...facturesLegacy.map((f) => f['entree_id'].toString()),
+        ...facturesNew.map((f) => f['source_pension_entree_id'].toString()),
+      };
       final seuil15j = DateTime.now().subtract(const Duration(days: 15));
-      final debiteurs = factures.where((f) {
-        if (f['statut'] != 'envoyee') return false;
-        final dEnvoi = DateTime.tryParse(f['date_envoi']?.toString() ?? '');
-        return dEnvoi != null && dEnvoi.isBefore(seuil15j);
-      }).toList();
+      final debiteurs = <Map<String, dynamic>>[
+        ...facturesLegacy.where((f) {
+          if (f['statut'] != 'envoyee') return false;
+          final dEnvoi = DateTime.tryParse(f['date_envoi']?.toString() ?? '');
+          return dEnvoi != null && dEnvoi.isBefore(seuil15j);
+        }).map((f) => {...f, '_table': 'pension_factures'}),
+        ...facturesNew.where((f) {
+          if (f['statut'] != 'emise') return false;
+          final d = DateTime.tryParse((f['created_at'] ?? f['date_facture'])?.toString() ?? '');
+          return d != null && d.isBefore(seuil15j);
+        }).map((f) => {...f, '_table': 'factures'}),
+      ];
       // Photo/puce affichées pour tout animal déjà lié (via son animal_id sur
       // l'entrée) — indépendamment de l'accès santé/alimentation, pas encore
       // forcément validé par le propriétaire (voir animal_access ci-dessus,
@@ -1047,24 +1063,43 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
     );
   }
 
-  Future<void> _marquerFacturePayee(String factureId) async {
-    await _supa.from('pension_factures').update({
-      'statut': 'payee',
-      'date_paiement': DateTime.now().toIso8601String(),
-    }).eq('id', factureId);
+  Future<void> _marquerFacturePayee(String factureId, {String table = 'pension_factures'}) async {
+    await _supa.from(table).update(table == 'factures'
+        ? {'statut': 'payee'}
+        : {'statut': 'payee', 'date_paiement': DateTime.now().toIso8601String()},
+    ).eq('id', factureId);
     if (mounted) Navigator.pop(context);
     _load();
   }
 
   Future<void> _showFacturesImpayees() async {
-    // Toutes les factures non payées (pas seulement celles >15j du bandeau)
+    // Toutes les factures non payées (pas seulement celles >15j du bandeau),
+    // anciennes (pension_factures) + nouvelles (factures, moteur commun) —
+    // normalisées vers un même affichage.
     final pid = User_Info.activeProfileId;
     List<Map<String, dynamic>> impayees = [];
     try {
-      final rows = await _supa.from('pension_factures').select()
+      final rowsLegacy = await _supa.from('pension_factures').select()
           .eq('pro_uid', _uid).eq('pro_profile_id', pid).eq('statut', 'envoyee')
           .order('date_envoi');
-      impayees = List<Map<String, dynamic>>.from(rows as List);
+      final rowsNew = await _supa.from('factures').select()
+          .eq('profile_id', pid).eq('statut', 'emise')
+          .not('source_pension_entree_id', 'is', null)
+          .order('created_at');
+      impayees = [
+        ...List<Map<String, dynamic>>.from(rowsLegacy as List).map((f) => {
+              'id': f['id'], '_table': 'pension_factures',
+              'nom': '${f['animal_nom'] ?? ''} — ${f['proprietaire_nom'] ?? ''}',
+              'montant': (f['montant'] as num?)?.toDouble() ?? 0,
+              'date': f['date_envoi'],
+            }),
+        ...List<Map<String, dynamic>>.from(rowsNew as List).map((f) => {
+              'id': f['id'], '_table': 'factures',
+              'nom': '${f['prenom_client'] ?? ''} ${f['nom_client'] ?? ''}'.trim(),
+              'montant': (f['total_ttc'] as num?)?.toDouble() ?? 0,
+              'date': f['date_facture'] ?? f['created_at'],
+            }),
+      ];
     } catch (_) {}
     if (!mounted) return;
     await showModalBottomSheet(
@@ -1097,7 +1132,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
                     itemCount: impayees.length,
                     itemBuilder: (_, i) {
                       final f = impayees[i];
-                      final dEnvoi = DateTime.tryParse(f['date_envoi']?.toString() ?? '');
+                      final dEnvoi = DateTime.tryParse(f['date']?.toString() ?? '');
                       final montant = (f['montant'] as num?)?.toDouble() ?? 0;
                       return Container(
                         margin: const EdgeInsets.only(bottom: 10),
@@ -1105,7 +1140,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
                         decoration: BoxDecoration(color: const Color(0xFFF8F8F6), borderRadius: BorderRadius.circular(12)),
                         child: Row(children: [
                           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text('${f['animal_nom'] ?? ''} — ${f['proprietaire_nom'] ?? ''}',
+                            Text((f['nom'] ?? '').toString(),
                                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
                             const SizedBox(height: 2),
                             Text(
@@ -1113,7 +1148,8 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
                                 style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
                           ])),
                           TextButton.icon(
-                            onPressed: () => _marquerFacturePayee(f['id'].toString()),
+                            onPressed: () => _marquerFacturePayee(f['id'].toString(),
+                                table: (f['_table'] ?? 'pension_factures').toString()),
                             icon: const Icon(Icons.check_circle_outline, size: 18, color: Color(0xFF6E9E57)),
                             label: const Text('Marquer payée',
                                 style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Color(0xFF6E9E57))),
@@ -3324,7 +3360,6 @@ class _FacturationSheet extends StatefulWidget {
 
 class _FacturationSheetState extends State<_FacturationSheet> {
   static const _teal   = Color(0xFF0C5C6C);
-  static const _purple = Color(0xFF7B5EA7);
 
   late final TextEditingController _tarifCtrl;
   late final TextEditingController _nbNuitsCtrl;
@@ -3333,9 +3368,7 @@ class _FacturationSheetState extends State<_FacturationSheet> {
   late final TextEditingController _acomptePctCtrl;
   bool _avecTVA    = false;
   bool _isAcompte  = false;
-  bool _generating = false;
-  bool _sending    = false;
-  bool _marking    = false;
+  bool _continuing = false;
 
   @override
   void initState() {
@@ -3641,64 +3674,23 @@ class _FacturationSheetState extends State<_FacturationSheet> {
                 ),
                 const SizedBox(height: 20),
 
-                // Bouton Aperçu / Imprimer
+                // Bascule vers le moteur de facturation commun (numérotation,
+                // PDF archivé, envoi email + notification) — mêmes lignes que
+                // celles calculées ci-dessus (pension/nuit, acompte, TVA…).
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed: _tarif > 0 && !_generating && !_sending ? _genererPDF : null,
-                    icon: _generating
+                    onPressed: _tarif > 0 && !_continuing ? _continuerVersFacturation : null,
+                    icon: _continuing
                         ? const SizedBox(width: 18, height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                    label: Text(_generating ? 'Génération...' : 'Aperçu / Imprimer',
+                        : const Icon(Icons.arrow_forward_outlined, size: 18),
+                    label: Text(_continuing ? 'Préparation...' : 'Continuer vers la facture',
                         style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
                     style: FilledButton.styleFrom(
                       backgroundColor: _teal,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-
-                // Bouton Envoyer au propriétaire
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _tarif > 0 && !_generating && !_sending ? _envoyerAuProprietaire : null,
-                    icon: _sending
-                        ? const SizedBox(width: 18, height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0C5C6C)))
-                        : const Icon(Icons.send_outlined, size: 18),
-                    label: Text(_sending ? 'Envoi en cours...' : 'Envoyer au propriétaire',
-                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _teal,
-                      side: const BorderSide(color: Color(0xFF0C5C6C)),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-
-                // Facture remise en main propre / hors app — pas d'envoi ni de
-                // PDF stocké, juste tracée pour les alertes/l'historique.
-                SizedBox(
-                  width: double.infinity,
-                  child: TextButton.icon(
-                    onPressed: _tarif > 0 && !_generating && !_sending && !_marking ? _marquerFacture : null,
-                    icon: _marking
-                        ? const SizedBox(width: 18, height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.grey))
-                        : const Icon(Icons.fact_check_outlined, size: 18),
-                    label: Text(_marking
-                        ? '...'
-                        : _isAcompte ? 'Marquer acompte facturé (sans envoi)' : 'Marquer facturé (sans envoi)',
-                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.grey.shade700,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
                 ),
@@ -3751,396 +3743,83 @@ class _FacturationSheetState extends State<_FacturationSheet> {
     ],
   );
 
-  // Construit le document PDF et retourne les bytes
-  Future<Uint8List> _buildPdfBytes() async {
-    final e        = widget.entree;
-    final pdfDoc   = pw.Document();
-    final font     = await PdfGoogleFonts.robotoRegular();
-    final fontBold = await PdfGoogleFonts.robotoBold();
-    final fmt      = DateFormat('dd/MM/yyyy');
-    final logo     = pw.MemoryImage(
-        (await rootBundle.load('assets/Logo_petsmatch_fond_blanc.png'))
-            .buffer.asUint8List());
-
-    final now        = DateTime.now();
-    final invoiceNum = '${_isAcompte ? 'ACPT' : 'FACT'}-${DateFormat('yyyyMMdd-HHmm').format(now)}';
-
-    final pensionNom = User_Info.nameElevage.isNotEmpty
-        ? User_Info.nameElevage
-        : '${User_Info.firstname} ${User_Info.lastname}'.trim();
-
-    final adressePension = [
-      User_Info.rueElevage.isNotEmpty ? User_Info.rueElevage : User_Info.rue,
-      User_Info.villeElevage.isNotEmpty ? User_Info.villeElevage : User_Info.ville,
-      User_Info.codePostalElevage.isNotEmpty ? User_Info.codePostalElevage : User_Info.codePostal,
-    ].where((s) => s.isNotEmpty).join(', ');
-
-    String fmtIso(String? iso) {
-      if (iso == null || iso.isEmpty) return '—';
-      final dt = DateTime.tryParse(iso);
-      return dt != null ? fmt.format(dt) : '—';
-    }
-
-    String fmtM(double v) => '${v.toStringAsFixed(2).replaceAll('.', ',')} €';
-
-    final nbN       = _nbNuits;
-    final tarif     = _tarif;
-    final supp      = _supp;
-    final sousTotal = _sousTotal;
-    final tvaAmt    = _tva;
-    final total     = _total;
-    final suppDesc  = _suppDescCtrl.text.trim();
-    final avecTVA   = _avecTVA;
-    final dateSortie = (e['date_sortie_effective'] ?? e['date_sortie_prevue']) as String?;
-
-    pw.Widget detailRow(String desc, String qte, String pu, String montant,
-        {bool isHeader = false}) =>
-      pw.Container(
-        decoration: pw.BoxDecoration(
-          color: isHeader ? const PdfColor.fromInt(0xFF0C5C6C) : null,
-          border: const pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200, width: 0.3)),
-        ),
-        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        child: pw.Row(children: [
-          pw.Expanded(flex: 5, child: pw.Text(desc,
-              style: pw.TextStyle(font: isHeader ? fontBold : font, fontSize: 8,
-                  color: isHeader ? PdfColors.white : PdfColors.black))),
-          pw.SizedBox(width: 36, child: pw.Text(qte, textAlign: pw.TextAlign.center,
-              style: pw.TextStyle(font: isHeader ? fontBold : font, fontSize: 8,
-                  color: isHeader ? PdfColors.white : PdfColors.grey700))),
-          pw.SizedBox(width: 60, child: pw.Text(pu, textAlign: pw.TextAlign.right,
-              style: pw.TextStyle(font: isHeader ? fontBold : font, fontSize: 8,
-                  color: isHeader ? PdfColors.white : PdfColors.grey700))),
-          pw.SizedBox(width: 60, child: pw.Text(montant, textAlign: pw.TextAlign.right,
-              style: pw.TextStyle(font: isHeader ? fontBold : font, fontSize: 8,
-                  color: isHeader ? PdfColors.white : const PdfColor.fromInt(0xFF0C5C6C)))),
-        ]),
-      );
-
-    pw.Widget totalLine(String label, String value,
-        {bool isBold = false, bool isHighlight = false}) =>
-      pw.Container(
-        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: isHighlight ? const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0C5C6C)) : null,
-        child: pw.Row(mainAxisAlignment: pw.MainAxisAlignment.end, children: [
-          pw.SizedBox(width: 130, child: pw.Text(label,
-              style: pw.TextStyle(font: isBold || isHighlight ? fontBold : font, fontSize: 8,
-                  color: isHighlight ? PdfColors.white : PdfColors.grey700))),
-          pw.SizedBox(width: 64, child: pw.Text(value, textAlign: pw.TextAlign.right,
-              style: pw.TextStyle(font: isBold || isHighlight ? fontBold : font, fontSize: 8,
-                  color: isHighlight ? PdfColors.white : const PdfColor.fromInt(0xFF0C5C6C)))),
-        ]),
-      );
-
-    pdfDoc.addPage(pw.Page(
-      pageFormat: PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.all(32),
-      build: (ctx) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-        pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-          pw.Image(logo, width: 40, height: 40),
-          pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
-            pw.Text(_isAcompte ? "FACTURE D'ACOMPTE" : 'FACTURE',
-                style: pw.TextStyle(font: fontBold, fontSize: 18,
-                    color: const PdfColor.fromInt(0xFF0C5C6C))),
-            pw.Text(invoiceNum, style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)),
-            pw.Text('Date : ${fmt.format(now)}', style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)),
-          ]),
-        ]),
-        pw.SizedBox(height: 6),
-        pw.Divider(thickness: 1, color: const PdfColor.fromInt(0xFF0C5C6C)),
-        pw.SizedBox(height: 14),
-        pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-          pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-            pw.Text('ÉMETTEUR', style: pw.TextStyle(font: fontBold, fontSize: 7,
-                color: PdfColors.grey500, letterSpacing: 0.5)),
-            pw.SizedBox(height: 4),
-            if (pensionNom.isNotEmpty) pw.Text(pensionNom, style: pw.TextStyle(font: fontBold, fontSize: 10)),
-            if (adressePension.isNotEmpty) pw.Text(adressePension, style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)),
-            if (User_Info.email.isNotEmpty && User_Info.email != 'none')
-              pw.Text(User_Info.email, style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)),
-            if (User_Info.phone_number.isNotEmpty && User_Info.phone_number != '0000000000')
-              pw.Text(User_Info.phone_number, style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)),
-            if (User_Info.siret.isNotEmpty)
-              pw.Text('SIRET : ${User_Info.siret}', style: pw.TextStyle(font: font, fontSize: 7, color: PdfColors.grey500)),
-          ])),
-          pw.SizedBox(width: 24),
-          pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-            pw.Text('DESTINATAIRE', style: pw.TextStyle(font: fontBold, fontSize: 7,
-                color: PdfColors.grey500, letterSpacing: 0.5)),
-            pw.SizedBox(height: 4),
-            pw.Text((e['proprietaire_nom'] ?? '').toString().isNotEmpty ? e['proprietaire_nom'].toString() : '—',
-                style: pw.TextStyle(font: fontBold, fontSize: 10)),
-            if ((e['proprietaire_contact'] ?? '').toString().isNotEmpty)
-              pw.Text(e['proprietaire_contact'].toString(), style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)),
-            if ((e['proprietaire_email'] ?? '').toString().isNotEmpty)
-              pw.Text(e['proprietaire_email'].toString(), style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)),
-          ])),
-        ]),
-        pw.SizedBox(height: 14),
-        pw.Container(
-          padding: const pw.EdgeInsets.all(10),
-          decoration: pw.BoxDecoration(
-            color: const PdfColor.fromInt(0xFFF0F7F9),
-            border: pw.Border.all(color: PdfColors.grey300, width: 0.5),
-            borderRadius: pw.BorderRadius.circular(4),
-          ),
-          child: pw.Row(children: [
-            pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-              pw.Text('ANIMAL', style: pw.TextStyle(font: fontBold, fontSize: 7, color: PdfColors.grey500, letterSpacing: 0.5)),
-              pw.SizedBox(height: 3),
-              pw.Text('${e['animal_nom'] ?? '—'} · ${_espLabel(e['espece']?.toString() ?? '')}',
-                  style: pw.TextStyle(font: fontBold, fontSize: 9)),
-              if ((e['race'] ?? '').toString().isNotEmpty)
-                pw.Text(e['race'].toString(), style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)),
-              if ((e['puce'] ?? '').toString().isNotEmpty)
-                pw.Text('Puce : ${e['puce']}', style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)),
-            ])),
-            pw.SizedBox(width: 20),
-            pw.Expanded(child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-              pw.Text('SÉJOUR', style: pw.TextStyle(font: fontBold, fontSize: 7, color: PdfColors.grey500, letterSpacing: 0.5)),
-              pw.SizedBox(height: 3),
-              pw.Text('Entrée : ${fmtIso(e['date_entree'] as String?)}', style: pw.TextStyle(font: font, fontSize: 8)),
-              pw.Text('Sortie : ${fmtIso(dateSortie)}', style: pw.TextStyle(font: font, fontSize: 8)),
-              pw.Text('Durée : $nbN nuit${nbN > 1 ? 's' : ''}',
-                  style: pw.TextStyle(font: fontBold, fontSize: 9, color: const PdfColor.fromInt(0xFF0C5C6C))),
-            ])),
-          ]),
-        ),
-        pw.SizedBox(height: 14),
-        pw.Container(
-          decoration: pw.BoxDecoration(border: pw.Border.all(color: PdfColors.grey300, width: 0.5)),
-          child: pw.Column(children: [
-            detailRow('Description', 'Qté', 'P.U. HT', 'Total HT', isHeader: true),
-            detailRow('Pension du ${fmtIso(e['date_entree'] as String?)} au ${fmtIso(dateSortie)}',
-                '$nbN', fmtM(tarif), fmtM(tarif * nbN)),
-            if (supp > 0)
-              detailRow(suppDesc.isNotEmpty ? suppDesc : 'Suppléments', '1', fmtM(supp), fmtM(supp)),
-          ]),
-        ),
-        pw.SizedBox(height: 8),
-        pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.end, children: [
-          if (avecTVA) ...[
-            totalLine('Sous-total HT', fmtM(sousTotal)),
-            pw.SizedBox(height: 2),
-            totalLine('TVA 20%', fmtM(tvaAmt)),
-            pw.SizedBox(height: 4),
-          ],
-          if (_isAcompte) ...[
-            totalLine(avecTVA ? 'Total TTC séjour' : 'Total séjour', fmtM(total), isBold: true),
-            pw.SizedBox(height: 2),
-            totalLine('Solde à la sortie', fmtM(_solde)),
-            pw.SizedBox(height: 4),
-            totalLine('ACOMPTE $_acomptePct% À RÉGLER', fmtM(_montantFacture), isBold: true, isHighlight: true),
-          ] else
-            totalLine(avecTVA ? 'TOTAL TTC' : 'TOTAL', fmtM(total), isBold: true, isHighlight: true),
-        ]),
-        pw.SizedBox(height: 20),
-        pw.Container(
-          padding: const pw.EdgeInsets.all(10),
-          decoration: pw.BoxDecoration(color: PdfColors.grey100, borderRadius: pw.BorderRadius.circular(4)),
-          child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-            pw.Text('CONDITIONS DE RÈGLEMENT',
-                style: pw.TextStyle(font: fontBold, fontSize: 7, color: PdfColors.grey600, letterSpacing: 0.5)),
-            pw.SizedBox(height: 4),
-            pw.Text(
-                _isAcompte
-                    ? "Acompte à régler pour confirmer la réservation. Le solde de ${fmtM(_solde)} sera facturé à la fin du séjour. "
-                      'Document généré via PetsMatch.'
-                    : 'Paiement à réception de facture. '
-                      'Tout retard de paiement entraîne des pénalités au taux légal en vigueur. '
-                      'Document généré via PetsMatch.',
-                style: pw.TextStyle(font: font, fontSize: 7, color: PdfColors.grey600)),
-          ]),
-        ),
-      ]),
-    ));
-
-    return Uint8List.fromList(await pdfDoc.save());
-  }
-
-  // Facture remise en main propre / hors app (impression, chèque, espèces…) —
-  // aucun envoi ni PDF stocké, juste tracée pour les alertes et l'historique.
-  Future<void> _marquerFacture() async {
-    setState(() => _marking = true);
+  // Bascule vers le moteur de facturation commun (CreerFacturePage) avec les
+  // lignes déjà calculées ci-dessus — numérotation, PDF archivé, envoi email
+  // + notification au propriétaire sont ensuite gérés par ce moteur, comme
+  // pour tous les autres profils (garde, taxi, photographe, toilettage…).
+  Future<void> _continuerVersFacturation() async {
+    setState(() => _continuing = true);
     try {
-      final now    = DateTime.now();
-      final invNum = '${_isAcompte ? 'ACPT' : 'FACT'}-${DateFormat('yyyyMMdd-HHmm').format(now)}';
-      final uid    = FirebaseAuth.instance.currentUser?.uid ?? '';
-      await Supabase.instance.client.from('pension_factures').insert({
-        'pro_uid':          uid,
-        'pro_profile_id':   User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
-        'entree_id':        widget.entree['id'],
-        'numero':           invNum,
-        'animal_nom':       widget.entree['animal_nom'],
-        'proprietaire_nom': widget.entree['proprietaire_nom'],
-        'montant':          _montantFacture,
-        'statut':           'envoyee',
-        if (_isAcompte) 'type': 'acompte',
-        if (_isAcompte) 'acompte_pct': _acomptePct,
-      });
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Séjour marqué comme facturé.', style: TextStyle(fontFamily: 'Galey')),
-          backgroundColor: Color(0xFF6E9E57),
-        ));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
-          backgroundColor: Colors.red,
-        ));
-      }
-    } finally {
-      if (mounted) setState(() => _marking = false);
-    }
-  }
-
-  Future<void> _genererPDF() async {
-    setState(() => _generating = true);
-    try {
-      final bytes = await _buildPdfBytes();
-      await Printing.layoutPdf(onLayout: (_) async => bytes);
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Erreur PDF : $e'), backgroundColor: Colors.red));
-      }
-    } finally {
-      if (mounted) setState(() => _generating = false);
-    }
-  }
-
-  Future<void> _envoyerAuProprietaire() async {
-    final ownerEmail = (widget.entree['proprietaire_email'] ?? '').toString().trim();
-    if (ownerEmail.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Email du propriétaire non renseigné.',
-            style: TextStyle(fontFamily: 'Galey')),
-        backgroundColor: Colors.orange,
-      ));
-      return;
-    }
-
-    setState(() => _sending = true);
-    try {
-      // 1 — Générer les bytes PDF
-      final bytes   = await _buildPdfBytes();
-      final now     = DateTime.now();
-      final invNum  = '${_isAcompte ? 'ACPT' : 'FACT'}-${DateFormat('yyyyMMdd-HHmm').format(now)}';
-      final uid     = FirebaseAuth.instance.currentUser?.uid ?? '';
-      final animalNom = widget.entree['animal_nom']?.toString() ?? '';
-
-      // 2 — Upload Firebase Storage
-      final ref     = FirebaseStorage.instance
-          .ref('factures/$uid/$invNum.pdf');
-      final task    = await ref.putData(
-        Uint8List.fromList(bytes),
-        SettableMetadata(contentType: 'application/pdf'),
-      );
-      final dlUrl   = await task.ref.getDownloadURL();
-
-      // 3 — Lookup uid propriétaire dans Supabase par email
+      final e = widget.entree;
       final supa = Supabase.instance.client;
-      final ownerRow = await supa
-          .from('users')
-          .select('uid')
-          .eq('email', ownerEmail)
-          .maybeSingle();
-      final ownerUid = ownerRow?['uid'] as String?;
 
-      if (ownerUid == null || ownerUid.isEmpty) {
-        throw Exception('Propriétaire introuvable dans PetsMatch (email : $ownerEmail)');
+      // Compte PetsMatch du propriétaire (email) — permet au moteur commun de
+      // pré-remplir ses coordonnées et de lui envoyer la facture (email +
+      // notification in-app), comme pour les autres profils.
+      final ownerEmail = (e['proprietaire_email'] ?? '').toString().trim();
+      String? ownerUid;
+      if (ownerEmail.isNotEmpty) {
+        final row = await supa.from('users').select('uid').eq('email', ownerEmail).maybeSingle();
+        ownerUid = row?['uid'] as String?;
       }
-
-      // 4 — Notification Supabase (déclenchera FCM via Cloud Function)
-      final pensionNom = User_Info.nameElevage.isNotEmpty
-          ? User_Info.nameElevage
-          : '${User_Info.firstname} ${User_Info.lastname}'.trim();
-
+      final animalId = e['animal_id']?.toString();
       String? ownerProfileId;
-      final animalIdForProfile = widget.entree['animal_id']?.toString();
-      if (animalIdForProfile != null && animalIdForProfile.isNotEmpty) {
+      if (animalId != null && animalId.isNotEmpty) {
         final propRow = await supa.from('animaux_proprietes')
-            .select('profile_id_proprio').eq('animal_id', animalIdForProfile)
+            .select('profile_id_proprio').eq('animal_id', animalId)
             .filter('date_fin', 'is', null).order('date_debut', ascending: false)
             .limit(1).maybeSingle();
         ownerProfileId = propRow?['profile_id_proprio'] as String?;
       }
 
-      await supa.from('notifications').insert({
-        'uid':   ownerUid,
-        'type':  'facture_pension',
-        'title': _isAcompte
-            ? 'Votre acompte de pension est disponible'
-            : 'Votre facture de pension est disponible',
-        'body':  _isAcompte
-            ? '$pensionNom vous demande un acompte de $_acomptePct% pour le séjour de $animalNom.'
-            : '$pensionNom vous a envoyé la facture pour le séjour de $animalNom.',
-        if (ownerProfileId != null) 'profile_id': ownerProfileId,
-        'data':  {
-          'url':        dlUrl,
-          'invoice':    invNum,
-          'animal_nom': animalNom,
-          'pension_nom': pensionNom,
-        },
-        'read': false,
-      });
-
-      // Persiste la facture — sans ça, impossible de savoir plus tard quel
-      // séjour est facturé ou quel client n'a pas encore payé (alertes).
-      await supa.from('pension_factures').insert({
-        'pro_uid':          uid,
-        'pro_profile_id':   User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
-        'entree_id':        widget.entree['id'],
-        'numero':           invNum,
-        'animal_nom':       animalNom,
-        'proprietaire_nom': widget.entree['proprietaire_nom'],
-        'proprietaire_uid': ownerUid,
-        'montant':          _montantFacture,
-        'pdf_url':          dlUrl,
-        'statut':           'envoyee',
-        if (_isAcompte) 'type': 'acompte',
-        if (_isAcompte) 'acompte_pct': _acomptePct,
-      });
-
-      // Email au propriétaire avec le lien du PDF (en plus de la notif in-app).
-      try {
-        await http.post(
-          Uri.parse('$kSiteBaseUrl/api/facture/notify-email'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'email': ownerEmail,
-            'client_nom': widget.entree['proprietaire_nom'] ?? 'Client',
-            'pro_nom': pensionNom,
-            'numero_facture': invNum,
-            'total_ttc': _montantFacture,
-            'facture_url': dlUrl,
-            'pdf_url': dlUrl,
-          }),
-        );
-      } catch (_) {/* l'email est un bonus */}
-
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Facture envoyée à $ownerEmail',
-              style: const TextStyle(fontFamily: 'Galey')),
-          backgroundColor: const Color(0xFF0C5C6C),
-          behavior: SnackBarBehavior.floating,
-        ));
+      String fmtDate(String? iso) {
+        final d = DateTime.tryParse(iso ?? '');
+        if (d == null) return '?';
+        return '${d.day.toString().padLeft(2, "0")}/${d.month.toString().padLeft(2, "0")}/${d.year}';
       }
-    } catch (e) {
+      final dateSortie = (e['date_sortie_effective'] ?? e['date_sortie_prevue'])?.toString();
+      final desc = 'Pension du ${fmtDate(e['date_entree']?.toString())} au ${fmtDate(dateSortie)} — '
+          '${e['animal_nom'] ?? ''}';
+      final tauxTVA = _avecTVA ? 20.0 : 0.0;
+      final lignes = <FacturePrefillLigne>[
+        _isAcompte
+            ? FacturePrefillLigne(designation: 'Acompte $_acomptePct% — $desc',
+                prixHT: _montantFacture, tauxTVA: tauxTVA)
+            : FacturePrefillLigne(designation: desc,
+                prixHT: _tarif, quantite: _nbNuits.toDouble(), tauxTVA: tauxTVA),
+        if (_supp > 0)
+          FacturePrefillLigne(
+              designation: _suppDescCtrl.text.trim().isNotEmpty ? _suppDescCtrl.text.trim() : 'Suppléments',
+              prixHT: _supp, tauxTVA: tauxTVA),
+      ];
+
+      if (!mounted) return;
+      Navigator.pop(context); // ferme la feuille de saisie
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => CreerFacturePage(
+          clientNom: e['proprietaire_nom'] as String?,
+          clientEmail: ownerEmail.isNotEmpty ? ownerEmail : null,
+          clientTel: e['proprietaire_contact'] as String?,
+          clientUid: ownerUid,
+          clientProfileId: ownerProfileId,
+          sourceAnimalId: animalId,
+          sourcePensionEntreeId: e['id']?.toString(),
+          typeFacture: _isAcompte ? 'acompte' : null,
+          noteInitiale: _isAcompte
+              ? 'Total du séjour : ${_fmt(_total)} — solde de ${_fmt(_solde)} facturé à la sortie.'
+              : null,
+          lignesPrefill: lignes,
+        ),
+      ));
+    } catch (err) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Erreur envoi : $e', style: const TextStyle(fontFamily: 'Galey')),
+          content: Text('Erreur : $err', style: const TextStyle(fontFamily: 'Galey')),
           backgroundColor: Colors.red,
         ));
       }
     } finally {
-      if (mounted) setState(() => _sending = false);
+      if (mounted) setState(() => _continuing = false);
     }
   }
 }

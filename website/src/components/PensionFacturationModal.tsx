@@ -1,24 +1,23 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import type { PensionEntree } from '@/components/PensionEntreeModal';
 import { pensionTarifKeyForEspece, type TarifsPension } from '@/lib/pension-especes';
-import { type PensionFactureData, type PensionFactureEmetteur } from '@/lib/pension-facture-html';
-import { pensionInvoicePdfBlob } from '@/lib/pension-facture-pdf';
+import { type PensionFactureEmetteur } from '@/lib/pension-facture-html';
 
 const TEAL = '#0C5C6C';
 
 function fmt(v: number) { return `${v.toFixed(2).replace('.', ',')} €`; }
 
-export function PensionFacturationModal({ entree, proUid, proProfileId, pensionNom, onClose, onSaved }: {
+export function PensionFacturationModal({ entree, proProfileId, pensionNom, onClose }: {
   entree: PensionEntree;
-  proUid: string;
   proProfileId: string | null;
   pensionNom: string;
   onClose: () => void;
-  onSaved: () => void;
 }) {
+  const router = useRouter();
   const dateEntree = entree.date_entree ? new Date(entree.date_entree) : null;
   const dateSortie = entree.date_sortie_effective
     ? new Date(entree.date_sortie_effective)
@@ -34,8 +33,6 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
   const [avecTVA, setAvecTVA] = useState(false);
   const [isAcompte, setIsAcompte] = useState(false);
   const [acomptePct, setAcomptePct] = useState('30');
-  const [sending, setSending] = useState(false);
-  const [marking, setMarking] = useState(false);
   const [error, setError] = useState('');
   const [emetteur, setEmetteur] = useState<PensionFactureEmetteur | null>(null);
 
@@ -106,179 +103,42 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
   // Montant réellement facturé : total du séjour, ou une fraction si c'est un acompte.
   const montantFacture = isAcompte ? Math.round(total * pctNum) / 100 : total;
 
-  function genNumero() {
-    return `${isAcompte ? 'ACPT' : 'FACT'}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString().slice(-4)}`;
-  }
-  function factureData(numero: string): PensionFactureData {
-    return {
-      numero,
-      pensionNom,
-      emetteur,
-      emiseLe: new Date().toISOString(),
-      animal: { nom: entree.animal_nom, espece: entree.espece, race: entree.race, puce: entree.puce },
-      proprietaire: { nom: entree.proprietaire_nom, email: entree.proprietaire_email, contact: entree.proprietaire_contact },
-      sejour: { dateEntree: entree.date_entree, dateSortie: entree.date_sortie_effective ?? entree.date_sortie_prevue },
-      nuits: nuitsNum,
-      tarifNuit: tarifNum,
-      suppDesc,
-      suppMontant: suppNum,
-      avecTVA,
-      isAcompte,
-      acomptePct: pctNum,
-    };
-  }
-  function facturePayload(numero: string, token: string) {
-    return {
-      pro_uid: proUid,
-      ...(proProfileId ? { pro_profile_id: proProfileId } : {}),
-      entree_id: entree.id,
-      numero,
-      token,
-      animal_nom: entree.animal_nom,
-      proprietaire_nom: entree.proprietaire_nom,
-      montant: montantFacture,
-      statut: 'envoyee',
-      details: factureData(numero),
-      ...(isAcompte ? { type: 'acompte', acompte_pct: pctNum } : {}),
-    };
+  function fmtIso(iso?: string | null) {
+    if (!iso) return '?';
+    const [y, m, d] = iso.slice(0, 10).split('-');
+    return `${d}/${m}/${y}`;
   }
 
-  // Insert résilient : si `details` / `token` n'existent pas encore (migration
-  // pas passée), on réessaie sans les colonnes manquantes. Renvoie la ligne
-  // créée (dont numero_affichage attribué par le serveur).
-  async function insertFacture(payload: Record<string, unknown>): Promise<{ data: Record<string, unknown> | null; error: { message: string } | null }> {
-    let p = payload;
-    for (let i = 0; i < 4; i++) {
-      const res = await supabase.from('pension_factures').insert(p).select('id, numero, numero_affichage').single();
-      if (!res.error) return { data: res.data as Record<string, unknown>, error: null };
-      const m = /'?(\w+)'? column|column "?(\w+)"?|(\bdetails\b|\btoken\b|\bnumero_affichage\b)/i.exec(res.error.message);
-      const col = m?.[1] || m?.[2] || m?.[3];
-      if (col === 'numero_affichage') {
-        // Migration 2b pas passée : on retombe sur un select minimal.
-        const res2 = await supabase.from('pension_factures').insert(p).select('id, numero').single();
-        return { data: (res2.data ?? null) as Record<string, unknown> | null, error: res2.error };
-      }
-      if (col && col in p) {
-        const { [col]: _omit, ...rest } = p;
-        void _omit;
-        p = rest;
-        continue;
-      }
-      return { data: null, error: res.error };
-    }
-    const last = await supabase.from('pension_factures').insert(p).select('id, numero').single();
-    return { data: (last.data ?? null) as Record<string, unknown> | null, error: last.error };
-  }
-
-  // Génère le PDF (avec le numéro serveur), l'upload, met à jour la ligne.
-  async function genererEtArchiver(factureId: string, numero: string): Promise<string | null> {
-    try {
-      const data = factureData(numero);
-      const blob = await pensionInvoicePdfBlob(data);
-      const path = `factures-pension/${proUid}/${factureId}.pdf`;
-      const { error: upErr } = await supabase.storage.from('petsmatch')
-        .upload(path, blob, { upsert: true, contentType: 'application/pdf' });
-      const pdfUrl = upErr ? null : supabase.storage.from('petsmatch').getPublicUrl(path).data.publicUrl;
-      await supabase.from('pension_factures').update({
-        numero, details: data, ...(pdfUrl ? { pdf_url: pdfUrl } : {}),
-      }).eq('id', factureId);
-      return pdfUrl;
-    } catch {
-      return null;
-    }
-  }
-
-  async function apercu() {
-    setMarking(true);
-    try {
-      const blob = await pensionInvoicePdfBlob(factureData(genNumero()));
-      const url = URL.createObjectURL(blob);
-      if (!window.open(url, '_blank')) setError('Autorisez les popups pour ouvrir la facture');
-    } catch {
-      setError('Impossible de générer le PDF');
-    } finally {
-      setMarking(false);
-    }
-  }
-
-  async function marquerFacture() {
+  // Bascule vers le moteur de facturation commun (numérotation, PDF archivé,
+  // envoi email + notification) — mêmes lignes que celles calculées ci-dessus
+  // (pension/nuit, acompte, TVA…), déposées en sessionStorage le temps de la
+  // navigation (voir /elevage/facturation).
+  function continuer() {
     if (tarifNum <= 0) { setError('Renseignez un tarif par nuit.'); return; }
-    setMarking(true);
-    setError('');
+    const dateSortie = entree.date_sortie_effective ?? entree.date_sortie_prevue;
+    const desc = `Pension du ${fmtIso(entree.date_entree)} au ${fmtIso(dateSortie)} — ${entree.animal_nom ?? ''}`;
+    const tva = avecTVA ? 20 : 0;
+    const lignes = [
+      isAcompte
+        ? { description: `Acompte ${pctNum}% — ${desc}`, quantite: 1, prixUnitaire: montantFacture, tva }
+        : { description: desc, quantite: nuitsNum, prixUnitaire: tarifNum, tva },
+      ...(suppNum > 0 ? [{ description: suppDesc.trim() || 'Suppléments', quantite: 1, prixUnitaire: suppNum, tva }] : []),
+    ];
+    const prefill = {
+      nomClient: entree.proprietaire_nom ?? '',
+      emailClient: entree.proprietaire_email ?? '',
+      telClient: entree.proprietaire_contact ?? '',
+      note: isAcompte
+        ? `Total du séjour : ${fmt(total)} — solde de ${fmt(total - montantFacture)} facturé à la sortie.`
+        : '',
+      lignes,
+      sourcePensionEntreeId: entree.id,
+    };
     try {
-      const { data, error: err } = await insertFacture(facturePayload('', crypto.randomUUID()));
-      if (err || !data) { setError(err?.message ?? 'Erreur'); setMarking(false); return; }
-      const numero = (data.numero_affichage as string) || (data.numero as string) || genNumero();
-      await genererEtArchiver(data.id as string, numero);
-      onSaved();
-    } finally {
-      setMarking(false);
-    }
-  }
-
-  async function envoyerAuProprietaire() {
-    const ownerEmail = (entree.proprietaire_email ?? '').trim();
-    if (!ownerEmail) { setError('Email du propriétaire non renseigné.'); return; }
-    setSending(true);
-    setError('');
-    try {
-      const { data: ownerRow } = await supabase.from('users').select('uid').eq('email', ownerEmail).maybeSingle();
-      const ownerUid = ownerRow?.uid as string | undefined;
-
-      let ownerProfileId: string | null = null;
-      if (ownerUid && entree.animal_id) {
-        const { data: propRow } = await supabase.from('animaux_proprietes')
-          .select('profile_id_proprio').eq('animal_id', entree.animal_id).is('date_fin', null)
-          .order('date_debut', { ascending: false }).limit(1).maybeSingle();
-        ownerProfileId = propRow?.profile_id_proprio ?? null;
-      }
-
-      const token = crypto.randomUUID();
-
-      const { data, error: err } = await insertFacture({
-        ...facturePayload('', token),
-        ...(ownerUid ? { proprietaire_uid: ownerUid } : {}),
-      });
-      if (err || !data) { setError(err?.message ?? 'Erreur'); setSending(false); return; }
-      const numero = (data.numero_affichage as string) || (data.numero as string) || genNumero();
-      const pdf_url = await genererEtArchiver(data.id as string, numero);
-
-      // Notification in-app uniquement si le propriétaire a un compte PetsMatch.
-      if (ownerUid) {
-        await supabase.from('notifications').insert({
-          uid: ownerUid,
-          type: 'facture_pension',
-          title: isAcompte ? "Votre acompte de pension est disponible" : 'Votre facture de pension est disponible',
-          body: isAcompte
-            ? `${pensionNom} vous demande un acompte de ${pctNum}% pour le séjour de ${entree.animal_nom}.`
-            : `${pensionNom} vous a envoyé la facture pour le séjour de ${entree.animal_nom}.`,
-          ...(ownerProfileId ? { profile_id: ownerProfileId } : {}),
-          data: { invoice: numero, animal_nom: entree.animal_nom, pension_nom: pensionNom, url: `/facture-pension/${token}` },
-          read: false,
-        });
-      }
-
-      // Email avec le lien de consultation (en plus de la notification in-app).
-      try {
-        await fetch('/api/facture/notify-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: ownerEmail,
-            client_nom: entree.proprietaire_nom || 'Client',
-            pro_nom: pensionNom,
-            numero_facture: numero,
-            total_ttc: montantFacture,
-            facture_url: `${window.location.origin}/facture-pension/${token}`,
-            ...(pdf_url ? { pdf_url } : {}),
-          }),
-        });
-      } catch { /* l'email est un bonus, on n'échoue pas la facturation dessus */ }
-
-      onSaved();
-    } finally {
-      setSending(false);
-    }
+      sessionStorage.setItem('pm_facture_prefill', JSON.stringify(prefill));
+    } catch { /* ignore */ }
+    onClose();
+    router.push('/elevage/facturation');
   }
 
   const inp: React.CSSProperties = {
@@ -384,26 +244,13 @@ export function PensionFacturationModal({ entree, proUid, proProfileId, pensionN
 
         {error && <p style={{ color: '#dc2626', fontFamily: 'Galey, sans-serif', fontSize: 13, marginBottom: 12 }}>{error}</p>}
 
-        <button onClick={apercu} disabled={tarifNum <= 0 || sending || marking} style={{
+        <button onClick={continuer} disabled={tarifNum <= 0} style={{
           width: '100%', padding: '13px 0', background: TEAL, color: 'white', border: 'none', borderRadius: 12,
           fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 14,
-          cursor: tarifNum <= 0 || sending || marking ? 'not-allowed' : 'pointer',
-          opacity: tarifNum <= 0 || sending || marking ? 0.6 : 1, marginBottom: 10,
-        }}>
-          {marking && !sending ? 'Génération du PDF…' : '🖨️ Aperçu PDF'}
-        </button>
-        <button onClick={envoyerAuProprietaire} disabled={tarifNum <= 0 || sending || marking} style={{
-          width: '100%', padding: '13px 0', background: 'transparent', color: TEAL, border: `1px solid ${TEAL}`, borderRadius: 12,
-          fontFamily: 'Galey, sans-serif', fontWeight: 700, fontSize: 14, cursor: tarifNum <= 0 ? 'not-allowed' : 'pointer',
+          cursor: tarifNum <= 0 ? 'not-allowed' : 'pointer',
           opacity: tarifNum <= 0 ? 0.6 : 1, marginBottom: 10,
         }}>
-          {sending ? 'Envoi en cours…' : '✉️ Envoyer au propriétaire (email + notif)'}
-        </button>
-        <button onClick={marquerFacture} disabled={tarifNum <= 0 || sending || marking} style={{
-          width: '100%', padding: '11px 0', background: 'transparent', color: '#6b7280', border: 'none',
-          fontFamily: 'Galey, sans-serif', fontWeight: 600, fontSize: 13, cursor: tarifNum <= 0 ? 'not-allowed' : 'pointer',
-        }}>
-          {marking ? '…' : isAcompte ? '✔ Marquer acompte facturé (sans envoi)' : '✔ Marquer facturé (sans envoi)'}
+          Continuer vers la facture →
         </button>
       </div>
     </div>

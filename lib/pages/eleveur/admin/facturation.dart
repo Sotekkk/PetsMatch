@@ -15,6 +15,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/pages/pro/pension_factures_page.dart' show PensionFacturesPage;
 
 // ─────────────────────────────────────────────────────────────
 // HELPERS
@@ -195,6 +196,18 @@ class _FacturationPageState extends State<FacturationPage> {
         title: const Text('Mes Factures',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
         actions: [
+          // Pension a migré vers ce moteur commun ; les factures envoyées avant
+          // la migration restent dans l'ancienne table, consultables ici.
+          if (User_Info.catPro == 'pension')
+            IconButton(
+              icon: const Icon(Icons.history_outlined),
+              tooltip: 'Historique (avant migration)',
+              onPressed: () {
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => const PensionFacturesPage(),
+                ));
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.verified_user_outlined),
             tooltip: 'Attestation de conformité',
@@ -536,6 +549,7 @@ class CreerFacturePage extends StatefulWidget {
   final String? sourceRdvId;      // RDV « ancre »
   final List<String> sourceRdvIds; // tous les RDV couverts (garde multi-jours)
   final String? sourceAnimalId;
+  final String? sourcePensionEntreeId; // séjour pension d'origine
   final String? clientUid;
   final String? clientProfileId;
 
@@ -553,6 +567,7 @@ class CreerFacturePage extends StatefulWidget {
     this.sourceRdvId,
     this.sourceRdvIds = const [],
     this.sourceAnimalId,
+    this.sourcePensionEntreeId,
     this.clientUid,
     this.clientProfileId,
   });
@@ -807,6 +822,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
         if (widget.factureParenteId != null) 'facture_parente_id': widget.factureParenteId,
         if (widget.sourceRdvId != null) 'source_rdv_id': widget.sourceRdvId,
         if (widget.sourceAnimalId != null) 'source_animal_id': widget.sourceAnimalId,
+        if (widget.sourcePensionEntreeId != null) 'source_pension_entree_id': widget.sourcePensionEntreeId,
         if (widget.clientUid != null) 'client_uid': widget.clientUid,
         if (widget.clientProfileId != null) 'client_profile_id': widget.clientProfileId,
         'date_facture':        _frToIso(d['dateFacture']),
