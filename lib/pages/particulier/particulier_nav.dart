@@ -30,6 +30,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
 import 'package:PetsMatch/pages/agenda/agenda_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
+import 'package:PetsMatch/pages/particulier/mes_factures_particulier_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_en_accueil_page.dart';
 import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
@@ -242,6 +243,16 @@ class _ParticulierNavState extends State<ParticulierNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const MesContratsParticulierPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerSubItem(
+                      label: 'Mes Factures',
+                      icon: Icons.receipt_long_outlined,
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const MesFacturesParticulierPage(),
                         ));
                       },
                     ),

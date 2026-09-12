@@ -746,6 +746,7 @@ export default function Header() {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const [unreadByProfile, setUnreadByProfile] = useState<Record<string, number>>({});
   const [pensionDialog, setPensionDialog] = useState<Notif | null>(null);
   const [renewDialog, setRenewDialog] = useState<Notif | null>(null);
   // Profile switching — utilise directement les profils chargés par AuthContext
@@ -1017,6 +1018,42 @@ export default function Header() {
     // la cloche restait filtrée sur l'ancien profil indéfiniment.
   }, [user, activeProfileId]);
 
+  // ── Badge non-lus par profil (sélecteur « Mes profils ») ─────────────────
+  // Même logique de scoping que le bandeau app (profile_switcher_header.dart)
+  // et l'API /api/notifications (profile_id en priorité, repli profile_type).
+  useEffect(() => {
+    if (!user) return;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    async function fetchCounts() {
+      const res = await fetch(`/api/notifications?uid=${user!.uid}&countsByProfile=1`);
+      if (!res.ok) return;
+      const rows = await res.json() as { profile_id: string | null; profile_type: string | null }[];
+      const counts: Record<string, number> = {};
+      for (const n of rows) {
+        if (n.profile_id) {
+          counts[n.profile_id] = (counts[n.profile_id] ?? 0) + 1;
+        } else if (n.profile_type) {
+          for (const p of profiles) {
+            if (p.profile_type === n.profile_type) counts[p.id] = (counts[p.id] ?? 0) + 1;
+          }
+        }
+      }
+      setUnreadByProfile(counts);
+    }
+
+    fetchCounts();
+
+    channel = supabase
+      .channel(`header_profile_badges_${user.uid}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'notifications', filter: `uid=eq.${user.uid}`,
+      }, () => fetchCounts())
+      .subscribe();
+
+    return () => { channel?.unsubscribe(); };
+  }, [user, profiles]);
+
   const totalBell = notifs.length + unreadMessages;
 
   async function markAllRead() {
@@ -1072,6 +1109,7 @@ export default function Header() {
         {profiles.map(p => {
           const isActive = activeProfileId === p.id || (!activeProfileId && p.is_main);
           const displayName = p.nom ?? p.profile_label ?? typeLabel(p.profile_type);
+          const unread = unreadByProfile[p.id] ?? 0;
           return (
             <button
               key={p.id}
@@ -1086,6 +1124,11 @@ export default function Header() {
                 {isActive && (
                   <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-[#6E9E57] rounded-full border-2 border-white flex items-center justify-center">
                     <span className="text-white text-[8px]">✓</span>
+                  </span>
+                )}
+                {unread > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-red-500 rounded-full border-[1.5px] border-white flex items-center justify-center">
+                    <span className="text-white text-[9px] font-bold leading-none">{unread > 9 ? '9+' : unread}</span>
                   </span>
                 )}
               </div>

@@ -7,10 +7,22 @@ const supabase = createClient(
 );
 
 // GET /api/notifications?uid=xxx&profileId=yyy
+// GET /api/notifications?uid=xxx&countsByProfile=1 — pour le badge du
+// sélecteur de profil (Header.tsx) : {profile_id, profile_type} de chaque
+// notif non lue, sans le filtre par profil actif (on veut TOUS les profils).
 export async function GET(req: NextRequest) {
   const uid = req.nextUrl.searchParams.get('uid');
   const profileId = req.nextUrl.searchParams.get('profileId');
   if (!uid) return NextResponse.json([]);
+
+  if (req.nextUrl.searchParams.get('countsByProfile') === '1') {
+    const { data } = await supabase
+      .from('notifications')
+      .select('profile_id, profile_type')
+      .eq('uid', uid)
+      .eq('read', false);
+    return NextResponse.json(data ?? []);
+  }
 
   const { data } = await supabase
     .from('notifications')

@@ -1023,6 +1023,22 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
+                  // Sante/veterinaire/marechal_ferrant n'ont pas de bloc dédié
+                  // plus bas (contrairement à garde/taxi/photographe/toilettage)
+                  // — ajouté ici pour qu'une facture créée depuis
+                  // _facturerConsultation (pro_agenda.dart) reste consultable.
+                  if (User_Info.catPro == 'veterinaire' ||
+                      User_Info.catPro == 'sante' ||
+                      User_Info.catPro == 'marechal_ferrant') _DrawerItem(
+                    icon: Icons.receipt_long_outlined,
+                    label: 'Mes Factures',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const FacturationPage(),
+                      ));
+                    },
+                  ),
                   // « Mon activité pet sitting » — sections repliables, calquées
                   // sur la branche éducateur (« Mon espace pro » / « Administratif »).
                   if (User_Info.catPro == 'garde') ...[

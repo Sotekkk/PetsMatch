@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/pages/profile/add_profile_page.dart';
@@ -21,6 +22,7 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
 
   List<Map<String, dynamic>> _profiles = [];
   bool _loading = true;
+  Map<String, int> _unreadByProfile = {};
 
   @override
   void initState() {
@@ -58,10 +60,43 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
         if (User_Info.activeProfileId.isEmpty) User_Info.primaryAvatar = da;
       }
 
+      await _loadUnreadCounts(uid, rows);
       if (mounted) setState(() { _profiles = rows; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Notifs non lues par profil — même logique de scoping que
+  /// notifications_page.dart (profile_id en priorité, repli profile_type).
+  /// Une seule requête groupée plutôt qu'une par profil.
+  Future<void> _loadUnreadCounts(String uid, List<Map<String, dynamic>> profiles) async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('notifications')
+          .select('profile_id, profile_type')
+          .eq('uid', uid)
+          .eq('read', false);
+      final counts = <String, int>{};
+      for (final n in (rows as List)) {
+        final pid = (n['profile_id'] as String?) ?? '';
+        final pt = (n['profile_type'] as String?) ?? '';
+        if (pid.isNotEmpty) {
+          counts[pid] = (counts[pid] ?? 0) + 1;
+        } else if (pt.isNotEmpty) {
+          for (final p in profiles) {
+            if (p['profile_type']?.toString() == pt) {
+              final id = p['id']?.toString() ?? '';
+              if (id.isNotEmpty) counts[id] = (counts[id] ?? 0) + 1;
+            }
+          }
+        }
+        // Notif totalement non scopée (ni profile_id ni profile_type) :
+        // déjà visible sur tous les profils côté cloche, pas comptée ici
+        // pour ne pas gonfler artificiellement chaque badge.
+      }
+      if (mounted) setState(() => _unreadByProfile = counts);
+    } catch (_) {}
   }
 
   /// Avatar affiché pour une ligne user_profiles, aligné sur le profil public :
@@ -197,6 +232,7 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
         profiles: _profiles,
         loading: _loading,
         activeProfileId: User_Info.activeProfileId,
+        unreadByProfile: _unreadByProfile,
         onSelect: _switchToProfile,
         onAddProfile: () {
           Navigator.pop(context);
@@ -325,6 +361,7 @@ class _SwitcherSheet extends StatelessWidget {
   final List<Map<String, dynamic>> profiles;
   final bool loading;
   final String activeProfileId;
+  final Map<String, int> unreadByProfile;
   final void Function(Map<String, dynamic>) onSelect;
   final VoidCallback onAddProfile;
   final void Function(String id) onDelete;
@@ -335,6 +372,7 @@ class _SwitcherSheet extends StatelessWidget {
     required this.profiles,
     required this.loading,
     required this.activeProfileId,
+    required this.unreadByProfile,
     required this.onSelect,
     required this.onAddProfile,
     required this.onDelete,
@@ -385,6 +423,7 @@ class _SwitcherSheet extends StatelessWidget {
                   avatarUrl: _ProfileSwitcherHeaderState._displayAvatar(p),
                   isActive: activeProfileId == id || (activeProfileId.isEmpty && isMain),
                   isMain: isMain,
+                  unreadCount: unreadByProfile[id] ?? 0,
                   onTap: () => onSelect(p),
                   onDelete: isMain ? null : () => onDelete(id),
                 );
@@ -424,6 +463,7 @@ class _ProfileRow extends StatelessWidget {
   final String avatarUrl;
   final bool isActive;
   final bool isMain;
+  final int unreadCount;
   final VoidCallback onTap;
   final VoidCallback? onDelete;
 
@@ -434,6 +474,7 @@ class _ProfileRow extends StatelessWidget {
     required this.avatarUrl,
     required this.isActive,
     this.isMain = false,
+    this.unreadCount = 0,
     required this.onTap,
     this.onDelete,
   });
@@ -462,6 +503,25 @@ class _ProfileRow extends StatelessWidget {
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(Icons.check, color: Colors.white, size: 10),
+              ),
+            ),
+          if (unreadCount > 0)
+            Positioned(
+              right: -2, top: -2,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  unreadCount > 9 ? '9+' : '$unreadCount',
+                  style: const TextStyle(color: Colors.white, fontSize: 9,
+                      fontFamily: 'Galey', fontWeight: FontWeight.w700, height: 1),
+                ),
               ),
             ),
         ],

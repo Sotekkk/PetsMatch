@@ -922,7 +922,8 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
           'type': 'facture_recue',
           'title': 'Nouvelle facture — ${d['nomEmetteur'] ?? 'votre prestataire'}',
           'body': 'Facture n° ${_numAff(d)} · ${(d['totalTTC'] as num?)?.toStringAsFixed(2) ?? ''} €',
-          if (pdfUrl != null) 'data': {'url': pdfUrl},
+          'data': {'facture_id': factureId, if (pdfUrl != null) 'url': pdfUrl},
+          if (widget.clientProfileId != null) 'profile_id': widget.clientProfileId,
           'read': false,
         });
       }

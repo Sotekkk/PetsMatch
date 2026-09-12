@@ -28,6 +28,7 @@ import 'package:PetsMatch/pages/particulier/animaux_acquis_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/eleveur/admin/contrat_reservation.dart';
+import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show FactureDetailPage;
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/particulier/mes_contrats_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/mes_annonces_page.dart';
@@ -36,6 +37,62 @@ import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/promenades/promenade_detail_page.dart';
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
+
+// YYYY-MM-DD → DD/MM/YYYY
+String _isoToFrFacture(dynamic v) {
+  if (v == null) return '';
+  final s = v.toString();
+  if (s.length < 10) return s;
+  final p = s.substring(0, 10).split('-');
+  return p.length == 3 ? '${p[2]}/${p[1]}/${p[0]}' : s;
+}
+
+// Même correspondance snake_case → camelCase que facturation.dart _supaToUi
+// — symbole privé à ce fichier, dupliqué ici pour ouvrir FactureDetailPage
+// depuis le tap d'une notif « facture_recue ».
+Map<String, dynamic> _factureToUi(Map<String, dynamic> r) => {
+  'id':                 r['id'],
+  'numeroFacture':      r['numero_facture'],
+  'numeroAffichage':    r['numero_affichage'],
+  'typeFacture':        r['type_facture'],
+  'pdfUrl':             r['pdf_url'],
+  'dateFacture':        _isoToFrFacture(r['date_facture']),
+  'datePrestation':     _isoToFrFacture(r['date_prestation']),
+  'dateEcheance':       _isoToFrFacture(r['date_echeance']),
+  'lignes':             r['lignes'] ?? [],
+  'totalHT':            r['total_ht'],
+  'totalTVA':           r['total_tva'],
+  'totalTTC':           r['total_ttc'],
+  'regimeTVA':          r['regime_tva'],
+  'nomClient':          r['nom_client'],
+  'prenomClient':       r['prenom_client'],
+  'emailClient':        r['email_client'],
+  'telephoneClient':    r['telephone_client'],
+  'rueClient':          r['rue_client'],
+  'cpClient':           r['cp_client'],
+  'villeClient':        r['ville_client'],
+  'paysClient':         r['pays_client'],
+  'siretClient':        r['siret_client'],
+  'tvaClient':          r['tva_client'],
+  'nomEmetteur':        r['nom_emetteur'],
+  'rueEmetteur':        r['rue_emetteur'],
+  'cpEmetteur':         r['cp_emetteur'],
+  'villeEmetteur':      r['ville_emetteur'],
+  'paysEmetteur':       r['pays_emetteur'],
+  'telEmetteur':        r['tel_emetteur'],
+  'siretEmetteur':      r['siret_emetteur'],
+  'tvaEmetteur':        r['tva_emetteur'],
+  'formeJuridiqueEmetteur': r['forme_juridique_emetteur'],
+  'capitalEmetteur':    r['capital_emetteur'],
+  'rcsEmetteur':        r['rcs_emetteur'],
+  'rmEmetteur':         r['rm_emetteur'],
+  'emailEmetteur':      r['email_emetteur'],
+  'modePaiement':       r['mode_paiement'],
+  'delaiPaiement':      r['delai_paiement'],
+  'conditionsEscompte': r['conditions_escompte'],
+  'noteComplementaire': r['note_complementaire'],
+  'statut':             r['statut'],
+};
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -175,6 +232,23 @@ class _NotificationsPageState extends State<NotificationsPage> {
             builder: (_) => ChatScreen(conversationId: conversationId, eleveurId: otherUid),
           ));
         }
+      }
+      return;
+    }
+
+    // Nouvelle facture reçue → ouvre directement la liseuse (FactureDetailPage)
+    // plutôt que de rester sur la liste des notifications.
+    if (type == 'facture_recue') {
+      final factureId = data is Map ? data['facture_id']?.toString() : null;
+      if (factureId != null && factureId.isNotEmpty) {
+        try {
+          final row = await _supa.from('factures').select().eq('id', factureId).maybeSingle();
+          if (row != null && mounted) {
+            await Navigator.push(context, MaterialPageRoute(
+              builder: (_) => FactureDetailPage(data: _factureToUi(row), docId: factureId),
+            ));
+          }
+        } catch (_) {}
       }
       return;
     }
