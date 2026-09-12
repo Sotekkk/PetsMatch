@@ -89,6 +89,9 @@ import 'package:PetsMatch/pages/pro/toilettage_employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_planning_employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_dashboard_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 import 'package:PetsMatch/pages/lieux/mon_etablissement_page.dart';
 
 import 'package:PetsMatch/pages/association/animaux/mes_animaux_asso.dart';
@@ -632,6 +635,15 @@ List<QuickAction> _all(BuildContext ctx) => [
     visible: () => _catPro == 'veterinaire' || _catPro == 'sante',
     open: (c) => _push(c, const VetPatientsPage()),
   ),
+  QuickAction(
+    label: 'Mon abonnement (vétérinaire/santé)',
+    keywords: ['abonnement', 'premium', 'plan', 'formule', 'passer avancé', 'passer clinique'],
+    icon: Icons.workspace_premium_outlined, group: 'Mon profil',
+    visible: () => _catPro == 'veterinaire' || _catPro == 'sante' || _catPro == 'marechal_ferrant',
+    open: (c) => _push(c, _catPro == 'veterinaire'
+        ? const VetAbonnementPage()
+        : SanteAbonnementPage(profilType: _catPro)),
+  ),
 
   // ── Garde / pet sitter ─────────────────────────────────────────────────────
   QuickAction(
@@ -745,6 +757,12 @@ List<QuickAction> _all(BuildContext ctx) => [
     keywords: ['facturation', 'comptabilité'],
     icon: Icons.receipt_long_outlined, group: 'Administratif',
     visible: () => _catPro == 'photographe', open: (c) => _push(c, const FacturationPage()),
+  ),
+  QuickAction(
+    label: 'Mon abonnement (photo)',
+    keywords: ['abonnement', 'premium', 'plan', 'formule', 'passer essentiel'],
+    icon: Icons.workspace_premium_outlined, group: 'Mon profil',
+    visible: () => _catPro == 'photographe', open: (c) => _push(c, const PhotographeAbonnementPage()),
   ),
   QuickAction(
     label: 'Tableau de bord (photo)',

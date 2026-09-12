@@ -44,6 +44,9 @@ import 'package:PetsMatch/pages/pro/pension_mes_taches_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart';
 import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/registre_visites_page.dart';
 import 'package:PetsMatch/pages/pro/cles_clients_page.dart';
 import 'package:PetsMatch/pages/pro/tarifs_clients_page.dart';
@@ -1038,6 +1041,20 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
+                  if (User_Info.catPro == 'veterinaire' ||
+                      User_Info.catPro == 'sante' ||
+                      User_Info.catPro == 'marechal_ferrant') _DrawerItem(
+                    icon: Icons.workspace_premium_outlined,
+                    label: 'Mon abonnement',
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => User_Info.catPro == 'veterinaire'
+                            ? const VetAbonnementPage()
+                            : SanteAbonnementPage(profilType: User_Info.catPro),
+                      ));
+                    },
+                  ),
                   // « Mon activité pet sitting » — sections repliables, calquées
                   // sur la branche éducateur (« Mon espace pro » / « Administratif »).
                   if (User_Info.catPro == 'garde') ...[
@@ -1263,6 +1280,16 @@ class _EleveurNavState extends State<EleveurNav> {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const PhotographeDashboardPage(),
+                        ));
+                      },
+                    ),
+                    _DrawerItem(
+                      icon: Icons.workspace_premium_outlined,
+                      label: 'Mon abonnement',
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const PhotographeAbonnementPage(),
                         ));
                       },
                     ),

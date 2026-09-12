@@ -164,6 +164,52 @@ class ToilettagePlanConfig {
   });
 }
 
+class VetPlanConfig {
+  final String code;
+  final String label;
+  final bool hasAccesPermanent;
+  final bool hasEcritureCarnetSante;
+  final bool hasRappelsPush;
+  final bool hasMultiPraticiens;
+  final int maxPraticiens; // -1 = illimité
+  final bool hasExportCsv;
+  final double prixMensuel;
+  final double prixAnnuel;
+
+  const VetPlanConfig({
+    required this.code,
+    required this.label,
+    required this.hasAccesPermanent,
+    required this.hasEcritureCarnetSante,
+    required this.hasRappelsPush,
+    required this.hasMultiPraticiens,
+    required this.maxPraticiens,
+    required this.hasExportCsv,
+    this.prixMensuel = 0,
+    this.prixAnnuel = 0,
+  });
+}
+
+class PhotographePlanConfig {
+  final String code;
+  final String label;
+  final int maxPhotosPortfolio; // -1 = illimité
+  final bool hasMiseEnAvant;
+  final bool hasStatistiques;
+  final double prixMensuel;
+  final double prixAnnuel;
+
+  const PhotographePlanConfig({
+    required this.code,
+    required this.label,
+    required this.maxPhotosPortfolio,
+    required this.hasMiseEnAvant,
+    required this.hasStatistiques,
+    this.prixMensuel = 0,
+    this.prixAnnuel = 0,
+  });
+}
+
 class PlanService {
   static const String kWebsiteUrl = 'https://www.petsmatchapp.com';
 
@@ -548,6 +594,148 @@ class PlanService {
           .select('plan_code')
           .eq('uid', uid)
           .eq('profil_type', 'toilettage')
+          .eq('statut', 'actif')
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      return (res?['plan_code'] as String?) ?? 'free';
+    } catch (_) {
+      return 'free';
+    }
+  }
+
+  // Vétérinaire — grille dédiée (Spec §8.1), FREE/Avancé/Clinique.
+  static const Map<String, VetPlanConfig> vetConfigs = {
+    'free': VetPlanConfig(
+      code: 'free', label: 'Découverte', hasAccesPermanent: false, hasEcritureCarnetSante: false,
+      hasRappelsPush: false, hasMultiPraticiens: false, maxPraticiens: 1, hasExportCsv: false,
+      prixMensuel: 0, prixAnnuel: 0,
+    ),
+    'avance': VetPlanConfig(
+      code: 'avance', label: 'Avancé', hasAccesPermanent: true, hasEcritureCarnetSante: true,
+      hasRappelsPush: true, hasMultiPraticiens: false, maxPraticiens: 1, hasExportCsv: false,
+      prixMensuel: 29, prixAnnuel: 290,
+    ),
+    'clinique': VetPlanConfig(
+      code: 'clinique', label: 'Clinique', hasAccesPermanent: true, hasEcritureCarnetSante: true,
+      hasRappelsPush: true, hasMultiPraticiens: true, maxPraticiens: 5, hasExportCsv: true,
+      prixMensuel: 49, prixAnnuel: 490,
+    ),
+  };
+
+  static VetPlanConfig getVetConfig(String planCode) =>
+      vetConfigs[planCode] ?? vetConfigs['free']!;
+
+  /// Tarifs vétérinaire à jour depuis plans_tarifaires (éditables depuis
+  /// l'admin web sans déploiement). Retombe sur vetConfigs si la BDD est
+  /// injoignable.
+  static Future<Map<String, VetPlanConfig>> getVetPlansLive() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('plans_tarifaires')
+          .select('plan_code, label, prix_mensuel, prix_annuel, features')
+          .eq('profil_type', 'veterinaire')
+          .eq('actif', true);
+      final out = <String, VetPlanConfig>{};
+      for (final row in (rows as List)) {
+        final code = row['plan_code'] as String?;
+        if (code == null) continue;
+        final fallback = getVetConfig(code);
+        final f = (row['features'] as Map<String, dynamic>?) ?? {};
+        out[code] = VetPlanConfig(
+          code: code,
+          label: (row['label'] as String?) ?? fallback.label,
+          hasAccesPermanent: f['hasAccesPermanent'] as bool? ?? fallback.hasAccesPermanent,
+          hasEcritureCarnetSante: f['hasEcritureCarnetSante'] as bool? ?? fallback.hasEcritureCarnetSante,
+          hasRappelsPush: f['hasRappelsPush'] as bool? ?? fallback.hasRappelsPush,
+          hasMultiPraticiens: f['hasMultiPraticiens'] as bool? ?? fallback.hasMultiPraticiens,
+          maxPraticiens: (f['maxPraticiens'] as num?)?.toInt() ?? fallback.maxPraticiens,
+          hasExportCsv: f['hasExportCsv'] as bool? ?? fallback.hasExportCsv,
+          prixMensuel: (row['prix_mensuel'] as num?)?.toDouble() ?? fallback.prixMensuel,
+          prixAnnuel: (row['prix_annuel'] as num?)?.toDouble() ?? fallback.prixAnnuel,
+        );
+      }
+      return out.isEmpty ? vetConfigs : out;
+    } catch (_) {
+      return vetConfigs;
+    }
+  }
+
+  /// Plan vétérinaire actif pour ce uid — distinct des autres profils
+  /// (abonnements est scopé par profil_type).
+  static Future<String> getVetPlanCode(String uid) async {
+    try {
+      final res = await Supabase.instance.client
+          .from('abonnements')
+          .select('plan_code')
+          .eq('uid', uid)
+          .eq('profil_type', 'veterinaire')
+          .eq('statut', 'actif')
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      return (res?['plan_code'] as String?) ?? 'free';
+    } catch (_) {
+      return 'free';
+    }
+  }
+
+  // Photographe animalier — grille dédiée (Spec §8.1), FREE/Essentiel.
+  static const Map<String, PhotographePlanConfig> photographeConfigs = {
+    'free': PhotographePlanConfig(
+      code: 'free', label: 'Découverte', maxPhotosPortfolio: 5, hasMiseEnAvant: false,
+      hasStatistiques: false, prixMensuel: 0, prixAnnuel: 0,
+    ),
+    'essentiel': PhotographePlanConfig(
+      code: 'essentiel', label: 'Essentiel', maxPhotosPortfolio: -1, hasMiseEnAvant: true,
+      hasStatistiques: true, prixMensuel: 9, prixAnnuel: 90,
+    ),
+  };
+
+  static PhotographePlanConfig getPhotographeConfig(String planCode) =>
+      photographeConfigs[planCode] ?? photographeConfigs['free']!;
+
+  /// Tarifs photographe à jour depuis plans_tarifaires (éditables depuis
+  /// l'admin web sans déploiement). Retombe sur photographeConfigs si la BDD
+  /// est injoignable.
+  static Future<Map<String, PhotographePlanConfig>> getPhotographePlansLive() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('plans_tarifaires')
+          .select('plan_code, label, prix_mensuel, prix_annuel, features')
+          .eq('profil_type', 'photographe')
+          .eq('actif', true);
+      final out = <String, PhotographePlanConfig>{};
+      for (final row in (rows as List)) {
+        final code = row['plan_code'] as String?;
+        if (code == null) continue;
+        final fallback = getPhotographeConfig(code);
+        final f = (row['features'] as Map<String, dynamic>?) ?? {};
+        out[code] = PhotographePlanConfig(
+          code: code,
+          label: (row['label'] as String?) ?? fallback.label,
+          maxPhotosPortfolio: (f['maxPhotosPortfolio'] as num?)?.toInt() ?? fallback.maxPhotosPortfolio,
+          hasMiseEnAvant: f['hasMiseEnAvant'] as bool? ?? fallback.hasMiseEnAvant,
+          hasStatistiques: f['hasStatistiques'] as bool? ?? fallback.hasStatistiques,
+          prixMensuel: (row['prix_mensuel'] as num?)?.toDouble() ?? fallback.prixMensuel,
+          prixAnnuel: (row['prix_annuel'] as num?)?.toDouble() ?? fallback.prixAnnuel,
+        );
+      }
+      return out.isEmpty ? photographeConfigs : out;
+    } catch (_) {
+      return photographeConfigs;
+    }
+  }
+
+  /// Plan photographe actif pour ce uid — distinct des autres profils
+  /// (abonnements est scopé par profil_type).
+  static Future<String> getPhotographePlanCode(String uid) async {
+    try {
+      final res = await Supabase.instance.client
+          .from('abonnements')
+          .select('plan_code')
+          .eq('uid', uid)
+          .eq('profil_type', 'photographe')
           .eq('statut', 'actif')
           .order('created_at', ascending: false)
           .limit(1)

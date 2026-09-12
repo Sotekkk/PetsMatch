@@ -855,12 +855,31 @@ export default function Header() {
           }
         : sec)
     : baseMenuSections;
+  // « Mon abonnement » pour les profils qui partagent un menu générique
+  // (MENU_VET couvre véto/santé/maréchal-ferrant, MENU_PRO couvre
+  // toilettage/photographe/taxi) — pension/garde/éducateur ont déjà leur
+  // lien dans leur propre menu dédié. Le href dépend du sous-type réel,
+  // pas du menu (trois profils différents partagent MENU_VET).
+  const ABONNEMENT_HREF: Record<string, string> = {
+    veterinaire: '/veterinaire/abonnement',
+    sante: '/sante/abonnement',
+    marechal_ferrant: '/marechal-ferrant/abonnement',
+    toilettage: '/toilettage/abonnement',
+    photographe: '/photographe/abonnement',
+  };
+  const effectiveSubCatPro = resolvedProfileType || (isPrimaryPro ? primaryCatPro : '');
+  const abonnementHref = ABONNEMENT_HREF[effectiveSubCatPro];
+  const withAbonnement = (isEffectivelyPro && !effectiveIsPension && !effectiveIsEducation && !effectiveIsGarde && abonnementHref)
+    ? withEmployeurs.map((sec, i) => i === 1
+        ? { ...sec, items: [...sec.items, { href: abonnementHref, label: 'Mon abonnement', icon: '💳' }] }
+        : sec)
+    : withEmployeurs;
   // Petites annonces « matériel & objets » liées aux animaux — accessible à
   // tous les profils (particulier, éleveur, association, pro). Section propre
   // pour éviter toute confusion avec les annonces d'animaux.
   const menuSections = user
     ? [
-        ...withEmployeurs,
+        ...withAbonnement,
         {
           section: 'Petites annonces (matériel)',
           icon: '📦',
@@ -871,7 +890,7 @@ export default function Header() {
           ],
         },
       ]
-    : withEmployeurs;
+    : withAbonnement;
 
   // ── Index de recherche rapide (loupe) ────────────────────────────────────
   // À plat : tous les items du menu du profil actif + les liens de nav + les
