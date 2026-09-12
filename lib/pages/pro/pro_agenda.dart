@@ -2430,9 +2430,14 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
   // ── AG08 — Créneaux ──────────────────────────────────────────────────────────
 
-  Future<void> _loadCreneaux() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+  // User_Info.activeProfileId peut être vide (ex. juste après un switch de
+  // profil, ou compte employé) — repli sur le premier profil pro du compte,
+  // comme _loadCreneaux le fait déjà. Utilisé aussi côté écriture
+  // (_applyRange/_deleteRange/_replicateWeek) : sans ce repli, un créneau
+  // créé avec pro_profile_id='' n'était jamais retrouvé par la lecture
+  // (filtrée sur le vrai profile_id) → « Ajouter une plage » semblait ne
+  // rien faire alors que la ligne était bien écrite en base.
+  String _resolveProProfileId() {
     String pid = User_Info.activeProfileId;
     if (pid.isEmpty && User_Info.availableProfiles.isNotEmpty) {
       final proProfile = User_Info.availableProfiles.firstWhere(
@@ -2441,6 +2446,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       );
       pid = proProfile['id']?.toString() ?? '';
     }
+    return pid;
+  }
+
+  Future<void> _loadCreneaux() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final pid = _resolveProProfileId();
     final weekEnd = _weekStart.add(const Duration(days: 6));
     try {
       var creneauxQ = Supabase.instance.client
@@ -2565,7 +2577,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   Future<void> _applyRange(String date, TimeOfDay start, TimeOfDay end, String statut, {String? type, bool domicileOk = false, String? prestationId, int capacite = 1, String? typeGarde}) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final pid = User_Info.activeProfileId;
+    final pid = _resolveProProfileId();
     int curMins = start.hour * 60 + start.minute;
     final endMins = end.hour * 60 + end.minute;
     if (curMins >= endMins) return;
@@ -2606,7 +2618,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   Future<void> _deleteRange(String date, TimeOfDay start, TimeOfDay end) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final pid = User_Info.activeProfileId;
+    final pid = _resolveProProfileId();
     int curMins = start.hour * 60 + start.minute;
     final endMins = end.hour * 60 + end.minute;
     final hdList = <String>[];
@@ -2629,17 +2641,28 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     backgroundColor: Colors.red, behavior: SnackBarBehavior.floating,
   ));
 
-  Future<void> _showRangeDialog(String dateStr, {TimeOfDay? initialStart, TimeOfDay? initialEnd}) async {
-    // Pré-rempli par le glisser sur la grille semaine (creneaux_week_grid.dart)
-    // si fourni, sinon valeurs par défaut pour une saisie manuelle.
-    TimeOfDay startTime = initialStart ?? const TimeOfDay(hour: 9, minute: 0);
-    TimeOfDay endTime   = initialEnd ?? const TimeOfDay(hour: 10, minute: 0);
-    String statut = 'disponible';
-    String? type; // 'individuel' / 'collectif' / null = les deux (éducateur uniquement)
-    bool domicileOk = false; // créneau proposable à domicile (éducateur uniquement)
+  Future<void> _showRangeDialog(String dateStr,
+      {TimeOfDay? initialStart, TimeOfDay? initialEnd, CreneauRange? editing}) async {
+    // Pré-rempli soit par le glisser sur la grille semaine
+    // (creneaux_week_grid.dart), soit par la plage existante tapée (édition),
+    // sinon valeurs par défaut pour une saisie manuelle.
+    TimeOfDay startTime = editing?.start ?? initialStart ?? const TimeOfDay(hour: 9, minute: 0);
+    TimeOfDay endTime   = editing?.end   ?? initialEnd   ?? const TimeOfDay(hour: 10, minute: 0);
+    String statut = editing?.statut ?? 'disponible';
+    String? type = editing?.type; // 'individuel' / 'collectif' / null = les deux (éducateur uniquement)
+    bool domicileOk = editing?.domicile ?? false; // créneau proposable à domicile (éducateur uniquement)
     String? prestationId; // cours du catalogue (collectif) rattaché à ce créneau
     int capacite = 1; // nombre de places (garde à domicile : plusieurs animaux/jour)
-    String? typeGarde; // garde : 'journee' / 'prestation' / null = les deux
+    String? typeGarde = editing?.typeGarde; // garde : 'journee' / 'prestation' / null = les deux
+
+    // capacite/prestationId ne font pas partie de CreneauRange (fusionnés par
+    // _groupedRanges) — repris depuis le créneau de départ de la plage éditée.
+    if (editing != null) {
+      final key = '${dateStr}_${editing.start.hour.toString().padLeft(2, '0')}:'
+          '${editing.start.minute.toString().padLeft(2, '0')}';
+      capacite = _slotCapacite[key] ?? 1;
+      prestationId = _slotPrestationIds[key];
+    }
 
     List<Map<String, dynamic>> coursCollectifs = [];
     if (User_Info.catPro == 'education') {
@@ -2715,7 +2738,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   decoration: BoxDecoration(color: Colors.grey.shade300,
                       borderRadius: BorderRadius.circular(2)))),
               const SizedBox(height: 16),
-              const Text('Nouvelle plage', style: TextStyle(
+              Text(editing != null ? 'Modifier la plage' : 'Nouvelle plage', style: const TextStyle(
                   fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
               const SizedBox(height: 16),
               // Mode
@@ -2880,17 +2903,35 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                 ),
               ],
               const SizedBox(height: 20),
-              SizedBox(width: double.infinity, child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isDisp ? const Color(0xFF6E9E57) : const Color(0xFFFF9800),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Appliquer', style: TextStyle(
-                    fontFamily: 'Galey', fontWeight: FontWeight.w600,
-                    fontSize: 15, color: Colors.white)),
-              )),
+              Row(children: [
+                if (editing != null) ...[
+                  Expanded(child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red.shade400,
+                      side: BorderSide(color: Colors.red.shade200),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _confirmDeleteRange(dateStr, editing);
+                    },
+                    child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 15)),
+                  )),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isDisp ? const Color(0xFF6E9E57) : const Color(0xFFFF9800),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Appliquer', style: TextStyle(
+                      fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                      fontSize: 15, color: Colors.white)),
+                )),
+              ]),
             ]),
             ),
           );
@@ -2898,6 +2939,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       ),
     );
     if (confirmed == true && mounted) {
+      // Édition : la plage d'origine est effacée avant réécriture, pour
+      // couvrir aussi le cas où l'horaire a été changé (rétréci/décalé).
+      if (editing != null) {
+        await _deleteRange(dateStr, editing.start, editing.end);
+      }
       await _applyRange(dateStr, startTime, endTime, statut,
           type: statut == 'disponible' ? type : null,
           domicileOk: statut == 'disponible' && domicileOk,
@@ -2934,7 +2980,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
-    final pid = User_Info.activeProfileId;
+    final pid = _resolveProProfileId();
     final weekSlots = _blockedSlots.entries.where((e) => e.value == 'disponible').toList();
     if (weekSlots.isEmpty) {
       if (mounted) {
@@ -3209,7 +3255,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             rdvsByDay: rdvsByDay,
             onCreateRange: (day, start, end) => _showRangeDialog(
                 CreneauxWeekGrid.dateKey(day), initialStart: start, initialEnd: end),
-            onTapRange: (day, range) => _confirmDeleteRange(CreneauxWeekGrid.dateKey(day), range),
+            onTapRange: (day, range) => _showRangeDialog(CreneauxWeekGrid.dateKey(day), editing: range),
           ),
         ),
       ),
