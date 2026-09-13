@@ -404,7 +404,7 @@ export default function AgendaPage() {
   const [tasks, setTasks]     = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingRdvs, setPendingRdvs] = useState<{id:string;date_debut:string;motif:string|null;client_uid:string;client_profile_id:string|null;animal_id:number|null}[]>([]);
-  const [view, setView]       = useState<'calendar' | 'day' | 'list'>('calendar');
+  const [view, setView]       = useState<'calendar' | 'week' | 'day' | 'list'>('calendar');
   const [focusedMonth, setFocusedMonth] = useState(() => {
     const n = new Date(); return { year: n.getFullYear(), month: n.getMonth() };
   });
@@ -718,6 +718,15 @@ export default function AgendaPage() {
     });
   }
 
+  function navigateWeek(dir: 'prev' | 'next') {
+    setSelectedDate(d => {
+      const next = new Date(d);
+      next.setDate(next.getDate() + (dir === 'next' ? 7 : -7));
+      setFocusedMonth({ year: next.getFullYear(), month: next.getMonth() });
+      return next;
+    });
+  }
+
   const upcoming = events.filter(e => new Date(e.date_debut) >= new Date(Date.now() - 86400000));
   const grouped: Record<string, AgendaEvent[]> = {};
   for (const e of upcoming) {
@@ -789,13 +798,13 @@ export default function AgendaPage() {
           </div>
           <div className="flex items-center gap-2">
             <div className="flex rounded-lg bg-white/10 overflow-hidden text-xs font-semibold">
-              {([['calendar', 'Mois'], ['day', 'Jour'], ['list', 'Liste']] as const).map(([v, label]) => (
+              {([['calendar', 'Mois'], ['week', 'Semaine'], ['day', 'Jour'], ['list', 'Liste']] as const).map(([v, label]) => (
                 <button key={v} onClick={() => {
                   setView(v);
                   // Préserver le jour actuellement sélectionné (vue Mois) plutôt
                   // que de toujours revenir à aujourd'hui — sinon un RDV vu sur
-                  // un autre jour "disparaît" en passant en vue Jour.
-                  if (v === 'day') {
+                  // un autre jour "disparaît" en passant en vue Jour/Semaine.
+                  if (v === 'day' || v === 'week') {
                     setSelectedDate(selectedDay
                       ? new Date(focusedMonth.year, focusedMonth.month, selectedDay)
                       : new Date());
@@ -865,6 +874,14 @@ export default function AgendaPage() {
             onToggleTask={toggleTask}
             uid={uid ?? ''}
             onUpdated={load}
+          />
+        ) : view === 'week' ? (
+          <WeekView
+            date={selectedDate}
+            eventsForDate={eventsForDate}
+            onNavigate={navigateWeek}
+            onSelectDay={(d) => { setSelectedDate(d); setView('day'); }}
+            onNavigateToAnimal={navigateToAnimal}
           />
         ) : view === 'day' ? (
           <DayView
@@ -1800,6 +1817,126 @@ function DayView({ date, events, tasks, onNavigate, onDelete, onAnnuler, onModif
               </div>
             );
           })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── WeekView ──────────────────────────────────────────────────────────────────
+// Grille 7 colonnes (jours) × heures — pendant de DayView (même constantes de
+// timeline) affichant toute la semaine d'un coup, façon Google Agenda.
+
+function mondayOf(d: Date): Date {
+  const day = d.getDay(); // 0 = dimanche
+  const diff = day === 0 ? -6 : 1 - day;
+  const m = new Date(d);
+  m.setDate(d.getDate() + diff);
+  m.setHours(0, 0, 0, 0);
+  return m;
+}
+
+const WEEK_DAY_ABBR = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+
+function WeekView({ date, eventsForDate, onNavigate, onSelectDay, onNavigateToAnimal }: {
+  date: Date;
+  eventsForDate: (d: Date) => AgendaEvent[];
+  onNavigate: (dir: 'prev' | 'next') => void;
+  onSelectDay: (d: Date) => void;
+  onNavigateToAnimal: (id: string | number | null | undefined) => void;
+}) {
+  const HOURS = Array.from({ length: TIMELINE_END - TIMELINE_START + 1 }, (_, i) => i + TIMELINE_START);
+  const monday = mondayOf(date);
+  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(monday); d.setDate(monday.getDate() + i); return d; });
+  const sunday = days[6];
+  const today = new Date();
+  const sameMonth = monday.getMonth() === sunday.getMonth();
+  const label = sameMonth
+    ? `Semaine du ${monday.getDate()} au ${sunday.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}`
+    : `Semaine du ${monday.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} au ${sunday.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`;
+
+  return (
+    <div className="space-y-4">
+      {/* Navigation semaine */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-4 py-3">
+        <div className="flex items-center justify-between">
+          <button onClick={() => onNavigate('prev')} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-[#0C5C6C] text-xl font-light">‹</button>
+          <span className="font-bold text-sm capitalize" style={{ fontFamily: 'Galey, sans-serif', color: '#1E2025' }}>{label}</span>
+          <button onClick={() => onNavigate('next')} className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-[#0C5C6C] text-xl font-light">›</button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="overflow-x-auto">
+          <div className="flex" style={{ minWidth: 60 + 7 * 108 }}>
+            {/* Colonne des heures — partagée par tous les jours */}
+            <div className="flex-shrink-0" style={{ width: 44 }}>
+              <div style={{ height: 40 }} />
+              <div className="relative" style={{ height: TIMELINE_PX }}>
+                {HOURS.map(h => (
+                  <span key={h} className="absolute text-[10px] text-gray-400"
+                    style={{ top: `calc(${((h - TIMELINE_START) / (TIMELINE_END - TIMELINE_START)) * 100}% - 7px)`, right: 6 }}>
+                    {String(h).padStart(2, '0')}h
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {days.map((day, i) => {
+              const isToday = day.toDateString() === today.toDateString();
+              const isSelected = day.toDateString() === date.toDateString();
+              const evts = eventsForDate(day);
+              return (
+                <div key={i} className="flex-shrink-0 border-l border-gray-50" style={{ width: 108 }}>
+                  <button onClick={() => onSelectDay(day)}
+                    className="w-full flex flex-col items-center justify-center rounded-xl mx-0.5 transition-colors"
+                    style={{ height: 36, marginTop: 2, background: isSelected ? '#0C5C6C' : isToday ? '#0C5C6C1a' : 'transparent' }}>
+                    <span className="text-[10px] font-semibold" style={{ color: isSelected ? 'rgba(255,255,255,0.7)' : '#9CA3AF' }}>{WEEK_DAY_ABBR[i]}</span>
+                    <span className="text-sm font-bold" style={{ color: isSelected ? 'white' : '#1E2025' }}>{day.getDate()}</span>
+                  </button>
+                  <div className="relative mx-0.5 border border-gray-100 rounded-lg" style={{ height: TIMELINE_PX }}>
+                    {HOURS.map(h => (
+                      <div key={h} className="absolute left-0 right-0 border-t border-gray-50"
+                        style={{ top: `${((h - TIMELINE_START) / (TIMELINE_END - TIMELINE_START)) * 100}%` }} />
+                    ))}
+                    {isToday && today.getHours() >= TIMELINE_START && today.getHours() < TIMELINE_END && (
+                      <div className="absolute left-0 right-0 border-t border-red-400"
+                        style={{ top: `${(minutesFromTop(today.toISOString()) / TOTAL_MIN) * 100}%` }} />
+                    )}
+                    {evts.map(e => {
+                      const mins = minutesFromTop(e.date_debut);
+                      const dur = e.duree_minutes ?? e.rdv?.duree_minutes ?? 30;
+                      const topPct = Math.max(0, mins) / TOTAL_MIN * 100;
+                      const heightPct = Math.max(0.5, dur / TOTAL_MIN * 100);
+                      const color = colorFor(e);
+                      const animalId = e.animal_id ?? e.rdv?.animal_id;
+                      const statut = e.rdv?.statut ?? '';
+                      const isTermine = statut === 'termine' || statut === 'annule';
+                      return (
+                        <div key={e.id}
+                          onClick={() => animalId ? onNavigateToAnimal(animalId) : undefined}
+                          className="absolute rounded-md px-1 py-0.5 overflow-hidden"
+                          style={{
+                            left: 2, right: 2,
+                            top: `${topPct}%`,
+                            height: `max(16px, ${heightPct}%)`,
+                            background: isTermine ? '#f3f4f6' : color,
+                            cursor: animalId ? 'pointer' : 'default',
+                          }}>
+                          <p className="text-[8.5px] font-bold truncate leading-tight" style={{ color: isTermine ? '#9CA3AF' : 'white', fontFamily: 'Galey, sans-serif' }}>
+                            {e.titre}
+                          </p>
+                          <p className="text-[8px] truncate leading-tight" style={{ color: isTermine ? '#9CA3AF' : 'rgba(255,255,255,0.75)' }}>
+                            {fmtTime(e.date_debut)}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>

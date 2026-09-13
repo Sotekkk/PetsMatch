@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/widgets/pro_day_timeline.dart';
+import 'package:PetsMatch/widgets/week_events_grid.dart';
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart' show AddEmployeManuelSheet;
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart' show AnimalFichePage;
@@ -1572,67 +1573,78 @@ class _AgendaPageState extends State<AgendaPage> {
 
   // ── Week view ──────────────────────────────────────────────────────────────
 
-  Widget _weekStrip() {
-    final day = _selectedDay ?? DateTime.now();
-    final monday = _mondayOf(day);
-    final today = DateTime.now();
-    const dayAbbr = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-      child: Row(children: [
-        IconButton(icon: const Icon(Icons.chevron_left, color: _kTeal), onPressed: () => _shiftWeek(-7)),
-        Expanded(child: Row(children: List.generate(7, (i) {
-          final d = monday.add(Duration(days: i));
-          final evts = _eventsForDay(d);
-          final tasks = _tasksForDay(d);
-          final isToday = d.year == today.year && d.month == today.month && d.day == today.day;
-          final isSelected = d.year == day.year && d.month == day.month && d.day == day.day;
-          return Expanded(
-            child: GestureDetector(
-              onTap: () => setState(() => _selectedDay = d),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                margin: const EdgeInsets.symmetric(horizontal: 2),
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                decoration: BoxDecoration(
-                  color: isSelected ? _kTeal : isToday ? _kTeal.withValues(alpha: 0.1) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
-                  border: isToday && !isSelected ? Border.all(color: _kTeal, width: 1.5) : null,
-                ),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Text(dayAbbr[i], style: TextStyle(fontFamily: 'Galey', fontSize: 11,
-                      fontWeight: FontWeight.w600, color: isSelected ? Colors.white70 : Colors.grey)),
-                  const SizedBox(height: 2),
-                  Text('${d.day}', style: TextStyle(fontFamily: 'Galey', fontSize: 14,
-                      fontWeight: FontWeight.w700, color: isSelected ? Colors.white : const Color(0xFF1E2025))),
-                  const SizedBox(height: 3),
-                  SizedBox(height: 6, child: (evts.isNotEmpty || tasks.isNotEmpty) ? Wrap(
-                    alignment: WrapAlignment.center, spacing: 2,
-                    children: [
-                      ...evts.take(2).map((e) => Container(width: 5, height: 5,
-                        decoration: BoxDecoration(color: isSelected ? Colors.white.withValues(alpha: 0.8) : _colorFor(e), shape: BoxShape.circle))),
-                      if (tasks.isNotEmpty) Container(width: 5, height: 5,
-                        decoration: BoxDecoration(color: isSelected ? Colors.white.withValues(alpha: 0.8) : const Color(0xFF6E9E57), shape: BoxShape.circle)),
-                    ],
-                  ) : null),
-                ]),
-              ),
-            ),
-          );
-        }))),
-        IconButton(icon: const Icon(Icons.chevron_right, color: _kTeal), onPressed: () => _shiftWeek(7)),
-      ]),
-    );
-  }
-
   Widget _weekView() {
     final day = _selectedDay ?? DateTime.now();
-    return Column(children: [
-      _weekStrip(),
-      _dayBody(day),
-      _legend(showTasksEntry: _canShowTasks()),
-    ]);
+    final monday = _mondayOf(day);
+    final days = List.generate(7, (i) => monday.add(Duration(days: i)));
+    final sunday = days.last;
+    final sameMonth = monday.month == sunday.month;
+    final label = sameMonth
+        ? 'Semaine du ${monday.day} au ${sunday.day} ${DateFormat('MMMM', 'fr').format(sunday)}'
+        : 'Semaine du ${DateFormat('d MMM', 'fr').format(monday)} au ${DateFormat('d MMM', 'fr').format(sunday)}';
+
+    return Expanded(
+      child: Column(children: [
+        // Navigation semaine
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Row(children: [
+            IconButton(icon: const Icon(Icons.chevron_left, color: _kTeal), onPressed: () => _shiftWeek(-7)),
+            Expanded(
+              child: Text(label, textAlign: TextAlign.center,
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 14, color: Color(0xFF1E2025))),
+            ),
+            IconButton(icon: const Icon(Icons.chevron_right, color: _kTeal), onPressed: () => _shiftWeek(7)),
+          ]),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () async { await _load(); await _loadTasks(); },
+            color: _kTeal,
+            child: WeekEventsGrid(
+              days: days,
+              selectedDay: day,
+              eventsForDay: _eventsForDay,
+              colorFor: _colorFor,
+              onDayHeaderTap: (d) => setState(() { _selectedDay = d; _viewMode = 1; }),
+              onEventTap: (e) {
+                final hasLink = (e['rdv_id']?.toString().isNotEmpty ?? false)
+                    || (e['couleur']?.toString() ?? '').startsWith('rdv:');
+                if (e['type'] == 'rdv' && hasLink) {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    useSafeArea: true,
+                    backgroundColor: Colors.white,
+                    shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+                    builder: (_) => _RdvDetailSheet(event: e, onRefresh: _load),
+                  );
+                } else {
+                  final d = _parseDate(e['date_debut'] as String);
+                  showModalBottomSheet(
+                    context: context,
+                    useSafeArea: true,
+                    backgroundColor: Colors.white,
+                    shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                    builder: (_) => _DaySheet(
+                      day: d,
+                      events: [e],
+                      onAdd: () { Navigator.pop(context); _showAddSheet(initialDate: d); },
+                      onRefresh: _load,
+                    ),
+                  );
+                }
+              },
+            ),
+          ),
+        ),
+      ]),
+    );
   }
 
   // ── List view ──────────────────────────────────────────────────────────────
