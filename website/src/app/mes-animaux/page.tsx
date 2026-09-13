@@ -98,7 +98,7 @@ function Chip({
 }
 
 function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, reproPublic = false, isRetraite = false, chaleurFlag = false, gestanteFlag = false, selectMode = false, selected = false, onDelete, onToggleReproducteur, onToggleReproPublic, onToggleRetraite, onSelect, onCeder, onTransferer }: {
-  a: Animal; tab: 'presents' | 'anciens'; showPorteeBadge?: boolean;
+  a: Animal; tab: 'presents' | 'anciens' | 'decedes'; showPorteeBadge?: boolean;
   reproducteur?: boolean; reproPublic?: boolean; isRetraite?: boolean; chaleurFlag?: boolean; gestanteFlag?: boolean;
   selectMode?: boolean; selected?: boolean;
   onDelete?: () => void; onToggleReproducteur?: () => void; onToggleReproPublic?: () => void; onToggleRetraite?: () => void; onSelect?: () => void;
@@ -118,7 +118,7 @@ function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, rep
         : <div className="w-full h-full flex items-center justify-center text-5xl">
             {SPECIES_EMOJI[a.espece ?? ''] ?? '🐾'}
           </div>}
-      {tab === 'anciens' && (a.statut === 'sorti' || a.statut === 'decede') && (
+      {(tab === 'anciens' || tab === 'decedes') && (a.statut === 'sorti' || a.statut === 'decede') && (
         <span className={`absolute top-2 right-2 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg ${
           a.statut === 'decede' ? 'bg-red-500' : 'bg-[#0C5C6C]'
         }`}>
@@ -300,8 +300,11 @@ function MesAnimauxPageInner() {
   // Filtre restauré depuis l'URL (?tab=&sub=) pour que la flèche "retour" depuis
   // la fiche d'un animal retrouve le même filtre au lieu de repartir à zéro.
   const tabParam = searchParams.get('tab');
-  const initialTab: 'presents' | 'anciens' | 'suivi' =
-    tabParam === 'anciens' ? 'anciens' : tabParam === 'suivi' ? 'suivi' : 'presents';
+  const initialTab: 'presents' | 'anciens' | 'suivi' | 'decedes' =
+    tabParam === 'anciens' ? 'anciens'
+      : tabParam === 'suivi' ? 'suivi'
+      : tabParam === 'decedes' ? 'decedes'
+      : 'presents';
   const initialSub = searchParams.get('sub');
   const initialSubTab: 'tous' | 'repro' | 'bebes' =
     initialSub === 'repro' || initialSub === 'bebes' ? initialSub : 'tous';
@@ -312,7 +315,7 @@ function MesAnimauxPageInner() {
   const [fetching, setFetching] = useState(true);
   const [chaleurFlags, setChaleurFlags] = useState<Record<string, boolean>>({});
   const [gestanteFlags, setGestanteFlags] = useState<Record<string, boolean>>({});
-  const [tab, setTab] = useState<'presents' | 'anciens' | 'suivi'>(initialTab);
+  const [tab, setTab] = useState<'presents' | 'anciens' | 'suivi' | 'decedes'>(initialTab);
   const [cederAnimal, setCederAnimal] = useState<Animal | null>(null);
   const [invitesCopro, setInvitesCopro] = useState<{ animal_id: string; nom: string }[]>([]);
   const [nomElevage, setNomElevage] = useState('');
@@ -349,9 +352,11 @@ function MesAnimauxPageInner() {
   const [filtreGestante, setFiltreGestante] = useState(false);
   const [filtreChaleur, setFiltreChaleur] = useState(false);
 
-  // Filtres anciens
+  // Filtres cédés (ex-« anciens » — les décédés ont leur propre onglet ci-dessous)
   const [anciensEspece, setAnciensEspece] = useState('tous');
-  const [anciensStatut, setAnciensStatut] = useState('tous');
+
+  // Filtres décédés
+  const [decedesEspece, setDecedesEspece] = useState('tous');
 
   // Recherche
   const [search, setSearch] = useState('');
@@ -545,14 +550,16 @@ function MesAnimauxPageInner() {
 
   if (loading || !user) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
 
-  // Séparer présents / anciens via animaux_proprietes (source unique)
+  // Séparer présents / cédés / décédés via animaux_proprietes (source unique)
   // cessionEnAttente = animal_id où date_fin IS NULL = propriétaire actuel
   const presents = animaux.filter(a => cessionEnAttente.has(a.id) && a.statut !== 'decede');
-  const anciens  = animaux.filter(a => !cessionEnAttente.has(a.id) || a.statut === 'decede');
+  const anciens  = animaux.filter(a => a.statut === 'sorti');
+  const decedes  = animaux.filter(a => a.statut === 'decede');
 
   // Espèces disponibles dans chaque groupe
   const especesPresents = [...new Set(presents.map(a => a.espece).filter(Boolean))] as string[];
   const especesAnciens  = [...new Set(anciens.map(a => a.espece).filter(Boolean))] as string[];
+  const especesDecedes  = [...new Set(decedes.map(a => a.espece).filter(Boolean))] as string[];
 
   // Races disponibles selon espèce sélectionnée (présents)
   const racesDisponibles = filtreEspece !== 'tous'
@@ -582,10 +589,20 @@ function MesAnimauxPageInner() {
     return true;
   });
 
-  // Filtrage anciens
+  // Filtrage cédés
   const filteredAnciens = anciens.filter(a => {
     if (anciensEspece !== 'tous' && a.espece !== anciensEspece) return false;
-    if (anciensStatut !== 'tous' && a.statut !== anciensStatut) return false;
+    if (searchLower) {
+      const nom  = (a.nom            ?? '').toLowerCase();
+      const puce = (a.identification ?? '').toLowerCase();
+      if (!nom.includes(searchLower) && !puce.includes(searchLower)) return false;
+    }
+    return true;
+  });
+
+  // Filtrage décédés
+  const filteredDecedes = decedes.filter(a => {
+    if (decedesEspece !== 'tous' && a.espece !== decedesEspece) return false;
     if (searchLower) {
       const nom  = (a.nom            ?? '').toLowerCase();
       const puce = (a.identification ?? '').toLowerCase();
@@ -597,7 +614,9 @@ function MesAnimauxPageInner() {
   const activeFilterCount = tab === 'presents'
     ? (filtreEspece !== 'tous' ? 1 : 0) + (filtreSexe !== 'tous' ? 1 : 0) + (filtreRace ? 1 : 0) +
       (filtreRetraite ? 1 : 0) + (filtreRepro ? 1 : 0) + (filtreGestante ? 1 : 0) + (filtreChaleur ? 1 : 0)
-    : (anciensEspece !== 'tous' ? 1 : 0) + (anciensStatut !== 'tous' ? 1 : 0);
+    : tab === 'decedes'
+    ? (decedesEspece !== 'tous' ? 1 : 0)
+    : (anciensEspece !== 'tous' ? 1 : 0);
 
   // Sub-tab filtering (presents only)
   const presentsForSubTab = (() => {
@@ -606,7 +625,7 @@ function MesAnimauxPageInner() {
     return filteredPresents;
   })();
 
-  const currentList = tab === 'presents' ? presentsForSubTab : filteredAnciens;
+  const currentList = tab === 'presents' ? presentsForSubTab : tab === 'decedes' ? filteredDecedes : filteredAnciens;
 
   // Groupement par portée (bébés uniquement) — inclut les frères/sœurs reproducteurs
   const porteeGroups: Map<string, Animal[]> = new Map();
@@ -638,8 +657,10 @@ function MesAnimauxPageInner() {
     if (tab === 'presents') {
       setFiltreEspece('tous'); setFiltreSexe('tous'); setFiltreRace('');
       setFiltreRetraite(false); setFiltreRepro(false); setFiltreGestante(false); setFiltreChaleur(false);
+    } else if (tab === 'decedes') {
+      setDecedesEspece('tous');
     } else {
-      setAnciensEspece('tous'); setAnciensStatut('tous');
+      setAnciensEspece('tous');
     }
   }
 
@@ -720,16 +741,18 @@ function MesAnimauxPageInner() {
 
       {/* Tabs (éleveur uniquement) */}
       {isEleveur && (
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-4">
-          {(['presents', 'anciens', 'suivi'] as const).map((t) => (
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-4 overflow-x-auto">
+          {(['presents', 'anciens', 'suivi', 'decedes'] as const).map((t) => (
             <button key={t} onClick={() => { setTab(t); setFilterOpen(false); }}
-              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${
+              className={`flex-1 py-2 px-2 text-sm font-semibold rounded-lg transition-all whitespace-nowrap ${
                 tab === t ? 'bg-white text-[#0C5C6C] shadow-sm' : 'text-gray-500 hover:text-gray-700'
               }`}>
               {t === 'presents'
                 ? `Présents (${presents.length})`
                 : t === 'anciens'
-                ? `Anciens (${anciens.length})`
+                ? `Cédés (${anciens.length})`
+                : t === 'decedes'
+                ? `Décédés (${decedes.length})`
                 : 'Suivi'}
             </button>
           ))}
@@ -890,9 +913,23 @@ function MesAnimauxPageInner() {
                 </div>
               </div>
             </>
+          ) : tab === 'decedes' ? (
+            <>
+              {/* Espèce décédés */}
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Espèce</p>
+                <div className="flex flex-wrap gap-2">
+                  {SPECIES.filter(s => s.value === 'tous' || especesDecedes.includes(s.value)).map(sp => (
+                    <Chip key={sp.value} label={sp.label} active={decedesEspece === sp.value}
+                      color={sp.color} onClick={() => setDecedesEspece(sp.value)}
+                      emoji={sp.value !== 'tous' ? (SPECIES_EMOJI[sp.value] ?? '') : undefined} />
+                  ))}
+                </div>
+              </div>
+            </>
           ) : (
             <>
-              {/* Espèce anciens */}
+              {/* Espèce cédés */}
               <div>
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Espèce</p>
                 <div className="flex flex-wrap gap-2">
@@ -900,16 +937,6 @@ function MesAnimauxPageInner() {
                     <Chip key={sp.value} label={sp.label} active={anciensEspece === sp.value}
                       color={sp.color} onClick={() => setAnciensEspece(sp.value)}
                       emoji={sp.value !== 'tous' ? (SPECIES_EMOJI[sp.value] ?? '') : undefined} />
-                  ))}
-                </div>
-              </div>
-              {/* Statut anciens */}
-              <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Motif</p>
-                <div className="flex gap-2">
-                  {[{ v: 'tous', l: 'Tous' }, { v: 'sorti', l: 'Sorti / Vendu' }, { v: 'decede', l: 'Décédé' }].map(s => (
-                    <Chip key={s.v} label={s.l} active={anciensStatut === s.v}
-                      color="#0C5C6C" onClick={() => setAnciensStatut(s.v)} />
                   ))}
                 </div>
               </div>
@@ -931,7 +958,9 @@ function MesAnimauxPageInner() {
               ? 'Aucun animal reproducteur'
               : tab === 'presents' && presentsSubTab === 'bebes'
               ? 'Aucun bébé dans une portée'
-              : tab === 'presents' ? 'Aucun animal présent' : 'Aucun ancien animal'}
+              : tab === 'presents' ? 'Aucun animal présent'
+              : tab === 'decedes' ? 'Aucun animal décédé'
+              : 'Aucun animal cédé'}
           </p>
           <p className="text-gray-400 text-sm mt-1">
             {tab === 'presents' && presentsSubTab === 'repro'

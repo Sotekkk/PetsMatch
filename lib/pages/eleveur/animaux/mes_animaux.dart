@@ -56,7 +56,7 @@ Widget speciesIcon(String espece, double size, Color color) {
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 class MesAnimauxPage extends StatefulWidget {
-  /// 0 = Présents, 1 = Anciens, 2 = Suivi cessions
+  /// 0 = Présents, 1 = Cédés, 2 = Suivi cessions, 3 = Décédés
   final int initialTab;
   const MesAnimauxPage({super.key, this.initialTab = 0});
   @override
@@ -78,11 +78,16 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   bool   _selectMode    = false;
   final Set<String> _selectedIds = {};
 
-  // Anciens filters
+  // Cédés filters (ex-« Anciens », ne montre plus que les animaux sortis :
+  // les décédés ont leur propre onglet, cf. _decedes* ci-dessous)
   String    _anciensEspece = 'tous';
-  String    _anciensStatut = 'tous'; // 'tous', 'sorti', 'decede'
   DateTime? _anciensDtDebut;
   DateTime? _anciensDtFin;
+
+  // Décédés filters
+  String    _decedesEspece = 'tous';
+  DateTime? _decedesDtDebut;
+  DateTime? _decedesDtFin;
 
   String _search = '';
   final TextEditingController _searchController = TextEditingController();
@@ -103,8 +108,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this,
-        initialIndex: widget.initialTab.clamp(0, 2));
+    _tabController = TabController(length: 4, vsync: this,
+        initialIndex: widget.initialTab.clamp(0, 3));
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         setState(() { _selectMode = false; _selectedIds.clear(); });
@@ -535,8 +540,14 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   int get _anciensFilterCount {
     int c = 0;
     if (_anciensEspece != 'tous') c++;
-    if (_anciensStatut != 'tous') c++;
     if (_anciensDtDebut != null || _anciensDtFin != null) c++;
+    return c;
+  }
+
+  int get _decedesFilterCount {
+    int c = 0;
+    if (_decedesEspece != 'tous') c++;
+    if (_decedesDtDebut != null || _decedesDtFin != null) c++;
     return c;
   }
 
@@ -746,14 +757,13 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
     for (final d in _animauxData) {
       final statut = d['statut'] as String? ?? '';
-      if (statut != 'sorti' && statut != 'decede') continue;
+      if (statut != 'sorti') continue;
       final esp = (d['espece'] ?? '') as String;
       if (esp.isNotEmpty) availableSpeciesSet.add(esp);
     }
     if (!mounted) return;
 
     String    tmpEspece = _anciensEspece;
-    String    tmpStatut = _anciensStatut;
     DateTime? tmpDebut  = _anciensDtDebut;
     DateTime? tmpFin    = _anciensDtFin;
     final fmt = DateFormat('dd/MM/yyyy');
@@ -767,7 +777,6 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           void apply() {
             setState(() {
               _anciensEspece  = tmpEspece;
-              _anciensStatut  = tmpStatut;
               _anciensDtDebut = tmpDebut;
               _anciensDtFin   = tmpFin;
             });
@@ -787,15 +796,15 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                   decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
               const SizedBox(height: 16),
               Row(children: [
-                const Text('Filtrer les anciens',
+                const Text('Filtrer les cédés',
                     style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                         fontSize: 17, color: Color(0xFF1F2A2E))),
                 const Spacer(),
-                if (tmpEspece != 'tous' || tmpStatut != 'tous' || tmpDebut != null || tmpFin != null)
+                if (tmpEspece != 'tous' || tmpDebut != null || tmpFin != null)
                   TextButton(
                     onPressed: () {
-                      setSheet(() { tmpEspece = 'tous'; tmpStatut = 'tous'; tmpDebut = null; tmpFin = null; });
-                      setState(() { _anciensEspece = 'tous'; _anciensStatut = 'tous'; _anciensDtDebut = null; _anciensDtFin = null; });
+                      setSheet(() { tmpEspece = 'tous'; tmpDebut = null; tmpFin = null; });
+                      setState(() { _anciensEspece = 'tous'; _anciensDtDebut = null; _anciensDtFin = null; });
                     },
                     style: TextButton.styleFrom(padding: EdgeInsets.zero),
                     child: const Text('Réinitialiser',
@@ -835,19 +844,6 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                   ),
                 );
               }).toList()),
-              const SizedBox(height: 18),
-
-              // Statut
-              const Text('Statut', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
-                  fontSize: 13, color: Color(0xFF6F767B))),
-              const SizedBox(height: 10),
-              Row(children: [
-                _SexeChip(label: 'Tous',    active: tmpStatut == 'tous',   onTap: () { setSheet(() => tmpStatut = 'tous');   apply(); }),
-                const SizedBox(width: 8),
-                _SexeChip(label: 'Sorti',   active: tmpStatut == 'sorti',  onTap: () { setSheet(() => tmpStatut = 'sorti');  apply(); }),
-                const SizedBox(width: 8),
-                _SexeChip(label: 'Décédé',  active: tmpStatut == 'decede', onTap: () { setSheet(() => tmpStatut = 'decede'); apply(); }),
-              ]),
               const SizedBox(height: 18),
 
               // Période de sortie
@@ -936,10 +932,15 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   }
 
   Future<void> _openFilterSheet() async {
-    if (_tabController.index == 0) {
-      await _openPresentsFilterSheet();
-    } else {
-      await _openAnciensFilterSheet();
+    switch (_tabController.index) {
+      case 0:
+        await _openPresentsFilterSheet();
+        break;
+      case 3:
+        await _openDecedesFilterSheet();
+        break;
+      default:
+        await _openAnciensFilterSheet();
     }
   }
 
@@ -989,7 +990,11 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
   @override
   Widget build(BuildContext context) {
     final isPresents  = _tabController.index == 0;
-    final filterCount = isPresents ? _presentsFilterCount : _anciensFilterCount;
+    final filterCount = switch (_tabController.index) {
+      0 => _presentsFilterCount,
+      3 => _decedesFilterCount,
+      _ => _anciensFilterCount,
+    };
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
@@ -1058,10 +1063,13 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         ],
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           tabs: const [
             Tab(text: 'Présents'),
-            Tab(text: 'Anciens'),
+            Tab(text: 'Cédés'),
             Tab(text: 'Suivi'),
+            Tab(text: 'Décédés'),
           ],
           indicatorColor: const Color(0xFF6E9E57),
           indicatorWeight: 3,
@@ -1089,6 +1097,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
             loading: _loading,
             onChanged: _loadAnimaux,
           ),
+          _buildDecedesTab(),
         ],
       ),
     );
@@ -1584,14 +1593,6 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
               color: speciesColor(_anciensEspece),
               onRemove: () => setState(() => _anciensEspece = 'tous'),
             ),
-          if (_anciensStatut != 'tous') ...[
-            if (_anciensEspece != 'tous') const SizedBox(width: 6),
-            _ActiveChip(
-              label: _anciensStatut == 'sorti' ? 'Sorti' : 'Décédé',
-              color: _anciensStatut == 'sorti' ? _teal : Colors.redAccent,
-              onRemove: () => setState(() => _anciensStatut = 'tous'),
-            ),
-          ],
           if (_anciensDtDebut != null || _anciensDtFin != null) ...[
             const SizedBox(width: 6),
             _ActiveChip(
@@ -1615,10 +1616,11 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     var docs = _animauxData.where((data) {
       final statut = data['statut'] as String? ?? '';
       final aid = data['id'] as String? ?? '';
-      // animaux_proprietes = source unique : anciens = date_fin IS NOT NULL ou décédé
-      if (_currentOwnerIds.contains(aid) && statut != 'decede') return false;
+      // Cédés = animaux sortis (cédés à un nouveau propriétaire) uniquement ;
+      // les décédés ont leur propre onglet (cf. _buildDecedesList).
+      if (statut != 'sorti') return false;
+      if (_currentOwnerIds.contains(aid)) return false;
       if (_anciensEspece != 'tous' && data['espece'] != _anciensEspece) return false;
-      if (_anciensStatut != 'tous' && statut != _anciensStatut) return false;
       if (_anciensDtDebut != null || _anciensDtFin != null) {
         final ds = data['date_sortie'] as String?;
         if (ds == null || ds.isEmpty) return false;
@@ -1648,8 +1650,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           const SizedBox(height: 12),
           Text(
             _anciensFilterCount > 0
-                ? 'Aucun ancien animal\ncorrespondant aux filtres'
-                : 'Aucun animal sorti ou décédé',
+                ? 'Aucun animal cédé\ncorrespondant aux filtres'
+                : 'Aucun animal cédé',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey.shade500, fontFamily: 'Galey', fontSize: 15),
           ),
@@ -1657,7 +1659,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
             const SizedBox(height: 16),
             TextButton(
               onPressed: () => setState(() {
-                _anciensEspece = 'tous'; _anciensStatut = 'tous';
+                _anciensEspece = 'tous';
                 _anciensDtDebut = null; _anciensDtFin = null;
               }),
               child: const Text('Réinitialiser les filtres',
@@ -1691,6 +1693,311 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
             gestanteFlag: _gestanteFlags[id] ?? false,
             onTap: () => _openFiche(context, id, data: data),
             onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
+          );
+        },
+      ),
+    );
+  }
+
+  // ── Décédés tab ───────────────────────────────────────────────────────────────
+
+  Widget _buildDecedesTab() {
+    return Column(children: [
+      _buildSearchField(),
+      if (_decedesFilterCount > 0) _buildDecedesFiltersRow(),
+      Expanded(child: _buildDecedesList()),
+    ]);
+  }
+
+  Widget _buildDecedesFiltersRow() {
+    final fmt = DateFormat('dd/MM/yy');
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: [
+          if (_decedesEspece != 'tous')
+            _ActiveChip(
+              label: speciesLabel(_decedesEspece),
+              color: speciesColor(_decedesEspece),
+              onRemove: () => setState(() => _decedesEspece = 'tous'),
+            ),
+          if (_decedesDtDebut != null || _decedesDtFin != null) ...[
+            if (_decedesEspece != 'tous') const SizedBox(width: 6),
+            _ActiveChip(
+              label: [
+                if (_decedesDtDebut != null) 'Du ${fmt.format(_decedesDtDebut!)}',
+                if (_decedesDtFin != null) 'au ${fmt.format(_decedesDtFin!)}',
+              ].join(' '),
+              color: const Color(0xFF5F9EAA),
+              onRemove: () => setState(() { _decedesDtDebut = null; _decedesDtFin = null; }),
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildDecedesList() {
+    if (_uid == null) return const Center(child: Text('Non connecté'));
+    if (_loading) return const Center(child: CircularProgressIndicator(color: _green));
+
+    var docs = _animauxData.where((data) {
+      final statut = data['statut'] as String? ?? '';
+      if (statut != 'decede') return false;
+      if (_decedesEspece != 'tous' && data['espece'] != _decedesEspece) return false;
+      if (_decedesDtDebut != null || _decedesDtFin != null) {
+        final ds = data['date_sortie'] as String?;
+        if (ds == null || ds.isEmpty) return false;
+        final dt = DateTime.tryParse(ds);
+        if (dt == null) return false;
+        if (_decedesDtDebut != null && dt.isBefore(_decedesDtDebut!)) return false;
+        if (_decedesDtFin != null &&
+            dt.isAfter(_decedesDtFin!.add(const Duration(days: 1)))) return false;
+      }
+      if (_search.isNotEmpty) {
+        final nom  = (data['nom']            ?? '').toString().toLowerCase();
+        final puce = (data['identification'] ?? '').toString().toLowerCase();
+        if (!nom.contains(_search) && !puce.contains(_search)) return false;
+      }
+      return true;
+    }).toList()
+      ..sort((a, b) {
+        final da = DateTime.tryParse(a['date_sortie'] as String? ?? '') ?? DateTime(0);
+        final db = DateTime.tryParse(b['date_sortie'] as String? ?? '') ?? DateTime(0);
+        return db.compareTo(da);
+      });
+
+    if (docs.isEmpty) {
+      return Center(
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(Icons.pets_outlined, size: 56, color: Colors.grey.shade300),
+          const SizedBox(height: 12),
+          Text(
+            _decedesFilterCount > 0
+                ? 'Aucun animal décédé\ncorrespondant aux filtres'
+                : 'Aucun animal décédé',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade500, fontFamily: 'Galey', fontSize: 15),
+          ),
+          if (_decedesFilterCount > 0) ...[
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () => setState(() {
+                _decedesEspece = 'tous';
+                _decedesDtDebut = null; _decedesDtFin = null;
+              }),
+              child: const Text('Réinitialiser les filtres',
+                  style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6E9E57))),
+            ),
+          ],
+        ]),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadAnimaux,
+      color: _green,
+      child: GridView.builder(
+        padding: const EdgeInsets.all(16),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          childAspectRatio: 0.68,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: docs.length,
+        itemBuilder: (_, i) {
+          final data = docs[i];
+          final id = data['id'] as String? ?? '';
+          return _AnimalCard(
+            id: id,
+            data: data,
+            showStatut: true,
+            chaleurFlag:  false,
+            gestanteFlag: false,
+            onTap: () => _openFiche(context, id, data: data),
+            onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _openDecedesFilterSheet() async {
+    Set<String> availableSpeciesSet = {};
+
+    for (final d in _animauxData) {
+      final statut = d['statut'] as String? ?? '';
+      if (statut != 'decede') continue;
+      final esp = (d['espece'] ?? '') as String;
+      if (esp.isNotEmpty) availableSpeciesSet.add(esp);
+    }
+    if (!mounted) return;
+
+    String    tmpEspece = _decedesEspece;
+    DateTime? tmpDebut  = _decedesDtDebut;
+    DateTime? tmpFin    = _decedesDtFin;
+    final fmt = DateFormat('dd/MM/yyyy');
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          void apply() {
+            setState(() {
+              _decedesEspece  = tmpEspece;
+              _decedesDtDebut = tmpDebut;
+              _decedesDtFin   = tmpFin;
+            });
+          }
+
+          return Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            padding: EdgeInsets.only(
+              left: 20, right: 20, top: 12,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 28,
+            ),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Center(child: Container(width: 40, height: 4,
+                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 16),
+              Row(children: [
+                const Text('Filtrer les décédés',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 17, color: Color(0xFF1F2A2E))),
+                const Spacer(),
+                if (tmpEspece != 'tous' || tmpDebut != null || tmpFin != null)
+                  TextButton(
+                    onPressed: () {
+                      setSheet(() { tmpEspece = 'tous'; tmpDebut = null; tmpFin = null; });
+                      setState(() { _decedesEspece = 'tous'; _decedesDtDebut = null; _decedesDtFin = null; });
+                    },
+                    style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                    child: const Text('Réinitialiser',
+                        style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6E9E57))),
+                  ),
+              ]),
+              const SizedBox(height: 16),
+
+              // Espèce
+              const Text('Espèce', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                  fontSize: 13, color: Color(0xFF6F767B))),
+              const SizedBox(height: 10),
+              Wrap(spacing: 8, runSpacing: 8,
+                  children: kSpeciesData
+                      .where((sp) => sp.value == 'tous' || availableSpeciesSet.contains(sp.value))
+                      .map((sp) {
+                final active = tmpEspece == sp.value;
+                return GestureDetector(
+                  onTap: () { setSheet(() => tmpEspece = sp.value); apply(); },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: active ? sp.color : Colors.transparent,
+                      border: Border.all(color: active ? sp.color : Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      if (sp.value != 'tous') ...[
+                        speciesIcon(sp.value, 13, active ? Colors.white : sp.color),
+                        const SizedBox(width: 5),
+                      ],
+                      Text(sp.label, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                          color: active ? Colors.white : Colors.black87,
+                          fontWeight: active ? FontWeight.w600 : FontWeight.normal)),
+                    ]),
+                  ),
+                );
+              }).toList()),
+              const SizedBox(height: 18),
+
+              // Date de décès
+              const Text('Date de décès', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                  fontSize: 13, color: Color(0xFF6F767B))),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: ctx,
+                        initialDate: tmpDebut ?? DateTime.now(),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) { setSheet(() => tmpDebut = picked); apply(); }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: tmpDebut != null ? _teal : Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(children: [
+                        Icon(Icons.calendar_today_outlined, size: 14,
+                            color: tmpDebut != null ? _teal : Colors.grey),
+                        const SizedBox(width: 6),
+                        Text(tmpDebut != null ? fmt.format(tmpDebut!) : 'Du...',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                color: tmpDebut != null ? _teal : Colors.grey)),
+                        if (tmpDebut != null) ...[
+                          const Spacer(),
+                          GestureDetector(
+                            onTap: () { setSheet(() => tmpDebut = null); apply(); },
+                            child: const Icon(Icons.close, size: 14, color: Colors.grey),
+                          ),
+                        ],
+                      ]),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: ctx,
+                        initialDate: tmpFin ?? DateTime.now(),
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) { setSheet(() => tmpFin = picked); apply(); }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: tmpFin != null ? _teal : Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(children: [
+                        Icon(Icons.calendar_today_outlined, size: 14,
+                            color: tmpFin != null ? _teal : Colors.grey),
+                        const SizedBox(width: 6),
+                        Text(tmpFin != null ? fmt.format(tmpFin!) : 'Au...',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                                color: tmpFin != null ? _teal : Colors.grey)),
+                        if (tmpFin != null) ...[
+                          const Spacer(),
+                          GestureDetector(
+                            onTap: () { setSheet(() => tmpFin = null); apply(); },
+                            child: const Icon(Icons.close, size: 14, color: Colors.grey),
+                          ),
+                        ],
+                      ]),
+                    ),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 8),
+            ]),
           );
         },
       ),
