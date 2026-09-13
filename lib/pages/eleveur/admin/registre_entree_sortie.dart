@@ -838,9 +838,19 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
     if (d != null) onPicked(d);
   }
 
+  static bool _statutSorti(String s) =>
+      s == 'sorti' || s == 'decede' || s == 'adopte' || s == 'transfere';
+
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
+      // Statut avant modification (chargé à l'ouverture du sheet) — pour
+      // répercuter un passage « présent → sorti » sur animaux_proprietes +
+      // registre_mouvements, sinon l'animal reste "présent" dans Mes Animaux
+      // malgré un statut "sorti" (même correctif que animal_fiche.dart).
+      final oldStatut = widget.animalData['statut'] as String? ?? 'present';
+      final ownerUid = widget.animalData['uid_eleveur'] as String?;
+
       await Supabase.instance.client.from('animaux').update({
         'statut':               _statut,
         'date_entree':          _dateEntree?.toIso8601String(),
@@ -855,6 +865,44 @@ class _RegistreEditSheetState extends State<_RegistreEditSheet> {
         'cause_mort':           _statut == 'decede' ? _causeMort : '',
         'updated_at':           DateTime.now().toIso8601String(),
       }).eq('id', widget.animalId);
+
+      final devientSorti = _statutSorti(_statut) && !_statutSorti(oldStatut);
+      final redevientPresent = !_statutSorti(_statut) && _statutSorti(oldStatut);
+      final dateMvt = (_dateSortie ?? DateTime.now()).toIso8601String().split('T').first;
+
+      if (devientSorti && ownerUid != null) {
+        try {
+          await Supabase.instance.client.from('animaux_proprietes')
+              .update({'date_fin': dateMvt})
+              .eq('animal_id', widget.animalId).eq('uid_proprio', ownerUid)
+              .isFilter('date_fin', null);
+        } catch (_) {}
+        try {
+          final dejaSorti = await Supabase.instance.client.from('registre_mouvements')
+              .select('id').eq('animal_id', widget.animalId).eq('type', 'sortie').limit(1);
+          if ((dejaSorti as List).isEmpty) {
+            await Supabase.instance.client.from('registre_mouvements').insert({
+              'animal_id':            widget.animalId,
+              'uid_eleveur':          ownerUid,
+              'type':                 'sortie',
+              'date_mouvement':       dateMvt,
+              'motif':                _statut == 'decede' ? 'autre' : 'cession',
+              if (_destinataireQualite.isNotEmpty) 'destinataire_qualite': _destinataireQualite,
+              if (_destinataireNomCtrl.text.trim().isNotEmpty) 'destinataire_nom': _destinataireNomCtrl.text.trim(),
+              if (_destinataireAdresseCtrl.text.trim().isNotEmpty) 'destinataire_adresse': _destinataireAdresseCtrl.text.trim(),
+              if (_statut == 'decede' && _causeMort.isNotEmpty) 'cause_mort': _causeMort,
+            });
+          }
+        } catch (_) {}
+      } else if (redevientPresent && ownerUid != null) {
+        try {
+          await Supabase.instance.client.from('animaux_proprietes')
+              .update({'date_fin': null})
+              .eq('animal_id', widget.animalId).eq('uid_proprio', ownerUid)
+              .not('date_fin', 'is', null);
+        } catch (_) {}
+      }
+
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {

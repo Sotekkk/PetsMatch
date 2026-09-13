@@ -2774,6 +2774,15 @@ function AnimalFichePageInner() {
   // ── Sauvegarde registre
   async function saveRegistre() {
     if (!id) return;
+    // Statut avant modification (relu en base — le state `animal` local a déjà
+    // la nouvelle valeur au moment du save) — pour répercuter un passage
+    // « présent → sorti » sur animaux_proprietes + registre_mouvements,
+    // sinon l'animal reste "présent" dans Mes Animaux malgré un statut
+    // "sorti" (même correctif que côté appli).
+    const { data: before } = await supabase.from('animaux').select('statut, uid_eleveur').eq('id', id).maybeSingle();
+    const oldStatut = before?.statut ?? 'present';
+    const ownerUid = before?.uid_eleveur;
+
     await supabase.from('animaux').update({
       statut: animal.statut, date_entree: animal.date_entree,
       provenance_qualite: animal.provenance_qualite, provenance_nom: animal.provenance_nom,
@@ -2784,6 +2793,36 @@ function AnimalFichePageInner() {
       destinataire_qualite: animal.destinataire_qualite, destinataire_nom: animal.destinataire_nom,
       destinataire_adresse: animal.destinataire_adresse, cause_mort: animal.cause_mort,
     }).eq('id', id);
+
+    const oldSorti = ['sorti', 'decede'].includes(oldStatut);
+    const newSorti = ['sorti', 'decede'].includes(animal.statut ?? 'present');
+    const dateMvt = animal.date_sortie || new Date().toISOString().slice(0, 10);
+    if (newSorti && !oldSorti && ownerUid) {
+      try {
+        await supabase.from('animaux_proprietes').update({ date_fin: dateMvt })
+          .eq('animal_id', id).eq('uid_proprio', ownerUid).is('date_fin', null);
+      } catch { /* ignore */ }
+      try {
+        const { data: dejaSorti } = await supabase.from('registre_mouvements')
+          .select('id').eq('animal_id', id).eq('type', 'sortie').limit(1);
+        if (!dejaSorti || dejaSorti.length === 0) {
+          await supabase.from('registre_mouvements').insert({
+            animal_id: id, uid_eleveur: ownerUid, type: 'sortie', date_mouvement: dateMvt,
+            motif: animal.statut === 'decede' ? 'autre' : 'cession',
+            ...(animal.destinataire_qualite ? { destinataire_qualite: animal.destinataire_qualite } : {}),
+            ...(animal.destinataire_nom ? { destinataire_nom: animal.destinataire_nom } : {}),
+            ...(animal.destinataire_adresse ? { destinataire_adresse: animal.destinataire_adresse } : {}),
+            ...(animal.statut === 'decede' && animal.cause_mort ? { cause_mort: animal.cause_mort } : {}),
+          });
+        }
+      } catch { /* ignore */ }
+    } else if (!newSorti && oldSorti && ownerUid) {
+      try {
+        await supabase.from('animaux_proprietes').update({ date_fin: null })
+          .eq('animal_id', id).eq('uid_proprio', ownerUid).not('date_fin', 'is', null);
+      } catch { /* ignore */ }
+    }
+
     setShowRegistre(false);
   }
 

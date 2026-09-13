@@ -53,7 +53,11 @@ function buildSejour(jours: GardeRdvRow[]): GardeSejour {
     dateSortiePrevue: new Date(dernier.date_heure),
     arriveeValideeLe,
     departValideLe,
-    statut: departValideLe ? 'termine' : arriveeValideeLe ? 'en_garde' : 'a_venir',
+    // Rétrocompatibilité : une garde déjà marquée « terminée » (rdv.statut)
+    // avant l'existence de la validation de présence n'a pas de
+    // depart_valide_le rétroactif — sans ce repli elle resterait coincée
+    // en « à venir » indéfiniment.
+    statut: departValideLe || dernier.statut === 'termine' ? 'termine' : arriveeValideeLe ? 'en_garde' : 'a_venir',
     animalNom: premier._animal_nom ?? 'Animal',
     clientNom: premier._client_nom ?? 'Client',
   };

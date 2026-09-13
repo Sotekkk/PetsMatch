@@ -27,8 +27,13 @@ class GardeSejour {
         departValideLe = DateTime.tryParse(jours.last['depart_valide_le']?.toString() ?? '');
 
   /// 'a_venir' (aucune validation) → 'en_garde' (arrivée validée) → 'termine' (départ validé).
+  /// Rétrocompatibilité : les gardes déjà marquées « terminée » (rdv.statut)
+  /// avant l'existence de la validation de présence n'ont pas de
+  /// depart_valide_le rétroactif — sans ce repli elles resteraient coincées
+  /// en « à venir » indéfiniment.
   String get statut {
     if (departValideLe != null) return 'termine';
+    if ((dernierJour['statut']?.toString() ?? '') == 'termine') return 'termine';
     if (arriveeValideeLe != null) return 'en_garde';
     return 'a_venir';
   }

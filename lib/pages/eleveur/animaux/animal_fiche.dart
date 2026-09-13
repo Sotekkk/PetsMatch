@@ -1258,6 +1258,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     }
   }
 
+  static bool _statutSorti(String s) =>
+      s == 'sorti' || s == 'decede' || s == 'adopte' || s == 'transfere';
+
   Future<void> _saveRegistre() async {
     if (widget.animalId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1266,6 +1269,16 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     }
     setState(() => _savingRegistre = true);
     try {
+      final animalId = widget.animalId!;
+      // Statut avant modification — pour détecter un passage « présent → sorti »
+      // et le répercuter sur animaux_proprietes + registre_mouvements, que
+      // cet éditeur laissait jusqu'ici désynchronisés (l'animal restait
+      // « présent » dans Mes Animaux malgré un statut « sorti »).
+      final before = await _supa.from('animaux')
+          .select('statut, uid_eleveur, uid_proprietaire').eq('id', animalId).maybeSingle();
+      final oldStatut = (before?['statut'] as String?) ?? 'present';
+      final ownerUid = (before?['uid_eleveur'] ?? before?['uid_proprietaire'])?.toString() ?? _ownerUid;
+
       await _supa.from('animaux').update({
         'statut':               _statut,
         'date_entree':          _dateEntree?.toIso8601String(),
@@ -1282,7 +1295,46 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'cause_mort':           _causeMort,
         'is_retraite':          _isRetraite,
         'updated_at':           DateTime.now().toIso8601String(),
-      }).eq('id', widget.animalId!);
+      }).eq('id', animalId);
+
+      final devientSorti = _statutSorti(_statut) && !_statutSorti(oldStatut);
+      final redevientPresent = !_statutSorti(_statut) && _statutSorti(oldStatut);
+      final dateMvt = (_dateSortie ?? DateTime.now()).toIso8601String().split('T').first;
+
+      if (devientSorti && ownerUid != null) {
+        try {
+          await _supa.from('animaux_proprietes')
+              .update({'date_fin': dateMvt})
+              .eq('animal_id', animalId).eq('uid_proprio', ownerUid)
+              .isFilter('date_fin', null);
+        } catch (_) {}
+        try {
+          final dejaSorti = await _supa.from('registre_mouvements')
+              .select('id').eq('animal_id', animalId).eq('type', 'sortie').limit(1);
+          if ((dejaSorti as List).isEmpty) {
+            await _supa.from('registre_mouvements').insert({
+              'animal_id':            animalId,
+              'uid_eleveur':          ownerUid,
+              'type':                 'sortie',
+              'date_mouvement':       dateMvt,
+              'motif':                _statut == 'decede' ? 'autre' : 'cession',
+              if (_destinataireQualite.isNotEmpty) 'destinataire_qualite': _destinataireQualite,
+              if (_destinataireNomCtrl.text.trim().isNotEmpty) 'destinataire_nom': _destinataireNomCtrl.text.trim(),
+              if (_destinataireAdresseCtrl.text.trim().isNotEmpty) 'destinataire_adresse': _destinataireAdresseCtrl.text.trim(),
+              if (_statut == 'decede' && _causeMort.isNotEmpty) 'cause_mort': _causeMort,
+            });
+            await _loadMouvements();
+          }
+        } catch (_) {}
+      } else if (redevientPresent && ownerUid != null) {
+        try {
+          await _supa.from('animaux_proprietes')
+              .update({'date_fin': null})
+              .eq('animal_id', animalId).eq('uid_proprio', ownerUid)
+              .not('date_fin', 'is', null);
+        } catch (_) {}
+      }
+
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Registre enregistré ✓', style: TextStyle(fontFamily: 'Galey'))));
     } catch (e) {

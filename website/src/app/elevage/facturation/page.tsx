@@ -58,6 +58,15 @@ interface FacturePrefill {
   note?: string;
   lignes?: { description: string; quantite: number; prixUnitaire: number; tva: number }[];
   sourcePensionEntreeId?: string;
+  // Garde à domicile — voir GardeFacturationModal. sourceRdvIds n'est pas une
+  // colonne de `factures` : utilisé uniquement pour marquer après coup tous
+  // les RDV couverts (rdv.facture_id), même logique que l'appli
+  // (facturation.dart lignes 916-925).
+  sourceRdvId?: string;
+  sourceRdvIds?: string[];
+  sourceAnimalId?: string;
+  clientUid?: string;
+  clientProfileId?: string;
 }
 
 const STATUT_STYLE: Record<string, string> = {
@@ -87,11 +96,15 @@ export default function FacturationPage() {
   const { user, userData, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const profilSource = pathname?.startsWith('/association') ? 'association' : 'eleveur';
   const activeProfileId = useActiveProfile();
   const { config: planConfig, loading: planLoading } = usePlan();
   const { isPension: isPensionSource } = usePensionAccess();
   const { isGarde: isGardeSource } = useGardeAccess();
+  // Garde n'avait aucune facturation web jusqu'ici (contrairement à pension/
+  // éleveur déjà en place) — on peut donc la scoper correctement dès le
+  // départ, comme l'appli (facturation.dart : profil_source = catPro),
+  // sans risquer de perturber une séquence de numérotation déjà en cours.
+  const profilSource = pathname?.startsWith('/association') ? 'association' : isGardeSource ? 'garde' : 'eleveur';
   const { plan: pensionPlan, loading: pensionPlanLoading } = usePensionPlan();
   const { plan: gardePlan, loading: gardePlanLoading } = usePlanGarde();
   // Pension et garde ont chacun leur propre abonnement — la facturation est
@@ -575,6 +588,10 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
       regime_tva:     franchise ? 'franchise' : 'normal',
       ...(isAvoir ? { type_facture: 'avoir', facture_parente_id: avoirDe!.id } : {}),
       ...(prefill?.sourcePensionEntreeId ? { source_pension_entree_id: prefill.sourcePensionEntreeId } : {}),
+      ...(prefill?.sourceRdvId ? { source_rdv_id: prefill.sourceRdvId } : {}),
+      ...(prefill?.sourceAnimalId ? { source_animal_id: prefill.sourceAnimalId } : {}),
+      ...(prefill?.clientUid ? { client_uid: prefill.clientUid } : {}),
+      ...(prefill?.clientProfileId ? { client_profile_id: prefill.clientProfileId } : {}),
       nom_client:     nomClient,
       prenom_client:  prenomClient || null,
       email_client:   emailClient || null,
@@ -624,6 +641,14 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
     // proposé au client par email.
     const f = data as Facture & { numero_affichage?: string };
     const numero = f.numero_affichage || String(f.numero_facture ?? '');
+
+    // Marque les RDV couverts (garde de plusieurs jours = N lignes `rdv`) —
+    // même logique que l'appli (facturation.dart lignes 916-925).
+    const rdvIds = [...new Set([...(prefill?.sourceRdvIds ?? []), ...(prefill?.sourceRdvId ? [prefill.sourceRdvId] : [])])].filter(Boolean);
+    if (rdvIds.length) {
+      try { await supabase.from('rdv').update({ facture_id: f.id }).in('id', rdvIds); } catch { /* ignore */ }
+    }
+
     try {
       const blob = await facturePdfBlob({
         numero,

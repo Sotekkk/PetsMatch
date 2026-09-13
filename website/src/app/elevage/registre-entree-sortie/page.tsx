@@ -459,6 +459,40 @@ function EditRegistreForm({ animal, uid, onClose, onSaved }: {
       cause_mort: statut === 'decede' ? causeMort : '',
     };
     await supabase.from('animaux').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', animal.id);
+
+    // Répercute un passage « présent → sorti » sur animaux_proprietes +
+    // registre_mouvements — sinon l'animal reste "présent" dans Mes Animaux
+    // malgré un statut "sorti" (même correctif que côté appli).
+    const oldSorti = ['sorti', 'decede'].includes(animal.statut ?? 'present');
+    const newSorti = ['sorti', 'decede'].includes(statut);
+    const ownerUid = animal.uid_eleveur;
+    const dateMvt = dateSortie || new Date().toISOString().slice(0, 10);
+    if (newSorti && !oldSorti && ownerUid) {
+      try {
+        await supabase.from('animaux_proprietes').update({ date_fin: dateMvt })
+          .eq('animal_id', animal.id).eq('uid_proprio', ownerUid).is('date_fin', null);
+      } catch { /* ignore */ }
+      try {
+        const { data: dejaSorti } = await supabase.from('registre_mouvements')
+          .select('id').eq('animal_id', animal.id).eq('type', 'sortie').limit(1);
+        if (!dejaSorti || dejaSorti.length === 0) {
+          await supabase.from('registre_mouvements').insert({
+            animal_id: animal.id, uid_eleveur: ownerUid, type: 'sortie', date_mouvement: dateMvt,
+            motif: statut === 'decede' ? 'autre' : 'cession',
+            ...(destQualite ? { destinataire_qualite: destQualite } : {}),
+            ...(destNom ? { destinataire_nom: destNom } : {}),
+            ...(destAdresse ? { destinataire_adresse: destAdresse } : {}),
+            ...(statut === 'decede' && causeMort ? { cause_mort: causeMort } : {}),
+          });
+        }
+      } catch { /* ignore */ }
+    } else if (!newSorti && oldSorti && ownerUid) {
+      try {
+        await supabase.from('animaux_proprietes').update({ date_fin: null })
+          .eq('animal_id', animal.id).eq('uid_proprio', ownerUid).not('date_fin', 'is', null);
+      } catch { /* ignore */ }
+    }
+
     onSaved({ ...animal, ...payload });
     setSaving(false);
   }

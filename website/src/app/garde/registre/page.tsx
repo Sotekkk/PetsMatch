@@ -6,11 +6,13 @@ import { useGardeAccess } from '@/hooks/useGardeAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { PensionJournal } from '@/components/PensionJournal';
+import { GardeFacturationModal } from '@/components/GardeFacturationModal';
 import { groupeGardeSejours, estGardeJournee, type GardeRdvRow, type GardeSejour } from '@/lib/garde-sejours';
 
 const TEAL = '#0C5C6C';
 
 interface Rdv extends GardeRdvRow {
+  facture_id?: string | null;
   _client_email?: string;
   _client_tel?: string;
   _animal_espece?: string;
@@ -44,6 +46,7 @@ export default function RegistreVisitesPage() {
   const [visites, setVisites] = useState<Rdv[]>([]);
   const [loading, setLoading] = useState(true);
   const [journalFor, setJournalFor] = useState<Rdv | null>(null);
+  const [facturingSejour, setFacturingSejour] = useState<GardeSejour | null>(null);
 
   useEffect(() => {
     if (authLoading) return;
@@ -55,7 +58,7 @@ export default function RegistreVisitesPage() {
     if (!user) return;
     setLoading(true);
     let q = supabase.from('rdv')
-      .select('id, animal_id, client_uid, client_profile_id, date_heure, motif, statut, arrivee_validee_le, depart_valide_le')
+      .select('id, animal_id, client_uid, client_profile_id, date_heure, motif, statut, arrivee_validee_le, depart_valide_le, facture_id')
       .eq('pro_uid', user.uid);
     if (activeProfileId) q = q.eq('pro_profile_id', activeProfileId) as typeof q;
     const { data } = await q.in('statut', ['confirme', 'termine']).order('date_heure', { ascending: true });
@@ -76,8 +79,8 @@ export default function RegistreVisitesPage() {
         ? supabase.from('user_profiles').select('uid, firstname, lastname, nom, email_contact, phone_number').in('uid', uidsNoPid).eq('is_main', true)
         : Promise.resolve({ data: [] as { uid: string; firstname: string | null; lastname: string | null; nom: string | null; email_contact: string | null; phone_number: string | null }[] }),
       animalIds.length
-        ? supabase.from('animaux').select('id, nom, espece, race, puce').in('id', animalIds)
-        : Promise.resolve({ data: [] as { id: string; nom: string | null; espece: string | null; race: string | null; puce: string | null }[] }),
+        ? supabase.from('animaux').select('id, nom, espece, race, identification').in('id', animalIds)
+        : Promise.resolve({ data: [] as { id: string; nom: string | null; espece: string | null; race: string | null; identification: string | null }[] }),
     ]);
 
     const nomOf = (c: { nom: string | null; firstname: string | null; lastname: string | null }) =>
@@ -101,7 +104,7 @@ export default function RegistreVisitesPage() {
         _animal_nom: a?.nom ?? '',
         _animal_espece: a?.espece ?? '',
         _animal_race: a?.race ?? '',
-        _animal_puce: a?.puce ?? '',
+        _animal_puce: a?.identification ?? '',
       };
     });
 
@@ -274,7 +277,9 @@ export default function RegistreVisitesPage() {
         <div className="space-y-3">
           {displayed.map(item => isSejour(item) ? (
             <SejourTourneeCard key={`${item.animalId}-${item.dateEntree.toISOString()}`} sejour={item}
-              onValiderArrivee={() => validerArrivee(item)} onValiderDepart={() => validerDepart(item)} />
+              factured={item.jours.some(j => !!(j as Rdv).facture_id)}
+              onValiderArrivee={() => validerArrivee(item)} onValiderDepart={() => validerDepart(item)}
+              onFacturer={() => setFacturingSejour(item)} />
           ) : (
             <VisiteCard key={item.id} rdv={item} onTerminer={() => marquerTermine(item)} onRapport={() => setJournalFor(item)} />
           ))}
@@ -287,6 +292,19 @@ export default function RegistreVisitesPage() {
           animalNom={journalFor._animal_nom || 'Animal'}
           proUid={user?.uid}
           onClose={() => setJournalFor(null)}
+        />
+      )}
+
+      {facturingSejour && user && (
+        <GardeFacturationModal
+          rdv={facturingSejour.jours[facturingSejour.jours.length - 1] as Rdv}
+          proUid={user.uid}
+          proProfileId={activeProfileId}
+          animalNom={facturingSejour.animalNom}
+          clientNom={facturingSejour.clientNom}
+          clientEmail={(facturingSejour.jours[0] as Rdv)._client_email}
+          clientTel={(facturingSejour.jours[0] as Rdv)._client_tel}
+          onClose={() => setFacturingSejour(null)}
         />
       )}
     </div>
@@ -324,11 +342,13 @@ function VisiteCard({ rdv, onTerminer, onRapport }: { rdv: Rdv; onTerminer: () =
   );
 }
 
-function SejourTourneeCard({ sejour, onValiderArrivee, onValiderDepart }: {
-  sejour: GardeSejour; onValiderArrivee: () => void; onValiderDepart: () => void;
+function SejourTourneeCard({ sejour, factured = false, onValiderArrivee, onValiderDepart, onFacturer }: {
+  sejour: GardeSejour; factured?: boolean; onValiderArrivee: () => void; onValiderDepart: () => void; onFacturer: () => void;
 }) {
   const unSeulJour = sejour.jours.length === 1;
   const periode = unSeulJour ? `le ${fmtDateCourt(sejour.dateEntree)}` : `du ${fmtDateCourt(sejour.dateEntree)} au ${fmtDateCourt(sejour.dateSortiePrevue)}`;
+  const badgeCls = sejour.statut === 'termine' ? 'bg-[#E8F4F6] text-[#0C5C6C]'
+    : sejour.statut === 'en_garde' ? 'bg-[#EEF5EA] text-[#6E9E57]' : 'bg-[#FFF8E1] text-[#CA8A04]';
   return (
     <div className="rounded-2xl border-2 bg-white p-4 shadow-sm" style={{ borderColor: TEAL }}>
       <div className="flex items-start justify-between mb-3">
@@ -336,8 +356,8 @@ function SejourTourneeCard({ sejour, onValiderArrivee, onValiderDepart }: {
           <p className="font-bold font-galey text-sm text-[#1F2A2E]">🏠 Garde à domicile — {sejour.animalNom} — {sejour.clientNom}</p>
           <p className="text-xs text-gray-400 font-galey">Chez vous {periode}</p>
         </div>
-        <span className={`text-xs font-semibold font-galey px-2 py-1 rounded-full whitespace-nowrap ${sejour.statut === 'en_garde' ? 'bg-[#EEF5EA] text-[#6E9E57]' : 'bg-[#FFF8E1] text-[#CA8A04]'}`}>
-          {sejour.statut === 'en_garde' ? 'En cours' : 'À venir'}
+        <span className={`text-xs font-semibold font-galey px-2 py-1 rounded-full whitespace-nowrap ${badgeCls}`}>
+          {STATUT_LABEL[sejour.statut]}
         </span>
       </div>
       {sejour.statut === 'a_venir' ? (
@@ -346,16 +366,33 @@ function SejourTourneeCard({ sejour, onValiderArrivee, onValiderDepart }: {
           style={{ backgroundColor: TEAL }}>
           🏠 Valider l&apos;arrivée
         </button>
-      ) : (
+      ) : sejour.statut === 'en_garde' ? (
         <>
-          <p className="text-xs font-galey text-[#6E9E57] font-semibold mb-2">
-            ✅ Arrivé le {sejour.arriveeValideeLe ? fmtDateCourt(sejour.arriveeValideeLe) : ''}
-          </p>
+          {sejour.arriveeValideeLe && (
+            <p className="text-xs font-galey text-[#6E9E57] font-semibold mb-2">
+              ✅ Arrivé le {fmtDateCourt(sejour.arriveeValideeLe)}
+            </p>
+          )}
           <button onClick={onValiderDepart}
             className="w-full text-xs font-medium font-galey border rounded-xl py-2"
             style={{ color: TEAL, borderColor: TEAL }}>
             🚪 Valider le départ
           </button>
+        </>
+      ) : (
+        <>
+          <p className="text-xs font-galey text-[#0C5C6C] font-semibold mb-2">
+            ✅ {sejour.departValideLe ? `Départ le ${fmtDateCourt(sejour.departValideLe)}` : 'Garde terminée'}
+          </p>
+          {factured ? (
+            <p className="text-xs font-galey text-[#6E9E57] font-semibold">✅ Facturé</p>
+          ) : (
+            <button onClick={onFacturer}
+              className="w-full text-xs font-medium font-galey border rounded-xl py-2"
+              style={{ color: '#6E9E57', borderColor: '#6E9E57' }}>
+              🧾 Facturer
+            </button>
+          )}
         </>
       )}
     </div>

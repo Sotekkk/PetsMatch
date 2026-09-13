@@ -1,12 +1,9 @@
-import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
@@ -84,7 +81,7 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
             ? _supa.from('user_profiles').select('id, uid, firstname, lastname, nom, email_contact, phone_number').inFilter('uid', clientUidsNoPid).eq('is_main', true)
             : Future.value(<Map<String, dynamic>>[]),
         animalIds.isNotEmpty
-            ? _supa.from('animaux').select('id, nom, espece, race, puce').inFilter('id', animalIds)
+            ? _supa.from('animaux').select('id, nom, espece, race, identification').inFilter('id', animalIds)
             : Future.value(<Map<String, dynamic>>[]),
       ]);
 
@@ -123,7 +120,7 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
             'nom': a['nom']?.toString() ?? '',
             'espece': a['espece']?.toString() ?? '',
             'race': a['race']?.toString() ?? '',
-            'puce': a['puce']?.toString() ?? '',
+            'puce': a['identification']?.toString() ?? '',
           },
       };
       final animalNames = <String, String>{
@@ -358,20 +355,6 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
     'Date entrée', 'Sortie prévue', 'Sortie effective', 'Statut',
   ];
 
-  Future<void> _exportCsvRegistre(List<GardeSejour> sejours) async {
-    if (sejours.isEmpty) return;
-    String esc(Object? v) => '"${(v?.toString() ?? '').replaceAll('"', '""')}"';
-    final rows = _registreRows(sejours);
-    final csv = [_registreHeaders, ...rows].map((r) => r.map(esc).join(';')).join('\r\n');
-    final bytes = utf8.encode('﻿$csv');
-    final xFile = XFile.fromData(
-      Uint8List.fromList(bytes),
-      mimeType: 'text/csv',
-      name: 'registre_garde_${DateTime.now().millisecondsSinceEpoch}.csv',
-    );
-    await Share.shareXFiles([xFile], subject: 'Registre garde à domicile — PetsMatch');
-  }
-
   Future<void> _exportPdfRegistre(List<GardeSejour> sejours) async {
     if (sejours.isEmpty) return;
     final pdf = pw.Document();
@@ -451,7 +434,6 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
         sejours: tousSejours,
         onValiderArrivee: _validerArrivee,
         onValiderDepart: _validerDepart,
-        onExportCsv: _exportCsvRegistre,
         onExportPdf: _exportPdfRegistre,
       );
     } else if (_tab == 2) {
@@ -489,10 +471,13 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
               itemBuilder: (_, i) {
                 final item = displayed[i];
                 if (item is GardeSejour) {
+                  final factured = item.jours.any((j) => _facturedRdvIds.contains(j['id']?.toString()));
                   return _SejourTourneeCard(
                     sejour: item,
+                    factured: factured,
                     onValiderArrivee: () => _validerArrivee(item),
                     onValiderDepart: () => _validerDepart(item),
+                    onFacturer: factured ? null : () => _facturerVisite(item.dernierJour),
                   );
                 }
                 final rdv = item as Map<String, dynamic>;
@@ -734,10 +719,14 @@ class _VisiteCard extends StatelessWidget {
 
 /// Carte "tournée" d'un séjour de garde à domicile (une par séjour, pas par
 /// jour) : arrivée/départ à valider, jours intermédiaires sans action.
+/// Une fois terminé : lecture seule + facturation (couvre tout le séjour,
+/// cf. gardeJoursAFacturer).
 class _SejourTourneeCard extends StatelessWidget {
   final GardeSejour sejour;
+  final bool factured;
   final VoidCallback onValiderArrivee;
   final VoidCallback onValiderDepart;
+  final VoidCallback? onFacturer;
   static const _teal = Color(0xFF0C5C6C);
   static const _amber = Color(0xFFCA8A04);
   static const _green = Color(0xFF6E9E57);
@@ -746,15 +735,21 @@ class _SejourTourneeCard extends StatelessWidget {
     required this.sejour,
     required this.onValiderArrivee,
     required this.onValiderDepart,
+    this.factured = false,
+    this.onFacturer,
   });
 
   @override
   Widget build(BuildContext context) {
     final f = DateFormat('EEE d MMM', 'fr_FR');
+    final fCourt = DateFormat('d MMM', 'fr_FR');
     final periode = sejour.unSeulJour
         ? 'le ${f.format(sejour.dateEntree)}'
         : 'du ${f.format(sejour.dateEntree)} au ${f.format(sejour.dateSortiePrevue)}';
     final statut = sejour.statut;
+    final statutLabel = statut == 'termine' ? 'Terminé' : statut == 'en_garde' ? 'En cours' : 'À venir';
+    final statutColor = statut == 'termine' ? _teal : statut == 'en_garde' ? _green : _amber;
+    final statutBg = statut == 'termine' ? const Color(0xFFE8F4F6) : statut == 'en_garde' ? const Color(0xFFEEF5EA) : const Color(0xFFFFF8E1);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -775,13 +770,9 @@ class _SejourTourneeCard extends StatelessWidget {
             ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: statut == 'en_garde' ? const Color(0xFFEEF5EA) : const Color(0xFFFFF8E1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(statut == 'en_garde' ? 'En cours' : 'À venir',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600,
-                      color: statut == 'en_garde' ? _green : _amber)),
+              decoration: BoxDecoration(color: statutBg, borderRadius: BorderRadius.circular(10)),
+              child: Text(statutLabel, style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                  fontWeight: FontWeight.w600, color: statutColor)),
             ),
           ]),
           const SizedBox(height: 10),
@@ -798,14 +789,16 @@ class _SejourTourneeCard extends StatelessWidget {
                 ),
               ),
             )
-          else ...[
-            Row(children: [
-              const Icon(Icons.check_circle_outline, size: 16, color: _green),
-              const SizedBox(width: 6),
-              Text('Arrivé le ${DateFormat('d MMM', 'fr_FR').format(sejour.arriveeValideeLe!)}',
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _green, fontWeight: FontWeight.w600)),
-            ]),
-            const SizedBox(height: 8),
+          else if (statut == 'en_garde') ...[
+            if (sejour.arriveeValideeLe != null) ...[
+              Row(children: [
+                const Icon(Icons.check_circle_outline, size: 16, color: _green),
+                const SizedBox(width: 6),
+                Text('Arrivé le ${fCourt.format(sejour.arriveeValideeLe!)}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _green, fontWeight: FontWeight.w600)),
+              ]),
+              const SizedBox(height: 8),
+            ],
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -818,6 +811,38 @@ class _SejourTourneeCard extends StatelessWidget {
                 ),
               ),
             ),
+          ] else ...[
+            Row(children: [
+              const Icon(Icons.check_circle_outline, size: 16, color: _teal),
+              const SizedBox(width: 6),
+              Text(
+                sejour.departValideLe != null ? 'Départ le ${fCourt.format(sejour.departValideLe!)}' : 'Garde terminée',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal, fontWeight: FontWeight.w600),
+              ),
+            ]),
+            if (factured) ...[
+              const SizedBox(height: 8),
+              Row(children: const [
+                Icon(Icons.check_circle_outline, size: 16, color: _green),
+                SizedBox(width: 6),
+                Text('Facturé', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                    fontWeight: FontWeight.w600, color: _green)),
+              ]),
+            ] else if (onFacturer != null) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onFacturer,
+                  icon: const Icon(Icons.receipt_long_outlined, size: 16),
+                  label: const Text('Facturer', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _green, side: const BorderSide(color: _green),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                ),
+              ),
+            ],
           ],
         ]),
       ),
@@ -827,19 +852,18 @@ class _SejourTourneeCard extends StatelessWidget {
 
 /// Onglet "Registre" — vue légale : uniquement les séjours de garde à
 /// domicile (hébergement), jamais les promenades/visites. Filtre par
-/// statut + export CSV/PDF, comme le registre pension.
+/// statut + export PDF (le CSV reste réservé au site, plus adapté à un
+/// usage tableur que sur mobile).
 class _RegistreLegalView extends StatefulWidget {
   final List<GardeSejour> sejours;
   final Future<void> Function(GardeSejour) onValiderArrivee;
   final Future<void> Function(GardeSejour) onValiderDepart;
-  final Future<void> Function(List<GardeSejour>) onExportCsv;
   final Future<void> Function(List<GardeSejour>) onExportPdf;
 
   const _RegistreLegalView({
     required this.sejours,
     required this.onValiderArrivee,
     required this.onValiderDepart,
-    required this.onExportCsv,
     required this.onExportPdf,
   });
 
@@ -885,25 +909,15 @@ class _RegistreLegalViewState extends State<_RegistreLegalView> {
       ),
       Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-        child: Row(children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: sorted.isEmpty ? null : () => widget.onExportCsv(sorted),
-              icon: const Icon(Icons.table_view_outlined, size: 16),
-              label: const Text('CSV', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-              style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal)),
-            ),
+        child: SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: sorted.isEmpty ? null : () => widget.onExportPdf(sorted),
+            icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+            label: const Text('Exporter en PDF', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+            style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal)),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: sorted.isEmpty ? null : () => widget.onExportPdf(sorted),
-              icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
-              label: const Text('PDF', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-              style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal)),
-            ),
-          ),
-        ]),
+        ),
       ),
       Expanded(
         child: sorted.isEmpty
