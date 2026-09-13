@@ -145,6 +145,10 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
   const [selectedCertificat, setSelectedCertificat] = useState<DocEntry | null>(null);
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [generatingFacture, setGeneratingFacture] = useState(false);
+  // Faire un contrat/certificat est une option pour garder une trace écrite —
+  // ça n'oblige pas à attendre la signature de l'acquéreur pour transférer
+  // l'animal : par défaut on transfère tout de suite.
+  const [attendreSignature, setAttendreSignature] = useState(false);
 
   // Écoute le contrat ou certificat signé depuis la popup
   useEffect(() => {
@@ -477,11 +481,13 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
       // Profil de l'acquéreur qui recevra l'animal (particulier, pas pension…)
       const acqProfileId = await resolveAcquereurProfileId(searchResult?.uid ?? null, qualite);
 
-      // Aucun document → cession directe (animal cédé tout de suite)
+      // Avoir un contrat/certificat ne bloque pas le transfert : c'est un
+      // choix (attendreSignature) de l'éleveur, pas une obligation liée au
+      // fait d'avoir généré un document.
       const hasDocuments = !!finalContratUrl || !!finalCertificatUrl
         || !!selectedContrat || !!selectedCertificat
         || existingContrats.length > 0 || existingCertificats.length > 0;
-      const finaliseNow = !isReCession && !hasDocuments;
+      const finaliseNow = !isReCession && (!hasDocuments || !attendreSignature);
 
       const { error: animalUpdateError } = await supabase.from('animaux').update({
         statut:                 finaliseNow ? 'sorti' : 'en_attente_cession',
@@ -996,6 +1002,20 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
                     {generatingFacture ? '⏳ Génération…' : '🧾 Générer la facture (montant = prix)'}
                   </button>
                 </>
+              )}
+
+              {(!!contratUrl || !!certificatUrl || !!selectedContrat || !!selectedCertificat
+                || existingContrats.length > 0 || existingCertificats.length > 0) && (
+                <label className="flex items-start gap-2.5 pt-1 cursor-pointer">
+                  <input type="checkbox" checked={attendreSignature}
+                    onChange={e => setAttendreSignature(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 accent-[#0C5C6C]" />
+                  <span className="text-xs text-gray-500">
+                    {attendreSignature
+                      ? 'Attendre la signature de l\'acquéreur avant de transférer l\'animal'
+                      : 'Transférer l\'animal tout de suite (la signature du document, si besoin, se fait après — ce n\'est pas obligatoire pour valider la cession)'}
+                  </span>
+                </label>
               )}
 
               {error && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-xl">{error}</p>}

@@ -2794,6 +2794,12 @@ function AnimalFichePageInner() {
       destinataire_adresse: animal.destinataire_adresse, cause_mort: animal.cause_mort,
     }).eq('id', id);
 
+    // Sortie/décès déclarés directement dans le registre (sans passer par la
+    // modale de cession) : clôturer/rouvrir aussi la ligne animaux_proprietes
+    // du propriétaire actuel (sinon l'animal reste compté comme « présent »
+    // dans Mes Animaux malgré un statut sorti/décédé) et journaliser la
+    // sortie dans registre_mouvements (sinon le registre légal ne voit
+    // jamais ce mouvement).
     const oldSorti = ['sorti', 'decede'].includes(oldStatut);
     const newSorti = ['sorti', 'decede'].includes(animal.statut ?? 'present');
     const dateMvt = animal.date_sortie || new Date().toISOString().slice(0, 10);
@@ -3331,6 +3337,18 @@ function AnimalFichePageInner() {
               <button onClick={() => setShowCession(true)}
                 className="text-sm text-amber-700 font-semibold border border-amber-300 rounded-full px-3 py-1.5 hover:bg-amber-50 transition-colors">
                 🤝 Céder
+              </button>
+            )}
+            {isEleveur && isOwner && !isCede && animal.statut !== 'cession_en_cours' && (
+              <button onClick={() => {
+                set('statut', 'decede');
+                if (!animal.date_sortie) set('date_sortie', new Date().toISOString().split('T')[0]);
+                setShowRegistre(true);
+                setTimeout(() => document.getElementById('registre-section')
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+              }}
+                className="text-sm text-red-600 font-semibold border border-red-200 rounded-full px-3 py-1.5 hover:bg-red-50 transition-colors">
+                🖤 Décéder
               </button>
             )}
             {canWrite && !isCede && animal.statut !== 'cession_en_cours' && (
@@ -3948,7 +3966,7 @@ function AnimalFichePageInner() {
 
           {/* Registre Entrée/Sortie (éleveur) */}
           {isEleveur && (
-            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+            <div id="registre-section" className="bg-white rounded-2xl shadow-sm overflow-hidden">
               <button onClick={()=>setShowRegistre(!showRegistre)}
                 className="w-full flex items-center gap-3 p-4 hover:bg-gray-50 transition-colors">
                 <span className="text-xl">📂</span>
