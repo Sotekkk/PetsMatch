@@ -254,6 +254,10 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             tarif: meta.tarif,
             notes: meta.notes,
           },
+          {
+            signatureEleveur: meta.signature_eleveur,
+            signatureAcquereur: meta.signature_acquereur,
+          },
         );
       } else if (data.type === 'contrat_prestation_photo') {
         const { data: rdv } = await supabase
@@ -625,9 +629,37 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
 
     // Notifications inter-parties
     const isAdoption = doc.type === 'contrat_adoption';
-    const partieVendeur = isAdoption ? 'L\'association' : 'L\'éleveur';
+    // Mêmes rôles que les libellés de signature — un pet sitter n'est pas
+    // « l'éleveur » (voir signerLabels plus bas / _signerRoles côté appli).
+    const { partieVendeur, partieAcquereurDefaut } = (() => {
+      switch (doc.type) {
+        case 'contrat_garde':
+        case 'contrat_hebergement':
+        case 'contrat_prestation_photo':
+        case 'contrat_education':
+          return { partieVendeur: 'Le prestataire', partieAcquereurDefaut: 'Le client' };
+        case 'contrat_adoption':
+          return { partieVendeur: 'L\'association', partieAcquereurDefaut: 'L\'adoptant(e)' };
+        case 'contrat_saillie':
+          return { partieVendeur: 'Le propriétaire de l\'étalon', partieAcquereurDefaut: 'Le propriétaire de la femelle' };
+        default:
+          return { partieVendeur: 'L\'éleveur', partieAcquereurDefaut: 'L\'acquéreur' };
+      }
+    })();
+    // Type de profil du pro à notifier — doit correspondre à user_profiles.profile_type
+    // (sinon /api/notifications ne trouve pas le profil et la notif perd son profile_id).
+    const proProfileType = (() => {
+      switch (doc.type) {
+        case 'contrat_garde': return 'garde';
+        case 'contrat_hebergement': return 'pension';
+        case 'contrat_prestation_photo': return 'photographe';
+        case 'contrat_education': return 'education';
+        case 'contrat_adoption': return 'association';
+        default: return 'eleveur';
+      }
+    })();
     const acqEmail  = doc.metadata?.acquereur_email;
-    const acqNom    = doc.metadata?.acquereur_nom || (isAdoption ? 'L\'adoptant(e)' : 'L\'acquéreur');
+    const acqNom    = doc.metadata?.acquereur_nom || partieAcquereurDefaut;
     const titre     = doc.titre ?? 'le contrat';
     const signingUrl = `${window.location.origin}/signer-contrat/${token}`;
 
@@ -649,7 +681,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           body: aConfirmer
             ? `${acqNom} a signé ${titre}. Confirmez la cession pour transférer l'animal.`
             : `${acqNom} a signé ${titre} — à vous de signer pour finaliser.`,
-          profileType: isAdoption ? 'association' : 'eleveur',
+          profileType: proProfileType,
           data: { token, ...(doc.animal_id ? { animalId: doc.animal_id } : {}) } }) });
     } else {
       // Éleveur vient de signer → notifier l'acquéreur
@@ -827,6 +859,25 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       </div>
     </div>
   );
+
+  // Libellés des deux signataires selon le type de contrat (« éleveur /
+  // acquéreur » ne convient pas à une garde, une adoption, une saillie…) —
+  // même mapping que l'appli (contrat_signature_page.dart, _signerRoles).
+  const signerLabels = (() => {
+    switch (doc?.type) {
+      case 'contrat_garde':
+      case 'contrat_hebergement':
+      case 'contrat_prestation_photo':
+      case 'contrat_education':
+        return { vendeur: 'Signature du prestataire', acquereur: 'Signature du client', vendeurNoun: 'Le prestataire', acquereurNoun: 'Le client', vendeurA: 'au prestataire', acquereurA: 'au client' };
+      case 'contrat_adoption':
+        return { vendeur: 'Signature de l\'association', acquereur: 'Signature de l\'adoptant(e)', vendeurNoun: 'L\'association', acquereurNoun: 'L\'adoptant(e)', vendeurA: 'à l\'association', acquereurA: 'à l\'adoptant(e)' };
+      case 'contrat_saillie':
+        return { vendeur: 'Signature du propriétaire de l\'étalon', acquereur: 'Signature du propriétaire de la femelle', vendeurNoun: 'Le propriétaire de l\'étalon', acquereurNoun: 'Le propriétaire de la femelle', vendeurA: 'au propriétaire de l\'étalon', acquereurA: 'au propriétaire de la femelle' };
+      default:
+        return { vendeur: 'Signature de l\'éleveur', acquereur: 'Signature de l\'acquéreur', vendeurNoun: 'L\'éleveur', acquereurNoun: 'L\'acquéreur', vendeurA: 'à l\'éleveur', acquereurA: 'à l\'acquéreur' };
+    }
+  })();
 
   const isSigned    = doc?.statut === 'signe';
   const isPartial   = doc?.statut === 'partiellement_signe';
@@ -1012,7 +1063,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
 
           {/* Signature vendeur / association */}
           <SignatureZone
-            label={doc?.type === 'contrat_adoption' ? 'Signature de l\'association' : 'Signature de l\'éleveur'}
+            label={signerLabels.vendeur}
             sublabel={doc?.metadata?.acquereur_nom ? undefined : undefined}
             canvasRef={canvasElvRef}
             handlers={elvHandlers}
@@ -1021,11 +1072,13 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             onSign={() => signer('eleveur')}
             onClear={() => { clearCanvas(canvasElvRef); setSaved(p => ({ ...p, eleveur: false })); }}
             signedAt={doc?.metadata?.signe_eleveur_le}
+            disabled={!isOwner}
+            reservedFor={signerLabels.vendeurA}
           />
 
           {/* Signature acquéreur / adoptant — grisée pour l'autre partie */}
           <SignatureZone
-            label={doc?.type === 'contrat_adoption' ? 'Signature de l\'adoptant(e)' : 'Signature de l\'acquéreur'}
+            label={signerLabels.acquereur}
             sublabel={doc?.metadata?.acquereur_nom || undefined}
             canvasRef={canvasAcqRef}
             handlers={acqHandlers}
@@ -1035,6 +1088,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             onClear={() => { clearCanvas(canvasAcqRef); setSaved(p => ({ ...p, acquereur: false })); }}
             signedAt={doc?.metadata?.signe_acquereur_le}
             disabled={isOwner}
+            reservedFor={signerLabels.acquereurA}
           />
 
         </div>
@@ -1100,7 +1154,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           onClick={e => { if (e.target === e.currentTarget) setRefuseModal(false); }}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl space-y-4">
             <h3 className="font-bold text-[#1F2A2E] text-base font-galey">❌ Refuser ce contrat</h3>
-            <p className="text-sm text-gray-500">Indiquez optionnellement la raison du refus. {doc?.type === 'contrat_adoption' ? "L'association" : "L'éleveur"} en sera informé(e).</p>
+            <p className="text-sm text-gray-500">Indiquez optionnellement la raison du refus. {signerLabels.vendeurNoun} en sera informé(e).</p>
             <textarea
               value={refuseReason}
               onChange={e => setRefuseReason(e.target.value)}
@@ -1127,7 +1181,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
 
 // ── Composant zone de signature ──────────────────────────────────────────────
 function SignatureZone({
-  label, sublabel, canvasRef, handlers, isSigned, saving, onSign, onClear, signedAt, disabled,
+  label, sublabel, canvasRef, handlers, isSigned, saving, onSign, onClear, signedAt, disabled, reservedFor,
 }: {
   label: string;
   sublabel?: string;
@@ -1140,6 +1194,7 @@ function SignatureZone({
   onClear: () => void;
   signedAt?: string;
   disabled?: boolean;
+  reservedFor?: string;
 }) {
   return (
     <div className={`border-2 rounded-xl p-4 ${isSigned ? 'border-green-400 bg-green-50' : disabled ? 'border-gray-200 bg-gray-100 opacity-60' : 'border-gray-200 bg-gray-50'}`}>
@@ -1149,12 +1204,12 @@ function SignatureZone({
         ref={canvasRef}
         width={400}
         height={120}
-        className={`w-full rounded-lg border border-gray-200 bg-white touch-none ${disabled ? 'cursor-not-allowed' : 'cursor-crosshair'}`}
+        className={`w-full rounded-lg border border-gray-200 bg-white touch-none ${(disabled || isSigned) ? 'cursor-not-allowed' : 'cursor-crosshair'}`}
         style={{ height: 100 }}
-        {...(disabled ? {} : handlers)}
+        {...((disabled || isSigned) ? {} : handlers)}
       />
       {disabled && !isSigned && (
-        <p className="text-xs text-gray-400 mt-2 text-center italic">Réservé à l&apos;acquéreur</p>
+        <p className="text-xs text-gray-400 mt-2 text-center italic">Réservé{reservedFor ? ` ${reservedFor}` : ' à l\'acquéreur'}</p>
       )}
       {!disabled && (
         <div className="flex gap-2 mt-3">

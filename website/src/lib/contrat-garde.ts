@@ -59,12 +59,15 @@ function fmt(d?: string): string {
   try { return new Date(d).toLocaleDateString('fr-FR'); } catch { return d; }
 }
 
-function signBlock(role: 'vendeur' | 'acheteur', titre: string, nom: string): string {
+function signBlock(role: 'vendeur' | 'acheteur', titre: string, nom: string, sig?: string): string {
+  const img = sig
+    ? `<img src="${sig}" style="max-height:60px;max-width:100%;object-fit:contain">`
+    : '';
   return `
 <div class="sign-block" data-signer="${role}">
   <div class="sign-label">${titre}</div>
   <div class="sign-name">${nom || '…'}</div>
-  <div class="sign-img"></div>
+  <div class="sign-img">${img}</div>
   <div class="sign-note">« Lu et approuvé »</div>
 </div>`;
 }
@@ -73,7 +76,10 @@ export function generateContratGardeHTML(
   rdv: RdvContrat,
   garde: GardeInfo,
   data: DataContratGarde,
+  opts?: { signatureEleveur?: string; signatureAcquereur?: string },
 ): string {
+  const sigElv = opts?.signatureEleveur;
+  const sigAcq = opts?.signatureAcquereur;
   const today = new Date().toLocaleDateString('fr-FR');
   const tarif = data.tarif ? `${data.tarif} €` : 'à convenir';
 
@@ -136,8 +142,8 @@ ${data.notes ? `<div class="art-title">Art. 7 – Notes complémentaires</div><d
 <div class="sign-section">
   <div class="block" style="text-align:right;margin-bottom:8px">Fait le ${today}</div>
   <div class="sign-row">
-    ${signBlock('vendeur', 'Le Prestataire', garde.nom)}
-    ${signBlock('acheteur', 'Le Client', rdv.client_nom || '')}
+    ${signBlock('vendeur', 'Le Prestataire', garde.nom, sigElv)}
+    ${signBlock('acheteur', 'Le Client', rdv.client_nom || '', sigAcq)}
   </div>
 </div>
 
