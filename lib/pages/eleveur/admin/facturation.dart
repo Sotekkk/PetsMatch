@@ -911,9 +911,15 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
       final bytes = await _buildPdf(d);
       await _archiverEtEnvoyer(factureId, bytes, d);
 
+      // Le PDF est déjà archivé (_archiverEtEnvoyer ci-dessus) et reste
+      // accessible à tout moment depuis la fiche facture (bouton Imprimer) —
+      // pas besoin d'ouvrir la boîte d'impression système ici. On amène
+      // directement sur « Mes Factures » pour retrouver la facture émise.
       if (!mounted) return;
-      await Printing.layoutPdf(onLayout: (_) async => bytes);
-      if (mounted) Navigator.pop(context);
+      final wasAssociation = User_Info.activeType == 'association' || User_Info.isAssociation;
+      Navigator.pushReplacement(context, MaterialPageRoute(
+        builder: (_) => FacturationPage(isAssociation: wasAssociation),
+      ));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
