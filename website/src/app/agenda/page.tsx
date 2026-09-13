@@ -1908,10 +1908,17 @@ function WeekView({ date, eventsForDate, onNavigate, onSelectDay, onNavigateToAn
                       const dur = e.duree_minutes ?? e.rdv?.duree_minutes ?? 30;
                       const topPct = Math.max(0, mins) / TOTAL_MIN * 100;
                       const heightPct = Math.max(0.5, dur / TOTAL_MIN * 100);
+                      // Hauteur réelle approx. (TIMELINE_PX = hauteur totale de la
+                      // grille) — sous ~26px, le titre + l'heure ne tiennent pas
+                      // tous les deux : on garde l'heure (l'info la plus utile
+                      // d'un coup d'œil) et on masque le titre plutôt que de
+                      // laisser l'heure coupée par overflow-hidden.
+                      const approxPx = Math.max(16, (heightPct / 100) * TIMELINE_PX);
                       const color = colorFor(e);
                       const animalId = e.animal_id ?? e.rdv?.animal_id;
                       const statut = e.rdv?.statut ?? '';
                       const isTermine = statut === 'termine' || statut === 'annule';
+                      const textColor = isTermine ? '#9CA3AF' : 'white';
                       return (
                         <div key={e.id}
                           onClick={() => animalId ? onNavigateToAnimal(animalId) : undefined}
@@ -1923,12 +1930,20 @@ function WeekView({ date, eventsForDate, onNavigate, onSelectDay, onNavigateToAn
                             background: isTermine ? '#f3f4f6' : color,
                             cursor: animalId ? 'pointer' : 'default',
                           }}>
-                          <p className="text-[8.5px] font-bold truncate leading-tight" style={{ color: isTermine ? '#9CA3AF' : 'white', fontFamily: 'Galey, sans-serif' }}>
-                            {e.titre}
-                          </p>
-                          <p className="text-[8px] truncate leading-tight" style={{ color: isTermine ? '#9CA3AF' : 'rgba(255,255,255,0.75)' }}>
-                            {fmtTime(e.date_debut)}
-                          </p>
+                          {approxPx < 26 ? (
+                            <p className="text-[8px] font-bold truncate leading-tight" style={{ color: textColor, fontFamily: 'Galey, sans-serif' }}>
+                              {fmtTime(e.date_debut)}
+                            </p>
+                          ) : (
+                            <>
+                              <p className="text-[8.5px] font-bold truncate leading-tight" style={{ color: textColor, fontFamily: 'Galey, sans-serif' }}>
+                                {e.titre}
+                              </p>
+                              <p className="text-[8px] truncate leading-tight" style={{ color: isTermine ? '#9CA3AF' : 'rgba(255,255,255,0.75)' }}>
+                                {fmtTime(e.date_debut)}
+                              </p>
+                            </>
+                          )}
                         </div>
                       );
                     })}
