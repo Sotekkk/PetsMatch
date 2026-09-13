@@ -3294,6 +3294,18 @@ function AnimalFichePageInner() {
                 🤝 Céder
               </button>
             )}
+            {isEleveur && isOwner && !isCede && animal.statut !== 'cession_en_cours' && (
+              <button onClick={() => {
+                set('statut', 'decede');
+                if (!animal.date_sortie) set('date_sortie', new Date().toISOString().split('T')[0]);
+                setShowRegistre(true);
+                setTimeout(() => document.getElementById('registre-section')
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+              }}
+                className="text-sm text-red-600 font-semibold border border-red-200 rounded-full px-3 py-1.5 hover:bg-red-50 transition-colors">
+                🖤 Décéder
+              </button>
+            )}
             {canWrite && !isCede && animal.statut !== 'cession_en_cours' && (
               <button onClick={() => setEditing(true)}
                 className="text-sm text-[#0C5C6C] font-semibold border border-[#0C5C6C]/30 rounded-full px-3 py-1.5 hover:bg-[#0C5C6C]/5">
@@ -3909,7 +3921,7 @@ function AnimalFichePageInner() {
 
           {/* Registre Entrée/Sortie (éleveur) */}
           {isEleveur && (
-            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+            <div id="registre-section" className="bg-white rounded-2xl shadow-sm overflow-hidden">
               <button onClick={()=>setShowRegistre(!showRegistre)}
                 className="w-full flex items-center gap-3 p-4 hover:bg-gray-50 transition-colors">
                 <span className="text-xl">📂</span>

@@ -108,6 +108,18 @@ class _CessionSheetState extends State<CessionSheet> {
   Map<String, dynamic>? _selectedCertificat;
   bool _loadingDocs = true;
 
+  // Faire un contrat/certificat sur le site est une option pour garder une
+  // trace écrite — ça n'oblige pas à attendre la signature de l'acquéreur
+  // pour transférer l'animal : par défaut on transfère tout de suite, la
+  // signature peut se faire après, à tête reposée.
+  bool _attendreSignature = false;
+
+  bool get _hasAnyDocument =>
+      _contratUrl != null || _certificatUrl != null ||
+      _selectedContrat != null || _selectedCertificat != null ||
+      _existingContrats.any((d) => d['type'] != 'facture') ||
+      _existingCertificats.isNotEmpty;
+
   // Profil éleveur (pour la facture)
   Map<String, dynamic>? _eleveurProfile;
 
@@ -654,12 +666,14 @@ class _CessionSheetState extends State<CessionSheet> {
       final contratUrl     = _contratUrl ?? _selectedContrat?['url'] as String?;
       final certificatUrl  = _certificatUrl ?? _selectedCertificat?['url'] as String?;
 
-      // Aucun document à signer → cession directe (animal cédé tout de suite).
+      // Avoir un contrat/certificat ne bloque pas le transfert : c'est un
+      // choix (_attendreSignature) de l'éleveur, pas une obligation liée au
+      // fait d'avoir généré un document sur le site.
       final hasDocuments = contratUrl != null || certificatUrl != null
           || _selectedContrat != null || _selectedCertificat != null
           || _existingContrats.any((d) => d['type'] != 'facture')
           || _existingCertificats.isNotEmpty;
-      final finaliseNow = !widget.isReCession && !hasDocuments;
+      final finaliseNow = !widget.isReCession && (!hasDocuments || !_attendreSignature);
       final dateCessionStr = _dateCession.toIso8601String().split('T').first;
 
       final cedantProfileId = User_Info.activeProfileId;
@@ -1317,6 +1331,34 @@ class _CessionSheetState extends State<CessionSheet> {
                 label: Text(_generatingFacture ? 'Génération…' : 'Générer la facture (montant = prix)',
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
                 style: TextButton.styleFrom(foregroundColor: _teal, padding: EdgeInsets.zero),
+              ),
+            ],
+            if (_hasAnyDocument) ...[
+              const SizedBox(height: 16),
+              const Divider(height: 1),
+              const SizedBox(height: 12),
+              InkWell(
+                onTap: () => setState(() => _attendreSignature = !_attendreSignature),
+                borderRadius: BorderRadius.circular(10),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Switch.adaptive(
+                    value: _attendreSignature,
+                    activeTrackColor: _teal,
+                    onChanged: (v) => setState(() => _attendreSignature = v),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: Text(
+                        _attendreSignature
+                            ? 'Attendre la signature de l\'acquéreur avant de transférer l\'animal'
+                            : 'Transférer l\'animal tout de suite (la signature du document, si besoin, se fait après — ce n\'est pas obligatoire pour valider la cession)',
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                      ),
+                    ),
+                  ),
+                ]),
               ),
             ],
             const SizedBox(height: 20),

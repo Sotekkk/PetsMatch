@@ -1293,6 +1293,86 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     }
   }
 
+  /// Raccourci depuis l'en-tête de la fiche (à côté de « Céder ») pour
+  /// déclarer un décès sans passer par la section « Registre Entrée / Sortie ».
+  Future<void> _declarerDeces() async {
+    DateTime date = DateTime.now();
+    String cause = '';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Déclarer le décès',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('L\'animal passera dans l\'onglet « Décédés » de Mes Animaux.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+            const SizedBox(height: 14),
+            const Text('Date du décès', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                fontWeight: FontWeight.w600, color: Color(0xFF6F767B))),
+            const SizedBox(height: 6),
+            GestureDetector(
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: ctx, initialDate: date, firstDate: DateTime(2000), lastDate: DateTime.now());
+                if (picked != null) setSheet(() => date = picked);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey.shade300),
+                    borderRadius: BorderRadius.circular(10)),
+                child: Row(children: [
+                  const Icon(Icons.calendar_today_outlined, size: 16, color: Colors.redAccent),
+                  const SizedBox(width: 8),
+                  Text(DateFormat('dd/MM/yyyy').format(date),
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text('Cause (optionnel)', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                fontWeight: FontWeight.w600, color: Color(0xFF6F767B))),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              value: cause.isEmpty ? null : cause,
+              isExpanded: true,
+              hint: const Text('Cause de la mort',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
+              decoration: InputDecoration(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              items: ['maladie', 'accident', 'naturelle', 'inconnue']
+                  .map((v) => DropdownMenuItem(value: v, child: Text(_IdentiteTab._causeMortLabel(v),
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13))))
+                  .toList(),
+              onChanged: (v) => setSheet(() => cause = v ?? ''),
+            ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Confirmer le décès', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() {
+      _statut = 'decede';
+      _dateSortie = date;
+      _causeMort = cause;
+    });
+    await _saveRegistre();
+  }
+
   Future<String> _uploadFile(File file, String folder) async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
     final name = '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
@@ -1684,6 +1764,14 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                   },
                 ),
               ),
+            ),
+          if (widget.animalId != null && !widget.vetMode
+              && !widget.readOnly && widget.eleveurUidOverride == null
+              && _statut != 'decede' && _statut != 'cession_en_cours' && _statut != 'sorti')
+            IconButton(
+              icon: const Icon(Icons.sentiment_very_dissatisfied_outlined, size: 20),
+              tooltip: 'Déclarer le décès',
+              onPressed: _declarerDeces,
             ),
           if (widget.readOnly)
             const Padding(
