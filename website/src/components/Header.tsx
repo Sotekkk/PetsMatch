@@ -279,12 +279,11 @@ const MENU_PENSION = [
 
 // Section/regroupement identiques au drawer app (eleveur_nav.dart, bloc
 // catPro == 'garde') : « Mon activité pet sitting » pour l'opérationnel,
-// « Administratif » pour devis/contrats/tarifs/facturation. Deux items de
-// l'appli restent absents ici : « Ma tournée » (pas d'équivalent web) et
-// « Protocoles » (PlanTemplateListPage) — /elevage/planning ne sait filtrer
-// que profilSource éleveur/pension/association, pas garde (protocoles
-// garde invisibles + plan éleveur vérifié au lieu du plan garde) ; à
-// corriger séparément avant de l'exposer ici.
+// « Administratif » pour devis/contrats/tarifs/facturation. Un item de
+// l'appli reste absent ici : « Ma tournée » (pas d'équivalent web).
+// « Protocoles » (/elevage/planning?profilSource=garde) a été adapté au
+// pet-sitting (type de protocole restreint, pas de cheptel/reproduction,
+// déclenchement manuel uniquement) et branché sur le plan garde.
 const MENU_GARDE = [
   {
     section: 'Mon activité pet sitting',
@@ -296,6 +295,7 @@ const MENU_GARDE = [
       { href: '/garde/registre',      label: 'Registre des visites', icon: '📋' },
       { href: '/mes-patients',        label: 'Mes animaux en garde', icon: '🐾' },
       { href: '/garde/cles',          label: 'Gestion des clés',     icon: '🔑' },
+      { href: '/elevage/planning?profilSource=garde', label: 'Protocoles', icon: '📋', pro: true },
       { href: '/elevage/inventaire',  label: 'Inventaire',           icon: '📦', pro: true },
       { href: '/mes-taches',          label: 'Mes tâches',           icon: '✅', pro: true },
       { href: '/elevage/employes',    label: 'Mes Employés',         icon: '👥', pro: true },

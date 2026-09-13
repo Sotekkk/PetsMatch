@@ -55,8 +55,19 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
     ('sanitaire',   '💊', 'Sanitaire'),
     ('alimentaire', '🍽️', 'Alimentaire'),
     ('nettoyage',   '🧴', 'Désinfection'),
+    ('materiel',    '🎒', 'Matériel'),
     ('promenade',   '🦮', 'Promenade / Socialisation'),
     ('toilettage',  '✂️', 'Toilettage'),
+  ];
+
+  // Pet-sitter : pas d'alimentation (déjà son propre onglet sur la fiche
+  // animal) ni de toilettage (hors périmètre garde) — garde Sanitaire,
+  // Nettoyage, Matériel (nouveau, pour préparer un séjour) et Promenade.
+  static const _typesGarde = [
+    ('sanitaire', '💊', 'Sanitaire'),
+    ('nettoyage', '🧴', 'Nettoyage'),
+    ('materiel',  '🎒', 'Matériel'),
+    ('promenade', '🦮', 'Promenade'),
   ];
 
   static const _especes = ['', 'chien', 'chat', 'cheval', 'lapin', 'oiseau', 'nac', 'ovin', 'caprin', 'porcin'];
@@ -78,6 +89,13 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
   // (saillie, mise bas) — ces cibles/événements n'ont pas de sens hors
   // contexte éleveur.
   bool get _isAssociation => _profilSource != 'eleveur';
+
+  // Pet-sitter : pas de cheptel (aucun animal possédé), pas de reproduction —
+  // formulaire simplifié à l'essentiel (type de protocole + étapes),
+  // toujours ciblé sur l'animal individuel du séjour choisi à l'application.
+  bool get _isGarde => _profilSource == 'garde';
+
+  List<(String, String, String)> get _typesForForm => _isGarde ? _typesGarde : _types;
 
   List<(String, String, String, String)> get _cibles => _isAssociation
       ? _ciblesBase.where((c) => c.$1 != 'gestantes').toList()
@@ -203,7 +221,12 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           espece:          _espece.isEmpty ? null : _espece,
           description:     _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
           lieu:            lieuNett,
-          cibleType:       _type == 'nettoyage' ? 'cheptel' : _cibleType,
+          // Un pet-sitter ne possède pas de cheptel (aucun animal sous son
+          // propre uid_eleveur) : forcer 'cheptel' viderait la résolution de
+          // cible à l'application (_resolveCibles) et ne générerait aucune
+          // tâche. On garde 'individuel' (sans animal forcé = tâche générale
+          // non rattachée, ou choix de l'animal à l'application).
+          cibleType:       (_type == 'nettoyage' && !_isGarde) ? 'cheptel' : _cibleType,
           referenceEvent:  _type == 'nettoyage' ? 'manuel' : _refEvent,
           declencheurAuto: auto,
           defaultAnimalIds: defaultAnimalIds,
@@ -217,7 +240,12 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           espece:          _espece.isEmpty ? null : _espece,
           description:     _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
           lieu:            lieuNett,
-          cibleType:       _type == 'nettoyage' ? 'cheptel' : _cibleType,
+          // Un pet-sitter ne possède pas de cheptel (aucun animal sous son
+          // propre uid_eleveur) : forcer 'cheptel' viderait la résolution de
+          // cible à l'application (_resolveCibles) et ne générerait aucune
+          // tâche. On garde 'individuel' (sans animal forcé = tâche générale
+          // non rattachée, ou choix de l'animal à l'application).
+          cibleType:       (_type == 'nettoyage' && !_isGarde) ? 'cheptel' : _cibleType,
           referenceEvent:  _type == 'nettoyage' ? 'manuel' : _refEvent,
           declencheurAuto: auto,
           defaultAnimalIds: defaultAnimalIds,
@@ -265,7 +293,8 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           // ── Informations générales ──
           _Card(children: [
             _SectionTitle('Informations générales'),
-            _Field(controller: _nomCtrl, label: 'Nom du protocole *', hint: 'ex: Vermifuge portée standard chien'),
+            _Field(controller: _nomCtrl, label: 'Nom du protocole *',
+                hint: _isGarde ? 'ex: Nettoyage du parc après le départ' : 'ex: Vermifuge portée standard chien'),
             const SizedBox(height: 10),
             _Field(controller: _descCtrl, label: 'Description (optionnel)', hint: 'Notes sur ce protocole', maxLines: 2),
           ]),
@@ -275,7 +304,7 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
           if (!isEdit) ...[
             _Card(children: [
               _SectionTitle('Type de protocole'),
-              Wrap(spacing: 8, runSpacing: 6, children: _types.map((t) {
+              Wrap(spacing: 8, runSpacing: 6, children: _typesForForm.map((t) {
                 final active = _type == t.$1;
                 return _Chip(emoji: t.$2, label: t.$3, active: active, onTap: () => setState(() => _type = t.$1));
               }).toList()),
@@ -310,8 +339,10 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
             const SizedBox(height: 12),
           ],
 
-          // ── Espèce + Qui est ciblé (hors nettoyage) ──
-          if (_type != 'nettoyage') ...[
+          // ── Espèce + Qui est ciblé (hors nettoyage, hors garde : un
+          // pet-sitter ne possède pas de cheptel, la cible reste toujours
+          // l'animal individuel du séjour, choisi à l'application) ──
+          if (_type != 'nettoyage' && !_isGarde) ...[
             _Card(children: [
               _SectionTitle('Qui est concerné ?'),
               const _InfoBox('Définissez qui sera automatiquement ciblé quand vous appliquez ce protocole.'),
@@ -367,8 +398,10 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
             const SizedBox(height: 12),
           ],
 
-          // ── Référence temporelle (J0) — hors nettoyage et bébés ──
-          if (_type != 'nettoyage' && _cibleType != 'bebes') ...[
+          // ── Référence temporelle (J0) — hors nettoyage, bébés et garde
+          // (toujours 'manuel' pour un pet-sitter : pas de saillie/mise bas/
+          // naissance à suivre) ──
+          if (_type != 'nettoyage' && _cibleType != 'bebes' && !_isGarde) ...[
             _Card(children: [
               _SectionTitle('Événement de référence (J0)'),
               const _InfoBox('Tous les offsets de vos étapes seront calculés depuis cet événement.'),
@@ -384,8 +417,9 @@ class _PlanTemplateFormPageState extends State<PlanTemplateFormPage> {
             const SizedBox(height: 12),
           ],
 
-          // ── Déclenchement automatique ──
-          if (_type != 'nettoyage') ...[
+          // ── Déclenchement automatique (pas pour garde : manuel uniquement
+          // pour cette itération, cf. plan) ──
+          if (_type != 'nettoyage' && !_isGarde) ...[
             _Card(children: [
               _SectionTitle('Déclenchement automatique'),
               const _InfoBox('Si activé, ce protocole sera appliqué automatiquement à l\'animal concerné dès que l\'événement est enregistré dans l\'élevage.'),

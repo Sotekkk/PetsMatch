@@ -29,6 +29,8 @@ class PlanningService {
       q = q.eq('profil_source', 'pension');
     } else if (profilSource == 'association') {
       q = q.eq('profil_source', 'association');
+    } else if (profilSource == 'garde') {
+      q = q.eq('profil_source', 'garde');
     } else {
       q = q.or('profil_source.is.null,profil_source.eq.eleveur');
     }
@@ -629,7 +631,9 @@ class PlanningService {
         ? await q.eq('profil_source', 'pension').order('date_prevue')
         : profil == 'association'
             ? await q.eq('profil_source', 'association').order('date_prevue')
-            : await q.or('profil_source.is.null,profil_source.eq.eleveur').order('date_prevue');
+            : profil == 'garde'
+                ? await q.eq('profil_source', 'garde').order('date_prevue')
+                : await q.or('profil_source.is.null,profil_source.eq.eleveur').order('date_prevue');
     return List<Map<String, dynamic>>.from(rows);
   }
 

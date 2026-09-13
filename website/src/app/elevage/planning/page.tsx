@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
-import { usePlan, usePensionPlan } from '@/lib/use-plan';
+import { usePlan, usePensionPlan, usePlanGarde } from '@/lib/use-plan';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -77,6 +77,15 @@ const TYPE_LABELS: Record<string, string> = {
   socialisation:'Promenade / Socialisation',
   alimentaire:  'Alimentaire',
   toilettage:   'Toilettage',
+  materiel:     'Matériel',
+};
+// Type de protocole pour un pet-sitter : pas d'alimentation (déjà son propre
+// onglet sur la fiche animal) ni de toilettage (hors périmètre garde).
+const TYPE_LABELS_GARDE: Record<string, string> = {
+  sanitaire: 'Sanitaire',
+  nettoyage: 'Nettoyage',
+  materiel:  'Matériel',
+  promenade: 'Promenade',
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -86,6 +95,7 @@ const TYPE_COLORS: Record<string, string> = {
   socialisation:'bg-purple-100 text-purple-700',
   alimentaire: 'bg-yellow-100 text-yellow-700',
   toilettage:  'bg-pink-100 text-pink-700',
+  materiel:    'bg-blue-100 text-blue-700',
 };
 
 const CIBLE_OPTIONS = [
@@ -281,10 +291,14 @@ function PlanningPageInner() {
   const targetProfileId = employerProfileId || profileId;
   const { config: planConfig, loading: planLoading } = usePlan();
   const { plan: pensionPlan, loading: pensionPlanLoading } = usePensionPlan();
-  // La pension a son propre abonnement — les protocoles sont inclus dès le plan payant.
+  const { plan: gardePlan, loading: gardePlanLoading } = usePlanGarde();
+  // La pension et la garde ont chacune leur propre abonnement — les
+  // protocoles sont inclus dès le plan payant (même logique que le tiroir
+  // appli, cf. eleveur_nav.dart _gardePlanCode).
   const isPensionSource = profilSource === 'pension';
-  const planGateLoading = isPensionSource ? pensionPlanLoading : planLoading;
-  const hasProtocolesAccess = isPensionSource ? pensionPlan !== 'free' : planConfig.hasPlanning;
+  const isGardeSource = profilSource === 'garde';
+  const planGateLoading = isPensionSource ? pensionPlanLoading : isGardeSource ? gardePlanLoading : planLoading;
+  const hasProtocolesAccess = isPensionSource ? pensionPlan !== 'free' : isGardeSource ? gardePlan !== 'free' : planConfig.hasPlanning;
 
   const [employePerms, setEmployePerms] = useState<Set<string>>(new Set());
   const canWrite = !employerUid || employePerms.has('write_protocoles');
@@ -347,7 +361,9 @@ function PlanningPageInner() {
       ? q.eq('profil_source', 'pension')
       : profilSource === 'association'
         ? q.eq('profil_source', 'association')
-        : q.or('profil_source.is.null,profil_source.eq.eleveur'));
+        : profilSource === 'garde'
+          ? q.eq('profil_source', 'garde')
+          : q.or('profil_source.is.null,profil_source.eq.eleveur'));
     if (error) console.error('[plan_taches]', error.message, error.details);
     setTaches((data ?? []) as Tache[]);
     setLoadingData(false);
@@ -366,7 +382,9 @@ function PlanningPageInner() {
       ? q.eq('profil_source', 'pension')
       : profilSource === 'association'
         ? q.eq('profil_source', 'association')
-        : q.or('profil_source.is.null,profil_source.eq.eleveur'));
+        : profilSource === 'garde'
+          ? q.eq('profil_source', 'garde')
+          : q.or('profil_source.is.null,profil_source.eq.eleveur'));
     setTemplates((data ?? []) as Template[]);
   }, [user, profilSource, targetProfileId, targetUid, profileLoaded]);
 
@@ -390,7 +408,9 @@ function PlanningPageInner() {
       ? qMonth.eq('profil_source', 'pension')
       : profilSource === 'association'
         ? qMonth.eq('profil_source', 'association')
-        : qMonth.or('profil_source.is.null,profil_source.eq.eleveur'));
+        : profilSource === 'garde'
+          ? qMonth.eq('profil_source', 'garde')
+          : qMonth.or('profil_source.is.null,profil_source.eq.eleveur'));
     const byDate: Record<string, string[]> = {};
     const overdue = new Set<string>();
     const todayStr = fmt(new Date());
@@ -1165,7 +1185,10 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
       const templatePayload = {
         nom, espece: espece || null, description: description || null,
         lieu: isNett ? (lieuNett || null) : null,
-        cible_type: isNett ? 'cheptel' : cibleType,
+        // Un pet-sitter ne possède pas de cheptel (aucun animal sous son
+        // propre uid_eleveur) : forcer 'cheptel' viderait la résolution de
+        // cible à l'application et ne générerait aucune tâche.
+        cible_type: (isNett && profilSource !== 'garde') ? 'cheptel' : cibleType,
         reference_event: isNett ? 'manuel' : refEvent,
         declencheur_auto: (isNett || !declencheurAuto) ? null : declencheurAuto,
         default_animal_ids: (!isNett && cibleType === 'individuel' && animalIds.length > 0) ? animalIds : null,
@@ -1238,7 +1261,8 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
           <div className="space-y-3">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Nom *</label>
-              <input value={nom} onChange={e => setNom(e.target.value)} placeholder="ex: Vermifuge portée standard chien"
+              <input value={nom} onChange={e => setNom(e.target.value)}
+                placeholder={profilSource === 'garde' ? 'ex: Nettoyage du parc après le départ' : 'ex: Vermifuge portée standard chien'}
                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-green-500" />
             </div>
             <div>
@@ -1252,7 +1276,7 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
             <div>
               <label className="block text-sm font-semibold text-teal-700 mb-2">Type de protocole</label>
               <div className="flex flex-wrap gap-2">
-                {Object.entries(TYPE_LABELS).filter(([k]) => k !== 'socialisation').map(([k, v]) => (
+                {Object.entries(profilSource === 'garde' ? TYPE_LABELS_GARDE : TYPE_LABELS).filter(([k]) => k !== 'socialisation').map(([k, v]) => (
                   <button key={k} onClick={() => setType(k)}
                     className={`px-3 py-1.5 rounded-xl text-sm font-semibold transition-colors ${type === k ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                     {v}
@@ -1280,7 +1304,7 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
             </div>
           )}
 
-          {type !== 'nettoyage' && (
+          {type !== 'nettoyage' && profilSource !== 'garde' && (
             <div className="bg-gray-50 rounded-xl p-4 space-y-3">
               <label className="block text-sm font-bold text-teal-700">Qui est concerné ?</label>
               <p className="text-xs text-green-700 bg-green-50 p-2 rounded-lg">Définissez qui sera automatiquement ciblé quand vous appliquez ce protocole.</p>
@@ -1389,7 +1413,7 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
             </div>
           )}
 
-          {type !== 'nettoyage' && cibleType !== 'bebes' && (
+          {type !== 'nettoyage' && cibleType !== 'bebes' && profilSource !== 'garde' && (
             <div className="bg-gray-50 rounded-xl p-4 space-y-3">
               <label className="block text-sm font-bold text-teal-700">Événement de référence (J0)</label>
               <p className="text-xs text-gray-400">Tous les offsets de vos étapes sont calculés depuis cet événement.</p>
@@ -1409,7 +1433,7 @@ function TemplateFormModal({ existing, uid, profileId, profilSource = 'eleveur',
             </div>
           )}
 
-          {type !== 'nettoyage' && (
+          {type !== 'nettoyage' && profilSource !== 'garde' && (
             <div className="bg-gray-50 rounded-xl p-4 space-y-3">
               <label className="block text-sm font-bold text-teal-700">Déclenchement automatique</label>
               <p className="text-xs text-gray-400">Si activé, ce protocole sera appliqué automatiquement à l&apos;animal concerné dès que l&apos;événement est enregistré.</p>
@@ -1622,6 +1646,20 @@ function ApplyModal({ template, uid, profileId, profilSource = 'eleveur', onClos
 
   useEffect(() => {
     if (!needsAnimal) return;
+    // Un pet-sitter ne possède aucun animal sous son propre uid_eleveur — la
+    // cible individuelle porte sur les animaux de ses clients, résolus via
+    // animal_access (même pattern que mes-patients/page.tsx).
+    if (profilSource === 'garde') {
+      (async () => {
+        const { data: grants } = await supabase.from('animal_access')
+          .select('animal_id').eq('pro_profile_id', profileId ?? '').neq('statut', 'revoked');
+        const ids = [...new Set((grants ?? []).map(g => g.animal_id as string))];
+        if (!ids.length) { setAnimaux([]); return; }
+        const { data } = await supabase.from('animaux').select('id, nom, espece, photo_url').in('id', ids).order('nom');
+        setAnimaux((data ?? []) as { id: string; nom: string; espece?: string; photo_url?: string | null }[]);
+      })();
+      return;
+    }
     let q = supabase.from('animaux').select('id, nom, espece, photo_url').eq('uid_eleveur', uid);
     if (profileId) q = q.eq('profile_id', profileId) as typeof q;
     (profilSource === 'association' ? q.eq('is_association', true) : q.or('is_association.is.null,is_association.eq.false'))

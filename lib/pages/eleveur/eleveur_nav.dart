@@ -1144,7 +1144,7 @@ class _EleveurNavState extends State<EleveurNav> {
                             Navigator.push(context, MaterialPageRoute(
                               builder: (_) => _gardePlanCode == 'free'
                                   ? const GardeAbonnementPage()
-                                  : const PlanTemplateListPage(),
+                                  : const PlanTemplateListPage(profilSource: 'garde'),
                             ));
                           },
                         ),
