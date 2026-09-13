@@ -37,9 +37,10 @@ function snapTo15(t: string): string {
 
 type SlotStatus = 'disponible' | 'bloque';
 type TypePrestation = 'individuel' | 'collectif' | null;
-interface SlotRange { start: string; end: string; statut: SlotStatus; type?: TypePrestation; domicile?: boolean; }
+type TypeGarde = 'journee' | 'prestation' | null;
+interface SlotRange { start: string; end: string; statut: SlotStatus; type?: TypePrestation; domicile?: boolean; typeGarde?: TypeGarde; }
 
-function groupRanges(slotsForDate: { time: string; statut: SlotStatus; type?: TypePrestation; domicile?: boolean }[]): SlotRange[] {
+function groupRanges(slotsForDate: { time: string; statut: SlotStatus; type?: TypePrestation; domicile?: boolean; typeGarde?: TypeGarde }[]): SlotRange[] {
   const sorted = [...slotsForDate].sort((a, b) => a.time.localeCompare(b.time));
   if (!sorted.length) return [];
   const ranges: SlotRange[] = [];
@@ -48,18 +49,20 @@ function groupRanges(slotsForDate: { time: string; statut: SlotStatus; type?: Ty
   let curStatut = sorted[0].statut;
   let curType = sorted[0].type ?? null;
   let curDomicile = sorted[0].domicile ?? false;
+  let curTypeGarde = sorted[0].typeGarde ?? null;
   for (let i = 1; i < sorted.length; i++) {
     const curMins = timeToMins(sorted[i].time);
     const t = sorted[i].type ?? null;
     const d = sorted[i].domicile ?? false;
-    if (sorted[i].statut === curStatut && t === curType && d === curDomicile && curMins === prevMins + 15) {
+    const tg = sorted[i].typeGarde ?? null;
+    if (sorted[i].statut === curStatut && t === curType && d === curDomicile && tg === curTypeGarde && curMins === prevMins + 15) {
       prevMins = curMins;
     } else {
-      ranges.push({ start: rStart, end: minsToTime(prevMins + 15), statut: curStatut, type: curType, domicile: curDomicile });
-      rStart = sorted[i].time; prevMins = curMins; curStatut = sorted[i].statut; curType = t; curDomicile = d;
+      ranges.push({ start: rStart, end: minsToTime(prevMins + 15), statut: curStatut, type: curType, domicile: curDomicile, typeGarde: curTypeGarde });
+      rStart = sorted[i].time; prevMins = curMins; curStatut = sorted[i].statut; curType = t; curDomicile = d; curTypeGarde = tg;
     }
   }
-  ranges.push({ start: rStart, end: minsToTime(prevMins + 15), statut: curStatut, type: curType, domicile: curDomicile });
+  ranges.push({ start: rStart, end: minsToTime(prevMins + 15), statut: curStatut, type: curType, domicile: curDomicile, typeGarde: curTypeGarde });
   return ranges;
 }
 
@@ -84,10 +87,15 @@ export default function ProCreneauxPage() {
   const [addType, setAddType]               = useState<TypePrestation>(null);
   const [addDomicile, setAddDomicile]       = useState(false);
   const [addPrestationId, setAddPrestationId] = useState<string | null>(null);
+  const [addTypeGarde, setAddTypeGarde]     = useState<TypeGarde>(null);
+  const [addCapacite, setAddCapacite]       = useState(1);
+  const [editingKey, setEditingKey]         = useState<{ day: Date; range: SlotRange } | null>(null);
   const [coursCollectifs, setCoursCollectifs] = useState<{ id: string; nom: string }[]>([]);
   const [slotTypes, setSlotTypes]           = useState<Record<string, TypePrestation>>({});
   const [slotDomicile, setSlotDomicile]     = useState<Record<string, boolean>>({});
   const [slotPrestationIds, setSlotPrestationIds] = useState<Record<string, string>>({});
+  const [slotTypeGarde, setSlotTypeGarde]   = useState<Record<string, TypeGarde>>({});
+  const [slotCapacite, setSlotCapacite]     = useState<Record<string, number>>({});
   const [catPro, setCatPro]                 = useState('');
   const [rdvs, setRdvs]                     = useState<{ date_heure: string; duree_minutes: number | null; motif: string | null }[]>([]);
 
@@ -117,7 +125,7 @@ export default function ProCreneauxPage() {
     try {
       const { data } = await supabase
         .from('creneaux_pro')
-        .select('date, heure_debut, statut, type_prestation, domicile_ok, prestation_id')
+        .select('date, heure_debut, statut, type_prestation, domicile_ok, prestation_id, type_garde, capacite')
         .eq('pro_uid', user.uid)
         .eq('pro_profile_id', activeProfileId)
         .in('statut', ['disponible', 'bloque'])
@@ -127,18 +135,24 @@ export default function ProCreneauxPage() {
       const typeMap: Record<string, TypePrestation> = {};
       const domicileMap: Record<string, boolean> = {};
       const presMap: Record<string, string> = {};
-      for (const r of (data ?? []) as { date: string; heure_debut: string; statut: SlotStatus; type_prestation: TypePrestation; domicile_ok: boolean; prestation_id: string | null }[]) {
+      const typeGardeMap: Record<string, TypeGarde> = {};
+      const capaciteMap: Record<string, number> = {};
+      for (const r of (data ?? []) as { date: string; heure_debut: string; statut: SlotStatus; type_prestation: TypePrestation; domicile_ok: boolean; prestation_id: string | null; type_garde: TypeGarde; capacite: number | null }[]) {
         const hhmm = r.heure_debut.substring(0, 5);
         const key = `${r.date}_${hhmm}`;
         map[key] = r.statut;
         if (r.type_prestation) typeMap[key] = r.type_prestation;
         if (r.domicile_ok) domicileMap[key] = true;
         if (r.prestation_id) presMap[key] = r.prestation_id;
+        if (r.type_garde) typeGardeMap[key] = r.type_garde;
+        if ((r.capacite ?? 1) > 1) capaciteMap[key] = r.capacite as number;
       }
       setSlots(map);
       setSlotTypes(typeMap);
       setSlotDomicile(domicileMap);
       setSlotPrestationIds(presMap);
+      setSlotTypeGarde(typeGardeMap);
+      setSlotCapacite(capaciteMap);
 
       const { data: rdvRows } = await supabase.from('rdv')
         .select('date_heure, duree_minutes, motif')
@@ -162,7 +176,7 @@ export default function ProCreneauxPage() {
     const key = toDateStr(day);
     const slotsForThatDay = Object.entries(slots)
       .filter(([k]) => k.startsWith(`${key}_`))
-      .map(([k, statut]) => ({ time: k.slice(key.length + 1), statut, type: slotTypes[k] ?? null, domicile: slotDomicile[k] ?? false }));
+      .map(([k, statut]) => ({ time: k.slice(key.length + 1), statut, type: slotTypes[k] ?? null, domicile: slotDomicile[k] ?? false, typeGarde: slotTypeGarde[k] ?? null }));
     rangesByDay[key] = groupRanges(slotsForThatDay);
     rdvsByDay[key] = rdvs.filter(r => toDateStr(new Date(r.date_heure)) === key);
   }
@@ -187,7 +201,7 @@ export default function ProCreneauxPage() {
     } catch { /* ignore — résumé informatif, pas bloquant */ }
   }
 
-  async function applyRange(date: string, start: string, end: string, statut: SlotStatus, type: TypePrestation = null, domicile = false, prestationId: string | null = null) {
+  async function applyRange(date: string, start: string, end: string, statut: SlotStatus, type: TypePrestation = null, domicile = false, prestationId: string | null = null, typeGarde: TypeGarde = null, capacite = 1) {
     if (!user || saving) return;
     setSaving(true);
     let cur = timeToMins(start);
@@ -196,6 +210,8 @@ export default function ProCreneauxPage() {
     const newTypes: Record<string, TypePrestation> = {};
     const newDomicile: Record<string, boolean> = {};
     const newPres: Record<string, string> = {};
+    const newTypeGarde: Record<string, TypeGarde> = {};
+    const newCapacite: Record<string, number> = {};
     const rows: Record<string, unknown>[] = [];
     while (cur < endM) {
       const hhmm = minsToTime(cur);
@@ -205,9 +221,11 @@ export default function ProCreneauxPage() {
       if (type) newTypes[key] = type;
       newDomicile[key] = domicile;
       if (prestationId) newPres[key] = prestationId;
+      if (typeGarde) newTypeGarde[key] = typeGarde;
+      if (capacite > 1) newCapacite[key] = capacite;
       rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, date,
         heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut, type_prestation: type, domicile_ok: domicile,
-        prestation_id: prestationId });
+        prestation_id: prestationId, type_garde: typeGarde, capacite });
       cur += 15;
     }
     const merged = { ...slots, ...newSlots };
@@ -217,6 +235,16 @@ export default function ProCreneauxPage() {
     setSlotPrestationIds(prev => {
       const n = { ...prev };
       for (const k of Object.keys(newSlots)) { if (newPres[k]) n[k] = newPres[k]; else delete n[k]; }
+      return n;
+    });
+    setSlotTypeGarde(prev => {
+      const n = { ...prev };
+      for (const k of Object.keys(newSlots)) { if (newTypeGarde[k]) n[k] = newTypeGarde[k]; else delete n[k]; }
+      return n;
+    });
+    setSlotCapacite(prev => {
+      const n = { ...prev };
+      for (const k of Object.keys(newSlots)) { if (newCapacite[k]) n[k] = newCapacite[k]; else delete n[k]; }
       return n;
     });
     try {
@@ -246,6 +274,8 @@ export default function ProCreneauxPage() {
     setSlotDomicile(prev => { const n = { ...prev }; keyList.forEach(k => delete n[k]); return n; });
     setSlotTypes(prev => { const n = { ...prev }; keyList.forEach(k => delete n[k]); return n; });
     setSlotPrestationIds(prev => { const n = { ...prev }; keyList.forEach(k => delete n[k]); return n; });
+    setSlotTypeGarde(prev => { const n = { ...prev }; keyList.forEach(k => delete n[k]); return n; });
+    setSlotCapacite(prev => { const n = { ...prev }; keyList.forEach(k => delete n[k]); return n; });
     try {
       await supabase.from('creneaux_pro').delete()
         .eq('pro_uid', user.uid).eq('pro_profile_id', activeProfileId)
@@ -287,6 +317,8 @@ export default function ProCreneauxPage() {
             heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut: 'disponible',
             type_prestation: slotTypes[key] ?? null,
             domicile_ok: slotDomicile[key] ?? false,
+            type_garde: slotTypeGarde[key] ?? null,
+            capacite: slotCapacite[key] ?? 1,
             ...(slotPrestationIds[key] ? { prestation_id: slotPrestationIds[key] } : {}) });
         }
         target = new Date(target); target.setDate(target.getDate() + 7);
@@ -334,7 +366,14 @@ export default function ProCreneauxPage() {
 
       {/* Actions */}
       <div className="flex gap-2 mb-2">
-        <button onClick={() => { setAddDate(toDateStr(days[0] && days[0] > new Date() ? days[0] : new Date())); setShowAddModal(true); }}
+        <button onClick={() => {
+            setEditingKey(null);
+            setAddDate(toDateStr(days[0] && days[0] > new Date() ? days[0] : new Date()));
+            setAddStart('09:00'); setAddEnd('10:00'); setAddMode('disponible');
+            setAddType(null); setAddDomicile(false); setAddPrestationId(null);
+            setAddTypeGarde(null); setAddCapacite(1);
+            setShowAddModal(true);
+          }}
           className="flex-1 py-3 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
           style={{ background: TEAL, fontFamily: 'Galey, sans-serif' }}>
           + Nouvelle plage
@@ -358,8 +397,23 @@ export default function ProCreneauxPage() {
             days={days}
             rangesByDay={rangesByDay}
             rdvsByDay={rdvsByDay}
-            onCreateRange={(day, start, end) => { setAddDate(toDateStr(day)); setAddStart(start); setAddEnd(end); setShowAddModal(true); }}
-            onTapRange={(day, r) => deleteRange(toDateStr(day), r as SlotRange)}
+            onCreateRange={(day, start, end) => {
+              setEditingKey(null);
+              setAddDate(toDateStr(day)); setAddStart(start); setAddEnd(end); setAddMode('disponible');
+              setAddType(null); setAddDomicile(false); setAddPrestationId(null);
+              setAddTypeGarde(null); setAddCapacite(1);
+              setShowAddModal(true);
+            }}
+            onTapRange={(day, r) => {
+              const range = r as SlotRange;
+              const key = `${toDateStr(day)}_${range.start}`;
+              setEditingKey({ day, range });
+              setAddDate(toDateStr(day)); setAddStart(range.start); setAddEnd(range.end); setAddMode(range.statut);
+              setAddType(range.type ?? null); setAddDomicile(range.domicile ?? false);
+              setAddPrestationId(slotPrestationIds[key] ?? null);
+              setAddTypeGarde(range.typeGarde ?? null); setAddCapacite(slotCapacite[key] ?? 1);
+              setShowAddModal(true);
+            }}
           />
         </div>
       )}
@@ -367,11 +421,11 @@ export default function ProCreneauxPage() {
       {/* Modal — Nouvelle plage */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4"
-          onClick={() => setShowAddModal(false)}>
+          onClick={() => { setShowAddModal(false); setEditingKey(null); }}>
           <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-5"
             onClick={e => e.stopPropagation()}>
             <h3 className="font-bold text-base text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>
-              Nouvelle plage
+              {editingKey ? 'Modifier la plage' : 'Nouvelle plage'}
             </h3>
 
             {/* Mode Disponible / Bloqué */}
@@ -466,8 +520,56 @@ export default function ProCreneauxPage() {
               </div>
             )}
 
+            {/* Type de créneau (pet sitting uniquement) — calqué sur l'appli */}
+            {catPro === 'garde' && addMode === 'disponible' && (
+              <div className="rounded-xl p-3" style={{ background: '#0C5C6C0A', border: `1px solid ${TEAL}33` }}>
+                <p className="text-xs font-bold mb-2" style={{ color: TEAL, fontFamily: 'Galey, sans-serif' }}>
+                  Type de créneau
+                </p>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {([[null, 'Les deux'], ['journee', '🌙 Garde à la journée'], ['prestation', '🦮 Promenade & visite']] as const).map(([v, label]) => (
+                    <button key={label} type="button" onClick={() => setAddTypeGarde(v)}
+                      className="px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-all"
+                      style={{
+                        background: addTypeGarde === v ? TEAL : '#F3F4F6',
+                        borderColor: addTypeGarde === v ? TEAL : '#e5e7eb',
+                        color: addTypeGarde === v ? 'white' : '#6B7280',
+                        fontFamily: 'Galey, sans-serif',
+                      }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold" style={{ color: TEAL, fontFamily: 'Galey, sans-serif' }}>
+                    {addTypeGarde === 'prestation' ? 'Prestations simultanées' : 'Nombre de places'}
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <button type="button" disabled={addCapacite <= 1} onClick={() => setAddCapacite(c => Math.max(1, c - 1))}
+                      className="w-7 h-7 rounded-full border flex items-center justify-center disabled:opacity-30"
+                      style={{ borderColor: TEAL, color: TEAL }}>−</button>
+                    <span className="text-sm font-bold w-5 text-center" style={{ fontFamily: 'Galey, sans-serif' }}>{addCapacite}</span>
+                    <button type="button" disabled={addCapacite >= 10} onClick={() => setAddCapacite(c => Math.min(10, c + 1))}
+                      className="w-7 h-7 rounded-full border flex items-center justify-center disabled:opacity-30"
+                      style={{ borderColor: TEAL, color: TEAL }}>+</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-3">
-              <button onClick={() => setShowAddModal(false)}
+              {editingKey && (
+                <button
+                  onClick={async () => {
+                    setShowAddModal(false);
+                    await deleteRange(toDateStr(editingKey.day), editingKey.range);
+                    setEditingKey(null);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl border-2 border-red-200 text-sm font-semibold text-red-500">
+                  Supprimer
+                </button>
+              )}
+              <button onClick={() => { setShowAddModal(false); setEditingKey(null); }}
                 className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500">
                 Annuler
               </button>
@@ -475,12 +577,18 @@ export default function ProCreneauxPage() {
                 onClick={async () => {
                   if (timeToMins(addEnd) <= timeToMins(addStart)) return;
                   setShowAddModal(false);
+                  if (editingKey) await deleteRange(toDateStr(editingKey.day), editingKey.range);
                   await applyRange(addDate, addStart, addEnd, addMode, addMode === 'disponible' ? addType : null, addMode === 'disponible' && addDomicile,
-                    addMode === 'disponible' && addType === 'collectif' ? addPrestationId : null);
+                    addMode === 'disponible' && addType === 'collectif' ? addPrestationId : null,
+                    addMode === 'disponible' ? addTypeGarde : null,
+                    addMode === 'disponible' ? addCapacite : 1);
                   await loadSlots();
+                  setEditingKey(null);
                   setAddType(null);
                   setAddDomicile(false);
                   setAddPrestationId(null);
+                  setAddTypeGarde(null);
+                  setAddCapacite(1);
                 }}
                 disabled={saving || timeToMins(addEnd) <= timeToMins(addStart)}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"

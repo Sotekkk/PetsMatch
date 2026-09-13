@@ -7,12 +7,14 @@ import { useRef, useState } from 'react';
 // pour rester un composant autonome (typage structurel TS, pas d'import
 // croisé nécessaire).
 export type TypePrestation = 'individuel' | 'collectif' | null | undefined;
+export type TypeGarde = 'journee' | 'prestation' | null | undefined;
 export interface WeekGridRange {
   start: string; // 'HH:MM'
   end: string;
   statut: 'disponible' | 'bloque';
   type?: TypePrestation;
   domicile?: boolean;
+  typeGarde?: TypeGarde;
 }
 export interface WeekGridRdv {
   date_heure: string;
@@ -153,7 +155,7 @@ export default function CreneauxWeekGrid({
                     <div key={i} onClick={() => onTapRange(day, r)}
                       className="absolute left-0.5 right-0.5 px-1 py-0.5 text-[9px] font-galey font-bold cursor-pointer overflow-hidden"
                       style={{ top, height: Math.max(bottom - top, 10), background: `${color}2E`, borderLeft: `3px solid ${color}`, color: isDisp ? '#4A7A32' : '#E65100' }}>
-                      {r.start}{r.domicile ? ' 🏠' : ''}{r.type === 'collectif' ? ' 👥' : r.type === 'individuel' ? ' 🎓' : ''}
+                      {r.start}{r.domicile ? ' 🏠' : ''}{r.type === 'collectif' ? ' 👥' : r.type === 'individuel' ? ' 🎓' : ''}{r.typeGarde === 'journee' ? ' 🌙' : r.typeGarde === 'prestation' ? ' 🦮' : ''}
                     </div>
                   );
                 })}

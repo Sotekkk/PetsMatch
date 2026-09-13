@@ -290,7 +290,8 @@ const MENU_GARDE = [
     section: 'Mon activité pet sitting',
     icon: '🐕',
     items: [
-      { href: '/agenda',              label: 'Mon agenda RDV',       icon: '📅' },
+      { href: '/agenda',              label: 'Mon agenda',           icon: '📅' },
+      { href: '/mes-rdv',             label: 'Gérer mes RDV',        icon: '🗓️' },
       { href: '/pro/creneaux',        label: 'Mes créneaux',         icon: '⏰' },
       { href: '/garde/registre',      label: 'Registre des visites', icon: '📋' },
       { href: '/mes-patients',        label: 'Mes animaux en garde', icon: '🐾' },
