@@ -116,6 +116,15 @@ function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
+/** « 09:00 – 10:00 » (ou juste « 09:00 » sans durée) — même info que l'appli
+ * (heure + durée), présentée en plage pour se lire d'un coup d'œil. */
+function fmtTimeRange(iso: string, dureeMinutes?: number | null) {
+  const start = fmtTime(iso);
+  if (!dureeMinutes) return start;
+  const end = new Date(new Date(iso).getTime() + dureeMinutes * 60000);
+  return `${start} – ${fmtTime(end.toISOString())}`;
+}
+
 function isToday(iso: string) {
   const d = new Date(iso);
   const t = new Date();
@@ -1604,7 +1613,7 @@ function EventCard({ event: e, onDelete, onAnnuler, onModifier, onNavigateToAnim
         <span className="text-xl flex-shrink-0">{TYPE_ICON[e.type] ?? '📅'}</span>
         <div className="flex-1 min-w-0">
           <p className="font-bold text-sm text-[#1E2025] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{e.titre}</p>
-          <p className="text-xs text-gray-400">{fmtTime(e.date_debut)} · {TYPE_LABEL[e.type] ?? e.type}</p>
+          <p className="text-xs text-gray-400">{fmtTimeRange(e.date_debut, e.duree_minutes ?? e.rdv?.duree_minutes)} · {TYPE_LABEL[e.type] ?? e.type}</p>
           {e.notes && <p className="text-xs text-gray-400 truncate">{e.notes}</p>}
           {lieu && <p className="text-xs text-gray-400 truncate">📍 {lieu}</p>}
         </div>
@@ -1792,7 +1801,7 @@ function DayView({ date, events, tasks, onNavigate, onDelete, onAnnuler, onModif
                       {TYPE_ICON[e.type] ?? '📅'} {e.titre}
                     </p>
                     <p className="text-[10px] text-gray-500 leading-tight">
-                      {fmtTime(e.date_debut)}{dur ? ` · ${dur} min` : ''}
+                      {fmtTimeRange(e.date_debut, dur)}
                     </p>
                     {e.rdv?.motif && <p className="text-[10px] text-gray-400 truncate leading-tight">{e.rdv.motif}</p>}
                     {isGarde && estGardeJournee(e.rdv?.motif) && (
@@ -1932,7 +1941,7 @@ function WeekView({ date, eventsForDate, onNavigate, onSelectDay, onNavigateToAn
                           }}>
                           {approxPx < 26 ? (
                             <p className="text-[8px] font-bold truncate leading-tight" style={{ color: textColor, fontFamily: 'Galey, sans-serif' }}>
-                              {fmtTime(e.date_debut)}
+                              {fmtTimeRange(e.date_debut, dur)}
                             </p>
                           ) : (
                             <>
@@ -1940,7 +1949,7 @@ function WeekView({ date, eventsForDate, onNavigate, onSelectDay, onNavigateToAn
                                 {e.titre}
                               </p>
                               <p className="text-[8px] truncate leading-tight" style={{ color: isTermine ? '#9CA3AF' : 'rgba(255,255,255,0.75)' }}>
-                                {fmtTime(e.date_debut)}
+                                {fmtTimeRange(e.date_debut, dur)}
                               </p>
                             </>
                           )}
