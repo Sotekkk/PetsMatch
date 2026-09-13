@@ -277,32 +277,45 @@ const MENU_PENSION = [
   },
 ];
 
+// Section/regroupement identiques au drawer app (eleveur_nav.dart, bloc
+// catPro == 'garde') : « Mon activité pet sitting » pour l'opérationnel,
+// « Administratif » pour devis/contrats/tarifs/facturation. Deux items de
+// l'appli restent absents ici : « Ma tournée » (pas d'équivalent web) et
+// « Protocoles » (PlanTemplateListPage) — /elevage/planning ne sait filtrer
+// que profilSource éleveur/pension/association, pas garde (protocoles
+// garde invisibles + plan éleveur vérifié au lieu du plan garde) ; à
+// corriger séparément avant de l'exposer ici.
 const MENU_GARDE = [
   {
-    section: 'Mon Activité',
+    section: 'Mon activité pet sitting',
     icon: '🐕',
     items: [
-      { href: '/garde/registre',  label: 'Registre visites', icon: '📋' },
-      { href: '/garde/devis',     label: 'Devis',            icon: '📝' },
-      { href: '/garde/contrat',   label: 'Contrats',         icon: '✍️', pro: true },
-      { href: '/garde/cles',      label: 'Gestion des clés', icon: '🔑' },
+      { href: '/agenda',              label: 'Mon agenda RDV',       icon: '📅' },
+      { href: '/pro/creneaux',        label: 'Mes créneaux',         icon: '⏰' },
+      { href: '/garde/registre',      label: 'Registre des visites', icon: '📋' },
+      { href: '/mes-patients',        label: 'Mes animaux en garde', icon: '🐾' },
+      { href: '/garde/cles',          label: 'Gestion des clés',     icon: '🔑' },
+      { href: '/elevage/inventaire',  label: 'Inventaire',           icon: '📦', pro: true },
+      { href: '/mes-taches',          label: 'Mes tâches',           icon: '✅', pro: true },
+      { href: '/elevage/employes',    label: 'Mes Employés',         icon: '👥', pro: true },
+      { href: '/garde/abonnement',    label: 'Mon abonnement',       icon: '💳' },
+    ],
+  },
+  {
+    section: 'Administratif',
+    icon: '🗂️',
+    items: [
+      { href: '/garde/devis',          label: 'Devis',          icon: '📝' },
+      { href: '/garde/contrat',        label: 'Mes contrats',   icon: '✍️' },
       { href: '/garde/tarifs-clients', label: 'Tarifs clients', icon: '🏷️' },
-      { href: '/mes-rdv',         label: 'Gérer mes RDV',    icon: '🗓️' },
-      { href: '/pro/creneaux',    label: 'Mes créneaux',     icon: '⏰' },
-      { href: '/agenda',          label: 'Mon agenda',       icon: '📅' },
-      { href: '/mes-patients',    label: 'Mes animaux en garde', icon: '🐾' },
+      { href: '/elevage/facturation',  label: 'Facturation',    icon: '🧾', premium: true },
     ],
   },
   {
     section: 'Mon Profil',
     icon: '👤',
     items: [
-      { href: '/profil',              label: 'Modifier mon profil', icon: '✏️' },
-      { href: '/elevage/inventaire',  label: 'Inventaire',          icon: '📦', pro: true },
-      { href: '/elevage/employes',            label: 'Mes employés',        icon: '👥', pro: true },
-      { href: '/mes-taches',          label: 'Mes tâches',          icon: '✅', pro: true },
-      { href: '/elevage/facturation', label: 'Facturation',         icon: '🧾', premium: true },
-      { href: '/garde/abonnement',    label: 'Mon abonnement',      icon: '💳' },
+      { href: '/profil', label: 'Modifier mon profil', icon: '✏️' },
     ],
   },
   {
