@@ -1583,8 +1583,7 @@ class _AgendaPageState extends State<AgendaPage> {
         ? 'Semaine du ${monday.day} au ${sunday.day} ${DateFormat('MMMM', 'fr').format(sunday)}'
         : 'Semaine du ${DateFormat('d MMM', 'fr').format(monday)} au ${DateFormat('d MMM', 'fr').format(sunday)}';
 
-    return Expanded(
-      child: Column(children: [
+    return Column(children: [
         // Navigation semaine
         Container(
           color: Colors.white,
@@ -1643,8 +1642,7 @@ class _AgendaPageState extends State<AgendaPage> {
             ),
           ),
         ),
-      ]),
-    );
+      ]);
   }
 
   // ── List view ──────────────────────────────────────────────────────────────
