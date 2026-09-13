@@ -169,7 +169,15 @@ class _FacturationPageState extends State<FacturationPage> {
     final rows = widget.isAssociation
         ? await q.eq('profil_source', 'association').order('created_at', ascending: false)
         : await q.or('profil_source.is.null,profil_source.neq.association').order('created_at', ascending: false);
-    return rows.map(_supaToUi).toList();
+    // `rows` est de type `dynamic` (issu de `dynamic q`, nécessaire pour
+    // unifier les deux branches de filtre ci-dessus) — appeler .map() dessus
+    // renvoie un Iterable<dynamic>/List<dynamic> au lieu de
+    // List<Map<String, dynamic>>, ce que le type de retour de cette fonction
+    // async refuse au runtime (throw silencieux, jamais vu avant l'ajout de
+    // l'affichage d'erreur ci-dessus : la page affichait juste « Aucune
+    // facture » quoi qu'il arrive). Un cast explicite avant le map règle ça.
+    final list = List<Map<String, dynamic>>.from(rows as List);
+    return list.map(_supaToUi).toList();
   }
 
   void _refresh() => setState(() => _future = _load());
@@ -254,6 +262,16 @@ class _FacturationPageState extends State<FacturationPage> {
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator(color: _green));
+          }
+          if (snap.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text('Erreur de chargement : ${snap.error}',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontFamily: 'Galey', color: Colors.red.shade400, fontSize: 13)),
+              ),
+            );
           }
           final docs = snap.data ?? [];
           if (docs.isEmpty) {

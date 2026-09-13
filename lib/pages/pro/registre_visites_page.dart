@@ -122,21 +122,34 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
       }
 
       final clients = <String, Map<String, dynamic>>{};
+      // Un contrat cadre couvre toutes les gardes d'un client, potentiellement
+      // pour plusieurs animaux — on affiche la liste complète sous son nom
+      // plutôt que celui de la seule première visite rencontrée.
+      final animauxByClient = <String, Set<String>>{};
       for (final r in list) {
         r['_client_nom'] = clientName(r);
         r['_client_email'] = clientEmail(r);
         r['_animal_nom'] = animalNames[r['animal_id']?.toString()] ?? '';
         final cu = r['client_uid']?.toString();
-        if (cu != null && cu.isNotEmpty && !clients.containsKey(cu)) {
-          final doc = docByClient[cu];
-          clients[cu] = {
-            'nom': clientName(r),
-            'email': clientEmail(r),
-            'profile_id': r['client_profile_id'],
-            'doc_token': doc?['token'],
-            'doc_statut': doc?['statut'],
-          };
+        if (cu != null && cu.isNotEmpty) {
+          if ((r['_animal_nom'] as String).isNotEmpty) {
+            animauxByClient.putIfAbsent(cu, () => {}).add(r['_animal_nom'] as String);
+          }
+          if (!clients.containsKey(cu)) {
+            final doc = docByClient[cu];
+            clients[cu] = {
+              'nom': clientName(r),
+              'email': clientEmail(r),
+              'profile_id': r['client_profile_id'],
+              'doc_token': doc?['token'],
+              'doc_statut': doc?['statut'],
+            };
+          }
         }
+      }
+      for (final entry in clients.entries) {
+        final animaux = (animauxByClient[entry.key]?.toList() ?? [])..sort();
+        entry.value['animaux'] = animaux.join(', ');
       }
 
       // RDV déjà facturés — porté directement par `rdv.facture_id`.
@@ -278,6 +291,7 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
                 final e = clientsList[i - 1];
                 return _ClientContratCard(
                   nom: e.value['nom'] as String,
+                  animaux: e.value['animaux'] as String? ?? '',
                   statut: e.value['doc_statut'] as String?,
                   onTap: () => _openClientContrat(e.key),
                 );
@@ -352,10 +366,11 @@ class _Empty extends StatelessWidget {
 
 class _ClientContratCard extends StatelessWidget {
   final String nom;
+  final String animaux;
   final String? statut;
   final VoidCallback onTap;
   static const _teal = Color(0xFF0C5C6C);
-  const _ClientContratCard({required this.nom, required this.statut, required this.onTap});
+  const _ClientContratCard({required this.nom, required this.animaux, required this.statut, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -374,7 +389,14 @@ class _ClientContratCard extends StatelessWidget {
         onTap: onTap,
         leading: const Icon(Icons.draw_outlined, color: _teal),
         title: Text(nom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
-        subtitle: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: color)),
+        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (animaux.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Text(animaux, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+            ),
+          Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: color)),
+        ]),
         trailing: const Icon(Icons.chevron_right, color: Colors.grey),
       ),
     );
