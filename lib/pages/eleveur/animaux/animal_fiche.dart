@@ -1423,12 +1423,51 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       ),
     );
     if (confirmed != true) return;
-    setState(() {
-      _statut = 'decede';
-      _dateSortie = date;
-      _causeMort = cause;
-    });
-    await _saveRegistre();
+    if (widget.animalId == null) return;
+    final animalId = widget.animalId!;
+    final dateStr = date.toIso8601String().split('T').first;
+    try {
+      // Écriture directe et minimale (statut + date + cause) : on ne passe
+      // pas par _saveRegistre pour éviter toute dépendance à l'état des
+      // autres champs du registre — la seule chose qui doit se produire ici
+      // est « cet animal est décédé », de façon fiable.
+      await _supa.from('animaux').update({
+        'statut':      'decede',
+        'date_sortie': dateStr,
+        'cause_mort':  cause,
+        'updated_at':  DateTime.now().toIso8601String(),
+      }).eq('id', animalId);
+      // Clôture (best-effort) de la ligne de propriété en cours, pour que
+      // l'animal ne reste pas compté comme « présent » dans Mes Animaux.
+      try {
+        final ownerUid = _ownerUid ?? FirebaseAuth.instance.currentUser?.uid;
+        if (ownerUid != null) {
+          await _supa.from('animaux_proprietes')
+              .update({'date_fin': dateStr})
+              .eq('animal_id', animalId).eq('uid_proprio', ownerUid)
+              .isFilter('date_fin', null);
+        }
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() {
+        _statut = 'decede';
+        _dateSortie = date;
+        _causeMort = cause;
+      });
+      await _refreshFromSupabase();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('☠️ Décès enregistré — l\'animal est dans l\'onglet Décédés',
+            style: TextStyle(fontFamily: 'Galey')),
+            backgroundColor: Colors.redAccent),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur lors de l\'enregistrement du décès : $e',
+            style: const TextStyle(fontFamily: 'Galey'))),
+      );
+    }
   }
 
   Future<String> _uploadFile(File file, String folder) async {

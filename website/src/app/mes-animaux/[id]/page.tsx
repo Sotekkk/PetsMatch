@@ -3340,12 +3340,31 @@ function AnimalFichePageInner() {
               </button>
             )}
             {isEleveur && isOwner && !isCede && animal.statut !== 'cession_en_cours' && (
-              <button onClick={() => {
-                set('statut', 'decede');
-                if (!animal.date_sortie) set('date_sortie', new Date().toISOString().split('T')[0]);
-                setShowRegistre(true);
-                setTimeout(() => document.getElementById('registre-section')
-                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+              <button onClick={async () => {
+                if (!id) return;
+                if (!confirm(`Déclarer ${animal.nom || 'cet animal'} décédé ? Il passera dans l'onglet Décédés.`)) return;
+                const dateStr = animal.date_sortie || new Date().toISOString().split('T')[0];
+                setSaveError(null);
+                try {
+                  // Écriture directe et minimale (statut + date) : indépendante
+                  // de l'état des autres champs du registre, pour que le
+                  // décès s'enregistre de façon fiable en un clic.
+                  const { error } = await supabase.from('animaux')
+                    .update({ statut: 'decede', date_sortie: dateStr }).eq('id', id);
+                  if (error) throw error;
+                  try {
+                    const ownerUid = animal.uid_eleveur || animal.uid_proprietaire || user?.uid;
+                    if (ownerUid) {
+                      await supabase.from('animaux_proprietes')
+                        .update({ date_fin: dateStr })
+                        .eq('animal_id', id).eq('uid_proprio', ownerUid).is('date_fin', null);
+                    }
+                  } catch {}
+                  set('statut', 'decede');
+                  set('date_sortie', dateStr);
+                } catch (e) {
+                  setSaveError(`Erreur lors de l'enregistrement du décès : ${(e as Error).message}`);
+                }
               }}
                 className="text-sm text-red-600 font-semibold border border-red-200 rounded-full px-3 py-1.5 hover:bg-red-50 transition-colors">
                 🖤 Décéder
