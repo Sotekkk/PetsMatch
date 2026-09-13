@@ -3262,6 +3262,35 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     ]);
   }
 
+  /// Garde-journée uniquement : « 🏠 Garde à domicile · N/Cap places ce jour-là »
+  /// — capacité issue des créneaux de la semaine déjà chargés (_slotCapacite,
+  /// défaut 1 si non renseigné), occupation comptée sur les RDV actifs du
+  /// même jour. Regroupement par séjour : voir Registre visites (garde
+  /// uniquement) — ici on garde une ligne par jour, cette vue reste générique
+  /// à tous les métiers.
+  String? _gardeBadge(Map<String, dynamic> rdv) {
+    if (User_Info.catPro != 'garde' || !estGardeJournee(rdv)) return null;
+    final dh = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
+    if (dh == null) return null;
+    final date = '${dh.year.toString().padLeft(4, '0')}-${dh.month.toString().padLeft(2, '0')}-${dh.day.toString().padLeft(2, '0')}';
+
+    var cap = 1;
+    for (final entry in _slotCapacite.entries) {
+      if (entry.key.split('_').first == date && entry.value > cap) cap = entry.value;
+    }
+
+    var occupees = 0;
+    for (final r in _rdvs) {
+      final s = r['statut']?.toString() ?? '';
+      if (s != 'confirme' && s != 'demande') continue;
+      if (!estGardeJournee(r)) continue;
+      final d = DateTime.tryParse(r['date_heure']?.toString() ?? '')?.toLocal();
+      if (d != null && _sameDay(d, dh)) occupees++;
+    }
+
+    return '🏠 Garde à domicile · $occupees/$cap place${cap > 1 ? 's' : ''} ce jour-là';
+  }
+
   Widget _buildList(List<Map<String, dynamic>> rdvs,
       {bool showActions = false, bool showCancel = false, bool showDelete = false}) {
     if (rdvs.isEmpty) {
@@ -3286,6 +3315,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         final showProTools = !showActions; // confirme + historique uniquement
         return _RdvCard(
           rdv: rdv,
+          gardeBadge: _gardeBadge(rdv),
           showActions: showActions,
           showCancel: showCancel,
           onAccept:  () => _showAcceptDialog(rdv),
@@ -3424,6 +3454,7 @@ class _LegendDot extends StatelessWidget {
 
 class _RdvCard extends StatelessWidget {
   final Map<String, dynamic> rdv;
+  final String? gardeBadge;
   final bool showActions;
   final bool showCancel;
   final VoidCallback onAccept;
@@ -3444,6 +3475,7 @@ class _RdvCard extends StatelessWidget {
 
   const _RdvCard({
     required this.rdv,
+    this.gardeBadge,
     required this.showActions,
     required this.showCancel,
     required this.onAccept,
@@ -3561,6 +3593,11 @@ class _RdvCard extends StatelessWidget {
               // Motif + lieu + durée
               if (motif.isNotEmpty)
                 Text(motif, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF555F6A))),
+              if (gardeBadge != null) ...[
+                const SizedBox(height: 4),
+                Text(gardeBadge!, style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
+                    fontWeight: FontWeight.w600, color: Color(0xFF0C5C6C))),
+              ],
               if (lieu.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Row(children: [

@@ -879,6 +879,8 @@ export default function AgendaPage() {
             onToggleTask={toggleTask}
             uid={uid ?? ''}
             onUpdated={load}
+            isGarde={userData?.profileType === 'garde'}
+            proProfileId={activeProfileId}
           />
         ) : (
           <ListView groups={grouped} keys={groupedKeys} onDelete={deleteEvent}
@@ -1658,7 +1660,7 @@ function minutesFromTop(iso: string): number {
   return (d.getHours() - TIMELINE_START) * 60 + d.getMinutes();
 }
 
-function DayView({ date, events, tasks, onNavigate, onDelete, onAnnuler, onModifier, onNavigateToAnimal, onToggleTask, uid, onUpdated }: {
+function DayView({ date, events, tasks, onNavigate, onDelete, onAnnuler, onModifier, onNavigateToAnimal, onToggleTask, uid, onUpdated, isGarde = false, proProfileId = null }: {
   date: Date;
   events: AgendaEvent[];
   tasks: Task[];
@@ -1670,10 +1672,40 @@ function DayView({ date, events, tasks, onNavigate, onDelete, onAnnuler, onModif
   onToggleTask: (t: Task) => void;
   uid: string;
   onUpdated: () => void;
+  isGarde?: boolean;
+  proProfileId?: string | null;
 }) {
   const HOURS = Array.from({ length: TIMELINE_END - TIMELINE_START + 1 }, (_, i) => i + TIMELINE_START);
   const today = new Date();
   const isToday = date.toDateString() === today.toDateString();
+
+  // Garde à domicile — occupation du jour affiché « 🏠 N/Cap places ce
+  // jour-là ». Capacité = creneaux_pro.capacite (défaut 1) ; occupation =
+  // gardes-journée confirmées/demandées ce jour, déjà dans `events`. Vue
+  // groupée par séjour (arrivée/départ) : voir Registre visites, réservé
+  // à la garde — cette page reste générique à tous les métiers.
+  const [gardeCap, setGardeCap] = useState(1);
+  useEffect(() => {
+    if (!isGarde) return;
+    let alive = true;
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    let q = supabase.from('creneaux_pro').select('capacite').eq('pro_uid', uid).eq('statut', 'disponible').eq('date', dateStr);
+    if (proProfileId) q = q.eq('pro_profile_id', proProfileId) as typeof q;
+    q.then(({ data }) => {
+      if (!alive) return;
+      const max = (data ?? []).reduce((m, r) => Math.max(m, (r as { capacite: number | null }).capacite ?? 1), 1);
+      setGardeCap(max);
+    });
+    return () => { alive = false; };
+  }, [isGarde, uid, proProfileId, date]);
+
+  const estGardeJournee = (motif?: string | null) => {
+    const m = (motif ?? '').toLowerCase();
+    return m.includes('garde') && (m.includes('journ'));
+  };
+  const gardeOccupees = isGarde
+    ? events.filter(e => estGardeJournee(e.rdv?.motif) && (e.rdv?.statut === 'confirme' || e.rdv?.statut === 'demande')).length
+    : 0;
 
   return (
     <div className="space-y-4">
@@ -1746,6 +1778,11 @@ function DayView({ date, events, tasks, onNavigate, onDelete, onAnnuler, onModif
                       {fmtTime(e.date_debut)}{dur ? ` · ${dur} min` : ''}
                     </p>
                     {e.rdv?.motif && <p className="text-[10px] text-gray-400 truncate leading-tight">{e.rdv.motif}</p>}
+                    {isGarde && estGardeJournee(e.rdv?.motif) && (
+                      <p className="text-[10px] font-bold truncate leading-tight" style={{ color: '#0C5C6C' }}>
+                        🏠 {gardeOccupees}/{gardeCap} place{gardeCap > 1 ? 's' : ''} ce jour-là
+                      </p>
+                    )}
                   </div>
                   {isRdv && statut && (
                     <span className="text-[9px] font-bold flex-shrink-0 px-1.5 py-0.5 rounded-full"

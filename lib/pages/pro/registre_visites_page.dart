@@ -1,19 +1,33 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 import 'package:PetsMatch/pages/pro/garde_facture_helper.dart';
+import 'package:PetsMatch/pages/pro/garde_sejour_helper.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 
 // ── Registre visites — liste des RDV (visites/promenades) du profil garde,
 // avec statut de compte-rendu. Contrairement à la pension (logements avec
 // check-in/check-out), le modèle petsitter est événementiel : chaque visite
 // est déjà un RDV dans le système agenda générique (table `rdv`).
+//
+// Les gardes-journée (motif garde_journee, hébergement chez le prestataire)
+// sont regroupées en "séjours" (garde_sejour_helper.dart) et bénéficient
+// d'une validation de présence (arrivée / départ) + d'un registre légal
+// dédié (obligation d'entrée-sortie, cf. arrêté du 3 avril 2014 — les
+// promenades/visites à domicile client, « sans hébergement », n'y sont pas
+// soumises et restent de simples RDV événementiels).
 
 class RegistreVisitesPage extends StatefulWidget {
-  final int initialTab; // 0 = À venir, 1 = Passées, 2 = Mes contrats
+  final int initialTab; // 0 = À venir, 1 = Passées, 2 = Mes contrats, 3 = Registre
   const RegistreVisitesPage({super.key, this.initialTab = 0});
 
   @override
@@ -27,15 +41,15 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
 
   bool _loading = true;
   List<Map<String, dynamic>> _visites = [];
-  late int _tab; // 0 = À venir, 1 = Passées, 2 = Mes contrats
-  // client_uid → {nom, email, profile_id, doc_token, doc_statut}
+  late int _tab; // 0 = À venir, 1 = Passées, 2 = Mes contrats, 3 = Registre
+  // client_uid → {nom, email, tel, profile_id, doc_token, doc_statut}
   Map<String, Map<String, dynamic>> _clients = {};
   Set<String> _facturedRdvIds = {};
 
   @override
   void initState() {
     super.initState();
-    _tab = widget.initialTab.clamp(0, 2);
+    _tab = widget.initialTab.clamp(0, 3);
     _load();
   }
 
@@ -64,13 +78,13 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
 
       final results = await Future.wait([
         clientProfileIds.isNotEmpty
-            ? _supa.from('user_profiles').select('id, uid, firstname, lastname, nom, email_contact').inFilter('id', clientProfileIds)
+            ? _supa.from('user_profiles').select('id, uid, firstname, lastname, nom, email_contact, phone_number').inFilter('id', clientProfileIds)
             : Future.value(<Map<String, dynamic>>[]),
         clientUidsNoPid.isNotEmpty
-            ? _supa.from('user_profiles').select('id, uid, firstname, lastname, nom, email_contact').inFilter('uid', clientUidsNoPid).eq('is_main', true)
+            ? _supa.from('user_profiles').select('id, uid, firstname, lastname, nom, email_contact, phone_number').inFilter('uid', clientUidsNoPid).eq('is_main', true)
             : Future.value(<Map<String, dynamic>>[]),
         animalIds.isNotEmpty
-            ? _supa.from('animaux').select('id, nom').inFilter('id', animalIds)
+            ? _supa.from('animaux').select('id, nom, espece, race, puce').inFilter('id', animalIds)
             : Future.value(<Map<String, dynamic>>[]),
       ]);
 
@@ -89,18 +103,31 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
       }
       final nameByPid = <String, String>{};
       final emailByPid = <String, String>{};
+      final telByPid = <String, String>{};
       final nameByUid = <String, String>{};
       final emailByUid = <String, String>{};
+      final telByUid = <String, String>{};
       for (final c in (results[0] as List)) {
         nameByPid[c['id'] as String] = nomOf(c);
         emailByPid[c['id'] as String] = (c['email_contact'] as String?) ?? '';
+        telByPid[c['id'] as String] = (c['phone_number'] as String?) ?? '';
       }
       for (final c in (results[1] as List)) {
         nameByUid[c['uid'] as String] = nomOf(c);
         emailByUid[c['uid'] as String] = (c['email_contact'] as String?) ?? '';
+        telByUid[c['uid'] as String] = (c['phone_number'] as String?) ?? '';
       }
+      final animalInfo = <String, Map<String, String>>{
+        for (final a in (results[2] as List))
+          a['id'].toString(): {
+            'nom': a['nom']?.toString() ?? '',
+            'espece': a['espece']?.toString() ?? '',
+            'race': a['race']?.toString() ?? '',
+            'puce': a['puce']?.toString() ?? '',
+          },
+      };
       final animalNames = <String, String>{
-        for (final a in (results[2] as List)) a['id'].toString(): a['nom']?.toString() ?? '',
+        for (final e in animalInfo.entries) e.key: e.value['nom'] ?? '',
       };
 
       final docByClient = <String, Map<String, dynamic>>{};
@@ -120,6 +147,11 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
         if (cp.isNotEmpty && (emailByPid[cp] ?? '').isNotEmpty) return emailByPid[cp]!;
         return emailByUid[r['client_uid']?.toString() ?? ''] ?? '';
       }
+      String clientTel(Map<String, dynamic> r) {
+        final cp = r['client_profile_id']?.toString() ?? '';
+        if (cp.isNotEmpty && (telByPid[cp] ?? '').isNotEmpty) return telByPid[cp]!;
+        return telByUid[r['client_uid']?.toString() ?? ''] ?? '';
+      }
 
       final clients = <String, Map<String, dynamic>>{};
       // Un contrat cadre couvre toutes les gardes d'un client, potentiellement
@@ -129,7 +161,12 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
       for (final r in list) {
         r['_client_nom'] = clientName(r);
         r['_client_email'] = clientEmail(r);
+        r['_client_tel'] = clientTel(r);
+        final info = animalInfo[r['animal_id']?.toString()];
         r['_animal_nom'] = animalNames[r['animal_id']?.toString()] ?? '';
+        r['_animal_espece'] = info?['espece'] ?? '';
+        r['_animal_race'] = info?['race'] ?? '';
+        r['_animal_puce'] = info?['puce'] ?? '';
         final cu = r['client_uid']?.toString();
         if (cu != null && cu.isNotEmpty) {
           if ((r['_animal_nom'] as String).isNotEmpty) {
@@ -140,6 +177,7 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
             clients[cu] = {
               'nom': clientName(r),
               'email': clientEmail(r),
+              'tel': clientTel(r),
               'profile_id': r['client_profile_id'],
               'doc_token': doc?['token'],
               'doc_statut': doc?['statut'],
@@ -260,19 +298,163 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
     if (mounted) await _load();
   }
 
+  /// Validation de présence (registre légal garde à domicile) — l'animal est
+  /// arrivé chez le prestataire : posé sur la ligne du 1er jour du séjour.
+  Future<void> _validerArrivee(GardeSejour sejour) async {
+    try {
+      await _supa.from('rdv')
+          .update({'arrivee_validee_le': DateTime.now().toIso8601String()})
+          .eq('id', sejour.premierJour['id']);
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  /// L'animal est reparti — posé sur la ligne du dernier jour du séjour.
+  Future<void> _validerDepart(GardeSejour sejour) async {
+    try {
+      await _supa.from('rdv')
+          .update({'depart_valide_le': DateTime.now().toIso8601String()})
+          .eq('id', sejour.dernierJour['id']);
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  static String _sejourStatutLabel(String statut) => switch (statut) {
+        'termine' => 'Terminé',
+        'en_garde' => 'En garde',
+        _ => 'À venir',
+      };
+
+  List<List<String>> _registreRows(List<GardeSejour> sejours) {
+    final fmt = DateFormat('dd/MM/yyyy');
+    String d(DateTime? dt) => dt != null ? fmt.format(dt) : '—';
+    return sejours.map((s) => [
+          s.animalNom,
+          (s.premierJour['_animal_espece'] as String?)?.isNotEmpty == true ? s.premierJour['_animal_espece'] as String : '—',
+          (s.premierJour['_animal_race'] as String?)?.isNotEmpty == true ? s.premierJour['_animal_race'] as String : '—',
+          (s.premierJour['_animal_puce'] as String?)?.isNotEmpty == true ? s.premierJour['_animal_puce'] as String : '—',
+          s.clientNom,
+          (s.premierJour['_client_tel'] as String?)?.isNotEmpty == true ? s.premierJour['_client_tel'] as String : '—',
+          (s.premierJour['_client_email'] as String?)?.isNotEmpty == true ? s.premierJour['_client_email'] as String : '—',
+          d(s.dateEntree),
+          d(s.dateSortiePrevue),
+          d(s.departValideLe),
+          _sejourStatutLabel(s.statut),
+        ]).toList();
+  }
+
+  static const _registreHeaders = [
+    'Nom', 'Espèce', 'Race', 'Puce', 'Client', 'Téléphone', 'Email',
+    'Date entrée', 'Sortie prévue', 'Sortie effective', 'Statut',
+  ];
+
+  Future<void> _exportCsvRegistre(List<GardeSejour> sejours) async {
+    if (sejours.isEmpty) return;
+    String esc(Object? v) => '"${(v?.toString() ?? '').replaceAll('"', '""')}"';
+    final rows = _registreRows(sejours);
+    final csv = [_registreHeaders, ...rows].map((r) => r.map(esc).join(';')).join('\r\n');
+    final bytes = utf8.encode('﻿$csv');
+    final xFile = XFile.fromData(
+      Uint8List.fromList(bytes),
+      mimeType: 'text/csv',
+      name: 'registre_garde_${DateTime.now().millisecondsSinceEpoch}.csv',
+    );
+    await Share.shareXFiles([xFile], subject: 'Registre garde à domicile — PetsMatch');
+  }
+
+  Future<void> _exportPdfRegistre(List<GardeSejour> sejours) async {
+    if (sejours.isEmpty) return;
+    final pdf = pw.Document();
+    final font = await PdfGoogleFonts.robotoRegular();
+    final fontBold = await PdfGoogleFonts.robotoBold();
+    final rows = _registreRows(sejours);
+
+    pdf.addPage(pw.MultiPage(
+      pageFormat: PdfPageFormat.a4.landscape,
+      margin: const pw.EdgeInsets.all(20),
+      header: (ctx) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+        pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+          pw.Text('REGISTRE GARDE À DOMICILE — ENTRÉES & SORTIES',
+              style: pw.TextStyle(font: fontBold, fontSize: 11)),
+          pw.Text('Édité le ${DateFormat('dd/MM/yyyy').format(DateTime.now())}',
+              style: pw.TextStyle(font: font, fontSize: 8, color: PdfColors.grey600)),
+        ]),
+        pw.SizedBox(height: 8),
+        pw.Divider(thickness: 0.5),
+        pw.SizedBox(height: 4),
+      ]),
+      build: (ctx) => [
+        pw.TableHelper.fromTextArray(
+          headers: _registreHeaders,
+          data: rows,
+          headerStyle: pw.TextStyle(font: fontBold, fontSize: 7, color: PdfColors.white),
+          headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0C5C6C)),
+          cellStyle: pw.TextStyle(font: font, fontSize: 6.5),
+          cellAlignments: {for (var i = 0; i < _registreHeaders.length; i++) i: pw.Alignment.centerLeft},
+          rowDecoration: const pw.BoxDecoration(color: PdfColors.white),
+          oddRowDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFFF5F5F5)),
+          border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.3),
+          cellPadding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+        ),
+      ],
+    ));
+
+    await Printing.layoutPdf(onLayout: (_) async => pdf.save());
+  }
+
+  DateTime _itemStartDate(dynamic item) => item is GardeSejour
+      ? item.dateEntree
+      : DateTime.tryParse((item as Map)['date_heure']?.toString() ?? '') ?? DateTime(0);
+  DateTime _itemEndDate(dynamic item) =>
+      item is GardeSejour ? item.dateSortiePrevue : _itemStartDate(item);
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final aVenir = _visites.where((r) {
+
+    // Gardes-journée (hébergement chez le prestataire) regroupées en séjours ;
+    // le reste (promenades/visites, l'animal reste chez son propriétaire)
+    // affiché individuellement, comme avant.
+    final tousSejours = groupeGardeSejours(_visites);
+    final sejoursActifs = tousSejours.where((s) => s.statut != 'termine').toList();
+    final sejoursTermines = tousSejours.where((s) => s.statut == 'termine').toList()
+      ..sort((a, b) => b.dateSortiePrevue.compareTo(a.dateSortiePrevue));
+
+    final visitesSimples = _visites.where((r) => !estGardeJournee(r)).toList();
+    final aVenirSimples = visitesSimples.where((r) {
       final dh = DateTime.tryParse(r['date_heure']?.toString() ?? '');
       return r['statut'] != 'termine' && (dh == null || dh.isAfter(now));
     }).toList();
-    final passees = _visites.where((r) => !aVenir.contains(r)).toList().reversed.toList();
+    final passeesSimples = visitesSimples.where((r) => !aVenirSimples.contains(r)).toList().reversed.toList();
+
+    final aVenirItems = <dynamic>[...sejoursActifs, ...aVenirSimples]
+      ..sort((a, b) => _itemStartDate(a).compareTo(_itemStartDate(b)));
+    final passeesItems = <dynamic>[...sejoursTermines, ...passeesSimples]
+      ..sort((a, b) => _itemEndDate(b).compareTo(_itemEndDate(a)));
+
     final clientsList = _clients.entries.toList()
       ..sort((a, b) => (a.value['nom'] as String).compareTo(b.value['nom'] as String));
 
     Widget content;
-    if (_tab == 2) {
+    if (_tab == 3) {
+      content = _RegistreLegalView(
+        sejours: tousSejours,
+        onValiderArrivee: _validerArrivee,
+        onValiderDepart: _validerDepart,
+        onExportCsv: _exportCsvRegistre,
+        onExportPdf: _exportPdfRegistre,
+      );
+    } else if (_tab == 2) {
       content = clientsList.isEmpty
           ? const _Empty('Aucun client — un RDV confirmé est requis.')
           : ListView.builder(
@@ -298,25 +480,36 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
               },
             );
     } else {
-      final displayed = _tab == 1 ? passees : aVenir;
+      final displayed = _tab == 1 ? passeesItems : aVenirItems;
       content = displayed.isEmpty
           ? _Empty(_tab == 1 ? 'Aucune visite passée' : 'Aucune visite à venir')
           : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: displayed.length,
-              itemBuilder: (_, i) => _VisiteCard(
-                rdv: displayed[i],
-                factured: _facturedRdvIds.contains(displayed[i]['id']?.toString()),
-                onTerminer: () => _marquerTermine(displayed[i]),
-                onRapport: () => sendGardeNews(context, displayed[i]),
-                onFacturer: displayed[i]['statut'] == 'termine'
-                    ? () => _facturerVisite(displayed[i])
-                    : null,
-                onContrat: () {
-                  final cu = displayed[i]['client_uid']?.toString();
-                  if (cu != null && cu.isNotEmpty) _openClientContrat(cu, displayed[i]);
-                },
-              ),
+              itemBuilder: (_, i) {
+                final item = displayed[i];
+                if (item is GardeSejour) {
+                  return _SejourTourneeCard(
+                    sejour: item,
+                    onValiderArrivee: () => _validerArrivee(item),
+                    onValiderDepart: () => _validerDepart(item),
+                  );
+                }
+                final rdv = item as Map<String, dynamic>;
+                return _VisiteCard(
+                  rdv: rdv,
+                  factured: _facturedRdvIds.contains(rdv['id']?.toString()),
+                  onTerminer: () => _marquerTermine(rdv),
+                  onRapport: () => sendGardeNews(context, rdv),
+                  onFacturer: rdv['statut'] == 'termine'
+                      ? () => _facturerVisite(rdv)
+                      : null,
+                  onContrat: () {
+                    final cu = rdv['client_uid']?.toString();
+                    if (cu != null && cu.isNotEmpty) _openClientContrat(cu, rdv);
+                  },
+                );
+              },
             );
     }
 
@@ -332,19 +525,21 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
           preferredSize: const Size.fromHeight(48),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Row(children: [
-              for (final t in [
-                (0, 'À venir (${aVenir.length})'),
-                (1, 'Passées (${passees.length})'),
-                (2, 'Mes contrats (${clientsList.length})'),
-              ]) ...[
-                Expanded(
-                  child: _TabChip(label: t.$2, selected: _tab == t.$1,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(children: [
+                for (final t in [
+                  (0, 'À venir (${aVenirItems.length})'),
+                  (1, 'Passées (${passeesItems.length})'),
+                  (2, 'Mes contrats (${clientsList.length})'),
+                  (3, 'Registre (${tousSejours.length})'),
+                ]) ...[
+                  _TabChip(label: t.$2, selected: _tab == t.$1,
                       onTap: () => setState(() => _tab = t.$1)),
-                ),
-                if (t.$1 != 2) const SizedBox(width: 8),
-              ],
-            ]),
+                  if (t.$1 != 3) const SizedBox(width: 8),
+                ],
+              ]),
+            ),
           ),
         ),
       ),
@@ -463,6 +658,9 @@ class _VisiteCard extends StatelessWidget {
                 Text('${rdv['_animal_nom']} — ${rdv['_client_nom']}',
                     style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
                 const SizedBox(height: 2),
+                Text('🚶 ${gardeMotifLabel(gardePrestationKey(rdv['motif']?.toString()), rdv['_animal_espece']?.toString())} · animal chez son propriétaire',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+                const SizedBox(height: 2),
                 Text(dateStr, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
               ]),
             ),
@@ -527,6 +725,286 @@ class _VisiteCard extends StatelessWidget {
                       ),
                     ),
                   ),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+/// Carte "tournée" d'un séjour de garde à domicile (une par séjour, pas par
+/// jour) : arrivée/départ à valider, jours intermédiaires sans action.
+class _SejourTourneeCard extends StatelessWidget {
+  final GardeSejour sejour;
+  final VoidCallback onValiderArrivee;
+  final VoidCallback onValiderDepart;
+  static const _teal = Color(0xFF0C5C6C);
+  static const _amber = Color(0xFFCA8A04);
+  static const _green = Color(0xFF6E9E57);
+
+  const _SejourTourneeCard({
+    required this.sejour,
+    required this.onValiderArrivee,
+    required this.onValiderDepart,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final f = DateFormat('EEE d MMM', 'fr_FR');
+    final periode = sejour.unSeulJour
+        ? 'le ${f.format(sejour.dateEntree)}'
+        : 'du ${f.format(sejour.dateEntree)} au ${f.format(sejour.dateSortiePrevue)}';
+    final statut = sejour.statut;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: _teal, width: 1)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('🏠 Garde à domicile — ${sejour.animalNom} — ${sejour.clientNom}',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                const SizedBox(height: 2),
+                Text('Chez vous $periode',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+              ]),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: statut == 'en_garde' ? const Color(0xFFEEF5EA) : const Color(0xFFFFF8E1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(statut == 'en_garde' ? 'En cours' : 'À venir',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600,
+                      color: statut == 'en_garde' ? _green : _amber)),
+            ),
+          ]),
+          const SizedBox(height: 10),
+          if (statut == 'a_venir')
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: onValiderArrivee,
+                icon: const Icon(Icons.home_outlined, size: 16),
+                label: const Text('Valider l\'arrivée', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _teal, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 8), elevation: 0,
+                ),
+              ),
+            )
+          else ...[
+            Row(children: [
+              const Icon(Icons.check_circle_outline, size: 16, color: _green),
+              const SizedBox(width: 6),
+              Text('Arrivé le ${DateFormat('d MMM', 'fr_FR').format(sejour.arriveeValideeLe!)}',
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _green, fontWeight: FontWeight.w600)),
+            ]),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onValiderDepart,
+                icon: const Icon(Icons.logout, size: 16),
+                label: const Text('Valider le départ', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _teal, side: const BorderSide(color: _teal),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+/// Onglet "Registre" — vue légale : uniquement les séjours de garde à
+/// domicile (hébergement), jamais les promenades/visites. Filtre par
+/// statut + export CSV/PDF, comme le registre pension.
+class _RegistreLegalView extends StatefulWidget {
+  final List<GardeSejour> sejours;
+  final Future<void> Function(GardeSejour) onValiderArrivee;
+  final Future<void> Function(GardeSejour) onValiderDepart;
+  final Future<void> Function(List<GardeSejour>) onExportCsv;
+  final Future<void> Function(List<GardeSejour>) onExportPdf;
+
+  const _RegistreLegalView({
+    required this.sejours,
+    required this.onValiderArrivee,
+    required this.onValiderDepart,
+    required this.onExportCsv,
+    required this.onExportPdf,
+  });
+
+  @override
+  State<_RegistreLegalView> createState() => _RegistreLegalViewState();
+}
+
+class _RegistreLegalViewState extends State<_RegistreLegalView> {
+  static const _teal = Color(0xFF0C5C6C);
+  String _filtre = 'tous'; // a_venir | en_garde | termine | tous
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _filtre == 'tous'
+        ? widget.sejours
+        : widget.sejours.where((s) => s.statut == _filtre).toList();
+    final sorted = filtered.toList()..sort((a, b) => b.dateEntree.compareTo(a.dateEntree));
+
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+        child: Row(children: [
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(children: [
+                for (final f in const [
+                  ('a_venir', 'À venir'), ('en_garde', 'En garde'), ('termine', 'Terminés'), ('tous', 'Tous'),
+                ]) ...[
+                  ChoiceChip(
+                    label: Text(f.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                    selected: _filtre == f.$1,
+                    onSelected: (_) => setState(() => _filtre = f.$1),
+                    selectedColor: _teal,
+                    labelStyle: TextStyle(color: _filtre == f.$1 ? Colors.white : Colors.black87),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+              ]),
+            ),
+          ),
+        ]),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+        child: Row(children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: sorted.isEmpty ? null : () => widget.onExportCsv(sorted),
+              icon: const Icon(Icons.table_view_outlined, size: 16),
+              label: const Text('CSV', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+              style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal)),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: sorted.isEmpty ? null : () => widget.onExportPdf(sorted),
+              icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+              label: const Text('PDF', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+              style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal)),
+            ),
+          ),
+        ]),
+      ),
+      Expanded(
+        child: sorted.isEmpty
+            ? const _Empty('Aucun séjour de garde à domicile')
+            : ListView.builder(
+                padding: const EdgeInsets.all(12),
+                itemCount: sorted.length,
+                itemBuilder: (_, i) => _SejourRegistreCard(
+                  sejour: sorted[i],
+                  onValiderArrivee: () => widget.onValiderArrivee(sorted[i]),
+                  onValiderDepart: () => widget.onValiderDepart(sorted[i]),
+                ),
+              ),
+      ),
+    ]);
+  }
+}
+
+/// Ligne du registre légal : identité complète de l'animal (nom, espèce,
+/// race, puce I-CAD) + coordonnées du client + dates d'entrée/sortie.
+class _SejourRegistreCard extends StatelessWidget {
+  final GardeSejour sejour;
+  final VoidCallback onValiderArrivee;
+  final VoidCallback onValiderDepart;
+  static const _teal = Color(0xFF0C5C6C);
+  static const _amber = Color(0xFFCA8A04);
+  static const _green = Color(0xFF6E9E57);
+
+  const _SejourRegistreCard({
+    required this.sejour,
+    required this.onValiderArrivee,
+    required this.onValiderDepart,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final f = DateFormat('dd/MM/yyyy');
+    final j = sejour.premierJour;
+    final espece = (j['_animal_espece'] as String?) ?? '';
+    final race = (j['_animal_race'] as String?) ?? '';
+    final puce = (j['_animal_puce'] as String?) ?? '';
+    final tel = (j['_client_tel'] as String?) ?? '';
+    final email = (j['_client_email'] as String?) ?? '';
+    final (label, color) = switch (sejour.statut) {
+      'termine' => ('Terminé', _green),
+      'en_garde' => ('En garde', _teal),
+      _ => ('À venir', _amber),
+    };
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(
+              child: Text(sejour.animalNom,
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+              child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+            ),
+          ]),
+          if (espece.isNotEmpty || race.isNotEmpty || puce.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text([espece, race, if (puce.isNotEmpty) 'Puce $puce'].where((s) => s.isNotEmpty).join(' · '),
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+          ],
+          const SizedBox(height: 6),
+          Text('👤 ${sejour.clientNom}${tel.isNotEmpty ? ' · $tel' : ''}${email.isNotEmpty ? ' · $email' : ''}',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+          const SizedBox(height: 6),
+          Text(
+            'Entrée le ${f.format(sejour.dateEntree)}'
+            '${sejour.departValideLe != null ? ' · Sortie le ${f.format(sejour.departValideLe!)}' : ' · Sortie prévue le ${f.format(sejour.dateSortiePrevue)}'}',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+          if (sejour.statut != 'termine') ...[
+            const SizedBox(height: 10),
+            Row(children: [
+              if (sejour.statut == 'a_venir')
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: onValiderArrivee,
+                    style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 8)),
+                    child: const Text('Valider l\'arrivée', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  ),
+                )
+              else
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: onValiderDepart,
+                    style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 8)),
+                    child: const Text('Valider le départ', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                  ),
+                ),
+            ]),
           ],
         ]),
       ),
