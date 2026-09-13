@@ -13,6 +13,7 @@ function clientsPageTitle(catPro: string): string {
   if (catPro === 'veterinaire' || catPro === 'sante') return 'Mes patients';
   if (catPro === 'marechal_ferrant') return 'Mes équidés suivis';
   if (catPro === 'education') return 'Mes élèves';
+  if (catPro === 'garde') return 'Mes animaux en garde';
   return 'Animaux suivis';
 }
 
@@ -127,6 +128,18 @@ export default function MesPatientsPage() {
     load();
   }, [user, activeProfileId]);
 
+  // Auto-retrait : le propriétaire peut aussi révoquer depuis la fiche animal
+  // (mes-animaux/[id]/page.tsx) — même effet, mêmes colonnes. Ne s'applique
+  // qu'aux accès explicites (animal_access), pas aux entrées "rdv-<id>"
+  // (complétées depuis un RDV confirmé, sans ligne animal_access dédiée).
+  async function revokeGrant(grantId: string, animalNom: string) {
+    if (!confirm(`Vous retirer de la liste de ${animalNom} ? Vous n'aurez plus accès à sa fiche.`)) return;
+    await supabase.from('animal_access')
+      .update({ statut: 'revoked', revoked_at: new Date().toISOString() })
+      .eq('id', grantId);
+    setGrants(prev => prev.filter(g => g.id !== grantId));
+  }
+
   if (!user) return (
     <div className="min-h-screen flex items-center justify-center text-gray-400 text-sm">
       Connectez-vous pour accéder à vos patients.
@@ -161,7 +174,7 @@ export default function MesPatientsPage() {
         <div className="mb-4">
           <input
             value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Rechercher un patient…"
+            placeholder={catPro === 'garde' ? 'Rechercher un animal…' : catPro === 'education' ? 'Rechercher un élève…' : 'Rechercher un patient…'}
             className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#0C5C6C] shadow-sm"
             style={{ fontFamily: 'Galey, sans-serif' }}
           />
@@ -204,6 +217,7 @@ export default function MesPatientsPage() {
                       </span>
                     </div>
                     {(catPro === 'education' || catPro === 'garde') && <span className="w-7" />}
+                    {!g.id.startsWith('rdv-') && <span className="w-7" />}
                     <span className="text-gray-300 text-lg">›</span>
                   </Link>
                   {(catPro === 'education' || catPro === 'garde') && user && (
@@ -216,6 +230,16 @@ export default function MesPatientsPage() {
                         myProfileId={activeProfileId ?? null}
                       />
                     </div>
+                  )}
+                  {!g.id.startsWith('rdv-') && (
+                    <button
+                      onClick={(e) => { e.preventDefault(); revokeGrant(g.id, a.nom); }}
+                      title="Me retirer"
+                      className="absolute top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full text-red-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                      style={{ right: (catPro === 'education' || catPro === 'garde') ? '2.75rem' : '2.25rem' }}
+                    >
+                      <span className="text-sm">✕</span>
+                    </button>
                   )}
                 </div>
               );

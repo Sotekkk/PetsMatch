@@ -36,6 +36,13 @@ interface VaccinEntry {
   id: string; vaccin: string; date: string;
   date_rappel: string | null; lot: string | null; veterinaire: string | null; source: string | null;
 }
+// alimentations — écrite par le propriétaire depuis l'appli (animal_fiche.dart
+// _AlimentationTab). notes packe des détails secondaires en pipe-séparé,
+// dont le nombre de repas/jour en 4ᵉ segment — cf. _save() côté appli.
+interface AlimentationEntry {
+  id: string; type_ration: string | null; marque: string | null; gamme: string | null;
+  niveau_activite: string | null; densite_calorique: number | null; notes: string | null;
+}
 interface VisiteEntry {
   id: string; date: string; motif: string | null;
   veterinaire: string | null; diagnostic: string | null; notes: string | null;
@@ -204,6 +211,7 @@ function PatientDetailPageInner() {
   const [owner, setOwner] = useState<Owner | null>(null);
   const [grant, setGrant] = useState<Grant | null>(null);
   const [loading, setLoading] = useState(true);
+  const [alimentation, setAlimentation] = useState<AlimentationEntry | null>(null);
 
   // Santé
   const [vaccins, setVaccins] = useState<VaccinEntry[]>([]);
@@ -299,7 +307,13 @@ function PatientDetailPageInner() {
           : ['Identité', 'Santé', 'Repro', 'Propriétaire', 'Consultations'])
       : isEducation
         ? ['Identité', 'Santé', 'Éducation', 'Propriétaire']
-        : ['Identité', 'Santé', 'Propriétaire', 'Consultations'];
+        // Pet-sitter / toilettage / photographe / taxi animalier… : Consultations
+        // (CR/ordonnances/radios) est réservé aux professions de santé, pas
+        // seulement en lecture seule — masqué, pas juste verrouillé. Le
+        // pet-sitter garde Alimentation (essentiel pour nourrir l'animal).
+        : catPro === 'garde'
+          ? ['Identité', 'Santé', 'Alimentation', 'Propriétaire']
+          : ['Identité', 'Santé', 'Propriétaire'];
 
   // Load data
   useEffect(() => {
@@ -335,6 +349,7 @@ function PatientDetailPageInner() {
         supabase.from('education_objectifs').select('id, libelle, categorie, statut, note, ordre').eq('animal_id', animalId).order('ordre').order('created_at'),
         supabase.from('exercices_attribues').select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs').eq('animal_id', animalId).order('assigned_at', { ascending: false }),
         supabase.from('forfaits_souscrits').select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, statut').eq('animal_id', animalId).order('souscrit_le', { ascending: false }),
+        supabase.from('alimentations').select('id, type_ration, marque, gamme, niveau_activite, densite_calorique, notes').eq('animal_id', animalId).maybeSingle(),
       ]);
 
       const get = <T,>(i: number): T[] => {
@@ -363,6 +378,7 @@ function PatientDetailPageInner() {
       const attr = get<EducAttribue>(12);
       setAttribues(attr);
       setForfaitsSous(get<ForfaitSous>(13).filter(f => f.statut !== 'annule'));
+      setAlimentation(getSingle<AlimentationEntry>(14));
       if (attr.length) {
         const { data: rt } = await supabase.from('exercices_retours')
           .select('id, attribution_id, note, media, ressenti, from_pro')
@@ -933,7 +949,9 @@ function PatientDetailPageInner() {
       <div style={{ background: TEAL }} className="text-white">
         <div className="max-w-3xl mx-auto px-4 pt-4 pb-2 flex items-center gap-3">
           <button onClick={() => router.back()} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors">←</button>
-          <span className="font-bold text-base flex-1" style={{ fontFamily: 'Galey, sans-serif' }}>Fiche patient</span>
+          <span className="font-bold text-base flex-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+            {catPro === 'garde' ? 'Animal en garde' : catPro === 'education' ? 'Animal suivi' : 'Fiche patient'}
+          </span>
           {(catPro === 'education' || catPro === 'garde') && user && (
             <OwnerContactButton
               animalId={animalId}
@@ -1226,7 +1244,26 @@ function PatientDetailPageInner() {
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex gap-2 items-center text-blue-700 text-xs font-medium mb-4">
               <span>📖</span><span>Données renseignées par le propriétaire — lecture seule</span>
             </div>
-            <EmptyState text="Plan alimentaire non renseigné par le propriétaire" />
+            {alimentation ? (
+              <div className="space-y-2">
+                {[
+                  ['Type de ration', alimentation.type_ration],
+                  ['Marque', [alimentation.marque, alimentation.gamme].filter(Boolean).join(' — ') || null],
+                  ['Niveau d\'activité', alimentation.niveau_activite],
+                  ['Densité calorique', alimentation.densite_calorique ? `${alimentation.densite_calorique} kcal/100g` : null],
+                  ['Repas par jour', alimentation.notes?.split('|')?.[3] || null],
+                ].filter(([, v]) => v).map(([label, v]) => (
+                  <div key={label} className="flex justify-between items-center border-b border-gray-100 pb-2 last:border-0">
+                    <span className="text-xs text-gray-500 font-medium">{label}</span>
+                    <span className="text-sm font-semibold text-[#1F2A2E] capitalize" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      {v?.toString().replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState text="Plan alimentaire non renseigné par le propriétaire" />
+            )}
           </Card>
         )}
 
@@ -1682,8 +1719,8 @@ function PatientDetailPageInner() {
           </Card>
         )}
 
-        {/* ── Consultations (carnet de santé complet) ── */}
-        {tab === 'Consultations' && (
+        {/* ── Consultations (carnet de santé complet) — réservé santé ── */}
+        {tab === 'Consultations' && isVet && (
           <>
             {/* Bouton + avec submenu */}
             {hasWriteAccess && (

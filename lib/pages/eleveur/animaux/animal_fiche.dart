@@ -102,6 +102,14 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   bool _hasDevis = false;
   // Registre mouvements (plusieurs E/S par animal)
   List<Map<String, dynamic>> _mouvements = [];
+  // Garde/pet-sitting access (visible au propriétaire)
+  List<Map<String, dynamic>> _gardeAcces = [];
+  // Statut de l'accès animal_access du viewer vetMode courant (pro non-santé
+  // uniquement — health pros ont toujours l'écriture) : null/'active' = lecture
+  // seule, 'write_requested' = demande envoyée, 'active_write' = autorisé.
+  String? _healthAccessStatut;
+  String? _healthAccessGrantId;
+  bool get _canWriteHealth => _isHealthPro || _healthAccessStatut == 'active_write';
   // Vet access (visible au propriétaire)
   List<Map<String, dynamic>> _vetAcces = [];
   // Owner uid (utilisé dans le mode vétérinaire)
@@ -212,8 +220,19 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     return !widget.employePerms!.contains(perm);
   }
 
+  // Consultations (CR/ordonnances/radios/actes) est réservé aux professions de
+  // santé — un pet-sitter, toiletteur, éducateur… n'y a pas accès du tout
+  // (masqué, pas juste lecture seule).
+  static bool get _isHealthPro =>
+      User_Info.catPro == 'veterinaire' || User_Info.catPro == 'sante' || User_Info.catPro == 'marechal_ferrant';
+
   int get _tabCount {
-    if (widget.vetMode) return (User_Info.catPro == 'sante' || User_Info.catPro == 'marechal_ferrant') ? 6 : 5;
+    if (widget.vetMode) {
+      if (User_Info.catPro == 'sante' || User_Info.catPro == 'marechal_ferrant') return 6;
+      if (User_Info.catPro == 'veterinaire') return 5;
+      if (User_Info.catPro == 'garde') return 5; // + Alimentation (essentiel pour un pet-sitter)
+      return 4; // toilettage / photographe / taxi animalier… : pas de Consultations
+    }
     if (widget.isAssociation) return 4;
     if (_statut == 'sorti' && !_isNewOwner) return 2; // ancien proprio : Identité + Documents
     if (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab) return 5; // particulier : sans Repro
@@ -275,8 +294,43 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     if (widget.animalId != null) {
       _loadActiveAlerte();
       _refreshFromSupabase();
-      if (!widget.vetMode) _loadVetAcces();
+      if (!widget.vetMode) {
+        _loadVetAcces();
+        _loadGardeAcces();
+      } else if (!_isHealthPro) {
+        _loadHealthAccessStatut();
+      }
     }
+  }
+
+  // Statut de l'accès du viewer pro courant (non-santé) sur cet animal — pilote
+  // _canWriteHealth (lecture seule par défaut, écriture seulement si le
+  // propriétaire a explicitement autorisé via _gardeAccesSection/'active_write').
+  Future<void> _loadHealthAccessStatut() async {
+    if (widget.animalId == null) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final proProfile = await _supa.from('user_profiles')
+          .select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+      final pid = proProfile?['id'] as String?;
+      if (pid == null) return;
+      final row = await _supa.from('animal_access')
+          .select('id, statut').eq('animal_id', widget.animalId!)
+          .eq('pro_profile_id', pid).maybeSingle();
+      if (mounted) setState(() {
+        _healthAccessGrantId = row?['id']?.toString();
+        _healthAccessStatut = row?['statut']?.toString();
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _requestHealthWriteAccess() async {
+    if (_healthAccessGrantId == null) return;
+    try {
+      await _supa.from('animal_access').update({'statut': 'write_requested'}).eq('id', _healthAccessGrantId!);
+      if (mounted) setState(() => _healthAccessStatut = 'write_requested');
+    } catch (_) {}
   }
 
   Future<void> _loadVetAcces() async {
@@ -387,6 +441,31 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     try {
       final devis = await _supa.from('devis').select('id').eq('animal_id', widget.animalId!).limit(1);
       if (mounted) setState(() => _hasDevis = (devis as List).isNotEmpty);
+    } catch (_) {}
+  }
+
+  // Accès pet-sitting (visible au propriétaire) — lecture seule par défaut
+  // (statut 'active'), écriture santé seulement si 'active_write' (approuvée
+  // via _approveGardeAcces), demande en attente si 'write_requested'.
+  Future<void> _loadGardeAcces() async {
+    if (widget.animalId == null) return;
+    try {
+      final rows = await _supa
+          .from('animal_access')
+          .select('id, pro_profile_id, statut, created_at, user_profiles!inner(profile_type, name_elevage, firstname, lastname)')
+          .eq('animal_id', widget.animalId!)
+          .neq('statut', 'revoked')
+          .eq('user_profiles.profile_type', 'garde');
+      final list = (rows as List).map((r) {
+        final m = Map<String, dynamic>.from(r as Map);
+        final profile = m['user_profiles'] as Map?;
+        final nom = (profile?['name_elevage'] as String?)?.isNotEmpty == true
+            ? profile!['name_elevage'] as String
+            : '${profile?['firstname'] ?? ''} ${profile?['lastname'] ?? ''}'.trim();
+        m['pro_nom'] = nom.isNotEmpty ? nom : 'Pet-sitter';
+        return m;
+      }).toList();
+      if (mounted) setState(() => _gardeAcces = list);
     } catch (_) {}
   }
 
@@ -687,6 +766,45 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       await _supa.from('animal_access').update({'statut': 'revoked', 'revoked_at': DateTime.now().toUtc().toIso8601String()}).eq('id', accesId);
       _loadPensionAcces();
     }
+  }
+
+  Future<void> _revokeGardeAcces(BuildContext context, String accesId, String proNom) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Révoquer l\'accès ?',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text(
+          '$proNom n\'aura plus accès à la fiche de ${_nomCtrl.text}.',
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Révoquer', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true && mounted) {
+      await _supa.from('animal_access').update({'statut': 'revoked', 'revoked_at': DateTime.now().toUtc().toIso8601String()}).eq('id', accesId);
+      _loadGardeAcces();
+    }
+  }
+
+  // Le propriétaire autorise explicitement l'écriture santé (ajout/suppression
+  // de vaccins…) à un pet-sitter qui en a fait la demande (_requestHealthWriteAccess).
+  Future<void> _approveGardeAcces(String accesId) async {
+    try {
+      await _supa.from('animal_access').update({'statut': 'active_write'}).eq('id', accesId);
+      _loadGardeAcces();
+    } catch (_) {}
   }
 
   Future<void> _loadBreeds() async {
@@ -1900,7 +2018,15 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           tabs: widget.vetMode
               ? ((User_Info.catPro == 'sante' || User_Info.catPro == 'marechal_ferrant')
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Anatomie')]
-                  : const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations')])
+                  : User_Info.catPro == 'veterinaire'
+                      ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations')]
+                      // Pet-sitter : pas de Consultations (domaine santé réservé
+                      // aux pros de santé) mais Alimentation (essentiel pour
+                      // nourrir l'animal pendant la garde).
+                      : User_Info.catPro == 'garde'
+                          ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Repro'), Tab(text: 'Propriétaire')]
+                          // toilettage / photographe / taxi animalier…
+                          : const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire')])
               : widget.educationMode
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Éducation')]
                   : widget.isAssociation
@@ -1917,10 +2043,24 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         children: widget.vetMode
             ? [
                 _IdentiteTab(this),
-                _CarnetSanteTab(animalId: widget.animalId, vetMode: true, espece: _espece),
+                _CarnetSanteTab(
+                  animalId: widget.animalId, vetMode: true, espece: _espece,
+                  canWrite: _canWriteHealth,
+                  writeRequested: _healthAccessStatut == 'write_requested',
+                  onRequestWrite: (!_canWriteHealth && _healthAccessGrantId != null && _healthAccessStatut != 'write_requested')
+                      ? _requestHealthWriteAccess : null,
+                ),
+                // Le régime alimentaire n'a pas de mode lecture seule intégré
+                // (_AlimentationTab n'a jamais été pensé pour un viewer externe) —
+                // AbsorbPointer bloque toute interaction sans y toucher, pour
+                // qu'un pet-sitter puisse consulter sans pouvoir modifier le
+                // plan du propriétaire.
+                if (User_Info.catPro == 'garde')
+                  AbsorbPointer(absorbing: widget.readOnly, child: _AlimentationTab(this)),
                 _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly('write_repro'), sterilise: _sterilise, dateNaissance: _dateNaissance),
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
-                _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId),
+                if (_isHealthPro)
+                  _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId),
                 if (User_Info.catPro == 'sante' || User_Info.catPro == 'marechal_ferrant')
                   AnatomieSeancesTab(animalId: widget.animalId ?? '', espece: _espece),
               ]
@@ -2208,6 +2348,10 @@ class _IdentiteTab extends StatelessWidget {
             const SizedBox(height: 12),
             _vetAccesSection(context),
           ],
+          if (s._gardeAcces.isNotEmpty && !s.widget.vetMode) ...[
+            const SizedBox(height: 12),
+            _gardeAccesSection(context),
+          ],
           const SizedBox(height: 80),
         ],
       ),
@@ -2323,6 +2467,74 @@ class _IdentiteTab extends StatelessWidget {
                   tooltip: 'Approuver',
                   onPressed: () => s._approveVetAcces(g['id']?.toString() ?? ''),
                 ),
+            ]),
+          ),
+      ]),
+    );
+  }
+
+  Widget _gardeAccesSection(BuildContext context) {
+    const orange = Color(0xFFE08000);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: orange.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: orange.withValues(alpha: 0.2)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Row(children: [
+          Icon(Icons.pets_outlined, size: 16, color: orange),
+          SizedBox(width: 6),
+          Text('Accès pet-sitting',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                  fontWeight: FontWeight.w700, color: orange)),
+        ]),
+        const SizedBox(height: 10),
+        for (final a in s._gardeAcces)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(a['pro_nom']?.toString() ?? 'Pet-sitter',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                        fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E))),
+                Container(
+                  margin: const EdgeInsets.only(top: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: a['statut'] == 'active_write' ? Colors.green.shade100
+                        : a['statut'] == 'write_requested' ? Colors.amber.shade100
+                        : Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    a['statut'] == 'active_write' ? 'Écriture autorisée'
+                        : a['statut'] == 'write_requested' ? 'Demande d\'accès écriture'
+                        : 'Lecture seule',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600,
+                        color: a['statut'] == 'active_write' ? Colors.green.shade800
+                            : a['statut'] == 'write_requested' ? Colors.amber.shade800
+                            : Colors.grey.shade700),
+                  ),
+                ),
+              ])),
+              if (a['statut'] == 'write_requested')
+                IconButton(
+                  icon: const Icon(Icons.check_circle_outline, color: orange, size: 22),
+                  tooltip: 'Autoriser l\'écriture',
+                  onPressed: () => s._approveGardeAcces(a['id']?.toString() ?? ''),
+                ),
+              TextButton(
+                onPressed: () => s._revokeGardeAcces(
+                    context, a['id'] as String, a['pro_nom']?.toString() ?? 'Pet-sitter'),
+                style: TextButton.styleFrom(
+                    foregroundColor: Colors.red.shade600,
+                    padding: const EdgeInsets.symmetric(horizontal: 8)),
+                child: const Text('Révoquer',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+              ),
             ]),
           ),
       ]),
@@ -4546,7 +4758,13 @@ class _CarnetSanteTab extends StatelessWidget {
   final String? animalId;
   final bool vetMode;
   final String espece;
-  const _CarnetSanteTab({this.animalId, this.vetMode = false, required this.espece});
+  // Lecture seule par défaut pour un viewer vetMode sans droit d'écriture
+  // santé (ex. pet-sitter) — cf. AnimalFichePage._canWriteHealth.
+  final bool canWrite;
+  final bool writeRequested;
+  final VoidCallback? onRequestWrite;
+  const _CarnetSanteTab({this.animalId, this.vetMode = false, required this.espece,
+      this.canWrite = true, this.writeRequested = false, this.onRequestWrite});
 
   static const _cats = [
     (key: 'vaccinations',     label: 'Vaccins',              icon: Icons.vaccines_outlined,             color: Color(0xFF0C5C6C)),
@@ -4582,6 +4800,9 @@ class _CarnetSanteTab extends StatelessWidget {
           color: cat.color,
           vetMode: vetMode,
           espece: espece,
+          canWrite: canWrite,
+          writeRequested: writeRequested,
+          onRequestWrite: onRequestWrite,
         );
       },
     );
@@ -4596,8 +4817,12 @@ class _SanteTile extends StatelessWidget {
   final Color color;
   final bool vetMode;
   final String? espece;
+  final bool canWrite;
+  final bool writeRequested;
+  final VoidCallback? onRequestWrite;
   const _SanteTile({required this.animalId, required this.collection,
-      required this.label, required this.icon, required this.color, this.vetMode = false, this.espece});
+      required this.label, required this.icon, required this.color, this.vetMode = false, this.espece,
+      this.canWrite = true, this.writeRequested = false, this.onRequestWrite});
 
   @override
   Widget build(BuildContext context) {
@@ -4611,6 +4836,7 @@ class _SanteTile extends StatelessWidget {
             builder: (_) => SanteDetailPage(
               animalId: animalId, collection: collection,
               label: label, icon: icon, color: color, vetMode: vetMode, espece: espece,
+              canWrite: canWrite, writeRequested: writeRequested, onRequestWrite: onRequestWrite,
             ),
           )),
           child: Container(
@@ -4654,8 +4880,12 @@ class SanteDetailPage extends StatelessWidget {
   final Color color;
   final bool vetMode;
   final String? espece;
+  final bool canWrite;
+  final bool writeRequested;
+  final VoidCallback? onRequestWrite;
   const SanteDetailPage({super.key, required this.animalId, required this.collection,
-      required this.label, required this.icon, required this.color, this.vetMode = false, this.espece});
+      required this.label, required this.icon, required this.color, this.vetMode = false, this.espece,
+      this.canWrite = true, this.writeRequested = false, this.onRequestWrite});
 
   Widget _dialogFor(BuildContext ctx) {
     final src   = vetMode ? 'veterinaire' : 'owner';
@@ -4686,7 +4916,8 @@ class SanteDetailPage extends StatelessWidget {
       ),
       body: collection == 'poids'
           ? _PoidsTab(animalId: animalId)
-          : _SanteList(animalId: animalId, collection: collection, icon: icon, addBuilder: _dialogFor, vetMode: vetMode, espece: espece),
+          : _SanteList(animalId: animalId, collection: collection, icon: icon, addBuilder: _dialogFor, vetMode: vetMode, espece: espece,
+              canWrite: canWrite, writeRequested: writeRequested, onRequestWrite: onRequestWrite),
     );
   }
 }
@@ -4698,7 +4929,11 @@ class _SanteList extends StatefulWidget {
   final Widget Function(BuildContext) addBuilder;
   final bool vetMode;
   final String? espece;
-  const _SanteList({required this.animalId, required this.collection, required this.icon, required this.addBuilder, this.vetMode = false, this.espece});
+  final bool canWrite;
+  final bool writeRequested;
+  final VoidCallback? onRequestWrite;
+  const _SanteList({required this.animalId, required this.collection, required this.icon, required this.addBuilder, this.vetMode = false, this.espece,
+      this.canWrite = true, this.writeRequested = false, this.onRequestWrite});
   @override
   State<_SanteList> createState() => _SanteListState();
 }
@@ -4809,41 +5044,66 @@ class _SanteListState extends State<_SanteList> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
-      floatingActionButton: FloatingActionButton.small(
-        onPressed: () async {
-          await showDialog(context: context, builder: widget.addBuilder);
-          _refresh();
-        },
-        backgroundColor: const Color(0xFF6E9E57),
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF6E9E57)))
-          : _data.isEmpty
-              ? Center(child: Text('Aucun enregistrement',
-                  style: TextStyle(color: Colors.grey.shade500, fontFamily: 'Galey')))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _data.length,
-                  itemBuilder: (_, i) {
-                    final d = _data[i];
-                    final isVetEntry = d['source'] == 'veterinaire';
-                    final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-                    final canDelete = isVetEntry
-                        ? (widget.vetMode && d['vet_id']?.toString() == myUid)
-                        : !widget.vetMode;
-                    final canEdit = !isVetEntry && !widget.vetMode;
-                    return _SanteCard(
-                      title: _title(d), data: d, icon: widget.icon,
-                      onDelete: () => _delete(d['id']?.toString() ?? ''),
-                      onEdit: canEdit ? () => _edit(d) : null,
-                      onRappel: (!widget.vetMode && ['vaccinations', 'vermifuges', 'antiparasitaires'].contains(widget.collection))
-                          ? () => _addRappel(d) : null,
-                      collection: widget.collection,
-                      canDelete: canDelete,
-                    );
-                  },
-                ),
+      floatingActionButton: widget.canWrite
+          ? FloatingActionButton.small(
+              onPressed: () async {
+                await showDialog(context: context, builder: widget.addBuilder);
+                _refresh();
+              },
+              backgroundColor: const Color(0xFF6E9E57),
+              child: const Icon(Icons.add, color: Colors.white),
+            )
+          : (widget.onRequestWrite != null
+              ? FloatingActionButton.extended(
+                  onPressed: widget.onRequestWrite,
+                  backgroundColor: Colors.grey.shade500,
+                  icon: const Icon(Icons.lock_outline, size: 18, color: Colors.white),
+                  label: const Text('Demander l\'accès', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white)),
+                )
+              : null),
+      body: Column(children: [
+        if (widget.vetMode && !widget.canWrite)
+          Container(
+            width: double.infinity,
+            color: Colors.amber.shade50,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Text(
+              widget.writeRequested
+                  ? '🔒 Lecture seule — demande d\'accès en écriture envoyée, en attente d\'autorisation du propriétaire.'
+                  : '🔒 Lecture seule — le propriétaire n\'a pas autorisé l\'ajout/la suppression d\'entrées ici.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.amber.shade900),
+            ),
+          ),
+        Expanded(
+          child: _loading
+              ? const Center(child: CircularProgressIndicator(color: Color(0xFF6E9E57)))
+              : _data.isEmpty
+                  ? Center(child: Text('Aucun enregistrement',
+                      style: TextStyle(color: Colors.grey.shade500, fontFamily: 'Galey')))
+                  : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _data.length,
+                      itemBuilder: (_, i) {
+                        final d = _data[i];
+                        final isVetEntry = d['source'] == 'veterinaire';
+                        final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                        final canDelete = widget.canWrite && (isVetEntry
+                            ? (widget.vetMode && d['vet_id']?.toString() == myUid)
+                            : !widget.vetMode);
+                        final canEdit = !isVetEntry && !widget.vetMode;
+                        return _SanteCard(
+                          title: _title(d), data: d, icon: widget.icon,
+                          onDelete: () => _delete(d['id']?.toString() ?? ''),
+                          onEdit: canEdit ? () => _edit(d) : null,
+                          onRappel: (!widget.vetMode && ['vaccinations', 'vermifuges', 'antiparasitaires'].contains(widget.collection))
+                              ? () => _addRappel(d) : null,
+                          collection: widget.collection,
+                          canDelete: canDelete,
+                        );
+                      },
+                    ),
+        ),
+      ]),
     );
   }
 }

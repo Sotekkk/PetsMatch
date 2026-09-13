@@ -2297,7 +2297,7 @@ function AnimalFichePageInner() {
   const [vetNames, setVetNames] = useState<Record<string,string>>({});
 
   // ── Accès vétérinaires (animal_access)
-  const [vetAcces, setVetAcces] = useState<{id:string;pro_profile_id:string;vet_nom:string;statut:string;granted_at?:string}[]>([]);
+  const [vetAcces, setVetAcces] = useState<{id:string;pro_profile_id:string;vet_nom:string;statut:string;granted_at?:string;profile_type?:string}[]>([]);
   const [vetAccesSaving, setVetAccesSaving] = useState<string|null>(null);
   const [hasPensionUpdates, setHasPensionUpdates] = useState(false);
   const [hasEducationRapports, setHasEducationRapports] = useState(false);
@@ -2427,22 +2427,37 @@ function AnimalFichePageInner() {
     const grantRows = (grants.data ?? []) as {id:string;pro_profile_id:string;statut:string;granted_at?:string}[];
     const proProfileIds = grantRows.map(g => g.pro_profile_id).filter(Boolean);
     let profileUidMap: Record<string,string> = {};
+    let profileTypeMap: Record<string,string> = {};
     if (proProfileIds.length > 0) {
-      const { data: profiles } = await supabase.from('user_profiles').select('id, uid').in('id', proProfileIds);
-      (profiles ?? []).forEach((p: {id:string;uid:string}) => { profileUidMap[p.id] = p.uid; });
+      const { data: profiles } = await supabase.from('user_profiles').select('id, uid, profile_type').in('id', proProfileIds);
+      (profiles ?? []).forEach((p: {id:string;uid:string;profile_type?:string}) => {
+        profileUidMap[p.id] = p.uid;
+        profileTypeMap[p.id] = p.profile_type ?? '';
+      });
     }
     const vetUids = Object.values(profileUidMap);
     const proUids = [...new Set([...allDocs.map(d => d.pro_uid as string).filter(Boolean), ...vetUids])];
     const names: Record<string,string> = {};
+    // Noms bruts (sans « Dr. ») pour le bloc d'accès unifié, qui mélange
+    // véto/pension/garde/etc. — le titre « Dr. » n'est ajouté qu'à l'affichage,
+    // seulement pour les grants dont le profil est réellement vétérinaire
+    // (documents santé eux restent 100% rédigés par des vétérinaires depuis le
+    // verrouillage d'accès côté carnet de santé, donc gardent leur préfixe).
+    const bareNames: Record<string,string> = {};
     if (proUids.length > 0) {
       const { data: users } = await supabase.from('user_profiles').select('uid, firstname, lastname').in('uid', proUids).eq('is_main', true);
       (users ?? []).forEach((u: Record<string,unknown>) => {
         const nom = `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
         names[u.uid as string] = nom ? `Dr. ${nom}` : 'Vétérinaire';
+        bareNames[u.uid as string] = nom || 'Professionnel';
       });
       setVetNames(names);
     }
-    setVetAcces(grantRows.map(g => ({ ...g, vet_nom: names[profileUidMap[g.pro_profile_id]] ?? 'Vétérinaire' })));
+    setVetAcces(grantRows.map(g => ({
+      ...g,
+      vet_nom: bareNames[profileUidMap[g.pro_profile_id]] ?? 'Professionnel',
+      profile_type: profileTypeMap[g.pro_profile_id] ?? '',
+    })));
   }, [id, isNew]);
 
   const loadMouvements = useCallback(async () => {
@@ -2652,6 +2667,17 @@ function AnimalFichePageInner() {
     try {
       await supabase.from('animal_access').update({ statut: 'active', granted_at: new Date().toISOString() }).eq('id', grantId);
       setVetAcces(prev => prev.map(g => g.id === grantId ? { ...g, statut: 'active', granted_at: new Date().toISOString() } : g));
+    } finally { setVetAccesSaving(null); }
+  }
+
+  // Le propriétaire autorise explicitement l'écriture santé (ex. ajout/suppression
+  // de vaccins) à un pro non-santé qui en a fait la demande depuis sa fiche
+  // (ex. pet-sitter, cf. mes-patients/[id]/page.tsx requestWriteAccess()).
+  async function approveWriteAcces(grantId: string) {
+    setVetAccesSaving(grantId);
+    try {
+      await supabase.from('animal_access').update({ statut: 'active_write' }).eq('id', grantId);
+      setVetAcces(prev => prev.map(g => g.id === grantId ? { ...g, statut: 'active_write' } : g));
     } finally { setVetAccesSaving(null); }
   }
 
@@ -4254,52 +4280,67 @@ function AnimalFichePageInner() {
         {!isNew && (
           <CoproprietairesSection animalId={id} animalNom={animal.nom || 'Animal'} userUid={user?.uid} />
         )}
-        {/* ── Accès vétérinaires ───────────────────────────────────────────── */}
+        {/* ── Accès professionnels ─────────────────────────────────────────── */}
         {!isNew && vetAcces.length > 0 && (
           <div className="rounded-2xl border border-[#26A69A]/20 bg-[#26A69A]/5 p-4">
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-base">🩺</span>
+              <span className="text-base">🔑</span>
               <p className="font-bold text-sm text-[#26A69A]" style={{ fontFamily: 'Galey, sans-serif' }}>
-                Accès vétérinaires
+                Accès professionnels
               </p>
             </div>
             <div className="space-y-2">
-              {vetAcces.map(g => (
-                <div key={g.id} className="flex items-center justify-between bg-white rounded-xl px-3 py-2 shadow-sm">
-                  <div>
-                    <p className="text-sm font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
-                      Dr. {g.vet_nom}
-                    </p>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      g.statut === 'active' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                    }`}>
-                      {g.statut === 'active' ? 'Accès accordé' : 'En attente de validation'}
-                    </span>
+              {vetAcces.map(g => {
+                const isVetGrant = g.profile_type === 'veterinaire';
+                const badge = g.statut === 'active_write' ? { label: 'Écriture autorisée', cls: 'bg-green-100 text-green-700' }
+                  : g.statut === 'write_requested' ? { label: 'Demande d\'accès écriture', cls: 'bg-amber-100 text-amber-700' }
+                  : g.statut === 'active' ? { label: 'Accès accordé', cls: 'bg-green-100 text-green-700' }
+                  : { label: 'En attente de validation', cls: 'bg-amber-100 text-amber-700' };
+                return (
+                  <div key={g.id} className="flex items-center justify-between bg-white rounded-xl px-3 py-2 shadow-sm">
+                    <div>
+                      <p className="text-sm font-semibold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+                        {isVetGrant ? 'Dr. ' : ''}{g.vet_nom}
+                      </p>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badge.cls}`}>
+                        {badge.label}
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      {g.statut === 'pending' && (
+                        <button
+                          onClick={() => approveVetAcces(g.id)}
+                          disabled={vetAccesSaving === g.id}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-[#26A69A] text-white hover:bg-[#1e9087] disabled:opacity-50"
+                          style={{ fontFamily: 'Galey, sans-serif' }}
+                        >
+                          {vetAccesSaving === g.id ? '…' : '✓ Approuver'}
+                        </button>
+                      )}
+                      {g.statut === 'write_requested' && (
+                        <button
+                          onClick={() => approveWriteAcces(g.id)}
+                          disabled={vetAccesSaving === g.id}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-[#26A69A] text-white hover:bg-[#1e9087] disabled:opacity-50"
+                          style={{ fontFamily: 'Galey, sans-serif' }}
+                        >
+                          {vetAccesSaving === g.id ? '…' : 'Autoriser l\'écriture'}
+                        </button>
+                      )}
+                      {(g.statut === 'active' || g.statut === 'active_write') && (
+                        <button
+                          onClick={() => revokeVetAcces(g.id)}
+                          disabled={vetAccesSaving === g.id}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-xl border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-50"
+                          style={{ fontFamily: 'Galey, sans-serif' }}
+                        >
+                          {vetAccesSaving === g.id ? '…' : 'Révoquer'}
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    {g.statut === 'pending' && (
-                      <button
-                        onClick={() => approveVetAcces(g.id)}
-                        disabled={vetAccesSaving === g.id}
-                        className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-[#26A69A] text-white hover:bg-[#1e9087] disabled:opacity-50"
-                        style={{ fontFamily: 'Galey, sans-serif' }}
-                      >
-                        {vetAccesSaving === g.id ? '…' : '✓ Approuver'}
-                      </button>
-                    )}
-                    {g.statut === 'active' && (
-                      <button
-                        onClick={() => revokeVetAcces(g.id)}
-                        disabled={vetAccesSaving === g.id}
-                        className="text-xs font-semibold px-3 py-1.5 rounded-xl border border-red-200 text-red-500 hover:bg-red-50 disabled:opacity-50"
-                        style={{ fontFamily: 'Galey, sans-serif' }}
-                      >
-                        {vetAccesSaving === g.id ? '…' : 'Révoquer'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

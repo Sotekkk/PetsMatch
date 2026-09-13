@@ -119,9 +119,9 @@ class _ProClientsPageState extends State<ProClientsPage>
       }
       final grants = await supa
           .from('animal_access')
-          .select('animal_id, granted_at, granted_by_profile_id')
+          .select('id, animal_id, granted_at, granted_by_profile_id')
           .eq('pro_profile_id', proProfileId)
-          .eq('statut', 'active')
+          .inFilter('statut', ['active', 'write_requested', 'active_write'])
           .order('granted_at', ascending: false);
 
       // Compléter avec les animaux des RDVs qui n'ont pas encore d'accès accordé
@@ -139,7 +139,7 @@ class _ProClientsPageState extends State<ProClientsPage>
       final Map<String, Map<String, dynamic>> seen = {};
       for (final g in grants as List) {
         final id = g['animal_id']?.toString();
-        if (id != null) seen[id] = {'animal_id': id, 'granted_by_profile_id': g['granted_by_profile_id'], 'granted_at': g['granted_at']};
+        if (id != null) seen[id] = {'animal_id': id, 'granted_by_profile_id': g['granted_by_profile_id'], 'granted_at': g['granted_at'], 'grant_id': g['id']?.toString()};
       }
       for (final r in rdvAnimals as List) {
         final id = r['animal_id']?.toString();
@@ -192,6 +192,7 @@ class _ProClientsPageState extends State<ProClientsPage>
               '_owner_profile_id': ownerPid,
               '_owner_name': ownerNames[ownerPid ?? ''] ?? 'Propriétaire',
               '_granted_at': extra['granted_at'],
+              '_grant_id': extra['grant_id'],
             };
           }).toList();
           _loading = false;
@@ -200,6 +201,40 @@ class _ProClientsPageState extends State<ProClientsPage>
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  // Auto-retrait : l'accès (animal_access) peut aussi être révoqué par le
+  // propriétaire depuis la fiche animal — même effet, mêmes colonnes.
+  Future<void> _revoquerAnimal(Map<String, dynamic> animal) async {
+    final grantId = animal['_grant_id']?.toString() ?? '';
+    if (grantId.isEmpty) return;
+    final nom = animal['nom']?.toString() ?? 'Cet animal';
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Retirer cet animal ?',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+        content: Text('$nom sera retiré de votre liste, vous n\'aurez plus accès à sa fiche.',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Retirer', style: TextStyle(fontFamily: 'Galey')),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    await Supabase.instance.client.from('animal_access')
+        .update({'statut': 'revoked', 'revoked_at': DateTime.now().toUtc().toIso8601String()})
+        .eq('id', grantId);
+    _loadAnimals();
   }
 
   Future<void> _loadAgenda() async {
@@ -368,6 +403,9 @@ class _ProClientsPageState extends State<ProClientsPage>
                     onProgression: User_Info.catPro == 'education'
                         ? () => _openSuivi(filtered[i])
                         : null,
+                    onRevoke: filtered[i]['_grant_id'] != null
+                        ? () => _revoquerAnimal(filtered[i])
+                        : null,
                   ),
                 ),
               ),
@@ -397,7 +435,13 @@ class _ProClientsPageState extends State<ProClientsPage>
       builder: (_) => AnimalFichePage(
         animalId: animalId,
         readOnly: true,
-        vetMode: User_Info.catPro == 'sante' || User_Info.catPro == 'veterinaire' || User_Info.catPro == 'marechal_ferrant',
+        // Tout pro non-éducateur passe par le mode "pro viewer" (vetMode) —
+        // AnimalFichePage y restreint déjà l'onglet Consultations et
+        // l'écriture santé selon le métier (_isHealthPro/_canWriteHealth).
+        // Avant ce correctif, seuls sante/veterinaire/marechal_ferrant
+        // passaient par là : un pet-sitter atterrissait sur les onglets
+        // "propriétaire" complets (Consultations + carnet en écriture libre).
+        vetMode: User_Info.catPro != 'education',
         educationMode: User_Info.catPro == 'education',
       ),
     ));
@@ -534,6 +578,7 @@ class _AnimalCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onCompteRendu;
   final VoidCallback? onProgression;
+  final VoidCallback? onRevoke;
 
   const _AnimalCard({
     required this.animal,
@@ -542,6 +587,7 @@ class _AnimalCard extends StatelessWidget {
     required this.onTap,
     required this.onCompteRendu,
     this.onProgression,
+    this.onRevoke,
   });
 
   @override
@@ -644,6 +690,15 @@ class _AnimalCard extends StatelessWidget {
                       ? onProgression!
                       : onCompteRendu,
                 ),
+              if (onRevoke != null) ...[
+                const SizedBox(height: 6),
+                _ActionBtn(
+                  icon: Icons.person_remove_outlined,
+                  color: Colors.red.shade400,
+                  tooltip: 'Me retirer',
+                  onTap: onRevoke!,
+                ),
+              ],
             ]),
           ]),
         ),
