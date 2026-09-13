@@ -62,6 +62,22 @@ const _kTypeColor = {
   'autre':      Color(0xFF9E9E9E),
 };
 
+// Palette façon Google Agenda — l'utilisateur choisit parmi ces teintes pour
+// personnaliser la couleur de chaque type d'événement (voir _pickColorForType).
+const _kColorPalette = [
+  '#D50000', '#E67C73', '#F4511E', '#F6BF26', '#33B679', '#0B8043',
+  '#039BE5', '#3F51B5', '#7986CB', '#8E24AA', '#616161',
+];
+
+// Couleurs personnalisées par type, chargées depuis users.agenda_couleurs_types
+// (_AgendaPageState._loadColorPrefs). Top-level plutôt que champ d'état pour
+// rester lisible par _colorFor et _EventTile (classe séparée) sans plomberie.
+Map<String, String> _agendaCustomColors = {};
+
+Color _hexToColor(String hex) {
+  try { return Color(int.parse('FF${hex.replaceAll('#', '')}', radix: 16)); } catch (_) { return Colors.grey; }
+}
+
 /// Types disponibles selon le profil connecté.
 List<String> _typesForProfile() {
   if (User_Info.isPro) {
@@ -99,7 +115,10 @@ Color _colorFor(Map<String, dynamic> e) {
   if (e['couleur'] != null) {
     try { return Color(int.parse('FF${(e['couleur'] as String).replaceAll('#', '')}', radix: 16)); } catch (_) {}
   }
-  return _kTypeColor[e['type']] ?? const Color(0xFF9E9E9E);
+  final type = e['type']?.toString();
+  final custom = _agendaCustomColors[type];
+  if (custom != null) return _hexToColor(custom);
+  return _kTypeColor[type] ?? const Color(0xFF9E9E9E);
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
@@ -134,6 +153,7 @@ class _AgendaPageState extends State<AgendaPage> {
     _selectedDay = DateTime.now();
     _load();
     _loadTasks();
+    _loadColorPrefs();
     _loadEmployes().then((_) {
       if (mounted && widget.autoOpenAddTache) _showAddTacheSheet(DateTime.now());
     });
@@ -153,6 +173,58 @@ class _AgendaPageState extends State<AgendaPage> {
   void dispose() {
     User_Info.profileNotifier.removeListener(_onProfileChanged);
     super.dispose();
+  }
+
+  // ── Couleurs personnalisées par type (façon Google Agenda) ─────────────────
+
+  Future<void> _loadColorPrefs() async {
+    try {
+      final row = await _supa.from('users').select('agenda_couleurs_types').eq('uid', _uid).maybeSingle();
+      final raw = row?['agenda_couleurs_types'];
+      if (raw is Map) {
+        _agendaCustomColors = raw.map((k, v) => MapEntry(k.toString(), v.toString()));
+        if (mounted) setState(() {});
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _pickColorForType(String type) async {
+    final current = _agendaCustomColors[type];
+    final chosen = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Couleur — ${_kTypeLabel[type] ?? type}',
+            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+        content: Wrap(spacing: 10, runSpacing: 10, children: [
+          for (final hex in _kColorPalette)
+            GestureDetector(
+              onTap: () => Navigator.pop(ctx, hex),
+              child: Container(
+                width: 32, height: 32,
+                decoration: BoxDecoration(
+                  color: _hexToColor(hex),
+                  shape: BoxShape.circle,
+                  border: current == hex ? Border.all(color: Colors.black87, width: 2.5) : null,
+                ),
+              ),
+            ),
+        ]),
+        actions: [
+          if (current != null)
+            TextButton(onPressed: () => Navigator.pop(ctx, ''),
+                child: const Text('Réinitialiser', style: TextStyle(color: Colors.grey))),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+        ],
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    setState(() {
+      if (chosen.isEmpty) { _agendaCustomColors.remove(type); } else { _agendaCustomColors[type] = chosen; }
+    });
+    try {
+      await _supa.from('users').update({'agenda_couleurs_types': _agendaCustomColors}).eq('uid', _uid);
+    } catch (_) {}
   }
 
   Future<void> _loadEmployes() async {
@@ -1357,17 +1429,17 @@ class _AgendaPageState extends State<AgendaPage> {
                         ...evts.take(2).map((e) => Container(
                           width: 6, height: 6,
                           decoration: BoxDecoration(
-                            color: isSelected ? Colors.white.withValues(alpha: 0.8) : _colorFor(e),
+                            color: _colorFor(e),
                             shape: BoxShape.circle,
+                            border: isSelected ? Border.all(color: Colors.white, width: 0.75) : null,
                           ),
                         )),
                         if (tasks.isNotEmpty) Container(
                           width: 6, height: 6,
                           decoration: BoxDecoration(
-                            color: isSelected
-                                ? Colors.white.withValues(alpha: 0.8)
-                                : const Color(0xFF6E9E57),
+                            color: const Color(0xFF6E9E57),
                             shape: BoxShape.circle,
+                            border: isSelected ? Border.all(color: Colors.white, width: 0.75) : null,
                           ),
                         ),
                       ],
@@ -1389,17 +1461,25 @@ class _AgendaPageState extends State<AgendaPage> {
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
       child: Wrap(spacing: 12, runSpacing: 6, children: [
-        ..._typesForProfile().map((t) => _legendDot(_kTypeColor[t] ?? Colors.grey, _kTypeLabel[t] ?? t)),
+        ..._typesForProfile().map((t) => _legendDot(_colorFor({'type': t}), _kTypeLabel[t] ?? t,
+            onTap: () => _pickColorForType(t))),
         if (showTasksEntry) _legendDot(const Color(0xFF6E9E57), 'Tâches'),
       ]),
     );
   }
 
-  Widget _legendDot(Color color, String label) => Row(mainAxisSize: MainAxisSize.min, children: [
-    Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-    const SizedBox(width: 5),
-    Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
-  ]);
+  Widget _legendDot(Color color, String label, {VoidCallback? onTap}) => GestureDetector(
+    onTap: onTap,
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+      const SizedBox(width: 5),
+      Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.grey.shade600)),
+      if (onTap != null) ...[
+        const SizedBox(width: 2),
+        Icon(Icons.edit, size: 10, color: Colors.grey.shade400),
+      ],
+    ]),
+  );
 
   // ── Day view ───────────────────────────────────────────────────────────────
 
