@@ -2784,6 +2784,17 @@ function AnimalFichePageInner() {
       destinataire_qualite: animal.destinataire_qualite, destinataire_nom: animal.destinataire_nom,
       destinataire_adresse: animal.destinataire_adresse, cause_mort: animal.cause_mort,
     }).eq('id', id);
+    // Sortie/décès déclarés directement dans le registre (sans passer par la
+    // modale de cession) : clôturer aussi la ligne animaux_proprietes du
+    // propriétaire actuel, sinon l'animal reste compté comme « présent »
+    // (Mes Animaux) alors que son statut dit déjà sorti/décédé.
+    if ((animal.statut === 'sorti' || animal.statut === 'decede') && user?.uid) {
+      try {
+        await supabase.from('animaux_proprietes')
+          .update({ date_fin: animal.date_sortie || new Date().toISOString().split('T')[0] })
+          .eq('animal_id', id).eq('uid_proprio', user.uid).is('date_fin', null);
+      } catch {}
+    }
     setShowRegistre(false);
   }
 

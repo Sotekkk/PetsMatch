@@ -551,8 +551,12 @@ function MesAnimauxPageInner() {
   if (loading || !user) return <div className="flex justify-center py-32 text-gray-400">Chargement…</div>;
 
   // Séparer présents / cédés / décédés via animaux_proprietes (source unique)
-  // cessionEnAttente = animal_id où date_fin IS NULL = propriétaire actuel
-  const presents = animaux.filter(a => cessionEnAttente.has(a.id) && a.statut !== 'decede');
+  // cessionEnAttente = animal_id où date_fin IS NULL = propriétaire actuel.
+  // Le statut de l'animal est exclu explicitement en plus de la ligne
+  // animaux_proprietes : une sortie/décès déclaré manuellement dans le
+  // registre ne clôture pas toujours cette ligne, l'animal ne doit pour
+  // autant pas rester visible dans Présents.
+  const presents = animaux.filter(a => cessionEnAttente.has(a.id) && a.statut !== 'decede' && a.statut !== 'sorti');
   const anciens  = animaux.filter(a => a.statut === 'sorti');
   const decedes  = animaux.filter(a => a.statut === 'decede');
 

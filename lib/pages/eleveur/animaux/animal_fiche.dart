@@ -1283,6 +1283,22 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'is_retraite':          _isRetraite,
         'updated_at':           DateTime.now().toIso8601String(),
       }).eq('id', widget.animalId!);
+      // Sortie/décès déclarés directement dans le registre (sans passer par
+      // la fiche de cession) : clôturer aussi la ligne animaux_proprietes du
+      // propriétaire actuel, sinon l'animal reste compté comme « présent »
+      // (Mes Animaux) alors que son statut dit déjà sorti/décédé.
+      if (_statut == 'sorti' || _statut == 'decede') {
+        try {
+          final uid = FirebaseAuth.instance.currentUser?.uid;
+          if (uid != null) {
+            await _supa.from('animaux_proprietes')
+                .update({'date_fin': (_dateSortie ?? DateTime.now()).toIso8601String()})
+                .eq('animal_id', widget.animalId!)
+                .eq('uid_proprio', uid)
+                .isFilter('date_fin', null);
+          }
+        } catch (_) {}
+      }
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Registre enregistré ✓', style: TextStyle(fontFamily: 'Galey'))));
     } catch (e) {

@@ -1211,9 +1211,14 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     var base = _animauxData.where((data) {
       final statut = data['statut'] as String? ?? '';
       final aid = data['id'] as String? ?? '';
-      // animaux_proprietes = source unique : date_fin IS NULL = présent
+      // animaux_proprietes = source unique : date_fin IS NULL = présent.
+      // On exclut aussi explicitement sorti/decede par le statut de l'animal
+      // lui-même : une cession déclarée manuellement dans le registre (sans
+      // repasser par la fiche de cession) ne clôture pas toujours la ligne
+      // animaux_proprietes, il ne faut pas que l'animal reste visible dans
+      // Présents pour autant.
       if (!_currentOwnerIds.contains(aid)) return false;
-      if (statut == 'decede') return false;
+      if (statut == 'decede' || statut == 'sorti') return false;
       if (_filterEspece != 'tous' && data['espece'] != _filterEspece) return false;
       if (_filterSexe != 'tous' && data['sexe'] != _filterSexe) return false;
       if (_filterRace.isNotEmpty &&
@@ -1615,11 +1620,12 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
     var docs = _animauxData.where((data) {
       final statut = data['statut'] as String? ?? '';
-      final aid = data['id'] as String? ?? '';
-      // Cédés = animaux sortis (cédés à un nouveau propriétaire) uniquement ;
-      // les décédés ont leur propre onglet (cf. _buildDecedesList).
+      // Cédés = animaux dont le statut est « sorti » (cédés à un nouveau
+      // propriétaire) uniquement ; le statut de l'animal fait foi, pas la
+      // ligne animaux_proprietes (une cession déclarée manuellement dans le
+      // registre ne clôture pas toujours cette ligne). Les décédés ont leur
+      // propre onglet (cf. _buildDecedesList).
       if (statut != 'sorti') return false;
-      if (_currentOwnerIds.contains(aid)) return false;
       if (_anciensEspece != 'tous' && data['espece'] != _anciensEspece) return false;
       if (_anciensDtDebut != null || _anciensDtFin != null) {
         final ds = data['date_sortie'] as String?;
