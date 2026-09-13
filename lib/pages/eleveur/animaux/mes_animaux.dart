@@ -2270,7 +2270,10 @@ class _AnimalCard extends StatelessWidget {
                                   fontFamily: 'Galey', fontWeight: FontWeight.w600)),
                         ),
                       ),
-                    if (statut == 'reserve')
+                    // Sur les cartes « Bébés » (showPorteeBadge), le badge Réservé est
+                    // affiché juste à côté du badge Portée (en haut à gauche) plutôt
+                    // qu'ici, pour que les deux se voient d'un coup d'œil ensemble.
+                    if (statut == 'reserve' && !showPorteeBadge)
                       Positioned(
                         top: 6, right: 6,
                         child: Container(
@@ -2341,19 +2344,37 @@ class _AnimalCard extends StatelessWidget {
                     if (showPorteeBadge && (data['portee_id'] as String? ?? '').isNotEmpty)
                       Positioned(
                         top: 6, left: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0C5C6C).withOpacity(0.85),
-                            borderRadius: BorderRadius.circular(8),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0C5C6C).withOpacity(0.85),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(Icons.diversity_3, size: 8, color: Colors.white),
+                              SizedBox(width: 3),
+                              Text('Portée', style: TextStyle(color: Colors.white, fontSize: 8,
+                                  fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                            ]),
                           ),
-                          child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                            Icon(Icons.diversity_3, size: 8, color: Colors.white),
-                            SizedBox(width: 3),
-                            Text('Portée', style: TextStyle(color: Colors.white, fontSize: 8,
-                                fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                          ]),
-                        ),
+                          if (statut == 'reserve') ...[
+                            const SizedBox(width: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFD97706).withOpacity(0.92),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                                Icon(Icons.bookmark, size: 8, color: Colors.white),
+                                SizedBox(width: 3),
+                                Text('Réservé', style: TextStyle(color: Colors.white, fontSize: 8,
+                                    fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                              ]),
+                            ),
+                          ],
+                        ]),
                       ),
                     if (selectMode)
                       Positioned.fill(

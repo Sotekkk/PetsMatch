@@ -130,9 +130,24 @@ function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, rep
           ⏳ Cession
         </span>
       )}
+      {/* Sur les cartes "Bébés" (showPorteeBadge), le badge Réservé s'affiche
+          juste à côté du badge Portée plutôt qu'en haut à droite, pour que
+          les deux se voient d'un coup d'œil ensemble. */}
+      {tab === 'presents' && a.statut === 'reserve' && !showPorteeBadge && !selectMode && (
+        <span className="absolute top-2 right-2 bg-amber-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg">
+          🔖 Réservé
+        </span>
+      )}
       {showPorteeBadge && a.portee_id && !selectMode && (
-        <span className="absolute top-2 left-2 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg bg-[#0C5C6C]/85">
-          🐣 Portée
+        <span className="absolute top-2 left-2 flex items-center gap-1">
+          <span className="text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg bg-[#0C5C6C]/85">
+            🐣 Portée
+          </span>
+          {a.statut === 'reserve' && (
+            <span className="text-white text-[9px] font-bold px-1.5 py-0.5 rounded-lg bg-amber-600/92">
+              🔖 Réservé
+            </span>
+          )}
         </span>
       )}
       {tab === 'presents' && reproducteur && !selectMode && (
