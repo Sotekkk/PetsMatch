@@ -203,10 +203,10 @@ export default function MesPatientsPage() {
                         Accès accordé
                       </span>
                     </div>
-                    {catPro === 'education' && <span className="w-7" />}
+                    {(catPro === 'education' || catPro === 'garde') && <span className="w-7" />}
                     <span className="text-gray-300 text-lg">›</span>
                   </Link>
-                  {catPro === 'education' && user && (
+                  {(catPro === 'education' || catPro === 'garde') && user && (
                     <div className="absolute top-1/2 -translate-y-1/2 right-9">
                       <OwnerContactButton
                         animalId={String(a.id)}

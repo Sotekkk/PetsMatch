@@ -12,6 +12,7 @@ interface Cle {
   id: string;
   animal_id: string | null;
   owner_uid: string | null;
+  owner_profile_id: string | null;
   description: string;
   statut: string;
   date_recuperation: string | null;
@@ -25,6 +26,7 @@ interface ClientOption {
   animal_id: string;
   animal_nom: string;
   client_uid: string | null;
+  client_profile_id: string | null;
   client_nom: string;
 }
 
@@ -60,46 +62,60 @@ export default function ClesClientsPage() {
     const { data: clesData } = await clesQ.order('created_at', { ascending: false });
     const clesRows = (clesData ?? []) as Cle[];
 
-    let rdvQ = supabase.from('rdv').select('client_uid, animal_id').eq('pro_uid', user.uid);
+    let rdvQ = supabase.from('rdv').select('client_uid, client_profile_id, animal_id').eq('pro_uid', user.uid);
     if (activeProfileId) rdvQ = rdvQ.eq('pro_profile_id', activeProfileId) as typeof rdvQ;
     const { data: rdvData } = await rdvQ.in('statut', ['confirme', 'termine']).not('animal_id', 'is', null);
-    const rdvRows = (rdvData ?? []) as { client_uid: string | null; animal_id: string | null }[];
+    const rdvRows = (rdvData ?? []) as { client_uid: string | null; client_profile_id: string | null; animal_id: string | null }[];
 
-    const seenAnimals = new Map<string, string | null>();
+    // client_uid → client_profile_id (le profil qui a réservé — jamais
+    // is_main, qui peut renvoyer un autre profil du même compte multi-profils,
+    // ex. l'éleveur au lieu du particulier — cf. garde/contrat).
+    const seenAnimals = new Map<string, { uid: string | null; pid: string | null }>();
     for (const r of rdvRows) {
-      if (r.animal_id) seenAnimals.set(r.animal_id, r.client_uid);
+      if (r.animal_id) seenAnimals.set(r.animal_id, { uid: r.client_uid, pid: r.client_profile_id ?? seenAnimals.get(r.animal_id)?.pid ?? null });
     }
 
     const animalIds = [...new Set([...seenAnimals.keys(), ...clesRows.map(c => c.animal_id).filter((a): a is string => !!a)])];
-    const clientUids = [...new Set([...seenAnimals.values(), ...clesRows.map(c => c.owner_uid)].filter((u): u is string => !!u))];
 
-    const [{ data: animaux }, { data: users }] = await Promise.all([
+    const pids = new Set<string>();
+    for (const v of seenAnimals.values()) if (v.pid) pids.add(v.pid);
+    for (const c of clesRows) if (c.owner_profile_id) pids.add(c.owner_profile_id);
+    const uidsNoPid = new Set<string>();
+    for (const v of seenAnimals.values()) if (v.uid && !v.pid) uidsNoPid.add(v.uid);
+    for (const c of clesRows) if (c.owner_uid && !c.owner_profile_id) uidsNoPid.add(c.owner_uid);
+
+    type Prof = { id?: string; uid?: string; firstname: string | null; lastname: string | null; nom: string | null };
+    const [{ data: animaux }, { data: byPid }, { data: byUid }] = await Promise.all([
       animalIds.length
         ? supabase.from('animaux').select('id, nom').in('id', animalIds)
         : Promise.resolve({ data: [] as { id: string; nom: string | null }[] }),
-      clientUids.length
-        ? supabase.from('user_profiles').select('uid, firstname, lastname, nom').in('uid', clientUids).eq('is_main', true)
-        : Promise.resolve({ data: [] as { uid: string; firstname: string | null; lastname: string | null; nom: string | null }[] }),
+      pids.size
+        ? supabase.from('user_profiles').select('id, firstname, lastname, nom').in('id', [...pids])
+        : Promise.resolve({ data: [] as Prof[] }),
+      uidsNoPid.size
+        ? supabase.from('user_profiles').select('uid, firstname, lastname, nom').in('uid', [...uidsNoPid]).eq('is_main', true)
+        : Promise.resolve({ data: [] as Prof[] }),
     ]);
 
     const animalNames = new Map((animaux ?? []).map(a => [a.id, a.nom || 'Animal']));
-    const clientNames = new Map((users ?? []).map(u => {
-      const nom = u.nom?.trim();
-      const full = nom || `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
-      return [u.uid, full || 'Client'];
-    }));
+    const nomOf = (u: Prof) => u.nom?.trim() || `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim() || 'Client';
+    const nameByPid = new Map((byPid ?? []).map(p => [p.id as string, nomOf(p)]));
+    const nameByUid = new Map((byUid ?? []).map(u => [u.uid as string, nomOf(u)]));
+    const clientName = (uid: string | null, pid: string | null) =>
+      (pid && nameByPid.get(pid)) || (uid && nameByUid.get(uid)) || 'Client';
 
     setCles(clesRows.map(c => ({
       ...c,
       _animal_nom: c.animal_id ? animalNames.get(c.animal_id) ?? 'Animal' : 'Animal',
-      _client_nom: c.owner_uid ? clientNames.get(c.owner_uid) ?? 'Client' : 'Client',
+      _client_nom: clientName(c.owner_uid, c.owner_profile_id),
     })));
 
-    setClients([...seenAnimals.entries()].map(([animal_id, client_uid]) => ({
+    setClients([...seenAnimals.entries()].map(([animal_id, v]) => ({
       animal_id,
       animal_nom: animalNames.get(animal_id) ?? 'Animal',
-      client_uid,
-      client_nom: client_uid ? clientNames.get(client_uid) ?? 'Client' : 'Client',
+      client_uid: v.uid,
+      client_profile_id: v.pid,
+      client_nom: clientName(v.uid, v.pid),
     })).sort((a, b) => a.animal_nom.localeCompare(b.animal_nom)));
 
     setLoading(false);
@@ -240,6 +256,7 @@ function CleModal({ cle, clients, uid, profileId, onClose, onSaved }: {
         ...(profileId ? { pro_profile_id: profileId } : {}),
         animal_id: animalId,
         owner_uid: client?.client_uid ?? null,
+        owner_profile_id: client?.client_profile_id ?? null,
         description: description.trim(),
         notes: notes.trim() || null,
         date_recuperation: new Date().toISOString().slice(0, 10),

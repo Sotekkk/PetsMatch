@@ -44,58 +44,80 @@ class _ClesClientsPageState extends State<ClesClientsPage> {
       final clesRows = await clesQ.order('created_at', ascending: false);
       final cles = List<Map<String, dynamic>>.from(clesRows as List);
 
-      var rdvQ = _supa.from('rdv').select('client_uid, animal_id').eq('pro_uid', uid);
+      var rdvQ = _supa.from('rdv').select('client_uid, client_profile_id, animal_id').eq('pro_uid', uid);
       if (pid.isNotEmpty) rdvQ = rdvQ.eq('pro_profile_id', pid);
       final rdvRows = await rdvQ
           .inFilter('statut', ['confirme', 'termine'])
           .not('animal_id', 'is', null);
 
-      final seenAnimals = <String, String?>{};
+      // client_uid → client_profile_id (le profil qui a réservé — jamais
+      // is_main, qui peut renvoyer un autre profil du même compte
+      // multi-profils, ex. l'éleveur au lieu du particulier).
+      final seenAnimals = <String, Map<String, String?>>{};
       for (final r in (rdvRows as List)) {
         final aid = r['animal_id']?.toString();
-        if (aid != null && aid.isNotEmpty) seenAnimals[aid] = r['client_uid'] as String?;
+        if (aid != null && aid.isNotEmpty) {
+          seenAnimals[aid] = {
+            'uid': r['client_uid'] as String?,
+            'pid': (r['client_profile_id'] as String?) ?? seenAnimals[aid]?['pid'],
+          };
+        }
       }
 
       final animalIds = {
         ...seenAnimals.keys,
         ...cles.map((c) => c['animal_id']?.toString()).whereType<String>(),
       }.toList();
-      final clientUids = {
-        ...seenAnimals.values.whereType<String>(),
-        ...cles.map((c) => c['owner_uid']?.toString()).whereType<String>(),
+      final pids = {
+        ...seenAnimals.values.map((v) => v['pid']).whereType<String>(),
+        ...cles.map((c) => c['owner_profile_id']?.toString()).whereType<String>(),
+      }.toList();
+      final uidsNoPid = {
+        ...seenAnimals.values.where((v) => v['pid'] == null).map((v) => v['uid']).whereType<String>(),
+        ...cles.where((c) => c['owner_profile_id'] == null).map((c) => c['owner_uid']?.toString()).whereType<String>(),
       }.toList();
 
       final results = await Future.wait([
         animalIds.isNotEmpty
             ? _supa.from('animaux').select('id, nom').inFilter('id', animalIds)
             : Future.value(<Map<String, dynamic>>[]),
-        clientUids.isNotEmpty
-            ? _supa.from('user_profiles').select('uid, firstname, lastname, nom').inFilter('uid', clientUids).eq('is_main', true)
+        pids.isNotEmpty
+            ? _supa.from('user_profiles').select('id, firstname, lastname, nom').inFilter('id', pids)
+            : Future.value(<Map<String, dynamic>>[]),
+        uidsNoPid.isNotEmpty
+            ? _supa.from('user_profiles').select('uid, firstname, lastname, nom').inFilter('uid', uidsNoPid).eq('is_main', true)
             : Future.value(<Map<String, dynamic>>[]),
       ]);
 
       final animalNames = <String, String>{
         for (final a in (results[0] as List)) a['id'].toString(): a['nom']?.toString() ?? 'Animal',
       };
-      final clientNames = <String, String>{};
-      for (final c in (results[1] as List)) {
+      String nomOf(Map<String, dynamic> c) {
         final nom = (c['nom'] as String?)?.trim();
         final full = nom?.isNotEmpty == true ? nom! : '${c['firstname'] ?? ''} ${c['lastname'] ?? ''}'.trim();
-        clientNames[c['uid'] as String] = full.isNotEmpty ? full : 'Client';
+        return full.isNotEmpty ? full : 'Client';
       }
+      final nameByPid = <String, String>{
+        for (final p in (results[1] as List)) p['id'] as String: nomOf(p),
+      };
+      final nameByUid = <String, String>{
+        for (final u in (results[2] as List)) u['uid'] as String: nomOf(u),
+      };
+      String clientName(String? uid, String? pid) =>
+          (pid != null ? nameByPid[pid] : null) ?? (uid != null ? nameByUid[uid] : null) ?? 'Client';
 
       for (final c in cles) {
         final aid = c['animal_id']?.toString();
         c['_animal_nom'] = aid != null ? (animalNames[aid] ?? 'Animal') : 'Animal';
-        final ouid = c['owner_uid']?.toString();
-        c['_client_nom'] = ouid != null ? (clientNames[ouid] ?? 'Client') : 'Client';
+        c['_client_nom'] = clientName(c['owner_uid']?.toString(), c['owner_profile_id']?.toString());
       }
 
       final clients = seenAnimals.entries.map((e) => {
         'animal_id': e.key,
         'animal_nom': animalNames[e.key] ?? 'Animal',
-        'client_uid': e.value,
-        'client_nom': e.value != null ? (clientNames[e.value] ?? 'Client') : 'Client',
+        'client_uid': e.value['uid'],
+        'client_profile_id': e.value['pid'],
+        'client_nom': clientName(e.value['uid'], e.value['pid']),
       }).toList()
         ..sort((a, b) => (a['animal_nom'] as String).compareTo(b['animal_nom'] as String));
 
@@ -112,7 +134,7 @@ class _ClesClientsPageState extends State<ClesClientsPage> {
     Map<String, dynamic>? selectedClient = existing != null
         ? _clients.firstWhere(
             (c) => c['animal_id'] == existing['animal_id'],
-            orElse: () => {'animal_id': existing['animal_id'], 'animal_nom': existing['_animal_nom'], 'client_uid': existing['owner_uid'], 'client_nom': existing['_client_nom']})
+            orElse: () => {'animal_id': existing['animal_id'], 'animal_nom': existing['_animal_nom'], 'client_uid': existing['owner_uid'], 'client_profile_id': existing['owner_profile_id'], 'client_nom': existing['_client_nom']})
         : (_clients.isNotEmpty ? _clients.first : null);
     final descCtrl = TextEditingController(text: existing?['description']?.toString() ?? '');
     final notesCtrl = TextEditingController(text: existing?['notes']?.toString() ?? '');
@@ -223,6 +245,7 @@ class _ClesClientsPageState extends State<ClesClientsPage> {
         if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
         'animal_id': client['animal_id'],
         'owner_uid': client['client_uid'],
+        'owner_profile_id': client['client_profile_id'],
         'description': description,
         if (notes.isNotEmpty) 'notes': notes,
         'date_recuperation': DateTime.now().toIso8601String().substring(0, 10),

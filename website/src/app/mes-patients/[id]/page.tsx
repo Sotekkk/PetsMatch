@@ -934,7 +934,7 @@ function PatientDetailPageInner() {
         <div className="max-w-3xl mx-auto px-4 pt-4 pb-2 flex items-center gap-3">
           <button onClick={() => router.back()} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors">←</button>
           <span className="font-bold text-base flex-1" style={{ fontFamily: 'Galey, sans-serif' }}>Fiche patient</span>
-          {catPro === 'education' && user && (
+          {(catPro === 'education' || catPro === 'garde') && user && (
             <OwnerContactButton
               animalId={animalId}
               animalNom={animal.nom ?? 'Animal'}

@@ -607,7 +607,7 @@ class _AnimalCard extends StatelessWidget {
             ])),
             // Actions
             Column(mainAxisSize: MainAxisSize.min, children: [
-              if (catPro == 'education') ...[
+              if (catPro == 'education' || catPro == 'garde') ...[
                 OwnerContactButton(
                   animalId: animal['id']?.toString() ?? '',
                   animalNom: nom,
