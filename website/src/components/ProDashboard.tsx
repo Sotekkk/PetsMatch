@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { typeFromMotif } from '@/lib/agenda-type';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -232,7 +233,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
     await supabase.from('agenda_events').insert({
       uid,
       titre: `RDV ${clientNames[rdv.client_uid] || 'Client'}${rdv.motif ? ` — ${rdv.motif}` : ''}`,
-      type: 'rdv',
+      type: typeFromMotif(rdv.motif),
       date_debut: rdv.date_heure,
       rdv_id: rdv.id,
       pro_profile_id: profileId,

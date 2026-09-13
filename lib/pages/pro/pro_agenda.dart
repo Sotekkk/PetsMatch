@@ -20,6 +20,21 @@ import 'package:PetsMatch/pages/pro/garde_facture_helper.dart';
 import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 import 'package:PetsMatch/pages/pro/creneaux_week_grid.dart';
 
+/// Déduit la catégorie d'agenda (agenda_page.dart _kTypeColor) à partir du
+/// motif texte saisi par le client à la réservation (ex. "Promenade 1h",
+/// "Visite à domicile", "Cours individuel") — pour que les points RDV créés
+/// depuis le profil public du pro héritent de la bonne couleur au lieu du
+/// bleu générique "RDV". Repli 'rdv' si le motif ne correspond à rien de
+/// connu (ex. garde-journée, consultation véto…).
+String _typeFromMotif(String? motif) {
+  final m = (motif ?? '').toLowerCase();
+  if (m.contains('cours') && m.contains('collectif')) return 'cours_collectif';
+  if (m.contains('cours') && m.contains('individuel')) return 'cours_individuel';
+  if (m.contains('visite') && m.contains('domicile')) return 'visite_domicile';
+  if (m.contains('promenade')) return 'promenade';
+  return 'rdv';
+}
+
 class ProAgendaPage extends StatefulWidget {
   // Index de l'onglet initial (0=Demandes, 1=À venir, 2=Historique,
   // 3=Créneaux) — permet d'ouvrir directement sur "Mes créneaux" depuis
@@ -813,7 +828,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         await supa.from('agenda_events').upsert({
           'uid':           clientUid,
           'titre':         titreClient,
-          'type':          'rdv',
+          'type':          _typeFromMotif(rdv['motif']?.toString()),
           'date_debut':    preciseDh.toIso8601String(),
           'animal_id':     rdv['animal_id'],
           'notes':         rdv['motif'],
@@ -840,7 +855,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           await supa.from('agenda_events').insert({
             'uid':            proUid,
             'titre':          titrePro,
-            'type':           'rdv',
+            'type':           _typeFromMotif(rdv['motif']?.toString()),
             'date_debut':     preciseDh.toIso8601String(),
             'animal_id':      rdv['animal_id'],
             'notes':          rdv['motif'],
@@ -1021,7 +1036,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
 
       if (clientUid != null) {
         await supa.from('agenda_events').upsert({
-          'uid': clientUid, 'titre': titreClient, 'type': 'rdv',
+          'uid': clientUid, 'titre': titreClient, 'type': _typeFromMotif(motifTitre),
           'date_debut': newDh.toIso8601String(), 'animal_id': rdv['animal_id'],
           'notes': motif, 'rdv_id': rdvId, 'duree_minutes': duree,
           'pro_profile_id': rdv['client_profile_id'],
@@ -1037,7 +1052,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
       if (proUid != null) {
         await supa.from('agenda_events').delete().eq('uid', proUid).eq('couleur', 'rdv:$rdvId');
         await supa.from('agenda_events').insert({
-          'uid': proUid, 'titre': titrePro, 'type': 'rdv',
+          'uid': proUid, 'titre': titrePro, 'type': _typeFromMotif(motifTitre),
           'date_debut': newDh.toIso8601String(), 'animal_id': rdv['animal_id'],
           'notes': motif, 'duree_minutes': duree, 'couleur': 'rdv:$rdvId',
           'pro_profile_id': rdv['pro_profile_id'],
@@ -1326,7 +1341,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         await supa.from('agenda_events').upsert({
           'uid':           clientUid,
           'titre':         titreClient,
-          'type':          'rdv',
+          'type':          _typeFromMotif(motifTxt),
           'date_debut':    dhUtc?.toIso8601String() ?? rdv['date_heure'],
           'animal_id':     rdv['animal_id'],
           'notes':         rdv['motif'],
@@ -1342,7 +1357,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             await supa.from('agenda_events').insert({
               'uid':            proUid2,
               'titre':          titrePro,
-              'type':           'rdv',
+              'type':           _typeFromMotif(motifTxt),
               'date_debut':     dhUtc?.toIso8601String() ?? rdv['date_heure'],
               'animal_id':      rdv['animal_id'],
               'notes':          rdv['motif'],
@@ -2165,7 +2180,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           await Supabase.instance.client.from('agenda_events').insert({
             'uid':            uid,
             'titre':          'RDV avec ${clientNom.isNotEmpty ? clientNom : 'Client'}',
-            'type':           'rdv',
+            'type':           _typeFromMotif(motif),
             'date_debut':     dh.toIso8601String(),
             'notes':          motif.isNotEmpty ? motif : 'RDV',
             'duree_minutes':  dureeMinutes,

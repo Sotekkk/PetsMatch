@@ -27,39 +27,48 @@ const _kNonElevageProfileTypes = {
 // ── Types (catalogue complet — le sous-ensemble affiché dépend du profil) ─────
 
 const _kTypeLabel = {
-  'rdv':        'RDV',
-  'mise_bas':   'Mise-bas',
-  'medication': 'Médicament',
-  'visite':     'Visite',
-  'formation':  'Formation',
-  'reunion':    'Réunion',
-  'absence':    'Absence',
-  'promenade':  'Promenade',
-  'autre':      'Autre',
+  'rdv':               'RDV',
+  'mise_bas':          'Mise-bas',
+  'medication':        'Médicament',
+  'visite':            'Visite',
+  'formation':         'Formation',
+  'reunion':           'Réunion',
+  'absence':           'Absence',
+  'promenade':         'Promenade',
+  'visite_domicile':   'Visite à domicile',
+  'cours_individuel':  'Cours individuel',
+  'cours_collectif':   'Cours collectif',
+  'autre':             'Autre',
 };
 
 const _kTypeIcon = {
-  'rdv':        '🐾',
-  'mise_bas':   '🐣',
-  'medication': '💊',
-  'visite':     '👀',
-  'formation':  '📚',
-  'reunion':    '🤝',
-  'absence':    '🏖️',
-  'promenade':  '🚶',
-  'autre':      '📅',
+  'rdv':               '🐾',
+  'mise_bas':          '🐣',
+  'medication':        '💊',
+  'visite':            '👀',
+  'formation':         '📚',
+  'reunion':           '🤝',
+  'absence':           '🏖️',
+  'promenade':         '🚶',
+  'visite_domicile':   '🏠',
+  'cours_individuel':  '🎓',
+  'cours_collectif':   '👥',
+  'autre':             '📅',
 };
 
 const _kTypeColor = {
-  'rdv':        Color(0xFF2196F3),
-  'mise_bas':   Color(0xFFE91E63),
-  'medication': Color(0xFFFF9800),
-  'visite':     Color(0xFF4CAF50),
-  'formation':  Color(0xFF7B1FA2),
-  'reunion':    Color(0xFF0288D1),
-  'absence':    Color(0xFF78909C),
-  'promenade':  Color(0xFF2E7D5E),
-  'autre':      Color(0xFF9E9E9E),
+  'rdv':               Color(0xFF2196F3),
+  'mise_bas':          Color(0xFFE91E63),
+  'medication':        Color(0xFFFF9800),
+  'visite':            Color(0xFF4CAF50),
+  'formation':         Color(0xFF7B1FA2),
+  'reunion':           Color(0xFF0288D1),
+  'absence':           Color(0xFF78909C),
+  'promenade':         Color(0xFF2E7D5E),
+  'visite_domicile':   Color(0xFF00ACC1),
+  'cours_individuel':  Color(0xFF7B5EA7),
+  'cours_collectif':   Color(0xFFAB47BC),
+  'autre':             Color(0xFF9E9E9E),
 };
 
 // Palette façon Google Agenda — l'utilisateur choisit parmi ces teintes pour
@@ -78,10 +87,23 @@ Color _hexToColor(String hex) {
   try { return Color(int.parse('FF${hex.replaceAll('#', '')}', radix: 16)); } catch (_) { return Colors.grey; }
 }
 
-/// Types disponibles selon le profil connecté.
+/// Types disponibles selon le profil connecté — pour les profils pro, la
+/// liste dépend du métier (catPro) pour proposer des catégories utiles à la
+/// création d'un événement manuel (ex. pet sitter : promenade/visite à
+/// domicile ; éducateur : cours individuel/collectif).
 List<String> _typesForProfile() {
   if (User_Info.isPro) {
-    return ['rdv', 'formation', 'reunion', 'absence', 'autre'];
+    switch (User_Info.catPro) {
+      case 'garde':
+        return ['rdv', 'promenade', 'visite_domicile', 'absence', 'autre'];
+      case 'education':
+        return ['rdv', 'cours_individuel', 'cours_collectif', 'formation', 'absence', 'autre'];
+      case 'veterinaire':
+      case 'sante':
+        return ['rdv', 'visite', 'formation', 'absence', 'autre'];
+      default:
+        return ['rdv', 'formation', 'reunion', 'absence', 'autre'];
+    }
   }
   if (User_Info.activeType == 'association') {
     return ['rdv', 'visite', 'reunion', 'formation', 'absence', 'autre'];
@@ -2579,6 +2601,13 @@ class _RdvDetailSheetState extends State<_RdvDetailSheet> {
                               animalId: _animal!['id'].toString(),
                               readOnly: true,
                               rdvId: _rdv?['id']?.toString(),
+                              // Vue RDV pro (« Maître : … » ci-dessus) : passer en
+                              // mode "pro viewer" pour restreindre Consultations/
+                              // Documents/carnet santé selon le métier — sans ça un
+                              // pet-sitter (ou autre pro non-santé) atterrissait sur
+                              // les onglets complets du propriétaire.
+                              vetMode: User_Info.isPro && User_Info.catPro != 'education',
+                              educationMode: User_Info.catPro == 'education',
                             ),
                           )),
                           icon: const Icon(Icons.pets_outlined, size: 18),

@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import OwnerContactButton from '@/components/pro/OwnerContactButton';
+import { typeFromMotif } from '@/lib/agenda-type';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -120,7 +121,7 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
         await supabase.from('agenda_events').upsert({
           uid: rdv.client_uid,
           titre: `RDV${rdv.animalNom ? ` — ${rdv.animalNom}` : ''}`,
-          type: 'rdv', date_debut: newDt.toISOString(),
+          type: typeFromMotif(rdv.motif), date_debut: newDt.toISOString(),
           duree_minutes: duree, rdv_id: rdv.id,
           animal_id: rdv.animal_id ?? null,
           pro_profile_id: rdv.client_profile_id ?? null,
@@ -131,7 +132,7 @@ function AccepterModal({ rdv, proName, onClose, onDone }: {
         await supabase.from('agenda_events').insert({
           uid: rdv.pro_uid,
           titre: `RDV avec ${rdv.clientName ?? 'Client'}`,
-          type: 'rdv', date_debut: newDt.toISOString(),
+          type: typeFromMotif(rdv.motif), date_debut: newDt.toISOString(),
           duree_minutes: duree, couleur: `rdv:${rdv.id}`,
           animal_id: rdv.animal_id ?? null,
           pro_profile_id: rdv.pro_profile_id ?? null,
@@ -312,7 +313,7 @@ function ModifierModal({ rdv, proName, activeProfileId, onClose, onDone }: {
       await supabase.from('agenda_events').upsert({
         uid: rdv.client_uid,
         titre: `RDV${rdv.animalNom ? ` — ${rdv.animalNom}` : ''}`,
-        type: 'rdv', date_debut: newDt.toISOString(),
+        type: typeFromMotif(motif), date_debut: newDt.toISOString(),
         duree_minutes: duree, rdv_id: rdv.id,
         animal_id: rdv.animal_id ?? null,
         pro_profile_id: rdv.client_profile_id ?? null,
@@ -323,7 +324,7 @@ function ModifierModal({ rdv, proName, activeProfileId, onClose, onDone }: {
       await supabase.from('agenda_events').insert({
         uid: rdv.pro_uid,
         titre: `RDV avec ${rdv.clientName ?? 'Client'}`,
-        type: 'rdv', date_debut: newDt.toISOString(),
+        type: typeFromMotif(motif), date_debut: newDt.toISOString(),
         duree_minutes: duree, couleur: `rdv:${rdv.id}`,
         animal_id: rdv.animal_id ?? null,
         pro_profile_id: rdv.pro_profile_id ?? null,

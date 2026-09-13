@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile, useProfileSource } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
+import { typeFromMotif } from '@/lib/agenda-type';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -78,30 +79,74 @@ const NON_ELEVAGE_PROFILE_TYPES = new Set([
 ]);
 
 const TYPE_LABEL: Record<string, string> = {
-  rdv:        'RDV',
-  mise_bas:   'Mise-bas',
-  medication: 'Médicament',
-  visite:     'Visite',
-  autre:      'Autre',
+  rdv:              'RDV',
+  mise_bas:         'Mise-bas',
+  medication:       'Médicament',
+  visite:           'Visite',
+  formation:        'Formation',
+  reunion:          'Réunion',
+  absence:          'Absence',
+  promenade:        'Promenade',
+  visite_domicile:  'Visite à domicile',
+  cours_individuel: 'Cours individuel',
+  cours_collectif:  'Cours collectif',
+  autre:            'Autre',
 };
 
 const TYPE_ICON: Record<string, string> = {
-  rdv:        '🐾',
-  mise_bas:   '🐣',
-  medication: '💊',
-  visite:     '👀',
-  autre:      '📅',
+  rdv:              '🐾',
+  mise_bas:         '🐣',
+  medication:       '💊',
+  visite:           '👀',
+  formation:        '📚',
+  reunion:          '🤝',
+  absence:          '🏖️',
+  promenade:        '🚶',
+  visite_domicile:  '🏠',
+  cours_individuel: '🎓',
+  cours_collectif:  '👥',
+  autre:            '📅',
 };
 
 const TYPE_COLOR: Record<string, string> = {
-  rdv:        '#2196F3',
-  mise_bas:   '#E91E63',
-  medication: '#FF9800',
-  visite:     '#4CAF50',
-  autre:      '#9E9E9E',
+  rdv:              '#2196F3',
+  mise_bas:         '#E91E63',
+  medication:       '#FF9800',
+  visite:           '#4CAF50',
+  formation:        '#7B1FA2',
+  reunion:          '#0288D1',
+  absence:          '#78909C',
+  promenade:        '#2E7D5E',
+  visite_domicile:  '#00ACC1',
+  cours_individuel: '#7B5EA7',
+  cours_collectif:  '#AB47BC',
+  autre:            '#9E9E9E',
 };
 
-const TYPES = ['rdv', 'mise_bas', 'medication', 'visite', 'autre'];
+// Types disponibles selon le profil connecté — pour les profils pro, la
+// liste dépend du métier (catPro) pour proposer des catégories utiles à la
+// création d'un événement manuel (ex. pet sitter : promenade/visite à
+// domicile ; éducateur : cours individuel/collectif). Miroir de
+// agenda_page.dart _typesForProfile().
+function typesForProfile(u: { isPro?: boolean; isElevage?: boolean; catPro?: string } | null | undefined, isAssociation: boolean): string[] {
+  if (u?.isPro) {
+    switch (u.catPro) {
+      case 'garde':
+        return ['rdv', 'promenade', 'visite_domicile', 'absence', 'autre'];
+      case 'education':
+        return ['rdv', 'cours_individuel', 'cours_collectif', 'formation', 'absence', 'autre'];
+      case 'veterinaire':
+      case 'sante':
+        return ['rdv', 'visite', 'formation', 'absence', 'autre'];
+      default:
+        return ['rdv', 'formation', 'reunion', 'absence', 'autre'];
+    }
+  }
+  if (isAssociation) return ['rdv', 'visite', 'reunion', 'formation', 'absence', 'autre'];
+  if (u?.isElevage) return ['rdv', 'mise_bas', 'medication', 'visite', 'autre'];
+  // Particulier : pas de « Mise bas », réservée aux profils élevage/pro/association.
+  return ['rdv', 'medication', 'visite', 'autre'];
+}
 
 function colorFor(e: AgendaEvent) {
   if (e.couleur && !e.couleur.startsWith('rdv:')) return e.couleur;
@@ -915,7 +960,7 @@ export default function AgendaPage() {
       </div>
 
       {showAdd && uid && (
-        <AddModal uid={uid} profileId={activeProfileId} isParticulierView={isParticulierView} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
+        <AddModal uid={uid} profileId={activeProfileId} types={typesForProfile(userData, userData?.isAssociation ?? false)} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); load(); }} />
       )}
 
       {modalAnnuler && (
@@ -978,7 +1023,7 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
     await supabase.from('agenda_events').insert({
       uid: proUid,
       titre: titrePro,
-      type: 'rdv',
+      type: typeFromMotif(m),
       date_debut: rdv.date_debut,
       rdv_id: rdv.id,
       pro_profile_id: proProfileId,
@@ -986,7 +1031,7 @@ function PendingRdvCard({ rdv, proUid, proProfileId, onDone }: {
     await supabase.from('agenda_events').upsert({
       uid: rdv.client_uid,
       titre: titreClient,
-      type: 'rdv',
+      type: typeFromMotif(m),
       date_debut: rdv.date_debut,
       rdv_id: rdv.id,
       animal_id: rdv.animal_id,
@@ -1969,10 +2014,7 @@ function WeekView({ date, eventsForDate, onNavigate, onSelectDay, onNavigateToAn
 
 // ── AddModal ──────────────────────────────────────────────────────────────────
 
-function AddModal({ uid, profileId, isParticulierView, onClose, onSaved }: { uid: string; profileId: string; isParticulierView: boolean; onClose: () => void; onSaved: () => void }) {
-  // « Mise bas » n'a pas de sens pour un profil particulier — réservé aux
-  // profils élevage/pro/association.
-  const types = isParticulierView ? TYPES.filter(t => t !== 'mise_bas') : TYPES;
+function AddModal({ uid, profileId, types, onClose, onSaved }: { uid: string; profileId: string; types: string[]; onClose: () => void; onSaved: () => void }) {
   const [titre, setTitre]   = useState('');
   const [type, setType]     = useState('autre');
   const [date, setDate]     = useState(() => new Date().toISOString().slice(0, 16));
