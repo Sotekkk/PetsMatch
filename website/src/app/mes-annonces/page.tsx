@@ -36,6 +36,7 @@ const STATUT_LABEL: Record<string, string> = {
   disponible: 'Disponible', reserve: 'Réservé', vendu: 'Vendu',
   archivee: 'Archivée', pause: 'En pause', expiree: 'Expirée',
   brouillon: 'Brouillon · non payée',
+  quota_depasse: 'Bloquée · quota dépassé',
 };
 const STATUT_COLOR: Record<string, string> = {
   disponible: 'bg-green-100 text-green-700',
@@ -45,6 +46,7 @@ const STATUT_COLOR: Record<string, string> = {
   pause:      'bg-gray-100 text-gray-500',
   expiree:    'bg-red-100 text-red-500',
   brouillon:  'bg-amber-100 text-amber-700',
+  quota_depasse: 'bg-red-100 text-red-600',
 };
 
 type FilterKey = 'toutes' | 'disponible' | 'archivee' | 'pause';
@@ -354,7 +356,20 @@ export default function MesAnnoncesPage() {
                     </p>
                   )}
 
-                  {statut === 'brouillon' ? (
+                  {statut === 'quota_depasse' ? (
+                    <div className="flex gap-1.5 mt-3 pt-3 border-t border-gray-50">
+                      <Link href="/abonnement"
+                        className="flex-1 text-center text-xs bg-[#D97706] hover:bg-[#B45309] text-white font-semibold py-2 rounded-xl transition-colors">
+                        Passer à un plan payant pour republier
+                      </Link>
+                      <button
+                        onClick={() => handleDelete(a.id)}
+                        disabled={deleting === a.id}
+                        className="px-2.5 py-2 text-xs border border-red-100 hover:bg-red-50 text-red-400 rounded-xl transition-colors disabled:opacity-50">
+                        {deleting === a.id ? '…' : '🗑'}
+                      </button>
+                    </div>
+                  ) : statut === 'brouillon' ? (
                     <div className="flex gap-1.5 mt-3 pt-3 border-t border-gray-50">
                       <button
                         onClick={() => handlePayerPublier(a)}

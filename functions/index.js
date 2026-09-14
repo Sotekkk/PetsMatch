@@ -15,6 +15,7 @@ const marketplaceBillingFunctions = require("./marketplace_billing");
 const retardFunctions = require("./retard");
 const pensionFunctions = require("./pension");
 const cessionSterilisationFunctions = require("./cession_sterilisation");
+const abonnementFunctions = require("./abonnements");
 
 // Stripe + messagerie
 exports.createStripePaymentIntent = stripeFunctions.createStripePaymentIntent;
@@ -65,6 +66,7 @@ exports.sendInventaireReminders = santeFunctions.sendInventaireReminders;
 
 // Annonces — expiration auto + rappels J-7 et J-1
 exports.sendAnnonceExpirationReminders = annonceFunctions.sendAnnonceExpirationReminders;
+exports.processAbonnementsExpiration = abonnementFunctions.processAbonnementsExpiration;
 
 // Matching perdu ↔ trouvé — score pondéré + notification ≥ 90%
 exports.matchLostFound = matchFunctions.matchLostFound;

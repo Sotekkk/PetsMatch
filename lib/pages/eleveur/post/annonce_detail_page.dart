@@ -385,6 +385,69 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
         && (annonceProfileId == null || annonceProfileId.isEmpty
             || User_Info.activeProfileId.isEmpty
             || annonceProfileId == User_Info.activeProfileId);
+    // Vendeur éleveur pas encore validé → invisible aux autres, sauf au
+    // propriétaire qui peut prévisualiser son annonce.
+    final profilSource = (data['profilSource'] ?? data['profil_source'])?.toString();
+    if (profilSource != 'association' && profilSource != 'particulier' && !isOwner) {
+      final statutPro = (_eleveurData?['statut_pro'] ?? '').toString();
+      if (_eleveurData != null && statutPro != 'actif' && statutPro != 'validated') {
+        return Scaffold(
+          backgroundColor: const Color(0xFFF5F5F0),
+          appBar: AppBar(
+            backgroundColor: const Color(0xFFF5F5F0),
+            elevation: 0,
+            iconTheme: const IconThemeData(color: Colors.black87),
+          ),
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.hourglass_top_outlined, size: 64, color: Colors.grey.shade300),
+                const SizedBox(height: 12),
+                const Text('Cette annonce est en cours de validation',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                const SizedBox(height: 6),
+                Text('Elle sera visible dès que notre équipe aura approuvé le vendeur.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+              ]),
+            ),
+          ),
+        );
+      }
+    }
+
+    // Annonce bloquée (abonnement éleveur expiré, hors quota gratuit) — sauf
+    // au propriétaire, qui garde accès pour republier après paiement.
+    final annonceStatut = (data['statut'] ?? '').toString();
+    if (annonceStatut == 'quota_depasse' && !isOwner) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF5F5F0),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFFF5F5F0),
+          elevation: 0,
+          iconTheme: const IconThemeData(color: Colors.black87),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.lock_outline, size: 64, color: Colors.grey.shade300),
+              const SizedBox(height: 12),
+              const Text('Cette annonce n\'est plus disponible',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+              const SizedBox(height: 6),
+              Text('Elle sera de nouveau visible dès que le vendeur aura repris un abonnement payant.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+            ]),
+          ),
+        ),
+      );
+    }
+
     final photos    = List<String>.from(data['photos'] ?? []);
     final espece    = (data['espece'] as String?) ?? '';
     final especeAutre = (data['espece_autre'] as String?) ?? '';

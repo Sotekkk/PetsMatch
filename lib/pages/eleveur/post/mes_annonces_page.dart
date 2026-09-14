@@ -469,6 +469,7 @@ class _AnnonceCardState extends State<_AnnonceCard> {
     'reserve'    => const Color(0xFFF59E0B),
     'pause'      => const Color(0xFF9CA3AF),
     'vendu' || 'cede' => Colors.blueGrey,
+    'quota_depasse' => Colors.redAccent,
     _            => Colors.redAccent,
   };
 
@@ -479,6 +480,7 @@ class _AnnonceCardState extends State<_AnnonceCard> {
     'vendu'      => 'Vendu',
     'cede'       => 'Cédé',
     'expiree'    => 'Expirée',
+    'quota_depasse' => 'Bloquée · quota dépassé',
     _            => s,
   };
 
@@ -689,7 +691,35 @@ class _AnnonceCardState extends State<_AnnonceCard> {
           Divider(height: 1, color: Colors.grey.shade100),
 
           // ── Actions ───────────────────────────────────────────────────────
-          if (!isTermine)
+          if (_statut == 'quota_depasse')
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Row(children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const AbonnementPage())),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFD97706),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: const Text('Passer à un plan payant pour republier',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _ActionBtn(
+                  icon: Icons.delete_outline,
+                  label: 'Supprimer',
+                  color: Colors.redAccent,
+                  onTap: () => _confirmDelete(context),
+                ),
+              ]),
+            )
+          else if (!isTermine)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               child: Row(children: [

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, checkAdmin } from '../_lib/guard';
+import { computeDateFin } from '@/lib/subscription';
 
 // POST /api/admin/abonnement
 // { uid: <admin>, targetUid, profileId?, profil_type, plan_code,
@@ -23,12 +24,17 @@ export async function POST(req: NextRequest) {
     const profileId = body.profileId ?? null;
     const statut = body.statut ?? 'actif';
     const periodicite = body.periodicite ?? 'mensuel';
-    const dateFin = body.date_fin ?? null;
     if (!targetUid || !profilType || !planCode) {
       return NextResponse.json({ error: 'targetUid, profil_type et plan_code requis' }, { status: 400 });
     }
 
     const nowIso = new Date().toISOString();
+    // Calcule une échéance cohérente avec la périodicité quand l'admin n'en
+    // saisit pas une explicitement (mensuel → +1 mois, annuel → +1 an) —
+    // sans ça, un octroi manuel sans date_fin ne pouvait jamais expirer.
+    // Un abonnement non actif (statut fourni ≠ 'actif') n'a pas d'échéance
+    // à calculer.
+    const dateFin = body.date_fin ?? (statut === 'actif' ? computeDateFin(nowIso, periodicite) : null);
 
     // 1. Annuler les abonnements actifs de ce couple.
     let cancelQ = supabaseAdmin.from('abonnements')

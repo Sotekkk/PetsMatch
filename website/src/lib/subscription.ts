@@ -20,6 +20,15 @@ const FALLBACK: Record<PlanCode, PlanInfo> = {
   premium: { plan: 'premium', maxAnnonces: -1, dureeDays: 60, autoPublish: true  },
 };
 
+/** mensuel → +1 mois ; tout le reste (annuel compris) → +1 an, valable
+ * jusqu'à la date anniversaire du paiement. */
+export function computeDateFin(dateDebutIso: string, periodicite: string): string {
+  const d = new Date(dateDebutIso);
+  if (periodicite === 'mensuel') d.setMonth(d.getMonth() + 1);
+  else d.setFullYear(d.getFullYear() + 1);
+  return d.toISOString();
+}
+
 export async function getUserPlan(uid: string): Promise<PlanInfo> {
   try {
     const { data } = await supabaseAdmin

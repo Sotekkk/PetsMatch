@@ -749,6 +749,41 @@ function AnnonceDetailPageInner() {
     </div>
   );
 
+  // Vendeur (non association) pas encore validé → invisible aux autres, sauf
+  // au propriétaire qui peut prévisualiser son annonce.
+  if (annonce.profil_source !== 'association' && pro
+      && !['actif', 'validated'].includes(pro.statut_pro || '') && !isOwner) {
+    return (
+      <div className="min-h-screen bg-[#F8F8F6] flex flex-col items-center justify-center gap-3 px-4 text-center">
+        <span className="text-5xl">⏳</span>
+        <p className="text-gray-700 font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Cette annonce est en cours de validation
+        </p>
+        <p className="text-gray-500 text-sm max-w-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Elle sera visible dès que notre équipe aura approuvé le vendeur.
+        </p>
+        <Link href="/annonces" className="text-[#0C5C6C] text-sm underline">← Retour aux annonces</Link>
+      </div>
+    );
+  }
+
+  // Annonce bloquée (abonnement éleveur expiré, hors quota gratuit) — sauf
+  // au propriétaire, qui garde accès pour republier après paiement.
+  if (annonce.statut === 'quota_depasse' && !isOwner) {
+    return (
+      <div className="min-h-screen bg-[#F8F8F6] flex flex-col items-center justify-center gap-3 px-4 text-center">
+        <span className="text-5xl">🔒</span>
+        <p className="text-gray-700 font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Cette annonce n&apos;est plus disponible
+        </p>
+        <p className="text-gray-500 text-sm max-w-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Elle sera de nouveau visible dès que le vendeur aura repris un abonnement payant.
+        </p>
+        <Link href="/annonces" className="text-[#0C5C6C] text-sm underline">← Retour aux annonces</Link>
+      </div>
+    );
+  }
+
   const photos = (annonce.photos ?? []) as string[];
   const bebes = (annonce.animaux_portee ?? []) as Bebe[];
   const isPortee = annonce.type === 'portee';
