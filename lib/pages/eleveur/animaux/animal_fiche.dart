@@ -1892,7 +1892,13 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             ),
           if (widget.animalId != null && !widget.vetMode
               && !widget.readOnly && widget.eleveurUidOverride == null
-              && _statut == 'present')
+              // Auparavant `_statut == 'present'` : un animal dont le statut
+              // n'était pas exactement « present » en base (vide/legacy)
+              // faisait disparaître ce bouton alors que Céder/Décéder,
+              // eux, restaient visibles (conditions par exclusion) — mêmes
+              // règles ici pour rester cohérent.
+              && _statut != 'reserve' && _statut != 'sorti'
+              && _statut != 'decede' && _statut != 'cession_en_cours')
             IconButton(
               icon: const Icon(Icons.bookmark_add_outlined, size: 20),
               tooltip: 'Réserver cet animal',
