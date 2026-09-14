@@ -50,6 +50,40 @@ class _ContactUrgence {
   void dispose() { nom.dispose(); tel.dispose(); }
 }
 
+// ─── Bouton d'action rapide de l'en-tête (Partager / Réserver / Céder…) ───────
+// Un vrai bouton libellé (icône + texte, fond blanc translucide sur l'AppBar
+// teal), comme sur le site, plutôt qu'une icône seule pas toujours claire.
+
+class _QuickAction {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  _QuickAction({required this.icon, required this.label, required this.color, required this.onTap});
+
+  Widget build() => Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: color.withValues(alpha: 0.35)),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 6),
+              Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                  fontWeight: FontWeight.w600, color: color)),
+            ]),
+          ),
+        ),
+      );
+}
+
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 class AnimalFichePage extends StatefulWidget {
@@ -1873,6 +1907,143 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
 
   // ── UI ───────────────────────────────────────────────────────────────────────
 
+  /// Actions rapides de la fiche (Partager / Réserver / Céder / Décéder…) —
+  /// de vrais boutons libellés (icône + texte), comme sur le site, plutôt
+  /// que des icônes seules pas toujours claires.
+  List<_QuickAction> _ficheQuickActions() {
+    if (widget.animalId == null || widget.readOnly) return [];
+    final actions = <_QuickAction>[];
+    if (!widget.vetMode) {
+      actions.add(_QuickAction(
+        icon: Icons.share_outlined,
+        label: 'Partager',
+        color: const Color(0xFF5F9EAA),
+        onTap: () => showVetShareSheet(context, widget.animalId!),
+      ));
+    }
+    if (!widget.vetMode && widget.eleveurUidOverride == null) {
+      // Auparavant `_statut == 'present'` : un animal dont le statut n'était
+      // pas exactement « present » en base (vide/legacy) faisait disparaître
+      // ce bouton alors que Céder/Décéder, eux, restaient visibles
+      // (conditions par exclusion) — mêmes règles ici pour rester cohérent.
+      if (_statut != 'reserve' && _statut != 'sorti'
+          && _statut != 'decede' && _statut != 'cession_en_cours') {
+        actions.add(_QuickAction(
+          icon: Icons.bookmark_add_outlined,
+          label: 'Réserver',
+          color: const Color(0xFFD97706),
+          onTap: () => showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (_) => ReservationSheet(
+              animal: {
+                'id': widget.animalId,
+                'nom': _nomCtrl.text.isNotEmpty ? _nomCtrl.text : null,
+                'espece': _espece,
+                'race': _raceCtrl.text.isNotEmpty ? _raceCtrl.text : null,
+                'identification': _identCtrl.text.isNotEmpty ? _identCtrl.text : null,
+                'date_naissance': _dateNaissance?.toIso8601String(),
+              },
+              uid: FirebaseAuth.instance.currentUser!.uid,
+              onReserved: () {
+                _refreshFromSupabase();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('🔖 Réservation enregistrée'), backgroundColor: Color(0xFFD97706)),
+                );
+              },
+            ),
+          ),
+        ));
+      }
+      if (_statut == 'reserve') {
+        actions.add(_QuickAction(
+          icon: Icons.bookmark_remove_outlined,
+          label: 'Annuler la réservation',
+          color: const Color(0xFF6F767B),
+          onTap: () async {
+            if (_reservation == null) return;
+            final confirm = await showDialog<bool>(
+              context: context,
+              builder: (_) => AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                title: const Text('Annuler la réservation ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Non')),
+                  TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Oui, annuler')),
+                ],
+              ),
+            );
+            if (confirm != true) return;
+            await _supa.from('reservations_animaux')
+                .update({'statut': 'annulee', 'updated_at': DateTime.now().toIso8601String()})
+                .eq('id', _reservation!['id']);
+            await _supa.from('animaux').update({'statut': 'present'}).eq('id', widget.animalId!);
+            if (mounted) _refreshFromSupabase();
+          },
+        ));
+      }
+      if (_statut != 'decede' && _statut != 'cession_en_cours'
+          && (_statut != 'sorti' || _uidAcquereur == FirebaseAuth.instance.currentUser?.uid)) {
+        actions.add(_QuickAction(
+          icon: Icons.handshake_outlined,
+          label: widget.isAssociation ? 'Proposer à l\'adoption' : 'Céder',
+          color: const Color(0xFFB45309),
+          onTap: () => showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (_) => CessionSheet(
+              animal: {
+                'id': widget.animalId,
+                'nom': _nomCtrl.text.isNotEmpty ? _nomCtrl.text : null,
+                'espece': _espece,
+                'race': _raceCtrl.text.isNotEmpty ? _raceCtrl.text : null,
+                'sexe': _sexe,
+                'identification': _identCtrl.text.isNotEmpty ? _identCtrl.text : null,
+                'date_naissance': _dateNaissance?.toIso8601String(),
+              },
+              uid: FirebaseAuth.instance.currentUser!.uid,
+              nomElevage: _nomElevage ?? '',
+              isReCession: _isNewOwner && !User_Info.isElevage && !User_Info.isAssociation,
+              reservation: _statut == 'reserve' ? _reservation : null,
+              onCeded: () {
+                _refreshFromSupabase();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('✓ Cession enregistrée'), backgroundColor: Color(0xFF6E9E57)),
+                );
+              },
+            ),
+          ),
+        ));
+      }
+      if (_statut != 'decede' && _statut != 'cession_en_cours' && _statut != 'sorti') {
+        actions.add(_QuickAction(
+          icon: Icons.sentiment_very_dissatisfied_outlined,
+          label: 'Décéder',
+          color: Colors.redAccent,
+          onTap: _declarerDeces,
+        ));
+      }
+    }
+    return actions;
+  }
+
+  Widget _ficheQuickActionsRow() {
+    final actions = _ficheQuickActions();
+    return Container(
+      height: 48,
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: actions.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) => actions[i].build(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1884,110 +2055,6 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          if (widget.animalId != null && !widget.vetMode)
-            IconButton(
-              icon: const Icon(Icons.share_outlined, size: 20),
-              tooltip: 'Partager avec mon vétérinaire',
-              onPressed: () => showVetShareSheet(context, widget.animalId!),
-            ),
-          if (widget.animalId != null && !widget.vetMode
-              && !widget.readOnly && widget.eleveurUidOverride == null
-              && _statut == 'present')
-            IconButton(
-              icon: const Icon(Icons.bookmark_add_outlined, size: 20),
-              tooltip: 'Réserver cet animal',
-              onPressed: () => showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                backgroundColor: Colors.transparent,
-                builder: (_) => ReservationSheet(
-                  animal: {
-                    'id': widget.animalId,
-                    'nom': _nomCtrl.text.isNotEmpty ? _nomCtrl.text : null,
-                    'espece': _espece,
-                    'race': _raceCtrl.text.isNotEmpty ? _raceCtrl.text : null,
-                    'identification': _identCtrl.text.isNotEmpty ? _identCtrl.text : null,
-                    'date_naissance': _dateNaissance?.toIso8601String(),
-                  },
-                  uid: FirebaseAuth.instance.currentUser!.uid,
-                  onReserved: () {
-                    _refreshFromSupabase();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('🔖 Réservation enregistrée'), backgroundColor: Color(0xFFD97706)),
-                    );
-                  },
-                ),
-              ),
-            ),
-          if (widget.animalId != null && !widget.vetMode
-              && !widget.readOnly && widget.eleveurUidOverride == null
-              && _statut == 'reserve')
-            IconButton(
-              icon: const Icon(Icons.bookmark_remove_outlined, size: 20),
-              tooltip: 'Annuler la réservation',
-              onPressed: () async {
-                if (_reservation == null) return;
-                final confirm = await showDialog<bool>(
-                  context: context,
-                  builder: (_) => AlertDialog(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    title: const Text('Annuler la réservation ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Non')),
-                      TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Oui, annuler')),
-                    ],
-                  ),
-                );
-                if (confirm != true) return;
-                await _supa.from('reservations_animaux')
-                    .update({'statut': 'annulee', 'updated_at': DateTime.now().toIso8601String()})
-                    .eq('id', _reservation!['id']);
-                await _supa.from('animaux').update({'statut': 'present'}).eq('id', widget.animalId!);
-                if (mounted) _refreshFromSupabase();
-              },
-            ),
-          if (widget.animalId != null && !widget.vetMode
-              && !widget.readOnly && widget.eleveurUidOverride == null
-              && _statut != 'decede' && _statut != 'cession_en_cours'
-              && (_statut != 'sorti' || _uidAcquereur == FirebaseAuth.instance.currentUser?.uid))
-            IconButton(
-              icon: const Icon(Icons.handshake_outlined, size: 20),
-              tooltip: widget.isAssociation ? 'Proposer à l\'adoption' : 'Céder cet animal',
-              onPressed: () => showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                backgroundColor: Colors.transparent,
-                builder: (_) => CessionSheet(
-                  animal: {
-                    'id': widget.animalId,
-                    'nom': _nomCtrl.text.isNotEmpty ? _nomCtrl.text : null,
-                    'espece': _espece,
-                    'race': _raceCtrl.text.isNotEmpty ? _raceCtrl.text : null,
-                    'sexe': _sexe,
-                    'identification': _identCtrl.text.isNotEmpty ? _identCtrl.text : null,
-                    'date_naissance': _dateNaissance?.toIso8601String(),
-                  },
-                  uid: FirebaseAuth.instance.currentUser!.uid,
-                  nomElevage: _nomElevage ?? '',
-                  isReCession: _isNewOwner && !User_Info.isElevage && !User_Info.isAssociation,
-                  reservation: _statut == 'reserve' ? _reservation : null,
-                  onCeded: () {
-                    _refreshFromSupabase();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('✓ Cession enregistrée'), backgroundColor: Color(0xFF6E9E57)),
-                    );
-                  },
-                ),
-              ),
-            ),
-          if (widget.animalId != null && !widget.vetMode
-              && !widget.readOnly && widget.eleveurUidOverride == null
-              && _statut != 'decede' && _statut != 'cession_en_cours' && _statut != 'sorti')
-            IconButton(
-              icon: const Icon(Icons.sentiment_very_dissatisfied_outlined, size: 20),
-              tooltip: 'Déclarer le décès',
-              onPressed: _declarerDeces,
-            ),
           if (widget.readOnly)
             const Padding(
               padding: EdgeInsets.only(right: 16),
@@ -2007,7 +2074,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               label: const Text('Modifier', style: TextStyle(color: Colors.white, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
             ),
         ],
-        bottom: TabBar(
+        bottom: PreferredSize(
+          preferredSize: Size.fromHeight(_ficheQuickActions().isEmpty ? 48 : 96),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            if (_ficheQuickActions().isNotEmpty) _ficheQuickActionsRow(),
+            TabBar(
           controller: _tabs,
           isScrollable: true,
           tabAlignment: TabAlignment.start,
@@ -2036,6 +2107,8 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                           : (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab
                               ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Documents')]
                               : const [Tab(text: 'Identité'), Tab(text: 'Documents'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')])),
+            ),
+          ]),
         ),
       ),
       body: TabBarView(
