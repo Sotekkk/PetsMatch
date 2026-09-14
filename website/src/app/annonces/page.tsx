@@ -198,6 +198,10 @@ export default function AnnoncesPage() {
   ].filter(Boolean).length;
 
   const filtered = annonces.filter((a) => {
+    // Vendeur pas encore validé → invisible dans l'annuaire public (déjà
+    // chargé pour le badge « vérifié », on le réutilise comme filtre).
+    const verif = a.uid_eleveur ? eleveurVerifs[a.uid_eleveur] : undefined;
+    if (verif && !['actif', 'validated'].includes(verif.statut_pro || '')) return false;
     const isAsso = a.profil_source === 'association';
     if (source === 'eleveurs' && isAsso) return false;
     if (source === 'associations' && !isAsso) return false;

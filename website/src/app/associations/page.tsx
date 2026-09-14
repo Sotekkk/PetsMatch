@@ -26,6 +26,7 @@ interface Asso {
   description?: string;
   lat?: number;
   lng?: number;
+  statutPro?: string;
 }
 
 export default function AssociationsPage() {
@@ -38,11 +39,15 @@ export default function AssociationsPage() {
     // user_profiles : profile_type='association' — on ne sélectionne PAS name_elevage
     // (cette colonne n'existe pas dans user_profiles, cause "not in schema cache")
     supabase.from('user_profiles')
-      .select('id, uid, nom, profile_label, avatar_url, banner_url, ville, description, lat, lng')
+      .select('id, uid, nom, profile_label, avatar_url, banner_url, ville, description, lat, lng, statut_pro')
       .eq('profile_type', 'association')
       .order('nom')
       .then(({ data: profiles }) => {
-        const list: Asso[] = ((profiles ?? []) as Record<string, unknown>[]).map(p => {
+        const list: Asso[] = ((profiles ?? []) as Record<string, unknown>[])
+          // Association pas encore validée (RNA en cours de vérification) →
+          // invisible dans l'annuaire public tant que son dossier n'est pas approuvé.
+          .filter(p => ['actif', 'validated'].includes((p['statut_pro'] as string | undefined) ?? ''))
+          .map(p => {
           const uid = p['uid'] as string ?? '';
           const id  = p['id']  as string ?? uid;
           const nom   = (p['nom']          as string | undefined)?.trim() ?? '';
@@ -57,6 +62,7 @@ export default function AssociationsPage() {
             description: (p['description'] as string | undefined)?.trim() ?? undefined,
             lat:         (p['lat'] as number | undefined) ?? undefined,
             lng:         (p['lng'] as number | undefined) ?? undefined,
+            statutPro:   (p['statut_pro'] as string | undefined) ?? undefined,
           };
         });
 

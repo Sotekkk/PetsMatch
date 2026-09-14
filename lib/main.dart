@@ -275,6 +275,7 @@ class User_Info {
   static String agrementPrefectoral = '';
   static int capaciteAccueil = 0;
   static String verificationStatus = 'none';
+  static String statutPro = '';
   static String kbisUrl = '';
   static String rejectionReason = '';
   static bool isDog = false;
@@ -486,6 +487,7 @@ class User_Info {
     facebook  = p['facebook']?.toString() ?? '';
     bannerUrl = p['banner_url']?.toString() ?? '';
     verificationStatus = p['verification_status']?.toString() ?? 'none';
+    statutPro = p['statut_pro']?.toString() ?? '';
     kbisUrl = p['kbis_url']?.toString() ?? '';
     tarifs  = p['tarifs']?.toString() ?? '';
     photosGalerie = _safeStringList(p['photos_galerie'], []);
@@ -906,24 +908,71 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
             if (!snap.hasData) return WelcomePage();
 
-            // Profil actif dans Supabase (contourne isValidate Firestore)
-            final hasActiveProfile = User_Info.availableProfiles.any((p) {
-              final s = (p['statut_pro'] ?? '').toString().toLowerCase();
-              return s == 'actif' || s == 'validated';
-            });
-            final needsValidation = User_Info.isElevage || User_Info.isPro;
+            // Un pro « en attente » (jamais encore examiné) garde l'accès normal
+            // à l'appli — seul un dossier explicitement REFUSÉ par un admin reste
+            // bloquant. Être en attente ne doit priver que de la visibilité
+            // auprès des autres (gérée par ailleurs, pas ici), pas de l'usage de
+            // son propre compte.
+            final isRejected = User_Info.verificationStatus == 'rejected';
+            // Blocage admin (bouton « Suspendre »), tous types de compte
+            // confondus — y compris particulier, cf. demande explicite.
+            final isSuspended = User_Info.statutPro == 'suspendu';
 
-            if (User_Info.isAdmin || User_Info.isValidate || !needsValidation || hasActiveProfile) {
+            if (User_Info.isAdmin || (!isSuspended && !isRejected)) {
               // L'UI est prête : rejoue un éventuel lien de partage en attente.
               WidgetsBinding.instance.addPostFrameCallback(
                   (_) => DeepLinkService.instance.flushPending());
               return BottomNav();
+            } else if (isSuspended) {
+              return const _SuspendedAccountPage();
             } else {
               return VerificationRegistrationPage();
             }
           },
         );
       },
+    );
+  }
+}
+
+/// Écran plein-écran affiché quand un admin a suspendu le compte (bouton
+/// « Suspendre » de l'admin, tous types de compte confondus — y compris
+/// particulier). Distinct de [VerificationRegistrationPage] (validation
+/// SIRET/RNA refusée) : ici c'est une décision de modération, pas un statut
+/// de dossier pro.
+class _SuspendedAccountPage extends StatelessWidget {
+  const _SuspendedAccountPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F8F6),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('🚫', style: TextStyle(fontSize: 56)),
+            const SizedBox(height: 16),
+            const Text('Compte suspendu',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+            const SizedBox(height: 8),
+            Text(
+              'Votre compte a été suspendu par un administrateur. '
+              'Contactez le support si vous pensez qu\'il s\'agit d\'une erreur.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () => FirebaseAuth.instance.signOut(),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0C5C6C)),
+              child: const Text('Se déconnecter',
+                  style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
+            ),
+          ]),
+        ),
+      ),
     );
   }
 }

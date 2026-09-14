@@ -43,6 +43,7 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
   String _siteWeb      = '';
   List<Map<String, dynamic>> _animaux   = [];
   List<Map<String, dynamic>> _annonces  = [];
+  String _statutPro = '';
   bool _loading = true;
   bool _loadingChat = false;
 
@@ -58,12 +59,12 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
       Map<String, dynamic>? p;
       if (widget.profileId != null) {
         p = await _supa.from('user_profiles')
-            .select('nom, profile_label, desc_entreprise, description, avatar_url, banner_url, ville, phone, telephone, site_web')
+            .select('nom, profile_label, desc_entreprise, description, avatar_url, banner_url, ville, phone, telephone, site_web, statut_pro')
             .eq('id', widget.profileId!)
             .maybeSingle();
       } else {
         final rows = (await _supa.from('user_profiles')
-            .select('nom, profile_label, desc_entreprise, description, avatar_url, banner_url, ville, phone, telephone, site_web, profile_type')
+            .select('nom, profile_label, desc_entreprise, description, avatar_url, banner_url, ville, phone, telephone, site_web, profile_type, statut_pro')
             .eq('uid', widget.uid)) as List;
         p = rows.firstWhere(
           (r) => r['profile_type'] == 'association',
@@ -105,6 +106,7 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
           _description  = ((p?['desc_entreprise'] ?? p?['description']) as String?)?.trim() ?? '';
           _phone        = (p?['phone'] ?? p?['telephone'])?.toString().trim() ?? '';
           _siteWeb      = (p?['site_web'] as String?)?.trim() ?? '';
+          _statutPro    = (p?['statut_pro'] ?? '').toString();
           _animaux      = List<Map<String, dynamic>>.from(animaux);
           _annonces     = List<Map<String, dynamic>>.from(annoncesRes);
           _loading      = false;
@@ -152,6 +154,37 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Association pas encore validée → visible uniquement par son
+    // propriétaire (pour qu'il puisse voir son brouillon).
+    final isOwner = User_Info.uid == widget.uid;
+    final isActivated = _statutPro == 'actif' || _statutPro == 'validated';
+    if (!_loading && !isActivated && !isOwner) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8F8F6),
+        appBar: AppBar(
+          backgroundColor: _teal,
+          foregroundColor: Colors.white,
+          elevation: 0,
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.hourglass_top_outlined, size: 64, color: Colors.grey.shade300),
+              const SizedBox(height: 12),
+              const Text('Ce profil est en cours de validation',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+              const SizedBox(height: 6),
+              Text('Il sera visible dès que notre équipe l\'aura approuvé.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+            ]),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
       body: CustomScrollView(

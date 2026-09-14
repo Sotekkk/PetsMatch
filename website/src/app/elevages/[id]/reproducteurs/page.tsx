@@ -5,14 +5,18 @@ import { useParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-context';
 import { ESPECE_LABEL, ESPECE_EMOJI, UUID_RE, ageLabel, sexeSymbol, type Repro } from '@/lib/repro';
 
 export default function ReproducteursPage() {
   const params = useParams();
   const id = String(params.id ?? '');
+  const { user } = useAuth();
   const [repros, setRepros] = useState<Repro[]>([]);
   const [nomElevage, setNomElevage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [euid, setEuid] = useState('');
+  const [statutPro, setStatutPro] = useState('');
 
   useEffect(() => {
     if (!id) return;
@@ -23,11 +27,13 @@ export default function ReproducteursPage() {
         const { data } = await supabase.from('user_profiles').select('uid').eq('id', id).maybeSingle();
         euid = (data?.uid as string) ?? id;
       }
+      setEuid(euid);
       // 2. Profil ÉLEVEUR uniquement (jamais un autre profil du même compte)
       const { data: prof } = await supabase.from('user_profiles')
-        .select('id, nom, montre_reproducteurs')
+        .select('id, nom, montre_reproducteurs, statut_pro')
         .eq('uid', euid).eq('profile_type', 'eleveur').maybeSingle();
       setNomElevage((prof?.nom as string) ?? '');
+      setStatutPro((prof?.statut_pro as string) ?? '');
       if (!prof?.id || prof.montre_reproducteurs !== true) { setRepros([]); setLoading(false); return; }
       // 3. Reproducteurs publics
       const { data: rows } = await supabase.from('animaux')
@@ -60,6 +66,14 @@ export default function ReproducteursPage() {
 
         {loading ? (
           <p className="text-gray-400 text-sm py-12 text-center">Chargement…</p>
+        ) : !['actif', 'validated'].includes(statutPro) && user?.uid !== euid ? (
+          <div className="text-center py-12 bg-white rounded-2xl shadow-sm">
+            <span className="text-4xl">⏳</span>
+            <p className="text-gray-700 font-semibold mt-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+              Ce profil est en cours de validation
+            </p>
+            <p className="text-gray-500 text-sm mt-1">Il sera visible dès que notre équipe l&apos;aura approuvé.</p>
+          </div>
         ) : repros.length === 0 ? (
           <p className="text-gray-400 text-sm text-center py-12 bg-white rounded-2xl shadow-sm">
             Aucun reproducteur affiché.

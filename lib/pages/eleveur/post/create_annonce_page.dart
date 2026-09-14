@@ -558,6 +558,29 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       return;
     }
 
+    // ── Seuls les éleveurs validés peuvent publier (anti-opportunistes) ──────
+    // Requête directe (pas de champ statut_pro mis en cache dans User_Info)
+    // pour avoir la donnée la plus fraîche au moment de la publication.
+    final activeProfId = User_Info.activeProfileId;
+    if (activeProfId.isNotEmpty) {
+      final prof = await Supabase.instance.client
+          .from('user_profiles')
+          .select('statut_pro')
+          .eq('id', activeProfId)
+          .maybeSingle();
+      final statutPro = (prof?['statut_pro'] ?? '').toString().toLowerCase();
+      if (statutPro != 'actif' && statutPro != 'validated') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: const Text(
+                '⏳ Votre dossier éleveur est en cours de validation. Vous pourrez publier des annonces dès qu\'il sera approuvé.',
+                style: TextStyle(fontFamily: 'Galey')),
+            backgroundColor: Colors.orange.shade700));
+        }
+        return;
+      }
+    }
+
     setState(() => _saving = true);
 
     // ── Quota check (nouvelle annonce uniquement) ────────────────────────────

@@ -33,13 +33,17 @@ class _AssociationsListPageState extends State<AssociationsListPage> {
       // name_elevage n'existe pas dans user_profiles → utiliser nom + profile_label
       final profiles = await Supabase.instance.client
           .from('user_profiles')
-          .select('id,uid,nom,profile_label,avatar_url,profile_type,ville,latitude,longitude')
+          .select('id,uid,nom,profile_label,avatar_url,profile_type,ville,latitude,longitude,statut_pro')
           .eq('profile_type', 'association')
           .order('nom');
 
       final list = <Map<String, dynamic>>[];
 
       for (final p in profiles as List) {
+        // Association pas encore validée (RNA en cours) → invisible dans
+        // l'annuaire public tant que son dossier n'est pas approuvé.
+        final statutPro = (p['statut_pro'] ?? '').toString();
+        if (statutPro != 'actif' && statutPro != 'validated') continue;
         final uid       = p['uid']?.toString() ?? '';
         final profileId = p['id']?.toString() ?? '';
         final nom       = (p['nom'] as String?)?.trim() ?? '';

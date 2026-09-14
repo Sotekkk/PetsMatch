@@ -242,6 +242,39 @@ class _AssociationHomePageState extends State<AssociationHomePage> with RouteAwa
                 if (_loading)
                   const Center(child: CircularProgressIndicator())
                 else ...[
+                  // Non bloquant : un dossier en attente garde l'accès normal
+                  // à l'appli (cf. AuthWrapper, lib/main.dart) — seule sa
+                  // visibilité auprès des autres est restreinte tant qu'il
+                  // n'a pas été examiné par un admin.
+                  if (!User_Info.isValidate) ...[
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.orange.shade300, width: 1.5),
+                      ),
+                      child: Row(children: [
+                        CircleAvatar(
+                          backgroundColor: Colors.orange.shade100,
+                          child: Icon(Icons.hourglass_empty, color: Colors.orange.shade800, size: 20),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text('Dossier en cours d\'examen',
+                                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                                    fontSize: 14, color: Colors.orange.shade900)),
+                            Text(
+                              'Vous pouvez utiliser votre compte normalement, mais votre profil n\'est pas encore visible par les autres.',
+                              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.orange.shade800),
+                            ),
+                          ]),
+                        ),
+                      ]),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
                   // Stats — 3 colonnes × 2 lignes
                   Row(
                     children: [

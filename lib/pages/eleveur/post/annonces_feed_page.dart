@@ -330,6 +330,7 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
           final photoMap    = <String, String>{};
           final verifiedMap = <String, bool>{};
           final premiumMap  = <String, bool>{};
+          final activeMap   = <String, bool>{};
           for (final u in List<Map<String, dynamic>>.from(users)) {
             final id = u['uid'] as String?;
             if (id == null) continue;
@@ -340,6 +341,8 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
             final siret = u['siret']?.toString() ?? '';
             verifiedMap[id] = u['statut_pro'] == 'actif' && siret.isNotEmpty;
             premiumMap[id]  = premiumByUid[id] ?? false;
+            final statutPro = (u['statut_pro'] ?? '').toString();
+            activeMap[id] = statutPro == 'actif' || statutPro == 'validated';
           }
           items = items.map((i) {
             // Une annonce particulier/association n'est pas portée par le profil
@@ -353,6 +356,12 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
                 verifie: uid != null && (verifiedMap[uid] ?? false),
                 premium: uid != null && (premiumMap[uid] ?? false),
               );
+          }).where((i) {
+            // Éleveur pas encore validé (SIRET/dossier en cours) → invisible
+            // dans le fil public tant que son dossier n'est pas approuvé.
+            if (i.isParticulier || i.isAssociation) return true;
+            final uid = i.uidEleveur;
+            return uid == null || (activeMap[uid] ?? false);
           }).toList();
 
           // Annonces particulier : photo/ville depuis le profil particulier réel

@@ -295,6 +295,10 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                           const SizedBox(height: 12),
                           _buildDisponibiliteBanner(context),
                         ],
+                        if ((User_Info.isPro || User_Info.isElevage) && !User_Info.isValidate) ...[
+                          const SizedBox(height: 16),
+                          _buildPendingValidationBanner(context),
+                        ],
                         if (!User_Info.isProfileComplete()) ...[
                           const SizedBox(height: 16),
                           _buildProfileIncompleteBanner(context),
@@ -681,6 +685,43 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
           const Icon(Icons.chevron_right, color: Color(0xFF5F9EAA), size: 16),
         ]),
       ),
+    );
+  }
+
+  // Non bloquant : un dossier en attente garde l'accès normal à l'appli
+  // (cf. AuthWrapper, lib/main.dart) — seule sa visibilité auprès des autres
+  // est restreinte tant qu'il n'a pas été examiné par un admin.
+  Widget _buildPendingValidationBanner(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.orange.shade300, width: 1.5),
+      ),
+      child: Row(children: [
+        CircleAvatar(
+          backgroundColor: Colors.orange.shade100,
+          child: Icon(Icons.hourglass_empty, color: Colors.orange.shade800, size: 20),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(
+              'Dossier en cours d\'examen',
+              style: TextStyle(
+                  fontFamily: 'Galey',
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  color: Colors.orange.shade900),
+            ),
+            Text(
+              'Vous pouvez utiliser votre compte normalement, mais votre profil n\'est pas encore visible par les autres.',
+              style: TextStyle(
+                  fontFamily: 'Galey', fontSize: 12, color: Colors.orange.shade800)),
+          ]),
+        ),
+      ]),
     );
   }
 

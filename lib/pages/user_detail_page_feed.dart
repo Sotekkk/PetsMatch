@@ -34,6 +34,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
   String _facebook = '';
   String _siteWeb = '';
   String _telephone = '';
+  String _statutPro = '';
 
   @override
   void initState() {
@@ -52,7 +53,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
       final prof = await Supabase.instance.client
           .from('user_profiles')
           .select('id, montre_reproducteurs, desc_entreprise, description, '
-              'instagram, facebook, site_web, numero_elevage, phone_number')
+              'instagram, facebook, site_web, numero_elevage, phone_number, statut_pro')
           .eq('uid', widget.user.uid)
           .eq('profile_type', 'eleveur')
           .maybeSingle();
@@ -86,6 +87,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
           _facebook = fb;
           _siteWeb = web;
           _telephone = tel;
+          _statutPro = (prof?['statut_pro'] ?? '').toString();
         });
       }
       if (prof == null) return;
@@ -274,6 +276,38 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
     final user = widget.user;
     final isOwnProfile = User_Info.uid == user.uid;
     final allBreeds = [...user.dogBreeds, ...user.catBreeds];
+
+    // Un profil éleveur non validé n'est visible que par son propriétaire
+    // (pour qu'il puisse voir son brouillon) — pas via un accès direct.
+    final isActivated = const ['actif', 'validated'].contains(_statutPro);
+    if (!isActivated && !isOwnProfile) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8F8F6),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF0C5C6C),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.hourglass_top_outlined, size: 64, color: Colors.grey.shade300),
+              const SizedBox(height: 12),
+              const Text('Ce profil est en cours de validation',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+              const SizedBox(height: 6),
+              Text('Il sera visible dès que notre équipe l\'aura approuvé.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+            ]),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),

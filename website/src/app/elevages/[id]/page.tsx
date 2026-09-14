@@ -292,6 +292,23 @@ export default function EleveurProfilePage() {
   const badgeLevel = getBadgeLevel({ statutPro: eleveur.statutPro, siret: eleveur.siret, isPremium: eleveur.isPremium });
   const isOwnProfile = user?.uid === eleveur.uid;
 
+  // Un profil éleveur non validé n'est visible que par son propriétaire (pour
+  // qu'il puisse voir son brouillon) — pas via un lien direct vers cette page.
+  if (!['actif', 'validated'].includes(eleveur.statutPro || '') && !isOwnProfile) {
+    return (
+      <div className="min-h-screen bg-[#F8F8F8] flex flex-col items-center justify-center gap-3 px-4 text-center">
+        <span className="text-5xl">⏳</span>
+        <p className="text-gray-700 font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Ce profil est en cours de validation
+        </p>
+        <p className="text-gray-500 text-sm max-w-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Il sera visible dès que notre équipe l&apos;aura approuvé.
+        </p>
+        <Link href="/elevages" className="text-[#0C5C6C] text-sm underline">← Retour aux éleveurs</Link>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-[#F8F8F6] min-h-screen">
       {/* Banner + photo */}

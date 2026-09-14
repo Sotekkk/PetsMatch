@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart'
     show speciesLabel, speciesColor, speciesIcon;
 import 'package:PetsMatch/data/genetic_tests.dart';
@@ -25,6 +26,7 @@ class ReproducteursPublicsPage extends StatefulWidget {
 class _ReproducteursPublicsPageState extends State<ReproducteursPublicsPage> {
   final _supa = Supabase.instance.client;
   bool _loading = true;
+  bool _blocked = false;
   List<Map<String, dynamic>> _repros = [];
 
   @override
@@ -39,13 +41,19 @@ class _ReproducteursPublicsPageState extends State<ReproducteursPublicsPage> {
       // même uid (association, pension…), pour éviter toute fuite cross-profil.
       final prof = await _supa
           .from('user_profiles')
-          .select('id, montre_reproducteurs')
+          .select('id, montre_reproducteurs, statut_pro')
           .eq('uid', widget.uid)
           .eq('profile_type', 'eleveur')
           .maybeSingle();
       final profileId = prof?['id'] as String?;
       if (profileId == null || prof?['montre_reproducteurs'] != true) {
         if (mounted) setState(() { _repros = []; _loading = false; });
+        return;
+      }
+      final statutPro = (prof?['statut_pro'] ?? '').toString();
+      final isOwner = User_Info.uid == widget.uid;
+      if (!isOwner && statutPro != 'actif' && statutPro != 'validated') {
+        if (mounted) setState(() { _blocked = true; _loading = false; });
         return;
       }
       final rows = await _supa
@@ -104,7 +112,24 @@ class _ReproducteursPublicsPageState extends State<ReproducteursPublicsPage> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: _teal))
-          : _repros.isEmpty
+          : _blocked
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.hourglass_top_outlined, size: 64, color: Colors.grey.shade300),
+                      const SizedBox(height: 12),
+                      const Text('Ce profil est en cours de validation',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                      const SizedBox(height: 6),
+                      Text('Il sera visible dès que notre équipe l\'aura approuvé.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+                    ]),
+                  ),
+                )
+              : _repros.isEmpty
               ? _empty()
               : ListView(
                   padding: const EdgeInsets.fromLTRB(14, 14, 14, 32),

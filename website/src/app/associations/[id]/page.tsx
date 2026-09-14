@@ -20,6 +20,7 @@ interface AssoProfile {
   site_web?: string;
   instagram?: string;
   facebook?: string;
+  statutPro?: string;
 }
 
 interface Annonce {
@@ -57,16 +58,16 @@ export default function AssociationProfilePage() {
     // ou un Firebase UID (alphanumérique sans tirets)
     const isProfileUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-    type SecProfile = { id?: string; uid?: string; profile_type?: string; profile_label?: string; nom?: string; avatar_url?: string; banner_url?: string; ville?: string; description?: string; desc_entreprise?: string; phone?: string; telephone?: string; site_web?: string; instagram?: string; facebook?: string };
+    type SecProfile = { id?: string; uid?: string; profile_type?: string; profile_label?: string; nom?: string; avatar_url?: string; banner_url?: string; ville?: string; description?: string; desc_entreprise?: string; phone?: string; telephone?: string; site_web?: string; instagram?: string; facebook?: string; statut_pro?: string };
 
     const profileQ = isProfileUUID
       // UUID de profil : query directe par id (bypass RLS, le profil est connu)
       ? supabase.from('user_profiles')
-          .select('id, uid, profile_type, profile_label, nom, avatar_url, banner_url, ville, description, desc_entreprise, phone, telephone, site_web, instagram, facebook')
+          .select('id, uid, profile_type, profile_label, nom, avatar_url, banner_url, ville, description, desc_entreprise, phone, telephone, site_web, instagram, facebook, statut_pro')
           .eq('id', id).maybeSingle().then(r => ({ data: r.data ? [r.data] : [], uid: (r.data as SecProfile | null)?.uid ?? id }))
       // Firebase UID : query par uid sans filtre profile_type (filtre côté client)
       : supabase.from('user_profiles')
-          .select('id, uid, profile_type, profile_label, nom, avatar_url, banner_url, ville, description, desc_entreprise, phone, telephone, site_web, instagram, facebook')
+          .select('id, uid, profile_type, profile_label, nom, avatar_url, banner_url, ville, description, desc_entreprise, phone, telephone, site_web, instagram, facebook, statut_pro')
           .eq('uid', id).then(r => ({ data: r.data ?? [], uid: id }));
 
     profileQ.then(({ data: allProfiles, uid: ownerUid }) => {
@@ -93,6 +94,7 @@ export default function AssociationProfilePage() {
         setProfile({ uid: firebaseUid, nom, avatar, banner, ville, description,
           telephone: telephone || undefined,
           site_web: sp?.site_web, instagram: sp?.instagram, facebook: sp?.facebook,
+          statutPro: sp?.statut_pro,
         });
         setAnnonces((ann ?? []) as Annonce[]);
         setAnimaux((anim ?? []) as Animal[]);
@@ -148,6 +150,24 @@ export default function AssociationProfilePage() {
       <div className="text-center py-24 text-gray-400 font-galey">
         <p className="text-5xl mb-4">🏠</p>
         <p>Association introuvable</p>
+      </div>
+    );
+  }
+
+  // Association pas encore validée → visible uniquement par son propriétaire
+  // (pour qu'il puisse voir son brouillon) — pas via un lien direct.
+  const isOwner = user?.uid === profile.uid;
+  if (!['actif', 'validated'].includes(profile.statutPro || '') && !isOwner) {
+    return (
+      <div className="min-h-screen bg-[#F8F8F8] flex flex-col items-center justify-center gap-3 px-4 text-center">
+        <span className="text-5xl">⏳</span>
+        <p className="text-gray-700 font-semibold" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Ce profil est en cours de validation
+        </p>
+        <p className="text-gray-500 text-sm max-w-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Il sera visible dès que notre équipe l&apos;aura approuvé.
+        </p>
+        <Link href="/associations" className="text-[#0C5C6C] text-sm underline">← Retour aux associations</Link>
       </div>
     );
   }

@@ -25,8 +25,20 @@ interface ProfileEntry {
   firstName: string; lastName: string; email: string; photoUrl: string;
   catPro: string; statutPro: string; nameElevage: string; professionPro: string;
   especesAcceptees: string[]; certifications: { nom?: string; organisme?: string }[];
-  rayonIntervention?: number; isAdmin?: boolean; isElevage?: boolean;
+  rayonIntervention?: number; isAdmin?: boolean; isElevage?: boolean; isAssociation?: boolean;
   isPremium?: boolean; siret?: string;
+}
+
+// Catégorie unique d'un profil pour le filtre admin — éleveur/association
+// priment sur catPro (ils sont exclus de proCategory), sinon le métier pro,
+// sinon particulier. Les admins ne rentrent dans aucune catégorie (bouton
+// « Admins » à part) ; les profils secondaires ne sont plus isolés dans leur
+// propre case, juste signalés par un badge sur la carte.
+function entryCategory(e: ProfileEntry): string {
+  if (e.isElevage) return 'eleveur';
+  if (e.isAssociation) return 'association';
+  if (e.catPro) return e.catPro;
+  return 'particulier';
 }
 
 interface Stats {
@@ -73,7 +85,10 @@ interface DossierEntry {
 }
 
 type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs' | 'animaux' | 'annonces' | 'consommation' | 'lieux_naturels' | 'tarification' | 'signalements_conv';
-type FilterType = 'tous' | 'eleveur' | 'particulier' | 'pro' | 'secondaire' | 'admin' | 'en_attente';
+// 'tous' / 'en_attente' / 'admin' sont des filtres transverses ; toute autre
+// valeur est une catégorie dynamique (eleveur, association, particulier, ou
+// un métier pro), générée depuis les données — cf. entryCategory().
+type FilterType = string;
 type SigFilter = 'en_attente' | 'traite' | 'rejete';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -140,6 +155,7 @@ export default function AdminPage() {
   const [dossiers, setDossiers] = useState<DossierEntry[]>([]);
   const [refusedDossiers, setRefusedDossiers] = useState<DossierEntry[]>([]);
   const [dossierTab, setDossierTab] = useState<'en_attente' | 'refuse'>('en_attente');
+  const [dossierCatFilter, setDossierCatFilter] = useState<string>('tous');
   const [dossiersLoading, setDossiersLoading] = useState(false);
   const [dossierSaving, setDossierSaving] = useState<string | null>(null);
   const [selectedDossier, setSelectedDossier] = useState<DossierEntry | null>(null);
@@ -317,7 +333,14 @@ export default function AdminPage() {
           especesAcceptees: (row?.especes_acceptees as string[]) ?? [],
           certifications: (row?.certifications as { nom?: string; organisme?: string }[]) ?? [],
           rayonIntervention: row?.rayon_intervention,
-          isAdmin: fire.isAdmin, isElevage: fire.isElevage,
+          isAdmin: fire.isAdmin,
+          // Le flag Firestore `isElevage` ne reflète que le profil actif au
+          // dernier sync (un compte multi-profils — admin de test, pro qui a
+          // aussi un profil éleveur — peut donc l'avoir à false alors qu'il a
+          // bien un profil éleveur). La ligne Supabase `user_profiles` (row)
+          // est la source de vérité, comme pour isAssociation ci-dessous.
+          isElevage: row?.profile_type === 'eleveur',
+          isAssociation: row?.profile_type === 'association',
           isPremium: meta?.is_premium ?? false,
           siret: row?.siret ?? '',
         });
@@ -342,6 +365,7 @@ export default function AdminPage() {
           rayonIntervention: row.rayon_intervention as number | undefined,
           isAdmin:   false,
           isElevage: row.profile_type === 'eleveur',
+          isAssociation: row.profile_type === 'association',
           isPremium: meta?.is_premium ?? false,
           siret:     row.siret ?? '',
         });
@@ -359,6 +383,8 @@ export default function AdminPage() {
           especesAcceptees: (row.especes_acceptees as string[]) ?? [],
           certifications: (row.certifications as { nom?: string; organisme?: string }[]) ?? [],
           rayonIntervention: row.rayon_intervention,
+          isElevage: row.profile_type === 'eleveur',
+          isAssociation: row.profile_type === 'association',
         });
       }
       allEntries.sort((a, b) => {
@@ -1082,13 +1108,17 @@ export default function AdminPage() {
   }, [sigFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Filtres utilisateurs ─────────────────────────────────────────────────────
+  // 'tous' / 'en_attente' / 'admin' restent des filtres transverses ; toute
+  // autre valeur de `filter` est une catégorie (éleveur, association,
+  // particulier, ou un métier pro) comparée à entryCategory(e) — les profils
+  // secondaires ET les admins ne sont plus isolés à part : un admin qui a
+  // aussi un profil éleveur apparaît sous « Éleveur », juste avec son badge
+  // « Admin » sur la carte (sinon un admin-éleveur comme un fondateur de
+  // test disparaissait de tous les filtres par métier).
   const filtered = entries.filter(e => {
-    if (filter === 'admin'       && !e.isAdmin) return false;
-    if (filter === 'eleveur'     && (!e.isElevage || e.isAdmin || e.isSecondary)) return false;
-    if (filter === 'pro'         && (!e.catPro || e.isAdmin || e.isSecondary)) return false;
-    if (filter === 'secondaire'  && !e.isSecondary) return false;
-    if (filter === 'en_attente'  && e.statutPro !== 'en_attente') return false;
-    if (filter === 'particulier' && (e.isElevage || e.catPro || e.isAdmin || e.isSecondary)) return false;
+    if (filter === 'admin') return !!e.isAdmin;
+    if (filter === 'en_attente' && e.statutPro !== 'en_attente') return false;
+    if (filter !== 'tous' && filter !== 'en_attente' && entryCategory(e) !== filter) return false;
     if (search) {
       const q = search.toLowerCase();
       const name = `${e.firstName} ${e.lastName}`.toLowerCase();
@@ -1441,12 +1471,45 @@ export default function AdminPage() {
               </button>
             </div>
 
+            {/* Filtre par catégorie pro — mêmes chips que Tarification, générées
+                depuis les métiers présents dans le sous-onglet actif. */}
+            {(() => {
+              const pool = dossierTab === 'en_attente' ? dossiers : refusedDossiers;
+              const cats = Array.from(new Set(pool.map(d => d.catPro).filter(Boolean))) as string[];
+              if (cats.length === 0) return null;
+              return (
+                <div className="flex flex-wrap gap-2 mb-5">
+                  <button onClick={() => setDossierCatFilter('tous')}
+                    className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                      dossierCatFilter === 'tous'
+                        ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
+                    }`}>
+                    Tous ({pool.length})
+                  </button>
+                  {cats.map(cat => {
+                    const count = pool.filter(d => d.catPro === cat).length;
+                    return (
+                      <button key={cat} onClick={() => setDossierCatFilter(cat)}
+                        className={`text-xs font-semibold px-3 py-1.5 rounded-full border capitalize transition-colors ${
+                          dossierCatFilter === cat
+                            ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
+                            : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
+                        }`}>
+                        {CAT_LABELS[cat] ?? cat} ({count})
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
             {dossiersLoading ? (
               <div className="flex justify-center py-16">
                 <div className="w-8 h-8 border-4 border-[#A7C79A] border-t-transparent rounded-full animate-spin" />
               </div>
             ) : dossierTab === 'en_attente' ? (
-              dossiers.length === 0 ? (
+              (dossierCatFilter === 'tous' ? dossiers : dossiers.filter(d => d.catPro === dossierCatFilter)).length === 0 ? (
                 <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
                   <div className="text-3xl mb-2">🎉</div>
                   <p className="font-semibold text-[#6E9E57]" style={{ fontFamily: 'Galey, sans-serif' }}>Aucun dossier en attente</p>
@@ -1454,7 +1517,7 @@ export default function AdminPage() {
                 </div>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {dossiers.map(d => (
+                  {(dossierCatFilter === 'tous' ? dossiers : dossiers.filter(d => d.catPro === dossierCatFilter)).map(d => (
                     <div key={d.isSecondary ? d.profileTableId : d.uid}
                       onClick={() => setSelectedDossier(d)}
                       className="bg-white rounded-2xl shadow-sm border border-orange-100 p-5 cursor-pointer hover:shadow-md transition-shadow">
@@ -1531,14 +1594,14 @@ export default function AdminPage() {
                 </div>
               )
             ) : (
-              refusedDossiers.length === 0 ? (
+              (dossierCatFilter === 'tous' ? refusedDossiers : refusedDossiers.filter(d => d.catPro === dossierCatFilter)).length === 0 ? (
                 <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
                   <div className="text-3xl mb-2">📭</div>
                   <p className="font-semibold text-gray-500" style={{ fontFamily: 'Galey, sans-serif' }}>Aucun dossier rejeté</p>
                 </div>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {refusedDossiers.map(d => (
+                  {(dossierCatFilter === 'tous' ? refusedDossiers : refusedDossiers.filter(d => d.catPro === dossierCatFilter)).map(d => (
                     <div key={d.uid}
                       onClick={() => setSelectedDossier(d)}
                       className="bg-white rounded-2xl shadow-sm border border-red-100 p-5 cursor-pointer hover:shadow-md transition-shadow">
@@ -1597,15 +1660,11 @@ export default function AdminPage() {
               style={{ fontFamily: 'Galey, sans-serif' }}
             />
             <div className="flex gap-2 flex-wrap mb-4">
-              {([
+              {[
                 { key: 'tous',       label: 'Tous' },
                 { key: 'en_attente', label: '⏳ En attente' },
-                { key: 'secondaire', label: 'Profils secondaires' },
-                { key: 'pro',        label: 'Pros' },
-                { key: 'eleveur',    label: 'Éleveurs' },
-                { key: 'particulier',label: 'Particuliers' },
                 { key: 'admin',      label: 'Admins' },
-              ] as { key: FilterType; label: string }[]).map(f => (
+              ].map(f => (
                 <button key={f.key} onClick={() => setFilter(f.key)}
                   className={`px-4 py-1.5 rounded-full text-sm font-semibold border transition-colors ${
                     filter === f.key
@@ -1620,6 +1679,37 @@ export default function AdminPage() {
                 {filtered.length} résultat(s)
               </span>
             </div>
+
+            {/* Filtre par catégorie de profil — un chip par métier réellement
+                présent dans les données (garde, santé, taxi animalier…), plus
+                Éleveur / Association / Particulier. Les profils secondaires ET
+                les admins ne sont plus isolés à part : ils tombent dans leur
+                propre catégorie et gardent juste leur badge « Secondaire » /
+                « Admin » sur la carte (cf. entryCategory / ProfileCard) — sinon
+                un fondateur qui a aussi un profil éleveur de test disparaissait
+                du filtre « Éleveur ». */}
+            {(() => {
+              const cats = Array.from(new Set(entries.map(entryCategory)))
+                .sort((a, b) => (CAT_LABELS[a] ?? a).localeCompare(CAT_LABELS[b] ?? b));
+              return (
+                <div className="flex flex-wrap gap-2 mb-4 -mt-2">
+                  {cats.map(cat => {
+                    const count = entries.filter(e => entryCategory(e) === cat).length;
+                    const label = cat === 'particulier' ? 'Particuliers' : (CAT_LABELS[cat] ?? cat);
+                    return (
+                      <button key={cat} onClick={() => setFilter(cat)}
+                        className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
+                          filter === cat
+                            ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]'
+                            : 'bg-white text-gray-600 border-gray-200 hover:border-[#0C5C6C]'
+                        }`}>
+                        {label} ({count})
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             {usersLoading ? (
               <div className="flex justify-center py-16">
@@ -2835,27 +2925,35 @@ function ProfileModal({ entry, adminUid, onClose, onSetStatut, onDelete }: {
           <button onClick={onClose} className="text-gray-600 hover:text-gray-900 text-xl">✕</button>
         </div>
         <div className="p-6 space-y-5">
-          {(isPro || entry.isSecondary || entry.isElevage) && (
-            <Section title="Statut professionnel">
-              <div className="mb-3 flex items-center gap-2 flex-wrap">
-                {(() => { const s = STATUT_STYLE[statut] ?? STATUT_STYLE.actif; return (
-                  <span className="text-sm font-bold px-3 py-1 rounded-full" style={{ background: s.bg, color: s.color }}>{s.label}</span>
-                ); })()}
-                {entry.isPremium && (
-                  <span className="text-sm font-bold px-3 py-1 rounded-full" style={{ background: '#fef3c7', color: '#d97706' }}>★ Premium</span>
-                )}
-                {!entry.isPremium && statut === 'actif' && entry.siret && (
-                  <span className="text-sm font-bold px-3 py-1 rounded-full" style={{ background: '#dbeafe', color: '#2563eb' }}>✓ Vérifié</span>
-                )}
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                {statut !== 'actif'      && <ActionBtn label="✅ Activer"     color="#16a34a" onClick={() => doStatut('actif')}      disabled={saving} />}
-                {statut !== 'suspendu'   && <ActionBtn label="⏸ Suspendre"   color="#ea580c" onClick={() => doStatut('suspendu')}   disabled={saving} />}
-                {statut !== 'refuse'     && <ActionBtn label="❌ Refuser"     color="#dc2626" onClick={() => doStatut('refuse')}     disabled={saving} />}
-                {statut !== 'en_attente' && <ActionBtn label="⏳ En attente" color="#2563eb" onClick={() => doStatut('en_attente')} disabled={saving} />}
-              </div>
-            </Section>
-          )}
+          {(() => {
+            // Statut de compte (actif/suspendu) : disponible pour TOUT type de
+            // profil, y compris particulier — un admin doit pouvoir bloquer
+            // n'importe quel utilisateur, pas seulement les pros. Refus/En
+            // attente restent des notions de validation pro, donc réservées
+            // aux profils qui passent par ce workflow.
+            const isValidationWorkflow = isPro || entry.isSecondary || entry.isElevage;
+            return (
+              <Section title="Statut du compte">
+                <div className="mb-3 flex items-center gap-2 flex-wrap">
+                  {(() => { const s = STATUT_STYLE[statut] ?? STATUT_STYLE.actif; return (
+                    <span className="text-sm font-bold px-3 py-1 rounded-full" style={{ background: s.bg, color: s.color }}>{s.label}</span>
+                  ); })()}
+                  {entry.isPremium && (
+                    <span className="text-sm font-bold px-3 py-1 rounded-full" style={{ background: '#fef3c7', color: '#d97706' }}>★ Premium</span>
+                  )}
+                  {!entry.isPremium && statut === 'actif' && entry.siret && (
+                    <span className="text-sm font-bold px-3 py-1 rounded-full" style={{ background: '#dbeafe', color: '#2563eb' }}>✓ Vérifié</span>
+                  )}
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  {statut !== 'actif'      && <ActionBtn label="✅ Activer"     color="#16a34a" onClick={() => doStatut('actif')}      disabled={saving} />}
+                  {statut !== 'suspendu'   && <ActionBtn label="⏸ Suspendre"   color="#ea580c" onClick={() => doStatut('suspendu')}   disabled={saving} />}
+                  {isValidationWorkflow && statut !== 'refuse'     && <ActionBtn label="❌ Refuser"     color="#dc2626" onClick={() => doStatut('refuse')}     disabled={saving} />}
+                  {isValidationWorkflow && statut !== 'en_attente' && <ActionBtn label="⏳ En attente" color="#2563eb" onClick={() => doStatut('en_attente')} disabled={saving} />}
+                </div>
+              </Section>
+            );
+          })()}
 
           {/* ── Abonnement / plan ── */}
           {canSubscribe && (

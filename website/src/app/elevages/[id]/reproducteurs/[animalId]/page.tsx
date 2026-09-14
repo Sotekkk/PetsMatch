@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth-context';
 import { ESPECE_LABEL, UUID_RE, ageLabel, type Repro } from '@/lib/repro';
 import { offspringWord, resultatChipClass, testChipLabel, type TestGenetique } from '@/lib/genetics';
 
@@ -18,9 +19,11 @@ export default function ReproDetailPage() {
   const params = useParams();
   const id = String(params.id ?? '');
   const animalId = String(params.animalId ?? '');
+  const { user } = useAuth();
   const [repro, setRepro] = useState<Repro | null>(null);
   const [tests, setTests] = useState<TestGenetique[]>([]);
   const [loading, setLoading] = useState(true);
+  const [blocked, setBlocked] = useState(false);
 
   useEffect(() => {
     if (!id || !animalId) return;
@@ -31,9 +34,12 @@ export default function ReproDetailPage() {
         euid = (data?.uid as string) ?? id;
       }
       const { data: prof } = await supabase.from('user_profiles')
-        .select('id, montre_reproducteurs')
+        .select('id, montre_reproducteurs, statut_pro')
         .eq('uid', euid).eq('profile_type', 'eleveur').maybeSingle();
       if (!prof?.id || prof.montre_reproducteurs !== true) { setLoading(false); return; }
+      if (!['actif', 'validated'].includes(prof.statut_pro ?? '') && user?.uid !== euid) {
+        setBlocked(true); setLoading(false); return;
+      }
 
       const { data: a } = await supabase.from('animaux')
         .select('id, nom, nom_pedigree, espece, race, sexe, photo_url, date_naissance, '
@@ -49,10 +55,24 @@ export default function ReproDetailPage() {
       setTests((tg ?? []) as TestGenetique[]);
       setLoading(false);
     })();
-  }, [id, animalId]);
+  }, [id, animalId, user?.uid]);
 
   if (loading) {
     return <p className="text-center text-gray-400 text-sm py-20">Chargement…</p>;
+  }
+  if (blocked) {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-20 text-center">
+        <span className="text-4xl">⏳</span>
+        <p className="text-gray-700 font-semibold mt-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Ce profil est en cours de validation
+        </p>
+        <p className="text-gray-500 text-sm mt-1 mb-4">Il sera visible dès que notre équipe l&apos;aura approuvé.</p>
+        <Link href={`/elevages/${id}/reproducteurs`} className="text-[#0C5C6C] font-semibold hover:underline">
+          ← Retour aux reproducteurs
+        </Link>
+      </div>
+    );
   }
   if (!repro) {
     return (
