@@ -18,6 +18,7 @@ class _AbonnementPageState extends State<AbonnementPage> {
   String _planCode = 'free';
   int _activeCount = 0;
   bool _loading = true;
+  Map<String, PlanConfig> _configs = const {};
 
   @override
   void initState() {
@@ -31,11 +32,13 @@ class _AbonnementPageState extends State<AbonnementPage> {
     final results = await Future.wait([
       PlanService.getPlanCode(uid),
       PlanService.countActiveAnnonces(uid),
+      PlanService.getAllConfigs(),
     ]);
     if (!mounted) return;
     setState(() {
       _planCode    = results[0] as String;
       _activeCount = results[1] as int;
+      _configs     = results[2] as Map<String, PlanConfig>;
       _loading     = false;
     });
   }
@@ -53,7 +56,10 @@ class _AbonnementPageState extends State<AbonnementPage> {
 
   @override
   Widget build(BuildContext context) {
-    final config = PlanService.getConfig(_planCode);
+    const fallback = PlanConfig(
+        code: 'free', label: 'Gratuit', maxAnnonces: 0, dureeDays: 30,
+        hasRegistres: false, badge: '🌱');
+    final config = _configs[_planCode] ?? fallback;
 
     return Scaffold(
       backgroundColor: _bg,
@@ -118,19 +124,19 @@ class _AbonnementPageState extends State<AbonnementPage> {
 
                 // ── Cartes plans ────────────────────────────────────────────
                 _PlanCard(
-                  config: PlanService.configs['free']!,
+                  config: _configs['free'] ?? fallback,
                   isCurrent: _planCode == 'free',
                   onSelect: null,
                 ),
                 const SizedBox(height: 10),
                 _PlanCard(
-                  config: PlanService.configs['pro']!,
+                  config: _configs['pro'] ?? fallback,
                   isCurrent: _planCode == 'pro',
                   onSelect: _planCode == 'pro' ? null : () => _openWebsite('/abonnement'),
                 ),
                 const SizedBox(height: 10),
                 _PlanCard(
-                  config: PlanService.configs['premium']!,
+                  config: _configs['premium'] ?? fallback,
                   isCurrent: _planCode == 'premium',
                   onSelect: _planCode == 'premium' ? null : () => _openWebsite('/abonnement'),
                 ),

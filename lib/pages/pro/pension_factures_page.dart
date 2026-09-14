@@ -10,6 +10,8 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 
 /// Pension — historique des factures (Phase 2 item 2/4, complément).
 class PensionFacturesPage extends StatefulWidget {
@@ -31,6 +33,8 @@ class _PensionFacturesPageState extends State<PensionFacturesPage> {
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   bool _loading = true;
+  bool _planLoading = true;
+  String _planCode = 'free';
   List<Map<String, dynamic>> _factures = [];
   String? _filterStatut; // null = toutes, 'envoyee', 'payee'
   DateTimeRange? _dateRange; // export par plage de dates (Phase 2 item 3/4)
@@ -39,6 +43,12 @@ class _PensionFacturesPageState extends State<PensionFacturesPage> {
   void initState() {
     super.initState();
     _load();
+    _loadPlan();
+  }
+
+  Future<void> _loadPlan() async {
+    final code = await PlanService.getPensionPlanCode(_uid);
+    if (mounted) setState(() { _planCode = code; _planLoading = false; });
   }
 
   Future<void> _load() async {
@@ -247,6 +257,45 @@ class _PensionFacturesPageState extends State<PensionFacturesPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_planLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator(color: _teal)));
+    }
+    if (_planCode != 'premium') {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8F8F6),
+        appBar: AppBar(
+          backgroundColor: _teal,
+          foregroundColor: Colors.white,
+          title: const Text('Mes factures',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.lock_outline, size: 64, color: Colors.grey.shade300),
+              const SizedBox(height: 12),
+              const Text('Facturation — Plan Premium requis',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+              const SizedBox(height: 8),
+              Text('La facturation est disponible avec l\'abonnement Premium.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const PensionAbonnementPage())),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706)),
+                child: const Text('👑 Voir les plans',
+                    style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700)),
+              ),
+            ]),
+          ),
+        ),
+      );
+    }
+
     final list = _filtered;
     final totalDu = _factures.where((f) => f['statut'] == 'envoyee')
         .fold<double>(0, (s, f) => s + ((f['montant'] as num?)?.toDouble() ?? 0));

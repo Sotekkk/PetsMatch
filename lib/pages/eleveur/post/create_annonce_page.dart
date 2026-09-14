@@ -588,7 +588,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       try {
         final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
         final planCode = await PlanService.getPlanCode(uid);
-        final config = PlanService.getConfig(planCode);
+        final config = await PlanService.getConfig(planCode);
         if (config.maxAnnonces != -1) {
           final count = await PlanService.countActiveAnnonces(uid);
           if (count >= config.maxAnnonces) {

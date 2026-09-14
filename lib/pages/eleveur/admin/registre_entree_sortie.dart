@@ -145,7 +145,7 @@ class _RegistreEntreeSortiePageState extends State<RegistreEntreeSortiePage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) { setState(() => _planLoading = false); return; }
     final code   = await PlanService.getPlanCode(uid);
-    final config = PlanService.getConfig(code);
+    final config = await PlanService.getConfig(code);
     if (!mounted) return;
     setState(() { _hasRegistres = config.hasRegistres; _planLoading = false; });
   }

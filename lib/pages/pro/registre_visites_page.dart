@@ -10,6 +10,8 @@ import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 import 'package:PetsMatch/pages/pro/garde_facture_helper.dart';
 import 'package:PetsMatch/pages/pro/garde_sejour_helper.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 
 // ── Registre visites — liste des RDV (visites/promenades) du profil garde,
 // avec statut de compte-rendu. Contrairement à la pension (logements avec
@@ -212,6 +214,32 @@ class _RegistreVisitesPageState extends State<RegistreVisitesPage> {
     if (uid == null) return;
     final client = _clients[clientUid];
     if (client == null) return;
+    final planCode = await PlanService.getGardePlanCode(uid);
+    if (planCode != 'premium') {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Signature — Plan Premium requis',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            content: const Text('La signature électronique de contrats est disponible avec l\'abonnement Premium.',
+                style: TextStyle(fontFamily: 'Galey')),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const GardeAbonnementPage()));
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706)),
+                child: const Text('👑 Voir les plans', style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
     final pid = User_Info.activeProfileId;
     final animalId  = rdv?['animal_id']?.toString();
     final animalNom = (rdv?['_animal_nom'] ?? rdv?['animal_nom'] ?? '').toString();

@@ -15,9 +15,9 @@ export interface PlanInfo {
 }
 
 const FALLBACK: Record<PlanCode, PlanInfo> = {
-  free:    { plan: 'free',    maxAnnonces: 3,  dureeDays: 30, autoPublish: false },
-  pro:     { plan: 'pro',     maxAnnonces: 10, dureeDays: 45, autoPublish: true  },
-  premium: { plan: 'premium', maxAnnonces: -1, dureeDays: 60, autoPublish: true  },
+  free:    { plan: 'free',    maxAnnonces: 0, dureeDays: 30, autoPublish: false },
+  pro:     { plan: 'pro',     maxAnnonces: 1, dureeDays: 45, autoPublish: true  },
+  premium: { plan: 'premium', maxAnnonces: 3, dureeDays: 60, autoPublish: true  },
 };
 
 /** mensuel → +1 mois ; tout le reste (annuel compris) → +1 an, valable

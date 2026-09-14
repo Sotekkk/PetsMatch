@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
+import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 
 /// Helpers partagés pour facturer une prestation de garde depuis un `rdv`
 /// (registre des visites ET agenda pro). La facture elle-même passe par le
@@ -147,6 +149,33 @@ Future<double> gardeTarif(Map<String, dynamic> rdv) async {
 /// Une garde-journée étalée sur plusieurs jours non facturés propose de
 /// facturer toute la période en une seule facture (une ligne, quantité = N).
 Future<void> facturerGardeDepuisRdv(BuildContext context, Map<String, dynamic> rdv) async {
+  final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  final planCode = await PlanService.getGardePlanCode(uid);
+  if (!context.mounted) return;
+  if (planCode != 'premium') {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Facturation — Plan Premium requis',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('La facturation est disponible avec l\'abonnement Premium.',
+            style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const GardeAbonnementPage()));
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706)),
+            child: const Text('👑 Voir les plans', style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    return;
+  }
+
   final jours = await gardeJoursAFacturer(rdv);
   if (!context.mounted) return;
 

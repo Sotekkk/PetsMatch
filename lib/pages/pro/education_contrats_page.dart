@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
 
 // ── Contrats de prestation d'éducation ────────────────────────────────────────
 // Un contrat par CLIENT + ANIMAL (pas par séance). Réutilise `documents_animaux`
@@ -24,12 +26,21 @@ class _EducationContratsPageState extends State<EducationContratsPage> {
   final _supa = Supabase.instance.client;
 
   bool _loading = true;
+  bool _planLoading = true;
+  String _planCode = 'free';
   List<Map<String, dynamic>> _contrats = [];
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadPlan();
+  }
+
+  Future<void> _loadPlan() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final code = await PlanService.getEducationPlanCode(uid);
+    if (mounted) setState(() { _planCode = code; _planLoading = false; });
   }
 
   Future<void> _load() async {
@@ -233,6 +244,45 @@ class _EducationContratsPageState extends State<EducationContratsPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_planLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator(color: _teal)));
+    }
+    if (_planCode != 'premium') {
+      return Scaffold(
+        backgroundColor: _bg,
+        appBar: AppBar(
+          backgroundColor: _teal,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          title: const Text('Mes Contrats',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.lock_outline, size: 64, color: Colors.grey.shade300),
+              const SizedBox(height: 12),
+              const Text('Signature — Plan Premium requis',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+              const SizedBox(height: 8),
+              Text('La signature électronique de contrats est disponible avec l\'abonnement Premium.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const EducationAbonnementPage())),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706)),
+                child: const Text('👑 Voir les plans',
+                    style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700)),
+              ),
+            ]),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(

@@ -2,8 +2,10 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
+import { usePensionPlan } from '@/lib/use-plan';
 import { sendNotification } from '@/lib/notifications';
 
 interface Entree {
@@ -36,6 +38,7 @@ const STATUT_META: Record<string, { label: string; cls: string }> = {
 
 export default function PensionContratPage() {
   const { user, userData, isPension, loading: authLoading } = usePensionAccess();
+  const { plan: pensionPlan } = usePensionPlan();
   const router = useRouter();
   const [entrees, setEntrees] = useState<Entree[]>([]);
   const [docs, setDocs] = useState<Record<string, Doc>>({});
@@ -111,6 +114,24 @@ export default function PensionContratPage() {
   }
 
   if (!user || !userData) return null;
+
+  if (pensionPlan !== 'premium') {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <span className="text-5xl">🔒</span>
+        <h2 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Signature — Plan Premium requis
+        </h2>
+        <p className="text-gray-500 text-sm max-w-sm">
+          La signature électronique de contrats est disponible avec un abonnement Premium.
+        </p>
+        <Link href="/pension/abonnement"
+          className="bg-[#D97706] hover:bg-[#B45309] text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm">
+          👑 Voir les plans
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

@@ -16,6 +16,8 @@ import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/pro/pension_factures_page.dart' show PensionFacturesPage;
+import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 
 // ─────────────────────────────────────────────────────────────
 // HELPERS
@@ -132,11 +134,33 @@ class FacturationPage extends StatefulWidget {
 class _FacturationPageState extends State<FacturationPage> {
   final _supa = Supabase.instance.client;
   late Future<List<Map<String, dynamic>>> _future;
+  bool _planLoading = true;
+  String _planCode = 'free';
 
   @override
   void initState() {
     super.initState();
     _future = _load();
+    _loadPlan();
+  }
+
+  // La facturation est réservée au plan Premium, pour tout profil pro —
+  // sauf association, gratuite par conception (pas de grille tarifaire).
+  Future<void> _loadPlan() async {
+    if (widget.isAssociation) {
+      if (mounted) setState(() => _planLoading = false);
+      return;
+    }
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final catPro = User_Info.catPro;
+    final code = catPro == 'pension'
+        ? await PlanService.getPensionPlanCode(uid)
+        : catPro == 'garde'
+            ? await PlanService.getGardePlanCode(uid)
+            : catPro == 'education'
+                ? await PlanService.getEducationPlanCode(uid)
+                : await PlanService.getPlanCode(uid, profilType: catPro.isNotEmpty ? catPro : 'eleveur');
+    if (mounted) setState(() { _planCode = code; _planLoading = false; });
   }
 
   Future<List<Map<String, dynamic>>> _load() async {
@@ -209,6 +233,44 @@ class _FacturationPageState extends State<FacturationPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_planLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator(color: _teal)));
+    }
+    if (_planCode != 'premium' && !widget.isAssociation) {
+      return Scaffold(
+        backgroundColor: _bg,
+        appBar: AppBar(
+          backgroundColor: _teal,
+          foregroundColor: Colors.white,
+          title: const Text('Mes Factures',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.lock_outline, size: 64, color: Colors.grey.shade300),
+              const SizedBox(height: 12),
+              const Text('Facturation — Plan Premium requis',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+              const SizedBox(height: 8),
+              Text('La facturation est disponible avec l\'abonnement Premium.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const AbonnementPage())),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706)),
+                child: const Text('👑 Voir les plans',
+                    style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700)),
+              ),
+            ]),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(

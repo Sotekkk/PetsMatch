@@ -2,9 +2,11 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useEducationAccess } from '@/hooks/useEducationAccess';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useEducationPlan } from '@/lib/use-plan';
 
 interface DocRow {
   id: string;
@@ -37,6 +39,7 @@ const STATUT_META: Record<string, { label: string; cls: string }> = {
 
 export default function EducationContratPage() {
   const { user, userData, isEducation, loading: authLoading } = useEducationAccess();
+  const { plan: educationPlan } = useEducationPlan();
   const router = useRouter();
   const activeProfileId = useActiveProfile();
   const [docs, setDocs] = useState<DocRow[]>([]);
@@ -135,6 +138,24 @@ export default function EducationContratPage() {
   }
 
   if (!user || !userData) return null;
+
+  if (educationPlan !== 'premium') {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <span className="text-5xl">🔒</span>
+        <h2 className="text-xl font-bold text-[#1F2A2E]" style={{ fontFamily: 'Galey, sans-serif' }}>
+          Signature — Plan Premium requis
+        </h2>
+        <p className="text-gray-500 text-sm max-w-sm">
+          La signature électronique de contrats est disponible avec un abonnement Premium.
+        </p>
+        <Link href="/education/abonnement"
+          className="bg-[#D97706] hover:bg-[#B45309] text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm">
+          👑 Voir les plans
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">

@@ -746,31 +746,100 @@ class PlanService {
     }
   }
 
-  static const Map<String, PlanConfig> configs = {
+  // Repli uniquement si `plans_tarifaires` est injoignable — getConfig()
+  // charge toujours les vrais prix/quotas depuis la BDD (éditables depuis
+  // /admin → Tarification). Ne JAMAIS lire ces valeurs directement ailleurs,
+  // c'est exactement ce qui avait désynchronisé les prix affichés ici du
+  // vrai prix Stripe après une modification admin.
+  static const Map<String, PlanConfig> _fallback = {
     'free': PlanConfig(
-      code: 'free', label: 'Gratuit', maxAnnonces: 3, dureeDays: 30,
+      code: 'free', label: 'Gratuit', maxAnnonces: 0, dureeDays: 30,
       hasRegistres: false, badge: '🌱', prixMensuel: 0, prixAnnuel: 0,
     ),
     'pro': PlanConfig(
-      code: 'pro', label: 'Pro', maxAnnonces: 10, dureeDays: 45,
+      code: 'pro', label: 'Pro', maxAnnonces: 1, dureeDays: 45,
       hasRegistres: true, badge: '⚡', prixMensuel: 15, prixAnnuel: 149,
     ),
     'premium': PlanConfig(
-      code: 'premium', label: 'Premium', maxAnnonces: -1, dureeDays: 60,
-      hasRegistres: true, badge: '👑', prixMensuel: 30, prixAnnuel: 299,
+      code: 'premium', label: 'Premium', maxAnnonces: 3, dureeDays: 60,
+      hasRegistres: true, badge: '👑', prixMensuel: 25, prixAnnuel: 249,
     ),
   };
 
-  static PlanConfig getConfig(String planCode) =>
-      configs[planCode] ?? configs['free']!;
+  static const Map<String, String> _badges = {'free': '🌱', 'pro': '⚡', 'premium': '👑'};
 
-  static Future<String> getPlanCode(String uid) async {
+  /// Config d'un plan **en direct** depuis `plans_tarifaires`
+  /// (profil_type + plan_code) — reflète immédiatement tout changement fait
+  /// depuis l'admin Tarification, sans jamais nécessiter un nouveau build.
+  static Future<PlanConfig> getConfig(String planCode, {String profilType = 'eleveur'}) async {
+    final fallback = _fallback[planCode] ?? _fallback['free']!;
+    try {
+      final row = await Supabase.instance.client
+          .from('plans_tarifaires')
+          .select('label, prix_mensuel, prix_annuel, max_annonces, duree_annonce_jours')
+          .eq('profil_type', profilType)
+          .eq('plan_code', planCode)
+          .maybeSingle();
+      if (row == null) return fallback;
+      return PlanConfig(
+        code: planCode,
+        label: row['label']?.toString() ?? fallback.label,
+        maxAnnonces: (row['max_annonces'] as num?)?.toInt() ?? fallback.maxAnnonces,
+        dureeDays: (row['duree_annonce_jours'] as num?)?.toInt() ?? fallback.dureeDays,
+        // Pas une colonne plans_tarifaires — dérivé du plan_code, comme
+        // avant (seul free en est privé).
+        hasRegistres: planCode != 'free',
+        badge: _badges[planCode] ?? '🌱',
+        prixMensuel: (row['prix_mensuel'] as num?)?.toDouble() ?? fallback.prixMensuel,
+        prixAnnuel: (row['prix_annuel'] as num?)?.toDouble() ?? fallback.prixAnnuel,
+      );
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  /// Les 3 paliers d'un métier en une seule requête — pour les écrans de
+  /// comparaison (ex. AbonnementPage) qui affichent free/pro/premium
+  /// ensemble, évite 3 aller-retours séparés.
+  static Future<Map<String, PlanConfig>> getAllConfigs({String profilType = 'eleveur'}) async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('plans_tarifaires')
+          .select('plan_code, label, prix_mensuel, prix_annuel, max_annonces, duree_annonce_jours')
+          .eq('profil_type', profilType)
+          .eq('actif', true);
+      final out = <String, PlanConfig>{};
+      for (final r in (rows as List)) {
+        final planCode = r['plan_code']?.toString() ?? '';
+        if (planCode.isEmpty) continue;
+        final fallback = _fallback[planCode] ?? _fallback['free']!;
+        out[planCode] = PlanConfig(
+          code: planCode,
+          label: r['label']?.toString() ?? fallback.label,
+          maxAnnonces: (r['max_annonces'] as num?)?.toInt() ?? fallback.maxAnnonces,
+          dureeDays: (r['duree_annonce_jours'] as num?)?.toInt() ?? fallback.dureeDays,
+          hasRegistres: planCode != 'free',
+          badge: _badges[planCode] ?? '🌱',
+          prixMensuel: (r['prix_mensuel'] as num?)?.toDouble() ?? fallback.prixMensuel,
+          prixAnnuel: (r['prix_annuel'] as num?)?.toDouble() ?? fallback.prixAnnuel,
+        );
+      }
+      for (final code in _fallback.keys) {
+        out.putIfAbsent(code, () => _fallback[code]!);
+      }
+      return out;
+    } catch (_) {
+      return _fallback;
+    }
+  }
+
+  static Future<String> getPlanCode(String uid, {String profilType = 'eleveur'}) async {
     try {
       final res = await Supabase.instance.client
           .from('abonnements')
           .select('plan_code')
           .eq('uid', uid)
-          .eq('profil_type', 'eleveur')
+          .eq('profil_type', profilType)
           .eq('statut', 'actif')
           .order('created_at', ascending: false)
           .limit(1)

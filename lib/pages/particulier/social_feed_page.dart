@@ -237,12 +237,15 @@ final Map<String, bool> _socialProAllowedCache = {};
 
 /// Un profil non-particulier ne peut publier dans Pets Social que si le compte
 /// est premium (l'accès à la page l'exige déjà, ce contrôle est une sécurité).
-Future<bool> _socialProAllowed(String uid) async {
-  if (_socialProAllowedCache.containsKey(uid)) return _socialProAllowedCache[uid]!;
+/// `profilType` doit être le métier réellement actif (pas toujours éleveur —
+/// un toiletteur/garde/pension premium doit aussi être autorisé).
+Future<bool> _socialProAllowed(String uid, String profilType) async {
+  final cacheKey = '${uid}_$profilType';
+  if (_socialProAllowedCache.containsKey(cacheKey)) return _socialProAllowedCache[cacheKey]!;
   try {
-    final code = await PlanService.getPlanCode(uid);
+    final code = await PlanService.getPlanCode(uid, profilType: profilType);
     final ok = code == 'premium';
-    _socialProAllowedCache[uid] = ok;
+    _socialProAllowedCache[cacheKey] = ok;
     return ok;
   } catch (_) {
     return false;
@@ -261,7 +264,7 @@ Future<String?> _activeAuthorProfileId(String uid) async {
       // Profil pro / éleveur / association : identité = ce profil **si** le
       // compte est premium ; sinon repli sur le profil particulier (s'il
       // existe), et à défaut on garde ce profil.
-      if (await _socialProAllowed(uid)) {
+      if (await _socialProAllowed(uid, activeType)) {
         if (activeId.isNotEmpty) return activeId;
         final rows = await Supabase.instance.client
             .from('user_profiles').select('id')

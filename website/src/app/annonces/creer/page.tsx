@@ -9,9 +9,9 @@ import { uploadBlob, uploadRawFile } from '@/lib/upload-media';
 import ImageCropModal from '@/components/ImageCropModal';
 
 const PLAN_CONFIG: Record<string, { maxAnnonces: number; dureeDays: number; autoPublish: boolean }> = {
-  free:    { maxAnnonces: 3,  dureeDays: 30, autoPublish: false },
-  pro:     { maxAnnonces: 10, dureeDays: 45, autoPublish: true  },
-  premium: { maxAnnonces: -1, dureeDays: 60, autoPublish: true  },
+  free:    { maxAnnonces: 0, dureeDays: 30, autoPublish: false },
+  pro:     { maxAnnonces: 1, dureeDays: 45, autoPublish: true  },
+  premium: { maxAnnonces: 3, dureeDays: 60, autoPublish: true  },
 };
 
 async function getUserPlanClient(uid: string): Promise<keyof typeof PLAN_CONFIG> {

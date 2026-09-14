@@ -67,6 +67,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
   List<Map<String, dynamic>> _recentAnnonces = [];
   String _planCode    = 'free';
   int    _activeCount = 0;
+  PlanConfig? _planConfig;
 
   static const _green = Color(0xFF6E9E57);
   static const _teal = Color(0xFF0C5C6C);
@@ -153,6 +154,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
         final recent = results[3] as List;
         final planCode = results[4] as String;
         final activeCount = results[5] as int;
+        final planConfig = await PlanService.getConfig(planCode);
 
         int animalCount;
         if (activeProfileId.isNotEmpty && profileMigrated) {
@@ -175,6 +177,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
           _mesAlertes = List<Map<String, dynamic>>.from(alertes);
           _planCode    = planCode;
           _activeCount = activeCount;
+          _planConfig  = planConfig;
           _loading = false;
         });
       } else {
@@ -617,7 +620,8 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
   }
 
   Widget _buildQuotaCard(BuildContext context) {
-    final config   = PlanService.getConfig(_planCode);
+    final config   = _planConfig;
+    if (config == null) return const SizedBox.shrink();
     final atLimit  = config.maxAnnonces != -1 && _activeCount >= config.maxAnnonces;
     final progress = config.maxAnnonces == -1
         ? 0.0 : (_activeCount / config.maxAnnonces).clamp(0.0, 1.0);

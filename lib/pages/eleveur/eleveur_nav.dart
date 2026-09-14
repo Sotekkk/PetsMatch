@@ -124,7 +124,12 @@ class _EleveurNavState extends State<EleveurNav> {
       if (mounted) setState(() => _gardePlanCode = code);
       return;
     }
-    final code = await PlanService.getPlanCode(uid);
+    // Éleveur (catPro vide) ou tout autre métier pro sans variable dédiée
+    // (toilettage, santé, véto, maréchal-ferrant, photographe, taxi
+    // animalier, restauration) — vérifier le plan du bon métier, pas
+    // toujours celui d'éleveur.
+    final profType = User_Info.catPro.isNotEmpty ? User_Info.catPro : 'eleveur';
+    final code = await PlanService.getPlanCode(uid, profilType: profType);
     if (mounted) setState(() => _planCode = code);
   }
 
@@ -577,7 +582,7 @@ class _EleveurNavState extends State<EleveurNav> {
                           ));
                         },
                       ),
-                      if (_planCode == 'premium')
+                      if (_pensionPlanCode == 'premium')
                         _DrawerSubItem(
                           label: 'Pets Social',
                           icon: Icons.photo_library_outlined,
@@ -924,7 +929,12 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                  if (_planCode == 'premium')
+                  if ((User_Info.catPro == 'education'
+                          ? _educationPlanCode
+                          : User_Info.catPro == 'garde'
+                              ? _gardePlanCode
+                              : _planCode) ==
+                      'premium')
                     _DrawerItem(
                       icon: Icons.photo_library_outlined,
                       label: 'Pets Social',

@@ -163,7 +163,7 @@ class _RegistreSanitairePageState extends State<RegistreSanitairePage> {
       return;
     }
     final code   = await PlanService.getPlanCode(uid);
-    final config = PlanService.getConfig(code);
+    final config = await PlanService.getConfig(code);
     if (!mounted) return;
     setState(() { _hasRegistres = config.hasRegistres; _planLoading = false; });
   }

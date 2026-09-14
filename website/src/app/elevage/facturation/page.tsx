@@ -112,8 +112,8 @@ export default function FacturationPage() {
   // On ne touche pas au filtrage des données (profilSource), seulement au
   // verrou de plan.
   const planGateLoading = isPensionSource ? pensionPlanLoading : isGardeSource ? gardePlanLoading : planLoading;
-  const hasFacturationAccess = isPensionSource ? pensionPlan !== 'free'
-    : isGardeSource ? gardePlan !== 'free'
+  const hasFacturationAccess = isPensionSource ? pensionPlan === 'premium'
+    : isGardeSource ? gardePlan === 'premium'
     : planConfig.hasPremiumFeatures;
 
   const [factures, setFactures] = useState<Facture[]>([]);

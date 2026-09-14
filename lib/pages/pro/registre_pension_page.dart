@@ -17,6 +17,8 @@ import 'package:PetsMatch/services/chip_scanner_service.dart';
 import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
 import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne;
+import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart'
     show pensionTarifKeyForEspece, especeMatchesLogement,
         pensionLogementTypeLabel, pensionAlimentationSejourApplicable;
@@ -420,6 +422,32 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
   Future<void> _genererContratSignature(Map<String, dynamic> e) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+    final planCode = await PlanService.getPensionPlanCode(uid);
+    if (planCode != 'premium') {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Signature — Plan Premium requis',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            content: const Text('La signature électronique de contrats est disponible avec l\'abonnement Premium.',
+                style: TextStyle(fontFamily: 'Galey')),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const PensionAbonnementPage()));
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706)),
+                child: const Text('👑 Voir les plans', style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
     try {
       // Réutilise un contrat existant pour ce séjour si déjà créé.
       final existing = await _supa

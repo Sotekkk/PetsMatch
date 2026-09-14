@@ -20,9 +20,9 @@ export interface PlanConfig {
 }
 
 export const PLAN_CONFIG: Record<PlanCode, PlanConfig> = {
-  free:    { label: 'Gratuit', maxAnnonces: 3,  dureeDays: 30, autoPublish: false, hasRegistres: false, hasPlanning: false, hasPremiumFeatures: false, color: '#6B7280', bg: '#F3F4F6', badge: '🌱' },
-  pro:     { label: 'Pro',     maxAnnonces: 10, dureeDays: 45, autoPublish: true,  hasRegistres: true,  hasPlanning: false, hasPremiumFeatures: false, color: '#0C5C6C', bg: '#E8F4F6', badge: '⚡' },
-  premium: { label: 'Premium', maxAnnonces: -1, dureeDays: 60, autoPublish: true,  hasRegistres: true,  hasPlanning: true,  hasPremiumFeatures: true,  color: '#D97706', bg: '#FEF3C7', badge: '👑' },
+  free:    { label: 'Gratuit', maxAnnonces: 0, dureeDays: 30, autoPublish: false, hasRegistres: false, hasPlanning: false, hasPremiumFeatures: false, color: '#6B7280', bg: '#F3F4F6', badge: '🌱' },
+  pro:     { label: 'Pro',     maxAnnonces: 1, dureeDays: 45, autoPublish: true,  hasRegistres: true,  hasPlanning: false, hasPremiumFeatures: false, color: '#0C5C6C', bg: '#E8F4F6', badge: '⚡' },
+  premium: { label: 'Premium', maxAnnonces: 3, dureeDays: 60, autoPublish: true,  hasRegistres: true,  hasPlanning: true,  hasPremiumFeatures: true,  color: '#D97706', bg: '#FEF3C7', badge: '👑' },
 };
 
 export interface UsePlanResult {
@@ -186,6 +186,86 @@ export function usePlanGarde(): UseGardePlanResult {
             hasProtocoles: Boolean(f.hasProtocoles),
             hasFactureExport: Boolean(f.hasFactureExport),
             hasBadgePremium: Boolean(f.hasBadgePremium),
+          });
+        } else {
+          setConfig(fallback);
+        }
+        setLoading(false);
+      } catch {
+        setLoading(false);
+      }
+    })();
+  }, [user]);
+
+  return { plan, config, loading };
+}
+
+export interface EducationPlanConfig {
+  label: string;
+  hasEmployes: boolean;
+  maxEmployes: number; // -1 = illimité
+  hasBadgePremium: boolean;
+  hasFactureExport: boolean;
+  hasAccesPrioritaire: boolean;
+  prixMensuel: number;
+  prixAnnuel: number;
+}
+
+// Fallback si plans_tarifaires est indisponible — useEducationPlan() charge
+// toujours les prix/labels réels depuis la BDD (éditables depuis /admin).
+export const EDUCATION_PLAN_FALLBACK: Record<PlanCode, EducationPlanConfig> = {
+  free:    { label: 'Découverte', hasEmployes: false, maxEmployes: 0, hasBadgePremium: false, hasFactureExport: false, hasAccesPrioritaire: false, prixMensuel: 0, prixAnnuel: 0 },
+  pro:     { label: 'Pro', hasEmployes: true, maxEmployes: 3, hasBadgePremium: false, hasFactureExport: true, hasAccesPrioritaire: false, prixMensuel: 15, prixAnnuel: 150 },
+  premium: { label: 'Premium', hasEmployes: true, maxEmployes: -1, hasBadgePremium: true, hasFactureExport: true, hasAccesPrioritaire: true, prixMensuel: 25, prixAnnuel: 249.98 },
+};
+
+export interface UseEducationPlanResult {
+  plan: PlanCode;
+  config: EducationPlanConfig;
+  loading: boolean;
+}
+
+/** Plan éducateur/comportementaliste actif — distinct du plan éleveur/
+ * pension/garde (abonnements est scopé par profil_type). */
+export function useEducationPlan(): UseEducationPlanResult {
+  const { user } = useAuth();
+  const [plan, setPlan] = useState<PlanCode>('free');
+  const [config, setConfig] = useState<EducationPlanConfig>(EDUCATION_PLAN_FALLBACK.free);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) { setLoading(false); return; }
+    (async () => {
+      try {
+        const abo = await supabase
+          .from('abonnements')
+          .select('plan_code')
+          .eq('uid', user.uid)
+          .eq('profil_type', 'education')
+          .eq('statut', 'actif')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const code = (abo.data?.plan_code ?? 'free') as PlanCode;
+        setPlan(code);
+        const { data: planRow } = await supabase
+          .from('plans_tarifaires')
+          .select('label, prix_mensuel, prix_annuel, features')
+          .eq('profil_type', 'education')
+          .eq('plan_code', code)
+          .maybeSingle();
+        const fallback = EDUCATION_PLAN_FALLBACK[code];
+        if (planRow) {
+          const f = (planRow.features ?? {}) as Record<string, unknown>;
+          setConfig({
+            label: planRow.label ?? fallback.label,
+            prixMensuel: planRow.prix_mensuel ?? fallback.prixMensuel,
+            prixAnnuel: planRow.prix_annuel ?? fallback.prixAnnuel,
+            hasEmployes: Boolean(f.hasEmployes),
+            maxEmployes: typeof f.maxEmployes === 'number' ? f.maxEmployes : fallback.maxEmployes,
+            hasBadgePremium: Boolean(f.hasBadgePremium),
+            hasFactureExport: Boolean(f.hasFactureExport),
+            hasAccesPrioritaire: Boolean(f.hasAccesPrioritaire),
           });
         } else {
           setConfig(fallback);

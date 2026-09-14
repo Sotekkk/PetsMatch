@@ -39,6 +39,7 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
   String _planCode    = 'free';
   int    _activeCount = 0;
   bool   _planLoading = true;
+  PlanConfig? _planConfig;
 
   static const _teal  = Color(0xFF0C5C6C);
   static const _green = Color(0xFF6E9E57);
@@ -57,15 +58,21 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
       PlanService.countActiveAnnonces(_uid!),
     ]);
     if (!mounted) return;
+    final planCode = results[0] as String;
+    final config = await PlanService.getConfig(planCode);
+    if (!mounted) return;
     setState(() {
-      _planCode    = results[0] as String;
+      _planCode    = planCode;
       _activeCount = results[1] as int;
+      _planConfig  = config;
       _planLoading = false;
     });
   }
 
   void _onFabTap() {
-    final config = PlanService.getConfig(_planCode);
+    final config = _planConfig ?? const PlanConfig(
+        code: 'free', label: 'Gratuit', maxAnnonces: 0, dureeDays: 30,
+        hasRegistres: false, badge: '🌱');
     final atLimit = config.maxAnnonces != -1 && _activeCount >= config.maxAnnonces;
     if (atLimit) {
       _showQuotaSheet();
@@ -110,7 +117,9 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
 
   @override
   Widget build(BuildContext context) {
-    final config    = PlanService.getConfig(_planCode);
+    final config    = _planConfig ?? const PlanConfig(
+        code: 'free', label: 'Gratuit', maxAnnonces: 0, dureeDays: 30,
+        hasRegistres: false, badge: '🌱');
     final atLimit   = config.maxAnnonces != -1 && _activeCount >= config.maxAnnonces;
     final progress  = config.maxAnnonces == -1
         ? 0.0 : (_activeCount / config.maxAnnonces).clamp(0.0, 1.0);

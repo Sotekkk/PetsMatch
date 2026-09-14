@@ -175,6 +175,22 @@ export default function GardeContratPage() {
 
   if (!user || !userData) return null;
 
+  if (gardePlan !== 'premium') {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <span className="text-5xl">🔒</span>
+        <h2 className="text-xl font-bold font-galey text-teal-900">Signature — Plan Premium requis</h2>
+        <p className="text-gray-500 text-sm max-w-sm font-galey">
+          La signature électronique de contrats est disponible avec un abonnement Premium.
+        </p>
+        <Link href="/garde/abonnement"
+          className="bg-[#D97706] hover:bg-[#B45309] text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm">
+          👑 Voir les plans
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
       <h1 className="text-2xl font-bold font-galey text-teal-800">Contrats de prestation</h1>
@@ -219,18 +235,13 @@ export default function GardeContratPage() {
                       Voir le contrat
                     </a>
                   )}
+                  {/* Page entière déjà réservée au Premium ci-dessus — plus besoin
+                      d'un verrou spécifique à ce bouton. */}
                   {c.doc && c.doc.statut !== 'brouillon' && c.doc.statut !== 'signe' && c.email && (
-                    gardePlan !== 'free' ? (
-                      <button onClick={() => envoyerParEmail(c)} disabled={busy === c.uid}
-                        className="border border-gray-200 text-gray-600 px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-gray-50 disabled:opacity-50">
-                        {busy === c.uid ? '…' : '📧 Par email'}
-                      </button>
-                    ) : (
-                      <Link href="/garde/abonnement"
-                        className="text-xs font-galey text-amber-600 hover:underline whitespace-nowrap">
-                        🔒 Email (Pro)
-                      </Link>
-                    )
+                    <button onClick={() => envoyerParEmail(c)} disabled={busy === c.uid}
+                      className="border border-gray-200 text-gray-600 px-4 py-1.5 rounded-full text-xs font-galey font-semibold hover:bg-gray-50 disabled:opacity-50">
+                      {busy === c.uid ? '…' : '📧 Par email'}
+                    </button>
                   )}
                 </div>
               </div>

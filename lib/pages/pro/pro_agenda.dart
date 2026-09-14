@@ -18,6 +18,8 @@ import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart';
 import 'package:PetsMatch/pages/pro/garde_facture_helper.dart';
 import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
+import 'package:PetsMatch/services/plan_service.dart';
+import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/creneaux_week_grid.dart';
 
 /// Déduit la catégorie d'agenda (agenda_page.dart _kTypeColor) à partir du
@@ -1081,6 +1083,32 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   Future<void> _genererContratPhoto(Map<String, dynamic> rdv) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
+    final planCode = await PlanService.getPlanCode(uid, profilType: 'photographe');
+    if (planCode != 'essentiel') {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Signature — Plan Essentiel requis',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            content: const Text('La signature électronique de contrats est disponible avec l\'abonnement Essentiel.',
+                style: TextStyle(fontFamily: 'Galey')),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const PhotographeAbonnementPage()));
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706)),
+                child: const Text('👑 Voir les plans', style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
     try {
       final supa = Supabase.instance.client;
       final existing = await supa
