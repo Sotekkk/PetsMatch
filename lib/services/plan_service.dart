@@ -542,7 +542,7 @@ class PlanService {
       code: 'premium', label: 'Premium', hasEmployesIllimites: true, maxEmployes: -1,
       hasFacturation: true, hasStatistiques: true, hasGalerie: true, hasNotifications: true,
       hasExport: true, hasPlanningEmployes: true, hasContratSignature: true,
-      hasPaiementEnLigne: true, hasSyncGoogleAgenda: true, hasMiseEnAvant: true,
+      hasPaiementEnLigne: false, hasSyncGoogleAgenda: false, hasMiseEnAvant: true,
       prixMensuel: 25, prixAnnuel: 250,
     ),
   };

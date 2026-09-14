@@ -31,8 +31,6 @@ function featureLabels(f: Record<string, boolean | number>): string[] {
   if (f.hasExport) out.push('Export');
   if (f.hasPlanningEmployes) out.push('Planning employés');
   if (f.hasContratSignature) out.push('Contrats + signature électronique');
-  if (f.hasPaiementEnLigne) out.push('Paiement en ligne');
-  if (f.hasSyncGoogleAgenda) out.push('Sync Google Agenda');
   if (f.hasMiseEnAvant) out.push('Mise en avant');
   return out;
 }

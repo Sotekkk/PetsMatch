@@ -152,8 +152,6 @@ class _ToilettagePlanCard extends StatelessWidget {
       config.hasExport ? 'Export' : null,
       config.hasPlanningEmployes ? 'Planning employés' : null,
       config.hasContratSignature ? 'Contrats + signature électronique' : null,
-      config.hasPaiementEnLigne ? 'Paiement en ligne' : null,
-      config.hasSyncGoogleAgenda ? 'Sync Google Agenda' : null,
       config.hasMiseEnAvant ? 'Mise en avant' : null,
     ].whereType<String>().toList();
 
