@@ -36,6 +36,24 @@ interface UserProfile {
 
 // ── Navigation selon profil ───────────────────────────────────────────────────
 
+// Nav publique (déconnecté) — scindée en un premier niveau court (visible
+// en permanence) + un regroupement « Découvrir » pour ne pas surcharger la
+// barre horizontale desktop (9 items à plat était trop chargé). `NAV_GUEST`
+// reste la liste à plat, utilisée telle quelle pour le menu mobile (liste
+// verticale, pas de contrainte de largeur).
+const NAV_GUEST_PRIMARY = [
+  { href: '/annonces',   label: 'Annonces' },
+  { href: '/elevages',   label: 'Élevages' },
+  { href: '/services',   label: 'Annuaire' },
+  { href: '/communaute', label: 'Communauté' },
+  { href: '/tarifs',     label: 'Tarifs' },
+];
+const NAV_GUEST_MORE = [
+  { href: '/annonces/objets', label: '📦 Matériel' },
+  { href: '/adoptions',      label: '💚 Adoptions' },
+  { href: '/associations',   label: 'Associations' },
+  { href: '/animaux-perdus', label: 'Animaux perdus' },
+];
 const NAV_GUEST = [
   { href: '/annonces',       label: 'Annonces' },
   { href: '/annonces/objets', label: '📦 Matériel' },
@@ -45,6 +63,7 @@ const NAV_GUEST = [
   { href: '/animaux-perdus', label: 'Animaux perdus' },
   { href: '/services',       label: 'Annuaire' },
   { href: '/communaute',     label: 'Communauté' },
+  { href: '/tarifs',         label: 'Tarifs' },
 ];
 
 const NAV_ELEVEUR = [
@@ -53,18 +72,21 @@ const NAV_ELEVEUR = [
   { href: '/mes-annonces',            label: 'Mes Annonces' },
   { href: '/abonnement',              label: 'Abonnement' },
   { href: '/services',                label: 'Annuaire des professionnels' },
+  { href: '/tarifs',                  label: 'Tarifs' },
 ];
 
 // NAV spécifique profils pro secondaires (pas d'élevage)
 const NAV_PRO = [
   { href: '/',                     label: 'Accueil' },
   { href: '/communaute',           label: 'Communauté' },
+  { href: '/tarifs',               label: 'Tarifs' },
 ];
 
 const NAV_PENSION = [
   { href: '/',                     label: 'Accueil' },
   { href: '/pension/registre',     label: 'Registre' },
   { href: '/pension/chenil',       label: 'Logements / Chenil' },
+  { href: '/tarifs',               label: 'Tarifs' },
 ];
 
 const NAV_VET = [
@@ -73,6 +95,7 @@ const NAV_VET = [
   { href: '/agenda',               label: 'Agenda' },
   { href: '/mes-patients',         label: 'Patients' },
   { href: '/messages',             label: 'Messages' },
+  { href: '/tarifs',               label: 'Tarifs' },
 ];
 
 const NAV_PARTICULIER = [
@@ -83,6 +106,7 @@ const NAV_PARTICULIER = [
   { href: '/animaux-perdus',       label: 'Animaux perdus' },
   { href: '/communaute',           label: 'Communauté' },
   { href: '/services',             label: 'Annuaire des professionnels' },
+  { href: '/tarifs',               label: 'Tarifs' },
 ];
 
 const NAV_ASSOCIATION = [
@@ -92,6 +116,7 @@ const NAV_ASSOCIATION = [
   { href: '/association/agenda',       label: 'Agenda' },
   { href: '/animaux-perdus',           label: 'Animaux perdus' },
   { href: '/services',                 label: 'Annuaire des professionnels' },
+  { href: '/tarifs',                   label: 'Tarifs' },
 ];
 
 // ── Menu drawer items (miroir des drawers de l'app) ──────────────────────────
@@ -144,6 +169,7 @@ const MENU_ELEVEUR = [
     items: [
       { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
+      { href: '/tarifs',      label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -181,6 +207,7 @@ const MENU_VET = [
     items: [
       { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
+      { href: '/tarifs',      label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -218,6 +245,7 @@ const MENU_PRO = [
     items: [
       { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
+      { href: '/tarifs',      label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -265,6 +293,7 @@ const MENU_PENSION = [
     items: [
       { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute', label: 'Communauté',                  icon: '👥' },
+      { href: '/tarifs',     label: 'Tarifs',                      icon: '💶' },
     ],
   },
   {
@@ -325,6 +354,7 @@ const MENU_GARDE = [
     items: [
       { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute', label: 'Communauté',                  icon: '👥' },
+      { href: '/tarifs',     label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -367,6 +397,7 @@ const MENU_EDUCATION = [
     items: [
       { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
+      { href: '/tarifs',      label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -428,6 +459,7 @@ const MENU_ASSOCIATION = [
     items: [
       { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
+      { href: '/tarifs',      label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -475,6 +507,7 @@ const MENU_PARTICULIER = [
     items: [
       { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute', label: 'Communauté',                  icon: '👥' },
+      { href: '/tarifs',     label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -764,6 +797,8 @@ export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [guestMoreOpen, setGuestMoreOpen] = useState(false);
+  const guestMoreRef = useRef<HTMLDivElement>(null);
   const [bellOpen, setBellOpen] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [notifs, setNotifs] = useState<Notif[]>([]);
@@ -1115,6 +1150,9 @@ export default function Header() {
       if (bellRef.current && !bellRef.current.contains(e.target as Node)) {
         setBellOpen(false);
       }
+      if (guestMoreRef.current && !guestMoreRef.current.contains(e.target as Node)) {
+        setGuestMoreOpen(false);
+      }
     }
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
@@ -1215,16 +1253,58 @@ export default function Header() {
 
         {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-1 flex-1 justify-center">
-          {navLinks.map((l) => (
-            <Link key={l.href} href={l.href}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium text-center transition-colors ${
-                isActive(l.href)
-                  ? 'bg-white/20 text-white'
-                  : 'text-white/75 hover:text-white hover:bg-white/10'
-              }`}>
-              {l.label}
-            </Link>
-          ))}
+          {(loading || !user) ? (
+            <>
+              {NAV_GUEST_PRIMARY.map((l) => (
+                <Link key={l.href} href={l.href}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium text-center transition-colors ${
+                    isActive(l.href)
+                      ? 'bg-white/20 text-white'
+                      : 'text-white/75 hover:text-white hover:bg-white/10'
+                  }`}>
+                  {l.label}
+                </Link>
+              ))}
+              {/* Regroupe les pages secondaires pour ne pas surcharger la barre
+                  (9 items à plat était trop chargé visuellement). */}
+              <div className="relative" ref={guestMoreRef}>
+                <button onClick={() => setGuestMoreOpen(v => !v)}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium text-center transition-colors flex items-center gap-1 ${
+                    NAV_GUEST_MORE.some(l => isActive(l.href)) || guestMoreOpen
+                      ? 'bg-white/20 text-white'
+                      : 'text-white/75 hover:text-white hover:bg-white/10'
+                  }`}>
+                  Découvrir
+                  <svg className={`w-3.5 h-3.5 transition-transform ${guestMoreOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {guestMoreOpen && (
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-56 bg-white rounded-2xl shadow-lg border border-gray-100 py-2 z-50">
+                    {NAV_GUEST_MORE.map((l) => (
+                      <Link key={l.href} href={l.href} onClick={() => setGuestMoreOpen(false)}
+                        className={`block px-4 py-2 text-sm transition-colors ${
+                          isActive(l.href) ? 'text-[#0C5C6C] font-semibold bg-[#E8F4F6]' : 'text-[#1F2A2E] hover:bg-gray-50'
+                        }`}>
+                        {l.label}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            navLinks.map((l) => (
+              <Link key={l.href} href={l.href}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium text-center transition-colors ${
+                  isActive(l.href)
+                    ? 'bg-white/20 text-white'
+                    : 'text-white/75 hover:text-white hover:bg-white/10'
+                }`}>
+                {l.label}
+              </Link>
+            ))
+          )}
         </nav>
 
         {/* Auth zone */}
