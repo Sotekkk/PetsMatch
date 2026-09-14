@@ -120,6 +120,7 @@ class _GardeAbonnementPageState extends State<GardeAbonnementPage> {
       c.hasEmployes ? (c.maxEmployes == -1 ? 'Employés illimités' : '${c.maxEmployes} employés') : 'Sans employés',
       if (c.hasInventaire) 'Inventaire',
       if (c.hasProtocoles) 'Protocoles / Tâches',
+      if (c.hasContratSignature) 'Contrats signature',
     ];
     return parts.join(' · ');
   }
@@ -144,6 +145,7 @@ class _GardePlanCard extends StatelessWidget {
       config.hasInventaire ? 'Inventaire' : null,
       config.hasEmployes ? (config.maxEmployes == -1 ? 'Employés illimités' : 'Jusqu\'à ${config.maxEmployes} employés') : null,
       config.hasProtocoles ? 'Protocoles / Tâches' : null,
+      config.hasContratSignature ? 'Contrats signature électronique' : null,
       config.hasFactureExport ? 'Export factures' : null,
       config.hasBadgePremium ? 'Badge premium + mise en avant' : null,
     ].whereType<String>().toList();

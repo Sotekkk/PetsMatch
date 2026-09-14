@@ -280,6 +280,55 @@ export function useEducationPlan(): UseEducationPlanResult {
   return { plan, config, loading };
 }
 
+// Palier le plus haut (= fonctionnalités premium débloquées) par métier —
+// diffère de 'premium' pour plusieurs d'entre eux (grilles tarifaires
+// distinctes, cf. plans_tarifaires / chaque page <métier>/abonnement).
+// Partagé entre Header.tsx (badge « Premium » dans le drawer) et
+// elevage/facturation/page.tsx (verrou d'accès réel) — ne pas dupliquer.
+export const PROFESSION_TOP_TIER: Record<string, string> = {
+  education: 'premium',
+  toilettage: 'premium',
+  veterinaire: 'clinique',
+  sante: 'pro',
+  marechal_ferrant: 'pro',
+  photographe: 'essentiel',
+};
+
+/**
+ * Code du plan actif pour un métier quelconque — générique, contrairement à
+ * usePensionPlan()/usePlanGarde()/useEducationPlan() : ne renvoie que le
+ * plan_code, pas de config enrichie (features). Utile pour un verrou ponctuel
+ * partagé entre plusieurs métiers sans hook dédié (véto/santé/toilettage/
+ * maréchal-ferrant/photographe) plutôt que de dupliquer 5 hooks quasi
+ * identiques pour un seul point d'usage. Passer `profilType: ''` désactive
+ * la requête (utile pour appeler ce hook conditionnellement en respectant les
+ * règles des Hooks).
+ */
+export function useProfessionPlanCode(profilType: string): { planCode: PlanCode; loading: boolean } {
+  const { user } = useAuth();
+  const [planCode, setPlanCode] = useState<PlanCode>('free');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user || !profilType) { setLoading(false); return; }
+    setLoading(true);
+    supabase.from('abonnements')
+      .select('plan_code')
+      .eq('uid', user.uid)
+      .eq('profil_type', profilType)
+      .eq('statut', 'actif')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        setPlanCode((data?.plan_code ?? 'free') as PlanCode);
+        setLoading(false);
+      });
+  }, [user, profilType]);
+
+  return { planCode, loading };
+}
+
 export function usePlan(): UsePlanResult {
   const { user } = useAuth();
   const [plan, setPlan] = useState<PlanCode>('free');

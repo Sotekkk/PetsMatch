@@ -59,6 +59,7 @@ class EducationPlanConfig {
   final String label;
   final bool hasEmployes;
   final int maxEmployes; // -1 = illimité
+  final bool hasContratSignature;
   final bool hasFactureExport;
   final bool hasBadgePremium;
   final bool hasAccesPrioritaire;
@@ -70,6 +71,7 @@ class EducationPlanConfig {
     required this.label,
     required this.hasEmployes,
     required this.maxEmployes,
+    required this.hasContratSignature,
     required this.hasFactureExport,
     required this.hasBadgePremium,
     required this.hasAccesPrioritaire,
@@ -85,6 +87,7 @@ class GardePlanConfig {
   final bool hasEmployes;
   final int maxEmployes; // -1 = illimité
   final bool hasProtocoles;
+  final bool hasContratSignature;
   final bool hasFactureExport;
   final bool hasBadgePremium;
   final double prixMensuel;
@@ -97,6 +100,7 @@ class GardePlanConfig {
     required this.hasEmployes,
     required this.maxEmployes,
     required this.hasProtocoles,
+    required this.hasContratSignature,
     required this.hasFactureExport,
     required this.hasBadgePremium,
     this.prixMensuel = 0,
@@ -223,8 +227,8 @@ class PlanService {
     ),
     'pro': PensionPlanConfig(
       code: 'pro', label: 'Pro', hasInventaire: true, hasEmployes: true, maxEmployes: 3,
-      logementsIllimites: true, maxLogements: -1, hasProtocoles: true, hasContratSignature: true,
-      hasFactureExport: true, hasBadgePremium: false, prixMensuel: 14, prixAnnuel: 140,
+      logementsIllimites: true, maxLogements: -1, hasProtocoles: true, hasContratSignature: false,
+      hasFactureExport: false, hasBadgePremium: false, prixMensuel: 14, prixAnnuel: 140,
     ),
     'premium': PensionPlanConfig(
       code: 'premium', label: 'Premium', hasInventaire: true, hasEmployes: true, maxEmployes: -1,
@@ -295,17 +299,17 @@ class PlanService {
   static const Map<String, EducationPlanConfig> educationConfigs = {
     'free': EducationPlanConfig(
       code: 'free', label: 'Découverte', hasEmployes: false, maxEmployes: 0,
-      hasFactureExport: false, hasBadgePremium: false, hasAccesPrioritaire: false,
+      hasContratSignature: false, hasFactureExport: false, hasBadgePremium: false, hasAccesPrioritaire: false,
       prixMensuel: 0, prixAnnuel: 0,
     ),
     'pro': EducationPlanConfig(
       code: 'pro', label: 'Pro', hasEmployes: true, maxEmployes: 3,
-      hasFactureExport: true, hasBadgePremium: false, hasAccesPrioritaire: false,
+      hasContratSignature: false, hasFactureExport: false, hasBadgePremium: false, hasAccesPrioritaire: false,
       prixMensuel: 14, prixAnnuel: 140,
     ),
     'premium': EducationPlanConfig(
       code: 'premium', label: 'Premium', hasEmployes: true, maxEmployes: -1,
-      hasFactureExport: true, hasBadgePremium: true, hasAccesPrioritaire: true,
+      hasContratSignature: true, hasFactureExport: true, hasBadgePremium: true, hasAccesPrioritaire: true,
       prixMensuel: 24, prixAnnuel: 240,
     ),
   };
@@ -334,6 +338,7 @@ class PlanService {
           label: (row['label'] as String?) ?? fallback.label,
           hasEmployes: f['hasEmployes'] as bool? ?? fallback.hasEmployes,
           maxEmployes: (f['maxEmployes'] as num?)?.toInt() ?? fallback.maxEmployes,
+          hasContratSignature: f['hasContratSignature'] as bool? ?? fallback.hasContratSignature,
           hasFactureExport: f['hasFactureExport'] as bool? ?? fallback.hasFactureExport,
           hasBadgePremium: f['hasBadgePremium'] as bool? ?? fallback.hasBadgePremium,
           hasAccesPrioritaire: f['hasAccesPrioritaire'] as bool? ?? fallback.hasAccesPrioritaire,
@@ -369,17 +374,17 @@ class PlanService {
   static const Map<String, GardePlanConfig> gardeConfigs = {
     'free': GardePlanConfig(
       code: 'free', label: 'Découverte', hasInventaire: false, hasEmployes: false, maxEmployes: 0,
-      hasProtocoles: false, hasFactureExport: false, hasBadgePremium: false,
+      hasProtocoles: false, hasContratSignature: false, hasFactureExport: false, hasBadgePremium: false,
       prixMensuel: 0, prixAnnuel: 0,
     ),
     'pro': GardePlanConfig(
       code: 'pro', label: 'Pro', hasInventaire: true, hasEmployes: true, maxEmployes: 3,
-      hasProtocoles: true, hasFactureExport: true, hasBadgePremium: false,
+      hasProtocoles: true, hasContratSignature: false, hasFactureExport: false, hasBadgePremium: false,
       prixMensuel: 14, prixAnnuel: 140,
     ),
     'premium': GardePlanConfig(
       code: 'premium', label: 'Premium', hasInventaire: true, hasEmployes: true, maxEmployes: -1,
-      hasProtocoles: true, hasFactureExport: true, hasBadgePremium: true,
+      hasProtocoles: true, hasContratSignature: true, hasFactureExport: true, hasBadgePremium: true,
       prixMensuel: 24, prixAnnuel: 240,
     ),
   };
@@ -410,6 +415,7 @@ class PlanService {
           hasEmployes: f['hasEmployes'] as bool? ?? fallback.hasEmployes,
           maxEmployes: (f['maxEmployes'] as num?)?.toInt() ?? fallback.maxEmployes,
           hasProtocoles: f['hasProtocoles'] as bool? ?? fallback.hasProtocoles,
+          hasContratSignature: f['hasContratSignature'] as bool? ?? fallback.hasContratSignature,
           hasFactureExport: f['hasFactureExport'] as bool? ?? fallback.hasFactureExport,
           hasBadgePremium: f['hasBadgePremium'] as bool? ?? fallback.hasBadgePremium,
           prixMensuel: (row['prix_mensuel'] as num?)?.toDouble() ?? fallback.prixMensuel,
@@ -527,7 +533,7 @@ class PlanService {
     ),
     'pro': ToilettagePlanConfig(
       code: 'pro', label: 'Pro', hasEmployesIllimites: true, maxEmployes: -1,
-      hasFacturation: true, hasStatistiques: true, hasGalerie: true, hasNotifications: true,
+      hasFacturation: false, hasStatistiques: true, hasGalerie: true, hasNotifications: true,
       hasExport: true, hasPlanningEmployes: false, hasContratSignature: false,
       hasPaiementEnLigne: false, hasSyncGoogleAgenda: false, hasMiseEnAvant: false,
       prixMensuel: 15, prixAnnuel: 150,

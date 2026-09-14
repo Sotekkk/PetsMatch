@@ -8,7 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { useGardeAccess } from '@/hooks/useGardeAccess';
-import { usePlan, usePensionPlan, usePlanGarde } from '@/lib/use-plan';
+import { usePlan, usePensionPlan, usePlanGarde, useProfessionPlanCode, PROFESSION_TOP_TIER } from '@/lib/use-plan';
 import { facturePdfBlob } from '@/lib/facture-pdf';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -107,13 +107,28 @@ export default function FacturationPage() {
   const profilSource = pathname?.startsWith('/association') ? 'association' : isGardeSource ? 'garde' : 'eleveur';
   const { plan: pensionPlan, loading: pensionPlanLoading } = usePensionPlan();
   const { plan: gardePlan, loading: gardePlanLoading } = usePlanGarde();
-  // Pension et garde ont chacun leur propre abonnement — la facturation est
-  // incluse dès leur plan payant respectif, indépendamment du plan éleveur.
-  // On ne touche pas au filtrage des données (profilSource), seulement au
-  // verrou de plan.
-  const planGateLoading = isPensionSource ? pensionPlanLoading : isGardeSource ? gardePlanLoading : planLoading;
-  const hasFacturationAccess = isPensionSource ? pensionPlan === 'premium'
+  // Métiers sans hook dédié (éducateur/véto/santé/toilettage/maréchal-
+  // ferrant/photographe) — un seul hook générique, paramétré par le métier
+  // réellement actif. Avant ce correctif, tous ces métiers retombaient sur
+  // planConfig.hasPremiumFeatures (= l'abonnement ÉLEVEUR), qui n'a aucun
+  // rapport avec leur propre abonnement.
+  const isAssociation = profilSource === 'association';
+  const activeProfilType = userData?.profileType ?? 'eleveur';
+  const isOtherProfession = !isPensionSource && !isGardeSource && !isAssociation && activeProfilType !== 'eleveur';
+  const { planCode: otherPlanCode, loading: otherPlanLoading } =
+    useProfessionPlanCode(isOtherProfession ? activeProfilType : '');
+  // Pension/garde/les autres métiers ont chacun leur propre abonnement — la
+  // facturation est incluse dès LEUR plan payant respectif, indépendamment
+  // du plan éleveur. On ne touche pas au filtrage des données (profilSource),
+  // seulement au verrou de plan.
+  const planGateLoading = isPensionSource ? pensionPlanLoading
+    : isGardeSource ? gardePlanLoading
+    : isOtherProfession ? otherPlanLoading
+    : planLoading;
+  const hasFacturationAccess = isAssociation ? true
+    : isPensionSource ? pensionPlan === 'premium'
     : isGardeSource ? gardePlan === 'premium'
+    : isOtherProfession ? otherPlanCode === (PROFESSION_TOP_TIER[activeProfilType] ?? 'premium')
     : planConfig.hasPremiumFeatures;
 
   const [factures, setFactures] = useState<Facture[]>([]);
@@ -215,7 +230,13 @@ export default function FacturationPage() {
         <p className="text-gray-500 text-sm max-w-sm">
           La facturation est disponible avec un abonnement payant. Gérez vos factures directement depuis votre espace pro.
         </p>
-        <a href={isPensionSource ? '/pension/abonnement' : '/abonnement'}
+        <a href={
+          isPensionSource ? '/pension/abonnement'
+            : isGardeSource ? '/garde/abonnement'
+            : isOtherProfession
+              ? `/${activeProfilType === 'marechal_ferrant' ? 'marechal-ferrant' : activeProfilType}/abonnement`
+              : '/abonnement'
+        }
           className="bg-[#D97706] hover:bg-[#B45309] text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm">
           👑 Voir les plans
         </a>

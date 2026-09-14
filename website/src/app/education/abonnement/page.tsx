@@ -28,6 +28,7 @@ function featureLabels(f: Record<string, boolean | number>): string[] {
     'Réservation en ligne',
   ];
   if (f.hasEmployes) out.push(f.maxEmployes === -1 ? 'Employés illimités' : `Jusqu'à ${f.maxEmployes} employés`);
+  if (f.hasContratSignature) out.push('Contrats — signature électronique');
   if (f.hasFactureExport) out.push('Export factures');
   if (f.hasBadgePremium) out.push('Badge premium + mise en avant annuaire');
   if (f.hasAccesPrioritaire) out.push('Accès prioritaire support');

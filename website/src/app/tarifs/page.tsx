@@ -68,6 +68,7 @@ function featureLabels(profilType: string, raw: unknown): string[] {
     case 'education': {
       const out = ['Planning + cours individuels/collectifs', 'Tarification & suivi de progression', 'Réservation en ligne'];
       if (f.hasEmployes) out.push(f.maxEmployes === -1 ? 'Employés illimités' : `Jusqu'à ${f.maxEmployes} employés`);
+      if (f.hasContratSignature) out.push('Contrats — signature électronique');
       if (f.hasFactureExport) out.push('Export factures');
       if (f.hasBadgePremium) out.push('Badge premium + mise en avant annuaire');
       if (f.hasAccesPrioritaire) out.push('Accès prioritaire support');
@@ -78,6 +79,7 @@ function featureLabels(profilType: string, raw: unknown): string[] {
       if (f.hasEmployes) out.push(f.maxEmployes === -1 ? 'Employés illimités' : `Jusqu'à ${f.maxEmployes} employés`);
       if (f.hasInventaire) out.push('Inventaire');
       if (f.hasProtocoles) out.push('Protocoles / Tâches');
+      if (f.hasContratSignature) out.push('Contrats — signature électronique');
       if (f.hasFactureExport) out.push('Export factures');
       if (f.hasBadgePremium) out.push('Badge premium + mise en avant annuaire');
       return out;

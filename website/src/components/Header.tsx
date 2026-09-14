@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/auth-context';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
-import { usePlan, usePensionPlan, usePlanGarde } from '@/lib/use-plan';
+import { usePlan, usePensionPlan, usePlanGarde, useProfessionPlanCode, PROFESSION_TOP_TIER } from '@/lib/use-plan';
 import { useRouter } from 'next/navigation';
 import { ACTIVE_PROFILE_KEY, ACTIVE_PROFILE_TYPE_KEY, PROFILE_CHANGE_EVENT } from '@/hooks/useActiveProfile';
 
@@ -190,7 +190,7 @@ const MENU_VET = [
     section: 'Administratif',
     icon: '🗂️',
     items: [
-      { href: '/elevage/facturation', label: 'Mes Factures', icon: '🧾' },
+      { href: '/elevage/facturation', label: 'Mes Factures', icon: '🧾', premium: true },
     ],
   },
   {
@@ -227,7 +227,7 @@ const MENU_PRO = [
     section: 'Administratif',
     icon: '🗂️',
     items: [
-      { href: '/elevage/facturation', label: 'Mes Factures', icon: '🧾' },
+      { href: '/elevage/facturation', label: 'Mes Factures', icon: '🧾', premium: true },
     ],
   },
   {
@@ -379,7 +379,7 @@ const MENU_EDUCATION = [
     icon: '🗂️',
     items: [
       { href: '/education/devis',     label: 'Devis',        icon: '📋' },
-      { href: '/elevage/facturation', label: 'Mes Factures', icon: '🧾' },
+      { href: '/elevage/facturation', label: 'Mes Factures', icon: '🧾', premium: true },
       { href: '/education/contrat',    label: 'Mes Contrats', icon: '📄' },
     ],
   },
@@ -862,6 +862,14 @@ export default function Header() {
   const effectiveIsVet = !!(resolvedProfileType === 'veterinaire' || resolvedProfileType === 'sante' || resolvedProfileType === 'marechal_ferrant' ||
     activeProfile?.cat_pro === 'veterinaire' || activeProfile?.cat_pro === 'sante' || activeProfile?.cat_pro === 'marechal_ferrant'
   ) || (isPrimaryPro && (primaryCatPro === 'veterinaire' || primaryCatPro === 'sante' || primaryCatPro === 'marechal_ferrant'));
+
+  // Métiers sans variable de plan dédiée (véto/santé/toilettage/maréchal-
+  // ferrant/photographe/éducateur) — un seul hook générique paramétré par le
+  // métier réellement actif, plutôt que 6 hooks quasi identiques. Sans ça, le
+  // badge Premium du drawer ne s'affichait jamais pour ces métiers (l'item
+  // restait toujours cliquable, même sans abonnement payant).
+  const otherProfilType = effectiveType in PROFESSION_TOP_TIER ? effectiveType : '';
+  const { planCode: otherPlan } = useProfessionPlanCode(otherProfilType);
 
   const primaryDisplayName = userData?.nameElevage ?? userData?.firstname ?? user?.email ?? '';
   const primaryAvatar = userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
@@ -1554,11 +1562,13 @@ export default function Header() {
                               );
                               // Pension/garde : la facturation est incluse dès le
                               // premier plan payant (comme sur /elevage/facturation) ;
-                              // éleveur exige le plan Premium.
+                              // éleveur et les autres métiers exigent leur propre
+                              // palier le plus haut (PROFESSION_TOP_TIER).
                               const isPremiumLocked = !!it.premium && (
                                 effectiveIsPension ? pensionPlan === 'free'
                                 : effectiveIsGarde ? gardePlan === 'free'
                                 : effectiveType === 'eleveur' ? eleveurPlan !== 'premium'
+                                : otherProfilType ? otherPlan !== (PROFESSION_TOP_TIER[otherProfilType] ?? 'premium')
                                 : false
                               );
                               const isLocked = isProLocked || isPremiumLocked;
@@ -1566,8 +1576,12 @@ export default function Header() {
                               const badgeCls = isPremiumLocked
                                 ? 'text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full mr-1'
                                 : 'text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full mr-1';
+                              const abonnementHrefFor = effectiveIsPension ? '/pension/abonnement'
+                                : effectiveIsGarde ? '/garde/abonnement'
+                                : otherProfilType ? `/${otherProfilType === 'marechal_ferrant' ? 'marechal-ferrant' : otherProfilType}/abonnement`
+                                : '/abonnement';
                               return isLocked ? (
-                                <Link key={it.href} href={effectiveIsPension ? '/pension/abonnement' : effectiveIsGarde ? '/garde/abonnement' : '/abonnement'}
+                                <Link key={it.href} href={abonnementHrefFor}
                                   onClick={() => setDropdownOpen(false)}
                                   className="flex items-center gap-3 pl-10 pr-4 py-2 text-sm text-gray-400 hover:bg-gray-50 transition-colors">
                                   <span className="text-base opacity-50">{it.icon}</span>
@@ -1736,12 +1750,17 @@ export default function Header() {
                           effectiveIsPension ? pensionPlan === 'free'
                           : effectiveIsGarde ? gardePlan === 'free'
                           : effectiveType === 'eleveur' ? eleveurPlan !== 'premium'
+                          : otherProfilType ? otherPlan !== (PROFESSION_TOP_TIER[otherProfilType] ?? 'premium')
                           : false
                         );
                         const isLocked = isProLocked || isPremiumLocked;
                         const badge = isPremiumLocked ? 'Premium' : 'Pro';
+                        const abonnementHrefFor = effectiveIsPension ? '/pension/abonnement'
+                          : effectiveIsGarde ? '/garde/abonnement'
+                          : otherProfilType ? `/${otherProfilType === 'marechal_ferrant' ? 'marechal-ferrant' : otherProfilType}/abonnement`
+                          : '/abonnement';
                         return isLocked ? (
-                          <Link key={it.href} href={effectiveIsPension ? '/pension/abonnement' : effectiveIsGarde ? '/garde/abonnement' : '/abonnement'} onClick={() => setMenuOpen(false)}
+                          <Link key={it.href} href={abonnementHrefFor} onClick={() => setMenuOpen(false)}
                             className="flex items-center gap-2 py-2 text-white/40 text-sm">
                             <span className="opacity-50">{it.icon}</span>
                             <span className="flex-1 opacity-60">{it.label}</span>

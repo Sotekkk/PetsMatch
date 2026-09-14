@@ -118,6 +118,7 @@ class _EducationAbonnementPageState extends State<EducationAbonnementPage> {
   String _summaryLine(EducationPlanConfig c) {
     final parts = <String>[
       c.hasEmployes ? (c.maxEmployes == -1 ? 'Employés illimités' : '${c.maxEmployes} employés') : 'Sans employés',
+      if (c.hasContratSignature) 'Contrats signature',
       if (c.hasFactureExport) 'Export factures',
       if (c.hasBadgePremium) 'Badge premium',
     ];
@@ -145,6 +146,7 @@ class _EducationPlanCard extends StatelessWidget {
       'Tarification & suivi de progression',
       'Réservation en ligne',
       config.hasEmployes ? (config.maxEmployes == -1 ? 'Employés illimités' : 'Jusqu\'à ${config.maxEmployes} employés') : null,
+      config.hasContratSignature ? 'Contrats signature électronique' : null,
       config.hasFactureExport ? 'Export factures' : null,
       config.hasBadgePremium ? 'Badge premium + mise en avant' : null,
       config.hasAccesPrioritaire ? 'Accès prioritaire support' : null,

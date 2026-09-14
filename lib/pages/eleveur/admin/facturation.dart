@@ -18,6 +18,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/pro/pension_factures_page.dart' show PensionFacturesPage;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/education_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/toilettage_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 
 // ─────────────────────────────────────────────────────────────
 // HELPERS
@@ -144,7 +151,39 @@ class _FacturationPageState extends State<FacturationPage> {
     _loadPlan();
   }
 
-  // La facturation est réservée au plan Premium, pour tout profil pro —
+  // Palier le plus haut par métier — diffère de 'premium' pour plusieurs
+  // d'entre eux (grilles tarifaires distinctes, cf. plans_tarifaires / miroir
+  // website/src/lib/use-plan.ts PROFESSION_TOP_TIER). Sans ce mapping, véto/
+  // santé/maréchal-ferrant/photographe étaient bloqués en permanence (leur
+  // vrai palier max — clinique/pro/pro/essentiel — n'égale jamais 'premium').
+  static const Map<String, String> _topTierByMetier = {
+    'veterinaire': 'clinique',
+    'sante': 'pro',
+    'marechal_ferrant': 'pro',
+    'photographe': 'essentiel',
+  };
+  String get _requiredTier {
+    final catPro = User_Info.catPro.isNotEmpty ? User_Info.catPro : 'eleveur';
+    return _topTierByMetier[catPro] ?? 'premium';
+  }
+  String get _requiredTierLabel =>
+      _requiredTier.isEmpty ? 'Premium' : _requiredTier[0].toUpperCase() + _requiredTier.substring(1);
+
+  Widget _abonnementPageForMetier() {
+    switch (User_Info.catPro) {
+      case 'garde': return const GardeAbonnementPage();
+      case 'pension': return const PensionAbonnementPage();
+      case 'education': return const EducationAbonnementPage();
+      case 'toilettage': return const ToilettageAbonnementPage();
+      case 'veterinaire': return const VetAbonnementPage();
+      case 'sante': return const SanteAbonnementPage(profilType: 'sante');
+      case 'marechal_ferrant': return const SanteAbonnementPage(profilType: 'marechal_ferrant');
+      case 'photographe': return const PhotographeAbonnementPage();
+      default: return const AbonnementPage();
+    }
+  }
+
+  // La facturation est réservée au palier le plus haut de chaque métier —
   // sauf association, gratuite par conception (pas de grille tarifaire).
   Future<void> _loadPlan() async {
     if (widget.isAssociation) {
@@ -236,7 +275,7 @@ class _FacturationPageState extends State<FacturationPage> {
     if (_planLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator(color: _teal)));
     }
-    if (_planCode != 'premium' && !widget.isAssociation) {
+    if (_planCode != _requiredTier && !widget.isAssociation) {
       return Scaffold(
         backgroundColor: _bg,
         appBar: AppBar(
@@ -251,17 +290,17 @@ class _FacturationPageState extends State<FacturationPage> {
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.lock_outline, size: 64, color: Colors.grey.shade300),
               const SizedBox(height: 12),
-              const Text('Facturation — Plan Premium requis',
+              Text('Facturation — Plan $_requiredTierLabel requis',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
               const SizedBox(height: 8),
-              Text('La facturation est disponible avec l\'abonnement Premium.',
+              Text('La facturation est disponible avec l\'abonnement $_requiredTierLabel.',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
               const SizedBox(height: 20),
               ElevatedButton(
                 onPressed: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const AbonnementPage())),
+                    MaterialPageRoute(builder: (_) => _abonnementPageForMetier())),
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706)),
                 child: const Text('👑 Voir les plans',
                     style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700)),
