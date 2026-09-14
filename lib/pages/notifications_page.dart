@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
@@ -36,6 +35,7 @@ import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/promenades/promenade_detail_page.dart';
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show openSharedSocialPost;
 import 'package:PetsMatch/pages/chatScreen.dart';
 
 // YYYY-MM-DD → DD/MM/YYYY
@@ -791,6 +791,22 @@ class _NotificationsPageState extends State<NotificationsPage> {
           builder: (_) => PublicProfilePage(targetUid: fromUid),
         ));
       }
+    } else if (type == 'social_like' || type == 'social_comment') {
+      // "a aimé votre post" / "a commenté votre post" (Pets Social) — ouvre
+      // le post, et pour un commentaire, scrolle jusqu'à lui et le surligne.
+      final postId = data is Map ? data['post_id'] as String? : null;
+      final commentId = data is Map ? data['comment_id'] as String? : null;
+      if (postId != null) {
+        await openSharedSocialPost(context, postId,
+            highlightCommentId: type == 'social_comment' ? commentId : null);
+      }
+    } else if (type == 'social_follow') {
+      final actorUid = data is Map ? data['actor_uid'] as String? : null;
+      if (actorUid != null) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => PublicProfilePage(targetUid: actorUid),
+        ));
+      }
     } else if (type == 'employee_invite') {
       final eleveurUid = data is Map ? data['eleveurUid'] as String? : null;
       final eleveurNom = data is Map ? (data['eleveurNom'] as String? ?? 'Mon employeur') : 'Mon employeur';
@@ -898,19 +914,19 @@ class _NotificationsPageState extends State<NotificationsPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
 
-    if (profileType == User_Info.primaryType) {
-      try {
-        final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-        if (doc.exists) User_Info.updateUserInfo(doc.data()!);
-      } catch (_) {}
-    } else {
-      final profiles = await ProfileService.loadProfiles(uid);
-      final match = profiles.firstWhere(
-        (p) => p['profile_type'] == profileType,
-        orElse: () => {},
-      );
-      if (match.isNotEmpty) User_Info.applyProfile(match);
-    }
+    // Toujours passer par applyProfile (même pour le profil principal) : il
+    // renseigne activeProfileId correctement. L'ancien repli sur
+    // updateUserInfo() pour le profil principal remettait activeProfileId à
+    // '' sans jamais le réappliquer — les notifications scopées par
+    // profile_id (le cas normal) n'étaient alors plus jamais comptées comme
+    // lues pour ce profil après un aller-retour, elles réapparaissaient
+    // comme non lues.
+    final profiles = await ProfileService.loadProfiles(uid);
+    final match = profiles.firstWhere(
+      (p) => p['profile_type'] == profileType,
+      orElse: () => {},
+    );
+    if (match.isNotEmpty) User_Info.applyProfile(match);
 
     if (mounted) {
       navigatorKey.currentState?.pushAndRemoveUntil(
@@ -974,6 +990,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'coproprio_quitte':              return Icons.person_remove_outlined;
       case 'message':       return Icons.chat_bubble_outline;
       case 'like':          return Icons.favorite;
+      case 'social_like':    return Icons.favorite_outline;
+      case 'social_comment': return Icons.mode_comment_outlined;
+      case 'social_follow':  return Icons.person_add_alt_outlined;
       case 'chaleur':       return Icons.spa;
       case 'rappel_vaccin': return Icons.vaccines_outlined;
       case 'tache':         return Icons.task_alt;
@@ -1050,6 +1069,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'alerte_perdu':  return _orange;
       case 'message':       return _teal;
       case 'like':          return Colors.redAccent;
+      case 'social_like':    return Colors.redAccent;
+      case 'social_comment': return _teal;
+      case 'social_follow':  return const Color(0xFF7B5EA7);
       case 'chaleur':       return const Color(0xFFE91E8C);
       case 'rappel_vaccin': return const Color(0xFF26A69A);
       case 'tache':         return const Color(0xFF6E9E57);

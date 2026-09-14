@@ -318,6 +318,7 @@ void _sendSocialNotif({
   String? actorProfileId,
   String? postId,
   String? targetUid,
+  String? commentId,
   required String type,
   required String titleSuffix,
   required String body,
@@ -365,6 +366,7 @@ void _sendSocialNotif({
       'data': {
         if (postId != null) 'post_id': postId,
         if (targetUid != null) 'actor_uid': actorUid,
+        if (commentId != null) 'comment_id': commentId,
       },
       'read': false,
     });
@@ -639,8 +641,11 @@ List<String> _taggedIds(dynamic raw) {
 }
 
 /// Ouvre le détail d'une publication à partir de son id — point d'entrée des
-/// liens de partage `petsmatchapp.com/p/<id>` (cf. `DeepLinkService`).
-Future<void> openSharedSocialPost(BuildContext context, String postId) async {
+/// liens de partage `petsmatchapp.com/p/<id>` (cf. `DeepLinkService`) et des
+/// notifications social_like/social_comment (cf. notifications_page.dart).
+/// [highlightCommentId] : ouvre directement les commentaires en surlignant
+/// celui-ci (notification "a commenté votre post").
+Future<void> openSharedSocialPost(BuildContext context, String postId, {String? highlightCommentId}) async {
   try {
     final row = await Supabase.instance.client
         .from('posts_socialmedia').select().eq('id', postId).maybeSingle();
@@ -652,7 +657,7 @@ Future<void> openSharedSocialPost(BuildContext context, String postId) async {
       builder: (_) => Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 48),
-        child: _PostDetailSheet(post: Map<String, dynamic>.from(row), myUid: myUid),
+        child: _PostDetailSheet(post: Map<String, dynamic>.from(row), myUid: myUid, highlightCommentId: highlightCommentId),
       ),
     );
   } catch (_) {}
@@ -920,7 +925,11 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
         _headerBtn(Icons.search_rounded, _openSearch),
         const SizedBox(width: 8),
         Stack(clipBehavior: Clip.none, children: [
-          _headerBtn(Icons.notifications_outlined, () {
+          // Icône distincte de la cloche "Alertes" du menu du bas (celle-ci
+          // ne partage ni les mêmes données — likes/commentaires/abonnés vus
+          // localement, pas la table `notifications` — ni le même système de
+          // lecture) : un cœur plutôt qu'une cloche, pour ne pas les confondre.
+          _headerBtn(Icons.favorite_border_rounded, () {
             setState(() => _notifCount = 0);
             _markNotifSeen();
             _openNotifications();
@@ -3179,11 +3188,15 @@ class _CommentsSheet extends StatefulWidget {
   final String myUid;
   final String postAuthorUid;
   final VoidCallback onCommentAdded;
+  // Notification "a commenté votre post" : scrolle jusqu'au commentaire et
+  // le surligne brièvement à l'ouverture.
+  final String? highlightCommentId;
   const _CommentsSheet(
       {required this.postId,
       required this.myUid,
       required this.postAuthorUid,
-      required this.onCommentAdded});
+      required this.onCommentAdded,
+      this.highlightCommentId});
   @override
   State<_CommentsSheet> createState() => _CommentsSheetState();
 }
@@ -3199,12 +3212,29 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   String? _replyToId;
   Set<String> _following = {};
   String? _myProfileId;
+  final Map<String, GlobalKey> _itemKeys = {};
+  String? _highlightId;
 
   @override
   void initState() {
     super.initState();
+    _highlightId = widget.highlightCommentId;
     _load();
     _activeAuthorProfileId(widget.myUid).then((id) { if (mounted) _myProfileId = id; });
+  }
+
+  void _scrollToHighlight() {
+    final id = _highlightId;
+    if (id == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _itemKeys[id]?.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 400), alignment: 0.3);
+      }
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _highlightId = null);
+      });
+    });
   }
 
   @override
@@ -3222,6 +3252,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         _comments = rows.cast<Map<String, dynamic>>();
         _loading  = false;
       });
+      if (_highlightId != null) _scrollToHighlight();
     }
   }
 
@@ -3321,6 +3352,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         actorProfileId: pid,
         postId: widget.postId,
         targetUid: widget.postAuthorUid,
+        commentId: inserted['id']?.toString(),
         type: 'social_comment',
         titleSuffix: 'a commenté votre post',
         body: text.length > 60 ? '${text.substring(0, 60)}…' : text,
@@ -3465,7 +3497,20 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                           );
                         }
 
-                        return Padding(
+                        final commentId = c['id']?.toString() ?? '';
+                        final isHighlighted = commentId.isNotEmpty && commentId == _highlightId;
+                        final itemKey = commentId.isNotEmpty
+                            ? _itemKeys.putIfAbsent(commentId, () => GlobalKey())
+                            : null;
+
+                        return AnimatedContainer(
+                          key: itemKey,
+                          duration: const Duration(milliseconds: 400),
+                          decoration: BoxDecoration(
+                            color: isHighlighted ? _green.withValues(alpha: 0.20) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Padding(
                           padding: EdgeInsets.only(
                               left: isReply ? 28 : 0,
                               top: i > 0 ? (isReply ? 6 : 10) : 0,
@@ -3655,6 +3700,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                   ]),
                                 ),
                               ]),
+                        ),
                         );
                       },
                     );
@@ -5427,7 +5473,8 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
 class _PostDetailSheet extends StatefulWidget {
   final Map<String, dynamic> post;
   final String myUid;
-  const _PostDetailSheet({required this.post, required this.myUid});
+  final String? highlightCommentId;
+  const _PostDetailSheet({required this.post, required this.myUid, this.highlightCommentId});
   @override
   State<_PostDetailSheet> createState() => _PostDetailSheetState();
 }
@@ -5455,10 +5502,32 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
     return widget.post['uid'] as String;
   }
 
+  bool _autoOpenedComments = false;
+
   @override
   void initState() {
     super.initState();
     _loadProfile();
+    if (widget.highlightCommentId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openComments());
+    }
+  }
+
+  void _openComments() {
+    if (_autoOpenedComments || !mounted) return;
+    _autoOpenedComments = true;
+    showModalBottomSheet(
+      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+      builder: (_) => _CommentsSheet(
+        postId: _effectiveId,
+        myUid: widget.myUid,
+        postAuthorUid: _authorUid,
+        highlightCommentId: widget.highlightCommentId,
+        onCommentAdded: () => setState(() {
+          widget.post['comment_count'] = ((widget.post['comment_count'] as int?) ?? 0) + 1;
+        }),
+      ),
+    );
   }
 
   Future<void> _loadProfile() async {

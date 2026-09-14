@@ -613,6 +613,14 @@ function getNotifUrl(n: Notif): string | null {
       return d.annonceId
         ? `/annonces/${d.annonceId}${d.bebeIndex != null && d.bebeIndex !== '' ? `?bebe=${d.bebeIndex}` : ''}`
         : '/mes-annonces';
+    case 'social_like':
+    case 'social_comment':
+      // Pets Social n'a pas d'interface interactive sur le site (juste cette
+      // page de prévisualisation partagée) — on y amène quand même, avec un
+      // bouton "Ouvrir dans l'application" pour voir/répondre au commentaire.
+      return d.post_id ? `/p/${d.post_id}` : null;
+    case 'social_follow':
+      return d.actor_uid ? `/profil/${d.actor_uid}` : null;
     case 'alerte_perdu':
       return '/animaux-perdus';
     case 'chaleur':
@@ -1313,6 +1321,9 @@ export default function Header() {
                             {n.type === 'alerte_perdu' ? '🔍'
                               : n.type?.startsWith('coproprio_') ? '👥'
                               : n.type === 'like' ? '❤️'
+                              : n.type === 'social_like' ? '❤️'
+                              : n.type === 'social_comment' ? '💬'
+                              : n.type === 'social_follow' ? '➕'
                               : n.type === 'chaleur' ? '🌸'
                               : n.type === 'rappel_vaccin' ? '💉'
                               : n.type === 'sante' ? (n.data?.table === 'vermifuges' ? '💊' : n.data?.table === 'antiparasitaires' ? '🛡️' : '💉')
