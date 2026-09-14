@@ -737,6 +737,168 @@ Future<Uint8List> contratGardePdfBytes({
   return pdf.save();
 }
 
+// ─── CONTRAT DE PRESTATION D'ÉDUCATION ────────────────────────────────────────
+// ⚠️ Contenu à garder aligné sur website/src/lib/contrat-education.ts.
+
+pw.Widget _ligneRow(String desc, String qte, String pu, String total, {bool header = false}) {
+  final style = header
+      ? pw.TextStyle(fontSize: 8, color: _teal, fontWeight: pw.FontWeight.bold)
+      : _body();
+  return pw.Padding(
+    padding: const pw.EdgeInsets.symmetric(vertical: 3),
+    child: pw.Row(children: [
+      pw.Expanded(flex: 5, child: pw.Text(desc, style: style)),
+      pw.Expanded(flex: 2, child: pw.Text(qte, style: style, textAlign: pw.TextAlign.right)),
+      pw.Expanded(flex: 2, child: pw.Text(pu, style: style, textAlign: pw.TextAlign.right)),
+      pw.Expanded(flex: 2, child: pw.Text(total, style: style, textAlign: pw.TextAlign.right)),
+    ]),
+  );
+}
+
+Future<Uint8List> contratEducationPdfBytes({
+  Map<String, dynamic>? animal,
+  required Map<String, dynamic> prestataire,
+  String clientNom = '', String clientEmail = '', String clientTel = '',
+  List<Map<String, dynamic>> lignes = const [],
+  double totalTtc = 0,
+  DateTime? datePrestation, DateTime? dateValidite,
+  String notes = '',
+  String? sigPrestataire, String? sigClient, String villeSignature = '',
+}) async {
+  final pdf = pw.Document(theme: await _pdfTheme());
+  final p = _parties(prestataire);
+  final today = _fmt(DateTime.now());
+  final dateP = datePrestation != null ? _fmt(datePrestation) : '';
+  final dateV = dateValidite != null ? _fmt(dateValidite) : '';
+  final espece = (animal?['espece'] as String? ?? '').trim();
+  final race = (animal?['race'] as String? ?? '').trim();
+  final animalDesc = [
+    if (espece.isNotEmpty) espece[0].toUpperCase() + espece.substring(1),
+    if (race.isNotEmpty) race,
+  ].join(' — ');
+  String eur(num v) => '${v.toStringAsFixed(2).replaceAll('.', ',')} €';
+  final total = totalTtc > 0
+      ? totalTtc
+      : lignes.fold<double>(0, (s, l) => s + ((l['total'] as num?)?.toDouble() ?? 0));
+
+  pdf.addPage(pw.MultiPage(
+    pageFormat: PdfPageFormat.a4,
+    margin: const pw.EdgeInsets.fromLTRB(40, 40, 40, 40),
+    build: (ctx) => [
+      pw.Center(child: pw.Text('CONTRAT DE PRESTATION D\'ÉDUCATION CANINE',
+          style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold, color: _teal, letterSpacing: 0.8))),
+      pw.SizedBox(height: 16),
+
+      pw.Text('ENTRE LES SOUSSIGNÉS :', style: _bold()),
+      pw.SizedBox(height: 3),
+      _line('Le Prestataire', p.eleveurNom),
+      _line('Demeurant à', p.eleveurAdresse),
+      _line('Téléphone', p.eleveurTel),
+      _line('SIRET', p.eleveurSiret),
+      _line('Email', p.eleveurEmail),
+      pw.SizedBox(height: 8),
+      pw.Text('ET :', style: _bold()),
+      pw.SizedBox(height: 3),
+      _line('Le Client', clientNom.trim().isEmpty ? null : clientNom.trim()),
+      _line('Téléphone', clientTel.trim().isEmpty ? null : clientTel.trim()),
+      _line('Email', clientEmail.trim().isEmpty ? null : clientEmail.trim()),
+
+      pw.SizedBox(height: 10),
+      pw.Text('Article 1 : Objet du contrat', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      if (animal != null) ...[
+        _line('Animal', animal['nom'] as String?),
+        _line('Espèce / race', animalDesc.isEmpty ? null : animalDesc),
+      ],
+      _line('Date de la prestation', dateP.isEmpty ? null : dateP),
+      _line('Devis valable jusqu\'au', dateV.isEmpty ? null : dateV),
+      if (animal == null)
+        _para('Le Prestataire s\'engage à réaliser, pour le compte du Client, la ou les séances '
+            'd\'éducation canine / comportementalisme décrites ci-dessous, selon les modalités '
+            'convenues entre les parties.'),
+
+      pw.SizedBox(height: 8),
+      pw.Text('Détail de la prestation', style: _bold()),
+      pw.SizedBox(height: 4),
+      pw.Container(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFFF1F5F4)),
+        child: _ligneRow('Prestation', 'Qté', 'P.U.', 'Total', header: true),
+      ),
+      if (lignes.isNotEmpty)
+        ...lignes.map((l) => _ligneRow(
+              (l['description'] ?? '').toString(),
+              '${l['quantite'] ?? 1}',
+              eur((l['prix_unitaire'] as num?) ?? 0),
+              eur((l['total'] as num?) ?? 0),
+            ))
+      else
+        _ligneRow('Prestation d\'éducation canine', '1', eur(total), eur(total)),
+      pw.Divider(color: PdfColors.grey300, height: 12),
+      pw.Align(
+        alignment: pw.Alignment.centerRight,
+        child: pw.Text('Total TTC : ${eur(total)}', style: _bold()),
+      ),
+
+      pw.SizedBox(height: 10),
+      pw.Text('Article 2 : Engagement du Client', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para('Le Client s\'engage à être présent (ou à faire présenter l\'animal par une personne '
+          'majeure de son entourage) aux séances convenues, et à appliquer les consignes de suivi '
+          'transmises par le Prestataire entre les séances.'),
+
+      pw.Text('Article 3 : Comportement & sécurité de l\'animal', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para('Le Client certifie que l\'animal est à jour de ses vaccins et déclare tout antécédent '
+          'de morsure, d\'attaque ou de comportement dangereux avant la première séance. Le '
+          'Prestataire se réserve le droit d\'interrompre une séance en cas de danger pour les '
+          'personnes présentes.'),
+
+      pw.Text('Article 4 : Responsabilité civile', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para('Le Prestataire est couvert par une assurance responsabilité civile professionnelle. '
+          'Le Client demeure seul responsable des dommages causés par son animal à des tiers ou à '
+          'des biens durant la prestation.'),
+
+      pw.Text('Article 5 : Modalités financières & annulation', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para('Le règlement de la prestation est dû selon les modalités convenues entre les parties. '
+          'En cas d\'annulation moins de 24 h avant une séance prévue, celle-ci pourra être '
+          'facturée en tout ou partie selon les conditions du Prestataire.'),
+
+      pw.Text('Article 6 : Résultats & obligation de moyens', style: _artTitle()),
+      pw.SizedBox(height: 3),
+      _para('Le Prestataire s\'engage à mettre en œuvre les moyens professionnels appropriés à '
+          'l\'éducation ou la rééducation comportementale de l\'animal. Les résultats dépendent '
+          'également de l\'implication du Client et de facteurs propres à l\'animal ; le '
+          'Prestataire est tenu à une obligation de moyens, non de résultat.'),
+
+      if (notes.trim().isNotEmpty) ...[
+        pw.SizedBox(height: 9),
+        pw.Text('Article 7 : Notes complémentaires', style: _artTitle()),
+        pw.SizedBox(height: 3),
+        _para(notes.trim()),
+      ],
+
+      pw.SizedBox(height: 16),
+      pw.Text(villeSignature.trim().isEmpty
+          ? 'Fait le $today.'
+          : 'Fait à ${villeSignature.trim()}, le $today.', style: _body()),
+      pw.SizedBox(height: 8),
+      _copyBanner('Contrat établi en deux exemplaires originaux, un pour chaque partie.'),
+      pw.Row(children: [
+        _signBlock('Le Prestataire', p.eleveurNom, signature: sigPrestataire),
+        pw.SizedBox(width: 16),
+        _signBlock('Le Client', clientNom, signature: sigClient),
+      ]),
+      pw.SizedBox(height: 6),
+      pw.Center(child: pw.Text('$today - PetsMatch', style: _small())),
+    ],
+  ));
+
+  return pdf.save();
+}
+
 // ─── FACTURE ──────────────────────────────────────────────────────────────────
 
 /// Facture de vente d'un animal. Montants TTC ; si [tvaTaux] > 0, la TVA est

@@ -266,8 +266,9 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     }
     final type = _doc?['type'] as String? ?? '';
     final meta = (_doc?['metadata'] as Map?)?.cast<String, dynamic>() ?? {};
-    // Le contrat de garde « cadre » (par client) n'est pas rattaché à un animal.
-    final animalRequired = type != 'contrat_garde';
+    // Le contrat de garde « cadre » (par client) et certains contrats d'éducation
+    // (prestation générale, sans animal précisé) ne sont pas rattachés à un animal.
+    final animalRequired = type != 'contrat_garde' && type != 'contrat_education';
     if ((animalRequired && _animal == null) || _eleveur == null) { _pdfBytes = null; return; }
     final sigElv = meta['signature_eleveur'] as String?;
     final sigAcq = meta['signature_acquereur'] as String?;
@@ -354,6 +355,21 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
               ? DateTime.tryParse(m('date_visite'))
               : (m('date_prestation').isNotEmpty ? DateTime.tryParse(m('date_prestation')) : null),
           tarif: m('tarif'),
+          notes: m('notes'),
+          sigPrestataire: sigElv, sigClient: sigAcq,
+          villeSignature: ville,
+        );
+      } else if (type == 'contrat_education') {
+        final lignesRaw = (meta['lignes'] as List?) ?? const [];
+        _pdfBytes = await contratEducationPdfBytes(
+          animal: _animal == null ? null : animalPdf, prestataire: _eleveur!,
+          clientNom: m('acquereur_nom'),
+          clientEmail: m('acquereur_email'),
+          clientTel: m('acquereur_tel'),
+          lignes: lignesRaw.map((l) => Map<String, dynamic>.from(l as Map)).toList(),
+          totalTtc: (meta['total_ttc'] as num?)?.toDouble() ?? 0,
+          datePrestation: m('date_prestation').isNotEmpty ? DateTime.tryParse(m('date_prestation')) : null,
+          dateValidite: m('date_validite').isNotEmpty ? DateTime.tryParse(m('date_validite')) : null,
           notes: m('notes'),
           sigPrestataire: sigElv, sigClient: sigAcq,
           villeSignature: ville,
