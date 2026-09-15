@@ -47,6 +47,7 @@ app.*.map.json
 # Signing keys - NEVER commit
 *.jks
 *.keystore
+/android/key.properties
 
 # Node
 node_modules/
