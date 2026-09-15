@@ -31,6 +31,7 @@ import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/pro/anatomie_points_page.dart';
+import 'package:PetsMatch/pages/animaux/morpho/morpho_timeline_tab.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:PetsMatch/widgets/rich_text_view.dart';
@@ -260,17 +261,27 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   static bool get _isHealthPro =>
       User_Info.catPro == 'veterinaire' || User_Info.catPro == 'sante' || User_Info.catPro == 'marechal_ferrant';
 
+  // Suivi morphologique & bien-être : réservé aux pros ostéo/kiné et véto
+  // (pas maréchal-ferrant — équidés hors périmètre V1, chien/chat
+  // uniquement). Le gating par espèce se fait DANS l'onglet
+  // (MorphoTimelineTab affiche un message si non supporté), pas dans le
+  // compte d'onglets — même principe que l'onglet Anatomie existant, qui
+  // ne varie pas non plus avec l'espèce.
+  static bool get _isMorphoPro =>
+      User_Info.catPro == 'veterinaire' || User_Info.catPro == 'sante';
+
   int get _tabCount {
     if (widget.vetMode) {
-      if (User_Info.catPro == 'sante' || User_Info.catPro == 'marechal_ferrant') return 6;
-      if (User_Info.catPro == 'veterinaire') return 5;
+      if (User_Info.catPro == 'sante') return 6;
+      if (User_Info.catPro == 'marechal_ferrant') return 6;
+      if (User_Info.catPro == 'veterinaire') return 6;
       if (User_Info.catPro == 'garde') return 5; // + Alimentation (essentiel pour un pet-sitter)
       return 4; // toilettage / photographe / taxi animalier… : pas de Consultations
     }
-    if (widget.isAssociation) return 4;
+    if (widget.isAssociation) return 5;
     if (_statut == 'sorti' && !_isNewOwner) return 2; // ancien proprio : Identité + Documents
     if (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab) return 5; // particulier : sans Repro
-    return 6; // éleveur / employé élevage : tous les onglets
+    return 7; // éleveur / employé élevage : tous les onglets + Morphologie
   }
 
   void _onPucePereChanged() {
@@ -2087,10 +2098,15 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           unselectedLabelColor: Colors.white60,
           labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
           tabs: widget.vetMode
-              ? ((User_Info.catPro == 'sante' || User_Info.catPro == 'marechal_ferrant')
+              ? (User_Info.catPro == 'sante'
+                  // Anatomie a fusionné dans Morphologie pour santé (pointage
+                  // libre + compte-rendu structuré) — maréchal-ferrant garde
+                  // l'ancien onglet Anatomie séparé, hors périmètre ici.
+                  ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Morphologie')]
+                  : User_Info.catPro == 'marechal_ferrant'
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Anatomie')]
                   : User_Info.catPro == 'veterinaire'
-                      ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations')]
+                      ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Repro'), Tab(text: 'Propriétaire'), Tab(text: 'Consultations'), Tab(text: 'Morphologie')]
                       // Pet-sitter : pas de Consultations (domaine santé réservé
                       // aux pros de santé) mais Alimentation (essentiel pour
                       // nourrir l'animal pendant la garde).
@@ -2101,12 +2117,12 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               : widget.educationMode
                   ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Éducation')]
                   : widget.isAssociation
-                      ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')]
+                      ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Morphologie')]
                       : (_statut == 'sorti' && !_isNewOwner
                           ? const [Tab(text: 'Identité'), Tab(text: 'Documents')]
                           : (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab
                               ? const [Tab(text: 'Identité'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Documents')]
-                              : const [Tab(text: 'Identité'), Tab(text: 'Documents'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations')])),
+                              : const [Tab(text: 'Identité'), Tab(text: 'Documents'), Tab(text: 'Repro'), Tab(text: 'Santé'), Tab(text: 'Alimentation'), Tab(text: 'Consultations'), Tab(text: 'Morphologie')])),
             ),
           ]),
         ),
@@ -2134,8 +2150,17 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
                 if (_isHealthPro)
                   _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId),
-                if (User_Info.catPro == 'sante' || User_Info.catPro == 'marechal_ferrant')
+                // Maréchal-ferrant garde l'ancien onglet Anatomie séparé
+                // (pointage libre, hors périmètre de la fusion Morphologie) ;
+                // santé a fusionné dans Morphologie ci-dessous.
+                if (User_Info.catPro == 'marechal_ferrant')
                   AnatomieSeancesTab(animalId: widget.animalId ?? '', espece: _espece),
+                if (_isMorphoPro)
+                  MorphoTimelineTab(
+                    animalId: widget.animalId ?? '', espece: _espece,
+                    canWrite: _canWriteHealth,
+                    proProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+                  ),
               ]
             : widget.educationMode
                 ? [
@@ -2149,6 +2174,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                     _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
                     _AlimentationTab(this),
                     _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
+                    MorphoTimelineTab(animalId: widget.animalId ?? '', espece: _espece, canWrite: false),
                   ]
                 : (_statut == 'sorti' && !_isNewOwner
                     ? [
@@ -2170,6 +2196,10 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                             _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
                             _AlimentationTab(this),
                             _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
+                            // Vue "compte rendu" — la saisie est réservée aux pros
+                            // santé/véto (voir plus haut, branche vetMode) ;
+                            // l'éleveur consulte ici en lecture seule.
+                            MorphoTimelineTab(animalId: widget.animalId ?? '', espece: _espece, canWrite: false),
                           ])),
       ),
     );

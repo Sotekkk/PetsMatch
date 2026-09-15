@@ -24,6 +24,8 @@ import 'package:PetsMatch/pages/particulier/proprietaires_animal_sheet.dart';
 import 'package:PetsMatch/pages/particulier/create_annonce_cheval_page.dart';
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show AnimalTaggedPostsPage;
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
+import 'package:PetsMatch/pages/animaux/morpho/morpho_constants.dart';
+import 'package:PetsMatch/pages/animaux/morpho/morpho_timeline_tab.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
 import 'package:PetsMatch/widgets/rich_text_view.dart';
 import 'package:PetsMatch/widgets/document_viewer_page.dart';
@@ -290,9 +292,10 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   // Garde n'apparaissent que si l'animal a un suivi correspondant.
   bool get _showEducationTab => _hasEducationRapports || _hasDevis;
   bool get _showPensionTab => _hasPensionUpdates;
+  bool get _showMorphoTab => morphoSpeciesSupported(_espece);
 
   void _syncTabs() {
-    final n = 4 + (_showEducationTab ? 1 : 0) + (_showPensionTab ? 1 : 0);
+    final n = 4 + (_showEducationTab ? 1 : 0) + (_showPensionTab ? 1 : 0) + (_showMorphoTab ? 1 : 0);
     if (_tabs.length == n) return;
     final prev = _tabs.index;
     _tabs.dispose();
@@ -725,6 +728,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
             const Tab(text: 'Documents'),
             if (_showEducationTab) const Tab(text: 'Éducation'),
             if (_showPensionTab) const Tab(text: 'Pension & Garde'),
+            if (_showMorphoTab) const Tab(text: 'Morphologie'),
           ],
         ),
       ),
@@ -741,6 +745,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                 _buildDocumentsTab(),
                 if (_showEducationTab) _buildEducationTab(),
                 if (_showPensionTab) _buildPensionTab(),
+                if (_showMorphoTab) _buildMorphoTab(),
               ],
             ),
           ),
@@ -1221,6 +1226,14 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   Widget _buildPensionTab() => _PensionTabP(
         animalId: _animalId,
         animalNom: _nomCtrl.text.isEmpty ? 'Animal' : _nomCtrl.text,
+      );
+
+  // Vue "compte rendu" — la saisie est réservée aux pros santé/véto (voir
+  // animal_fiche.dart) ; le propriétaire consulte ici en lecture seule.
+  Widget _buildMorphoTab() => MorphoTimelineTab(
+        animalId: _animalId ?? '',
+        espece: _espece,
+        canWrite: false,
       );
 
   Widget _sterilisationBanner() {
@@ -6631,6 +6644,7 @@ class _DocumentsTabPState extends State<_DocumentsTabP> {
       'contrat_education': 'Contrat (éducateur)', 'certificat_cession': 'Certificat de cession',
       'contrat_garde': 'Contrat de prestation', 'contrat_pension': 'Contrat de pension',
       'contrat_photographe': 'Contrat (photographe)',
+      'contrat_sante': 'Contrat de soins',
       'devis': 'Devis', 'facture': 'Facture',
     };
     final titreDoc = (doc['titre'] as String?)?.trim();
