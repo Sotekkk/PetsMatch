@@ -1,4 +1,4 @@
-package com.application.petsmatch
+package com.application.petsmatchapp
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
