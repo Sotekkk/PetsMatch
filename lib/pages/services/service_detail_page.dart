@@ -544,6 +544,40 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
     return out;
   }
 
+  /// Santé (ostéo/kiné) : tarifs à afficher publiquement (label, prix formaté),
+  /// si le pro a activé `tarifs_sante_visibles`. Prestations fixes non nulles +
+  /// prestations libres.
+  List<(String, String)> get _tarifsSantePublics {
+    if (_proData?['cat_pro'] != 'sante' || _proData?['tarifs_sante_visibles'] != true) {
+      return [];
+    }
+    const labels = {
+      'consultation': 'Consultation',
+      'seance': 'Séance de suivi',
+      'autre': 'Autre prestation',
+    };
+    final out = <(String, String)>[];
+    final fixes = _proData?['tarifs_sante'];
+    if (fixes is Map) {
+      for (final entry in labels.entries) {
+        final v = (fixes[entry.key] as num?)?.toDouble() ?? 0;
+        if (v > 0) out.add((entry.value, '${v.toStringAsFixed(0)} €'));
+      }
+    }
+    final extra = _proData?['tarifs_sante_extra'];
+    if (extra is List) {
+      for (final e in extra) {
+        if (e is! Map) continue;
+        final label = e['label']?.toString().trim() ?? '';
+        if (label.isEmpty) continue;
+        final v = (e['prix'] as num?)?.toDouble() ?? 0;
+        final desc = e['description']?.toString().trim() ?? '';
+        out.add((desc.isEmpty ? label : '$label — $desc', v > 0 ? '${v.toStringAsFixed(0)} €' : '—'));
+      }
+    }
+    return out;
+  }
+
   String get _siteWeb => _proData?['site_web'] ?? '';
   String get _instagram => _proData?['instagram'] ?? '';
   String get _facebook => _proData?['facebook'] ?? '';
@@ -1043,6 +1077,29 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                     ]),
                   )),
                 ],
+              ],
+            )),
+          ],
+
+          // Tarifs santé (ostéo/kiné), si le pro les expose
+          if (_tarifsSantePublics.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _card(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _sectionTitle('Tarifs'),
+                const SizedBox(height: 8),
+                ..._tarifsSantePublics.map((t) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(child: Text(t.$1,
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                            fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
+                    const SizedBox(width: 8),
+                    Text(t.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                        fontWeight: FontWeight.w700, color: Color(0xFF0C5C6C))),
+                  ]),
+                )),
               ],
             )),
           ],

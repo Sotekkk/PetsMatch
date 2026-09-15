@@ -132,6 +132,17 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
   bool _loadingForfaits = false;
   bool _educationBilanRequis = true;
 
+  // Santé (ostéo/kiné) : tarifs par type de prestation (€)
+  Map<String, int> _tarifsSante = {};
+  static const _prestationsSante = [
+    ('consultation', 'Consultation'),
+    ('seance',       'Séance de suivi'),
+    ('autre',        'Autre prestation'),
+  ];
+  // Vitrine publique, comme l'éducateur.
+  bool _tarifsSanteVisibles = false;
+  List<Map<String, dynamic>> _tarifsSanteExtra = [];
+
   // Tous pros à RDV : délai minimum entre maintenant et un RDV réservable
   // (0 = aucun). Valeurs proposées : 0 / 12 / 24 / 48 / 72 h.
   int _delaiMinReservationH = 0;
@@ -345,6 +356,11 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
             (row['tarifs_garde'] as Map).map((k, v) =>
                 MapEntry(k.toString(), (v as num?)?.toInt() ?? 0)));
         }
+        if (row['tarifs_sante'] is Map) {
+          _tarifsSante = Map<String, int>.from(
+            (row['tarifs_sante'] as Map).map((k, v) =>
+                MapEntry(k.toString(), (v as num?)?.toInt() ?? 0)));
+        }
         if (row['tarifs_taxi'] is Map) {
           _tarifsTaxi = Map<String, double>.from(
             (row['tarifs_taxi'] as Map).map((k, v) =>
@@ -358,6 +374,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         _autreDomicileLat = (row['autre_domicile_lat'] as num?)?.toDouble();
         _autreDomicileLng = (row['autre_domicile_lng'] as num?)?.toDouble();
         _tarifsEducationVisibles = row['tarifs_education_visibles'] as bool? ?? false;
+        _tarifsSanteVisibles = row['tarifs_sante_visibles'] as bool? ?? false;
         _educationBilanDescCtrl.text = row['education_bilan_description']?.toString() ?? '';
         if (row['tarifs_education_extra'] is List) {
           _tarifsEducationExtra = [
@@ -373,6 +390,17 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         if (row['tarifs_garde_extra'] is List) {
           _tarifsGardeExtra = [
             for (final e in (row['tarifs_garde_extra'] as List))
+              if (e is Map)
+                {
+                  'label': e['label']?.toString() ?? '',
+                  'prix': (e['prix'] as num?)?.toInt() ?? 0,
+                  'description': e['description']?.toString() ?? '',
+                },
+          ];
+        }
+        if (row['tarifs_sante_extra'] is List) {
+          _tarifsSanteExtra = [
+            for (final e in (row['tarifs_sante_extra'] as List))
               if (e is Map)
                 {
                   'label': e['label']?.toString() ?? '',
@@ -731,6 +759,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'garde') 'tarifs_garde_extra': _cleanTarifsExtra(_tarifsGardeExtra),
+          if (_catPro == 'sante') 'tarifs_sante': _tarifsSante,
+          if (_catPro == 'sante') 'tarifs_sante_visibles': _tarifsSanteVisibles,
+          if (_catPro == 'sante') 'tarifs_sante_extra': _cleanTarifsExtra(_tarifsSanteExtra),
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           if (_catPro == 'education') 'tarifs_education_visibles': _tarifsEducationVisibles,
@@ -790,6 +821,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'garde') 'tarifs_garde_extra': _cleanTarifsExtra(_tarifsGardeExtra),
+          if (_catPro == 'sante') 'tarifs_sante': _tarifsSante,
+          if (_catPro == 'sante') 'tarifs_sante_visibles': _tarifsSanteVisibles,
+          if (_catPro == 'sante') 'tarifs_sante_extra': _cleanTarifsExtra(_tarifsSanteExtra),
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           if (_catPro == 'education') 'tarifs_education_visibles': _tarifsEducationVisibles,
@@ -835,6 +869,9 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'education') 'tarifs_education': _tarifsEducation,
           if (_catPro == 'garde') 'tarifs_garde': _tarifsGarde,
           if (_catPro == 'garde') 'tarifs_garde_extra': _cleanTarifsExtra(_tarifsGardeExtra),
+          if (_catPro == 'sante') 'tarifs_sante': _tarifsSante,
+          if (_catPro == 'sante') 'tarifs_sante_visibles': _tarifsSanteVisibles,
+          if (_catPro == 'sante') 'tarifs_sante_extra': _cleanTarifsExtra(_tarifsSanteExtra),
           if (_catPro == 'taxi_animalier') 'tarifs_taxi': _tarifsTaxi,
           if (_catPro == 'education') 'education_bilan_requis': _educationBilanRequis,
           if (_catPro == 'education') 'tarifs_education_visibles': _tarifsEducationVisibles,
@@ -1414,6 +1451,71 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                     _tarifsExtraEditor(
                       _tarifsEducationExtra,
                       (v) => setState(() => _tarifsEducationExtra = v),
+                    ),
+                  ],
+
+                  // ── Tarifs santé (ostéo/kiné) ──────────────────────────────
+                  if (_catPro == 'sante') ...[
+                    const SizedBox(height: 24),
+                    _sectionTitle('Tarifs par type de prestation (€)'),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Laissez à 0 les prestations que vous ne proposez pas.',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      Expanded(child: Text('Afficher mes tarifs sur ma fiche publique',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 13,
+                              fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
+                      Switch(
+                        value: _tarifsSanteVisibles,
+                        activeThumbColor: const Color(0xFF0C5C6C),
+                        onChanged: (v) => setState(() => _tarifsSanteVisibles = v),
+                      ),
+                    ]),
+                    const SizedBox(height: 12),
+                    ..._prestationsSante.map((t) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(children: [
+                        Expanded(child: Text(t.$2,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                                fontWeight: FontWeight.w600, color: Color(0xFF1E2025)))),
+                        const SizedBox(width: 12),
+                        SizedBox(
+                          width: 90,
+                          child: TextFormField(
+                            initialValue: (_tarifsSante[t.$1] ?? 0).toString(),
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                            decoration: InputDecoration(
+                              suffixText: '€',
+                              suffixStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                              filled: true, fillColor: Colors.white,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                                  borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
+                            ),
+                            onChanged: (val) {
+                              final v = int.tryParse(val);
+                              if (v != null && v >= 0) {
+                                setState(() => _tarifsSante = {..._tarifsSante, t.$1: v});
+                              }
+                            },
+                          ),
+                        ),
+                      ]),
+                    )),
+                    const SizedBox(height: 4),
+                    _tarifsExtraEditor(
+                      _tarifsSanteExtra,
+                      (v) => setState(() => _tarifsSanteExtra = v),
+                      accent: const Color(0xFF0C5C6C),
                     ),
                   ],
 

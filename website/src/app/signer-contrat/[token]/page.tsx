@@ -12,6 +12,7 @@ import { generateContratHebergementHTML } from '@/lib/contrat-pension';
 import { generateContratGardeHTML } from '@/lib/contrat-garde';
 import { generateContratPrestationPhotoHTML } from '@/lib/contrat-photographe';
 import { generateContratEducationHTML, type LigneEducation } from '@/lib/contrat-education';
+import { generateContratSanteHTML, type LigneSante } from '@/lib/contrat-sante';
 import { useAuth } from '@/lib/auth-context';
 
 const supabase = createClient(
@@ -360,6 +361,38 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
             notes: meta.notes,
           },
         );
+      } else if (data.type === 'contrat_sante') {
+        const metaLoose = meta as unknown as Record<string, unknown>;
+        let animalInfo: { nom?: string; espece?: string; race?: string } = {};
+        let clientInfo: { nom?: string; contact?: string } = {};
+        let datePrestation: string | undefined;
+        if (data.animal_id) {
+          const { data: an } = await supabase.from('animaux').select('nom, espece, race').eq('id', data.animal_id).maybeSingle();
+          animalInfo = an ?? {};
+        }
+        generatedHtml = generateContratSanteHTML(
+          {
+            animal_nom: animalInfo.nom ?? '',
+            espece: animalInfo.espece,
+            race: animalInfo.race,
+            client_nom: meta.acquereur_nom || clientInfo.nom,
+            client_contact: meta.acquereur_email || clientInfo.contact,
+            date_prestation: datePrestation ?? (metaLoose.date_prestation as string | undefined),
+            lignes: Array.isArray(metaLoose.lignes) ? (metaLoose.lignes as LigneSante[]) : undefined,
+            total_ttc: metaLoose.total_ttc ? Number(metaLoose.total_ttc) : undefined,
+            date_validite: metaLoose.date_validite as string | undefined,
+          },
+          {
+            nom: elvNom,
+            adresse: profil?.adress_elevage ?? profil?.adress ?? '',
+            email: profil?.email ?? '',
+            tel: elvTel,
+            siret: profil?.siret ?? '',
+          },
+          {
+            notes: meta.notes,
+          },
+        );
       } else if (data.type === 'contrat_adoption') {
         const assoInfo = {
           nom: meta.asso_nom ?? elvNom,
@@ -637,6 +670,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         case 'contrat_hebergement':
         case 'contrat_prestation_photo':
         case 'contrat_education':
+        case 'contrat_sante':
           return { partieVendeur: 'Le prestataire', partieAcquereurDefaut: 'Le client' };
         case 'contrat_adoption':
           return { partieVendeur: 'L\'association', partieAcquereurDefaut: 'L\'adoptant(e)' };
@@ -654,6 +688,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         case 'contrat_hebergement': return 'pension';
         case 'contrat_prestation_photo': return 'photographe';
         case 'contrat_education': return 'education';
+        case 'contrat_sante': return 'sante';
         case 'contrat_adoption': return 'association';
         default: return 'eleveur';
       }
@@ -869,6 +904,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       case 'contrat_hebergement':
       case 'contrat_prestation_photo':
       case 'contrat_education':
+      case 'contrat_sante':
         return { vendeur: 'Signature du prestataire', acquereur: 'Signature du client', vendeurNoun: 'Le prestataire', acquereurNoun: 'Le client', vendeurA: 'au prestataire', acquereurA: 'au client' };
       case 'contrat_adoption':
         return { vendeur: 'Signature de l\'association', acquereur: 'Signature de l\'adoptant(e)', vendeurNoun: 'L\'association', acquereurNoun: 'L\'adoptant(e)', vendeurA: 'à l\'association', acquereurA: 'à l\'adoptant(e)' };

@@ -53,6 +53,9 @@ interface ProData {
   tarifs_garde?: Record<string, number>;
   tarifs_garde_extra?: { label: string; prix: number; description?: string }[];
   garde_chevauchement_ok?: boolean;
+  tarifs_sante?: Record<string, number>;
+  tarifs_sante_visibles?: boolean;
+  tarifs_sante_extra?: { label: string; prix: number; description?: string }[];
   tarifs_pension?: {
     especes?: { espece: string; prix_seul: number; prix_partage?: number }[];
     afficher_public?: boolean;
@@ -297,6 +300,9 @@ function ProDetailContent() {
           tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
           tarifs_garde: (data.tarifs_garde as Record<string, number>) ?? {},
           tarifs_garde_extra: Array.isArray(data.tarifs_garde_extra) ? data.tarifs_garde_extra : [],
+          tarifs_sante: (data.tarifs_sante as Record<string, number>) ?? {},
+          tarifs_sante_visibles: (data.tarifs_sante_visibles as boolean) ?? false,
+          tarifs_sante_extra: Array.isArray(data.tarifs_sante_extra) ? data.tarifs_sante_extra : [],
           garde_chevauchement_ok: (data.garde_chevauchement_ok as boolean | null) ?? true,
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
         };
@@ -329,6 +335,9 @@ function ProDetailContent() {
           tarifs_pension: (data.tarifs_pension as ProData['tarifs_pension']) ?? undefined,
           tarifs_garde: (data.tarifs_garde as Record<string, number>) ?? {},
           tarifs_garde_extra: Array.isArray(data.tarifs_garde_extra) ? data.tarifs_garde_extra : [],
+          tarifs_sante: (data.tarifs_sante as Record<string, number>) ?? {},
+          tarifs_sante_visibles: (data.tarifs_sante_visibles as boolean) ?? false,
+          tarifs_sante_extra: Array.isArray(data.tarifs_sante_extra) ? data.tarifs_sante_extra : [],
           garde_chevauchement_ok: (data.garde_chevauchement_ok as boolean | null) ?? true,
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
         };
@@ -800,6 +809,26 @@ function ProDetailContent() {
         ]
       : [];
 
+  const SANTE_TARIF_LABELS: Record<string, string> = {
+    consultation: 'Consultation',
+    seance: 'Séance de suivi',
+    autre: 'Autre prestation',
+  };
+  const santeTarifs: { label: string; prix: string }[] =
+    pro?.cat_pro === 'sante' && pro.tarifs_sante_visibles
+      ? [
+          ...Object.entries(SANTE_TARIF_LABELS)
+            .filter(([k]) => (pro.tarifs_sante?.[k] ?? 0) > 0)
+            .map(([k, label]) => ({ label, prix: `${pro.tarifs_sante![k]} €` })),
+          ...(pro.tarifs_sante_extra ?? [])
+            .filter(e => e.label?.trim())
+            .map(e => ({
+              label: e.description?.trim() ? `${e.label.trim()} — ${e.description.trim()}` : e.label.trim(),
+              prix: (e.prix ?? 0) > 0 ? `${e.prix} €` : '—',
+            })),
+        ]
+      : [];
+
   const motifs = requiresBilanFirst
     ? (MOTIFS_BY_CAT.education ?? []).filter(m => m.key === 'evaluation')
     : MOTIFS_BY_CAT[pro?.cat_pro ?? ''] ?? DEFAULT_MOTIFS;
@@ -1063,6 +1092,19 @@ function ProDetailContent() {
                 <p className="font-bold text-[#1E2025] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Tarifs</p>
                 <div className="space-y-1.5">
                   {gardeTarifs.map((t, i) => (
+                    <div key={i} className="flex items-start justify-between gap-3 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      <span className="text-[#1E2025] font-medium">{t.label}</span>
+                      <span className="text-[#0C5C6C] font-bold whitespace-nowrap">{t.prix}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {pro.cat_pro === 'sante' && santeTarifs.length > 0 && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <p className="font-bold text-[#1E2025] mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Tarifs</p>
+                <div className="space-y-1.5">
+                  {santeTarifs.map((t, i) => (
                     <div key={i} className="flex items-start justify-between gap-3 text-sm" style={{ fontFamily: 'Galey, sans-serif' }}>
                       <span className="text-[#1E2025] font-medium">{t.label}</span>
                       <span className="text-[#0C5C6C] font-bold whitespace-nowrap">{t.prix}</span>

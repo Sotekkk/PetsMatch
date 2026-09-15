@@ -145,6 +145,7 @@ class _DocCard extends StatelessWidget {
     'contrat_garde':       '🏠 Contrat de prestation',
     'contrat_pension':     '🏨 Contrat de pension',
     'contrat_education':   '🎓 Contrat d\'éducation',
+    'contrat_sante':       '🩺 Contrat de soins',
   };
 
   Future<void> _refuse(BuildContext context) async {

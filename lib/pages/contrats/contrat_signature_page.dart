@@ -267,8 +267,8 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     final type = _doc?['type'] as String? ?? '';
     final meta = (_doc?['metadata'] as Map?)?.cast<String, dynamic>() ?? {};
     // Le contrat de garde « cadre » (par client) et certains contrats d'éducation
-    // (prestation générale, sans animal précisé) ne sont pas rattachés à un animal.
-    final animalRequired = type != 'contrat_garde' && type != 'contrat_education';
+    // / santé (prestation générale, sans animal précisé) ne sont pas rattachés à un animal.
+    final animalRequired = type != 'contrat_garde' && type != 'contrat_education' && type != 'contrat_sante';
     if ((animalRequired && _animal == null) || _eleveur == null) { _pdfBytes = null; return; }
     final sigElv = meta['signature_eleveur'] as String?;
     final sigAcq = meta['signature_acquereur'] as String?;
@@ -374,6 +374,21 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
           sigPrestataire: sigElv, sigClient: sigAcq,
           villeSignature: ville,
         );
+      } else if (type == 'contrat_sante') {
+        final lignesRaw = (meta['lignes'] as List?) ?? const [];
+        _pdfBytes = await contratSantePdfBytes(
+          animal: _animal == null ? null : animalPdf, prestataire: _eleveur!,
+          clientNom: m('acquereur_nom'),
+          clientEmail: m('acquereur_email'),
+          clientTel: m('acquereur_tel'),
+          lignes: lignesRaw.map((l) => Map<String, dynamic>.from(l as Map)).toList(),
+          totalTtc: (meta['total_ttc'] as num?)?.toDouble() ?? 0,
+          datePrestation: m('date_prestation').isNotEmpty ? DateTime.tryParse(m('date_prestation')) : null,
+          dateValidite: m('date_validite').isNotEmpty ? DateTime.tryParse(m('date_validite')) : null,
+          notes: m('notes'),
+          sigPrestataire: sigElv, sigClient: sigAcq,
+          villeSignature: ville,
+        );
       } else {
         _pdfBytes = null; // autres types → carte récap
       }
@@ -429,6 +444,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       case 'contrat_hebergement':
       case 'contrat_prestation':
       case 'contrat_education':
+      case 'contrat_sante':
         return (vendeurDe: 'du prestataire', acquereurDe: 'du client', acquereurA: 'au client');
       case 'contrat_adoption':
         return (vendeurDe: 'de l\'association', acquereurDe: 'de l\'adoptant·e', acquereurA: 'à l\'adoptant·e');
@@ -751,7 +767,8 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
         final destPid = await _destinataireProfileId(acqUid, meta);
         final docType = (_doc!['type'] as String?) ?? '';
         final isPresta = docType == 'contrat_garde' || docType == 'contrat_pension'
-            || docType == 'contrat_education' || docType == 'contrat_photographe';
+            || docType == 'contrat_education' || docType == 'contrat_photographe'
+            || docType == 'contrat_sante';
         final emetteur = isPresta ? 'Votre prestataire' : 'L\'éleveur';
         final titreDoc = (_doc!['titre'] as String?)?.trim();
         final animalPart = _animal?['nom'] != null

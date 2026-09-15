@@ -774,6 +774,12 @@ const PRESTATIONS_EDUCATION = [
   { value: 'domicile_supplement', label: 'Supplément à domicile' },
 ];
 
+const PRESTATIONS_SANTE = [
+  { value: 'consultation', label: 'Consultation' },
+  { value: 'seance', label: 'Séance de suivi' },
+  { value: 'autre', label: 'Autre prestation' },
+];
+
 const PRESTATIONS_GARDE = [
   { value: 'promenade_30min', label: 'Promenade (30 min)' },
   { value: 'promenade_1h', label: 'Promenade (1h)' },
@@ -887,6 +893,9 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
   const [tarifsLogements, setTarifsLogements] = useState<Record<string, number>>({});
   const [tarifsEducation, setTarifsEducation] = useState<Record<string, number>>({});
   const [tarifsGarde, setTarifsGarde] = useState<Record<string, number>>({});
+  const [tarifsSante, setTarifsSante] = useState<Record<string, number>>({});
+  const [tarifsSanteVisibles, setTarifsSanteVisibles] = useState(false);
+  const [tarifsSanteExtra, setTarifsSanteExtra] = useState<{ label: string; prix: number; description: string }[]>([]);
   const [tarifsTaxi, setTarifsTaxi] = useState<Record<string, number>>({});
   const [educationBilanRequis, setEducationBilanRequis] = useState(true);
   const [delaiMinReservationH, setDelaiMinReservationH] = useState(0);
@@ -991,6 +1000,19 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         }
         if (r.tarifs_garde && typeof r.tarifs_garde === 'object') {
           setTarifsGarde(r.tarifs_garde as Record<string, number>);
+        }
+        if (r.tarifs_sante && typeof r.tarifs_sante === 'object') {
+          setTarifsSante(r.tarifs_sante as Record<string, number>);
+        }
+        setTarifsSanteVisibles((r.tarifs_sante_visibles as boolean) ?? false);
+        if (Array.isArray(r.tarifs_sante_extra)) {
+          setTarifsSanteExtra((r.tarifs_sante_extra as unknown[])
+            .filter((e): e is Record<string, unknown> => !!e && typeof e === 'object')
+            .map(e => ({
+              label: String(e.label ?? ''),
+              prix: Number(e.prix ?? 0),
+              description: String(e.description ?? ''),
+            })));
         }
         if (r.tarifs_taxi && typeof r.tarifs_taxi === 'object') {
           setTarifsTaxi(r.tarifs_taxi as Record<string, number>);
@@ -1189,6 +1211,19 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         : {}),
       ...((data?.profile_type ?? data?.cat_pro) === 'garde'
         ? { tarifs_garde: tarifsGarde }
+        : {}),
+      ...((data?.profile_type ?? data?.cat_pro) === 'sante'
+        ? {
+            tarifs_sante: tarifsSante,
+            tarifs_sante_visibles: tarifsSanteVisibles,
+            tarifs_sante_extra: tarifsSanteExtra
+              .filter(e => e.label.trim())
+              .map(e => ({
+                label: e.label.trim(),
+                prix: Number(e.prix) || 0,
+                ...(e.description.trim() ? { description: e.description.trim() } : {}),
+              })),
+          }
         : {}),
       ...((data?.profile_type ?? data?.cat_pro) === 'taxi_animalier'
         ? { tarifs_taxi: tarifsTaxi }
@@ -1644,6 +1679,56 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
                     className={inputCls} />
                 </div>
               ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Tarifs santé (ostéo/kiné) */}
+        {catPro === 'sante' && (
+          <Card title="Tarifs par type de prestation (€)">
+            <p className="text-xs text-gray-400 mb-3">Laissez à 0 les prestations que vous ne proposez pas.</p>
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <p className="text-xs font-medium text-gray-600 flex-1">Afficher mes tarifs sur ma fiche publique</p>
+              <button type="button" onClick={() => setTarifsSanteVisibles(v => !v)}
+                className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
+                style={{ backgroundColor: tarifsSanteVisibles ? '#0C5C6C' : '#D1D5DB' }}>
+                <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform"
+                  style={{ transform: tarifsSanteVisibles ? 'translateX(20px)' : 'translateX(0)' }} />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {PRESTATIONS_SANTE.map(({ value, label }) => (
+                <div key={value}>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">{label}</label>
+                  <input type="number" min={0} step={1}
+                    value={tarifsSante[value] ?? 0}
+                    onChange={e => setTarifsSante(t => ({ ...t, [value]: Number(e.target.value) }))}
+                    className={inputCls} />
+                </div>
+              ))}
+            </div>
+            <p className="text-xs font-medium text-gray-600 mt-4 mb-2">Autres prestations</p>
+            <div className="space-y-2">
+              {tarifsSanteExtra.map((e, i) => (
+                <div key={i} className="bg-gray-50 rounded-xl p-2 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <input placeholder="Nom de la prestation" value={e.label}
+                      onChange={ev => setTarifsSanteExtra(prev => prev.map((x, j) => j === i ? { ...x, label: ev.target.value } : x))}
+                      className={`${inputCls} flex-1`} />
+                    <input type="number" min={0} step={1} value={e.prix}
+                      onChange={ev => setTarifsSanteExtra(prev => prev.map((x, j) => j === i ? { ...x, prix: Number(ev.target.value) } : x))}
+                      className={`${inputCls} w-20`} />
+                    <button type="button" onClick={() => setTarifsSanteExtra(prev => prev.filter((_, j) => j !== i))}
+                      className="text-red-400 hover:text-red-600 text-lg px-1">×</button>
+                  </div>
+                  <input placeholder="Description (facultatif)" value={e.description}
+                    onChange={ev => setTarifsSanteExtra(prev => prev.map((x, j) => j === i ? { ...x, description: ev.target.value } : x))}
+                    className={`${inputCls} w-full text-xs`} />
+                </div>
+              ))}
+              <button type="button"
+                onClick={() => setTarifsSanteExtra(prev => [...prev, { label: '', prix: 0, description: '' }])}
+                className="text-sm font-semibold text-[#0C5C6C] hover:underline">+ Ajouter une prestation</button>
             </div>
           </Card>
         )}

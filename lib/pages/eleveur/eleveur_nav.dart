@@ -45,6 +45,7 @@ import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart';
 import 'package:PetsMatch/pages/pro/garde_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/sante_contrats_page.dart';
 import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/registre_visites_page.dart';
@@ -934,7 +935,10 @@ class _EleveurNavState extends State<EleveurNav> {
                           : User_Info.catPro == 'garde'
                               ? _gardePlanCode
                               : _planCode) ==
-                      'premium')
+                      // Santé (ostéo/kiné) plafonne à 'pro' (pas de palier
+                      // 'premium' dans sa grille) — voir PROFESSION_TOP_TIER
+                      // côté site / _topTierByMetier dans facturation.dart.
+                      (User_Info.catPro == 'sante' ? 'pro' : 'premium'))
                     _DrawerItem(
                       icon: Icons.photo_library_outlined,
                       label: 'Pets Social',
@@ -997,7 +1001,7 @@ class _EleveurNavState extends State<EleveurNav> {
                               fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
                     ),
                   ],
-                  if (User_Info.catPro != 'pension' && User_Info.catPro != 'education' && User_Info.catPro != 'garde') _DrawerItem(
+                  if (User_Info.catPro != 'pension' && User_Info.catPro != 'education' && User_Info.catPro != 'garde' && User_Info.catPro != 'sante') _DrawerItem(
                     icon: Icons.calendar_month_outlined,
                     label: 'Mon agenda RDV',
                     onTap: () {
@@ -1017,17 +1021,13 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                  if (User_Info.catPro == 'sante' || User_Info.catPro == 'marechal_ferrant' || User_Info.catPro == 'photographe') _DrawerItem(
+                  if (User_Info.catPro == 'marechal_ferrant' || User_Info.catPro == 'photographe') _DrawerItem(
                     icon: User_Info.catPro == 'marechal_ferrant'
                         ? Icons.handyman_outlined
-                        : User_Info.catPro == 'photographe'
-                            ? Icons.people_outline
-                            : Icons.self_improvement_outlined,
+                        : Icons.people_outline,
                     label: User_Info.catPro == 'marechal_ferrant'
                         ? 'Mes équidés suivis'
-                        : User_Info.catPro == 'photographe'
-                            ? 'Mes clients'
-                            : 'Mes patients',
+                        : 'Mes clients',
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(
@@ -1035,12 +1035,11 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                  // Sante/veterinaire/marechal_ferrant n'ont pas de bloc dédié
-                  // plus bas (contrairement à garde/taxi/photographe/toilettage)
+                  // Veterinaire/marechal_ferrant n'ont pas de bloc dédié plus bas
+                  // (contrairement à garde/taxi/photographe/toilettage/sante)
                   // — ajouté ici pour qu'une facture créée depuis
                   // _facturerConsultation (pro_agenda.dart) reste consultable.
                   if (User_Info.catPro == 'veterinaire' ||
-                      User_Info.catPro == 'sante' ||
                       User_Info.catPro == 'marechal_ferrant') _DrawerItem(
                     icon: Icons.receipt_long_outlined,
                     label: 'Mes Factures',
@@ -1052,7 +1051,6 @@ class _EleveurNavState extends State<EleveurNav> {
                     },
                   ),
                   if (User_Info.catPro == 'veterinaire' ||
-                      User_Info.catPro == 'sante' ||
                       User_Info.catPro == 'marechal_ferrant') _DrawerItem(
                     icon: Icons.workspace_premium_outlined,
                     label: 'Mon abonnement',
@@ -1224,6 +1222,76 @@ class _EleveurNavState extends State<EleveurNav> {
                             Navigator.pop(context);
                             Navigator.push(context, MaterialPageRoute(
                               builder: (_) => const FacturationPage(),
+                            ));
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                  // « Mon activité santé » — sections repliables, calquées sur
+                  // la branche pet-sitting (« Mon activité pet sitting » /
+                  // « Administratif »).
+                  if (User_Info.catPro == 'sante') ...[
+                    _DrawerSection(
+                      icon: Icons.self_improvement_outlined,
+                      label: 'Mon activité santé',
+                      children: [
+                        _DrawerSubItem(
+                          label: 'Mon agenda RDV',
+                          icon: Icons.event_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const ProAgendaPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Mes patients',
+                          icon: Icons.medical_information_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const ProClientsPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Mon abonnement',
+                          icon: Icons.workspace_premium_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const SanteAbonnementPage(profilType: 'sante'),
+                            ));
+                          },
+                        ),
+                      ],
+                    ),
+                    _DrawerSection(
+                      icon: Icons.folder_open_outlined,
+                      label: 'Administratif',
+                      children: [
+                        _DrawerSubItem(
+                          label: 'Facturation',
+                          icon: Icons.receipt_long_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const FacturationPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Mes contrats',
+                          icon: Icons.description_outlined,
+                          locked: _planCode != 'pro',
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => _planCode != 'pro'
+                                  ? const SanteAbonnementPage(profilType: 'sante')
+                                  : const SanteContratsPage(),
                             ));
                           },
                         ),

@@ -939,12 +939,19 @@ export default function Header() {
         ? { ...sec, items: [...sec.items, { href: abonnementHref, label: 'Mon abonnement', icon: '💳' }] }
         : sec)
     : withEmployeurs;
+  // « Mes Contrats » (santé/ostéo·kiné uniquement — MENU_VET est aussi
+  // partagé par véto/maréchal-ferrant, qui n'ont pas cette fonctionnalité).
+  const withSanteContrats = (effectiveSubCatPro === 'sante')
+    ? withAbonnement.map((sec, i) => i === 1
+        ? { ...sec, items: [...sec.items, { href: '/sante/contrat', label: 'Mes Contrats', icon: '📄', premium: true }] }
+        : sec)
+    : withAbonnement;
   // Petites annonces « matériel & objets » liées aux animaux — accessible à
   // tous les profils (particulier, éleveur, association, pro). Section propre
   // pour éviter toute confusion avec les annonces d'animaux.
   const menuSections = user
     ? [
-        ...withAbonnement,
+        ...withSanteContrats,
         {
           section: 'Petites annonces (matériel)',
           icon: '📦',
@@ -955,7 +962,7 @@ export default function Header() {
           ],
         },
       ]
-    : withAbonnement;
+    : withSanteContrats;
 
   // ── Index de recherche rapide (loupe) ────────────────────────────────────
   // À plat : tous les items du menu du profil actif + les liens de nav + les
