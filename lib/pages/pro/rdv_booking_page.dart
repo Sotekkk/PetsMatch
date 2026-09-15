@@ -9,6 +9,13 @@ import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/main.dart' show User_Info, getApiKey;
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart' show prixPourAnimal;
 import 'package:PetsMatch/pages/pro/garde_facture_helper.dart' show gardeMotifLabel;
+import 'package:PetsMatch/utils/geocoding_helper.dart';
+
+// Vitesse moyenne heuristique (à vol d'oiseau, pas d'API Directions payante)
+// + marge de sécurité — même heuristique que education_reservation_page.dart,
+// utilisée ici pour filtrer les créneaux à domicile proposés au client santé/ostéo.
+const int _kVitesseTrajetKmh = 30;
+const int _kMargeTrajetMin = 15;
 
 class RdvBookingPage extends StatefulWidget {
   final String proUid;
@@ -110,6 +117,19 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   String _catPro = '';
   String? _selectedMotifKey; // pour les pros autres que vet/pension
 
+  // Santé/ostéo : rendez-vous à domicile ou au cabinet, avec calcul du temps
+  // de trajet — même mécanisme générique que education_reservation_page.dart
+  // (creneaux_pro.domicile_ok/trajet_origine, user_profiles.trajet_origine_defaut/
+  // autre_domicile_*, rdv.lieu_lat/lieu_lng), adapté au flux générique à un
+  // seul écran (pas de vue semaine dédiée).
+  bool get _hasDomicileOption => _catPro == 'sante';
+  bool _domicile = false;
+  bool _geocodingDomicile = false;
+  final _adresseDomicileCtrl = TextEditingController();
+  String _origineDefaut = 'cabinet';
+  double? _cabinetLat, _cabinetLng, _autreDomicileLat, _autreDomicileLng;
+  double? _domicileLat, _domicileLng;
+
   // Garde à domicile : la pet-sitter autorise-t-elle les prestations qui se
   // chevauchent (jusqu'à la capacité du jour) ? + réservation d'une garde-journée
   // sur une plage de dates.
@@ -161,6 +181,8 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     'toilettage_complet': 'Toilettage complet', 'coupe': 'Coupe',
     'seance': 'Séance', 'visite_adoption': 'Visite pour adoption', 'autre': 'Autre',
     'course': 'Course',
+    'bilan_osteo': 'Bilan ostéopathique', 'seance_suivi': 'Séance de suivi',
+    'consultation_ponctuelle': 'Consultation ponctuelle', 'suivi_sportif': 'Suivi sportif',
   };
   static const _motifIcons = <String, IconData>{
     'consultation': Icons.medical_services_outlined,
@@ -186,6 +208,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     'visite_adoption': Icons.favorite_border,
     'course': Icons.local_taxi_outlined,
     'autre': Icons.more_horiz_outlined,
+    'bilan_osteo': Icons.assignment_outlined,
+    'seance_suivi': Icons.self_improvement_outlined,
+    'consultation_ponctuelle': Icons.medical_services_outlined,
+    'suivi_sportif': Icons.fitness_center_outlined,
   };
   static const _defaultDureesByCatPro = <String, Map<String, int>>{
     'veterinaire': {'consultation': 30, 'vaccination': 20, 'bilan': 45, 'urgence': 60, 'chirurgie': 120, 'autre': 30},
@@ -193,7 +219,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     'garde':       {'promenade_30min': 30, 'promenade_1h': 60, 'promenade_2h': 120, 'visite_domicile': 30, 'garde_journee': 480, 'autre': 60},
     'education':   {'cours_individuel': 60, 'cours_collectif': 90, 'evaluation': 45, 'autre': 60},
     'toilettage':  {'bain': 45, 'toilettage_complet': 90, 'coupe': 60, 'autre': 60},
-    'sante':       {'consultation': 45, 'seance': 60, 'autre': 60},
+    'sante':       {'bilan_osteo': 60, 'seance_suivi': 45, 'consultation_ponctuelle': 30, 'suivi_sportif': 45, 'autre': 30},
     'taxi_animalier': {'course': 30, 'urgence': 20, 'autre': 30},
   };
 
@@ -234,6 +260,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     _notesCtrl.dispose();
     _adresseDepartCtrl.dispose();
     _adresseArriveeCtrl.dispose();
+    _adresseDomicileCtrl.dispose();
     _debounceDepart?.cancel();
     _debounceArrivee?.cancel();
     _places.dispose();
@@ -323,17 +350,22 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       final row = (widget.proProfileId != null && widget.proProfileId!.isNotEmpty)
           ? await Supabase.instance.client
               .from('user_profiles')
-              .select('durees_motifs, profile_type, cat_pro, education_bilan_requis, education_bilan_description, delai_min_reservation_h, garde_chevauchement_ok')
+              .select('durees_motifs, profile_type, cat_pro, education_bilan_requis, education_bilan_description, delai_min_reservation_h, garde_chevauchement_ok, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng')
               .eq('id', widget.proProfileId!)
               .maybeSingle()
           : await Supabase.instance.client
               .from('users')
-              .select('durees_motifs, cat_pro, garde_chevauchement_ok')
+              .select('durees_motifs, cat_pro, garde_chevauchement_ok, trajet_origine_defaut, autre_domicile_lat, autre_domicile_lng, latitude, longitude, lat, lng')
               .eq('uid', widget.proUid)
               .maybeSingle();
       if (row != null && mounted) {
         _catPro = row['profile_type']?.toString() ?? row['cat_pro']?.toString() ?? '';
         _gardeChevauchementOk = row['garde_chevauchement_ok'] as bool? ?? true;
+        _origineDefaut = row['trajet_origine_defaut']?.toString() ?? 'cabinet';
+        _autreDomicileLat = (row['autre_domicile_lat'] as num?)?.toDouble();
+        _autreDomicileLng = (row['autre_domicile_lng'] as num?)?.toDouble();
+        _cabinetLat = (row['latitude'] as num?)?.toDouble() ?? (row['lat'] as num?)?.toDouble();
+        _cabinetLng = (row['longitude'] as num?)?.toDouble() ?? (row['lng'] as num?)?.toDouble();
         if (row['durees_motifs'] is Map) {
           _dureesMotifs = Map<String, int>.from(
             (row['durees_motifs'] as Map).map((k, v) =>
@@ -449,7 +481,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       for (var page = 0; page < 6; page++) {
         final rows = await Supabase.instance.client
             .from('creneaux_pro')
-            .select('date, heure_debut, heure_fin, type_prestation, capacite, type_garde')
+            .select('date, heure_debut, heure_fin, type_prestation, capacite, type_garde, domicile_ok, trajet_origine')
             .eq('pro_uid', widget.proUid)
             .eq('statut', 'disponible')
             .eq('pro_profile_id', profileId)
@@ -469,7 +501,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     try {
       final rows = await Supabase.instance.client
           .from('rdv')
-          .select('date_heure, duree_minutes, statut, employe_id, motif')
+          .select('date_heure, duree_minutes, statut, employe_id, motif, lieu_lat, lieu_lng')
           .eq('pro_uid', widget.proUid)
           .eq('pro_profile_id', profileId)
           .inFilter('statut', ['confirme', 'demande'])
@@ -528,21 +560,28 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         ? now.add(Duration(hours: _delaiMinReservationH))
         : now.add(const Duration(minutes: 30));
 
+    // Rendez-vous à domicile (santé/ostéo) : n'accepter que les créneaux
+    // marqués domicile_ok, et ne calculer le trajet que si l'adresse client
+    // a été géocodée.
+    final domicileMode = _hasDomicileOption && _domicile;
+    final checkTrajet = domicileMode && _domicileLat != null && _domicileLng != null;
+
     // 1. Grouper les creneaux_pro par date
     // Un créneau marqué "collectif" par un éducateur est réservé à ses cours
     // collectifs (planifiés séparément) — non proposé ici pour un RDV individuel.
-    final creneauxByDate = <String, List<({int startMin, int endMin})>>{};
+    final creneauxByDate = <String, List<({int startMin, int endMin, String? origine})>>{};
     for (final slot in _availableSlots) {
       if (_catPro == 'education' && slot['type_prestation'] == 'collectif') continue;
       // Garde : la grille horaire (promenade / visite) n'utilise pas les plages
       // réservées à la garde-journée.
       if (_catPro == 'garde' && !_slotForPrestation(slot)) continue;
+      if (domicileMode && slot['domicile_ok'] != true) continue;
       final date = slot['date'] as String;
       final sp = (slot['heure_debut'] as String).split(':');
       final ep = (slot['heure_fin']   as String).split(':');
       final s = int.parse(sp[0]) * 60 + int.parse(sp[1]);
       final e = int.parse(ep[0]) * 60 + int.parse(ep[1]);
-      creneauxByDate.putIfAbsent(date, () => []).add((startMin: s, endMin: e));
+      creneauxByDate.putIfAbsent(date, () => []).add((startMin: s, endMin: e, origine: slot['trajet_origine']?.toString()));
     }
 
     final result = <String, List<Map<String, dynamic>>>{};
@@ -551,12 +590,13 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       final slots = entry.value..sort((a, b) => a.startMin.compareTo(b.startMin));
 
       // 2. Fusionner les créneaux consécutifs en fenêtres continues
-      final windows = <({int startMin, int endMin})>[];
+      final windows = <({int startMin, int endMin, String? origine})>[];
       for (final s in slots) {
         if (windows.isNotEmpty && s.startMin <= windows.last.endMin) {
           windows[windows.length - 1] = (
             startMin: windows.last.startMin,
             endMin: s.endMin > windows.last.endMin ? s.endMin : windows.last.endMin,
+            origine: windows.last.origine,
           );
         } else {
           windows.add(s);
@@ -567,8 +607,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       // multi-employés : deux employés distincts peuvent travailler en
       // parallèle — on ne bloque que les RDV du même employé sélectionné
       // (mono-intervenant implicite si aucun employé sélectionné : blocage
-      // pro-wide comme pour tous les autres types de pro).
+      // pro-wide comme pour tous les autres types de pro). En mode domicile,
+      // ces mêmes RDV servent aussi de points de chaînage pour le trajet.
       final blocked = <({int startMin, int endMin})>[];
+      final rdvsDuJour = <({int startMin, int endMin, double? lat, double? lng})>[];
       final filterByEmploye = widget.isToilettage && _selectedEmploye != null;
       for (final rdv in _existingRdvs) {
         if (filterByEmploye && rdv['employe_id'] != _selectedEmploye!['id']) continue;
@@ -579,7 +621,14 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         final rdvDuree = (rdv['duree_minutes'] as num?)?.toInt() ?? 30;
         final rdvStart = dh.hour * 60 + dh.minute;
         blocked.add((startMin: rdvStart, endMin: rdvStart + rdvDuree));
+        if (checkTrajet) {
+          rdvsDuJour.add((
+            startMin: rdvStart, endMin: rdvStart + rdvDuree,
+            lat: (rdv['lieu_lat'] as num?)?.toDouble(), lng: (rdv['lieu_lng'] as num?)?.toDouble(),
+          ));
+        }
       }
+      rdvsDuJour.sort((a, b) => a.startMin.compareTo(b.startMin));
 
       // 4. Générer les créneaux disponibles (pas de 15 min)
       final available = <Map<String, dynamic>>[];
@@ -598,22 +647,57 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
           final overlaps = gardeOverlapAllowed
               ? false
               : blocked.any((b) => t < b.endMin && t + duration > b.startMin);
-          if (!overlaps) {
-            final h = t ~/ 60;
-            final m = t % 60;
-            final eh = (t + duration) ~/ 60;
-            final em = (t + duration) % 60;
-            available.add({
-              'date': date,
-              'heure_debut': '${h.toString().padLeft(2,'0')}:${m.toString().padLeft(2,'0')}:00',
-              'heure_fin':   '${eh.toString().padLeft(2,'0')}:${em.toString().padLeft(2,'0')}:00',
-            });
-          }
+          if (overlaps) continue;
+          if (checkTrajet && !_trajetOk(t, t + duration, window.origine, rdvsDuJour)) continue;
+          final h = t ~/ 60;
+          final m = t % 60;
+          final eh = (t + duration) ~/ 60;
+          final em = (t + duration) % 60;
+          available.add({
+            'date': date,
+            'heure_debut': '${h.toString().padLeft(2,'0')}:${m.toString().padLeft(2,'0')}:00',
+            'heure_fin':   '${eh.toString().padLeft(2,'0')}:${em.toString().padLeft(2,'0')}:00',
+          });
         }
       }
       if (available.isNotEmpty) result[date] = available;
     }
     return result;
+  }
+
+  // Vérifie qu'il reste assez de temps pour le trajet avant/après ce créneau
+  // à domicile — origine = le RDV précédent ce jour-là s'il est géocodé,
+  // sinon l'origine du créneau (ou le défaut du pro) ; heuristique
+  // _kVitesseTrajetKmh + marge _kMargeTrajetMin. Même logique que
+  // education_reservation_page.dart._trajetOk.
+  bool _trajetOk(int startMin, int endMin, String? origineCreneau,
+      List<({int startMin, int endMin, double? lat, double? lng})> rdvsDuJour) {
+    final origine = origineCreneau ?? _origineDefaut;
+    final baseLat = origine == 'autre_domicile' ? _autreDomicileLat : _cabinetLat;
+    final baseLng = origine == 'autre_domicile' ? _autreDomicileLng : _cabinetLng;
+
+    ({int endMin, double? lat, double? lng})? precedent;
+    ({int startMin, double? lat, double? lng})? suivant;
+    for (final r in rdvsDuJour) {
+      if (r.endMin <= startMin) precedent = (endMin: r.endMin, lat: r.lat, lng: r.lng);
+      if (r.startMin >= endMin && suivant == null) suivant = (startMin: r.startMin, lat: r.lat, lng: r.lng);
+    }
+
+    final avantLat = precedent?.lat ?? baseLat;
+    final avantLng = precedent?.lng ?? baseLng;
+    final avantFin = precedent?.endMin ?? 0;
+    if (avantLat != null && avantLng != null) {
+      final distKm = GeocodingHelper.distanceKm(avantLat, avantLng, _domicileLat!, _domicileLng!);
+      final trajetMin = (distKm / _kVitesseTrajetKmh * 60).ceil() + _kMargeTrajetMin;
+      if (startMin - avantFin < trajetMin) return false;
+    }
+
+    if (suivant != null && suivant.lat != null && suivant.lng != null) {
+      final distKm = GeocodingHelper.distanceKm(_domicileLat!, _domicileLng!, suivant.lat!, suivant.lng!);
+      final trajetMin = (distKm / _kVitesseTrajetKmh * 60).ceil() + _kMargeTrajetMin;
+      if (suivant.startMin - endMin < trajetMin) return false;
+    }
+    return true;
   }
 
   List<String> get _availableDates => _smartSlotsByDate.keys.toList()..sort();
@@ -685,6 +769,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       if (_adresseDepartCtrl.text.trim().isEmpty) {
         _snack('Veuillez indiquer le lieu du shooting', color: Colors.orange); return;
       }
+    }
+
+    // Validation adresse domicile (santé/ostéo)
+    if (_hasDomicileOption && _domicile && _domicileLat == null) {
+      _snack('Veuillez indiquer et valider votre adresse', color: Colors.orange); return;
     }
 
     // Validation prestation (toiletteur)
@@ -823,6 +912,11 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
             'prestation_id': _selectedPrestation?['id'],
             if (_selectedPrestation != null) 'prix_calcule': _prixAffiche(_selectedPrestation!),
             if (_selectedEmploye != null) 'employe_id': _selectedEmploye!['id'],
+          },
+          if (_hasDomicileOption && _domicile) ...{
+            'lieu': _adresseDomicileCtrl.text.trim(),
+            if (_domicileLat != null) 'lieu_lat': _domicileLat,
+            if (_domicileLng != null) 'lieu_lng': _domicileLng,
           },
           if ((widget.isPension || widget.isGarde) && _premiereVisite != null)
             'premiere_visite': _premiereVisite,
@@ -1013,6 +1107,10 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
                   const SizedBox(height: 20),
                   if (widget.isPhotographe) ...[
                     _buildPhotographeLieuSection(),
+                    const SizedBox(height: 20),
+                  ],
+                  if (_hasDomicileOption) ...[
+                    _buildDomicileLieuSection(),
                     const SizedBox(height: 20),
                   ],
                   if (_isGardeJournee)
@@ -1914,6 +2012,81 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
         decoration: _inputDecoration('Adresse du shooting (studio ou déplacement)').copyWith(
             prefixIcon: const Icon(Icons.location_on_outlined, size: 18)),
       ),
+    ],
+  );
+
+  // Santé/ostéo : au cabinet (par défaut, tous les créneaux) ou à domicile
+  // (seulement les créneaux que le pro a marqués "à domicile", filtrés en
+  // plus par le temps de trajet une fois l'adresse géocodée — cf. _trajetOk).
+  Future<void> _geocoderDomicile() async {
+    final adresse = _adresseDomicileCtrl.text.trim();
+    if (adresse.isEmpty) return;
+    setState(() => _geocodingDomicile = true);
+    final geo = await GeocodingHelper.geocode(adresse);
+    if (!mounted) return;
+    setState(() {
+      _domicileLat = geo?.lat;
+      _domicileLng = geo?.lng;
+      _geocodingDomicile = false;
+      _selectedSlot = null;
+    });
+    if (geo == null) {
+      _snack('Adresse introuvable — précisez-la pour voir les créneaux à domicile.', color: Colors.orange);
+    }
+  }
+
+  Widget _buildDomicileLieuSection() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _sectionTitle('Lieu du rendez-vous'),
+      const SizedBox(height: 8),
+      Row(children: [
+        Expanded(child: OutlinedButton(
+          onPressed: () => setState(() { _domicile = false; _selectedSlot = null; }),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: !_domicile ? Colors.white : widget.categoryColor,
+            backgroundColor: !_domicile ? widget.categoryColor : Colors.white,
+            side: BorderSide(color: widget.categoryColor),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+          child: const Text('Au cabinet', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+        )),
+        const SizedBox(width: 10),
+        Expanded(child: OutlinedButton(
+          onPressed: () => setState(() { _domicile = true; _selectedSlot = null; }),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: _domicile ? Colors.white : widget.categoryColor,
+            backgroundColor: _domicile ? widget.categoryColor : Colors.white,
+            side: BorderSide(color: widget.categoryColor),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+          child: const Text('À domicile', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+        )),
+      ]),
+      if (_domicile) ...[
+        const SizedBox(height: 12),
+        TextField(
+          controller: _adresseDomicileCtrl,
+          onChanged: (_) {
+            if (_domicileLat != null) setState(() { _domicileLat = null; _domicileLng = null; });
+          },
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+          decoration: _inputDecoration('Votre adresse').copyWith(
+              prefixIcon: const Icon(Icons.home_outlined, size: 18)),
+        ),
+        const SizedBox(height: 8),
+        if (_domicileLat != null)
+          Text('Créneaux compatibles avec le trajet du professionnel affichés ci-dessous.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500))
+        else
+          SizedBox(width: double.infinity, child: OutlinedButton(
+            onPressed: _geocodingDomicile || _adresseDomicileCtrl.text.trim().isEmpty ? null : _geocoderDomicile,
+            style: OutlinedButton.styleFrom(foregroundColor: widget.categoryColor, side: BorderSide(color: widget.categoryColor)),
+            child: _geocodingDomicile
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Voir les créneaux à domicile', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+          )),
+      ],
     ],
   );
 

@@ -1324,7 +1324,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                       proName: _nomStructure,
                       categoryColor: widget.categoryColor,
                       isPension: _proData?['cat_pro'] == 'pension',
-                      isVet: _proData?['cat_pro'] == 'sante' || _proData?['cat_pro'] == 'veterinaire',
+                      isVet: _proData?['cat_pro'] == 'veterinaire',
                       isGarde: _proData?['cat_pro'] == 'garde',
                       isTaxi: _proData?['cat_pro'] == 'taxi_animalier',
                       isPhotographe: _proData?['cat_pro'] == 'photographe',

@@ -176,7 +176,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     'garde':       {'promenade_30min': 30, 'promenade_1h': 60, 'promenade_2h': 120, 'visite_domicile': 30, 'garde_journee': 480, 'autre': 60},
     'education':   {'cours_individuel': 60, 'cours_collectif': 90, 'evaluation': 45, 'autre': 60},
     'toilettage':  {'bain': 45, 'toilettage_complet': 90, 'coupe': 60, 'autre': 60},
-    'sante':       {'consultation': 45, 'seance': 60, 'autre': 60},
+    'sante':       {'bilan_osteo': 60, 'seance_suivi': 45, 'consultation_ponctuelle': 30, 'suivi_sportif': 45, 'autre': 30},
   };
 
   static const _motifLabels = <String, String>{
@@ -189,6 +189,8 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     'cours_individuel': 'Cours individuel', 'cours_collectif': 'Cours collectif',
     'evaluation': 'Évaluation', 'bain': 'Bain', 'toilettage_complet': 'Toilettage complet',
     'coupe': 'Coupe', 'seance': 'Séance', 'autre': 'Autre',
+    'bilan_osteo': 'Bilan ostéopathique', 'seance_suivi': 'Séance de suivi',
+    'consultation_ponctuelle': 'Consultation ponctuelle', 'suivi_sportif': 'Suivi sportif',
   };
 
   static const _jours = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
@@ -670,10 +672,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid ?? User_Info.uid;
 
-      // Géocode "l'autre domicile" (éducateur, trajet à domicile) si une
-      // adresse est saisie — refait à chaque save pour rester à jour si le
-      // pro modifie le texte.
-      if (_catPro == 'education' && _autreDomicileCtrl.text.trim().isNotEmpty) {
+      // Géocode "l'autre domicile" (éducateur/santé, trajet à domicile) si
+      // une adresse est saisie — refait à chaque save pour rester à jour si
+      // le pro modifie le texte.
+      if ((_catPro == 'education' || _catPro == 'sante') && _autreDomicileCtrl.text.trim().isNotEmpty) {
         try {
           final locs = await geo.locationFromAddress(_autreDomicileCtrl.text.trim());
           if (locs.isNotEmpty) {
@@ -769,10 +771,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'education') 'education_bilan_description': _educationBilanDescCtrl.text.trim(),
           if (_isBookingPro) 'delai_min_reservation_h': _delaiMinReservationH,
           if (_isBookingPro) 'annulation_limite_h': _annulationLimiteH,
-          if (_catPro == 'education') 'trajet_origine_defaut': _trajetOrigineDefaut,
-          if (_catPro == 'education') 'autre_domicile_adresse': _autreDomicileCtrl.text.trim(),
-          if (_catPro == 'education') 'autre_domicile_lat': _autreDomicileLat,
-          if (_catPro == 'education') 'autre_domicile_lng': _autreDomicileLng,
+          if (_catPro == 'education' || _catPro == 'sante') 'trajet_origine_defaut': _trajetOrigineDefaut,
+          if (_catPro == 'education' || _catPro == 'sante') 'autre_domicile_adresse': _autreDomicileCtrl.text.trim(),
+          if (_catPro == 'education' || _catPro == 'sante') 'autre_domicile_lat': _autreDomicileLat,
+          if (_catPro == 'education' || _catPro == 'sante') 'autre_domicile_lng': _autreDomicileLng,
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
           if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
@@ -879,10 +881,10 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
           if (_catPro == 'education') 'education_bilan_description': _educationBilanDescCtrl.text.trim(),
           if (_isBookingPro) 'delai_min_reservation_h': _delaiMinReservationH,
           if (_isBookingPro) 'annulation_limite_h': _annulationLimiteH,
-          if (_catPro == 'education') 'trajet_origine_defaut': _trajetOrigineDefaut,
-          if (_catPro == 'education') 'autre_domicile_adresse': _autreDomicileCtrl.text.trim(),
-          if (_catPro == 'education') 'autre_domicile_lat': _autreDomicileLat,
-          if (_catPro == 'education') 'autre_domicile_lng': _autreDomicileLng,
+          if (_catPro == 'education' || _catPro == 'sante') 'trajet_origine_defaut': _trajetOrigineDefaut,
+          if (_catPro == 'education' || _catPro == 'sante') 'autre_domicile_adresse': _autreDomicileCtrl.text.trim(),
+          if (_catPro == 'education' || _catPro == 'sante') 'autre_domicile_lat': _autreDomicileLat,
+          if (_catPro == 'education' || _catPro == 'sante') 'autre_domicile_lng': _autreDomicileLng,
           if (_catPro == 'garde' || _catPro == 'education') 'acaced': _acacedCtrl.text.trim(),
           if (_catPro == 'garde' || _catPro == 'education') 'acaced_numero': _acacedCtrl.text.trim(),
           if ((_catPro == 'garde' || _catPro == 'education') && acacedDocUrl != null && acacedDocUrl.isNotEmpty)
@@ -1614,10 +1616,17 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                             borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
                       ),
                     ),
-                    const SizedBox(height: 20),
+                  ],
+
+                  // ── Trajet à domicile (éducateur/comportementaliste ET santé
+                  // — les deux peuvent proposer des créneaux à domicile avec
+                  // calcul intelligent du temps de trajet, cf. "Mes créneaux"
+                  // et la réservation côté client) ────────────────────────────
+                  if (_catPro == 'education' || _catPro == 'sante') ...[
+                    const SizedBox(height: 24),
                     _sectionTitle('Trajet à domicile'),
                     const SizedBox(height: 4),
-                    Text('Adresse de départ utilisée pour estimer le temps de trajet des cours à domicile. '
+                    Text('Adresse de départ utilisée pour estimer le temps de trajet des rendez-vous à domicile. '
                         'Vous pourrez changer l\'origine pour un créneau précis depuis "Mes créneaux".',
                         style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
                     const SizedBox(height: 10),

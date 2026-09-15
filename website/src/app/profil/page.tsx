@@ -1154,7 +1154,7 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
     // locale car setAutreDomicileLatLng() ne serait pas reflété à temps dans
     // le payload construit juste après (state React asynchrone).
     let autreDomicileGeo = autreDomicileLatLng;
-    if ((data?.profile_type ?? data?.cat_pro) === 'education' && autreDomicileAdresse.trim()) {
+    if (['education', 'sante'].includes((data?.profile_type ?? data?.cat_pro) ?? '') && autreDomicileAdresse.trim()) {
       const geo = await geocodeAddress(autreDomicileAdresse.trim());
       if (geo) { autreDomicileGeo = geo; setAutreDomicileLatLng(geo); }
     }
@@ -1196,10 +1196,6 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
             education_bilan_requis: educationBilanRequis,
             tarifs_education_visibles: tarifsEducationVisibles,
             education_bilan_description: educationBilanDescription.trim(),
-            trajet_origine_defaut: trajetOrigineDefaut,
-            autre_domicile_adresse: autreDomicileAdresse.trim(),
-            autre_domicile_lat: autreDomicileGeo?.lat ?? null,
-            autre_domicile_lng: autreDomicileGeo?.lng ?? null,
             tarifs_education_extra: tarifsEducationExtra
               .filter(e => e.label.trim())
               .map(e => ({
@@ -1227,6 +1223,14 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
         : {}),
       ...((data?.profile_type ?? data?.cat_pro) === 'taxi_animalier'
         ? { tarifs_taxi: tarifsTaxi }
+        : {}),
+      ...(['education', 'sante'].includes((data?.profile_type ?? data?.cat_pro) ?? '')
+        ? {
+            trajet_origine_defaut: trajetOrigineDefaut,
+            autre_domicile_adresse: autreDomicileAdresse.trim(),
+            autre_domicile_lat: autreDomicileGeo?.lat ?? null,
+            autre_domicile_lng: autreDomicileGeo?.lng ?? null,
+          }
         : {}),
       ...(['garde', 'education'].includes((data?.profile_type ?? data?.cat_pro) ?? '')
         ? { acaced: acacedNum.trim(), acaced_numero: acacedNum.trim() }
@@ -1754,11 +1758,11 @@ function SecondaryProEdit({ profileId, uid }: { profileId: string; uid: string }
           </Card>
         )}
 
-        {/* Trajet à domicile (éducateur) */}
-        {catPro === 'education' && (
+        {/* Trajet à domicile (éducateur/comportementaliste et santé/ostéo) */}
+        {(catPro === 'education' || catPro === 'sante') && (
           <Card title="Trajet à domicile">
             <p className="text-xs text-gray-500 mb-3">
-              Adresse de départ utilisée pour estimer le temps de trajet des cours à domicile.
+              Adresse de départ utilisée pour estimer le temps de trajet des rendez-vous à domicile.
               Vous pourrez changer l&apos;origine pour un créneau précis depuis &laquo;&nbsp;Mes créneaux&nbsp;&raquo;.
             </p>
             <label className="text-xs font-medium text-gray-500 block mb-1">Autre domicile (optionnel)</label>

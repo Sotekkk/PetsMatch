@@ -506,7 +506,7 @@ export default function ProCreneauxPage() {
               </div>
             )}
 
-            {catPro === 'education' && addMode === 'disponible' && (
+            {(catPro === 'education' || catPro === 'sante') && addMode === 'disponible' && (
               <div className="flex items-center justify-between gap-4">
                 <span className="text-xs font-semibold text-gray-500" style={{ fontFamily: 'Galey, sans-serif' }}>
                   Disponible à domicile

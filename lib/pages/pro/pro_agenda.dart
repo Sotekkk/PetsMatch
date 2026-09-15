@@ -2693,7 +2693,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     TimeOfDay endTime   = editing?.end   ?? initialEnd   ?? const TimeOfDay(hour: 10, minute: 0);
     String statut = editing?.statut ?? 'disponible';
     String? type = editing?.type; // 'individuel' / 'collectif' / null = les deux (éducateur uniquement)
-    bool domicileOk = editing?.domicile ?? false; // créneau proposable à domicile (éducateur uniquement)
+    bool domicileOk = editing?.domicile ?? false; // créneau proposable à domicile (éducateur/comportementaliste et santé/ostéo)
     String? prestationId; // cours du catalogue (collectif) rattaché à ce créneau
     int capacite = 1; // nombre de places (garde à domicile : plusieurs animaux/jour)
     String? typeGarde = editing?.typeGarde; // garde : 'journee' / 'prestation' / null = les deux
@@ -2816,9 +2816,10 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     child: Text('→', style: TextStyle(fontSize: 22, color: Colors.grey))),
                 Expanded(child: timeCard('À', endTime, false)),
               ]),
-              // Options éducateur/comportementaliste — encadré teinté pour
-              // qu'on pense à les régler (type de cours + domicile).
-              if (User_Info.catPro == 'education' && isDisp) ...[
+              // Options éducateur/comportementaliste (type de cours) et
+              // santé/ostéo (domicile ou cabinet) — encadré teinté pour
+              // qu'on pense à les régler.
+              if ((User_Info.catPro == 'education' || User_Info.catPro == 'sante') && isDisp) ...[
                 const SizedBox(height: 16),
                 Container(
                   width: double.infinity,
@@ -2829,53 +2830,55 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     border: Border.all(color: const Color(0x337B5EA7)),
                   ),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('Type de cours', style: TextStyle(
-                        fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700,
-                        color: Color(0xFF7B5EA7))),
-                    const SizedBox(height: 8),
-                    Row(children: [
-                      for (final t in [('individuel', '🎓 Individuel'), ('collectif', '👥 Collectif'), (null, 'Les deux')])
-                        Expanded(child: Padding(
-                          padding: EdgeInsets.only(right: t.$1 == null ? 0 : 6),
-                          child: GestureDetector(
-                            onTap: () => setS(() => type = t.$1),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 9),
-                              decoration: BoxDecoration(
-                                color: type == t.$1 ? const Color(0xFF7B5EA7) : Colors.white,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                    color: type == t.$1 ? const Color(0xFF7B5EA7) : Colors.grey.shade300,
-                                    width: type == t.$1 ? 2 : 1),
+                    if (User_Info.catPro == 'education') ...[
+                      const Text('Type de cours', style: TextStyle(
+                          fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700,
+                          color: Color(0xFF7B5EA7))),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        for (final t in [('individuel', '🎓 Individuel'), ('collectif', '👥 Collectif'), (null, 'Les deux')])
+                          Expanded(child: Padding(
+                            padding: EdgeInsets.only(right: t.$1 == null ? 0 : 6),
+                            child: GestureDetector(
+                              onTap: () => setS(() => type = t.$1),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 9),
+                                decoration: BoxDecoration(
+                                  color: type == t.$1 ? const Color(0xFF7B5EA7) : Colors.white,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                      color: type == t.$1 ? const Color(0xFF7B5EA7) : Colors.grey.shade300,
+                                      width: type == t.$1 ? 2 : 1),
+                                ),
+                                child: Center(child: Text(t.$2, textAlign: TextAlign.center, style: TextStyle(
+                                    fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600,
+                                    color: type == t.$1 ? Colors.white : Colors.grey.shade600))),
                               ),
-                              child: Center(child: Text(t.$2, textAlign: TextAlign.center, style: TextStyle(
-                                  fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600,
-                                  color: type == t.$1 ? Colors.white : Colors.grey.shade600))),
                             ),
-                          ),
-                        )),
-                    ]),
-                    if (type == 'collectif' && coursCollectifs.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      const Text('Cours associé (optionnel)', style: TextStyle(
-                          fontFamily: 'Galey', fontSize: 11, color: Colors.grey,
-                          fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 6),
-                      DropdownButtonFormField<String?>(
-                        initialValue: prestationId,
-                        isExpanded: true,
-                        decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true,
-                            filled: true, fillColor: Colors.white,
-                            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
-                        items: [
-                          const DropdownMenuItem(value: null, child: Text('Aucun', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
-                          for (final c in coursCollectifs)
-                            DropdownMenuItem(value: c['id'] as String, child: Text(c['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
-                        ],
-                        onChanged: (v) => setS(() => prestationId = v),
-                      ),
+                          )),
+                      ]),
+                      if (type == 'collectif' && coursCollectifs.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        const Text('Cours associé (optionnel)', style: TextStyle(
+                            fontFamily: 'Galey', fontSize: 11, color: Colors.grey,
+                            fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String?>(
+                          initialValue: prestationId,
+                          isExpanded: true,
+                          decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true,
+                              filled: true, fillColor: Colors.white,
+                              contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8)),
+                          items: [
+                            const DropdownMenuItem(value: null, child: Text('Aucun', style: TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                            for (final c in coursCollectifs)
+                              DropdownMenuItem(value: c['id'] as String, child: Text(c['nom']?.toString() ?? '', style: const TextStyle(fontFamily: 'Galey', fontSize: 13))),
+                          ],
+                          onChanged: (v) => setS(() => prestationId = v),
+                        ),
+                      ],
+                      const Divider(height: 20),
                     ],
-                    const Divider(height: 20),
                     Row(children: [
                       Expanded(child: Text('Proposer ce créneau à domicile', style: TextStyle(
                           fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,

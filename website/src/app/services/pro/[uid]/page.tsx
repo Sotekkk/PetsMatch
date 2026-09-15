@@ -10,6 +10,12 @@ import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge
 import { PENSION_ESPECES } from '@/lib/pension-especes';
 import { gardeMotifLabel } from '@/lib/garde-labels';
 import EducationReservationModal from '@/components/education/EducationReservationModal';
+import { geocodeAddress, distanceKm } from '@/lib/geocoding';
+
+// Vitesse moyenne heuristique (à vol d'oiseau, pas d'API Directions payante)
+// + marge de sécurité — même heuristique que EducationReservationModal.tsx.
+const VITESSE_TRAJET_KMH = 30;
+const MARGE_TRAJET_MIN = 15;
 
 // photos_galerie (jsonb) : liste de string (URL) OU {url, legende}
 function normGalerie(raw: unknown): { url: string; legende: string }[] {
@@ -56,6 +62,10 @@ interface ProData {
   tarifs_sante?: Record<string, number>;
   tarifs_sante_visibles?: boolean;
   tarifs_sante_extra?: { label: string; prix: number; description?: string }[];
+  trajet_origine_defaut?: string;
+  autre_domicile_lat?: number | null;
+  autre_domicile_lng?: number | null;
+  latitude?: number | null; longitude?: number | null; lat?: number | null; lng?: number | null;
   tarifs_pension?: {
     especes?: { espece: string; prix_seul: number; prix_partage?: number }[];
     afficher_public?: boolean;
@@ -65,7 +75,7 @@ interface Prestation {
   id: string; nom: string; description?: string; duree_minutes?: number;
   prix?: number; prix_base?: number; grille_prix?: { prix: number }[];
 }
-interface Slot { date: string; heureDebut: string; heureFin: string; capacite?: number; typeGarde?: string | null; }
+interface Slot { date: string; heureDebut: string; heureFin: string; capacite?: number; typeGarde?: string | null; domicileOk?: boolean; trajetOrigine?: string | null; }
 interface Animal { id: number; nom: string; espece: string; }
 interface CoursCollectif {
   id: string; titre: string; date_heure: string; capacite_max: number; lieu?: string | null;
@@ -93,9 +103,11 @@ const MOTIFS_BY_CAT: Record<string, { key: string; label: string; icon: string; 
     { key: 'autre',        label: 'Autre',         icon: '➕', duree: 30 },
   ],
   sante: [
-    { key: 'consultation', label: 'Consultation',  icon: '🩺', duree: 45 },
-    { key: 'seance',       label: 'Séance',        icon: '💆', duree: 60 },
-    { key: 'autre',        label: 'Autre',         icon: '➕', duree: 60 },
+    { key: 'bilan_osteo',              label: 'Bilan ostéopathique',      icon: '📋', duree: 60 },
+    { key: 'seance_suivi',             label: 'Séance de suivi',          icon: '💆', duree: 45 },
+    { key: 'consultation_ponctuelle',  label: 'Consultation ponctuelle',  icon: '🩺', duree: 30 },
+    { key: 'suivi_sportif',            label: 'Suivi sportif',            icon: '🏃', duree: 45 },
+    { key: 'autre',                    label: 'Autre',                    icon: '➕', duree: 30 },
   ],
   garde: [
     { key: 'promenade_30min',  label: 'Promenade 30 min',  icon: '🦮', duree: 30 },
@@ -176,6 +188,18 @@ function ProDetailContent() {
   const [gardeDebut, setGardeDebut] = useState('');
   const [gardeFin, setGardeFin] = useState('');
   const [gardeJourCounts, setGardeJourCounts] = useState<Record<string, number>>({});
+
+  // Santé/ostéo : rendez-vous à domicile ou au cabinet, avec calcul du temps
+  // de trajet — même mécanisme que EducationReservationModal.tsx (colonnes
+  // génériques creneaux_pro.domicile_ok/trajet_origine, user_profiles.
+  // trajet_origine_defaut/autre_domicile_*, rdv.lieu_lat/lieu_lng).
+  const [domicile, setDomicile] = useState(false);
+  const [adresseDomicile, setAdresseDomicile] = useState('');
+  const [domicileLatLng, setDomicileLatLng] = useState<{ lat: number; lng: number } | null>(null);
+  const [geocodingDomicile, setGeocodingDomicile] = useState(false);
+  const [cabinetLatLng, setCabinetLatLng] = useState<{ lat: number; lng: number } | null>(null);
+  const [autreDomicileLatLng, setAutreDomicileLatLng] = useState<{ lat: number; lng: number } | null>(null);
+  const [rdvsDuJourByDate, setRdvsDuJourByDate] = useState<Record<string, { startMin: number; endMin: number; lat: number | null; lng: number | null }[]>>({});
 
   // Taxi animalier : trajet départ/arrivée + animaux transportés
   const [adresseDepart, setAdresseDepart] = useState('');
@@ -305,6 +329,11 @@ function ProDetailContent() {
           tarifs_sante_extra: Array.isArray(data.tarifs_sante_extra) ? data.tarifs_sante_extra : [],
           garde_chevauchement_ok: (data.garde_chevauchement_ok as boolean | null) ?? true,
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
+          trajet_origine_defaut: (data.trajet_origine_defaut as string) || 'cabinet',
+          autre_domicile_lat: (data.autre_domicile_lat as number | null) ?? null,
+          autre_domicile_lng: (data.autre_domicile_lng as number | null) ?? null,
+          latitude: (data.latitude as number | null) ?? null, longitude: (data.longitude as number | null) ?? null,
+          lat: (data.lat as number | null) ?? null, lng: (data.lng as number | null) ?? null,
         };
       } else {
         const { data } = await supabase.from('user_profiles').select('*').eq('uid', uid).eq('is_main', true).maybeSingle();
@@ -340,6 +369,11 @@ function ProDetailContent() {
           tarifs_sante_extra: Array.isArray(data.tarifs_sante_extra) ? data.tarifs_sante_extra : [],
           garde_chevauchement_ok: (data.garde_chevauchement_ok as boolean | null) ?? true,
           statut_pro: data.statut_pro || '', siret: data.siret || '', is_premium: data.is_premium ?? false,
+          trajet_origine_defaut: (data.trajet_origine_defaut as string) || 'cabinet',
+          autre_domicile_lat: (data.autre_domicile_lat as number | null) ?? null,
+          autre_domicile_lng: (data.autre_domicile_lng as number | null) ?? null,
+          latitude: (data.latitude as number | null) ?? null, longitude: (data.longitude as number | null) ?? null,
+          lat: (data.lat as number | null) ?? null, lng: (data.lng as number | null) ?? null,
         };
       }
       if (row) setPro({ ...(row as unknown as ProData), profileTableId });
@@ -523,8 +557,22 @@ function ProDetailContent() {
     setNotes('');
     setRecurrent(false);
     setOccurrences(4);
+    setDomicile(false);
+    setAdresseDomicile('');
+    setDomicileLatLng(null);
     setSlotsLoading(true);
     const profileId = profileTableId ?? '';
+    if (pro?.cat_pro === 'sante') {
+      setCabinetLatLng(
+        pro.latitude != null && pro.longitude != null ? { lat: pro.latitude, lng: pro.longitude }
+        : pro.lat != null && pro.lng != null ? { lat: pro.lat, lng: pro.lng }
+        : null
+      );
+      setAutreDomicileLatLng(
+        pro.autre_domicile_lat != null && pro.autre_domicile_lng != null
+          ? { lat: pro.autre_domicile_lat, lng: pro.autre_domicile_lng } : null
+      );
+    }
     // Scopé au profil actif du client réservant le RDV (pas tout le compte
     // Firebase) — sinon un compte multi-profil (ex. particulier + éleveur)
     // voit les animaux de tous ses profils au lieu du seul profil courant.
@@ -541,9 +589,9 @@ function ProDetailContent() {
     // Créneaux : PostgREST plafonne à 1000 lignes/réponse → un pro très chargé
     // ne verrait jamais les dates lointaines. On pagine.
     async function fetchAllSlots() {
-      const out: { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null; capacite?: number | null; type_garde?: string | null }[] = [];
+      const out: { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null; capacite?: number | null; type_garde?: string | null; domicile_ok?: boolean | null; trajet_origine?: string | null }[] = [];
       for (let page = 0; page < 6; page++) {
-        const { data } = await supabase.from('creneaux_pro').select('date, heure_debut, heure_fin, type_prestation, capacite, type_garde')
+        const { data } = await supabase.from('creneaux_pro').select('date, heure_debut, heure_fin, type_prestation, capacite, type_garde, domicile_ok, trajet_origine')
           .eq('pro_uid', uid).eq('statut', 'disponible').eq('pro_profile_id', profileId)
           .gte('date', toDateStr(new Date()))
           .order('date').order('heure_debut')
@@ -554,11 +602,33 @@ function ProDetailContent() {
       }
       return { data: out };
     }
-    const [slotsRes, animauxRes, ownRes] = await Promise.all([
+    // Santé/ostéo : RDV futurs géolocalisés (rendez-vous à domicile) —
+    // utilisés pour chaîner le calcul de trajet (avant/après le créneau
+    // envisagé), même mécanisme que EducationReservationModal.tsx.
+    async function fetchRdvsDuJour() {
+      if (pro?.cat_pro !== 'sante') return {};
+      const { data } = await supabase.from('rdv')
+        .select('date_heure, duree_minutes, lieu_lat, lieu_lng')
+        .eq('pro_uid', uid).eq('pro_profile_id', profileId)
+        .in('statut', ['confirme', 'demande'])
+        .gte('date_heure', new Date().toISOString());
+      const byDate: Record<string, { startMin: number; endMin: number; lat: number | null; lng: number | null }[]> = {};
+      for (const r of (data ?? []) as { date_heure: string; duree_minutes: number | null; lieu_lat: number | null; lieu_lng: number | null }[]) {
+        const dh = new Date(r.date_heure);
+        const key = toDateStr(dh);
+        const start = dh.getHours() * 60 + dh.getMinutes();
+        (byDate[key] ??= []).push({ startMin: start, endMin: start + (r.duree_minutes ?? 30), lat: r.lieu_lat, lng: r.lieu_lng });
+      }
+      for (const key in byDate) byDate[key].sort((a, b) => a.startMin - b.startMin);
+      return byDate;
+    }
+    const [slotsRes, animauxRes, ownRes, rdvsDuJour] = await Promise.all([
       fetchAllSlots(),
       animauxQ,
       ownQ,
+      fetchRdvsDuJour(),
     ]);
+    setRdvsDuJourByDate(rdvsDuJour);
 
     // Éducateur : un nouveau client ne peut réserver qu'un bilan tant qu'il
     // n'a pas eu de séance confirmée avec ce pro (sauf si le pro désactive
@@ -569,13 +639,16 @@ function ProDetailContent() {
         .in('statut', ['confirme', 'termine']).limit(1);
       setIsFirstTimeEducationClient((priorRdv ?? []).length === 0);
     }
-    const rawSlots = (slotsRes.data ?? []) as { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null; capacite?: number | null; type_garde?: string | null }[];
+    const rawSlots = (slotsRes.data ?? []) as { date: string; heure_debut: string; heure_fin: string; type_prestation?: string | null; capacite?: number | null; type_garde?: string | null; domicile_ok?: boolean | null; trajet_origine?: string | null }[];
     // Un créneau marqué "collectif" par l'éducateur est réservé à ses cours
     // collectifs (planifiés séparément) — non proposé ici pour un RDV individuel.
     const individualSlots = pro?.cat_pro === 'education'
       ? rawSlots.filter(s => s.type_prestation !== 'collectif')
       : rawSlots;
-    setSlots(individualSlots.map(s => ({ date: s.date, heureDebut: s.heure_debut, heureFin: s.heure_fin, capacite: s.capacite ?? 1, typeGarde: s.type_garde ?? null })));
+    setSlots(individualSlots.map(s => ({
+      date: s.date, heureDebut: s.heure_debut, heureFin: s.heure_fin, capacite: s.capacite ?? 1, typeGarde: s.type_garde ?? null,
+      domicileOk: s.domicile_ok === true, trajetOrigine: s.trajet_origine ?? null,
+    })));
 
     // Garde : gardes-journée déjà demandées/confirmées (pour la capacité/jour).
     if (pro?.cat_pro === 'garde') {
@@ -632,6 +705,10 @@ function ProDetailContent() {
     if (!isGardeJournee && !selectedSlot) return;
     if (premiereRequise && premiereVisite === null) return;
     if (isTaxi && (!adresseDepart.trim() || !adresseArrivee.trim() || animauxTaxiIds.length === 0)) return;
+    if (pro.cat_pro === 'sante' && domicile && !domicileLatLng) {
+      alert('Veuillez indiquer et valider votre adresse.');
+      return;
+    }
     setSaving(true);
     try {
       const motifInfo = (MOTIFS_BY_CAT[pro.cat_pro] ?? DEFAULT_MOTIFS).find(m => m.key === motifKey);
@@ -695,6 +772,10 @@ function ProDetailContent() {
             ...(latDepart != null ? { lat_depart: latDepart, lng_depart: lngDepart } : {}),
             ...(latArrivee != null ? { lat_arrivee: latArrivee, lng_arrivee: lngArrivee } : {}),
           } : {}),
+          ...(pro.cat_pro === 'sante' && domicile ? {
+            lieu: adresseDomicile.trim(),
+            ...(domicileLatLng ? { lieu_lat: domicileLatLng.lat, lieu_lng: domicileLatLng.lng } : {}),
+          } : {}),
         });
         if (!skipReserve) {
           await supabase.from('creneaux_pro').update({ statut: 'reserve' })
@@ -723,6 +804,17 @@ function ProDetailContent() {
     }
   }
 
+  async function geocoderDomicile() {
+    const adresse = adresseDomicile.trim();
+    if (!adresse) return;
+    setGeocodingDomicile(true);
+    const geo = await geocodeAddress(adresse);
+    setDomicileLatLng(geo);
+    setSelectedSlot(null);
+    setGeocodingDomicile(false);
+    if (!geo) alert('Adresse introuvable — précisez-la pour voir les créneaux à domicile.');
+  }
+
   // Délai minimum de réservation imposé par le pro : on masque tout créneau
   // qui commence avant « maintenant + délai » (repli 30 min si aucun délai).
   const delaiMinH = Number(pro?.delai_min_reservation_h) || 0;
@@ -731,8 +823,44 @@ function ProDetailContent() {
   // et inversement (typeGarde null = les deux).
   const slotForJournee = (s: Slot) => !s.typeGarde || s.typeGarde === 'journee';
   const slotForPrestation = (s: Slot) => !s.typeGarde || s.typeGarde === 'prestation';
+
+  // Santé/ostéo, mode domicile : vérifie qu'il reste assez de temps pour le
+  // trajet avant/après ce créneau — origine = le RDV précédent ce jour-là
+  // s'il est géolocalisé, sinon l'origine du créneau (ou le défaut du pro).
+  // Même heuristique que EducationReservationModal.tsx (30 km/h + 15 min).
+  function trajetOk(s: Slot): boolean {
+    if (!domicileLatLng) return true;
+    const [sh, sm] = s.heureDebut.split(':').map(Number);
+    const [eh, em] = s.heureFin.split(':').map(Number);
+    const startMin = sh * 60 + sm, endMin = eh * 60 + em;
+    const origine = s.trajetOrigine ?? pro?.trajet_origine_defaut ?? 'cabinet';
+    const base = origine === 'autre_domicile' ? autreDomicileLatLng : cabinetLatLng;
+    const rdvsDuJour = rdvsDuJourByDate[s.date] ?? [];
+    let precedent: { endMin: number; lat: number | null; lng: number | null } | null = null;
+    let suivant: { startMin: number; lat: number | null; lng: number | null } | null = null;
+    for (const r of rdvsDuJour) {
+      if (r.endMin <= startMin) precedent = r;
+      if (r.startMin >= endMin && !suivant) suivant = r;
+    }
+    const avantLat = precedent?.lat ?? base?.lat ?? null;
+    const avantLng = precedent?.lng ?? base?.lng ?? null;
+    const avantFin = precedent?.endMin ?? 0;
+    if (avantLat != null && avantLng != null) {
+      const distKm = distanceKm(avantLat, avantLng, domicileLatLng.lat, domicileLatLng.lng);
+      const trajetMin = Math.ceil((distKm / VITESSE_TRAJET_KMH) * 60) + MARGE_TRAJET_MIN;
+      if (startMin - avantFin < trajetMin) return false;
+    }
+    if (suivant && suivant.lat != null && suivant.lng != null) {
+      const distKm = distanceKm(domicileLatLng.lat, domicileLatLng.lng, suivant.lat, suivant.lng);
+      const trajetMin = Math.ceil((distKm / VITESSE_TRAJET_KMH) * 60) + MARGE_TRAJET_MIN;
+      if (suivant.startMin - endMin < trajetMin) return false;
+    }
+    return true;
+  }
+
   const slotsByDate = slots.reduce<Record<string, Slot[]>>((acc, s) => {
     if (pro?.cat_pro === 'garde' && !slotForPrestation(s)) return acc;
+    if (pro?.cat_pro === 'sante' && domicile && (!s.domicileOk || !trajetOk(s))) return acc;
     const [dy, dmo, dd] = s.date.split('-').map(Number);
     const [sh, sm] = s.heureDebut.split(':').map(Number);
     if (new Date(dy, dmo - 1, dd, sh || 0, sm || 0) < earliestBookable) return acc;
@@ -1425,6 +1553,57 @@ function ProDetailContent() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Lieu du rendez-vous (santé/ostéo uniquement) */}
+                  {pro.cat_pro === 'sante' && (
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2.5"
+                        style={{ fontFamily: 'Galey, sans-serif' }}>Lieu du rendez-vous</p>
+                      <div className="flex gap-2">
+                        <button onClick={() => { setDomicile(false); setSelectedSlot(null); }}
+                          className="flex-1 py-2.5 rounded-xl border text-sm font-semibold transition-all"
+                          style={{
+                            fontFamily: 'Galey, sans-serif',
+                            borderColor: catColor,
+                            backgroundColor: !domicile ? catColor : 'white',
+                            color: !domicile ? 'white' : catColor,
+                          }}>
+                          Au cabinet
+                        </button>
+                        <button onClick={() => { setDomicile(true); setSelectedSlot(null); }}
+                          className="flex-1 py-2.5 rounded-xl border text-sm font-semibold transition-all"
+                          style={{
+                            fontFamily: 'Galey, sans-serif',
+                            borderColor: catColor,
+                            backgroundColor: domicile ? catColor : 'white',
+                            color: domicile ? 'white' : catColor,
+                          }}>
+                          À domicile
+                        </button>
+                      </div>
+                      {domicile && (
+                        <div className="mt-3">
+                          <input value={adresseDomicile}
+                            onChange={e => { setAdresseDomicile(e.target.value); if (domicileLatLng) setDomicileLatLng(null); }}
+                            placeholder="Votre adresse"
+                            className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm"
+                            style={{ fontFamily: 'Galey, sans-serif' }} />
+                          {domicileLatLng ? (
+                            <p className="text-xs text-gray-400 mt-2">
+                              Créneaux compatibles avec le trajet du professionnel affichés ci-dessous.
+                            </p>
+                          ) : (
+                            <button onClick={geocoderDomicile}
+                              disabled={geocodingDomicile || !adresseDomicile.trim()}
+                              className="mt-2 w-full py-2.5 rounded-xl border text-sm font-semibold disabled:opacity-40"
+                              style={{ fontFamily: 'Galey, sans-serif', borderColor: catColor, color: catColor }}>
+                              {geocodingDomicile ? 'Recherche…' : 'Voir les créneaux à domicile'}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* Première fois ? (vétérinaire, ostéo, pension, garde) */}
                   {premiereRequise && motifKey && (
