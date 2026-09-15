@@ -2061,23 +2061,29 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     return actions;
   }
 
-  Widget _ficheQuickActionsRow() {
-    final actions = _ficheQuickActions();
+  Widget _ficheQuickActionsRow(List<_QuickAction> actions) {
     return Container(
       height: 48,
       alignment: Alignment.centerLeft,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: ListView.separated(
+      child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        itemCount: actions.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, i) => actions[i].build(),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (int i = 0; i < actions.length; i++) ...[
+              if (i > 0) const SizedBox(width: 8),
+              actions[i].build(),
+            ],
+          ],
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final quickActions = _ficheQuickActions();
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F6),
       appBar: AppBar(
@@ -2107,9 +2113,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             ),
         ],
         bottom: PreferredSize(
-          preferredSize: Size.fromHeight(_ficheQuickActions().isEmpty ? 48 : 96),
+          preferredSize: Size.fromHeight(quickActions.isEmpty ? 48 : 96),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            if (_ficheQuickActions().isNotEmpty) _ficheQuickActionsRow(),
+            if (quickActions.isNotEmpty) _ficheQuickActionsRow(quickActions),
             TabBar(
           controller: _tabs,
           isScrollable: true,
