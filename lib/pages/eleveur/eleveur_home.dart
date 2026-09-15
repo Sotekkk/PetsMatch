@@ -38,6 +38,10 @@ import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
 import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
 import 'package:PetsMatch/pages/pro/pension_documents_page.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
+import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/sante_suivis_morpho_page.dart';
+import 'package:PetsMatch/pages/pro/sante_contrats_page.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -66,6 +70,7 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
   bool _loading = true;
   List<Map<String, dynamic>> _recentAnnonces = [];
   String _planCode    = 'free';
+  String _santePlanCode = 'free';
   int    _activeCount = 0;
   PlanConfig? _planConfig;
 
@@ -220,6 +225,20 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
           _patientCount  = (patients as List).length;
           _rdvTodayCount = (rdvToday as List).length;
         });
+      } else if (User_Info.catPro == 'sante') {
+        final patients = await pf(supa.from('animal_access')
+            .select('id').eq('pro_profile_id', pid).eq('statut', 'active'));
+        final rdvToday = await pf(supa.from('rdv').select('id')
+            .eq('pro_uid', uid)
+            .gte('date_heure', todayStart)
+            .lte('date_heure', todayEnd)
+            .inFilter('statut', activeStatuts));
+        final planCode = await PlanService.getPlanCode(uid, profilType: 'sante');
+        if (mounted) setState(() {
+          _patientCount  = (patients as List).length;
+          _rdvTodayCount = (rdvToday as List).length;
+          _santePlanCode = planCode;
+        });
       } else if (User_Info.catPro == 'pension') {
         final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
         final rdvToday = await pf(supa.from('rdv').select('id')
@@ -293,6 +312,10 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                         if (User_Info.catPro == 'garde') ...[
                           const SizedBox(height: 12),
                           _buildGardeShortcuts(context),
+                        ],
+                        if (User_Info.catPro == 'sante') ...[
+                          const SizedBox(height: 12),
+                          _buildSanteShortcuts(context),
                         ],
                         if (User_Info.catPro == 'pension' && _logementsTotal > 0) ...[
                           const SizedBox(height: 12),
@@ -492,11 +515,38 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
     }
     if (User_Info.catPro == 'veterinaire') {
       return Row(children: [
-        _StatCard(value: _patientCount.toString(), label: 'Patients', icon: Icons.favorite_outline),
+        _StatCard(
+          value: _patientCount.toString(), label: 'Patients', icon: Icons.favorite_outline,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VetPatientsPage())),
+        ),
         const SizedBox(width: 12),
-        _StatCard(value: _rdvTodayCount.toString(), label: 'RDV aujourd\'hui', icon: Icons.calendar_today_outlined),
+        _StatCard(
+          value: _rdvTodayCount.toString(), label: 'RDV aujourd\'hui', icon: Icons.calendar_today_outlined,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProAgendaPage())),
+        ),
         const SizedBox(width: 12),
-        _StatCard(value: 'Vétérinaire', label: 'Statut', icon: Icons.verified_outlined),
+        _StatCard(
+          value: 'Vétérinaire', label: 'Statut', icon: Icons.verified_outlined,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const VetAbonnementPage())),
+        ),
+      ]);
+    }
+    if (User_Info.catPro == 'sante') {
+      return Row(children: [
+        _StatCard(
+          value: _patientCount.toString(), label: 'Patients', icon: Icons.medical_information_outlined,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProClientsPage())),
+        ),
+        const SizedBox(width: 12),
+        _StatCard(
+          value: _rdvTodayCount.toString(), label: 'RDV aujourd\'hui', icon: Icons.calendar_today_outlined,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProAgendaPage())),
+        ),
+        const SizedBox(width: 12),
+        _StatCard(
+          value: 'Santé', label: 'Statut', icon: Icons.verified_outlined,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SanteAbonnementPage(profilType: 'sante'))),
+        ),
       ]);
     }
     if (User_Info.catPro == 'pension') {
@@ -605,6 +655,40 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
             onTap: () => go(const ClesClientsPage())),
         _QuickTile(icon: Icons.receipt_long_outlined, label: 'Factu-\nration', color: const Color(0xFF6E9E57),
             onTap: () => go(const FacturationPage())),
+      ],
+    );
+  }
+
+  Widget _buildSanteShortcuts(BuildContext context) {
+    void go(Widget page) =>
+        Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    final contratsLocked = _santePlanCode != 'pro';
+    return GridView.count(
+      crossAxisCount: 3,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 1.0,
+      children: [
+        _QuickTile(icon: Icons.medical_information_outlined, label: 'Mes\npatients', color: _teal,
+            onTap: () => go(const ProClientsPage())),
+        _QuickTile(icon: Icons.event_outlined, label: 'Mon\nagenda RDV', color: const Color(0xFF5F9EAA),
+            onTap: () => go(const ProAgendaPage())),
+        _QuickTile(icon: Icons.accessibility_new, label: 'Mes\nsuivis', color: const Color(0xFF7B5EA7),
+            onTap: () => go(const SanteSuivisMorphoPage())),
+        _QuickTile(
+            icon: Icons.description_outlined,
+            label: 'Mes\ncontrats',
+            color: contratsLocked ? Colors.grey : const Color(0xFFB8860B),
+            isLocked: contratsLocked,
+            onTap: () => go(contratsLocked
+                ? const SanteAbonnementPage(profilType: 'sante')
+                : const SanteContratsPage())),
+        _QuickTile(icon: Icons.receipt_long_outlined, label: 'Factu-\nration', color: const Color(0xFF6E9E57),
+            onTap: () => go(const FacturationPage())),
+        _QuickTile(icon: Icons.workspace_premium_outlined, label: 'Mon\nabonnement', color: const Color(0xFFD97706),
+            onTap: () => go(const SanteAbonnementPage(profilType: 'sante'))),
       ],
     );
   }

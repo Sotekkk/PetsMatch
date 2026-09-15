@@ -939,13 +939,20 @@ export default function Header() {
         ? { ...sec, items: [...sec.items, { href: abonnementHref, label: 'Mon abonnement', icon: '💳' }] }
         : sec)
     : withEmployeurs;
+  // « Mes suivis » (suivi morphologique — santé/ostéo·kiné uniquement,
+  // dans "Mon Activité" comme côté appli, pas verrouillé par plan).
+  const withSanteSuivis = (effectiveSubCatPro === 'sante')
+    ? withAbonnement.map((sec, i) => i === 0
+        ? { ...sec, items: [...sec.items, { href: '/sante/suivis', label: 'Mes suivis', icon: '🦴' }] }
+        : sec)
+    : withAbonnement;
   // « Mes Contrats » (santé/ostéo·kiné uniquement — MENU_VET est aussi
   // partagé par véto/maréchal-ferrant, qui n'ont pas cette fonctionnalité).
   const withSanteContrats = (effectiveSubCatPro === 'sante')
-    ? withAbonnement.map((sec, i) => i === 1
+    ? withSanteSuivis.map((sec, i) => i === 1
         ? { ...sec, items: [...sec.items, { href: '/sante/contrat', label: 'Mes Contrats', icon: '📄', premium: true }] }
         : sec)
-    : withAbonnement;
+    : withSanteSuivis;
   // Petites annonces « matériel & objets » liées aux animaux — accessible à
   // tous les profils (particulier, éleveur, association, pro). Section propre
   // pour éviter toute confusion avec les annonces d'animaux.

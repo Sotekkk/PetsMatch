@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth-context';
 import { RichText, RichTextEditor, richTextIsEmpty, richTextToPlain } from '@/lib/rich-text';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { AnatomieSeances } from '@/components/AnatomiePoints';
+import MorphoAnimalTab from '@/components/morpho/MorphoAnimalTab';
 import OwnerContactButton from '@/components/pro/OwnerContactButton';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -287,7 +288,11 @@ function PatientDetailPageInner() {
 
   const isPensionType = PENSION_TYPES.has(catPro);
   const isVet = catPro === 'veterinaire' || catPro === 'sante' || catPro === 'marechal_ferrant';
-  const hasAnatomie = catPro === 'sante' || catPro === 'marechal_ferrant';
+  // Anatomie (pointage libre) fusionne dans Morphologie pour santé — reste
+  // séparé pour maréchal-ferrant, hors périmètre de la fusion. Véto n'avait
+  // pas Anatomie mais obtient Morphologie (comme côté appli).
+  const hasAnatomie = catPro === 'marechal_ferrant';
+  const hasMorpho = catPro === 'sante' || catPro === 'veterinaire';
   const isEducation = catPro === 'education';
   const hasWriteAccess = isVet
     ? (grant?.statut === 'active' || grant?.statut === 'active_write')
@@ -302,9 +307,9 @@ function PatientDetailPageInner() {
   const TABS: string[] = isPensionType
     ? ['Identité', 'Santé', 'Alimentation', 'Propriétaire']
     : isVet
-      ? (hasAnatomie
-          ? ['Identité', 'Santé', 'Repro', 'Propriétaire', 'Consultations', 'Anatomie']
-          : ['Identité', 'Santé', 'Repro', 'Propriétaire', 'Consultations'])
+      ? ['Identité', 'Santé', 'Repro', 'Propriétaire', 'Consultations',
+          ...(hasAnatomie ? ['Anatomie'] : []),
+          ...(hasMorpho ? ['Morphologie'] : [])]
       : isEducation
         ? ['Identité', 'Santé', 'Éducation', 'Propriétaire']
         // Pet-sitter / toilettage / photographe / taxi animalier… : Consultations
@@ -1889,6 +1894,10 @@ function PatientDetailPageInner() {
 
         {tab === 'Anatomie' && animal && (
           <AnatomieSeances animalId={String(animal.id)} espece={animal.espece} profilType={catPro} />
+        )}
+
+        {tab === 'Morphologie' && animal && (
+          <MorphoAnimalTab animalId={String(animal.id)} espece={animal.espece} />
         )}
       </div>
 

@@ -1,9 +1,11 @@
+import 'dart:async' show unawaited;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/widgets/inline_video.dart';
 import 'morpho_constants.dart';
 import 'morpho_silhouette.dart';
+import 'morpho_pdf_service.dart';
 
 /// Consultation d'un suivi morphologique existant. [readOnly] n'affecte
 /// pas grand-chose en V1 (pas d'édition depuis cette page — un suivi est
@@ -29,6 +31,9 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
   List<Map<String, dynamic>> _observations = [];
   List<Map<String, dynamic>> _mouvements = [];
   late String _vue = vuesDisponibles(morphoSpeciesKey(widget.espece) ?? 'chien').first.$1;
+  Map<String, dynamic> _animal = {};
+  Map<String, dynamic> _pro = {};
+  bool _exporting = false;
 
   String get _suiviId => widget.suivi['id'].toString();
 
@@ -56,8 +61,64 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
         _mouvements = List<Map<String, dynamic>>.from(results[4] as List);
         _loading = false;
       });
+      unawaited(_loadAnimalEtPro());
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadAnimalEtPro() async {
+    try {
+      final animalId = widget.suivi['animal_id']?.toString();
+      final proProfileId = widget.suivi['pro_profile_id']?.toString();
+      final uidAuteur = widget.suivi['uid_auteur']?.toString();
+      final futures = <Future<dynamic>>[
+        if (animalId != null) _supa.from('animaux').select('nom, espece, race').eq('id', animalId).maybeSingle() else Future.value(null),
+        if (proProfileId != null)
+          _supa.from('user_profiles').select('nom, firstname, lastname, adress, phone_number, email_contact').eq('id', proProfileId).maybeSingle()
+        else if (uidAuteur != null)
+          _supa.from('user_profiles').select('nom, firstname, lastname, adress, phone_number, email_contact').eq('uid', uidAuteur).eq('is_main', true).maybeSingle()
+        else
+          Future.value(null),
+      ];
+      final res = await Future.wait(futures);
+      if (!mounted) return;
+      final animalRow = res[0] as Map<String, dynamic>?;
+      final proRow = res[1] as Map<String, dynamic>?;
+      final proNom = (proRow?['nom'] as String?)?.trim().isNotEmpty == true
+          ? proRow!['nom'] as String
+          : '${proRow?['firstname'] ?? ''} ${proRow?['lastname'] ?? ''}'.trim();
+      setState(() {
+        _animal = animalRow ?? {
+          'nom': widget.suivi['animal_nom_libre'] ?? 'Animal',
+          'espece': widget.suivi['espece_libre'] ?? widget.espece,
+        };
+        _pro = {
+          'nom': proNom.isNotEmpty ? proNom : '',
+          'adresse': proRow?['adress'] ?? '',
+          'tel': proRow?['phone_number'] ?? '',
+          'email': proRow?['email_contact'] ?? '',
+        };
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _exporterPdf() async {
+    setState(() => _exporting = true);
+    try {
+      final bytes = await morphoSuiviPdfBytes(
+        suivi: widget.suivi, animal: _animal, pro: _pro,
+        photos: _photos, points: _points, observations: _observations, mouvements: _mouvements,
+      );
+      final nomAnimal = (_animal['nom'] as String?)?.replaceAll(' ', '_') ?? 'animal';
+      final dateStr = (widget.suivi['date']?.toString() ?? '').split('T').first;
+      await sharemorphoSuiviPdf(bytes, filename: 'suivi_morpho_${nomAnimal}_$dateStr.pdf');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur export : $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
     }
   }
 
@@ -88,6 +149,16 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
         backgroundColor: kMorphoTeal, foregroundColor: Colors.white, elevation: 0,
         title: Text(labelTypeSuivi(s['type_suivi']?.toString()),
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+        actions: [
+          if (!_loading)
+            IconButton(
+              tooltip: 'Exporter / partager en PDF',
+              icon: _exporting
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.ios_share),
+              onPressed: _exporting ? null : _exporterPdf,
+            ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: kMorphoTeal))
@@ -105,6 +176,12 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
               _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 if (date != null)
                   _infoLine('Date', DateFormat('d MMMM yyyy', 'fr_FR').format(date)),
+                if (s['animal_id'] == null && (s['animal_nom_libre'] as String?)?.isNotEmpty == true)
+                  _infoLine('Animal', s['animal_nom_libre']),
+                if ((s['client_nom_libre'] as String?)?.isNotEmpty == true)
+                  _infoLine('Client', s['client_nom_libre']),
+                if ((s['client_contact_libre'] as String?)?.isNotEmpty == true)
+                  _infoLine('Contact', s['client_contact_libre']),
                 if ((s['professionnel_nom'] as String?)?.isNotEmpty == true)
                   _infoLine('Professionnel', s['professionnel_nom']),
                 if ((s['motif'] as String?)?.isNotEmpty == true) _infoLine('Motif', s['motif']),

@@ -14,17 +14,23 @@ const int _kMaxVideoBytes = 50 * 1024 * 1024; // 50 Mo — aligné sur pension_j
 /// d'origine : infos générales → données animal → photos → vidéos →
 /// silhouette → observations statiques → observations dynamiques.
 class MorphoFormPage extends StatefulWidget {
-  final String animalId;
+  /// Null pour un client/animal saisi à la main (pas de fiche animal
+  /// existante — voir [animalNomLibre]/[clientNomLibre]).
+  final String? animalId;
   final String espece;
   final String? proProfileId; // non-null si créé par un pro (source = professionnel)
   final String? proNom;
+  final String? animalNomLibre;
+  final String? clientNomLibre;
 
   const MorphoFormPage({
     super.key,
-    required this.animalId,
+    this.animalId,
     required this.espece,
     this.proProfileId,
     this.proNom,
+    this.animalNomLibre,
+    this.clientNomLibre,
   });
 
   @override
@@ -45,6 +51,9 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
   final _checkpointCtrl = TextEditingController();
   String _niveauActivite = 'non_evalue';
   final _activiteSportiveCtrl = TextEditingController();
+  late final _animalNomCtrl = TextEditingController(text: widget.animalNomLibre ?? '');
+  late final _clientNomCtrl = TextEditingController(text: widget.clientNomLibre ?? '');
+  final _clientContactCtrl = TextEditingController();
 
   final Map<String, File> _photosVues = {}; // face/dos/profil_g/profil_d
   final List<File> _photosExtra = [];
@@ -57,17 +66,19 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
 
   late String _vueSilhouette = vuesDisponibles(morphoSpeciesKey(widget.espece) ?? 'chien').first.$1;
 
+  bool get _saisieLibre => widget.animalId == null;
+
   @override
   void initState() {
     super.initState();
     if (widget.proNom != null) _professionnelCtrl.text = widget.proNom!;
-    _prefillAnimal();
+    if (widget.animalId != null) _prefillAnimal();
   }
 
   Future<void> _prefillAnimal() async {
     try {
       final a = await _supa.from('animaux').select('poids, taille, date_naissance')
-          .eq('id', widget.animalId).maybeSingle();
+          .eq('id', widget.animalId!).maybeSingle();
       if (a == null || !mounted) return;
       if (a['poids'] != null) _poidsCtrl.text = a['poids'].toString();
       if (a['taille'] != null) _tailleCtrl.text = a['taille'].toString();
@@ -83,6 +94,9 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
     _tailleCtrl.dispose();
     _checkpointCtrl.dispose();
     _activiteSportiveCtrl.dispose();
+    _animalNomCtrl.dispose();
+    _clientNomCtrl.dispose();
+    _clientContactCtrl.dispose();
     super.dispose();
   }
 
@@ -164,7 +178,7 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
     try {
       final source = widget.proProfileId != null ? 'professionnel' : 'proprietaire';
       final inserted = await _supa.from('suivis_morpho').insert({
-        'animal_id': widget.animalId,
+        if (widget.animalId != null) 'animal_id': widget.animalId,
         'uid_auteur': uid,
         if (widget.proProfileId != null) 'pro_profile_id': widget.proProfileId,
         'type_suivi': _typeSuivi,
@@ -179,10 +193,14 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
         'niveau_activite': _niveauActivite,
         if (_activiteSportiveCtrl.text.trim().isNotEmpty) 'activite_sportive': _activiteSportiveCtrl.text.trim(),
         if (_checkpointCtrl.text.trim().isNotEmpty) 'checkpoint_age': _checkpointCtrl.text.trim(),
+        if (_saisieLibre && _animalNomCtrl.text.trim().isNotEmpty) 'animal_nom_libre': _animalNomCtrl.text.trim(),
+        if (_saisieLibre) 'espece_libre': morphoSpeciesKey(widget.espece) ?? widget.espece,
+        if (_saisieLibre && _clientNomCtrl.text.trim().isNotEmpty) 'client_nom_libre': _clientNomCtrl.text.trim(),
+        if (_saisieLibre && _clientContactCtrl.text.trim().isNotEmpty) 'client_contact_libre': _clientContactCtrl.text.trim(),
         'source': source,
       }).select('id').single();
       final suiviId = inserted['id'] as String;
-      final base = 'animaux/${widget.animalId}/morpho/$suiviId';
+      final base = 'animaux/${widget.animalId ?? 'libre'}/morpho/$suiviId';
 
       // Photos de vues guidées
       for (final entry in _photosVues.entries) {
@@ -273,6 +291,20 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
           const SizedBox(height: 12),
           _textField('Commentaires généraux', _commentairesCtrl, maxLines: 3),
         ])),
+
+        if (_saisieLibre) ...[
+          _sectionTitle('Client'),
+          _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Client occasionnel, sans fiche existante dans l\'application.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+            const SizedBox(height: 10),
+            _textField('Nom de l\'animal', _animalNomCtrl),
+            const SizedBox(height: 12),
+            _textField('Nom du client (facultatif)', _clientNomCtrl),
+            const SizedBox(height: 12),
+            _textField('Contact — téléphone ou email (facultatif)', _clientContactCtrl),
+          ])),
+        ],
 
         _sectionTitle('Données de l\'animal'),
         _card(child: Column(children: [

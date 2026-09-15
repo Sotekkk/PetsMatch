@@ -99,7 +99,8 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
   const isEducation = catPro === 'education';
   const isGarde = catPro === 'garde';
   const todayIso = new Date().toISOString().slice(0, 10);
-  const rdvTodayEdu = upcomingRdvs.filter(r => (r.date_heure ?? '').slice(0, 10) === todayIso).length;
+  const rdvToday = upcomingRdvs.filter(r => (r.date_heure ?? '').slice(0, 10) === todayIso).length;
+  const abonnementHref = catPro === 'veterinaire' ? '/veterinaire/abonnement' : '/sante/abonnement';
   const name   = profile.nom || userData?.firstname || 'Mon cabinet';
   const avatar = profile.avatar_url ?? userData?.profilePictureUrlElevage ?? userData?.profilePictureUrl ?? null;
 
@@ -308,7 +309,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
           ) : isEducation ? (
             <div className="grid grid-cols-3 gap-3 mt-4">
               <Link href="/education/planning" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold">{rdvTodayEdu}</p>
+                <p className="text-2xl font-bold">{rdvToday}</p>
                 <p className="text-xs text-white/70 mt-0.5">RDV aujourd&apos;hui</p>
               </Link>
               <Link href="/mes-rdv" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center">
@@ -318,6 +319,21 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
               <Link href="/education/abonnement" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center flex flex-col justify-center">
                 <p className="text-base font-bold">Éducateur</p>
                 <p className="text-xs text-white/70 mt-0.5">Ma formule</p>
+              </Link>
+            </div>
+          ) : isVet ? (
+            <div className="grid grid-cols-3 gap-3 mt-4">
+              <Link href="/mes-patients" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold">{patients.length}</p>
+                <p className="text-xs text-white/70 mt-0.5">Patients</p>
+              </Link>
+              <Link href="/mes-rdv" className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold">{rdvToday}</p>
+                <p className="text-xs text-white/70 mt-0.5">RDV aujourd&apos;hui</p>
+              </Link>
+              <Link href={abonnementHref} className="bg-white/10 hover:bg-white/20 transition-colors rounded-xl p-3 text-center flex flex-col justify-center">
+                <p className="text-base font-bold">{TYPE_LABEL[catPro] ?? 'Pro'}</p>
+                <p className="text-xs text-white/70 mt-0.5">Mon forfait</p>
               </Link>
             </div>
           ) : (
@@ -332,9 +348,7 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
               </div>
               <div className="bg-white/10 rounded-xl p-3 text-center">
                 <p className="text-2xl font-bold">{patients.length}</p>
-                <p className="text-xs text-white/70 mt-0.5">
-                  {isVet ? 'Patients' : 'Animaux suivis'}
-                </p>
+                <p className="text-xs text-white/70 mt-0.5">Animaux suivis</p>
               </div>
             </div>
           )}
@@ -393,6 +407,30 @@ export default function ProDashboard({ profile, profileId }: { profile: ProProfi
                 <Link href="/education/bibliotheque" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
                   <div className="text-2xl mb-1">🏋️</div>
                   <p className="text-xs font-semibold text-[#1F2A2E]">Bibliothèque d&apos;exercices</p>
+                </Link>
+              </>
+            )}
+            {isVet && (
+              <>
+                <Link href="/mes-patients" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
+                  <div className="text-2xl mb-1">🐾</div>
+                  <p className="text-xs font-semibold text-[#1F2A2E]">Mes patients</p>
+                </Link>
+                {catPro === 'sante' && (
+                  <>
+                    <Link href="/sante/suivis" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
+                      <div className="text-2xl mb-1">🦴</div>
+                      <p className="text-xs font-semibold text-[#1F2A2E]">Mes suivis</p>
+                    </Link>
+                    <Link href="/sante/contrat" className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
+                      <div className="text-2xl mb-1">📄</div>
+                      <p className="text-xs font-semibold text-[#1F2A2E]">Mes contrats</p>
+                    </Link>
+                  </>
+                )}
+                <Link href={abonnementHref} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition-shadow text-center">
+                  <div className="text-2xl mb-1">⭐</div>
+                  <p className="text-xs font-semibold text-[#1F2A2E]">Mon abonnement</p>
                 </Link>
               </>
             )}
