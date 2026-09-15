@@ -506,19 +506,26 @@ export default function ProCreneauxPage() {
               </div>
             )}
 
-            {(catPro === 'education' || catPro === 'sante') && addMode === 'disponible' && (
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-xs font-semibold text-gray-500" style={{ fontFamily: 'Galey, sans-serif' }}>
-                  Disponible à domicile
-                </span>
-                <button type="button" onClick={() => setAddDomicile(v => !v)}
-                  className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
-                  style={{ backgroundColor: addDomicile ? '#7B5EA7' : '#D1D5DB' }}>
-                  <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform"
-                    style={{ transform: addDomicile ? 'translateX(20px)' : 'translateX(0)' }} />
-                </button>
-              </div>
-            )}
+            {(catPro === 'education' || catPro === 'sante') && addMode === 'disponible' && (() => {
+              const accent = catPro === 'sante' ? '#0C5C6C' : '#7B5EA7';
+              return (
+                <div className="rounded-xl p-3 flex items-center justify-between gap-4"
+                  style={{ background: `${accent}0F`, border: `1.5px solid ${accent}59` }}>
+                  <div className="flex items-center gap-2">
+                    <span style={{ color: addDomicile ? accent : '#9CA3AF' }}>🏠</span>
+                    <span className="text-sm font-bold text-gray-800" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      Proposer ce créneau à domicile
+                    </span>
+                  </div>
+                  <button type="button" onClick={() => setAddDomicile(v => !v)}
+                    className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
+                    style={{ backgroundColor: addDomicile ? accent : '#D1D5DB' }}>
+                    <span className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform"
+                      style={{ transform: addDomicile ? 'translateX(20px)' : 'translateX(0)' }} />
+                  </button>
+                </div>
+              );
+            })()}
 
             {/* Type de créneau (pet sitting uniquement) — calqué sur l'appli */}
             {catPro === 'garde' && addMode === 'disponible' && (

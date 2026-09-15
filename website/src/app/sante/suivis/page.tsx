@@ -13,7 +13,7 @@ interface SuiviRow {
   _animal_nom?: string; _animal_espece?: string;
 }
 
-interface Patient { id: string; nom: string; espece: string }
+interface Patient { id: string; nom: string; espece: string; ownerName?: string }
 
 export default function SanteSuivisPage() {
   const { user, userData, isSante, loading: authLoading } = useSanteAccess();
@@ -23,6 +23,7 @@ export default function SanteSuivisPage() {
   const [loading, setLoading] = useState(true);
   const [picker, setPicker] = useState<'closed' | 'choix' | 'libre'>('closed');
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [patientSearch, setPatientSearch] = useState('');
   const [espece, setEspece] = useState('chien');
   const [creating, setCreating] = useState(false);
 
@@ -56,18 +57,45 @@ export default function SanteSuivisPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Tous les vrais patients du pro : accès accordés (animal_access) UNION
+  // animaux d'un RDV confirmé/terminé — même requête que /mes-patients, pour
+  // que « Mes suivis » propose la liste complète et pas seulement les
+  // patients déjà venus en RDV.
   async function ouvrirChoixPatient() {
-    if (!user) return;
-    let rq = supabase.from('rdv').select('animal_id, date_heure').eq('pro_uid', user.uid).not('animal_id', 'is', null);
-    if (activeProfileId) rq = rq.eq('pro_profile_id', activeProfileId) as typeof rq;
-    const { data: rdvs } = await rq.in('statut', ['confirme', 'termine']).order('date_heure', { ascending: false });
-    const animalIds = [...new Set(((rdvs ?? []) as { animal_id: string }[]).map(r => r.animal_id))];
-    if (animalIds.length) {
-      const { data: animaux } = await supabase.from('animaux').select('id, nom, espece').in('id', animalIds);
-      setPatients((animaux ?? []) as Patient[]);
-    } else {
-      setPatients([]);
+    if (!user || !activeProfileId) { setPatients([]); setPicker('choix'); return; }
+    const { data: grantRows } = await supabase.from('animal_access')
+      .select('animal_id, granted_by_profile_id')
+      .eq('pro_profile_id', activeProfileId).in('statut', ['active', 'write_requested', 'active_write']);
+    const seen = new Map<string, string | null>();
+    for (const g of (grantRows ?? []) as { animal_id: string; granted_by_profile_id: string | null }[]) {
+      seen.set(g.animal_id, g.granted_by_profile_id);
     }
+    const { data: rdvRows } = await supabase.from('rdv').select('animal_id')
+      .eq('pro_uid', user.uid).eq('pro_profile_id', activeProfileId)
+      .in('statut', ['confirme', 'termine']).not('animal_id', 'is', null);
+    for (const r of (rdvRows ?? []) as { animal_id: string }[]) {
+      if (!seen.has(r.animal_id)) seen.set(r.animal_id, null);
+    }
+    if (seen.size === 0) { setPatients([]); setPicker('choix'); return; }
+
+    const { data: animaux } = await supabase.from('animaux').select('id, nom, espece').in('id', [...seen.keys()]);
+    const ownerProfileIds = [...new Set([...seen.values()].filter((v): v is string => !!v))];
+    const ownerNames = new Map<string, string>();
+    if (ownerProfileIds.length) {
+      const { data: profiles } = await supabase.from('user_profiles').select('id, firstname, lastname, nom').in('id', ownerProfileIds);
+      for (const u of (profiles ?? []) as { id: string; firstname: string | null; lastname: string | null; nom: string | null }[]) {
+        const name = u.nom?.trim() || `${u.firstname ?? ''} ${u.lastname ?? ''}`.trim();
+        ownerNames.set(u.id, name || 'Propriétaire');
+      }
+    }
+    const list: Patient[] = ((animaux ?? []) as { id: string; nom: string; espece: string }[])
+      .map(a => {
+        const ownerPid = seen.get(a.id);
+        return { ...a, ownerName: ownerPid ? ownerNames.get(ownerPid) ?? '' : '' };
+      })
+      .sort((a, b) => a.nom.localeCompare(b.nom));
+    setPatients(list);
+    setPatientSearch('');
     setPicker('choix');
   }
 
@@ -130,18 +158,29 @@ export default function SanteSuivisPage() {
             </button>
             {patients.length > 0 && (
               <>
-                <p className="text-xs font-semibold text-gray-500 font-galey mb-2">Ou un patient existant</p>
-                <div className="flex flex-col gap-2">
-                  {patients.map(p => {
-                    const supported = morphoSpeciesSupported(p.espece);
-                    return (
-                      <button key={p.id} disabled={!supported} onClick={() => creerPourPatient(p)}
-                        className="text-left p-3 rounded-xl border border-gray-200 hover:bg-teal-50 disabled:opacity-40">
-                        <p className="font-semibold font-galey text-gray-900 text-sm">{p.nom}</p>
-                        <p className="text-xs text-gray-500 font-galey">{supported ? p.espece : 'Espèce non disponible pour le suivi morphologique'}</p>
-                      </button>
-                    );
-                  })}
+                <input value={patientSearch} onChange={e => setPatientSearch(e.target.value)}
+                  placeholder="Rechercher un patient ou un propriétaire…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-galey mb-2" />
+                <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
+                  {patients
+                    .filter(p => {
+                      const q = patientSearch.trim().toLowerCase();
+                      if (!q) return true;
+                      return p.nom.toLowerCase().includes(q) || (p.ownerName ?? '').toLowerCase().includes(q);
+                    })
+                    .map(p => {
+                      const supported = morphoSpeciesSupported(p.espece);
+                      return (
+                        <button key={p.id} disabled={!supported} onClick={() => creerPourPatient(p)}
+                          className="text-left p-3 rounded-xl border border-gray-200 hover:bg-teal-50 disabled:opacity-40">
+                          <p className="font-semibold font-galey text-gray-900 text-sm">{p.nom}</p>
+                          <p className="text-xs text-gray-500 font-galey">
+                            {!supported ? 'Espèce non disponible pour le suivi morphologique'
+                              : p.ownerName ? `${p.espece} · ${p.ownerName}` : p.espece}
+                          </p>
+                        </button>
+                      );
+                    })}
                 </div>
               </>
             )}

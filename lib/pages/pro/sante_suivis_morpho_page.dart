@@ -58,68 +58,136 @@ class _SanteSuivisMorphoPageState extends State<SanteSuivisMorphoPage> {
     }
   }
 
+  /// Tous les vrais patients du pro : accès accordés (animal_access) UNION
+  /// animaux d'un RDV confirmé/terminé — même requête que pro_clients_page.dart
+  /// (« Mes patients »), pour que « Mes suivis » propose la liste complète et
+  /// pas seulement les patients déjà venus en RDV.
+  Future<List<Map<String, dynamic>>> _loadVraisPatients(String uid, String pid) async {
+    final grants = await _supa.from('animal_access').select('animal_id, granted_by_profile_id')
+        .eq('pro_profile_id', pid).inFilter('statut', ['active', 'write_requested', 'active_write']);
+    final rdvAnimals = await _supa.from('rdv').select('animal_id, client_uid')
+        .eq('pro_uid', uid).eq('pro_profile_id', pid)
+        .inFilter('statut', ['confirme', 'termine']).not('animal_id', 'is', null);
+
+    final seen = <String, Map<String, dynamic>>{};
+    for (final g in (grants as List)) {
+      final id = g['animal_id']?.toString();
+      if (id != null) seen[id] = {'granted_by_profile_id': g['granted_by_profile_id']};
+    }
+    for (final r in (rdvAnimals as List)) {
+      final id = r['animal_id']?.toString();
+      if (id != null && !seen.containsKey(id)) seen[id] = {'owner_uid': r['client_uid']};
+    }
+    if (seen.isEmpty) return [];
+
+    final animaux = await _supa.from('animaux').select('id, nom, espece')
+        .inFilter('id', seen.keys.toList());
+
+    final ownerProfileIds = seen.values.map((e) => e['granted_by_profile_id'] as String?)
+        .whereType<String>().toSet().toList();
+    final ownerNames = <String, String>{};
+    if (ownerProfileIds.isNotEmpty) {
+      final profiles = await _supa.from('user_profiles').select('id, firstname, lastname, nom')
+          .inFilter('id', ownerProfileIds);
+      for (final u in (profiles as List)) {
+        final name = (u['nom'] as String?)?.isNotEmpty == true
+            ? u['nom'] as String
+            : '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+        ownerNames[u['id'] as String] = name.isNotEmpty ? name : 'Propriétaire';
+      }
+    }
+
+    return (animaux as List).map<Map<String, dynamic>>((a) {
+      final extra = seen[a['id']?.toString()] ?? {};
+      final ownerPid = extra['granted_by_profile_id'] as String?;
+      return {...a, '_owner_name': ownerNames[ownerPid] ?? ''};
+    }).toList()
+      ..sort((a, b) => (a['nom']?.toString() ?? '').compareTo(b['nom']?.toString() ?? ''));
+  }
+
   Future<void> _nouveauSuivi() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     final pid = User_Info.activeProfileId;
-    var rq = _supa.from('rdv').select('animal_id, date_heure').eq('pro_uid', uid);
-    if (pid.isNotEmpty) rq = rq.eq('pro_profile_id', pid);
-    final rows = await rq.inFilter('statut', ['confirme', 'termine']).not('animal_id', 'is', null).order('date_heure', ascending: false);
-    final animalIds = <String>[];
-    for (final r in (rows as List)) {
-      final id = r['animal_id']?.toString();
-      if (id != null && !animalIds.contains(id)) animalIds.add(id);
-    }
-    List<Map<String, dynamic>> animauxList = [];
-    if (animalIds.isNotEmpty) {
-      final animaux = await _supa.from('animaux').select('id, nom, espece').inFilter('id', animalIds);
-      animauxList = List<Map<String, dynamic>>.from(animaux as List)
-        ..sort((a, b) => animalIds.indexOf(a['id'].toString()).compareTo(animalIds.indexOf(b['id'].toString())));
-    }
+    final animauxList = pid.isNotEmpty ? await _loadVraisPatients(uid, pid) : <Map<String, dynamic>>[];
 
     if (!mounted) return;
+    final searchCtrl = TextEditingController();
     final choix = await showModalBottomSheet<Object>(
       context: context, backgroundColor: Colors.white, isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const SizedBox(height: 12),
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text('Nouveau suivi', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+      builder: (_) => StatefulBuilder(builder: (context, setSheetState) {
+        final query = searchCtrl.text.trim().toLowerCase();
+        final filtered = query.isEmpty
+            ? animauxList
+            : animauxList.where((a) =>
+                (a['nom']?.toString() ?? '').toLowerCase().contains(query) ||
+                (a['_owner_name']?.toString() ?? '').toLowerCase().contains(query)).toList();
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const SizedBox(height: 12),
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Align(alignment: Alignment.centerLeft, child: Text('Nouveau suivi', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15))),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const CircleAvatar(backgroundColor: Color(0xFFE0F2F1),
+                    child: Icon(Icons.person_add_alt_1, color: kMorphoTeal, size: 20)),
+                title: const Text('Client occasionnel (sans compte)', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+                subtitle: const Text('Nom de l\'animal saisi à la main', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                onTap: () => Navigator.pop(context, 'libre'),
+              ),
+              if (animauxList.isNotEmpty) ...[
+                const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+                  child: TextField(
+                    controller: searchCtrl,
+                    onChanged: (_) => setSheetState(() {}),
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Rechercher un patient ou un propriétaire…',
+                      hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400),
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      isDense: true, filled: true, fillColor: const Color(0xFFF5F5F5),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                    ),
+                  ),
+                ),
+                Flexible(
+                  child: filtered.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text('Aucun patient trouvé', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
+                        )
+                      : ListView(shrinkWrap: true, children: filtered.map((a) {
+                          final supported = morphoSpeciesSupported(a['espece']?.toString());
+                          final owner = a['_owner_name']?.toString() ?? '';
+                          return ListTile(
+                            enabled: supported,
+                            leading: CircleAvatar(backgroundColor: const Color(0xFFE0F2F1),
+                                child: Icon(Icons.pets, color: supported ? kMorphoTeal : Colors.grey, size: 20)),
+                            title: Text(a['nom']?.toString() ?? 'Animal', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+                            subtitle: Text(
+                                !supported
+                                    ? 'Espèce non disponible pour le suivi morphologique'
+                                    : owner.isNotEmpty ? '${a['espece'] ?? ''} · $owner' : (a['espece']?.toString() ?? ''),
+                                style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                            onTap: supported ? () => Navigator.pop(context, a) : null,
+                          );
+                        }).toList()),
+                ),
+              ],
+              const SizedBox(height: 8),
+            ]),
           ),
-          ListTile(
-            leading: const CircleAvatar(backgroundColor: Color(0xFFE0F2F1),
-                child: Icon(Icons.person_add_alt_1, color: kMorphoTeal, size: 20)),
-            title: const Text('Client occasionnel (sans compte)', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
-            subtitle: const Text('Nom de l\'animal saisi à la main', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
-            onTap: () => Navigator.pop(context, 'libre'),
-          ),
-          if (animauxList.isNotEmpty) ...[
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-              child: Text('Ou un patient existant', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade500)),
-            ),
-            Flexible(
-              child: ListView(shrinkWrap: true, children: animauxList.map((a) {
-                final supported = morphoSpeciesSupported(a['espece']?.toString());
-                return ListTile(
-                  enabled: supported,
-                  leading: CircleAvatar(backgroundColor: const Color(0xFFE0F2F1),
-                      child: Icon(Icons.pets, color: supported ? kMorphoTeal : Colors.grey, size: 20)),
-                  title: Text(a['nom']?.toString() ?? 'Animal', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
-                  subtitle: Text(supported ? (a['espece']?.toString() ?? '') : 'Espèce non disponible pour le suivi morphologique',
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                  onTap: supported ? () => Navigator.pop(context, a) : null,
-                );
-              }).toList()),
-            ),
-          ],
-          const SizedBox(height: 8),
-        ]),
-      ),
+        );
+      }),
     );
     if (choix == null) return;
 

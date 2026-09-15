@@ -2825,9 +2825,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                   width: double.infinity,
                   padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
                   decoration: BoxDecoration(
-                    color: const Color(0x0A7B5EA7),
+                    color: (User_Info.catPro == 'sante' ? const Color(0xFF0C5C6C) : const Color(0xFF7B5EA7)).withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0x337B5EA7)),
+                    border: Border.all(color: (User_Info.catPro == 'sante' ? const Color(0xFF0C5C6C) : const Color(0xFF7B5EA7)).withValues(alpha: 0.35), width: 1.5),
                   ),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     if (User_Info.catPro == 'education') ...[
@@ -2879,13 +2879,24 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                       ],
                       const Divider(height: 20),
                     ],
+                    if (User_Info.catPro == 'sante') ...[
+                      const Text('Lieu du rendez-vous', style: TextStyle(
+                          fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700,
+                          color: Color(0xFF0C5C6C))),
+                      const SizedBox(height: 8),
+                    ],
                     Row(children: [
+                      Icon(Icons.home_outlined, size: 18,
+                          color: domicileOk
+                              ? (User_Info.catPro == 'sante' ? const Color(0xFF0C5C6C) : const Color(0xFF7B5EA7))
+                              : Colors.grey.shade400),
+                      const SizedBox(width: 8),
                       Expanded(child: Text('Proposer ce créneau à domicile', style: TextStyle(
-                          fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                          fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700,
                           color: Colors.grey.shade800))),
                       Switch(
                         value: domicileOk,
-                        activeThumbColor: const Color(0xFF7B5EA7),
+                        activeThumbColor: User_Info.catPro == 'sante' ? const Color(0xFF0C5C6C) : const Color(0xFF7B5EA7),
                         onChanged: (v) => setS(() => domicileOk = v),
                       ),
                     ]),
