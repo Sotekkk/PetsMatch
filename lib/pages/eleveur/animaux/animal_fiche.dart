@@ -57,32 +57,52 @@ class _ContactUrgence {
 
 class _QuickAction {
   final IconData icon;
-  final String label;
+  final String? label;
   final Color color;
   final VoidCallback onTap;
-  _QuickAction({required this.icon, required this.label, required this.color, required this.onTap});
+  final String? tooltip;
+  /// Bouton icône seule (pas de texte) — réservé au partage, dont le
+  /// pictogramme est reconnu universellement et n'a pas besoin de libellé.
+  final bool iconOnly;
+  _QuickAction({
+    required this.icon,
+    this.label,
+    required this.color,
+    required this.onTap,
+    this.tooltip,
+    this.iconOnly = false,
+  });
 
-  Widget build() => Material(
+  Widget build() {
+    if (iconOnly) {
+      return Material(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: color.withValues(alpha: 0.35)),
-            ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(icon, size: 15, color: color),
-              const SizedBox(width: 6),
-              Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                  fontWeight: FontWeight.w600, color: color)),
-            ]),
-          ),
+        shape: const CircleBorder(),
+        child: IconButton(
+          icon: Icon(icon, size: 20, color: color),
+          tooltip: tooltip ?? label,
+          onPressed: onTap,
         ),
       );
+    }
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: color.withValues(alpha: 0.35)),
+          ),
+          child: Text(label ?? '', style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+              fontWeight: FontWeight.w600, color: color)),
+        ),
+      ),
+    );
+  }
 }
 
 // ─── Page principale ──────────────────────────────────────────────────────────
@@ -1926,8 +1946,9 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     final actions = <_QuickAction>[];
     if (!widget.vetMode) {
       actions.add(_QuickAction(
-        icon: Icons.share_outlined,
-        label: 'Partager',
+        icon: Icons.ios_share,
+        tooltip: 'Partager avec mon vétérinaire',
+        iconOnly: true,
         color: const Color(0xFF5F9EAA),
         onTap: () => showVetShareSheet(context, widget.animalId!),
       ));
