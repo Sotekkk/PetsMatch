@@ -278,10 +278,15 @@ export default function AjouterAnimalPage() {
         {/* ── Identification ── */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            N° identification <span className="text-gray-400 font-normal">(puce / tatouage)</span>
+            N° identification {['chien', 'chat'].includes(espece)
+              ? <span className="text-gray-400 font-normal">(I-CAD, 15 chiffres)</span>
+              : <span className="text-gray-400 font-normal">(puce / tatouage)</span>}
           </label>
           <input className={iCls} value={identification}
-            onChange={e => setIdentification(e.target.value)}
+            inputMode={['chien', 'chat'].includes(espece) ? 'numeric' : undefined}
+            onChange={e => setIdentification(
+              ['chien', 'chat'].includes(espece) ? e.target.value.replace(/\D/g, '') : e.target.value
+            )}
             placeholder="Ex: 250268500001234" />
         </div>
 
@@ -308,7 +313,7 @@ export default function AjouterAnimalPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Type de poil</label>
             <div className="flex flex-wrap gap-2">
-              {TYPES_POIL.map(t => (
+              {[...TYPES_POIL, ...(espece === 'chien' ? ['Dur'] : [])].map(t => (
                 <button key={t} type="button"
                   onClick={() => setTypePoil(typePoil === t ? '' : t)}
                   className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${

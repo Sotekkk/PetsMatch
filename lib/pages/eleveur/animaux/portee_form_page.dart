@@ -528,7 +528,8 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
     _textField(_nomPereCtrl, 'Nom', enabled: _pereSelected == null),
     const SizedBox(height: 10),
     _label('Identification (puce / tatouage)'),
-    _textField(_pucePereCtrl, 'Numéro de puce ou tatouage', enabled: _pereSelected == null),
+    _textField(_pucePereCtrl, _identDigitsOnly ? 'Numéro I-CAD (15 chiffres)' : 'Numéro de puce ou tatouage',
+        enabled: _pereSelected == null, keyboardType: _identKeyboard, inputFormatters: _identFormatters),
   ]);
 
   Widget _sectionMere() => _card('Mère', Icons.female, [
@@ -558,7 +559,8 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
     _textField(_nomMereCtrl, 'Nom', enabled: _mereSelected == null),
     const SizedBox(height: 10),
     _label('Identification (puce / tatouage)'),
-    _textField(_puceMereCtrl, 'Numéro de puce ou tatouage', enabled: _mereSelected == null),
+    _textField(_puceMereCtrl, _identDigitsOnly ? 'Numéro I-CAD (15 chiffres)' : 'Numéro de puce ou tatouage',
+        enabled: _mereSelected == null, keyboardType: _identKeyboard, inputFormatters: _identFormatters),
     const SizedBox(height: 10),
     _label('Race de la mère'),
     _raceMereField(enabled: _mereSelected == null),
@@ -665,7 +667,8 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             _label('N° identification'),
-            _textField(row.ident, 'Puce / tatouage'),
+            _textField(row.ident, _identDigitsOnly ? 'Puce (15 chiffres)' : 'Puce / tatouage',
+                keyboardType: _identKeyboard, inputFormatters: _identFormatters),
           ])),
         ]),
         const SizedBox(height: 10),
@@ -709,7 +712,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
           const SizedBox(height: 10),
           _label('Type de poil'),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            for (final t in _kTypesPoil)
+            for (final t in [..._kTypesPoil, if (_espece == 'chien') 'Dur'])
               GestureDetector(
                 onTap: () => setState(() => row.typePoil = row.typePoil == t ? '' : t),
                 child: AnimatedContainer(
@@ -813,13 +816,21 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
     filled: true, fillColor: const Color(0xFFF8F9FA),
   );
 
-  Widget _textField(TextEditingController ctrl, String hint, {bool enabled = true}) =>
+  Widget _textField(TextEditingController ctrl, String hint,
+          {bool enabled = true, TextInputType? keyboardType, List<TextInputFormatter>? inputFormatters}) =>
       TextFormField(
         controller: ctrl,
         enabled: enabled,
+        keyboardType: keyboardType,
+        inputFormatters: inputFormatters,
         style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF1F2A2E)),
         decoration: _inputDeco(hint),
       );
+
+  bool get _identDigitsOnly => _espece == 'chien' || _espece == 'chat';
+  List<TextInputFormatter>? get _identFormatters =>
+      _identDigitsOnly ? [FilteringTextInputFormatter.digitsOnly] : null;
+  TextInputType? get _identKeyboard => _identDigitsOnly ? TextInputType.number : null;
 
   Widget _raceField() {
     final breeds = _currentBreeds;

@@ -421,7 +421,9 @@ export default function PorteePage() {
             <div className="flex-1">
               <label className="block text-xs font-medium text-gray-600 mb-1">N° identification</label>
               <input className={iSmCls} value={pucePere} disabled={!!pereSelected}
-                onChange={e => setPucePere(e.target.value)} placeholder="Puce / tatouage" />
+                inputMode={['chien', 'chat'].includes(espece) ? 'numeric' : undefined}
+                onChange={e => setPucePere(['chien', 'chat'].includes(espece) ? e.target.value.replace(/\D/g, '') : e.target.value)}
+                placeholder={['chien', 'chat'].includes(espece) ? 'I-CAD (15 chiffres)' : 'Puce / tatouage'} />
             </div>
           </div>
         </div>
@@ -465,7 +467,9 @@ export default function PorteePage() {
             <div className="flex-1">
               <label className="block text-xs font-medium text-gray-600 mb-1">N° identification</label>
               <input className={iSmCls} value={puceMere} disabled={!!mereSelected}
-                onChange={e => setPuceMere(e.target.value)} placeholder="Puce / tatouage" />
+                inputMode={['chien', 'chat'].includes(espece) ? 'numeric' : undefined}
+                onChange={e => setPuceMere(['chien', 'chat'].includes(espece) ? e.target.value.replace(/\D/g, '') : e.target.value)}
+                placeholder={['chien', 'chat'].includes(espece) ? 'I-CAD (15 chiffres)' : 'Puce / tatouage'} />
             </div>
           </div>
           <div className="flex gap-3">
@@ -539,8 +543,10 @@ export default function PorteePage() {
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">N° identification</label>
                     <input className={iSmCls} value={row.identification}
-                      onChange={e => updateRow(i, 'identification', e.target.value)}
-                      placeholder="Puce / tatouage" />
+                      inputMode={['chien', 'chat'].includes(espece) ? 'numeric' : undefined}
+                      onChange={e => updateRow(i, 'identification',
+                        ['chien', 'chat'].includes(espece) ? e.target.value.replace(/\D/g, '') : e.target.value)}
+                      placeholder={['chien', 'chat'].includes(espece) ? 'I-CAD (15 chiffres)' : 'Puce / tatouage'} />
                   </div>
                 </div>
                 {/* Sexe */}
@@ -577,7 +583,7 @@ export default function PorteePage() {
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1.5">Type de poil</label>
                     <div className="flex flex-wrap gap-1.5">
-                      {TYPES_POIL.map(t => (
+                      {[...TYPES_POIL, ...(espece === 'chien' ? ['Dur'] : [])].map(t => (
                         <button key={t} type="button" onClick={() => updateRow(i, 'type_poil', row.type_poil === t ? '' : t)}
                           className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${row.type_poil === t ? 'bg-[#0C5C6C] border-[#0C5C6C] text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
                           {t}

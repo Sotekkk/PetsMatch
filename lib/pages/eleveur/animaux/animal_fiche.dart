@@ -2326,7 +2326,16 @@ class _IdentiteTab extends StatelessWidget {
                   if (s._espece == 'cheval') ...[
                     _field('N° de transpondeur (puce)', s._identCtrl),
                   ] else ...[
-                    _field(_identLabel, s._identCtrl),
+                    _field(
+                      _identLabel,
+                      s._identCtrl,
+                      inputType: s._espece == 'chien' || s._espece == 'chat'
+                          ? TextInputType.number
+                          : null,
+                      inputFormatters: s._espece == 'chien' || s._espece == 'chat'
+                          ? [FilteringTextInputFormatter.digitsOnly]
+                          : null,
+                    ),
                     _field('Passeport européen n°', s._passeportCtrl),
                   ],
                 ]),
@@ -2973,13 +2982,14 @@ class _IdentiteTab extends StatelessWidget {
     );
   }
 
-  Widget _field(String label, TextEditingController ctrl, {bool required = false, int maxLines = 1, TextInputType? inputType}) {
+  Widget _field(String label, TextEditingController ctrl, {bool required = false, int maxLines = 1, TextInputType? inputType, List<TextInputFormatter>? inputFormatters}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: TextFormField(
         controller: ctrl,
         maxLines: maxLines,
         keyboardType: inputType,
+        inputFormatters: inputFormatters,
         style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
         decoration: InputDecoration(
           labelText: required ? '$label *' : label,
@@ -3254,7 +3264,10 @@ class _IdentiteTab extends StatelessWidget {
   }
 
   Widget _poilField() {
-    const options = ['Court', 'Mi-long', 'Long', 'Frisé', 'Fil de soie', 'Ras'];
+    final options = [
+      'Court', 'Mi-long', 'Long', 'Frisé', 'Fil de soie', 'Ras',
+      if (s._espece == 'chien') 'Dur',
+    ];
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: DropdownButtonFormField<String>(

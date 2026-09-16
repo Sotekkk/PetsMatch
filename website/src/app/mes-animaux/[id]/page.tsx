@@ -185,8 +185,8 @@ function age(dob?: string | null) {
 
 // ─── Champ texte générique ────────────────────────────────────────────────────
 
-function Field({ label, value, onChange, type='text', rows, required }:
-  { label:string; value:string; onChange:(v:string)=>void; type?:string; rows?:number; required?:boolean }) {
+function Field({ label, value, onChange, type='text', rows, required, digitsOnly }:
+  { label:string; value:string; onChange:(v:string)=>void; type?:string; rows?:number; required?:boolean; digitsOnly?:boolean }) {
   const cls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30';
   if (type === 'checkbox') {
     return (
@@ -206,7 +206,9 @@ function Field({ label, value, onChange, type='text', rows, required }:
       {rows ? (
         <textarea value={value} onChange={e=>onChange(e.target.value)} rows={rows} className={cls} />
       ) : (
-        <input type={type} value={value} onChange={e=>onChange(e.target.value)} className={cls} />
+        <input type={type} value={value} inputMode={digitsOnly ? 'numeric' : undefined}
+          onChange={e=>onChange(digitsOnly ? e.target.value.replace(/\D/g, '') : e.target.value)}
+          className={cls} />
       )}
     </div>
   );
@@ -3703,7 +3705,9 @@ function AnimalFichePageInner() {
                   </>
                 ) : (
                   <>
-                    <Field label="Identification (puce / tatouage)" value={animal.identification??''} onChange={v=>set('identification',v)} />
+                    <Field label={['chien','chat'].includes(animal.espece ?? '') ? "Identification (I-CAD, 15 chiffres)" : "Identification (puce / tatouage)"}
+                      value={animal.identification??''} onChange={v=>set('identification',v)}
+                      digitsOnly={['chien','chat'].includes(animal.espece ?? '')} />
                     {animal.espece !== 'oiseau' && <Field label="Passeport européen n°" value={animal.passeport_europeen??''} onChange={v=>set('passeport_europeen',v)} />}
                   </>
                 )}
@@ -3721,7 +3725,7 @@ function AnimalFichePageInner() {
                   </p>
                 )}
                 {showPoil && <SelectField label="Type de poil" value={animal.type_poil??''} onChange={v=>set('type_poil',v)}
-                  options={[{value:'',label:'—'}, ...TYPES_POIL.map(t=>({value:t,label:t}))]} />}
+                  options={[{value:'',label:'—'}, ...[...TYPES_POIL, ...(animal.espece==='chien' ? ['Dur'] : [])].map(t=>({value:t,label:t}))]} />}
                 {showTaille && <Field label={animal.espece==='cheval'?'Taille au garrot (cm)':'Taille (cm)'} value={animal.taille??''} onChange={v=>set('taille',v)} />}
                 {animal.espece!=='oiseau' && <Field label="Poids (kg)" value={animal.poids??''} onChange={v=>set('poids',v)} />}
                 <Field label="Description" value={animal.description??''} onChange={v=>set('description',v)} rows={3} />

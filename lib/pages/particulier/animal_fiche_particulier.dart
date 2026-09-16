@@ -1384,7 +1384,18 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           ] else ...[
             _FLabel('Identification (puce / tatouage)'),
             const SizedBox(height: 6),
-            _FField(controller: _identCtrl, hint: 'Numéro de puce ou tatouage'),
+            _FField(
+              controller: _identCtrl,
+              hint: _espece == 'chien' || _espece == 'chat'
+                  ? 'Numéro I-CAD (15 chiffres)'
+                  : 'Numéro de puce ou tatouage',
+              keyboardType: _espece == 'chien' || _espece == 'chat'
+                  ? TextInputType.number
+                  : null,
+              inputFormatters: _espece == 'chien' || _espece == 'chat'
+                  ? [FilteringTextInputFormatter.digitsOnly]
+                  : null,
+            ),
             const SizedBox(height: 18),
           ],
 
@@ -1481,7 +1492,10 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   }
 
   Widget _buildTypePoilDropdown() {
-    const options = ['Court', 'Mi-long', 'Long', 'Frisé', 'Fil de soie', 'Ras'];
+    final options = [
+      'Court', 'Mi-long', 'Long', 'Frisé', 'Fil de soie', 'Ras',
+      if (_espece == 'chien') 'Dur',
+    ];
     return Padding(
       padding: const EdgeInsets.only(bottom: 0),
       child: DropdownButtonFormField<String>(
@@ -3307,7 +3321,8 @@ class _FField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final TextInputType? keyboardType;
-  const _FField({required this.controller, required this.hint, this.keyboardType});
+  final List<TextInputFormatter>? inputFormatters;
+  const _FField({required this.controller, required this.hint, this.keyboardType, this.inputFormatters});
   @override
   Widget build(BuildContext context) => Container(
         decoration: BoxDecoration(
@@ -3318,6 +3333,7 @@ class _FField extends StatelessWidget {
         child: TextField(
           controller: controller,
           keyboardType: keyboardType,
+          inputFormatters: inputFormatters,
           style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
           decoration: InputDecoration(
             hintText: hint,
