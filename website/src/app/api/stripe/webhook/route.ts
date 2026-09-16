@@ -2,11 +2,64 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { stripe } from '@/lib/stripe';
 import { createClient } from '@supabase/supabase-js';
+import { mailTransporter, MAIL_FROM } from '@/lib/mailer';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
+
+async function sendAchatReceiptEmail({ email, produitLabel, prix, dateAchat }: {
+  email: string; produitLabel: string; prix: number; dateAchat: string;
+}) {
+  const dateStr = new Date(dateAchat).toLocaleDateString('fr-FR', { dateStyle: 'long' });
+  const html = `<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+<body style="margin:0;padding:0;background:#f5f7fa;font-family:'Segoe UI',Arial,sans-serif;">
+  <div style="max-width:580px;margin:32px auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+    <div style="background:#0C5C6C;padding:28px 32px;text-align:center;">
+      <p style="color:#ffffff;font-size:22px;font-weight:700;margin:0;letter-spacing:-0.3px;">PetsMatch</p>
+      <p style="color:rgba(255,255,255,0.8);font-size:13px;margin:6px 0 0;">Reçu d'achat</p>
+    </div>
+    <div style="padding:32px;">
+      <p style="font-size:14px;color:#4B5563;line-height:1.6;margin:0 0 24px;">
+        Merci pour votre achat sur PetsMatch. Voici votre reçu.
+      </p>
+      <div style="background:#F0F9FF;border:1px solid #BAE6FD;border-radius:12px;padding:16px;margin-bottom:24px;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <tr>
+            <td style="color:#6B7280;padding:4px 0;">Produit</td>
+            <td style="color:#1F2A2E;font-weight:600;text-align:right;">${produitLabel}</td>
+          </tr>
+          <tr>
+            <td style="color:#6B7280;padding:4px 0;">Montant</td>
+            <td style="color:#1F2A2E;font-weight:600;text-align:right;">${prix.toFixed(2)} €</td>
+          </tr>
+          <tr>
+            <td style="color:#6B7280;padding:4px 0;">Date</td>
+            <td style="color:#1F2A2E;font-weight:600;text-align:right;">${dateStr}</td>
+          </tr>
+        </table>
+      </div>
+      <p style="font-size:12px;color:#9CA3AF;text-align:center;margin:0;">
+        Retrouvez l'historique de vos achats dans l'appli/le site, section « Mes achats ».
+      </p>
+    </div>
+    <div style="background:#F9FAFB;border-top:1px solid #E5E7EB;padding:16px 32px;text-align:center;">
+      <p style="font-size:11px;color:#9CA3AF;margin:0;">PetsMatch · petsmatch.contact@gmail.com</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  await mailTransporter.sendMail({
+    from: MAIL_FROM,
+    to: email,
+    subject: `🧾 Reçu — ${produitLabel} · PetsMatch`,
+    html,
+  });
+}
 
 export async function POST(req: NextRequest) {
   const body = await req.text();
@@ -90,7 +143,7 @@ export async function POST(req: NextRequest) {
         if (session.mode === 'payment') {
           const { produit_code, annonce_id } = session.metadata ?? {};
           if (produit_code) {
-            const { data: produit } = await supabase.from('produits_ponctuels').select('id, duree_heures').eq('code', produit_code).maybeSingle();
+            const { data: produit } = await supabase.from('produits_ponctuels').select('id, label, prix, duree_heures').eq('code', produit_code).maybeSingle();
             if (produit) {
               const expiration = produit.duree_heures
                 ? new Date(Date.now() + produit.duree_heures * 3600_000).toISOString()
@@ -113,6 +166,21 @@ export async function POST(req: NextRequest) {
                 } else if (expiration) {
                   await supabase.from('annonces').update({ boost_until: expiration }).eq('id', annonce_id);
                 }
+              }
+
+              // Reçu par email — fire-and-forget, ne doit jamais faire échouer
+              // le webhook (Stripe retente sinon). L'email vient du checkout
+              // (Stripe le collecte toujours en mode 'payment' même sans
+              // customer existant) ; repli sur users.email si absent.
+              const recipientEmail = session.customer_details?.email
+                ?? (await supabase.from('users').select('email').eq('uid', uid).maybeSingle()).data?.email;
+              if (recipientEmail) {
+                sendAchatReceiptEmail({
+                  email: recipientEmail,
+                  produitLabel: produit.label as string,
+                  prix: produit.prix as number,
+                  dateAchat: new Date().toISOString(),
+                }).catch((e) => console.error('[webhook] Échec envoi reçu achat:', e));
               }
             }
           }

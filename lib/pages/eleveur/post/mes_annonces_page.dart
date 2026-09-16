@@ -4,6 +4,7 @@ import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
+import 'package:PetsMatch/pages/eleveur/post/mes_achats_page.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -132,6 +133,14 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
         title: const Text('Mes Annonces',
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Mes achats',
+            icon: const Icon(Icons.receipt_long_outlined),
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const MesAchatsPage())),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: _green,
@@ -586,6 +595,8 @@ class _AnnonceCardState extends State<_AnnonceCard> {
     final expiresAt  = widget.data['expiresAt'] as Timestamp?;
     final isPaused   = _statut == 'pause';
     final isTermine  = _statut == 'vendu' || _statut == 'cede' || _statut == 'expiree' || _statut == 'supprime';
+    final boostUntil = DateTime.tryParse(widget.data['boost_until']?.toString() ?? '');
+    final isBoosted  = boostUntil != null && boostUntil.isAfter(DateTime.now());
 
     final displayTitle = titre.isNotEmpty ? titre
         : race.isNotEmpty ? race : speciesLabel(espece);
@@ -655,6 +666,8 @@ class _AnnonceCardState extends State<_AnnonceCard> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   // Badges : type + statut
                   Wrap(spacing: 6, runSpacing: 4, children: [
+                    if (isBoosted)
+                      _badge('⚡ Boostée', const Color(0xFFFF8A00)),
                     _badge(type == 'portee' ? 'Portée' : 'Animal',
                         type == 'portee' ? _teal : _green),
                     _badge(_statutLabel(_statut), _statutColor(_statut)),

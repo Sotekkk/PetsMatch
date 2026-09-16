@@ -218,10 +218,16 @@ export default function MesAnnoncesPage() {
           </h1>
           <p className="text-gray-500 text-sm">{annonces.length} annonce{annonces.length !== 1 ? 's' : ''}</p>
         </div>
-        <Link href={isParticulier ? '/annonces/creer-cheval' : '/annonces/creer'}
-          className="bg-[#6E9E57] hover:bg-[#5A8A45] text-white font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-2">
-          <span>+</span> {isParticulier ? 'Annonce cheval' : 'Nouvelle annonce'}
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/mes-achats"
+            className="border border-gray-200 hover:border-[#0C5C6C] text-gray-600 hover:text-[#0C5C6C] font-semibold px-4 py-2.5 rounded-xl transition-colors text-sm">
+            🧾 Mes achats
+          </Link>
+          <Link href={isParticulier ? '/annonces/creer-cheval' : '/annonces/creer'}
+            className="bg-[#6E9E57] hover:bg-[#5A8A45] text-white font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm flex items-center gap-2">
+            <span>+</span> {isParticulier ? 'Annonce cheval' : 'Nouvelle annonce'}
+          </Link>
+        </div>
       </div>
 
       {/* Quota plan */}

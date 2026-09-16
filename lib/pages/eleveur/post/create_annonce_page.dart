@@ -491,12 +491,15 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
 
   // ── Save ──────────────────────────────────────────────────────────────────────
 
-  void _showQuotaGate() {
+  void _showQuotaGate(String planCode) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _QuotaGateSheet(
+        // Palier au-dessus du plan actuel — null si déjà Premium (le plus
+        // élevé), auquel cas il n'y a pas d'upgrade à proposer.
+        nextPlanLabel: planCode == 'premium' ? null : planCode == 'pro' ? 'Premium' : 'Pro',
         onBuyExtra: () async {
           Navigator.pop(context);
           final uri = Uri.parse('${PlanService.kWebsiteUrl}/abonnement?buy=annonce_sup');
@@ -594,7 +597,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
           if (count >= config.maxAnnonces) {
             if (mounted) {
               setState(() => _saving = false);
-              _showQuotaGate();
+              _showQuotaGate(planCode);
             }
             return;
           }
@@ -827,6 +830,13 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   // BUILD
   // ─────────────────────────────────────────────────────────────────────────────
 
+  // Une fois l'annonce publiée, on verrouille les champs qui identifient
+  // l'animal/la portée (date de naissance, parents) : les laisser modifiables
+  // permettrait de faire passer une annonce pour une AUTRE portée/animal sans
+  // repayer/reconsommer le quota — seuls photos, texte et prix restent
+  // éditables après publication.
+  bool get _isEditLocked => widget.annonceId != null;
+
   @override
   Widget build(BuildContext context) {
     final isSaillie  = _typeVente == 'saillie';
@@ -861,8 +871,8 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
             if (_type == 'portee') ...[_sectionPortee(), const SizedBox(height: 12)],
             if (_type == 'animal') ...[_sectionAnimal(), const SizedBox(height: 12)],
             if (isSaillie) ...[_sectionSaillie(), const SizedBox(height: 12)],
-            if (!isSaillie && !isRetraite) ...[_sectionMere(), const SizedBox(height: 12)],
-            if (!isSaillie && !isRetraite) ...[_sectionPere(), const SizedBox(height: 12)],
+            if (!isSaillie && !isRetraite) ...[_lockable(_sectionMere()), const SizedBox(height: 12)],
+            if (!isSaillie && !isRetraite) ...[_lockable(_sectionPere()), const SizedBox(height: 12)],
             _sectionPedigree(),     const SizedBox(height: 12),
             _sectionSante(),
             if (_espece == 'cheval') ...[const SizedBox(height: 12), _sectionIdentificationEquin()],
@@ -895,6 +905,29 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   }
 
   // ─── Helpers visuels ─────────────────────────────────────────────────────────
+
+  // Grise + verrouille une section entière (Mère/Père) une fois l'annonce
+  // publiée — cf. _isEditLocked.
+  Widget _lockable(Widget child) {
+    if (!_isEditLocked) return child;
+    return Stack(children: [
+      AbsorbPointer(child: Opacity(opacity: 0.5, child: child)),
+      Positioned(
+        top: 16, right: 16,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.55), borderRadius: BorderRadius.circular(8)),
+          child: const Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.lock_outline, size: 12, color: Colors.white),
+            SizedBox(width: 4),
+            Text('Non modifiable après publication', style: TextStyle(
+                fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white)),
+          ]),
+        ),
+      ),
+    ]);
+  }
 
   Widget _card(String title, IconData icon, List<Widget> children) => Container(
     decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
@@ -981,10 +1014,10 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       )).toList(),
     );
 
-  Widget _datePicker(String label, DateTime? value, ValueChanged<DateTime> onPick) {
+  Widget _datePicker(String label, DateTime? value, ValueChanged<DateTime> onPick, {bool enabled = true}) {
     final fmt = DateFormat('dd/MM/yyyy');
     return GestureDetector(
-      onTap: () async {
+      onTap: !enabled ? null : () async {
         final d = await showDatePicker(context: context,
           initialDate: value ?? DateTime.now(), firstDate: DateTime(2010), lastDate: DateTime.now(),
           builder: (ctx, child) => Theme(data: ThemeData.light().copyWith(
@@ -993,11 +1026,12 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(color: const Color(0xFFF8F9FA),
+        decoration: BoxDecoration(color: !enabled ? const Color(0xFFEFEFEF) : const Color(0xFFF8F9FA),
             border: Border.all(color: const Color(0xFFE5E7EB)),
             borderRadius: BorderRadius.circular(10)),
         child: Row(children: [
-          const Icon(Icons.calendar_today_outlined, size: 16, color: Color(0xFF6F767B)),
+          Icon(!enabled ? Icons.lock_outline : Icons.calendar_today_outlined,
+              size: 16, color: const Color(0xFF6F767B)),
           const SizedBox(width: 8),
           Text(value != null ? fmt.format(value) : label,
               style: TextStyle(fontFamily: 'Galey', fontSize: 13,
@@ -1400,7 +1434,12 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     ]),
     const SizedBox(height: 6),
     _datePicker('Sélectionner une date', _dateNaissance,
-        (d) => setState(() => _dateNaissance = d)),
+        (d) => setState(() => _dateNaissance = d), enabled: !_isEditLocked),
+    if (_isEditLocked) ...[
+      const SizedBox(height: 4),
+      Text('Non modifiable après publication.',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+    ],
     const SizedBox(height: 12),
     _label('Nombre de bébés dans la portée'),
     Row(children: [
@@ -1492,7 +1531,12 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       const SizedBox(height: 10),
       _label('Date de naissance'),
       _datePicker('Sélectionner une date', _dateNaissanceAnimal,
-          (d) => setState(() => _dateNaissanceAnimal = d)),
+          (d) => setState(() => _dateNaissanceAnimal = d), enabled: !_isEditLocked),
+      if (_isEditLocked) ...[
+        const SizedBox(height: 4),
+        Text('Non modifiable après publication.',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+      ],
       if (_typeVente != 'saillie') ...[
         const SizedBox(height: 6),
         _checkRow(Icons.cut_outlined, 'Stérilisé(e)', _sterilise,
@@ -2427,11 +2471,19 @@ class _AnnonceBreedPickerSheetState extends State<_AnnonceBreedPickerSheet> {
 class _QuotaGateSheet extends StatelessWidget {
   final Future<void> Function() onBuyExtra;
   final VoidCallback onUpgradePro;
+  // Palier au-dessus du plan actuel à proposer — null si déjà au plan le
+  // plus élevé (Premium), auquel cas il n'y a rien à upsell.
+  final String? nextPlanLabel;
 
-  const _QuotaGateSheet({required this.onBuyExtra, required this.onUpgradePro});
+  const _QuotaGateSheet({
+    required this.onBuyExtra,
+    required this.onUpgradePro,
+    required this.nextPlanLabel,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final isTopPlan = nextPlanLabel == null;
     return Container(
       padding: EdgeInsets.fromLTRB(20, 24, 20, MediaQuery.of(context).viewInsets.bottom + 32),
       decoration: const BoxDecoration(
@@ -2450,10 +2502,12 @@ class _QuotaGateSheet extends StatelessWidget {
               style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                   fontSize: 20, color: Color(0xFF1F2A2E))),
           const SizedBox(height: 8),
-          const Text(
-            'Vous avez atteint la limite d\'annonces de votre plan actuel.',
+          Text(
+            isTopPlan
+                ? 'Vous êtes déjà sur notre plan le plus élevé (Premium). Achetez une annonce supplémentaire ou archivez-en une pour en publier une nouvelle.'
+                : 'Vous avez atteint la limite d\'annonces de votre plan actuel.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF6F767B)),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF6F767B)),
           ),
           const SizedBox(height: 24),
           SizedBox(
@@ -2471,22 +2525,24 @@ class _QuotaGateSheet extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: onUpgradePro,
-              icon: const Text('⚡', style: TextStyle(fontSize: 16)),
-              label: const Text('Passer au plan Pro',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0C5C6C),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          if (!isTopPlan) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: onUpgradePro,
+                icon: const Text('⚡', style: TextStyle(fontSize: 16)),
+                label: Text('Passer au plan $nextPlanLabel',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0C5C6C),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
               ),
             ),
-          ),
+          ],
           const SizedBox(height: 10),
           TextButton(
             onPressed: () => Navigator.pop(context),

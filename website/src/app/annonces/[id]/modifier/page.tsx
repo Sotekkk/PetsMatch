@@ -16,6 +16,12 @@ const TYPE_LABEL: Record<string, string> = {
   compagnon: 'Compagnon', portee: 'Portée', saillie: 'Saillie', retraite: "Retraité d'élevage",
 };
 
+function fmtDate(v?: string): string | undefined {
+  if (!v) return undefined;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? undefined : d.toLocaleDateString('fr-FR', { dateStyle: 'long' });
+}
+
 interface RawBabe {
   animalId?: string;
   nom?: string;
@@ -56,6 +62,8 @@ interface AnnonceData {
   mere_nom?: string;
   pere_puce?: string;
   pere_nom?: string;
+  date_naissance?: string;
+  date_naissance_animal?: string;
 }
 
 interface BabyEdit {
@@ -385,6 +393,10 @@ export default function ModifierAnnoncePage() {
             <LockedField label="Race" value={annonce.race} />
             {annonce.sexe && <LockedField label="Sexe" value={annonce.sexe === 'male' ? 'Mâle' : 'Femelle'} />}
             {annonce.titre && <LockedField label="Titre" value={annonce.titre} />}
+            <LockedField
+              label="Date de naissance"
+              value={fmtDate(annonce.type === 'portee' ? annonce.date_naissance : annonce.date_naissance_animal)}
+            />
             {annonce.mere_puce && <LockedField label="Puce mère" value={annonce.mere_puce} />}
             {annonce.pere_puce && <LockedField label="Puce père" value={annonce.pere_puce} />}
           </div>
