@@ -10,13 +10,13 @@ import MorphoSilhouette, { MorphoLegende } from '@/components/morpho/MorphoSilho
 import {
   TEAL, TYPES_SUIVI, NIVEAUX_ACTIVITE, VUES_PHOTOS, ACTIVITES_MOUVEMENT,
   CATEGORIES_OBSERVATION_STATIQUE, labelsValeurObservation, colorValeurObservation,
-  CATEGORIES_OSTEO, morphoSpeciesKey, vuesDisponibles, labelActivite,
+  CATEGORIES_OSTEO, colorCategoriePoint, PALETTE_COULEURS_POINTS, morphoSpeciesKey, vuesDisponibles, labelActivite,
   type MorphoPoint,
 } from '@/lib/morpho';
 
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 
-interface VideoEntree { file: File; activite: string; commentaire: string }
+interface VideoEntree { file?: File; existingUrl?: string; activite: string; commentaire: string }
 interface Mouvement { activite: string; observation: string; geneObservee: boolean | null; commentaire: string }
 interface ObsStatique { valeur: string; commentaire: string }
 
@@ -29,6 +29,8 @@ function NouveauSuiviContent() {
   const especeParam = params.get('espece') ?? 'chien';
   const espece = morphoSpeciesKey(especeParam) ?? 'chien';
   const saisieLibre = !animalId;
+  const suiviIdParam = params.get('suiviId');
+  const isEditing = !!suiviIdParam;
 
   const [saving, setSaving] = useState(false);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -46,8 +48,11 @@ function NouveauSuiviContent() {
   const [clientContact, setClientContact] = useState('');
 
   const [photosVues, setPhotosVues] = useState<Record<string, File>>({});
+  const [photosVuesExistantes, setPhotosVuesExistantes] = useState<Record<string, string>>({});
   const [photosExtra, setPhotosExtra] = useState<File[]>([]);
+  const [photosExtraExistantes, setPhotosExtraExistantes] = useState<string[]>([]);
   const [videos, setVideos] = useState<VideoEntree[]>([]);
+  const [loadingExisting, setLoadingExisting] = useState(false);
   const [points, setPoints] = useState<MorphoPoint[]>([]);
   const [vueSilhouette, setVueSilhouette] = useState(() => vuesDisponibles(espece)[0]?.key ?? 'profil_d');
   const [observations, setObservations] = useState<Record<string, ObsStatique>>(
@@ -65,12 +70,74 @@ function NouveauSuiviContent() {
   }, [user, userData, isSante, authLoading, router]);
 
   useEffect(() => {
-    if (!animalId) return;
+    if (!animalId || isEditing) return;
     supabase.from('animaux').select('poids, taille').eq('id', animalId).maybeSingle().then(({ data }) => {
       if (data?.poids) setPoids(String(data.poids));
       if (data?.taille) setTaille(String(data.taille));
     });
-  }, [animalId]);
+  }, [animalId, isEditing]);
+
+  // Édition (pro uniquement) : pré-remplit tout le formulaire depuis le
+  // suivi existant — l'enregistrement met à jour la même ligne (pas de
+  // nouvelle notification au propriétaire), les photos/vidéos non
+  // remplacées sont conservées sans nouvel upload.
+  useEffect(() => {
+    if (!suiviIdParam) return;
+    (async () => {
+      setLoadingExisting(true);
+      const { data: s } = await supabase.from('suivis_morpho').select('*').eq('id', suiviIdParam).maybeSingle();
+      if (!s) { setLoadingExisting(false); return; }
+      setTypeSuivi(s.type_suivi as string ?? 'bilan_morphologique');
+      setDate(String(s.date ?? '').slice(0, 10) || new Date().toISOString().slice(0, 10));
+      setProfessionnel((s.professionnel_nom as string) ?? '');
+      setMotif((s.motif as string) ?? '');
+      setCommentaires((s.commentaires as string) ?? '');
+      setPoids(s.poids != null ? String(s.poids) : '');
+      setTaille(s.taille != null ? String(s.taille) : '');
+      setNiveauActivite((s.niveau_activite as string) ?? 'non_evalue');
+      setActiviteSportive((s.activite_sportive as string) ?? '');
+      setCheckpoint((s.checkpoint_age as string) ?? '');
+      setAnimalNom((s.animal_nom_libre as string) ?? '');
+      setClientNom((s.client_nom_libre as string) ?? '');
+      setClientContact((s.client_contact_libre as string) ?? '');
+
+      const [ph, vi, pt, ob, mv] = await Promise.all([
+        supabase.from('suivis_morpho_photos').select('vue, url').eq('suivi_id', suiviIdParam),
+        supabase.from('suivis_morpho_videos').select('id, activite, commentaire, url').eq('suivi_id', suiviIdParam),
+        supabase.from('suivis_morpho_points').select('id, vue, x_pct, y_pct, categorie, note, couleur').eq('suivi_id', suiviIdParam),
+        supabase.from('suivis_morpho_observations').select('categorie, valeur, commentaire').eq('suivi_id', suiviIdParam),
+        supabase.from('suivis_morpho_mouvements').select('activite, observation, gene_observee, commentaire').eq('suivi_id', suiviIdParam),
+      ]);
+
+      const vuesExistantes: Record<string, string> = {};
+      const extraExistantes: string[] = [];
+      for (const p of (ph.data ?? []) as { vue: string; url: string }[]) {
+        if (VUES_PHOTOS.some(v => v.key === p.vue)) vuesExistantes[p.vue] = p.url;
+        else if (p.vue === 'autre') extraExistantes.push(p.url);
+      }
+      setPhotosVuesExistantes(vuesExistantes);
+      setPhotosExtraExistantes(extraExistantes);
+
+      const videoRows = (vi.data ?? []) as { id: string; activite: string; commentaire: string | null; url: string }[];
+      setVideos(videoRows.map(v => ({ existingUrl: v.url, activite: v.activite, commentaire: v.commentaire ?? '' })));
+
+      setPoints(((pt.data ?? []) as { id: string; vue: string; x_pct: number; y_pct: number; categorie: string; note: string | null; couleur: string | null }[])
+        .map(p => ({ id: String(p.id), vue: p.vue, x_pct: p.x_pct, y_pct: p.y_pct, categorie: p.categorie, note: p.note ?? '', couleur: p.couleur })));
+
+      const obsData = Object.fromEntries(CATEGORIES_OBSERVATION_STATIQUE.map(c => [c.key, { valeur: 'non_evalue', commentaire: '' }])) as Record<string, ObsStatique>;
+      for (const o of (ob.data ?? []) as { categorie: string; valeur: string; commentaire: string | null }[]) {
+        if (obsData[o.categorie]) obsData[o.categorie] = { valeur: o.valeur, commentaire: o.commentaire ?? '' };
+      }
+      setObservations(obsData);
+
+      setMouvements(((mv.data ?? []) as { activite: string; observation: string | null; gene_observee: boolean | null; commentaire: string | null }[])
+        .map(m => ({
+          activite: m.activite, observation: m.observation ?? '', geneObservee: m.gene_observee, commentaire: m.commentaire ?? '',
+        })));
+
+      setLoadingExisting(false);
+    })();
+  }, [suiviIdParam]);
 
   function addPointAt(xPct: number, yPct: number) {
     setPointSheet({ point: { id: `new-${Date.now()}`, x_pct: xPct, y_pct: yPct, categorie: 'autre', note: '', vue: vueSilhouette }, isNew: true });
@@ -90,48 +157,73 @@ function NouveauSuiviContent() {
     setSaving(true);
     try {
       const source = activeProfileId ? 'professionnel' : 'proprietaire';
-      const insertRow: Record<string, unknown> = {
-        uid_auteur: user.uid,
+      const headerRow: Record<string, unknown> = {
         type_suivi: typeSuivi,
         date,
         niveau_activite: niveauActivite,
-        source,
+        professionnel_nom: professionnel.trim() || null,
+        motif: motif.trim() || null,
+        commentaires: commentaires.trim() || null,
+        activite_sportive: activiteSportive.trim() || null,
+        checkpoint_age: checkpoint.trim() || null,
       };
-      if (animalId) insertRow.animal_id = animalId;
-      if (activeProfileId) insertRow.pro_profile_id = activeProfileId;
-      if (professionnel.trim()) insertRow.professionnel_nom = professionnel.trim();
-      if (motif.trim()) insertRow.motif = motif.trim();
-      if (commentaires.trim()) insertRow.commentaires = commentaires.trim();
       const poidsN = parseFloat(poids.replace(',', '.'));
-      if (!isNaN(poidsN)) insertRow.poids = poidsN;
+      headerRow.poids = isNaN(poidsN) ? null : poidsN;
       const tailleN = parseFloat(taille.replace(',', '.'));
-      if (!isNaN(tailleN)) insertRow.taille = tailleN;
-      if (activiteSportive.trim()) insertRow.activite_sportive = activiteSportive.trim();
-      if (checkpoint.trim()) insertRow.checkpoint_age = checkpoint.trim();
+      headerRow.taille = isNaN(tailleN) ? null : tailleN;
       if (saisieLibre) {
-        if (animalNom.trim()) insertRow.animal_nom_libre = animalNom.trim();
-        insertRow.espece_libre = espece;
-        if (clientNom.trim()) insertRow.client_nom_libre = clientNom.trim();
-        if (clientContact.trim()) insertRow.client_contact_libre = clientContact.trim();
+        headerRow.animal_nom_libre = animalNom.trim() || null;
+        headerRow.espece_libre = espece;
+        headerRow.client_nom_libre = clientNom.trim() || null;
+        headerRow.client_contact_libre = clientContact.trim() || null;
       }
 
-      const { data: inserted, error } = await supabase.from('suivis_morpho').insert(insertRow).select('id').single();
-      if (error || !inserted) throw error ?? new Error('Échec de la création');
-      const suiviId = inserted.id as string;
+      let suiviId: string;
+      if (isEditing && suiviIdParam) {
+        suiviId = suiviIdParam;
+        const { error } = await supabase.from('suivis_morpho').update(headerRow).eq('id', suiviId);
+        if (error) throw error;
+        // Les enfants sont entièrement recréés à chaque enregistrement (plus
+        // simple et sûr qu'un diff champ par champ) ; les fichiers déjà
+        // uploadés (photos/vidéos non remplacées) sont réutilisés tels quels
+        // ci-dessous, sans nouvel upload.
+        await Promise.all([
+          supabase.from('suivis_morpho_photos').delete().eq('suivi_id', suiviId),
+          supabase.from('suivis_morpho_videos').delete().eq('suivi_id', suiviId),
+          supabase.from('suivis_morpho_points').delete().eq('suivi_id', suiviId),
+          supabase.from('suivis_morpho_observations').delete().eq('suivi_id', suiviId),
+          supabase.from('suivis_morpho_mouvements').delete().eq('suivi_id', suiviId),
+        ]);
+      } else {
+        const insertRow: Record<string, unknown> = { uid_auteur: user.uid, source, ...headerRow };
+        if (animalId) insertRow.animal_id = animalId;
+        if (activeProfileId) insertRow.pro_profile_id = activeProfileId;
+        const { data: inserted, error } = await supabase.from('suivis_morpho').insert(insertRow).select('id').single();
+        if (error || !inserted) throw error ?? new Error('Échec de la création');
+        suiviId = inserted.id as string;
+      }
       const base = `animaux/${animalId ?? 'libre'}/morpho/${suiviId}`;
 
-      for (const [vue, file] of Object.entries(photosVues)) {
-        const url = await uploadPhoto(file, `${base}/${vue}.jpg`);
-        await supabase.from('suivis_morpho_photos').insert({ suivi_id: suiviId, vue, url });
+      for (const vue of new Set([...Object.keys(photosVues), ...Object.keys(photosVuesExistantes)])) {
+        const url = photosVues[vue] ? await uploadPhoto(photosVues[vue], `${base}/${vue}.jpg`) : photosVuesExistantes[vue];
+        if (url) await supabase.from('suivis_morpho_photos').insert({ suivi_id: suiviId, vue, url });
       }
       for (let i = 0; i < photosExtra.length; i++) {
         const url = await uploadPhoto(photosExtra[i], `${base}/extra_${i}.jpg`);
         await supabase.from('suivis_morpho_photos').insert({ suivi_id: suiviId, vue: 'autre', url });
       }
+      for (const url of photosExtraExistantes) {
+        await supabase.from('suivis_morpho_photos').insert({ suivi_id: suiviId, vue: 'autre', url });
+      }
       for (let i = 0; i < videos.length; i++) {
         const v = videos[i];
-        const ext = v.file.name.split('.').pop() || 'mp4';
-        const url = await uploadRawFile(v.file, `${base}/video_${i}.${ext}`);
+        let url: string;
+        if (v.file) {
+          const ext = v.file.name.split('.').pop() || 'mp4';
+          url = await uploadRawFile(v.file, `${base}/video_${i}.${ext}`);
+        } else {
+          url = v.existingUrl!;
+        }
         await supabase.from('suivis_morpho_videos').insert({
           suivi_id: suiviId, activite: v.activite,
           ...(v.commentaire.trim() ? { commentaire: v.commentaire.trim() } : {}),
@@ -143,6 +235,7 @@ function NouveauSuiviContent() {
         const { data: row } = await supabase.from('suivis_morpho_points').insert({
           suivi_id: suiviId, vue: p.vue, x_pct: p.x_pct, y_pct: p.y_pct, categorie: p.categorie,
           ...(p.note?.trim() ? { note: p.note.trim() } : {}),
+          ...(p.couleur ? { couleur: p.couleur } : {}),
         }).select('id').single();
         void row;
       }
@@ -162,6 +255,10 @@ function NouveauSuiviContent() {
         });
       }
 
+      // Pas de notification automatique ici : le pro décide lui-même quand
+      // le suivi est prêt à être transmis, via le bouton "Envoyer au
+      // client" sur la fiche du suivi (/sante/suivis/[id]).
+
       router.push(`/sante/suivis/${suiviId}`);
     } catch (e) {
       alert(`Erreur : ${e instanceof Error ? e.message : e}`);
@@ -174,9 +271,17 @@ function NouveauSuiviContent() {
 
   const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-galey focus:outline-none focus:ring-2 focus:ring-teal-500/30';
 
+  if (loadingExisting) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-24 flex justify-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2" style={{ borderColor: TEAL }} />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6 pb-24">
-      <h1 className="text-2xl font-bold font-galey" style={{ color: TEAL }}>Nouveau suivi</h1>
+      <h1 className="text-2xl font-bold font-galey" style={{ color: TEAL }}>{isEditing ? 'Modifier le suivi' : 'Nouveau suivi'}</h1>
 
       {saisieLibre && (
         <Card title="Client">
@@ -214,12 +319,25 @@ function NouveauSuiviContent() {
       </Card>
 
       <Card title="Photos de référence">
-        <PhotoGrid photos={photosVues} onChange={setPhotosVues} />
+        <PhotoGrid photos={photosVues} existingUrls={photosVuesExistantes}
+          onChange={setPhotosVues} onReplaceExisting={vue => setPhotosVuesExistantes(p => { const n = { ...p }; delete n[vue]; return n; })} />
         <p className="text-xs font-semibold text-gray-600 mt-4 mb-2">Photos supplémentaires</p>
         <div className="flex flex-wrap gap-2">
+          {photosExtraExistantes.map((url, i) => (
+            <div key={`existing-${i}`} className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={url} alt="" className="w-16 h-16 rounded-lg object-cover" />
+              <button onClick={() => setPhotosExtraExistantes(p => p.filter((_, j) => j !== i))}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/60 text-white text-xs flex items-center justify-center">✕</button>
+            </div>
+          ))}
           {photosExtra.map((f, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img key={i} src={URL.createObjectURL(f)} alt="" className="w-16 h-16 rounded-lg object-cover" />
+            <div key={i} className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={URL.createObjectURL(f)} alt="" className="w-16 h-16 rounded-lg object-cover" />
+              <button onClick={() => setPhotosExtra(p => p.filter((_, j) => j !== i))}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/60 text-white text-xs flex items-center justify-center">✕</button>
+            </div>
           ))}
           <label className="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center cursor-pointer text-2xl text-gray-400" style={{ color: TEAL }}>
             +
@@ -275,7 +393,7 @@ function NouveauSuiviContent() {
         <div className="max-w-2xl mx-auto">
           <button disabled={saving} onClick={handleSave}
             className="w-full py-3 rounded-xl text-sm font-galey font-bold text-white disabled:opacity-50" style={{ background: TEAL }}>
-            {saving ? 'Enregistrement…' : 'Enregistrer le suivi'}
+            {saving ? 'Enregistrement…' : isEditing ? 'Enregistrer les modifications' : 'Enregistrer le suivi'}
           </button>
         </div>
       </div>
@@ -306,9 +424,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <div><label className="block text-xs font-galey text-gray-500 mb-1">{label}</label>{children}</div>;
 }
 
-function PhotoGrid({ photos, onChange }: { photos: Record<string, File>; onChange: (p: Record<string, File>) => void }) {
+function PhotoGrid({ photos, existingUrls = {}, onChange, onReplaceExisting }: {
+  photos: Record<string, File>; existingUrls?: Record<string, string>;
+  onChange: (p: Record<string, File>) => void; onReplaceExisting?: (vue: string) => void;
+}) {
   function Slot({ vueKey, label }: { vueKey: string; label: string }) {
     const file = photos[vueKey];
+    const existingUrl = existingUrls[vueKey];
     return (
       <div className="flex flex-col items-center gap-1.5">
         <span className="text-[11px] font-bold font-galey text-gray-500">{label}</span>
@@ -316,11 +438,14 @@ function PhotoGrid({ photos, onChange }: { photos: Record<string, File>; onChang
           {file ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={URL.createObjectURL(file)} alt={label} className="w-full h-full object-cover" />
+          ) : existingUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={existingUrl} alt={label} className="w-full h-full object-cover" />
           ) : (
             <span style={{ color: TEAL }}>📷</span>
           )}
           <input type="file" accept="image/*" className="hidden"
-            onChange={e => { const f = e.target.files?.[0]; if (f) onChange({ ...photos, [vueKey]: f }); }} />
+            onChange={e => { const f = e.target.files?.[0]; if (f) { onChange({ ...photos, [vueKey]: f }); onReplaceExisting?.(vueKey); } }} />
         </label>
       </div>
     );
@@ -373,11 +498,27 @@ function PointSheet({ point, allowDelete, onSave, onDelete, onClose }: {
   point: MorphoPoint; allowDelete: boolean; onSave: (p: MorphoPoint) => void; onDelete: () => void; onClose: () => void;
 }) {
   const [categorie, setCategorie] = useState(point.categorie);
+  const [couleur, setCouleur] = useState((point.couleur ?? colorCategoriePoint(point.categorie)).replace('#', ''));
   const [note, setNote] = useState(point.note ?? '');
+  const [labelError, setLabelError] = useState(false);
   const inputCls = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm font-galey';
   return (
     <SheetShell title="Point" onClose={onClose}>
-      <p className="text-xs font-galey font-semibold text-gray-600 mb-1.5">Catégorie</p>
+      <p className="text-xs font-galey font-semibold text-gray-600 mb-1.5">Couleur</p>
+      <div className="flex flex-wrap gap-2.5 mb-3">
+        {PALETTE_COULEURS_POINTS.map(c => {
+          const hex = c.replace('#', '');
+          const selected = couleur === hex;
+          return (
+            <button key={c} onClick={() => setCouleur(hex)}
+              className="w-8 h-8 rounded-full flex items-center justify-center"
+              style={{ background: c, border: selected ? '2.5px solid #1F2A2E' : '2.5px solid transparent' }}>
+              {selected && <span className="text-white text-xs">✓</span>}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-xs font-galey font-semibold text-gray-600 mb-1.5">Catégorie (optionnel, pour classer le point)</p>
       <div className="flex flex-wrap gap-1.5 mb-3">
         {CATEGORIES_OSTEO.map(c => (
           <button key={c.key} onClick={() => setCategorie(c.key)}
@@ -387,12 +528,15 @@ function PointSheet({ point, allowDelete, onSave, onDelete, onClose }: {
           </button>
         ))}
       </div>
-      <textarea className={inputCls} rows={2} placeholder="Note (facultatif)" value={note} onChange={e => setNote(e.target.value)} />
+      <p className="text-xs font-galey font-semibold mb-1.5" style={{ color: labelError ? '#DC2626' : '#4B5563' }}>Ce qui a été travaillé *</p>
+      <textarea className={inputCls} rows={2} placeholder="Ex. « Point tendu », « Zone travaillée en profondeur »"
+        value={note} onChange={e => { setNote(e.target.value); if (labelError) setLabelError(false); }} />
+      {labelError && <p className="text-xs font-galey text-red-600 mt-1">Décrivez ce point pour la légende</p>}
       <div className="flex gap-2 mt-4">
         {allowDelete && (
           <button onClick={onDelete} className="text-red-500 text-sm font-galey font-semibold px-3">Supprimer</button>
         )}
-        <button onClick={() => onSave({ ...point, categorie, note })}
+        <button onClick={() => { if (!note.trim()) { setLabelError(true); return; } onSave({ ...point, categorie, note: note.trim(), couleur }); }}
           className="flex-1 py-2.5 rounded-xl text-sm font-galey font-bold text-white" style={{ background: TEAL }}>
           Valider
         </button>

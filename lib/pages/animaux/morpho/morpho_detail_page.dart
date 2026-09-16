@@ -1,11 +1,13 @@
 import 'dart:async' show unawaited;
 import 'package:flutter/material.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/widgets/inline_video.dart';
 import 'morpho_constants.dart';
 import 'morpho_silhouette.dart';
 import 'morpho_pdf_service.dart';
+import 'morpho_form_page.dart';
 
 /// Consultation d'un suivi morphologique existant. [readOnly] n'affecte
 /// pas grand-chose en V1 (pas d'édition depuis cette page — un suivi est
@@ -34,6 +36,8 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
   Map<String, dynamic> _animal = {};
   Map<String, dynamic> _pro = {};
   bool _exporting = false;
+  bool _sendingNotif = false;
+  late DateTime? _notifieA = DateTime.tryParse(widget.suivi['notifie_a']?.toString() ?? '');
 
   String get _suiviId => widget.suivi['id'].toString();
 
@@ -75,9 +79,9 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
       final futures = <Future<dynamic>>[
         if (animalId != null) _supa.from('animaux').select('nom, espece, race').eq('id', animalId).maybeSingle() else Future.value(null),
         if (proProfileId != null)
-          _supa.from('user_profiles').select('nom, firstname, lastname, adress, phone_number, email_contact').eq('id', proProfileId).maybeSingle()
+          _supa.from('user_profiles').select('nom, firstname, lastname, adress, phone_number, email_contact, profession_pro').eq('id', proProfileId).maybeSingle()
         else if (uidAuteur != null)
-          _supa.from('user_profiles').select('nom, firstname, lastname, adress, phone_number, email_contact').eq('uid', uidAuteur).eq('is_main', true).maybeSingle()
+          _supa.from('user_profiles').select('nom, firstname, lastname, adress, phone_number, email_contact, profession_pro').eq('uid', uidAuteur).eq('is_main', true).maybeSingle()
         else
           Future.value(null),
       ];
@@ -95,6 +99,7 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
         };
         _pro = {
           'nom': proNom.isNotEmpty ? proNom : '',
+          'profession': proRow?['profession_pro'] ?? '',
           'adresse': proRow?['adress'] ?? '',
           'tel': proRow?['phone_number'] ?? '',
           'email': proRow?['email_contact'] ?? '',
@@ -111,14 +116,92 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
         photos: _photos, points: _points, observations: _observations, mouvements: _mouvements,
       );
       final nomAnimal = (_animal['nom'] as String?)?.replaceAll(' ', '_') ?? 'animal';
+      final nomPraticien = ((_pro['nom'] as String?)?.trim().isNotEmpty == true)
+          ? (_pro['nom'] as String).replaceAll(' ', '_') : null;
       final dateStr = (widget.suivi['date']?.toString() ?? '').split('T').first;
-      await sharemorphoSuiviPdf(bytes, filename: 'suivi_morpho_${nomAnimal}_$dateStr.pdf');
+      final filename = [
+        'suivi_morpho', nomAnimal, if (nomPraticien != null) nomPraticien, dateStr,
+      ].join('_');
+      await sharemorphoSuiviPdf(bytes, filename: '$filename.pdf');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur export : $e')));
       }
     } finally {
       if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  // Modifier / supprimer — pro uniquement (widget.readOnly == false), pour
+  // corriger une erreur avant (ou après) que le propriétaire ait consulté
+  // son bilan. La modification réutilise le même id (pas de nouvelle
+  // notification) ; la suppression est définitive (cascade sur les enfants).
+  Future<void> _modifier() async {
+    final updated = await Navigator.push<bool>(context, MaterialPageRoute(
+      builder: (_) => MorphoFormPage(
+        animalId: widget.suivi['animal_id']?.toString(),
+        espece: widget.espece,
+        proProfileId: widget.suivi['pro_profile_id']?.toString(),
+        existingSuivi: widget.suivi,
+      ),
+    ));
+    if (updated == true && mounted) Navigator.pop(context, true);
+  }
+
+  /// Envoi manuel de la notification au(x) propriétaire(s) — décidé par le
+  /// pro (pas automatique à l'enregistrement), pour ne prévenir le client
+  /// qu'une fois le suivi réellement complet.
+  Future<void> _envoyerNotification() async {
+    if (widget.suivi['animal_id'] == null) return;
+    setState(() => _sendingNotif = true);
+    try {
+      // Tout se passe côté serveur (notifyOwnerMorphoBilan) : notification
+      // in-app + push FCM — une simple ligne dans `notifications` ne
+      // déclenche pas de push, il faut passer par la Cloud Function comme
+      // pour les autres notifications de l'appli.
+      final result = await FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('notifyOwnerMorphoBilan')
+          .call({'suiviId': _suiviId});
+      final data = result.data;
+      final sent = data is Map ? (data['sent'] as num?)?.toInt() ?? 0 : 0;
+      if (mounted) {
+        setState(() { _notifieA = DateTime.now(); _sendingNotif = false; });
+        if (sent == 0) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text(
+              'Envoyé, mais aucun propriétaire distinct trouvé à notifier (peut-être le même compte que vous).')));
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _sendingNotif = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      }
+    }
+  }
+
+  Future<void> _supprimer() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer ce suivi ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('Cette action est définitive et supprime aussi ses photos, vidéos et points.',
+            style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await _supa.from('suivis_morpho').delete().eq('id', _suiviId);
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
     }
   }
 
@@ -133,6 +216,7 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
             yPct: ((p['y_pct'] as num).toDouble()) / 100,
             categorie: p['categorie']?.toString() ?? 'autre',
             note: p['note']?.toString(),
+            couleur: p['couleur']?.toString(),
           ),
       ];
 
@@ -157,6 +241,15 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                   : const Icon(Icons.ios_share),
               onPressed: _exporting ? null : _exporterPdf,
+            ),
+          if (!_loading && !widget.readOnly)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              onSelected: (v) { if (v == 'modifier') _modifier(); if (v == 'supprimer') _supprimer(); },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'modifier', child: Text('Modifier', style: TextStyle(fontFamily: 'Galey'))),
+                PopupMenuItem(value: 'supprimer', child: Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red))),
+              ],
             ),
         ],
       ),
@@ -196,13 +289,66 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
                   Text(s['commentaires'], style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: kMorphoDark)),
                 ],
                 const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(color: kMorphoTeal.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)),
-                  child: Text(kSourceLabels[source] ?? source,
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: kMorphoTeal)),
-                ),
+                if (source == 'professionnel' && (_pro['nom'] as String?)?.isNotEmpty == true) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(color: kMorphoTeal.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(10)),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        const Icon(Icons.medical_information_outlined, size: 14, color: kMorphoTeal),
+                        const SizedBox(width: 6),
+                        Text('Réalisé par', style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700, color: kMorphoTeal.withValues(alpha: 0.8))),
+                      ]),
+                      const SizedBox(height: 4),
+                      Text(_pro['nom'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w700, color: kMorphoDark)),
+                      if ((_pro['profession'] as String?)?.isNotEmpty == true)
+                        Text(_pro['profession'] as String, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade600)),
+                      if ([_pro['adresse'], _pro['tel'], _pro['email']].any((v) => (v as String?)?.isNotEmpty == true)) ...[
+                        const SizedBox(height: 3),
+                        Text([_pro['adresse'], _pro['tel'], _pro['email']].where((v) => (v as String?)?.isNotEmpty == true).join('  ·  '),
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 10.5, color: Colors.grey.shade500)),
+                      ],
+                    ]),
+                  ),
+                ] else
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(color: kMorphoTeal.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)),
+                    child: Text(kSourceLabels[source] ?? source,
+                        style: const TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: kMorphoTeal)),
+                  ),
               ])),
+
+              if (!widget.readOnly && s['animal_id'] != null) ...[
+                const SizedBox(height: 10),
+                _card(child: _notifieA != null
+                    ? Row(children: [
+                        const Icon(Icons.check_circle, color: kMorphoTeal, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text('Envoyé au client le ${DateFormat('d MMM à HH:mm', 'fr_FR').format(_notifieA!)}',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600))),
+                      ])
+                    : Row(children: [
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          const Text('Le client ne voit pas encore ce bilan', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: kMorphoDark)),
+                          const SizedBox(height: 2),
+                          Text('Envoyez-le une fois le suivi complet et vérifié.', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+                        ])),
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          onPressed: _sendingNotif ? null : _envoyerNotification,
+                          icon: _sendingNotif
+                              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Icon(Icons.send, size: 16),
+                          label: const Text('Envoyer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12)),
+                          style: ElevatedButton.styleFrom(backgroundColor: kMorphoTeal, foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                        ),
+                      ]),
+                ),
+              ],
 
               if (kVuesPhotos.any((v) => _photoForVue(v.$1) != null)) ...[
                 _sectionTitle('Photos de référence'),
@@ -253,8 +399,6 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
                     refreshPoints: _displayedPoints,
                     onVueChanged: (v) => setState(() => _vue = v),
                   ),
-                  const SizedBox(height: 8),
-                  const MorphoLegende(),
                 ])),
                 for (final p in _points.where((p) => (p['note'] as String?)?.isNotEmpty == true))
                   Padding(
@@ -341,6 +485,9 @@ class _MorphoDetailPageState extends State<MorphoDetailPage> {
       );
 }
 
+/// Un point = sa couleur propre (choisie librement, indépendante de la
+/// catégorie) + son libellé (ce qui a été travaillé) comme légende
+/// principale ; la catégorie reste affichée en complément, plus discrète.
 class _PointSummary extends StatelessWidget {
   final Map<String, dynamic> point;
   const _PointSummary({required this.point});
@@ -348,16 +495,28 @@ class _PointSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final categorie = point['categorie']?.toString() ?? 'autre';
+    final note = (point['note'] as String?)?.trim() ?? '';
+    final couleur = colorPointEffectif(categorie, point['couleur']?.toString());
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [
-        Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle, color: colorCategoriePoint(categorie))),
-        const SizedBox(width: 6),
-        Text(labelCategoriePoint(categorie), style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 3),
+          child: Container(width: 12, height: 12, decoration: BoxDecoration(shape: BoxShape.circle, color: couleur)),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(note.isNotEmpty ? note : labelCategoriePoint(categorie),
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+            if (note.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(labelCategoriePoint(categorie),
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+              ),
+          ]),
+        ),
       ]),
-      if ((point['note'] as String?)?.isNotEmpty == true) ...[
-        const SizedBox(height: 6),
-        Text(point['note'], style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
-      ],
     ]);
   }
 }

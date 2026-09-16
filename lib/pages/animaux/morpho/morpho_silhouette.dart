@@ -11,7 +11,13 @@ class MorphoPoint {
   final String categorie;
   final String? note;
   final String? photoUrl;
-  const MorphoPoint({this.id, required this.xPct, required this.yPct, required this.categorie, this.note, this.photoUrl});
+  /// Couleur propre au point (hex sans #), indépendante de [categorie] —
+  /// permet de choisir n'importe quelle couleur de kPaletteCouleursPoints
+  /// sans avoir à sélectionner une catégorie précise juste pour l'obtenir.
+  final String? couleur;
+  const MorphoPoint({this.id, required this.xPct, required this.yPct, required this.categorie, this.note, this.photoUrl, this.couleur});
+
+  Color get couleurEffective => colorPointEffectif(categorie, couleur);
 }
 
 /// Silhouette de profil par espèce, reprise des illustrations dédiées
@@ -88,7 +94,7 @@ class MorphoSilhouette extends StatelessWidget {
                     width: 22, height: 22,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: colorCategoriePoint(p.categorie),
+                      color: p.couleurEffective,
                       border: Border.all(color: Colors.white, width: 2),
                       boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1))],
                     ),
@@ -210,7 +216,7 @@ class _MorphoSilhouetteFullscreenPageState extends State<MorphoSilhouetteFullscr
                             width: 28, height: 28,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: colorCategoriePoint(p.categorie),
+                              color: p.couleurEffective,
                               border: Border.all(color: Colors.white, width: 2.5),
                               boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 1))],
                             ),

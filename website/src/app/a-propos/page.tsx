@@ -6,9 +6,11 @@ const INFO_CARDS = [
   {
     title: '🏢 Éditeur',
     items: [
-      ['Dénomination', 'PETSMATCH (PM)'],
-      ['Forme juridique', 'SAS'],
+      ['Dénomination', 'PETSMATCH'],
+      ['Forme juridique', 'SAS (Société par Actions Simplifiée)'],
+      ['Capital social', '1 000 €'],
       ['Siège social', '15 La Ville Marchand, 22210 Plumieux, France'],
+      ['RCS', 'Saint-Brieuc'],
       ['SIREN', '931 344 816'],
       ['SIRET', '931 344 816 00018'],
       ['TVA intracommunautaire', 'FR94 931 344 816'],
@@ -18,10 +20,11 @@ const INFO_CARDS = [
     ],
   },
   {
-    title: '👤 Responsables de la publication',
+    title: '👤 Direction',
     items: [
-      ['Présidente', 'Natacha Loisiel'],
+      ['Présidente', 'Natacha Loisel'],
       ['Directeur général', 'Nabil Ksouri'],
+      ['Directrice générale déléguée (Produit)', 'Angélique Bégrand'],
     ],
   },
   {

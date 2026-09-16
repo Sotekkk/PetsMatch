@@ -71,11 +71,14 @@ class _RegisterPhoneAdressInformationPageState
   }
 
   void _validateAndContinue() {
+    // L'adresse postale n'est pas nécessaire à ce stade — elle est
+    // redemandée (et réellement utilisée) plus loin dans l'onboarding selon
+    // le type de profil ; l'exiger ici en plus faisait doublon et bloquait
+    // inutilement la création de compte.
     setState(() {
       _isPhoneValid = _phoneController.text.trim().isNotEmpty;
-      _isAddressValid = _addressController.text.trim().isNotEmpty;
     });
-    if (!_isPhoneValid || !_isAddressValid) return;
+    if (!_isPhoneValid) return;
 
     User_Info.phone_number = _phoneController.text;
     User_Info.codeISO = _selectedCountryCode;
@@ -211,7 +214,7 @@ class _RegisterPhoneAdressInformationPageState
 
           // ── Adresse ───────────────────────────────────────────────────────────
           _card([
-            Text('Adresse',
+            Text('Adresse (optionnel)',
                 style: TextStyle(
                     fontFamily: 'Galey',
                     fontSize: 13,

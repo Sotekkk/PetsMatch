@@ -8,7 +8,7 @@ interface SuiviRow { id: string; date: string; type_suivi: string }
 
 /// Onglet "Morphologie" embarqué dans la fiche patient (mes-patients/[id]) —
 /// liste les suivis morphologiques de CET animal, création rapide.
-export default function MorphoAnimalTab({ animalId, espece }: { animalId: string; espece: string }) {
+export default function MorphoAnimalTab({ animalId, espece, canWrite = true }: { animalId: string; espece: string; canWrite?: boolean }) {
   const [loading, setLoading] = useState(true);
   const [suivis, setSuivis] = useState<SuiviRow[]>([]);
 
@@ -29,10 +29,12 @@ export default function MorphoAnimalTab({ animalId, espece }: { animalId: string
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-bold font-galey text-gray-800">Suivi morphologique &amp; bien-être</h3>
-        <a href={`/sante/suivis/nouveau?animalId=${animalId}&espece=${encodeURIComponent(espece)}`}
-          className="text-white px-3 py-1.5 rounded-full text-xs font-galey font-semibold" style={{ background: TEAL }}>
-          + Nouveau suivi
-        </a>
+        {canWrite && (
+          <a href={`/sante/suivis/nouveau?animalId=${animalId}&espece=${encodeURIComponent(espece)}`}
+            className="text-white px-3 py-1.5 rounded-full text-xs font-galey font-semibold" style={{ background: TEAL }}>
+            + Nouveau suivi
+          </a>
+        )}
       </div>
       {loading ? (
         <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: TEAL }} /></div>

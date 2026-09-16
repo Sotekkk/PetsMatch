@@ -79,6 +79,33 @@ async function supabaseInsert(table, rows) {
     });
 }
 
+// PATCH (mise à jour) — path inclut le filtre (ex. "suivis_morpho?id=eq.X").
+async function supabasePatch(path, body) {
+    return new Promise((resolve, reject) => {
+        const bodyStr = JSON.stringify(body);
+        const options = {
+            hostname: new URL(SUPABASE_URL).hostname,
+            path: `/rest/v1/${path}`,
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+                "apikey": SUPABASE_SERVICE_KEY,
+                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                "Prefer": "return=minimal",
+                "Content-Length": Buffer.byteLength(bodyStr),
+            },
+        };
+        const req = https.request(options, (res) => {
+            let d = "";
+            res.on("data", (c) => d += c);
+            res.on("end", () => resolve(res.statusCode));
+        });
+        req.on("error", reject);
+        req.write(bodyStr);
+        req.end();
+    });
+}
+
 // Comme supabaseInsert, mais renvoie la ligne créée (Prefer: return=representation) —
 // nécessaire pour lier une tâche miroir pension à la tâche propriétaire d'origine.
 async function supabaseInsertReturning(table, rows) {
@@ -683,4 +710,86 @@ exports.sendInventaireReminders = functions
 
         console.log(`sendInventaireReminders: ${sent} notifications envoyées.`);
         return null;
+    });
+
+// ─── Suivi morphologique — envoi manuel au propriétaire ───────────────────────
+
+/**
+ * Notifie le(s) propriétaire(s) d'un animal qu'un suivi morphologique leur
+ * est disponible — déclenché manuellement par le pro (bouton "Envoyer au
+ * client" sur la fiche du suivi), jamais automatiquement à l'enregistrement.
+ * Fait tout côté serveur (le client n'insère rien lui-même) : notification
+ * in-app Supabase + push FCM (manquant si fait uniquement côté client — la
+ * table `notifications` seule n'envoie pas de push) + marque `notifie_a`.
+ * Appelé depuis l'app Flutter / le site via Firebase Functions callable.
+ */
+exports.notifyOwnerMorphoBilan = functions
+    .region("europe-west1")
+    .https.onCall(async (data) => {
+        const {suiviId} = data;
+        if (!suiviId) return {ok: false, reason: "missing_params"};
+
+        let suivis;
+        try {
+            suivis = await supabaseGet(
+                `suivis_morpho?id=eq.${encodeURIComponent(suiviId)}` +
+                `&select=animal_id,espece_libre,uid_auteur`,
+            );
+        } catch (e) {
+            console.error("notifyOwnerMorphoBilan: fetch suivi error", e.message);
+            return {ok: false};
+        }
+        if (!suivis?.length) return {ok: false, reason: "suivi_not_found"};
+        const suivi = suivis[0];
+        const animalId = suivi.animal_id;
+        if (!animalId) return {ok: false, reason: "no_animal"};
+
+        let proprios;
+        try {
+            proprios = await supabaseGet(
+                `animaux_proprietes?animal_id=eq.${encodeURIComponent(animalId)}` +
+                `&date_fin=is.null&select=uid_proprio,profile_id_proprio`,
+            );
+        } catch (e) {
+            console.error("notifyOwnerMorphoBilan: fetch proprios error", e.message);
+            return {ok: false};
+        }
+
+        const title = "Nouveau bilan disponible";
+        const body = "Un nouveau suivi morphologique & bien-être a été réalisé pour votre animal.";
+        let sent = 0;
+        for (const p of (proprios || [])) {
+            if (!p.uid_proprio || p.uid_proprio === suivi.uid_auteur) continue;
+            try {
+                await supabaseInsert("notifications", [{
+                    uid: p.uid_proprio,
+                    type: "morpho_bilan",
+                    title,
+                    body,
+                    data: {suiviId, espece: suivi.espece_libre},
+                    read: false,
+                    ...(p.profile_id_proprio ? {profile_id: p.profile_id_proprio} : {}),
+                }]);
+            } catch (e) {
+                console.error("notifyOwnerMorphoBilan: insert notification error", e.message);
+            }
+            try {
+                await sendPush(p.uid_proprio, title, body,
+                    {type: "morpho_bilan", suiviId}, {profileId: p.profile_id_proprio || null});
+            } catch (e) {
+                console.error("notifyOwnerMorphoBilan: FCM error", e.message);
+            }
+            sent++;
+        }
+
+        try {
+            await supabasePatch(
+                `suivis_morpho?id=eq.${encodeURIComponent(suiviId)}`,
+                {notifie_a: new Date().toISOString()},
+            );
+        } catch (e) {
+            console.error("notifyOwnerMorphoBilan: update notifie_a error", e.message);
+        }
+
+        return {ok: true, sent};
     });

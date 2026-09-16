@@ -2,6 +2,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/association/inscription_association_page.dart';
 import 'package:PetsMatch/pages/eleveur/info_elevage.dart';
 import 'package:PetsMatch/pages/particulier/description_page.dart';
+import 'package:PetsMatch/utils/google_auth_helper.dart';
 import 'package:flutter/material.dart';
 
 class RegisterSecurity extends StatefulWidget {
@@ -21,6 +22,7 @@ class _RegisterSecurityState extends State<RegisterSecurity> {
   bool _emailOk  = true;
   bool _passOk   = true;
   bool _verifOk  = true;
+  bool _googleLoading = false;
 
   static const _green = Color(0xFF6E9E57);
   static const _teal  = Color(0xFF0C5C6C);
@@ -57,6 +59,32 @@ class _RegisterSecurityState extends State<RegisterSecurity> {
 
     User_Info.email    = e;
     User_Info.password = p;
+    _goNext();
+  }
+
+  Future<void> _continueWithGoogle() async {
+    setState(() => _googleLoading = true);
+    try {
+      final cred = await signInWithGoogle();
+      if (cred == null) return; // annulé par l'utilisateur
+      // L'utilisateur Firebase existe déjà (authentifié à l'instant) — pas
+      // de mot de passe à créer, l'email est déjà vérifié par Google : le
+      // reste du parcours (CGU) saute directement à l'inscription finale.
+      User_Info.uid   = cred.user!.uid;
+      User_Info.email = cred.user!.email ?? '';
+      if (!mounted) return;
+      _goNext();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur de connexion Google : $e', style: const TextStyle(fontFamily: 'Galey'))),
+      );
+    } finally {
+      if (mounted) setState(() => _googleLoading = false);
+    }
+  }
+
+  void _goNext() {
     final isEleveur = User_Info.isElevage || User_Info.isPro;
     Navigator.push(
       context,
@@ -170,6 +198,32 @@ class _RegisterSecurityState extends State<RegisterSecurity> {
               child: const Text('CONTINUER',
                   style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                       fontSize: 16, color: Colors.white)),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(children: [
+            Expanded(child: Divider(color: Colors.grey.shade300)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text('ou', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+            ),
+            Expanded(child: Divider(color: Colors.grey.shade300)),
+          ]),
+          const SizedBox(height: 18),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _googleLoading ? null : _continueWithGoogle,
+              icon: _googleLoading
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : Image.asset('assets/logo/google.png', width: 18, height: 18),
+              label: const Text('Continuer avec Google',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14, color: Color(0xFF1F2A2E))),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: Colors.grey.shade300),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
             ),
           ),
         ]),

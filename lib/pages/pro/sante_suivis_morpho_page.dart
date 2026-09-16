@@ -29,12 +29,27 @@ class _SanteSuivisMorphoPageState extends State<SanteSuivisMorphoPage> {
     _load();
   }
 
+  /// Profil pro actif — un même uid peut porter plusieurs profils pro (ex :
+  /// ostéo + éducateur) ; sans ce repli sur le premier profil non-particulier,
+  /// `User_Info.activeProfileId` vide fait échouer la résolution des vrais
+  /// patients (animal_access est scopé par profil). Même pattern que
+  /// pro_clients_page.dart.
+  String _resolveProProfileId() {
+    if (User_Info.activeProfileId.isNotEmpty) return User_Info.activeProfileId;
+    if (User_Info.availableProfiles.isEmpty) return '';
+    final proProfile = User_Info.availableProfiles.firstWhere(
+      (p) => p['profile_type'] != 'particulier',
+      orElse: () => User_Info.availableProfiles.first,
+    );
+    return proProfile['id']?.toString() ?? '';
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) { setState(() => _loading = false); return; }
     try {
-      final pid = User_Info.activeProfileId;
+      final pid = _resolveProProfileId();
       var q = _supa.from('suivis_morpho').select().eq('uid_auteur', uid);
       if (pid.isNotEmpty) q = q.eq('pro_profile_id', pid);
       final rows = await q.order('date', ascending: false);
@@ -108,7 +123,7 @@ class _SanteSuivisMorphoPageState extends State<SanteSuivisMorphoPage> {
   Future<void> _nouveauSuivi() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final pid = User_Info.activeProfileId;
+    final pid = _resolveProProfileId();
     final animauxList = pid.isNotEmpty ? await _loadVraisPatients(uid, pid) : <Map<String, dynamic>>[];
 
     if (!mounted) return;
@@ -284,7 +299,7 @@ class _SanteSuivisMorphoPageState extends State<SanteSuivisMorphoPage> {
                       return InkWell(
                         onTap: () async {
                           await Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => MorphoDetailPage(suivi: s, espece: s['_animal_espece']?.toString() ?? 'chien'),
+                            builder: (_) => MorphoDetailPage(suivi: s, espece: s['_animal_espece']?.toString() ?? 'chien', readOnly: false),
                           ));
                           _load();
                         },

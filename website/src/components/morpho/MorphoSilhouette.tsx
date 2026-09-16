@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { SILHOUETTE_ASSETS, CATEGORIES_OSTEO, colorCategoriePoint, vuesDisponibles, TEAL, type MorphoPoint } from '@/lib/morpho';
+import { SILHOUETTE_ASSETS, CATEGORIES_OSTEO, colorPointEffectif, vuesDisponibles, TEAL, type MorphoPoint } from '@/lib/morpho';
 
 interface Props {
   espece: string;
@@ -62,7 +62,7 @@ function SilhouetteCanvas({ espece, vue, points, onTapEmpty, onTapPoint, dotSize
             left: `calc(${p.x_pct}% - ${dotSize / 2}px)`,
             top: `calc(${p.y_pct}% - ${dotSize / 2}px)`,
             width: dotSize, height: dotSize,
-            background: colorCategoriePoint(p.categorie),
+            background: colorPointEffectif(p.categorie, p.couleur),
             cursor: onTapPoint ? 'pointer' : 'default',
           }}
         />

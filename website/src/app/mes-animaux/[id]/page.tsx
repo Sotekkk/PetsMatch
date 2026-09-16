@@ -16,6 +16,8 @@ import { resolveAcquereurProfileId } from '@/lib/acquereur-profile';
 import ImageCropModal from '@/components/ImageCropModal';
 import AlimentationTab from './AlimentationTab';
 import { AnatomieOwnerSection } from '@/components/AnatomiePoints';
+import MorphoAnimalTab from '@/components/morpho/MorphoAnimalTab';
+import { morphoSpeciesSupported } from '@/lib/morpho';
 import { triggerAutoProtocoles } from '@/lib/planning-service';
 import { PensionJournal } from '@/components/PensionJournal';
 import { typesVaccinPour, categorieOptions, suggestFromCategorie } from '@/lib/vaccinTypes';
@@ -4622,6 +4624,9 @@ function AnimalFichePageInner() {
         <div className="space-y-4">
           <ConsultationsVetTab crs={crs} ordonnances={ordonnances} vetNames={vetNames} />
           <AnatomieOwnerSection animalId={id ?? ''} espece={animal.espece ?? ''} />
+          {morphoSpeciesSupported(animal.espece) && (
+            <MorphoAnimalTab animalId={id ?? ''} espece={animal.espece ?? 'chien'} canWrite={false} />
+          )}
         </div>
       )}
 

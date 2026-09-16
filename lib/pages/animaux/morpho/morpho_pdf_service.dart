@@ -120,6 +120,30 @@ Future<Uint8List> morphoSuiviPdfBytes({
       child: pw.Text('Compte rendu généré via PetsMatch le ${_fmt(DateTime.now())} — page ${ctx.pageNumber}/${ctx.pagesCount}', style: _small()),
     ),
     build: (ctx) => [
+      // En-tête professionnel — n'apparaît que si le suivi a été réalisé par
+      // un pro identifié (pro['nom'] non vide) : identifie clairement
+      // l'émetteur du compte rendu (nom, profession, coordonnées), comme un
+      // papier à en-tête de cabinet.
+      if ((pro['nom'] as String?)?.trim().isNotEmpty == true) ...[
+        pw.Container(
+          width: double.infinity,
+          padding: const pw.EdgeInsets.all(10),
+          decoration: pw.BoxDecoration(color: PdfColor.fromInt(0xFFF0F7F7), borderRadius: pw.BorderRadius.circular(6)),
+          child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+            pw.Text(pro['nom'] as String, style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, color: _teal)),
+            if ((pro['profession'] as String?)?.trim().isNotEmpty == true)
+              pw.Text(pro['profession'] as String, style: _small()),
+            pw.SizedBox(height: 3),
+            pw.Wrap(spacing: 12, children: [
+              if ((pro['adresse'] as String?)?.trim().isNotEmpty == true) pw.Text(pro['adresse'] as String, style: _small()),
+              if ((pro['tel'] as String?)?.trim().isNotEmpty == true) pw.Text(pro['tel'] as String, style: _small()),
+              if ((pro['email'] as String?)?.trim().isNotEmpty == true) pw.Text(pro['email'] as String, style: _small()),
+            ]),
+          ]),
+        ),
+        pw.SizedBox(height: 14),
+      ],
+
       pw.Center(child: pw.Text('SUIVI MORPHOLOGIQUE & BIEN-ÊTRE',
           style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: _teal, letterSpacing: 0.8))),
       pw.SizedBox(height: 4),
@@ -141,7 +165,8 @@ Future<Uint8List> morphoSuiviPdfBytes({
           pw.Text('Suivi', style: _artTitle()),
           pw.SizedBox(height: 4),
           _line('Date', date != null ? _fmt(date) : null),
-          _line('Professionnel', (suivi['professionnel_nom'] as String?) ?? pro['nom'] as String?),
+          if (((suivi['professionnel_nom'] as String?) ?? pro['nom'] as String?) != pro['nom'])
+            _line('Professionnel', (suivi['professionnel_nom'] as String?) ?? pro['nom'] as String?),
           _line('Motif', suivi['motif'] as String?),
           _line('Source', kSourceLabels[source]),
         ])),
@@ -193,7 +218,7 @@ Future<Uint8List> morphoSuiviPdfBytes({
                         width: 10, height: 10,
                         decoration: pw.BoxDecoration(
                           shape: pw.BoxShape.circle,
-                          color: _pdfColor(colorCategoriePoint(p['categorie']?.toString() ?? 'autre')),
+                          color: _pdfColor(colorPointEffectif(p['categorie']?.toString() ?? 'autre', p['couleur']?.toString())),
                           border: pw.Border.all(color: PdfColors.white, width: 1),
                         ),
                       ),
@@ -203,18 +228,28 @@ Future<Uint8List> morphoSuiviPdfBytes({
             ),
             pw.SizedBox(height: 4),
           ],
-        pw.Wrap(spacing: 10, runSpacing: 4, children: [
-          for (final c in kCategoriesOsteo)
-            if (points.any((p) => p['categorie'] == c.$1))
-              pw.Row(mainAxisSize: pw.MainAxisSize.min, children: [
-                pw.Container(width: 7, height: 7, decoration: pw.BoxDecoration(shape: pw.BoxShape.circle, color: _pdfColor(c.$3))),
-                pw.SizedBox(width: 3),
-                pw.Text(c.$2, style: _small()),
-              ]),
-        ]),
-        pw.SizedBox(height: 6),
+        // Légende par point : couleur propre + libellé (ce qui a été
+        // travaillé) — plus lisible que par catégorie quand deux points de
+        // même catégorie ont une couleur ou un motif différents.
         for (final p in points.where((p) => (p['note'] as String?)?.isNotEmpty == true))
-          _line(labelCategoriePoint(p['categorie']?.toString() ?? 'autre'), p['note'] as String?),
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(bottom: 3),
+            child: pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+              pw.Container(
+                width: 8, height: 8, margin: const pw.EdgeInsets.only(top: 2, right: 5),
+                decoration: pw.BoxDecoration(
+                  shape: pw.BoxShape.circle,
+                  color: _pdfColor(colorPointEffectif(p['categorie']?.toString() ?? 'autre', p['couleur']?.toString())),
+                ),
+              ),
+              pw.Expanded(
+                child: pw.RichText(text: pw.TextSpan(children: [
+                  pw.TextSpan(text: '${p['note']}  ', style: _bold()),
+                  pw.TextSpan(text: labelCategoriePoint(p['categorie']?.toString() ?? 'autre'), style: _small()),
+                ])),
+              ),
+            ]),
+          ),
       ],
 
       if (observations.isNotEmpty) ...[

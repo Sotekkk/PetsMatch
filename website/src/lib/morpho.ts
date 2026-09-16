@@ -95,6 +95,21 @@ export const CATEGORIES_OSTEO: { key: string; label: string; color: string }[] =
 export function colorCategoriePoint(cat: string) { return CATEGORIES_OSTEO.find(c => c.key === cat)?.color ?? '#9E9E9E'; }
 export function labelCategoriePoint(cat: string) { return CATEGORIES_OSTEO.find(c => c.key === cat)?.label ?? cat; }
 
+// Palette de couleurs pour un point — indépendante de la catégorie, pour
+// éviter de devoir sélectionner une catégorie (ex. « Point d'acupuncture »)
+// juste pour obtenir une couleur distincte. La catégorie reste éditable
+// (classement optionnel) ; c'est le libellé libre du point (obligatoire)
+// qui sert de légende lisible. Miroir de kPaletteCouleursPoints (app).
+export const PALETTE_COULEURS_POINTS = [
+  '#E67E22', '#F39C12', '#3498DB', '#9B59B6', '#795548',
+  '#8BC34A', '#E74C3C', '#1ABC9C', '#34495E', '#9E9E9E',
+];
+
+/** Couleur effective d'un point : sa couleur propre si choisie, sinon la couleur de sa catégorie. */
+export function colorPointEffectif(categorie: string, couleur?: string | null) {
+  return couleur ? `#${couleur.replace('#', '')}` : colorCategoriePoint(categorie);
+}
+
 // Nouveau design (ivoire/bleu) — mêmes fichiers que l'appli, copiés dans
 // public/anatomie/ (chien2_*, chat2_*, cheval2_*).
 export const SILHOUETTE_ASSETS: Record<string, Record<string, { src: string; ratio: number }>> = {
@@ -130,5 +145,6 @@ export interface MorphoPoint {
   y_pct: number; // 0-100
   categorie: string;
   note?: string | null;
+  couleur?: string | null;
   vue: string;
 }

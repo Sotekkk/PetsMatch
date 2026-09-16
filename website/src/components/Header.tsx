@@ -694,6 +694,8 @@ function getNotifUrl(n: Notif): string | null {
     case 'sterilisation_validee':
     case 'sterilisation_relance':
       return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
+    case 'morpho_bilan':
+      return d.suiviId ? `/sante/suivis/${d.suiviId}` : null;
     // Reçues par l'acquéreur → sa page « Mes contrats » (pas le lien de signature brut)
     case 'contrat_signe_eleveur':
     case 'contrat_signe_complet':

@@ -16,6 +16,7 @@ import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/pages/pro/education_rapports_page.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/pro_clients_page.dart';
+import 'package:PetsMatch/pages/animaux/morpho/morpho_detail_page.dart';
 import 'package:PetsMatch/pages/pro/education_devis_page.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/pro/vet_patients_page.dart';
@@ -565,6 +566,24 @@ class _NotificationsPageState extends State<NotificationsPage> {
       ));
       return;
     }
+    // Nouveau bilan morphologique réalisé par un professionnel → ouvre le
+    // compte rendu en lecture seule (accessible depuis l'onglet Morphologie
+    // de la fiche animal, mais on évite au propriétaire d'avoir à le rouvrir).
+    if (type == 'morpho_bilan') {
+      final suiviId = data is Map ? data['suiviId']?.toString() : null;
+      final espece = data is Map ? data['espece']?.toString() : null;
+      if (suiviId != null) {
+        try {
+          final suivi = await Supabase.instance.client.from('suivis_morpho').select().eq('id', suiviId).maybeSingle();
+          if (suivi != null && mounted) {
+            await Navigator.push(context, MaterialPageRoute(
+              builder: (_) => MorphoDetailPage(suivi: suivi, espece: espece ?? 'chien', readOnly: true),
+            ));
+          }
+        } catch (_) {}
+      }
+      return;
+    }
     if (type == 'contrat_refuse' || type == 'contrat_expire') {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => const ContratReservationPage(),
@@ -1008,6 +1027,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'visite_rapport':
       case 'garde_journal':         return Icons.photo_camera_back_outlined;
       case 'compte_rendu_recu':     return Icons.description_outlined;
+      case 'morpho_bilan':          return Icons.accessibility_new;
       case 'education_rapport':     return Icons.school_outlined;
       case 'education_objectif_acquis': return Icons.flag_outlined;
       case 'education_exercice_assigne': return Icons.fitness_center_outlined;
@@ -1087,6 +1107,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'visite_rapport':
       case 'garde_journal':         return const Color(0xFF6E9E57);
       case 'compte_rendu_recu':     return const Color(0xFF26A69A);
+      case 'morpho_bilan':          return const Color(0xFF0C5C6C);
       case 'education_rapport':     return const Color(0xFF7B5EA7);
       case 'education_objectif_acquis': return const Color(0xFF6E9E57);
       case 'education_exercice_assigne': return const Color(0xFFEF6C00);

@@ -24,6 +24,21 @@
 		<string>$(FLUTTER_BUILD_NUMBER)</string>
 		<key>ITSAppUsesNonExemptEncryption</key>
 		<false/>
+		<!-- Connexion Google — GIDClientID copié de GoogleService-Info.plist (CLIENT_ID),
+		     schéma d'URL copié de REVERSED_CLIENT_ID -->
+		<key>GIDClientID</key>
+		<string>910914025100-2454795sbn5fqlc2ccnlaujghaflofb0.apps.googleusercontent.com</string>
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>com.googleusercontent.apps.910914025100-2454795sbn5fqlc2ccnlaujghaflofb0</string>
+				</array>
+			</dict>
+		</array>
 		<key>LSApplicationQueriesSchemes</key>
 		<array>
 			<string>sms</string>

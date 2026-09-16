@@ -22,6 +22,10 @@ class MorphoFormPage extends StatefulWidget {
   final String? proNom;
   final String? animalNomLibre;
   final String? clientNomLibre;
+  /// Non-null pour modifier un suivi existant (pro uniquement) — pré-remplit
+  /// tout le formulaire ; l'enregistrement met à jour la même ligne au lieu
+  /// d'en créer une nouvelle (aucune notification renvoyée au propriétaire).
+  final Map<String, dynamic>? existingSuivi;
 
   const MorphoFormPage({
     super.key,
@@ -31,6 +35,7 @@ class MorphoFormPage extends StatefulWidget {
     this.proNom,
     this.animalNomLibre,
     this.clientNomLibre,
+    this.existingSuivi,
   });
 
   @override
@@ -55,8 +60,10 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
   late final _clientNomCtrl = TextEditingController(text: widget.clientNomLibre ?? '');
   final _clientContactCtrl = TextEditingController();
 
-  final Map<String, File> _photosVues = {}; // face/dos/profil_g/profil_d
+  final Map<String, File> _photosVues = {}; // face/dos/profil_g/profil_d — nouvelles
+  final Map<String, String> _photosVuesExistantes = {}; // vue -> url déjà enregistrée
   final List<File> _photosExtra = [];
+  final List<String> _photosExtraExistantes = [];
   final List<_VideoEntree> _videos = [];
   final List<_PointEntree> _points = [];
   late final Map<String, _ObsStatique> _observations = {
@@ -65,14 +72,106 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
   final List<_Mouvement> _mouvements = [];
 
   late String _vueSilhouette = vuesDisponibles(morphoSpeciesKey(widget.espece) ?? 'chien').first.$1;
+  bool _loadingExisting = false;
 
   bool get _saisieLibre => widget.animalId == null;
+  bool get _isEditing => widget.existingSuivi != null;
 
   @override
   void initState() {
     super.initState();
-    if (widget.proNom != null) _professionnelCtrl.text = widget.proNom!;
-    if (widget.animalId != null) _prefillAnimal();
+    if (_isEditing) {
+      _prefillFromExisting();
+    } else {
+      if (widget.proNom != null) _professionnelCtrl.text = widget.proNom!;
+      if (widget.animalId != null) _prefillAnimal();
+    }
+  }
+
+  Future<void> _prefillFromExisting() async {
+    setState(() => _loadingExisting = true);
+    final s = widget.existingSuivi!;
+    final suiviId = s['id'].toString();
+    _typeSuivi = s['type_suivi']?.toString() ?? _typeSuivi;
+    _date = DateTime.tryParse(s['date']?.toString() ?? '') ?? _date;
+    _professionnelCtrl.text = s['professionnel_nom']?.toString() ?? '';
+    _motifCtrl.text = s['motif']?.toString() ?? '';
+    _commentairesCtrl.text = s['commentaires']?.toString() ?? '';
+    _poidsCtrl.text = s['poids']?.toString() ?? '';
+    _tailleCtrl.text = s['taille']?.toString() ?? '';
+    _niveauActivite = s['niveau_activite']?.toString() ?? _niveauActivite;
+    _activiteSportiveCtrl.text = s['activite_sportive']?.toString() ?? '';
+    _checkpointCtrl.text = s['checkpoint_age']?.toString() ?? '';
+    _animalNomCtrl.text = s['animal_nom_libre']?.toString() ?? _animalNomCtrl.text;
+    _clientNomCtrl.text = s['client_nom_libre']?.toString() ?? _clientNomCtrl.text;
+    _clientContactCtrl.text = s['client_contact_libre']?.toString() ?? '';
+
+    try {
+      final results = await Future.wait([
+        _supa.from('suivis_morpho_photos').select().eq('suivi_id', suiviId),
+        _supa.from('suivis_morpho_videos').select().eq('suivi_id', suiviId),
+        _supa.from('suivis_morpho_points').select().eq('suivi_id', suiviId),
+        _supa.from('suivis_morpho_observations').select().eq('suivi_id', suiviId),
+        _supa.from('suivis_morpho_mouvements').select().eq('suivi_id', suiviId),
+      ]);
+      final photos = List<Map<String, dynamic>>.from(results[0] as List);
+      final videos = List<Map<String, dynamic>>.from(results[1] as List);
+      final points = List<Map<String, dynamic>>.from(results[2] as List);
+      final observations = List<Map<String, dynamic>>.from(results[3] as List);
+      final mouvements = List<Map<String, dynamic>>.from(results[4] as List);
+
+      for (final p in photos) {
+        final vue = p['vue']?.toString() ?? '';
+        if (kVuesPhotos.any((v) => v.$1 == vue)) {
+          _photosVuesExistantes[vue] = p['url'] as String;
+        } else if (vue == 'autre') {
+          _photosExtraExistantes.add(p['url'] as String);
+        }
+      }
+
+      final videoIdToIndex = <String, int>{};
+      for (final v in videos) {
+        videoIdToIndex[v['id'].toString()] = _videos.length;
+        _videos.add(_VideoEntree(
+          existingUrl: v['url'] as String,
+          activite: v['activite']?.toString() ?? kActivitesMouvement.first.$1,
+          commentaire: v['commentaire']?.toString() ?? '',
+        ));
+      }
+
+      for (final p in points) {
+        final photoRow = photos.cast<Map<String, dynamic>?>().firstWhere(
+            (ph) => ph?['point_id']?.toString() == p['id'].toString(), orElse: () => null);
+        _points.add(_PointEntree(
+          xPct: ((p['x_pct'] as num).toDouble()) / 100,
+          yPct: ((p['y_pct'] as num).toDouble()) / 100,
+          vue: p['vue']?.toString() ?? _vueSilhouette,
+          categorie: p['categorie']?.toString() ?? 'autre',
+          note: p['note']?.toString() ?? '',
+          couleur: p['couleur']?.toString(),
+          existingPhotoUrl: photoRow?['url'] as String?,
+        ));
+      }
+
+      for (final o in observations) {
+        final cat = o['categorie']?.toString();
+        if (cat != null && _observations.containsKey(cat)) {
+          _observations[cat]!.valeur = o['valeur']?.toString() ?? 'non_evalue';
+          _observations[cat]!.commentaire = o['commentaire']?.toString() ?? '';
+        }
+      }
+
+      for (final m in mouvements) {
+        final vid = m['video_id']?.toString();
+        _mouvements.add(_Mouvement()
+          ..activite = m['activite']?.toString() ?? kActivitesMouvement.first.$1
+          ..observation = m['observation']?.toString() ?? ''
+          ..geneObservee = m['gene_observee'] as bool?
+          ..commentaire = m['commentaire']?.toString() ?? ''
+          ..videoIndex = vid != null ? videoIdToIndex[vid] : null);
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _loadingExisting = false);
   }
 
   Future<void> _prefillAnimal() async {
@@ -103,13 +202,13 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
   Future<void> _pickVuePhoto(String vue) async {
     final f = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 88);
     if (f == null) return;
-    setState(() => _photosVues[vue] = File(f.path));
+    setState(() { _photosVues[vue] = File(f.path); _photosVuesExistantes.remove(vue); });
   }
 
   Future<void> _pickVuePhotoCamera(String vue) async {
     final f = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 88);
     if (f == null) return;
-    setState(() => _photosVues[vue] = File(f.path));
+    setState(() { _photosVues[vue] = File(f.path); _photosVuesExistantes.remove(vue); });
   }
 
   Future<void> _ajouterPhotoExtra() async {
@@ -159,7 +258,7 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
   List<MorphoPoint> _displayedPoints() => [
         for (var i = 0; i < _points.length; i++)
           if (_points[i].vue == _vueSilhouette)
-            MorphoPoint(id: '$i', xPct: _points[i].xPct, yPct: _points[i].yPct, categorie: _points[i].categorie, note: _points[i].note),
+            MorphoPoint(id: '$i', xPct: _points[i].xPct, yPct: _points[i].yPct, categorie: _points[i].categorie, note: _points[i].note, couleur: _points[i].couleur),
       ];
 
   Future<void> _ajouterMouvement() async {
@@ -177,47 +276,80 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
     setState(() => _saving = true);
     try {
       final source = widget.proProfileId != null ? 'professionnel' : 'proprietaire';
-      final inserted = await _supa.from('suivis_morpho').insert({
-        if (widget.animalId != null) 'animal_id': widget.animalId,
-        'uid_auteur': uid,
-        if (widget.proProfileId != null) 'pro_profile_id': widget.proProfileId,
+      final headerData = <String, dynamic>{
         'type_suivi': _typeSuivi,
         'date': _date.toIso8601String().split('T').first,
-        if (_professionnelCtrl.text.trim().isNotEmpty) 'professionnel_nom': _professionnelCtrl.text.trim(),
-        if (_motifCtrl.text.trim().isNotEmpty) 'motif': _motifCtrl.text.trim(),
-        if (_commentairesCtrl.text.trim().isNotEmpty) 'commentaires': _commentairesCtrl.text.trim(),
-        if (double.tryParse(_poidsCtrl.text.replaceAll(',', '.')) != null)
-          'poids': double.parse(_poidsCtrl.text.replaceAll(',', '.')),
-        if (double.tryParse(_tailleCtrl.text.replaceAll(',', '.')) != null)
-          'taille': double.parse(_tailleCtrl.text.replaceAll(',', '.')),
+        'professionnel_nom': _professionnelCtrl.text.trim().isEmpty ? null : _professionnelCtrl.text.trim(),
+        'motif': _motifCtrl.text.trim().isEmpty ? null : _motifCtrl.text.trim(),
+        'commentaires': _commentairesCtrl.text.trim().isEmpty ? null : _commentairesCtrl.text.trim(),
+        'poids': double.tryParse(_poidsCtrl.text.replaceAll(',', '.')),
+        'taille': double.tryParse(_tailleCtrl.text.replaceAll(',', '.')),
         'niveau_activite': _niveauActivite,
-        if (_activiteSportiveCtrl.text.trim().isNotEmpty) 'activite_sportive': _activiteSportiveCtrl.text.trim(),
-        if (_checkpointCtrl.text.trim().isNotEmpty) 'checkpoint_age': _checkpointCtrl.text.trim(),
-        if (_saisieLibre && _animalNomCtrl.text.trim().isNotEmpty) 'animal_nom_libre': _animalNomCtrl.text.trim(),
-        if (_saisieLibre) 'espece_libre': morphoSpeciesKey(widget.espece) ?? widget.espece,
-        if (_saisieLibre && _clientNomCtrl.text.trim().isNotEmpty) 'client_nom_libre': _clientNomCtrl.text.trim(),
-        if (_saisieLibre && _clientContactCtrl.text.trim().isNotEmpty) 'client_contact_libre': _clientContactCtrl.text.trim(),
-        'source': source,
-      }).select('id').single();
-      final suiviId = inserted['id'] as String;
+        'activite_sportive': _activiteSportiveCtrl.text.trim().isEmpty ? null : _activiteSportiveCtrl.text.trim(),
+        'checkpoint_age': _checkpointCtrl.text.trim().isEmpty ? null : _checkpointCtrl.text.trim(),
+        if (_saisieLibre) ...{
+          'animal_nom_libre': _animalNomCtrl.text.trim().isEmpty ? null : _animalNomCtrl.text.trim(),
+          'espece_libre': morphoSpeciesKey(widget.espece) ?? widget.espece,
+          'client_nom_libre': _clientNomCtrl.text.trim().isEmpty ? null : _clientNomCtrl.text.trim(),
+          'client_contact_libre': _clientContactCtrl.text.trim().isEmpty ? null : _clientContactCtrl.text.trim(),
+        },
+      };
+
+      final String suiviId;
+      if (_isEditing) {
+        suiviId = widget.existingSuivi!['id'].toString();
+        await _supa.from('suivis_morpho').update(headerData).eq('id', suiviId);
+        // Les enfants sont entièrement recréés à chaque enregistrement (plus
+        // simple et sûr qu'un diff champ par champ) ; les fichiers déjà
+        // uploadés (photos/vidéos non remplacées) sont réutilisés tels quels
+        // ci-dessous, sans nouvel upload.
+        await Future.wait([
+          _supa.from('suivis_morpho_photos').delete().eq('suivi_id', suiviId),
+          _supa.from('suivis_morpho_videos').delete().eq('suivi_id', suiviId),
+          _supa.from('suivis_morpho_points').delete().eq('suivi_id', suiviId),
+          _supa.from('suivis_morpho_observations').delete().eq('suivi_id', suiviId),
+          _supa.from('suivis_morpho_mouvements').delete().eq('suivi_id', suiviId),
+        ]);
+      } else {
+        final inserted = await _supa.from('suivis_morpho').insert({
+          if (widget.animalId != null) 'animal_id': widget.animalId,
+          'uid_auteur': uid,
+          if (widget.proProfileId != null) 'pro_profile_id': widget.proProfileId,
+          'source': source,
+          ...headerData,
+        }).select('id').single();
+        suiviId = inserted['id'] as String;
+      }
       final base = 'animaux/${widget.animalId ?? 'libre'}/morpho/$suiviId';
 
-      // Photos de vues guidées
-      for (final entry in _photosVues.entries) {
-        final url = await storage.uploadPhoto(entry.value, '$base/${entry.key}.jpg');
-        await _supa.from('suivis_morpho_photos').insert({'suivi_id': suiviId, 'vue': entry.key, 'url': url});
+      // Photos de vues guidées — nouvelle (upload) ou existante conservée
+      for (final vue in {..._photosVues.keys, ..._photosVuesExistantes.keys}) {
+        final url = _photosVues.containsKey(vue)
+            ? await storage.uploadPhoto(_photosVues[vue]!, '$base/$vue.jpg')
+            : _photosVuesExistantes[vue];
+        if (url != null) {
+          await _supa.from('suivis_morpho_photos').insert({'suivi_id': suiviId, 'vue': vue, 'url': url});
+        }
       }
-      // Photos extra
+      // Photos extra — nouvelles (upload) + existantes non retirées
       for (var i = 0; i < _photosExtra.length; i++) {
         final url = await storage.uploadPhoto(_photosExtra[i], '$base/extra_$i.jpg');
         await _supa.from('suivis_morpho_photos').insert({'suivi_id': suiviId, 'vue': 'autre', 'url': url});
       }
-      // Vidéos
+      for (final url in _photosExtraExistantes) {
+        await _supa.from('suivis_morpho_photos').insert({'suivi_id': suiviId, 'vue': 'autre', 'url': url});
+      }
+      // Vidéos — nouvelle (upload) ou existante conservée
       final videoIds = <int, String>{};
       for (var i = 0; i < _videos.length; i++) {
         final v = _videos[i];
-        final ext = v.file.path.split('.').last.toLowerCase();
-        final url = await storage.uploadRawFile(v.file, '$base/video_$i.$ext');
+        final String url;
+        if (v.file != null) {
+          final ext = v.file!.path.split('.').last.toLowerCase();
+          url = await storage.uploadRawFile(v.file!, '$base/video_$i.$ext');
+        } else {
+          url = v.existingUrl!;
+        }
         final row = await _supa.from('suivis_morpho_videos').insert({
           'suivi_id': suiviId, 'activite': v.activite,
           if (v.commentaire.trim().isNotEmpty) 'commentaire': v.commentaire.trim(),
@@ -233,11 +365,14 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
           'x_pct': p.xPct * 100, 'y_pct': p.yPct * 100,
           'categorie': p.categorie,
           if (p.note.trim().isNotEmpty) 'note': p.note.trim(),
+          if (p.couleur != null) 'couleur': p.couleur,
         }).select('id').single();
-        if (p.photo != null) {
-          final photoUrl = await storage.uploadPhoto(p.photo!, '$base/point_$i.jpg');
+        final pointPhotoUrl = p.photo != null
+            ? await storage.uploadPhoto(p.photo!, '$base/point_$i.jpg')
+            : p.existingPhotoUrl;
+        if (pointPhotoUrl != null) {
           await _supa.from('suivis_morpho_photos').insert({
-            'suivi_id': suiviId, 'vue': 'zone', 'point_id': row['id'], 'url': photoUrl,
+            'suivi_id': suiviId, 'vue': 'zone', 'point_id': row['id'], 'url': pointPhotoUrl,
           });
         }
       }
@@ -261,6 +396,10 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
         });
       }
 
+      // Pas de notification automatique ici : le pro décide lui-même quand
+      // le suivi est prêt à être transmis, via le bouton "Envoyer au
+      // client" sur la fiche du suivi (morpho_detail_page.dart).
+
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
@@ -276,9 +415,11 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
       backgroundColor: kMorphoBg,
       appBar: AppBar(
         backgroundColor: kMorphoTeal, foregroundColor: Colors.white, elevation: 0,
-        title: const Text('Nouveau suivi', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+        title: Text(_isEditing ? 'Modifier le suivi' : 'Nouveau suivi', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
       ),
-      body: ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 100), children: [
+      body: _loadingExisting
+          ? const Center(child: CircularProgressIndicator(color: kMorphoTeal))
+          : ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 100), children: [
         _sectionTitle('Informations générales'),
         _card(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           _dateField(),
@@ -324,6 +465,7 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
         _sectionTitle('Photos de référence'),
         _card(child: _PhotoGrid(
           photos: _photosVues,
+          existingUrls: _photosVuesExistantes,
           onPickGallery: _pickVuePhoto,
           onPickCamera: _pickVuePhotoCamera,
         )),
@@ -332,9 +474,32 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
           Text('Photos supplémentaires', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Colors.grey.shade700)),
           const SizedBox(height: 8),
           Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final url in _photosExtraExistantes)
+              Stack(children: [
+                ClipRRect(borderRadius: BorderRadius.circular(10),
+                    child: Image.network(url, width: 70, height: 70, fit: BoxFit.cover)),
+                Positioned(
+                  top: 2, right: 2,
+                  child: InkWell(
+                    onTap: () => setState(() => _photosExtraExistantes.remove(url)),
+                    child: const CircleAvatar(radius: 9, backgroundColor: Colors.black54,
+                        child: Icon(Icons.close, color: Colors.white, size: 12)),
+                  ),
+                ),
+              ]),
             for (final f in _photosExtra)
-              ClipRRect(borderRadius: BorderRadius.circular(10),
-                  child: Image.file(f, width: 70, height: 70, fit: BoxFit.cover)),
+              Stack(children: [
+                ClipRRect(borderRadius: BorderRadius.circular(10),
+                    child: Image.file(f, width: 70, height: 70, fit: BoxFit.cover)),
+                Positioned(
+                  top: 2, right: 2,
+                  child: InkWell(
+                    onTap: () => setState(() => _photosExtra.remove(f)),
+                    child: const CircleAvatar(radius: 9, backgroundColor: Colors.black54,
+                        child: Icon(Icons.close, color: Colors.white, size: 12)),
+                  ),
+                ),
+              ]),
             InkWell(
               onTap: _ajouterPhotoExtra,
               borderRadius: BorderRadius.circular(10),
@@ -444,7 +609,7 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
               ),
               child: _saving
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text('Enregistrer le suivi', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                  : Text(_isEditing ? 'Enregistrer les modifications' : 'Enregistrer le suivi', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
             ),
           ),
         ),
@@ -524,14 +689,17 @@ Widget _dropdown(String label, String value, List<(String, String)> options, voi
 
 class _PhotoGrid extends StatelessWidget {
   final Map<String, File> photos;
+  final Map<String, String> existingUrls;
   final void Function(String vue) onPickGallery;
   final void Function(String vue) onPickCamera;
-  const _PhotoGrid({required this.photos, required this.onPickGallery, required this.onPickCamera});
+  const _PhotoGrid({required this.photos, this.existingUrls = const {}, required this.onPickGallery, required this.onPickCamera});
 
   @override
   Widget build(BuildContext context) {
     Widget slot(String vue, String label) {
       final f = photos[vue];
+      final existingUrl = existingUrls[vue];
+      final hasImage = f != null || existingUrl != null;
       return Column(children: [
         Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
         const SizedBox(height: 6),
@@ -542,10 +710,14 @@ class _PhotoGrid extends StatelessWidget {
             width: 92, height: 92,
             decoration: BoxDecoration(
               color: const Color(0xFFF1F5F4), borderRadius: BorderRadius.circular(12),
-              image: f != null ? DecorationImage(image: FileImage(f), fit: BoxFit.cover) : null,
+              image: f != null
+                  ? DecorationImage(image: FileImage(f), fit: BoxFit.cover)
+                  : existingUrl != null
+                      ? DecorationImage(image: NetworkImage(existingUrl), fit: BoxFit.cover)
+                      : null,
               border: Border.all(color: Colors.grey.shade200),
             ),
-            child: f == null
+            child: !hasImage
                 ? const Center(child: Icon(Icons.camera_alt_outlined, color: kMorphoTeal, size: 26))
                 : Align(
                     alignment: Alignment.bottomRight,
@@ -647,17 +819,24 @@ class _PointEntree {
   final String vue; // 'profil_g' | 'profil_d' — vue sur laquelle le point a été posé
   String categorie;
   String note;
+  String? couleur; // hex sans # — indépendante de categorie, cf. kPaletteCouleursPoints
   File? photo;
+  String? existingPhotoUrl; // photo déjà enregistrée (édition), conservée si non remplacée
   bool deleted;
   _PointEntree({
     required this.xPct, required this.yPct, required this.vue,
-    this.categorie = 'autre', this.note = '', this.photo, this.deleted = false,
+    this.categorie = 'autre', this.note = '', this.couleur, this.photo, this.existingPhotoUrl, this.deleted = false,
   });
 
-  _PointEntree copyWith({String? categorie, String? note, File? photo, bool? deleted}) => _PointEntree(
+  _PointEntree copyWith({String? categorie, String? note, String? couleur, File? photo, bool? deleted}) => _PointEntree(
         xPct: xPct, yPct: yPct, vue: vue,
         categorie: categorie ?? this.categorie, note: note ?? this.note,
-        photo: photo ?? this.photo, deleted: deleted ?? this.deleted,
+        couleur: couleur ?? this.couleur,
+        photo: photo ?? this.photo,
+        // Une nouvelle photo choisie remplace l'existante (elle ne sera pas
+        // reconservée à l'enregistrement — cf. _enregistrer).
+        existingPhotoUrl: photo != null ? null : existingPhotoUrl,
+        deleted: deleted ?? this.deleted,
       );
 }
 
@@ -672,8 +851,10 @@ class _PointSheet extends StatefulWidget {
 
 class _PointSheetState extends State<_PointSheet> {
   late String _categorie = widget.initial.categorie;
+  late String _couleur = widget.initial.couleur ?? colorToHex(colorCategoriePoint(widget.initial.categorie));
   late final _noteCtrl = TextEditingController(text: widget.initial.note);
   File? _photo;
+  bool _labelError = false;
 
   @override
   void initState() {
@@ -695,7 +876,26 @@ class _PointSheetState extends State<_PointSheet> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
             const Text('Point', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
             const SizedBox(height: 16),
-            const Text('Catégorie', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+            const Text('Couleur', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+            const SizedBox(height: 6),
+            Wrap(spacing: 10, runSpacing: 10, children: [
+              for (final c in kPaletteCouleursPoints)
+                GestureDetector(
+                  onTap: () => setState(() => _couleur = colorToHex(c)),
+                  child: Container(
+                    width: 30, height: 30,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle, color: c,
+                      border: Border.all(
+                          color: _couleur == colorToHex(c) ? kMorphoDark : Colors.transparent, width: 2.5),
+                    ),
+                    child: _couleur == colorToHex(c)
+                        ? const Icon(Icons.check, color: Colors.white, size: 16) : null,
+                  ),
+                ),
+            ]),
+            const SizedBox(height: 14),
+            const Text('Catégorie (optionnel, pour classer le point)', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
             const SizedBox(height: 6),
             Wrap(spacing: 6, runSpacing: 6, children: [
               for (final c in kCategoriesOsteo)
@@ -707,7 +907,17 @@ class _PointSheetState extends State<_PointSheet> {
                 ),
             ]),
             const SizedBox(height: 14),
-            TextField(controller: _noteCtrl, maxLines: 2, style: const TextStyle(fontFamily: 'Galey', fontSize: 13), decoration: _decoration('Note (facultatif)')),
+            Text('Ce qui a été travaillé *', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13, color: _labelError ? Colors.red : null)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _noteCtrl,
+              maxLines: 2,
+              onChanged: (_) { if (_labelError) setState(() => _labelError = false); },
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+              decoration: _decoration('Ex. « Point tendu », « Zone travaillée en profondeur »').copyWith(
+                errorText: _labelError ? 'Décrivez ce point pour la légende' : null,
+              ),
+            ),
             const SizedBox(height: 12),
             Row(children: [
               if (_photo != null)
@@ -728,7 +938,11 @@ class _PointSheetState extends State<_PointSheet> {
                 const SizedBox(width: 12),
               ],
               Expanded(child: ElevatedButton(
-                onPressed: () => Navigator.pop(context, widget.initial.copyWith(categorie: _categorie, note: _noteCtrl.text, photo: _photo)),
+                onPressed: () {
+                  if (_noteCtrl.text.trim().isEmpty) { setState(() => _labelError = true); return; }
+                  Navigator.pop(context, widget.initial.copyWith(
+                      categorie: _categorie, note: _noteCtrl.text.trim(), couleur: _couleur, photo: _photo));
+                },
                 style: ElevatedButton.styleFrom(backgroundColor: kMorphoTeal, foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 13), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                 child: const Text('Valider', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
@@ -742,10 +956,11 @@ class _PointSheetState extends State<_PointSheet> {
 }
 
 class _VideoEntree {
-  final File file;
+  final File? file; // nouvelle vidéo, à uploader
+  final String? existingUrl; // vidéo déjà enregistrée (édition), conservée telle quelle
   final String activite;
   final String commentaire;
-  const _VideoEntree({required this.file, required this.activite, this.commentaire = ''});
+  const _VideoEntree({this.file, this.existingUrl, required this.activite, this.commentaire = ''});
 }
 
 class _AjoutVideoSheet extends StatefulWidget {

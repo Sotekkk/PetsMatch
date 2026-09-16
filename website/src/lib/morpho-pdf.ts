@@ -3,7 +3,7 @@
 // pour un client qui n'utilise pas l'application.
 
 import {
-  labelTypeSuivi, labelActivite, labelCategoriePoint, colorCategoriePoint,
+  labelTypeSuivi, labelActivite, labelCategoriePoint, colorPointEffectif,
   CATEGORIES_OBSERVATION_STATIQUE, labelsValeurObservation, SOURCE_LABELS,
   MORPHO_AVERTISSEMENT, VUES_PHOTOS, SILHOUETTE_ASSETS, morphoSpeciesKey,
   NIVEAUX_ACTIVITE, type MorphoPoint,
@@ -50,7 +50,7 @@ function hexToRgb(hex: string): [number, number, number] {
 export async function morphoSuiviPdfBlob(params: {
   suivi: SuiviRow;
   animal: { nom?: string; espece?: string; race?: string };
-  pro: { nom?: string; adresse?: string; tel?: string; email?: string };
+  pro: { nom?: string; profession?: string; adresse?: string; tel?: string; email?: string };
   photos: { vue: string; url: string }[];
   points: MorphoPoint[];
   observations: { categorie: string; valeur: string; commentaire?: string | null }[];
@@ -84,6 +84,29 @@ export async function morphoSuiviPdfBlob(params: {
 
   const espece = morphoSpeciesKey(animal.espece) ?? 'chien';
   const date = fmtDate(suivi.date as string | undefined);
+
+  // En-tête professionnel — n'apparaît que si le suivi a été réalisé par un
+  // pro identifié : identifie clairement l'émetteur du compte rendu, comme
+  // un papier à en-tête de cabinet. Miroir de morpho_pdf_service.dart.
+  if (pro.nom && pro.nom.trim()) {
+    const boxH = 14 + (pro.profession ? 11 : 0) + 13;
+    doc.setFillColor(240, 247, 247);
+    doc.roundedRect(M, y - 12, PAGE_W - 2 * M, boxH, 3, 3, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...TEAL);
+    doc.text(pro.nom, M + 8, y);
+    y += 14;
+    if (pro.profession) {
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...GREY);
+      doc.text(pro.profession, M + 8, y);
+      y += 11;
+    }
+    const coords = [pro.adresse, pro.tel, pro.email].filter(Boolean).join('   ·   ');
+    if (coords) {
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...GREY);
+      doc.text(coords, M + 8, y);
+    }
+    y += 22;
+  }
 
   doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...TEAL);
   doc.text('SUIVI MORPHOLOGIQUE & BIEN-ÊTRE', PAGE_W / 2, y, { align: 'center' });
@@ -119,7 +142,8 @@ export async function morphoSuiviPdfBlob(params: {
     y += 13;
   };
   lineR('Date', date);
-  lineR('Professionnel', (suivi.professionnel_nom as string) || pro.nom);
+  const professionnelNom = (suivi.professionnel_nom as string) || pro.nom;
+  if (professionnelNom && professionnelNom !== pro.nom) lineR('Professionnel', professionnelNom);
   lineR('Motif', suivi.motif as string);
   lineR('Source', SOURCE_LABELS[(suivi.source as string) || 'proprietaire']);
   if (suivi.niveau_activite && suivi.niveau_activite !== 'non_evalue') {
@@ -174,32 +198,29 @@ export async function morphoSuiviPdfBlob(params: {
       if (img) {
         doc.addImage(img.data, 'PNG', M, y, w, h);
         for (const p of points.filter(p => p.vue === v)) {
-          const [r, g, b] = hexToRgb(colorCategoriePoint(p.categorie));
+          const [r, g, b] = hexToRgb(colorPointEffectif(p.categorie, p.couleur));
           doc.setFillColor(r, g, b);
           doc.circle(M + (p.x_pct / 100) * w, y + (p.y_pct / 100) * h, 4, 'F');
         }
       }
       y += h + 12;
     }
-    // Légende
-    ensureSpace(14);
-    const usedCats = [...new Set(points.map(p => p.categorie))];
-    let lx = M;
-    doc.setFontSize(8);
-    for (const catKey of usedCats) {
-      const [r, g, b] = hexToRgb(colorCategoriePoint(catKey));
-      doc.setFillColor(r, g, b);
-      doc.circle(lx + 3, y - 3, 3, 'F');
-      doc.setTextColor(...GREY);
-      const label = labelCategoriePoint(catKey);
-      doc.text(label, lx + 10, y);
-      lx += doc.getTextWidth(label) + 24;
-      if (lx > PAGE_W - M - 60) { lx = M; y += 12; }
-    }
-    y += 16;
+    // Légende par point : couleur propre + libellé (ce qui a été travaillé)
+    // — plus lisible que par catégorie quand deux points de même catégorie
+    // ont une couleur ou un motif différents.
     for (const p of points.filter(p => p.note && p.note.trim())) {
-      line(labelCategoriePoint(p.categorie), p.note);
+      ensureSpace(14);
+      const [r, g, b] = hexToRgb(colorPointEffectif(p.categorie, p.couleur));
+      doc.setFillColor(r, g, b);
+      doc.circle(M + 3, y - 3, 3.5, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...DARK);
+      doc.text(String(p.note), M + 12, y);
+      const noteW = doc.getTextWidth(String(p.note));
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...GREY);
+      doc.text(`  ${labelCategoriePoint(p.categorie)}`, M + 12 + noteW, y);
+      y += 14;
     }
+    y += 6;
   }
 
   // Observations statiques

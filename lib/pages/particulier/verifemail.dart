@@ -3,7 +3,6 @@ import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/pages/eleveur/info_elevage.dart';
 import 'package:PetsMatch/pages/eleveur/verification_page.dart';
 import 'package:PetsMatch/pages/particulier/description_page.dart';
-import 'package:PetsMatch/utils.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -272,16 +271,34 @@ Future<Object> registerElevage(String email, String password) async {
   }
 }
 
-class _VerifyEmailPageState extends State<VerifyEmailPage> {
+class _VerifyEmailPageState extends State<VerifyEmailPage> with WidgetsBindingObserver {
+  static const _teal = Color(0xFF0C5C6C);
   bool _isVerified = false;
   bool _isResendEnabled = true;
   late Timer _timer;
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _startTimer();
     _checkEmailVerified();
+    // Cliquer le lien de vérification ouvre le navigateur/l'app mail, pas cet
+    // écran directement : on ne peut pas compter uniquement sur un retour au
+    // premier plan (fiable sur iOS après « quitter/rouvrir », pas toujours
+    // détecté sur Android où l'app reste en mémoire) — un sondage périodique
+    // en filet de sécurité garantit qu'on ne reste jamais bloqué ici.
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!_isVerified) _checkEmailVerified();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_isVerified) {
+      _checkEmailVerified();
+    }
   }
 
   void _startTimer() {
@@ -302,33 +319,27 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
   Future<void> _checkEmailVerified() async {
     User? user = FirebaseAuth.instance.currentUser;
     await user?.reload();
-    if (user != null && user.emailVerified) {
-      setState(() {
-        _isVerified = true;
-      });
-      _timer.cancel();
-      if (User_Info.isElevage || User_Info.isPro || User_Info.isAssociation) {
-
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-                builder: (context) => VerificationRegistrationPage()),
-          );
+    if (!mounted || user == null || !user.emailVerified) return;
+    setState(() {
+      _isVerified = true;
+    });
+    _timer.cancel();
+    _pollTimer?.cancel();
+    if (User_Info.isElevage || User_Info.isPro || User_Info.isAssociation) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => VerificationRegistrationPage()),
+      );
+    } else {
+      bool isRegistered = await registerUser(User_Info.email, User_Info.password);
+      if (!mounted) return;
+      if (isRegistered) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => BottomNav()),
+        );
       } else {
-        bool isRegistered =
-            await registerUser(User_Info.email, User_Info.password);
-
-        if (isRegistered) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => BottomNav()),
-          );
-        } else {
-          // Affichez un message d'erreur ou gérez l'échec d'enregistrement ici
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content:
-                    Text('Échec de l\'enregistrement. Veuillez réessayer.')),
-          );
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Échec de l\'enregistrement. Veuillez réessayer.')),
+        );
       }
     }
   }
@@ -350,103 +361,93 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer.cancel();
+    _pollTimer?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF8F8F6),
+      appBar: AppBar(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: const Text('Vérification de l\'e-mail',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+      ),
       body: Center(
-        child: Column(
-          children: [
-            SizedBox(
-                width: UTILS.widthReference(context),
-                height: UTILS.calculHeight(104, UTILS.heightReference(context)),
-                child: Stack(children: [
-                  Image.asset(
-                    'assets/deco/arrondi_rose_2.png',
-              color: const Color(0xFFA7C79A),
-              colorBlendMode: BlendMode.srcIn,
-                    fit: BoxFit.cover,
-                    width:
-                        UTILS.calculWidth(211, UTILS.widthReference(context)),
-                    height:
-                        UTILS.calculHeight(104, UTILS.heightReference(context)),
-                  ),
-                  Positioned(
-                    top: UTILS.calculHeight(42, UTILS.heightReference(context)),
-                    left: UTILS.calculWidth(10, UTILS.widthReference(context)),
-                    child: IconButton(
-                      icon: Icon(Icons.arrow_back,
-                          color: Colors.black), // Icône de la flèche noire
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                      },
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 84, height: 84,
+                decoration: BoxDecoration(
+                  color: _teal.withValues(alpha: _isVerified ? 1 : 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  _isVerified ? Icons.check_circle : Icons.mark_email_unread_outlined,
+                  color: _isVerified ? Colors.white : _teal,
+                  size: 40,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                _isVerified ? 'E-mail vérifié !' : 'Vérifiez votre boîte mail',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: Color(0xFF1F2A2E)),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _isVerified
+                    ? 'Redirection en cours…'
+                    : "Un e-mail de vérification a été envoyé à ${widget.email}. Cliquez sur le lien qu'il contient — cette page se met à jour automatiquement.",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade600, height: 1.4),
+              ),
+              const SizedBox(height: 28),
+              if (!_isVerified) ...[
+                const SizedBox(
+                  width: 22, height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.5, color: _teal),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: _isResendEnabled ? _resendVerificationEmail : null,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _teal,
+                      side: const BorderSide(color: _teal),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                     ),
+                    child: Text(_isResendEnabled ? 'Renvoyer l\'e-mail de vérification' : 'E-mail renvoyé — patientez un instant'),
                   ),
-                  Positioned(
-                    top: UTILS.calculHeight(53, UTILS.heightReference(context)),
-                    left: 0,
-                    right: 0,
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: Text(
-                        'INSCRIPTION',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontFamily: 'Galey',
-                          fontWeight: FontWeight.w500,
-                          fontSize: UTILS.calculWidth(
-                              20, UTILS.widthReference(context)),
-                        ),
-                      ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _checkEmailVerified,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _teal,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                     ),
-                  )
-                ])),
-            SizedBox(
-                height: UTILS.calculHeight(14, UTILS.heightReference(context))),
-            Align(
-              alignment: Alignment(-0.8, 0),
-              child: Text(
-                'Sécurité',
-                style: TextStyle(
-                    fontSize:
-                        UTILS.calculWidth(30, UTILS.widthReference(context)),
-                    fontFamily: 'Galey',
-                    color: Color(0xFF0C5C6C),
-                    fontWeight: FontWeight.w500),
-                textAlign: TextAlign.left,
-              ),
-            ),
-            Center(
-                child: Text(
-                    textAlign: TextAlign.center,
-                    "Un e-mail de vérification à été envoyer à cette adresse ${widget.email}. Vérifier l'email pour continuer.")),
-            SizedBox(
-                height: UTILS.calculHeight(20, UTILS.heightReference(context))),
-            ElevatedButton(
-              onPressed: _isResendEnabled ? _resendVerificationEmail : null,
-              child: Text('Renvoyer un e-mail de vérification'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Color.fromARGB(
-                    255, 255, 192, 187), // Couleur de fond du bouton
-              ),
-            ),
-            SizedBox(
-                height: UTILS.calculHeight(20, UTILS.heightReference(context))),
-            _isVerified
-                ? Text('Email vérifié! Vous pouvez continuez.')
-                : Text('En attente de vérification...'),
-            ElevatedButton(
-              onPressed: _checkEmailVerified,
-              child: Text("J'ai reçu le mail de vérification"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Color.fromARGB(
-                    255, 255, 192, 187), // Couleur de fond du bouton
-              ),
-            ),
-          ],
+                    child: const Text("J'ai déjà validé mon e-mail",
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );

@@ -128,6 +128,30 @@ Color colorCategoriePoint(String cat) =>
 String labelCategoriePoint(String cat) =>
     kCategoriesOsteo.firstWhere((c) => c.$1 == cat, orElse: () => kCategoriesOsteo.last).$2;
 
+/// Palette de couleurs pour un point — indépendante de la catégorie
+/// (`kCategoriesOsteo`), pour éviter de devoir sélectionner une catégorie
+/// (ex. « Point d'acupuncture ») juste pour obtenir une couleur distincte.
+/// La catégorie reste éditable (classement optionnel) ; c'est le libellé
+/// libre du point (obligatoire) qui sert de légende lisible.
+const List<Color> kPaletteCouleursPoints = [
+  Color(0xFFE67E22), Color(0xFFF39C12), Color(0xFF3498DB), Color(0xFF9B59B6),
+  Color(0xFF795548), Color(0xFF8BC34A), Color(0xFFE74C3C), Color(0xFF1ABC9C),
+  Color(0xFF34495E), Color(0xFF9E9E9E),
+];
+
+/// Couleur effective d'un point : sa couleur propre si choisie, sinon la
+/// couleur de sa catégorie (repli — anciens points sans `couleur`).
+Color colorPointEffectif(String categorie, String? couleurHex) {
+  if (couleurHex != null && couleurHex.isNotEmpty) {
+    final v = int.tryParse(couleurHex.replaceFirst('#', ''), radix: 16);
+    if (v != null) return Color(0xFF000000 | v);
+  }
+  return colorCategoriePoint(categorie);
+}
+
+String colorToHex(Color c) =>
+    ((c.toARGB32()) & 0xFFFFFF).toRadixString(16).padLeft(6, '0');
+
 /// Silhouettes réutilisées telles quelles (mêmes fichiers, même mécanisme
 /// que anatomie_points_page.dart / points_osteo — voir kVuesAnatomie /
 /// _speciesViewAssets dans ce fichier, non publics donc dupliqués ici plutôt

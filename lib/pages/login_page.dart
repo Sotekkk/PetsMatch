@@ -3,6 +3,7 @@ import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/pages/eleveur/verification_page.dart';
 import 'package:PetsMatch/pages/inscription_main.dart';
 import 'package:PetsMatch/pages/password_oublier.dart';
+import 'package:PetsMatch/utils/google_auth_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -73,6 +74,41 @@ class _LoginPageState extends State<LoginPage> {
               style: const TextStyle(fontFamily: 'Galey')),
           duration: const Duration(seconds: 8),
         ),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loginWithGoogle() async {
+    setState(() => _loading = true);
+    try {
+      final cred = await signInWithGoogle();
+      if (cred == null) return; // annulé par l'utilisateur
+      final uid = cred.user!.uid;
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      if (!mounted) return;
+      if (doc.exists) {
+        // Compte existant → même chemin que la connexion classique.
+        User_Info.updateUserInfo(doc.data() as Map<String, dynamic>);
+        await User_Info.loadProfiles(uid);
+        saveFcmTokenToFirestore().catchError((_) {});
+        if (!mounted) return;
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      } else {
+        // Première connexion Google : le compte Firebase existe déjà
+        // (authentifié à l'instant), il reste à choisir un profil et
+        // compléter l'inscription — le parcours saute ensuite les étapes
+        // mot de passe / vérification email (déjà couvertes par Google).
+        User_Info.uid = uid;
+        User_Info.email = cred.user!.email ?? '';
+        Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const InscriptionChoicePage()));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur de connexion Google : $e', style: const TextStyle(fontFamily: 'Galey'))),
       );
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -165,6 +201,34 @@ class _LoginPageState extends State<LoginPage> {
                           fontWeight: FontWeight.w700,
                           fontSize: 16,
                           color: Colors.white)),
+            ),
+          ),
+          const SizedBox(height: 18),
+
+          // ── Séparateur ────────────────────────────────────────────────────────
+          Row(children: [
+            Expanded(child: Divider(color: Colors.grey.shade300)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text('ou', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+            ),
+            Expanded(child: Divider(color: Colors.grey.shade300)),
+          ]),
+          const SizedBox(height: 18),
+
+          // ── Bouton Google ─────────────────────────────────────────────────────
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _loading ? null : _loginWithGoogle,
+              icon: Image.asset('assets/logo/google.png', width: 18, height: 18),
+              label: const Text('Continuer avec Google',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14, color: Color(0xFF1F2A2E))),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: Colors.grey.shade300),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
             ),
           ),
           const SizedBox(height: 28),

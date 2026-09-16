@@ -15,8 +15,10 @@ export default function MentionsLegalesPage() {
       <section className="mb-8">
         <h2 className="text-lg font-semibold text-[#0C5C6C] mb-3">Éditeur du site</h2>
         <p className="text-sm text-gray-700 leading-relaxed">
-          <strong>PetsMatch</strong><br />
-          Responsable de la publication : Angélique Bégrand<br />
+          <strong>PETSMATCH</strong> — SAS (Société par Actions Simplifiée) au capital de 1 000 €<br />
+          Siège social : 15 La Ville Marchand, 22210 Plumieux, France<br />
+          RCS Saint-Brieuc — SIREN 931 344 816<br />
+          Directrice de la publication : Natacha Loisel, Présidente de PetsMatch<br />
           Email : <a href="mailto:contact@petsmatch.fr" className="text-[#0C5C6C] underline">contact@petsmatch.fr</a>
         </p>
       </section>

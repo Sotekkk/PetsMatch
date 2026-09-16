@@ -64,6 +64,9 @@ exports.sendTraitementReminders = santeFunctions.sendTraitementReminders;
 // Inventaire — rappels de stock bas tant que non réapprovisionné
 exports.sendInventaireReminders = santeFunctions.sendInventaireReminders;
 
+// Suivi morphologique — envoi manuel au propriétaire (bouton "Envoyer au client")
+exports.notifyOwnerMorphoBilan = santeFunctions.notifyOwnerMorphoBilan;
+
 // Annonces — expiration auto + rappels J-7 et J-1
 exports.sendAnnonceExpirationReminders = annonceFunctions.sendAnnonceExpirationReminders;
 exports.processAbonnementsExpiration = abonnementFunctions.processAbonnementsExpiration;

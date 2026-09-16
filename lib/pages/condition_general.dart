@@ -3,6 +3,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/verification_page.dart';
 import 'package:PetsMatch/pages/particulier/verifemail.dart';
 import 'package:PetsMatch/utils.dart';
+import 'package:PetsMatch/utils/google_auth_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -35,85 +36,36 @@ class _ConditionGeneralState extends State<ConditionGeneral>
     super.dispose();
   }
 
+  static const _teal = Color(0xFF0C5C6C);
+  static const _bg = Color(0xFFF8F8F6);
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: _bg,
+      appBar: AppBar(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: const Text('Conditions Générales d\'Utilisation',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+      ),
       body: SingleChildScrollView(
         child: Center(
           child: DelayedAnimation(
             delay: 0,
             child: Column(
               children: [
-                SizedBox(
-                  width: UTILS.widthReference(context),
-                  height:
-                      UTILS.calculHeight(104, UTILS.heightReference(context)),
-                  child: Stack(
-                    children: [
-                      Image.asset(
-                        'assets/deco/arrondi_rose_2.png',
-              color: const Color(0xFFA7C79A),
-              colorBlendMode: BlendMode.srcIn,
-                        fit: BoxFit.cover,
-                        width: UTILS.calculWidth(
-                            211, UTILS.widthReference(context)),
-                        height: UTILS.calculHeight(
-                            104, UTILS.heightReference(context)),
-                      ),
-                      Positioned(
-                        top: UTILS.calculHeight(
-                            42, UTILS.heightReference(context)),
-                        left: UTILS.calculWidth(
-                            10, UTILS.widthReference(context)),
-                        child: IconButton(
-                          icon: Icon(Icons.arrow_back,
-                              color: Colors.black), // Icône de la flèche noire
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                          },
-                        ),
-                      ),
-                      Positioned(
-                        top: UTILS.calculHeight(
-                            53, UTILS.heightReference(context)),
-                        left: 0,
-                        right: 0,
-                        child: Align(
-                          alignment: Alignment.center,
-                          child: Text(
-                            'CGU',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontFamily: 'Galey',
-                              fontWeight: FontWeight.w500,
-                              fontSize: UTILS.calculWidth(
-                                  20, UTILS.widthReference(context)),
-                            ),
-                          ),
-                        ),
-                      )
-                    ],
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.grey.shade100),
                   ),
-                ),
-                SizedBox(
-                    height:
-                        UTILS.calculHeight(14, UTILS.heightReference(context))),
-                Align(
-                  alignment: Alignment(-0.8, 0),
-                  child: Text(
-                    "Conditions Générales d'Utilisation",
-                    style: TextStyle(
-                      fontSize:
-                          UTILS.calculWidth(20, UTILS.widthReference(context)),
-                      fontFamily: 'Galey',
-                      color: Color.fromARGB(255, 0, 0, 0),
-                      fontWeight: FontWeight.w500,
-                    ),
-                    textAlign: TextAlign.left,
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
                   child: Text(
                     """
 
@@ -123,12 +75,13 @@ class _ConditionGeneralState extends State<ConditionGeneral>
 2.Éditeur de l'application
   L'application est éditée par :
     - Nom de la société : PetsMatch
-    - Forme juridique : SAS
-    - Capital social : 1000 euros
-    - Siège social : La ville marchand, Plumieux, France
-    - RCS : 931 344 816
+    - Forme juridique : SAS (Société par Actions Simplifiée)
+    - Capital social : 1 000 €
+    - Siège social : 15 La Ville Marchand, 22210 Plumieux, France
+    - RCS : Saint-Brieuc
+    - SIREN : 931 344 816
     - Numéro de TVA intracommunautaire : FR94931344816
-    - Directeurs de la publication : Mr ALLEE, Mr KSOURI
+    - Présidente : Madame Natacha Loisel
     - Contact : petsmatch.contact@gmail.com
 
 3.Accès à l'application
@@ -530,24 +483,34 @@ Pour toute question ou réclamation, contactez-nous à l’adresse : petsmatch.c
                     style: TextStyle(fontSize: 16),
                   ),
                 ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Checkbox(
-                      value: _isAcceptedCGU,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          _isAcceptedCGU = value ?? false;
-                        });
-                      },
-                    ),
-                    Text("J'ai lu et j'accepte les conditions d'utilisation")
-                  ],
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      Checkbox(
+                        value: _isAcceptedCGU,
+                        activeColor: _teal,
+                        onChanged: (bool? value) {
+                          setState(() {
+                            _isAcceptedCGU = value ?? false;
+                          });
+                        },
+                      ),
+                      const Expanded(
+                        child: Text("J'ai lu et j'accepte les conditions d'utilisation",
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(height: 8),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Color.fromARGB(
-                        255, 255, 192, 187), // Couleur de fond du bouton
+                    backgroundColor: _teal,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Colors.grey.shade300,
+                    minimumSize: const Size(220, 46),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                   ),
                   onPressed: _isAcceptedCGU
                       ? () {
@@ -635,28 +598,58 @@ class _MentionsLegalesState extends State<MentionsLegales> {
   bool _isAcceptedMentions = false;
   void _validateAndContinue() async {
     try {
-      UserCredential userCredential =
-          await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: User_Info.email,
-        password: User_Info.password,
-      );
-      User_Info.uid = userCredential.user!.uid;
+      final User user;
+      if (isCurrentUserGoogleAuth) {
+        // Déjà authentifié via Google (compte créé + email vérifié par
+        // Google plus tôt dans le parcours) — pas de mot de passe à créer.
+        user = FirebaseAuth.instance.currentUser!;
+        User_Info.uid = user.uid;
+      } else {
+        final userCredential =
+            await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: User_Info.email,
+          password: User_Info.password,
+        );
+        user = userCredential.user!;
+        User_Info.uid = user.uid;
+      }
 
-      User? user = userCredential.user;
       Object isRegistered =
           await registerElevage(User_Info.email, User_Info.password);
       // Charge les profils V2 créés par registerElevage
-      await User_Info.loadProfiles(userCredential.user!.uid);
+      await User_Info.loadProfiles(user.uid);
       if (User_Info.isElevage) {
         _sendRegistrationEmail(isRegistered);
       }
-      if (user != null && !user.emailVerified) {
+      if (!mounted) return;
+      if (!user.emailVerified) {
         await user.sendEmailVerification();
+        if (!mounted) return;
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => VerifyEmailPage(email: User_Info.email),
           ),
         );
+      } else {
+        // Email déjà vérifié (compte Google) : on saute directement la
+        // vérification, comme verifemail.dart le fait une fois validé.
+        if (User_Info.isElevage || User_Info.isPro || User_Info.isAssociation) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => VerificationRegistrationPage()),
+          );
+        } else {
+          final ok = await registerUser(User_Info.email, User_Info.password);
+          if (!mounted) return;
+          if (ok) {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (context) => BottomNav()),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Échec de l\'enregistrement. Veuillez réessayer.')),
+            );
+          }
+        }
       }
     } on FirebaseAuthException catch (e) {
       String errorMessage;
@@ -706,91 +699,44 @@ class _MentionsLegalesState extends State<MentionsLegales> {
     }
   }
 
+  static const _teal = Color(0xFF0C5C6C);
+  static const _bg = Color(0xFFF8F8F6);
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: _bg,
+      appBar: AppBar(
+        backgroundColor: _teal,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: const Text('Mentions Légales',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+      ),
       body: SingleChildScrollView(
         child: Center(
           child: DelayedAnimation(
             delay: 0,
             child: Column(
               children: [
-                SizedBox(
-                  width: UTILS.widthReference(context),
-                  height:
-                      UTILS.calculHeight(104, UTILS.heightReference(context)),
-                  child: Stack(
-                    children: [
-                      Image.asset(
-                        'assets/deco/arrondi_rose_2.png',
-              color: const Color(0xFFA7C79A),
-              colorBlendMode: BlendMode.srcIn,
-                        fit: BoxFit.cover,
-                        width: UTILS.calculWidth(
-                            211, UTILS.widthReference(context)),
-                        height: UTILS.calculHeight(
-                            104, UTILS.heightReference(context)),
-                      ),
-                      Positioned(
-                        top: UTILS.calculHeight(
-                            42, UTILS.heightReference(context)),
-                        left: UTILS.calculWidth(
-                            10, UTILS.widthReference(context)),
-                        child: IconButton(
-                          icon: Icon(Icons.arrow_back,
-                              color: Colors.black), // Icône de la flèche noire
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                          },
-                        ),
-                      ),
-                      Positioned(
-                        top: UTILS.calculHeight(
-                            53, UTILS.heightReference(context)),
-                        left: 0,
-                        right: 0,
-                        child: Align(
-                          alignment: Alignment.center,
-                          child: Text(
-                            'Mentions Légales',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontFamily: 'Galey',
-                              fontWeight: FontWeight.w500,
-                              fontSize: UTILS.calculWidth(
-                                  20, UTILS.widthReference(context)),
-                            ),
-                          ),
-                        ),
-                      )
-                    ],
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.grey.shade100),
                   ),
-                ),
-                SizedBox(
-                    height:
-                        UTILS.calculHeight(14, UTILS.heightReference(context))),
-                Align(
-                  alignment: Alignment(-0.8, 0),
-                  child: Text(
-                    "Mentions Légales",
-                    style: TextStyle(
-                      fontSize:
-                          UTILS.calculWidth(25, UTILS.widthReference(context)),
-                      fontFamily: 'Galey',
-                      color: Color.fromARGB(255, 0, 0, 0),
-                      fontWeight: FontWeight.w500,
-                    ),
-                    textAlign: TextAlign.left,
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
                   child: Text(
                     """
 1. Éditeur de l’application
-  -  Dénomination sociale : PETSMATCH (PM)
+  -  Dénomination sociale : PETSMATCH
   -  Forme juridique : SAS (Société par Actions Simplifiée)
+  -  Capital social : 1 000 €
   -  Adresse du siège social : 15 La Ville Marchand, 22210 Plumieux, France
+  -  RCS : Saint-Brieuc
   -  SIREN : 931 344 816
   -  SIRET : 931 344 816 00018
   -  Numéro de TVA Intracommunautaire : FR94 931 344 816
@@ -798,11 +744,10 @@ class _MentionsLegalesState extends State<MentionsLegales> {
   -  Email de contact : petsmatch.contact@gmail.com
   -  Téléphone : 07 81 03 49 84
 
-2. Responsable de la publication
-  -  Nom : Nabil Ksouri
-  -  Fonction : Président de PETSMATCH SAS
-  -  Nom: Mevinn Allee
-  -  Fonction: Directeur général de PETSMATCH SAS
+2. Responsable de la publication / Direction
+  -  Présidente : Madame Natacha Loisel
+  -  Directeur Général : Monsieur Nabil Ksouri
+  -  Directrice Générale Déléguée (Produit) : Madame Angélique Bégrand
 
 3. Hébergement de l’application
   -  Nom de l’hébergeur : Google Firebase (Google LLC)
@@ -836,31 +781,42 @@ class _MentionsLegalesState extends State<MentionsLegales> {
                     style: TextStyle(fontSize: 16),
                   ),
                 ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Checkbox(
-                      value: _isAcceptedMentions,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          _isAcceptedMentions = value ?? false;
-                        });
-                      },
-                    ),
-                    Text("J'ai lu et j'accepte les mentions légales")
-                  ],
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      Checkbox(
+                        value: _isAcceptedMentions,
+                        activeColor: _teal,
+                        onChanged: (bool? value) {
+                          setState(() {
+                            _isAcceptedMentions = value ?? false;
+                          });
+                        },
+                      ),
+                      const Expanded(
+                        child: Text("J'ai lu et j'accepte les mentions légales",
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(height: 8),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Color.fromARGB(
-                        255, 255, 192, 187), // Couleur de fond du bouton
+                    backgroundColor: _teal,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Colors.grey.shade300,
+                    minimumSize: const Size(220, 46),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                   ),
                   onPressed: _isAcceptedMentions
                       ? () async {
                           _validateAndContinue();
                         }
                       : null,
-                  child: Text("Accepter et Continuer"),
+                  child: const Text("Accepter et Continuer",
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
                 ),
                 SizedBox(
                     height:

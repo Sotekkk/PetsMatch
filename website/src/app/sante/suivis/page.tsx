@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useSanteAccess } from '@/hooks/useSanteAccess';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { useAuth } from '@/lib/auth-context';
 import { labelTypeSuivi, morphoSpeciesSupported, TEAL } from '@/lib/morpho';
 
 interface SuiviRow {
@@ -17,8 +18,18 @@ interface Patient { id: string; nom: string; espece: string; ownerName?: string 
 
 export default function SanteSuivisPage() {
   const { user, userData, isSante, loading: authLoading } = useSanteAccess();
+  const { availableProfiles } = useAuth();
   const router = useRouter();
-  const activeProfileId = useActiveProfile();
+  const rawActiveProfileId = useActiveProfile();
+  // Un même compte peut porter plusieurs profils pro (ex : ostéo + éducateur) ;
+  // sans ce repli sur le premier profil non-particulier, activeProfileId vide
+  // (aucun profil sélectionné dans le switcher) fait échouer la résolution
+  // des vrais patients (animal_access est scopé par profil). Même pattern
+  // que sante_suivis_morpho_page.dart (app).
+  const activeProfileId = rawActiveProfileId
+    || availableProfiles.find(p => p.profile_type !== 'particulier')?.id
+    || availableProfiles[0]?.id
+    || '';
   const [suivis, setSuivis] = useState<SuiviRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [picker, setPicker] = useState<'closed' | 'choix' | 'libre'>('closed');
