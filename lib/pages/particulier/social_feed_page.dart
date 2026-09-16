@@ -315,29 +315,42 @@ Future<void> _insertLike(String postId, String uid) async {
 /// vide ou appartenir au mauvais profil (« vous suit maintenant » sans nom,
 /// ou le mauvais type de profil). Avec l'id exact du profil qui a agi, le
 /// nom est toujours le bon.
+///
+/// [recipientProfileId] : profil PRÉCIS du destinataire à notifier (le
+/// profil qui a posté / qui est suivi). Sans lui, la notif était insérée
+/// sans `profile_id` → `NotificationsPage._fetch` (repli `profile_type`
+/// vide = « tous profils ») l'affichait dans la cloche de N'IMPORTE QUEL
+/// profil actif du compte destinataire, pas seulement celui concerné.
 void _sendSocialNotif({
   required SupabaseClient supa,
   required String actorUid,
   String? actorProfileId,
   String? postId,
   String? targetUid,
+  String? recipientProfileId,
   String? commentId,
   required String type,
   required String titleSuffix,
   required String body,
 }) async {
   try {
-    // Récupérer le destinataire depuis le post si pas de targetUid direct
+    // Récupérer le destinataire (+ son profil précis) depuis le post si pas
+    // de targetUid/recipientProfileId direct (cas follow, déjà résolus).
     String? recipientUid = targetUid;
+    String? recipientPid = recipientProfileId;
     if (recipientUid == null && postId != null) {
       final row = await supa
           .from('posts_socialmedia')
-          .select('uid')
+          .select('uid, author_profile_id')
           .eq('id', postId)
           .maybeSingle();
       recipientUid = row?['uid'] as String?;
+      recipientPid ??= row?['author_profile_id'] as String?;
     }
     if (recipientUid == null || recipientUid == actorUid) return;
+    // Legacy (post sans author_profile_id) : repli particulier sinon is_main
+    // — même résolution que la lecture (_resolveAuthors).
+    recipientPid ??= await _socialProfileId(recipientUid);
 
     // Garde-fou anti-doublon : un appui multiple sur « Suivre »/like (avant
     // que l'UI ne se mette à jour, ou un double envoi réseau) créait jusqu'à
@@ -364,6 +377,7 @@ void _sendSocialNotif({
     await supa.from('notifications').insert({
       'uid': recipientUid,
       'type': type,
+      if (recipientPid != null) 'profile_id': recipientPid,
       'title': '$actorName $titleSuffix',
       'body': body,
       'data': {
@@ -402,6 +416,7 @@ Future<void> _insertFollow(String followerUid, String followingUid,
     actorUid: followerUid,
     actorProfileId: fp,
     targetUid: followingUid,
+    recipientProfileId: tp,
     type: 'social_follow',
     titleSuffix: 'vous suit maintenant',
     body: 'Découvrez son profil sur Pets Social 🐾',
@@ -1684,6 +1699,7 @@ class _FeedListState extends State<_FeedList>
                 postId: effectiveId,
                 myUid: widget.myUid,
                 postAuthorUid: originalUid,
+                postAuthorProfileId: origProfileId,
                 onCommentAdded: () => setState(() {
                   final idx = _posts.indexWhere((p) => p['id'] == postId);
                   if (idx >= 0) {
@@ -3190,6 +3206,10 @@ class _CommentsSheet extends StatefulWidget {
   final String postId;
   final String myUid;
   final String postAuthorUid;
+  // Profil précis de l'auteur (post original si repost) — pour scoper la
+  // notif "a commenté votre post" à la bonne cloche multi-profil. Repli
+  // particulier/is_main dans _sendSocialNotif si absent (legacy).
+  final String? postAuthorProfileId;
   final VoidCallback onCommentAdded;
   // Notification "a commenté votre post" : scrolle jusqu'au commentaire et
   // le surligne brièvement à l'ouverture.
@@ -3198,6 +3218,7 @@ class _CommentsSheet extends StatefulWidget {
       {required this.postId,
       required this.myUid,
       required this.postAuthorUid,
+      this.postAuthorProfileId,
       required this.onCommentAdded,
       this.highlightCommentId});
   @override
@@ -3355,6 +3376,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         actorProfileId: pid,
         postId: widget.postId,
         targetUid: widget.postAuthorUid,
+        recipientProfileId: widget.postAuthorProfileId,
         commentId: inserted['id']?.toString(),
         type: 'social_comment',
         titleSuffix: 'a commenté votre post',
@@ -5525,6 +5547,7 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
         postId: _effectiveId,
         myUid: widget.myUid,
         postAuthorUid: _authorUid,
+        postAuthorProfileId: _authorProfileId,
         highlightCommentId: widget.highlightCommentId,
         onCommentAdded: () => setState(() {
           widget.post['comment_count'] = ((widget.post['comment_count'] as int?) ?? 0) + 1;
@@ -5640,6 +5663,7 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
               postId: _effectiveId,
               myUid: widget.myUid,
               postAuthorUid: _authorUid,
+              postAuthorProfileId: _authorProfileId,
               onCommentAdded: () => setState(() {
                 widget.post['comment_count'] = ((widget.post['comment_count'] as int?) ?? 0) + 1;
               }))),
