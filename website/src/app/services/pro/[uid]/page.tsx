@@ -11,6 +11,8 @@ import { PENSION_ESPECES } from '@/lib/pension-especes';
 import { gardeMotifLabel } from '@/lib/garde-labels';
 import EducationReservationModal from '@/components/education/EducationReservationModal';
 import { geocodeAddress, distanceKm } from '@/lib/geocoding';
+import { getClientKnownAddress } from '@/lib/client-address';
+import { AnimalPickerField } from '@/components/AnimalPickerField';
 
 // Vitesse moyenne heuristique (à vol d'oiseau, pas d'API Directions payante)
 // + marge de sécurité — même heuristique que EducationReservationModal.tsx.
@@ -76,7 +78,7 @@ interface Prestation {
   prix?: number; prix_base?: number; grille_prix?: { prix: number }[];
 }
 interface Slot { date: string; heureDebut: string; heureFin: string; capacite?: number; typeGarde?: string | null; domicileOk?: boolean; trajetOrigine?: string | null; }
-interface Animal { id: number; nom: string; espece: string; }
+interface Animal { id: number; nom: string; espece: string; race?: string | null; photo_url?: string | null; }
 interface CoursCollectif {
   id: string; titre: string; date_heure: string; capacite_max: number; lieu?: string | null;
   pro_profile_id?: string | null; serie_id?: string | null;
@@ -195,6 +197,8 @@ function ProDetailContent() {
   // trajet_origine_defaut/autre_domicile_*, rdv.lieu_lat/lieu_lng).
   const [domicile, setDomicile] = useState(false);
   const [adresseDomicile, setAdresseDomicile] = useState('');
+  // Adresse connue du profil client (pré-remplissage) — cf. getClientKnownAddress.
+  const [clientAdresseConnue, setClientAdresseConnue] = useState<string | null>(null);
   const [domicileLatLng, setDomicileLatLng] = useState<{ lat: number; lng: number } | null>(null);
   const [geocodingDomicile, setGeocodingDomicile] = useState(false);
   const [cabinetLatLng, setCabinetLatLng] = useState<{ lat: number; lng: number } | null>(null);
@@ -559,6 +563,7 @@ function ProDetailContent() {
     setOccurrences(4);
     setDomicile(false);
     setAdresseDomicile('');
+    setClientAdresseConnue(null);
     setDomicileLatLng(null);
     setSlotsLoading(true);
     const profileId = profileTableId ?? '';
@@ -576,7 +581,7 @@ function ProDetailContent() {
     // Scopé au profil actif du client réservant le RDV (pas tout le compte
     // Firebase) — sinon un compte multi-profil (ex. particulier + éleveur)
     // voit les animaux de tous ses profils au lieu du seul profil courant.
-    let animauxQ = supabase.from('animaux').select('id, nom, espece')
+    let animauxQ = supabase.from('animaux').select('id, nom, espece, race, photo_url')
       .or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`)
       .order('nom');
     if (activeProfileId) animauxQ = animauxQ.eq('profile_id', activeProfileId);
@@ -622,13 +627,21 @@ function ProDetailContent() {
       for (const key in byDate) byDate[key].sort((a, b) => a.startMin - b.startMin);
       return byDate;
     }
-    const [slotsRes, animauxRes, ownRes, rdvsDuJour] = await Promise.all([
+    const [slotsRes, animauxRes, ownRes, rdvsDuJour, clientAdresse] = await Promise.all([
       fetchAllSlots(),
       animauxQ,
       ownQ,
       fetchRdvsDuJour(),
+      pro?.cat_pro === 'sante' ? getClientKnownAddress(user.uid, activeProfileId) : Promise.resolve(null),
     ]);
     setRdvsDuJourByDate(rdvsDuJour);
+    if (clientAdresse) {
+      setClientAdresseConnue(clientAdresse.text);
+      setAdresseDomicile(clientAdresse.text);
+      setDomicileLatLng(clientAdresse.lat != null && clientAdresse.lng != null ? { lat: clientAdresse.lat, lng: clientAdresse.lng } : null);
+    } else {
+      setClientAdresseConnue(null);
+    }
 
     // Éducateur : un nouveau client ne peut réserver qu'un bilan tant qu'il
     // n'a pas eu de séance confirmée avec ce pro (sauf si le pro désactive
@@ -673,7 +686,7 @@ function ProDetailContent() {
     const missingIds = cessionIds.filter(id => !direct.some(a => String(a.id) === id));
     let viaCession: Animal[] = [];
     if (missingIds.length > 0) {
-      const { data } = await supabase.from('animaux').select('id, nom, espece').in('id', missingIds);
+      const { data } = await supabase.from('animaux').select('id, nom, espece, race, photo_url').in('id', missingIds);
       viaCession = (data ?? []) as Animal[];
     }
     setAnimaux([...direct, ...viaCession].sort((a, b) => a.nom.localeCompare(b.nom)));
@@ -1588,6 +1601,11 @@ function ProDetailContent() {
                             placeholder="Votre adresse"
                             className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm"
                             style={{ fontFamily: 'Galey, sans-serif' }} />
+                          {clientAdresseConnue && adresseDomicile.trim() === clientAdresseConnue && (
+                            <p className="text-xs text-gray-400 mt-1">
+                              Adresse enregistrée sur votre profil — modifiable ci-dessus.
+                            </p>
+                          )}
                           {domicileLatLng ? (
                             <p className="text-xs text-gray-400 mt-2">
                               Créneaux compatibles avec le trajet du professionnel affichés ci-dessous.
@@ -1645,21 +1663,12 @@ function ProDetailContent() {
                         </Link>
                       </div>
                     ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {animaux.map(a => (
-                          <button key={a.id} onClick={() => setSelectedAnimalId(selectedAnimalId === a.id ? null : a.id)}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border text-sm font-semibold transition-all"
-                            style={{
-                              fontFamily: 'Galey, sans-serif',
-                              borderColor: selectedAnimalId === a.id ? catColor : '#E5E7EB',
-                              backgroundColor: selectedAnimalId === a.id ? `${catColor}15` : 'white',
-                              color: selectedAnimalId === a.id ? catColor : '#6B7280',
-                            }}>
-                            <span>{a.espece === 'chien' ? '🐶' : a.espece === 'chat' ? '🐱' : a.espece === 'cheval' ? '🐴' : '🐾'}</span>
-                            {a.nom}
-                          </button>
-                        ))}
-                      </div>
+                      <AnimalPickerField
+                        animaux={animaux}
+                        selectedId={selectedAnimalId}
+                        onSelect={(id) => setSelectedAnimalId(id as number | null)}
+                        accentColor={catColor}
+                      />
                     )}
                   </div>
                   )}

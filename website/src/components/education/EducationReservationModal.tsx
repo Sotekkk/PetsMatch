@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { geocodeAddress, distanceKm } from '@/lib/geocoding';
+import { getClientKnownAddress } from '@/lib/client-address';
+import { AnimalPickerField } from '@/components/AnimalPickerField';
 
 // Vitesse moyenne heuristique (à vol d'oiseau) + marge de sécurité — même
 // principe que lib/pages/pro/education_reservation_page.dart (app), utilisé
@@ -28,7 +30,7 @@ interface Prestation {
 }
 // Séance de groupe déjà planifiée (cours collectif), rapprochée d'un créneau fixe.
 type CoursSeance = { date_heure: string; coursId: string; capacite: number; inscrits: number };
-interface Animal { id: number | string; nom: string; espece: string; }
+interface Animal { id: number | string; nom: string; espece: string; race?: string | null; photo_url?: string | null; }
 interface Props {
   proUid: string;
   proProfileId: string | null;
@@ -90,6 +92,8 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
   const [domicile, setDomicile] = useState(false);
   const [domicileChoiceMade, setDomicileChoiceMade] = useState(false);
   const [adresseDomicile, setAdresseDomicile] = useState('');
+  // Adresse connue du profil client (pré-remplissage) — cf. getClientKnownAddress.
+  const [clientAdresseConnue, setClientAdresseConnue] = useState<string | null>(null);
   const [geocodingDomicile, setGeocodingDomicile] = useState(false);
   const [domicileLatLng, setDomicileLatLng] = useState<{ lat: number; lng: number } | null>(null);
   const [origineDefaut, setOrigineDefaut] = useState('cabinet');
@@ -147,23 +151,32 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
       // animaux_proprietes (source de vérité de la propriété courante — la
       // colonne animaux.profile_id est souvent null sur les vieux comptes,
       // cf. rdv_booking_page.dart _loadAnimaux).
-      let directQ = supabase.from('animaux').select('id, nom, espece')
+      let directQ = supabase.from('animaux').select('id, nom, espece, race, photo_url')
         .or(`uid_eleveur.eq.${user.uid},uid_proprietaire.eq.${user.uid}`);
       if (activeProfileId) directQ = directQ.eq('profile_id', activeProfileId);
       let ownQ = supabase.from('animaux_proprietes').select('animal_id')
         .eq('uid_proprio', user.uid).is('date_fin', null);
       if (activeProfileId) ownQ = ownQ.eq('profile_id_proprio', activeProfileId);
-      const [{ data: directRows }, { data: ownRows }] = await Promise.all([directQ, ownQ]);
+      const [{ data: directRows }, { data: ownRows }, clientAdresse] = await Promise.all([
+        directQ,
+        ownQ,
+        getClientKnownAddress(user.uid, activeProfileId),
+      ]);
       const direct = (directRows ?? []) as Animal[];
       const directIds = new Set(direct.map(a => String(a.id)));
       const missingIds = [...new Set(((ownRows ?? []) as { animal_id: string }[]).map(r => r.animal_id))]
         .filter(id => id && !directIds.has(String(id)));
       let viaCession: Animal[] = [];
       if (missingIds.length > 0) {
-        const { data: r2 } = await supabase.from('animaux').select('id, nom, espece').in('id', missingIds);
+        const { data: r2 } = await supabase.from('animaux').select('id, nom, espece, race, photo_url').in('id', missingIds);
         viaCession = (r2 ?? []) as Animal[];
       }
       setAnimaux([...direct, ...viaCession].sort((a, b) => (a.nom ?? '').localeCompare(b.nom ?? '')));
+      if (clientAdresse) {
+        setClientAdresseConnue(clientAdresse.text);
+        setAdresseDomicile(clientAdresse.text);
+        setDomicileLatLng(clientAdresse.lat != null && clientAdresse.lng != null ? { lat: clientAdresse.lat, lng: clientAdresse.lng } : null);
+      }
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -598,9 +611,15 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
               </div>
               {domicile && (
                 <>
-                  <input value={adresseDomicile} onChange={e => setAdresseDomicile(e.target.value)}
+                  <input value={adresseDomicile}
+                    onChange={e => { setAdresseDomicile(e.target.value); if (domicileLatLng) setDomicileLatLng(null); }}
                     placeholder="Votre adresse (numéro, rue, ville)"
                     className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-galey" />
+                  {clientAdresseConnue && adresseDomicile.trim() === clientAdresseConnue && (
+                    <p className="text-xs text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      Adresse enregistrée sur votre profil — modifiable ci-dessus.
+                    </p>
+                  )}
                   <p className="text-xs text-gray-400" style={{ fontFamily: 'Galey, sans-serif' }}>
                     Seuls les créneaux compatibles avec le trajet du professionnel seront proposés.
                   </p>
@@ -623,20 +642,12 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
                   Ajoutez un animal depuis <a href="/mes-animaux" className="underline">Mes animaux</a> pour réserver.
                 </p>
               ) : (
-                <div className="flex flex-wrap gap-2">
-                  {animaux.map(a => (
-                    <button key={a.id} onClick={() => setSelectedAnimalId(selectedAnimalId === a.id ? null : a.id)}
-                      className="px-3 py-1.5 rounded-full border text-xs font-semibold"
-                      style={{
-                        borderColor: selectedAnimalId === a.id ? catColor : '#E5E7EB',
-                        backgroundColor: selectedAnimalId === a.id ? `${catColor}15` : 'white',
-                        color: selectedAnimalId === a.id ? catColor : '#6B7280',
-                        fontFamily: 'Galey, sans-serif',
-                      }}>
-                      🐾 {a.nom}
-                    </button>
-                  ))}
-                </div>
+                <AnimalPickerField
+                  animaux={animaux}
+                  selectedId={selectedAnimalId}
+                  onSelect={setSelectedAnimalId}
+                  accentColor={catColor}
+                />
               )}
 
               <p className="text-xs font-semibold" style={{ fontFamily: 'Galey, sans-serif', color: catColor }}>

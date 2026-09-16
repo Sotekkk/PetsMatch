@@ -129,6 +129,13 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   String _origineDefaut = 'cabinet';
   double? _cabinetLat, _cabinetLng, _autreDomicileLat, _autreDomicileLng;
   double? _domicileLat, _domicileLng;
+  // Adresse déjà connue depuis le profil du client (user_profiles) — pré-remplit
+  // le champ pour éviter une ressaisie ; sinon le champ passe en autocomplétion
+  // Google Places comme le trajet taxi.
+  String? _clientAdresseConnue;
+  double? _clientAdresseLat, _clientAdresseLng;
+  Timer? _debounceDomicile;
+  List<Prediction> _predictionsDomicile = [];
 
   // Garde à domicile : la pet-sitter autorise-t-elle les prestations qui se
   // chevauchent (jusqu'à la capacité du jour) ? + réservation d'une garde-journée
@@ -263,6 +270,7 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     _adresseDomicileCtrl.dispose();
     _debounceDepart?.cancel();
     _debounceArrivee?.cancel();
+    _debounceDomicile?.cancel();
     _places.dispose();
     super.dispose();
   }
@@ -303,6 +311,24 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
     if (loc != null) { _latArrivee = loc.lat; _lngArrivee = loc.lng; }
   }
 
+  void _onDomicileChanged(String val) {
+    _debounceDomicile?.cancel();
+    if (_domicileLat != null) setState(() { _domicileLat = null; _domicileLng = null; });
+    if (val.trim().length < 3) { setState(() => _predictionsDomicile = []); return; }
+    _debounceDomicile = Timer(const Duration(milliseconds: 400), () async {
+      final res = await _places.autocomplete(val, components: [Component(Component.country, 'fr')], language: 'fr');
+      if (mounted) setState(() => _predictionsDomicile = res.isOkay ? res.predictions : []);
+    });
+  }
+
+  Future<void> _selectDomicilePrediction(Prediction p) async {
+    setState(() { _adresseDomicileCtrl.text = p.description ?? ''; _predictionsDomicile = []; _selectedSlot = null; });
+    if (p.placeId == null) return;
+    final det = await _places.getDetailsByPlaceId(p.placeId!);
+    final loc = det.isOkay ? det.result.geometry?.location : null;
+    if (loc != null && mounted) setState(() { _domicileLat = loc.lat; _domicileLng = loc.lng; });
+  }
+
   Future<void> _loadAll() async {
     await Future.wait([
       _loadAnimaux(),
@@ -310,8 +336,68 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       _loadAvailableSlots(),
       if (widget.isPhotographe || widget.isToilettage) _loadPrestations(),
       if (widget.isToilettage) _loadEmployesToilettage(),
+      _loadClientAdresse(),
     ]);
     if (mounted) setState(() => _loadingData = false);
+  }
+
+  // Adresse à domicile (santé/ostéo) : on a déjà l'adresse du client sur son
+  // profil (user_profiles, saisie via Google Places lors de l'inscription/
+  // édition du profil, déjà géocodée) — on la pré-remplit pour éviter une
+  // ressaisie. Le client peut toujours la modifier (champ en autocomplétion
+  // Places, cf. _buildDomicileLieuSection) si elle est fausse ou différente
+  // du lieu du rendez-vous.
+  //
+  // Piège vérifié en base réelle : la colonne générique rue/code_postal/ville
+  // de user_profiles est l'adresse personnelle et est renseignée (avec
+  // lat/lng déjà géocodés) pour TOUS les types de profil, y compris éleveur —
+  // les colonnes dédiées rue_elevage/code_postal_elevage/ville_elevage sont
+  // en pratique quasi toujours NULL (rarement saisies séparément). On lit
+  // donc les colonnes génériques en priorité, et on ne bascule sur
+  // *_elevage (géocodées à la volée, pas de lat_elevage/lng_elevage) que si
+  // les génériques sont vides.
+  Future<void> _loadClientAdresse() async {
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+      final supa = Supabase.instance.client;
+      Map<String, dynamic>? row;
+      final pid = User_Info.activeProfileId;
+      if (pid.isNotEmpty) {
+        row = await supa
+            .from('user_profiles')
+            .select('rue, ville, code_postal, pays, lat, lng, '
+                'rue_elevage, ville_elevage, code_postal_elevage, pays_elevage')
+            .eq('id', pid)
+            .maybeSingle();
+      }
+      row ??= await supa.from('users').select('rue, ville, code_postal, pays, lat, lng').eq('uid', uid).maybeSingle();
+      if (row == null) return;
+      final genericParts = [row['rue'], row['code_postal'], row['ville']]
+          .map((e) => e?.toString().trim() ?? '')
+          .where((s) => s.isNotEmpty);
+      if (genericParts.isNotEmpty) {
+        _clientAdresseConnue = genericParts.join(', ');
+        _clientAdresseLat = (row['lat'] as num?)?.toDouble();
+        _clientAdresseLng = (row['lng'] as num?)?.toDouble();
+      } else {
+        final elevageParts = [row['rue_elevage'], row['code_postal_elevage'], row['ville_elevage']]
+            .map((e) => e?.toString().trim() ?? '')
+            .where((s) => s.isNotEmpty);
+        if (elevageParts.isEmpty) return;
+        _clientAdresseConnue = elevageParts.join(', ');
+        final geo = await GeocodingHelper.geocode(_clientAdresseConnue!);
+        _clientAdresseLat = geo?.lat;
+        _clientAdresseLng = geo?.lng;
+      }
+      if (mounted && _adresseDomicileCtrl.text.trim().isEmpty) {
+        setState(() {
+          _adresseDomicileCtrl.text = _clientAdresseConnue!;
+          _domicileLat = _clientAdresseLat;
+          _domicileLng = _clientAdresseLng;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadPrestations() async {
@@ -2065,15 +2151,19 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
       ]),
       if (_domicile) ...[
         const SizedBox(height: 12),
-        TextField(
+        _addressAutocompleteField(
           controller: _adresseDomicileCtrl,
-          onChanged: (_) {
-            if (_domicileLat != null) setState(() { _domicileLat = null; _domicileLng = null; });
-          },
-          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-          decoration: _inputDecoration('Votre adresse').copyWith(
-              prefixIcon: const Icon(Icons.home_outlined, size: 18)),
+          label: 'Votre adresse',
+          icon: Icons.home_outlined,
+          predictions: _predictionsDomicile,
+          onChanged: _onDomicileChanged,
+          onSelect: _selectDomicilePrediction,
         ),
+        if (_domicileLat != null && _clientAdresseConnue != null && _adresseDomicileCtrl.text.trim() == _clientAdresseConnue) ...[
+          const SizedBox(height: 4),
+          Text('Adresse enregistrée sur votre profil — modifiable ci-dessus.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+        ],
         const SizedBox(height: 8),
         if (_domicileLat != null)
           Text('Créneaux compatibles avec le trajet du professionnel affichés ci-dessous.',
