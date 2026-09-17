@@ -15,6 +15,7 @@ interface Post {
   created_at?: string | null;
   is_repost?: boolean | null;
   original_post_id?: string | null;
+  visibilite?: string | null;
 }
 
 interface Author {
@@ -30,6 +31,7 @@ interface Author {
 type State =
   | { status: 'loading' }
   | { status: 'invalid' }
+  | { status: 'private'; postId: string }
   | { status: 'ok'; post: Post; author: Author | null; medias: string[] };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -90,7 +92,7 @@ export default function SharedPostPage({ params }: { params: Promise<{ id: strin
     try {
       const { data: row, error } = await supabase
         .from('posts_socialmedia')
-        .select('id, uid, author_profile_id, texte, media_url, created_at, is_repost, original_post_id')
+        .select('id, uid, author_profile_id, texte, media_url, created_at, is_repost, original_post_id, visibilite')
         .eq('id', postId)
         .maybeSingle();
 
@@ -105,10 +107,19 @@ export default function SharedPostPage({ params }: { params: Promise<{ id: strin
       if (post.is_repost && post.original_post_id) {
         const { data: orig } = await supabase
           .from('posts_socialmedia')
-          .select('id, uid, author_profile_id, texte, media_url, created_at')
+          .select('id, uid, author_profile_id, texte, media_url, created_at, visibilite')
           .eq('id', post.original_post_id)
           .maybeSingle();
         if (orig) post = { ...(orig as Post), is_repost: false, original_post_id: null };
+      }
+
+      // Publication « Amis » : cette page est publique et anonyme (pas de
+      // connexion), donc aucun moyen fiable de vérifier une amitié ici —
+      // on ne montre jamais le contenu, on renvoie vers l'appli (qui, elle,
+      // vérifie le lien PetFriend avant d'ouvrir le post).
+      if (post.visibilite === 'amis') {
+        setState({ status: 'private', postId: post.id });
+        return;
       }
 
       let author: Author | null = null;
@@ -164,6 +175,29 @@ export default function SharedPostPage({ params }: { params: Promise<{ id: strin
           >
             Découvrir PetsMatch
           </a>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === 'private') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="text-center max-w-sm">
+          <div className="text-6xl mb-4">🤝</div>
+          <h1 className="text-xl font-bold text-gray-800 mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>
+            Publication réservée aux amis
+          </h1>
+          <p className="text-gray-500 text-sm leading-relaxed">
+            Cette publication n&apos;est visible que par son auteur et ses PetFriends. Ouvrez-la dans l&apos;application si vous êtes ami·e avec son auteur.
+          </p>
+          <OpenInApp postId={state.postId} />
+          <Link
+            href="/"
+            className="mt-2 inline-block bg-green-600 text-white px-6 py-2.5 rounded-full text-sm font-medium hover:bg-green-700 transition-colors"
+          >
+            Découvrir PetsMatch
+          </Link>
         </div>
       </div>
     );
