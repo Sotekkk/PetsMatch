@@ -3203,6 +3203,125 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
 
+  /// Copie les créneaux disponibles d'un jour vers un ou plusieurs autres
+  /// jours de la MÊME semaine affichée — complémentaire de "Répliquer…"
+  /// (qui reporte toute la semaine sur les semaines suivantes). Ex. dupliquer
+  /// un lundi type sur un mercredi.
+  Future<void> _copyDay(DateTime sourceDay) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final pid = _resolveProProfileId();
+    final sourceKey = CreneauxWeekGrid.dateKey(sourceDay);
+    final daySlots = _blockedSlots.entries
+        .where((e) => e.key.startsWith('${sourceKey}_') && e.value == 'disponible')
+        .toList();
+    if (daySlots.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Aucun créneau ce jour à copier.', style: TextStyle(fontFamily: 'Galey')),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      return;
+    }
+
+    const joursLong = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+    final days = List.generate(7, (i) => _weekStart.add(Duration(days: i)));
+    final otherDays = days.where((d) => !_sameDay(d, sourceDay)).toList();
+    final selected = <DateTime>{};
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text('Copier ${joursLong[sourceDay.weekday - 1]} vers…',
+              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${daySlots.length ~/ 4 + (daySlots.length % 4 == 0 ? 0 : 1)} plage(s) de ce jour à copier.',
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 8),
+            for (final d in otherDays)
+              CheckboxListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                activeColor: _teal,
+                value: selected.contains(d),
+                title: Text('${joursLong[d.weekday - 1]} ${d.day} ${_mois[d.month - 1]}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                onChanged: (v) => setS(() { if (v == true) { selected.add(d); } else { selected.remove(d); } }),
+              ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Annuler', style: TextStyle(color: Colors.grey))),
+            TextButton(onPressed: selected.isEmpty ? null : () => Navigator.pop(ctx, true),
+                child: Text('Copier',
+                    style: TextStyle(color: _teal, fontWeight: FontWeight.w600))),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || selected.isEmpty || !mounted) return;
+
+    try {
+      final rows = <Map<String, dynamic>>[];
+      for (final target in selected) {
+        final targetKey = CreneauxWeekGrid.dateKey(target);
+        for (final entry in daySlots) {
+          final timeStr = entry.key.substring(sourceKey.length + 1);
+          final parts = timeStr.split(':');
+          final startMins = (int.tryParse(parts[0]) ?? 0) * 60 + (int.tryParse(parts[1]) ?? 0);
+          final finMins = startMins + 15;
+          final heureDebut = '${(startMins ~/ 60).toString().padLeft(2, '0')}:${(startMins % 60).toString().padLeft(2, '0')}:00';
+          final heureFin = '${(finMins ~/ 60).toString().padLeft(2, '0')}:${(finMins % 60).toString().padLeft(2, '0')}:00';
+          rows.add({
+            'pro_uid':        uid,
+            'pro_profile_id': pid,
+            'date':           targetKey,
+            'heure_debut':    heureDebut,
+            'heure_fin':      heureFin,
+            'statut':         'disponible',
+            'type_prestation': _slotTypes[entry.key],
+            'domicile_ok':    _slotDomicile.contains(entry.key),
+            'capacite':       _slotCapacite[entry.key] ?? 1,
+            if (_slotTypeGarde[entry.key] != null)
+              'type_garde': _slotTypeGarde[entry.key],
+            if (_slotPrestationIds[entry.key] != null)
+              'prestation_id': _slotPrestationIds[entry.key],
+          });
+        }
+      }
+
+      final seen = <String>{};
+      final deduped = rows.where((r) => seen.add('${r["date"]}_${r["heure_debut"]}')).toList();
+
+      await Supabase.instance.client.from('creneaux_pro')
+          .upsert(deduped, onConflict: 'pro_uid,pro_profile_id,date,heure_debut');
+
+      await _loadCreneaux();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            '${deduped.length} créneau(x) copiés sur ${selected.length} jour(s).',
+            style: const TextStyle(fontFamily: 'Galey'),
+          ),
+          backgroundColor: const Color(0xFF6E9E57),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
   Widget _buildCreneauxTab() {
     final days = List.generate(7, (i) => _weekStart.add(Duration(days: i)));
 
@@ -3313,6 +3432,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             onCreateRange: (day, start, end) => _showRangeDialog(
                 CreneauxWeekGrid.dateKey(day), initialStart: start, initialEnd: end),
             onTapRange: (day, range) => _showRangeDialog(CreneauxWeekGrid.dateKey(day), editing: range),
+            onCopyDay: _copyDay,
           ),
         ),
       ),

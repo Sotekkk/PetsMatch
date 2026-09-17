@@ -19,6 +19,11 @@ class CreneauxWeekGrid extends StatelessWidget {
   final Map<String, List<Map<String, dynamic>>> rdvsByDay; // clé 'yyyy-MM-dd'
   final void Function(DateTime day, TimeOfDay start, TimeOfDay end) onCreateRange;
   final void Function(DateTime day, CreneauRange range) onTapRange;
+  // Copie les créneaux disponibles de ce jour vers d'autres jours de la
+  // semaine choisis par le pro (ex. dupliquer un lundi type sur un mercredi)
+  // — distinct de "Répliquer…" qui reporte toute la semaine sur les
+  // semaines suivantes. Optionnel : l'icône n'apparaît que si fourni.
+  final void Function(DateTime day)? onCopyDay;
   final int startHour;
   final int endHour;
   static const double hourHeight = 56;
@@ -32,6 +37,7 @@ class CreneauxWeekGrid extends StatelessWidget {
     required this.rdvsByDay,
     required this.onCreateRange,
     required this.onTapRange,
+    this.onCopyDay,
     this.startHour = 6,
     this.endHour = 22,
   });
@@ -79,16 +85,27 @@ class CreneauxWeekGrid extends StatelessWidget {
                     SizedBox(
                       height: headerHeight,
                       child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: _sameDay(day, today) ? const Color(0xFF0C5C6C) : Colors.transparent,
-                            borderRadius: BorderRadius.circular(8),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: _sameDay(day, today) ? const Color(0xFF0C5C6C) : Colors.transparent,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text('${_kJoursCourts[day.weekday - 1]} ${day.day}',
+                                style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700,
+                                    color: _sameDay(day, today) ? Colors.white : Colors.black87)),
                           ),
-                          child: Text('${_kJoursCourts[day.weekday - 1]} ${day.day}',
-                              style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700,
-                                  color: _sameDay(day, today) ? Colors.white : Colors.black87)),
-                        ),
+                          if (onCopyDay != null &&
+                              (rangesByDay[dateKey(day)]?.any((r) => r.statut == 'disponible') ?? false))
+                            GestureDetector(
+                              onTap: () => onCopyDay!(day),
+                              child: Padding(
+                                padding: const EdgeInsets.only(left: 2),
+                                child: Icon(Icons.copy_outlined, size: 13, color: Colors.grey.shade500),
+                              ),
+                            ),
+                        ]),
                       ),
                     ),
                     _DayColumn(
