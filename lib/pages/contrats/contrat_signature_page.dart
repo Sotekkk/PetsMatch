@@ -435,9 +435,14 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
   /// acquéreur » ne convient pas à une garde, une adoption, une saillie…).
   /// `vendeurDe` / `acquereurDe` : forme génitive (« Signature … »).
   /// `acquereurA` : forme datif (« Envoyer … »).
-  ({String vendeurDe, String acquereurDe, String acquereurA}) get _signerRoles {
+  /// `vendeurLabel` / `acquereurLabel` : nom court (étiquette de champ).
+  ({String vendeurDe, String acquereurDe, String acquereurA, String vendeurLabel, String acquereurLabel})
+      get _signerRoles {
     if (widget.isCertificatEngagement) {
-      return (vendeurDe: 'du cédant', acquereurDe: 'du futur propriétaire', acquereurA: 'au futur propriétaire');
+      return (
+        vendeurDe: 'du cédant', acquereurDe: 'du futur propriétaire', acquereurA: 'au futur propriétaire',
+        vendeurLabel: 'Cédant', acquereurLabel: 'Futur propriétaire',
+      );
     }
     switch (_doc?['type'] as String? ?? '') {
       case 'contrat_garde':
@@ -445,13 +450,26 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       case 'contrat_prestation':
       case 'contrat_education':
       case 'contrat_sante':
-        return (vendeurDe: 'du prestataire', acquereurDe: 'du client', acquereurA: 'au client');
+        return (
+          vendeurDe: 'du prestataire', acquereurDe: 'du client', acquereurA: 'au client',
+          vendeurLabel: 'Prestataire', acquereurLabel: 'Client',
+        );
       case 'contrat_adoption':
-        return (vendeurDe: 'de l\'association', acquereurDe: 'de l\'adoptant·e', acquereurA: 'à l\'adoptant·e');
+        return (
+          vendeurDe: 'de l\'association', acquereurDe: 'de l\'adoptant·e', acquereurA: 'à l\'adoptant·e',
+          vendeurLabel: 'Association', acquereurLabel: 'Adoptant·e',
+        );
       case 'contrat_saillie':
-        return (vendeurDe: 'du propriétaire de l\'étalon', acquereurDe: 'du propriétaire de la femelle', acquereurA: 'au propriétaire de la femelle');
+        return (
+          vendeurDe: 'du propriétaire de l\'étalon', acquereurDe: 'du propriétaire de la femelle',
+          acquereurA: 'au propriétaire de la femelle',
+          vendeurLabel: 'Propriétaire étalon', acquereurLabel: 'Propriétaire femelle',
+        );
       default:
-        return (vendeurDe: 'de l\'éleveur / vendeur', acquereurDe: 'de l\'acquéreur', acquereurA: 'à l\'acquéreur');
+        return (
+          vendeurDe: 'de l\'éleveur / vendeur', acquereurDe: 'de l\'acquéreur', acquereurA: 'à l\'acquéreur',
+          vendeurLabel: 'Vendeur', acquereurLabel: 'Acquéreur',
+        );
     }
   }
 
@@ -807,8 +825,8 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
         if (url != null) {
           await Clipboard.setData(ClipboardData(text: url));
           _snack(acqUid != null
-              ? '📤 Envoyé à l\'acquéreur — lien copié'
-              : '🔗 Lien copié (acquéreur non inscrit)');
+              ? '📤 Envoyé ${_signerRoles.acquereurA} — lien copié'
+              : '🔗 Lien copié (${_signerRoles.acquereurDe} non inscrit·e)');
         } else {
           _snack('📤 Contrat transmis');
         }
@@ -1297,8 +1315,8 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
         row('Race', a['race'] as String?),
         row('Né le', dn),
         row('Puce', a['identification'] as String?),
-        row('Vendeur', elvNom.isEmpty ? null : elvNom),
-        row('Acquéreur', acqNom),
+        row(_signerRoles.vendeurLabel, elvNom.isEmpty ? null : elvNom),
+        row(_signerRoles.acquereurLabel, acqNom),
         row('Prix', prix == null || prix.isEmpty || prix == '0' ? 'Gratuit' : '$prix €'),
         row('Date', dateStr != null && dateStr.isNotEmpty
             ? DateFormat('dd/MM/yyyy').format(DateTime.tryParse(dateStr) ?? DateTime.now())
