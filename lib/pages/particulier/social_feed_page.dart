@@ -5332,7 +5332,10 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
                         // message), pas dupliquée ici.
                         GestureDetector(
                           onTap: () => Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => PublicProfilePage(targetUid: widget.targetUid))),
+                              builder: (_) => PublicProfilePage(
+                                targetUid: widget.targetUid,
+                                targetProfileId: _effectiveProfileId,
+                              ))),
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                             decoration: BoxDecoration(

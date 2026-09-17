@@ -3,9 +3,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/petfriends/petfriend_chat_page.dart';
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart'
+    show resolveActiveAuthorProfileId, socialProfileName, socialProfilePhoto,
+         socialProfileTypeLabel, kSocialAuthorCols;
 
 class PetFriendsPage extends StatefulWidget {
   const PetFriendsPage({super.key});
@@ -62,26 +64,10 @@ class _PetFriendsPageState extends State<PetFriendsPage>
     super.dispose();
   }
 
-  /// Résout MON profil particulier — jamais l'uid seul, jamais vide.
-  /// `User_Info.activeProfileId` reste '' tant qu'on n'a pas explicitement
-  /// changé de profil actif (cas le plus courant : un seul profil
-  /// particulier, jamais "switché"). Sans ce repli, `.eq('...', '')` ne
-  /// trouvait aucune demande/ami — la liste et l'onglet Demandes restaient
-  /// vides même quand une demande existait bel et bien en base.
-  Future<String?> _myProfileId() async {
-    final active = User_Info.activeProfileId;
-    if (active.isNotEmpty) return active;
-    try {
-      final row = await _supa.from('user_profiles').select('id')
-          .eq('uid', _myUid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
-      if (row?['id'] != null) return row!['id'] as String;
-      final main = await _supa.from('user_profiles').select('id')
-          .eq('uid', _myUid).eq('is_main', true).maybeSingle();
-      return main?['id'] as String?;
-    } catch (_) {
-      return null;
-    }
-  }
+  /// Résout MON profil ACTIF — jamais l'uid seul, jamais vide. Même
+  /// résolveur que Pets Social (`_activeAuthorProfileId`) : chaque profil
+  /// (particulier, éleveur, pro…) a sa propre liste de PetFriends.
+  Future<String?> _myProfileId() => resolveActiveAuthorProfileId(_myUid);
 
   // ─── Chargement groupes Supabase ─────────────────────────────────────────
 
@@ -121,15 +107,14 @@ class _PetFriendsPageState extends State<PetFriendsPage>
 
   Future<void> _loadAllUsers() async {
     try {
-      // PAS de filtre is_main : PetFriends porte sur le profil PARTICULIER de
-      // chacun, qui n'est pas forcément le profil principal du compte (un
-      // compte peut avoir un profil pro/éleveur en principal, cf. Natacha) —
-      // sinon ces comptes étaient invisibles à la recherche PetFriends.
+      // PetFriends se base sur le profil_id, exactement comme Pets Social :
+      // pas de filtre de type ni is_main, un compte peut apparaître via
+      // plusieurs de ses profils (particulier, éleveur, pro…), chacun étant
+      // une identité PetFriends distincte avec sa propre liste d'amis.
       final rows = await _supa
           .from('user_profiles')
-          .select('uid, firstname, lastname, profile_picture_url:avatar_url, ville')
+          .select('$kSocialAuthorCols, ville')
           .neq('uid', _myUid)
-          .eq('profile_type', 'particulier')
           .limit(500);
       if (mounted) setState(() {
         _allUsers = List<Map<String, dynamic>>.from(rows as List);
@@ -144,41 +129,49 @@ class _PetFriendsPageState extends State<PetFriendsPage>
     setState(() => _loading = true);
     try {
       final myProfileId = await _myProfileId() ?? '';
-      final sent     = await _supa.from('petfriends').select('id, uid_recepteur, statut').eq('demandeur_profile_id', myProfileId);
-      final received = await _supa.from('petfriends').select('id, uid_demandeur, statut').eq('recepteur_profile_id', myProfileId);
+      final sent     = await _supa.from('petfriends').select('id, uid_recepteur, recepteur_profile_id, statut').eq('demandeur_profile_id', myProfileId);
+      final received = await _supa.from('petfriends').select('id, uid_demandeur, demandeur_profile_id, statut').eq('recepteur_profile_id', myProfileId);
 
-      final Map<String, Map<String, dynamic>> byUid = {};
+      // Clé = profil_id de L'AUTRE partie (pas son uid : un même uid peut
+      // avoir plusieurs profils, chacun une relation PetFriends à part).
+      // Lignes historiques sans profil_id stocké → ignorées (pas de profil
+      // à afficher de toute façon sans migration de données).
+      final Map<String, Map<String, dynamic>> byProfileId = {};
       for (final r in (sent as List)) {
-        byUid[r['uid_recepteur'].toString()] = {'id': r['id'], 'statut': r['statut'], 'dir': 'sent', 'other': r['uid_recepteur']};
+        final pid = r['recepteur_profile_id']?.toString();
+        if (pid == null || pid.isEmpty) continue;
+        byProfileId[pid] = {'id': r['id'], 'statut': r['statut'], 'dir': 'sent', 'uid': r['uid_recepteur']};
       }
       for (final r in (received as List)) {
-        byUid[r['uid_demandeur'].toString()] ??= {'id': r['id'], 'statut': r['statut'], 'dir': 'received', 'other': r['uid_demandeur']};
+        final pid = r['demandeur_profile_id']?.toString();
+        if (pid == null || pid.isEmpty) continue;
+        byProfileId[pid] ??= {'id': r['id'], 'statut': r['statut'], 'dir': 'received', 'uid': r['uid_demandeur']};
       }
 
-      if (byUid.isEmpty) {
+      if (byProfileId.isEmpty) {
         if (mounted) setState(() { _friends = []; _received = []; _sent = []; _loading = false; });
         return;
       }
 
       final profiles = await _supa.from('user_profiles')
-          .select('uid, firstname, lastname, profile_picture_url:avatar_url, ville')
-          .inFilter('uid', byUid.keys.toList()).eq('profile_type', 'particulier');
+          .select('$kSocialAuthorCols, ville')
+          .inFilter('id', byProfileId.keys.toList());
       final Map<String, Map<String, dynamic>> profMap = {
-        for (final p in (profiles as List)) p['uid'].toString(): p as Map<String, dynamic>
+        for (final p in (profiles as List)) p['id'].toString(): p as Map<String, dynamic>
       };
 
       List<_FriendRow> friends = [], recv = [], sentList = [];
-      for (final e in byUid.entries) {
+      for (final e in byProfileId.entries) {
         final rel  = e.value;
         final prof = profMap[e.key];
         if (prof == null) continue;
         final row = _FriendRow(
-          relId: rel['id'].toString(), uid: e.key,
+          relId: rel['id'].toString(), uid: rel['uid'].toString(), profileId: e.key,
           statut: rel['statut'].toString(), direction: rel['dir'].toString(),
-          firstname: prof['firstname']?.toString() ?? '',
-          lastname:  prof['lastname']?.toString()  ?? '',
-          photoUrl:  prof['profile_picture_url']?.toString() ?? '',
-          city:      prof['ville']?.toString() ?? '',
+          fullName: socialProfileName(prof),
+          typeLabel: socialProfileTypeLabel(prof['profile_type']?.toString()),
+          photoUrl: socialProfilePhoto(prof) ?? '',
+          city: prof['ville']?.toString() ?? '',
         );
         if (rel['statut'] == 'accepte')       friends.add(row);
         else if (rel['dir'] == 'received')    recv.add(row);
@@ -197,30 +190,27 @@ class _PetFriendsPageState extends State<PetFriendsPage>
     final q = val.toLowerCase().trim();
     if (q.length < 2) { setState(() => _searchResults = []); return; }
     final filtered = _allUsers.where((u) {
-      final nom = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.toLowerCase();
+      final nom = socialProfileName(u).toLowerCase();
       return nom.contains(q);
     }).take(20).toList();
     final Map<String, String?> statuts = {};
     for (final u in filtered) {
-      final uid = u['uid'].toString();
-      if (_friends.any((f) => f.uid == uid))         statuts[uid] = 'accepte';
-      else if (_received.any((f) => f.uid == uid) || _sent.any((f) => f.uid == uid)) statuts[uid] = 'en_attente';
-      else statuts[uid] = null;
+      final pid = u['id'].toString();
+      if (_friends.any((f) => f.profileId == pid))         statuts[pid] = 'accepte';
+      else if (_received.any((f) => f.profileId == pid) || _sent.any((f) => f.profileId == pid)) statuts[pid] = 'en_attente';
+      else statuts[pid] = null;
     }
     setState(() { _searchResults = filtered; _searchStatuts = statuts; });
   }
 
-  Future<void> _sendRequest(String targetUid) async {
+  Future<void> _sendRequest(String targetUid, String targetProfileId) async {
     try {
       final myProfileId = await _myProfileId() ?? '';
-      var tgPRow = await _supa.from('user_profiles').select('id').eq('uid', targetUid).eq('profile_type', 'particulier').maybeSingle();
-      tgPRow ??= await _supa.from('user_profiles').select('id').eq('uid', targetUid).eq('is_main', true).maybeSingle();
-      final targetProfileId = tgPRow?['id'] as String?;
       await _supa.from('petfriends').insert({
         'uid_demandeur': _myUid,
         if (myProfileId.isNotEmpty) 'demandeur_profile_id': myProfileId,
         'uid_recepteur': targetUid,
-        if (targetProfileId != null) 'recepteur_profile_id': targetProfileId,
+        'recepteur_profile_id': targetProfileId,
         'statut': 'en_attente',
         'created_at': DateTime.now().toIso8601String(), 'updated_at': DateTime.now().toIso8601String(),
       });
@@ -229,10 +219,10 @@ class _PetFriendsPageState extends State<PetFriendsPage>
       await _supa.from('notifications').insert({
         'uid': targetUid, 'type': 'petfriend_request',
         'title': '🐾 Nouvelle demande PetFriend', 'body': '$nom veut être ton PetFriend !',
-        if (targetProfileId != null) 'profile_id': targetProfileId,
+        'profile_id': targetProfileId,
         'data': {'fromUid': _myUid}, 'read': false, 'created_at': DateTime.now().toIso8601String(),
       });
-      if (mounted) setState(() => _searchStatuts[targetUid] = 'en_attente');
+      if (mounted) setState(() => _searchStatuts[targetProfileId] = 'en_attente');
     } catch (_) {}
   }
 
@@ -240,12 +230,10 @@ class _PetFriendsPageState extends State<PetFriendsPage>
     await _supa.from('petfriends').update({'statut': 'accepte', 'updated_at': DateTime.now().toIso8601String()}).eq('id', row.relId);
     final me = await _supa.from('user_profiles').select('firstname, lastname').eq('uid', _myUid).eq('is_main', true).maybeSingle();
     final nom = me != null ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim() : 'Quelqu\'un';
-    var targetProfile = await _supa.from('user_profiles').select('id').eq('uid', row.uid).eq('profile_type', 'particulier').maybeSingle();
-    targetProfile ??= await _supa.from('user_profiles').select('id').eq('uid', row.uid).eq('is_main', true).maybeSingle();
     await _supa.from('notifications').insert({
       'uid': row.uid, 'type': 'petfriend_accepted',
       'title': '🐾 PetFriend accepté !', 'body': '$nom a accepté ta demande PetFriend.',
-      if (targetProfile?['id'] != null) 'profile_id': targetProfile!['id'],
+      'profile_id': row.profileId,
       'data': {'fromUid': _myUid}, 'read': false, 'created_at': DateTime.now().toIso8601String(),
     });
     _load();
@@ -256,8 +244,8 @@ class _PetFriendsPageState extends State<PetFriendsPage>
     _load();
   }
 
-  void _openProfile(String uid) => Navigator.push(context,
-      MaterialPageRoute(builder: (_) => PublicProfilePage(targetUid: uid)));
+  void _openProfile(String uid, String profileId) => Navigator.push(context,
+      MaterialPageRoute(builder: (_) => PublicProfilePage(targetUid: uid, targetProfileId: profileId)));
 
   // ─── Groupes ─────────────────────────────────────────────────────────────
 
@@ -558,19 +546,21 @@ class _PetFriendsPageState extends State<PetFriendsPage>
       itemBuilder: (_, i) {
         final u = _searchResults[i];
         final uid = u['uid'].toString();
+        final pid = u['id'].toString();
         return _friendCard(
           uid: uid,
-          nom: '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim(),
+          nom: socialProfileName(u),
+          typeLabel: socialProfileTypeLabel(u['profile_type']?.toString()),
           city: u['ville']?.toString() ?? '',
-          photoUrl: u['profile_picture_url']?.toString() ?? '',
-          onTap: () => _openProfile(uid),
-          trailing: _searchActionBtn(uid, _searchStatuts[uid]),
+          photoUrl: socialProfilePhoto(u) ?? '',
+          onTap: () => _openProfile(uid, pid),
+          trailing: _searchActionBtn(uid, pid, _searchStatuts[pid]),
         );
       },
     );
   }
 
-  Widget _searchActionBtn(String uid, String? statut) {
+  Widget _searchActionBtn(String uid, String profileId, String? statut) {
     if (statut == 'accepte') {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -589,7 +579,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
       );
     }
     return FilledButton(
-      onPressed: () => _sendRequest(uid),
+      onPressed: () => _sendRequest(uid, profileId),
       style: FilledButton.styleFrom(backgroundColor: _green,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           minimumSize: const Size(0, 0), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
@@ -620,8 +610,8 @@ class _PetFriendsPageState extends State<PetFriendsPage>
       itemBuilder: (_, i) {
         final f = _friends[i];
         return _friendCard(
-          uid: f.uid, nom: f.fullName, city: f.city, photoUrl: f.photoUrl,
-          onTap: () => _openProfile(f.uid),
+          uid: f.uid, nom: f.fullName, typeLabel: f.typeLabel, city: f.city, photoUrl: f.photoUrl,
+          onTap: () => _openProfile(f.uid, f.profileId),
           trailing: const Icon(Icons.chevron_right, color: Colors.grey),
         );
       },
@@ -653,8 +643,8 @@ class _PetFriendsPageState extends State<PetFriendsPage>
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: _friendCard(
-                uid: r.uid, nom: r.fullName, city: r.city, photoUrl: r.photoUrl,
-                onTap: () => _openProfile(r.uid),
+                uid: r.uid, nom: r.fullName, typeLabel: r.typeLabel, city: r.city, photoUrl: r.photoUrl,
+                onTap: () => _openProfile(r.uid, r.profileId),
                 trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                   FilledButton(
                     onPressed: () => _accept(r),
@@ -690,8 +680,8 @@ class _PetFriendsPageState extends State<PetFriendsPage>
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: _friendCard(
-                uid: s.uid, nom: s.fullName, city: s.city, photoUrl: s.photoUrl,
-                onTap: () => _openProfile(s.uid),
+                uid: s.uid, nom: s.fullName, typeLabel: s.typeLabel, city: s.city, photoUrl: s.photoUrl,
+                onTap: () => _openProfile(s.uid, s.profileId),
                 trailing: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(20),
@@ -710,6 +700,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
   Widget _friendCard({
     required String uid, required String nom, required String city,
     required String photoUrl, required Widget trailing, required VoidCallback onTap,
+    String? typeLabel,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -729,6 +720,8 @@ class _PetFriendsPageState extends State<PetFriendsPage>
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(nom.isNotEmpty ? nom : '—',
                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+            if (typeLabel != null)
+              Text(typeLabel, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _green)),
             if (city.isNotEmpty)
               Text(city, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
           ])),
@@ -740,10 +733,10 @@ class _PetFriendsPageState extends State<PetFriendsPage>
 }
 
 class _FriendRow {
-  final String relId, uid, statut, direction, firstname, lastname, photoUrl, city;
+  final String relId, uid, profileId, statut, direction, fullName, photoUrl, city;
+  final String? typeLabel;
   _FriendRow({
-    required this.relId, required this.uid, required this.statut, required this.direction,
-    required this.firstname, required this.lastname, required this.photoUrl, required this.city,
+    required this.relId, required this.uid, required this.profileId, required this.statut, required this.direction,
+    required this.fullName, this.typeLabel, required this.photoUrl, required this.city,
   });
-  String get fullName => '$firstname $lastname'.trim();
 }

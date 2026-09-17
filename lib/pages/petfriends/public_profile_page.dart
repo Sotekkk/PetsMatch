@@ -4,13 +4,21 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/petfriends/petfriend_chat_page.dart';
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart'
+    show resolveActiveAuthorProfileId, socialProfileName, socialProfilePhoto,
+         socialProfileTypeLabel, kSocialAuthorCols;
 
 class PublicProfilePage extends StatefulWidget {
   final String targetUid;
   final bool showMessageButton;
-  const PublicProfilePage({super.key, required this.targetUid, this.showMessageButton = true});
+  /// Profil PRÉCIS visé (n'importe quel type — particulier, éleveur, pro…),
+  /// quand on arrive depuis un contexte qui le connaît déjà (ex. le profil
+  /// Pets Social affiché). PetFriends se base sur ce profil_id, exactement
+  /// comme Pets Social : chaque profil a sa propre liste de PetFriends.
+  /// Si absent, on retombe sur le profil is_main de l'uid.
+  final String? targetProfileId;
+  const PublicProfilePage({super.key, required this.targetUid, this.showMessageButton = true, this.targetProfileId});
 
   @override
   State<PublicProfilePage> createState() => _PublicProfilePageState();
@@ -41,53 +49,40 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
     _load();
   }
 
-  /// Résout MON profil particulier — jamais l'uid seul, jamais vide.
-  /// `User_Info.activeProfileId` reste '' tant qu'on n'a pas explicitement
-  /// changé de profil actif (cas le plus courant : un compte avec un seul
-  /// profil particulier, jamais "switché"). Sans ce repli, toutes les
-  /// requêtes filtrées par profil (relation, demandes reçues…) ne
-  /// trouvaient rien → impossible d'accepter/refuser une demande reçue.
-  Future<String?> _myProfileId() async {
-    final active = User_Info.activeProfileId;
-    if (active.isNotEmpty) return active;
-    try {
-      final row = await _supa.from('user_profiles').select('id')
-          .eq('uid', _myUid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
-      if (row?['id'] != null) return row!['id'] as String;
-      final main = await _supa.from('user_profiles').select('id')
-          .eq('uid', _myUid).eq('is_main', true).maybeSingle();
-      return main?['id'] as String?;
-    } catch (_) {
-      return null;
-    }
-  }
+  /// Résout MON profil ACTIF — jamais l'uid seul, jamais vide. PetFriends se
+  /// base sur le profil_id exactement comme Pets Social (un follow, une
+  /// demande d'ami… appartiennent au profil actif, pas au compte entier) :
+  /// même résolveur que `_activeAuthorProfileId` (posts/likes/follows).
+  Future<String?> _myProfileId() => resolveActiveAuthorProfileId(_myUid);
 
   Future<void> _load() async {
     if (!mounted) return;
     setState(() => _loading = true);
 
-    // Étape 1 : profil
+    // Étape 1 : profil — celui explicitement visé (widget.targetProfileId,
+    // ex. le profil Pets Social qu'on regardait) sinon repli is_main de
+    // l'uid (n'importe quel type : PetFriends n'est plus réservé aux
+    // profils particulier, comme Pets Social).
     Map<String, dynamic>? profileData;
-    String? targetProfileId;
+    String? targetProfileId = widget.targetProfileId;
     try {
-      const cols = 'id, uid, firstname, lastname, avatar_url, ville';
-      // PetFriends est scopé au profil PARTICULIER (pas forcément le profil
-      // is_main : un compte peut avoir un profil pro/éleveur en principal,
-      // cf. Natacha). Sans ce filtre, la relation (créée sur le profil
-      // particulier de l'autre) restait introuvable → "Demander en ami"
-      // s'affichait alors qu'on était déjà PetFriends.
-      var up = await _supa.from('user_profiles').select(cols)
-          .eq('uid', widget.targetUid).eq('profile_type', 'particulier').maybeSingle();
+      const cols = '$kSocialAuthorCols, ville';
+      Map<String, dynamic>? up;
+      if (targetProfileId != null && targetProfileId.isNotEmpty) {
+        up = await _supa.from('user_profiles').select(cols)
+            .eq('id', targetProfileId).maybeSingle();
+      }
       up ??= await _supa.from('user_profiles').select(cols)
           .eq('uid', widget.targetUid).eq('is_main', true).maybeSingle();
       if (up != null) {
         targetProfileId = up['id']?.toString();
         profileData = {
           'uid':                 up['uid'],
-          'firstname':           up['firstname'],
-          'lastname':            up['lastname'],
-          'profile_picture_url': up['avatar_url'],
+          'firstname':           socialProfileName(up),
+          'lastname':            '',
+          'profile_picture_url': socialProfilePhoto(up),
           'ville':               up['ville'],
+          'type_label':          socialProfileTypeLabel(up['profile_type']?.toString()),
         };
       }
     } catch (_) {}
@@ -266,7 +261,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
           if ((otherData?['profile_picture_url'] as String?)?.isNotEmpty == true) 'photo': otherData!['profile_picture_url']},
       };
 
-      final pid = User_Info.activeProfileId;
+      final pid = await _myProfileId() ?? '';
       final created = await _supa.from('conversations').insert({
         'type':              'direct',
         'participants':      [_myUid, widget.targetUid],
@@ -342,6 +337,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
     final nom = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
     final city = p['ville']?.toString() ?? '';
     final photoUrl = p['profile_picture_url']?.toString() ?? '';
+    final typeLabel = p['type_label']?.toString();
     final isFriend = _relStatut == 'accepte';
 
     return Scaffold(
@@ -373,6 +369,10 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
             const SizedBox(height: 12),
             Text(nom.isNotEmpty ? nom : '—',
                 style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20)),
+            if (typeLabel != null) ...[
+              const SizedBox(height: 2),
+              Text(typeLabel, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+            ],
             if (city.isNotEmpty) ...[
               const SizedBox(height: 4),
               Row(mainAxisAlignment: MainAxisAlignment.center, children: [
