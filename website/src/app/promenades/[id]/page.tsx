@@ -99,6 +99,120 @@ function Avatar({ url, name, size = 40 }: { url?: string; name?: string; size?: 
   );
 }
 
+// ── Modal invitation PetFriends ─────────────────────────────────────────────────
+
+interface FriendProfile {
+  id: string; uid: string;
+  firstname?: string | null; lastname?: string | null; nom?: string | null;
+  profile_type?: string | null; avatar_url?: string | null; profile_picture_url_pro?: string | null;
+  social_pseudo?: string | null;
+}
+
+function friendName(f: FriendProfile): string {
+  const pseudo = (f.social_pseudo ?? '').trim();
+  if (pseudo) return pseudo;
+  const struct = (f.nom ?? '').trim();
+  const person = `${f.firstname ?? ''} ${f.lastname ?? ''}`.trim();
+  const isPro = !!f.profile_type && f.profile_type !== 'particulier';
+  if (isPro && struct) return struct;
+  return person || struct || 'Membre';
+}
+
+function friendPhoto(f: FriendProfile): string | undefined {
+  const isPro = !!f.profile_type && f.profile_type !== 'particulier';
+  return (isPro ? (f.profile_picture_url_pro || f.avatar_url) : f.avatar_url) || undefined;
+}
+
+function InviteModal({ myUid, myProfileId, promenadeId, titre, alreadyUids, onClose }: {
+  myUid: string; myProfileId: string; promenadeId: string; titre: string;
+  alreadyUids: Set<string>; onClose: () => void;
+}) {
+  const [friends, setFriends] = useState<{ profile: FriendProfile; uid: string }[]>([]);
+  const [myName, setMyName] = useState('Quelqu\'un');
+  const [loading, setLoading] = useState(true);
+  const [invited, setInvited] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    (async () => {
+      const { data: me } = await supabase.from('user_profiles')
+        .select('id, uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro, social_pseudo')
+        .eq('id', myProfileId).maybeSingle();
+      if (me) setMyName(friendName(me as FriendProfile));
+
+      const [sent, received] = await Promise.all([
+        supabase.from('petfriends').select('recepteur_profile_id, uid_recepteur')
+          .eq('demandeur_profile_id', myProfileId).eq('statut', 'accepte'),
+        supabase.from('petfriends').select('demandeur_profile_id, uid_demandeur')
+          .eq('recepteur_profile_id', myProfileId).eq('statut', 'accepte'),
+      ]);
+      const byProfileId = new Map<string, string>();
+      (sent.data ?? []).forEach((r: { recepteur_profile_id: string | null; uid_recepteur: string }) => {
+        if (r.recepteur_profile_id) byProfileId.set(r.recepteur_profile_id, r.uid_recepteur);
+      });
+      (received.data ?? []).forEach((r: { demandeur_profile_id: string | null; uid_demandeur: string }) => {
+        if (r.demandeur_profile_id) byProfileId.set(r.demandeur_profile_id, r.uid_demandeur);
+      });
+      if (byProfileId.size === 0) { setLoading(false); return; }
+      const { data: profiles } = await supabase.from('user_profiles')
+        .select('id, uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro, social_pseudo')
+        .in('id', Array.from(byProfileId.keys()));
+      setFriends((profiles ?? []).map((p: FriendProfile) => ({ profile: p, uid: byProfileId.get(p.id) ?? p.uid })));
+      setLoading(false);
+    })();
+  }, [myProfileId]);
+
+  async function invite(f: { profile: FriendProfile; uid: string }) {
+    setInvited(prev => new Set(prev).add(f.uid));
+    try {
+      await supabase.from('notifications').insert({
+        uid: f.uid,
+        type: 'promenade_invite',
+        title: '🐾 Invitation à une balade',
+        body: `${myName} t'invite à "${titre}"`,
+        profile_id: f.profile.id,
+        data: { promenadeId, fromUid: myUid },
+        read: false,
+        created_at: new Date().toISOString(),
+      });
+    } catch { /* silencieux */ }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl p-5 max-w-sm w-full shadow-xl max-h-[75vh] flex flex-col">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-[16px]">Inviter mes PetFriends</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+        <div className="overflow-y-auto flex-1 flex flex-col gap-2">
+          {loading ? (
+            <p className="text-[13px] text-gray-400 text-center py-6">Chargement…</p>
+          ) : friends.length === 0 ? (
+            <p className="text-[13px] text-gray-400 text-center py-6">Vous n&apos;avez pas encore de PetFriends</p>
+          ) : friends.map(f => {
+            const already = alreadyUids.has(f.uid) || invited.has(f.uid);
+            return (
+              <div key={f.profile.id} className="flex items-center gap-3">
+                <Avatar url={friendPhoto(f.profile)} name={friendName(f.profile)} size={36} />
+                <span className="flex-1 text-[14px] font-semibold truncate">{friendName(f.profile)}</span>
+                {already ? (
+                  <span className="text-[12px] text-gray-400">✓ Invité(e)</span>
+                ) : (
+                  <button onClick={() => invite(f)}
+                    className="px-3 py-1.5 rounded-full text-[12px] font-bold text-white"
+                    style={{ backgroundColor: '#2E7D5E' }}>
+                    Inviter
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Modal édition ─────────────────────────────────────────────────────────────
 
 function EditModal({ promenade, participants, currentUid, onClose, onSaved }: {
@@ -331,6 +445,8 @@ export default function PromenadeDetailPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const [friendProfileIds, setFriendProfileIds] = useState<Set<string>>(new Set());
 
   // Discussion
   const [messages, setMessages] = useState<PrMessage[]>([]);
@@ -386,6 +502,24 @@ export default function PromenadeDetailPage() {
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // ── PetFriends acceptés du profil actif — badge « Ami » sur les
+  // participants et liste de la modale d'invitation.
+  useEffect(() => {
+    if (!activeProfileId) return;
+    (async () => {
+      const [sent, received] = await Promise.all([
+        supabase.from('petfriends').select('recepteur_profile_id')
+          .eq('demandeur_profile_id', activeProfileId).eq('statut', 'accepte'),
+        supabase.from('petfriends').select('demandeur_profile_id')
+          .eq('recepteur_profile_id', activeProfileId).eq('statut', 'accepte'),
+      ]);
+      const ids = new Set<string>();
+      (sent.data ?? []).forEach((r: { recepteur_profile_id: string | null }) => { if (r.recepteur_profile_id) ids.add(r.recepteur_profile_id); });
+      (received.data ?? []).forEach((r: { demandeur_profile_id: string | null }) => { if (r.demandeur_profile_id) ids.add(r.demandeur_profile_id); });
+      setFriendProfileIds(ids);
+    })();
+  }, [activeProfileId]);
 
   // ── Chargement messages ─────────────────────────────────────────────────────
 
@@ -622,6 +756,10 @@ export default function PromenadeDetailPage() {
           {promenade.titre}
         </h1>
         <div className="flex items-center gap-2 shrink-0">
+          {user && (
+            <button onClick={() => setShowInvite(true)}
+              className="text-white/80 hover:text-white text-xl" title="Inviter mes PetFriends">🐾</button>
+          )}
           <button onClick={() => setShowShare(true)}
             className="text-white/80 hover:text-white text-xl" title="Partager">📤</button>
           {isOrganizer && (
@@ -710,7 +848,12 @@ export default function PromenadeDetailPage() {
             <div className="flex flex-wrap gap-4">
               {accepted.map(part => (
                 <div key={part.user_uid} className="flex flex-col items-center gap-1">
-                  <Avatar url={part.user?.profile_picture_url} name={part.user?.firstname} size={40} />
+                  <div className="relative">
+                    <Avatar url={part.user?.profile_picture_url} name={part.user?.firstname} size={40} />
+                    {!!part.user_profile_id && friendProfileIds.has(part.user_profile_id) && (
+                      <span className="absolute -right-0.5 -bottom-0.5 text-[11px]">❤</span>
+                    )}
+                  </div>
                   <span className="text-[11px] text-gray-400 max-w-[50px] truncate text-center">
                     {part.user?.firstname ?? '?'}
                   </span>
@@ -936,6 +1079,18 @@ export default function PromenadeDetailPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal invitation PetFriends */}
+      {showInvite && user && activeProfileId && (
+        <InviteModal
+          myUid={user.uid}
+          myProfileId={activeProfileId}
+          promenadeId={id}
+          titre={promenade.titre}
+          alreadyUids={new Set(participants.map(p => p.user_uid))}
+          onClose={() => setShowInvite(false)}
+        />
       )}
 
       {/* Modal édition */}

@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:PetsMatch/main.dart' show getApiKey, User_Info;
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart'
+    show resolveActiveAuthorProfileId, socialProfileName, socialProfilePhoto, kSocialAuthorCols;
 import 'package:PetsMatch/services/promenade_notification_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -34,6 +36,9 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
   List<Map<String, dynamic>> _messages = [];
   bool _loading = true;
   bool _saving = false;
+  /// PetFriends acceptés (profile_id) du profil actif — badge « Ami » sur
+  /// les participants et filtre de la liste d'invitation.
+  Set<String> _friendProfileIds = {};
 
   final _msgCtrl = TextEditingController();
   bool _sendingMsg = false;
@@ -105,11 +110,14 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
         }
       }
 
+      final friendIds = await _loadFriendProfileIds();
+
       if (mounted) {
         setState(() {
           _promenade = Map<String, dynamic>.from(p);
           _organizer = org != null ? Map<String, dynamic>.from(org) : null;
           _participants = parts;
+          _friendProfileIds = friendIds;
           _loading = false;
         });
       }
@@ -117,6 +125,24 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
       _loadMessages();
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<Set<String>> _loadFriendProfileIds() async {
+    if (_uid.isEmpty) return {};
+    try {
+      final myProfileId = await resolveActiveAuthorProfileId(_uid);
+      if (myProfileId == null) return {};
+      final sent = await _supa.from('petfriends').select('recepteur_profile_id')
+          .eq('demandeur_profile_id', myProfileId).eq('statut', 'accepte');
+      final received = await _supa.from('petfriends').select('demandeur_profile_id')
+          .eq('recepteur_profile_id', myProfileId).eq('statut', 'accepte');
+      return {
+        for (final r in (sent as List)) if (r['recepteur_profile_id'] != null) r['recepteur_profile_id'].toString(),
+        for (final r in (received as List)) if (r['demandeur_profile_id'] != null) r['demandeur_profile_id'].toString(),
+      };
+    } catch (_) {
+      return {};
     }
   }
 
@@ -165,6 +191,114 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// Bottom sheet listant mes PetFriends acceptés, avec un bouton pour
+  /// chacun envoyant une notification l'invitant à rejoindre la balade
+  /// (il reste libre de cliquer « Rejoindre » lui-même, même flow que les
+  /// autres demandes de participation).
+  Future<void> _openInviteFriends() async {
+    if (_uid.isEmpty || _promenade == null) return;
+    try {
+      final myProfileId = await resolveActiveAuthorProfileId(_uid);
+      if (myProfileId == null) return;
+      final sent = await _supa.from('petfriends')
+          .select('recepteur_profile_id, uid_recepteur')
+          .eq('demandeur_profile_id', myProfileId).eq('statut', 'accepte');
+      final received = await _supa.from('petfriends')
+          .select('demandeur_profile_id, uid_demandeur')
+          .eq('recepteur_profile_id', myProfileId).eq('statut', 'accepte');
+      final Map<String, String> friendUidByProfileId = {
+        for (final r in (sent as List))
+          if (r['recepteur_profile_id'] != null) r['recepteur_profile_id'].toString(): r['uid_recepteur'].toString(),
+        for (final r in (received as List))
+          if (r['demandeur_profile_id'] != null) r['demandeur_profile_id'].toString(): r['uid_demandeur'].toString(),
+      };
+      if (friendUidByProfileId.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Vous n\'avez pas encore de PetFriends', style: TextStyle(fontFamily: 'Galey'))));
+        }
+        return;
+      }
+      final profiles = await _supa.from('user_profiles').select(kSocialAuthorCols)
+          .inFilter('id', friendUidByProfileId.keys.toList());
+      final myProfile = await _supa.from('user_profiles').select(kSocialAuthorCols)
+          .eq('id', myProfileId).maybeSingle();
+      final myName = myProfile != null ? socialProfileName(myProfile) : 'Quelqu\'un';
+      final alreadyUids = _participants.map((p) => p['user_uid']?.toString() ?? '').toSet();
+      final titre = _promenade!['titre']?.toString() ?? 'une balade';
+
+      if (!mounted) return;
+      final invited = <String>{};
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => StatefulBuilder(builder: (ctx, setModal) => DraggableScrollableSheet(
+          initialChildSize: 0.6, maxChildSize: 0.9, minChildSize: 0.4, expand: false,
+          builder: (_, sc) => Container(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            decoration: const BoxDecoration(
+                color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Inviter mes PetFriends',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+              const SizedBox(height: 12),
+              Expanded(
+                child: ListView.separated(
+                  controller: sc,
+                  itemCount: (profiles as List).length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (_, i) {
+                    final f = profiles[i];
+                    final fUid = friendUidByProfileId[f['id'].toString()] ?? f['uid']?.toString() ?? '';
+                    final already = alreadyUids.contains(fUid) || invited.contains(fUid);
+                    return Row(children: [
+                      CircleAvatar(
+                        radius: 20, backgroundColor: const Color(0xFFE8F5E9),
+                        backgroundImage: (socialProfilePhoto(f) ?? '').isNotEmpty
+                            ? CachedNetworkImageProvider(socialProfilePhoto(f)!) : null,
+                        child: (socialProfilePhoto(f) ?? '').isEmpty
+                            ? const Icon(Icons.person_outline, color: _green) : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(socialProfileName(f),
+                          style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14))),
+                      already
+                          ? const Text('✓ Invité(e)', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey))
+                          : GestureDetector(
+                              onTap: () async {
+                                setModal(() => invited.add(fUid));
+                                try {
+                                  await _supa.from('notifications').insert({
+                                    'uid': fUid,
+                                    'type': 'promenade_invite',
+                                    'title': '🐾 Invitation à une balade',
+                                    'body': '$myName t\'invite à "$titre"',
+                                    'profile_id': f['id'],
+                                    'data': {'promenadeId': widget.promenadeId, 'fromUid': _uid},
+                                    'read': false,
+                                    'created_at': DateTime.now().toUtc().toIso8601String(),
+                                  });
+                                } catch (_) {}
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(color: _green, borderRadius: BorderRadius.circular(20)),
+                                child: const Text('Inviter',
+                                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+                              ),
+                            ),
+                    ]);
+                  },
+                ),
+              ),
+            ]),
+          ),
+        )),
+      );
+    } catch (_) {}
   }
 
   Future<void> _leave() async {
@@ -552,20 +686,26 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
             style: const TextStyle(
                 fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16),
             overflow: TextOverflow.ellipsis),
-        actions: _isOrganizer
-            ? [
-                IconButton(
-                  icon: const Icon(Icons.edit_outlined, size: 20),
-                  onPressed: _saving ? null : _openEdit,
-                  tooltip: 'Modifier',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 20),
-                  onPressed: _saving ? null : _confirmDelete,
-                  tooltip: 'Supprimer',
-                ),
-              ]
-            : null,
+        actions: [
+          if (_uid.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.person_add_alt_outlined, size: 20),
+              onPressed: _openInviteFriends,
+              tooltip: 'Inviter mes PetFriends',
+            ),
+          if (_isOrganizer) ...[
+            IconButton(
+              icon: const Icon(Icons.edit_outlined, size: 20),
+              onPressed: _saving ? null : _openEdit,
+              tooltip: 'Modifier',
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, size: 20),
+              onPressed: _saving ? null : _confirmDelete,
+              tooltip: 'Supprimer',
+            ),
+          ],
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _load,
@@ -692,11 +832,20 @@ class _PromenadeDetailPageState extends State<PromenadeDetailPage> {
                 Wrap(spacing: 12, runSpacing: 10, children: accepted.map((part) {
                   final u = part['user'] as Map?;
                   final partUid = part['user_uid']?.toString() ?? '';
+                  final partProfileId = part['user_profile_id']?.toString();
+                  final isFriend = partProfileId != null && _friendProfileIds.contains(partProfileId);
                   return GestureDetector(
                     onTap: partUid.isNotEmpty ? () => Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => PublicProfilePage(targetUid: partUid))) : null,
+                        builder: (_) => PublicProfilePage(targetUid: partUid, targetProfileId: partProfileId))) : null,
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      _avatar(u?['profile_picture_url']?.toString(), 20),
+                      Stack(clipBehavior: Clip.none, children: [
+                        _avatar(u?['profile_picture_url']?.toString(), 20),
+                        if (isFriend)
+                          const Positioned(
+                            right: -2, bottom: -2,
+                            child: Text('❤', style: TextStyle(fontSize: 12)),
+                          ),
+                      ]),
                       const SizedBox(height: 4),
                       SizedBox(
                         width: 52,
