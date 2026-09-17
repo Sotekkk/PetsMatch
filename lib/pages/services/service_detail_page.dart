@@ -13,6 +13,7 @@ import 'package:PetsMatch/widgets/avis_pro_widget.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show kPensionEspeces;
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show SocialProfilePage;
+import 'package:PetsMatch/services/plan_service.dart';
 import 'package:intl/intl.dart';
 
 class ServiceDetailPage extends StatefulWidget {
@@ -47,6 +48,10 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
   bool _inscrivant = false;
   List<Map<String, dynamic>> _prestations = [];
   List<Map<String, dynamic>> _forfaitsPublics = []; // éducateur : forfaits affiche_public
+  /// Pets Social n'est accessible aux PROS que premium (santé plafonne à
+  /// 'pro', son palier le plus haut) — jamais aux non-premium, même pour
+  /// juste être suivi. Cf. eleveur_nav.dart (même règle pour l'onglet).
+  bool _socialAllowed = false;
 
   @override
   void initState() {
@@ -136,9 +141,21 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
         if (row?['tarifs_education_visibles'] == true) await _loadForfaitsPublics();
       }
       if (row?['cat_pro'] == 'photographe' || row?['cat_pro'] == 'toilettage') await _loadPrestations();
+      _loadSocialAllowed(row);
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _loadSocialAllowed(Map<String, dynamic>? row) async {
+    final proUid = row?['uid']?.toString();
+    if (proUid == null) return;
+    final metier = ((row?['cat_pro'] as String?)?.isNotEmpty == true) ? row!['cat_pro'] as String : 'eleveur';
+    try {
+      final code = await PlanService.getPlanCode(proUid, profilType: metier);
+      final topTier = metier == 'sante' ? 'pro' : 'premium';
+      if (mounted) setState(() => _socialAllowed = code == topTier);
+    } catch (_) {}
   }
 
   Future<void> _loadForfaitsPublics() async {
@@ -815,6 +832,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             ],
           ]),
         ],
+        if (_socialAllowed) ...[
         const SizedBox(height: 10),
         GestureDetector(
           onTap: () => Navigator.push(context, MaterialPageRoute(
@@ -839,6 +857,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             ]),
           ),
         ),
+        ],
         if (_especes.isNotEmpty) ...[
           const SizedBox(height: 12),
           Wrap(
