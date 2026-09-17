@@ -16,10 +16,99 @@ const CAT_INFO: Record<string, { label: string; emoji: string }> = {
 
 interface Sujet {
   id: string; titre: string; contenu: string;
-  auteur_uid: string; epingle: boolean; created_at: string;
+  auteur_uid: string; auteur_profile_id?: string | null; epingle: boolean; created_at: string;
 }
 interface Reponse {
-  id: string; sujet_id: string; auteur_uid: string; contenu: string; created_at: string;
+  id: string; sujet_id: string; auteur_uid: string; auteur_profile_id?: string | null; contenu: string; created_at: string;
+}
+
+// ── Identité auteur (avatar/nom/badge) — même logique que Pets Social ─────────
+
+interface Author {
+  id: string; uid: string;
+  firstname?: string | null; lastname?: string | null; nom?: string | null;
+  profile_type?: string | null; avatar_url?: string | null; profile_picture_url_pro?: string | null;
+  social_pseudo?: string | null;
+}
+
+const TYPE_LABEL: Record<string, string> = {
+  eleveur: 'Éleveur',
+  association: 'Association',
+  veterinaire: 'Vétérinaire / Ostéo',
+  sante: 'Vétérinaire / Ostéo',
+  education: 'Éducateur',
+  garde: 'Pet Sitter',
+  toilettage: 'Toiletteur',
+  photographe: 'Photographe',
+  pension: 'Pension',
+};
+
+function authorName(a?: Author | null): string {
+  if (!a) return 'Membre';
+  const pseudo = (a.social_pseudo ?? '').trim();
+  if (pseudo) return pseudo;
+  const struct = (a.nom ?? '').trim();
+  const person = `${a.firstname ?? ''} ${a.lastname ?? ''}`.trim();
+  const isPro = !!a.profile_type && a.profile_type !== 'particulier';
+  if (isPro && struct) return struct;
+  if (person) return person;
+  return struct || 'Membre';
+}
+
+function authorPhoto(a?: Author | null): string | null {
+  if (!a) return null;
+  const isPro = !!a.profile_type && a.profile_type !== 'particulier';
+  if (isPro) return a.profile_picture_url_pro || a.avatar_url || null;
+  return a.avatar_url || null;
+}
+
+/// Clé d'identité d'une ligne forum : `auteur_profile_id` si connu, sinon
+/// repli `u:<uid>` (lignes créées avant la migration).
+function authorKey(row: { auteur_profile_id?: string | null; auteur_uid: string }): string {
+  return row.auteur_profile_id ? row.auteur_profile_id : `u:${row.auteur_uid}`;
+}
+
+const AUTHOR_COLS = 'id, uid, firstname, lastname, nom, profile_type, avatar_url, profile_picture_url_pro, social_pseudo';
+
+async function resolveAuthors(rows: { auteur_profile_id?: string | null; auteur_uid: string }[]): Promise<Record<string, Author>> {
+  const out: Record<string, Author> = {};
+  const profIds = Array.from(new Set(rows.map(r => r.auteur_profile_id).filter((id): id is string => !!id)));
+  if (profIds.length > 0) {
+    const { data } = await supabase.from('user_profiles').select(AUTHOR_COLS).in('id', profIds);
+    for (const r of (data ?? []) as Author[]) out[r.id] = r;
+  }
+  const legacyUids = Array.from(new Set(
+    rows.filter(r => !r.auteur_profile_id).map(r => r.auteur_uid).filter(Boolean)
+  ));
+  if (legacyUids.length > 0) {
+    const { data } = await supabase.from('user_profiles').select(AUTHOR_COLS)
+      .in('uid', legacyUids).eq('profile_type', 'particulier').eq('is_main', true);
+    for (const r of (data ?? []) as Author[]) {
+      const key = `u:${r.uid}`;
+      if (!out[key]) out[key] = r;
+    }
+  }
+  return out;
+}
+
+function AuthorBadge({ author, size = 28 }: { author?: Author | null; size?: number }) {
+  const name = authorName(author);
+  const photo = authorPhoto(author);
+  const badge = author?.profile_type ? TYPE_LABEL[author.profile_type] : null;
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      {photo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={photo} alt={name} style={{ width: size, height: size }} className="rounded-full object-cover flex-shrink-0" />
+      ) : (
+        <div style={{ width: size, height: size }} className="rounded-full bg-[#E0F2F1] flex items-center justify-center text-[#00ACC1] flex-shrink-0">🐾</div>
+      )}
+      <div className="min-w-0">
+        <p className="text-xs font-bold text-[#1E2025] truncate" style={{ fontFamily: 'Galey, sans-serif' }}>{name}</p>
+        {badge && <p className="text-[10px] text-gray-400">{badge}</p>}
+      </div>
+    </div>
+  );
 }
 
 function fmtDate(iso: string) {
@@ -36,10 +125,11 @@ function fmtDate(iso: string) {
 export default function ForumCategoriePage() {
   const { categorie } = useParams<{ categorie: string }>();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, activeProfileId } = useAuth();
   const cat = CAT_INFO[categorie] ?? { label: categorie, emoji: '💬' };
 
   const [sujets, setSujets] = useState<Sujet[]>([]);
+  const [authors, setAuthors] = useState<Record<string, Author>>({});
   const [loading, setLoading] = useState(true);
   const [openSujet, setOpenSujet] = useState<Sujet | null>(null);
   const [reponses, setReponses] = useState<Reponse[]>([]);
@@ -61,7 +151,10 @@ export default function ForumCategoriePage() {
       .eq('categorie_slug', categorie)
       .order('epingle', { ascending: false })
       .order('created_at', { ascending: false });
-    setSujets((data ?? []) as Sujet[]);
+    const rows = (data ?? []) as Sujet[];
+    setSujets(rows);
+    const resolved = await resolveAuthors(rows);
+    setAuthors(prev => ({ ...prev, ...resolved }));
     setLoading(false);
   }, [categorie]);
 
@@ -72,7 +165,10 @@ export default function ForumCategoriePage() {
     setLoadingReponses(true);
     const { data } = await supabase.from('forum_reponses').select('*')
       .eq('sujet_id', sujet.id).order('created_at');
-    setReponses((data ?? []) as Reponse[]);
+    const rows = (data ?? []) as Reponse[];
+    setReponses(rows);
+    const resolved = await resolveAuthors([sujet, ...rows]);
+    setAuthors(prev => ({ ...prev, ...resolved }));
     setLoadingReponses(false);
   }
 
@@ -82,9 +178,17 @@ export default function ForumCategoriePage() {
     try {
       const { data } = await supabase.from('forum_reponses').insert({
         sujet_id: openSujet.id, auteur_uid: user.uid,
+        auteur_profile_id: activeProfileId || null,
         contenu: newReponse.trim(), created_at: new Date().toISOString(),
       }).select().single();
-      if (data) setReponses(prev => [...prev, data as Reponse]);
+      if (data) {
+        const row = data as Reponse;
+        setReponses(prev => [...prev, row]);
+        if (!authors[authorKey(row)]) {
+          const resolved = await resolveAuthors([row]);
+          setAuthors(prev => ({ ...prev, ...resolved }));
+        }
+      }
       setNewReponse('');
     } finally { setSending(false); }
   }
@@ -95,6 +199,7 @@ export default function ForumCategoriePage() {
     try {
       const { data } = await supabase.from('forum_sujets').insert({
         categorie_slug: categorie, auteur_uid: user.uid,
+        auteur_profile_id: activeProfileId || null,
         titre: newTitre.trim(), contenu: newContenu.trim(),
         created_at: new Date().toISOString(),
       }).select().single();
@@ -156,6 +261,7 @@ export default function ForumCategoriePage() {
                 <div className="flex items-start gap-2">
                   {s.epingle && <span className="text-[#00ACC1] mt-0.5">📌</span>}
                   <div className="flex-1">
+                    <div className="mb-2"><AuthorBadge author={authors[authorKey(s)]} size={22} /></div>
                     <p className="font-bold text-[#1E2025] text-sm mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>{s.titre}</p>
                     <p className="text-xs text-gray-500 line-clamp-2" style={{ fontFamily: 'Galey, sans-serif' }}>{s.contenu}</p>
                     <p className="text-xs text-gray-400 mt-2">{fmtDate(s.created_at)}</p>
@@ -182,6 +288,7 @@ export default function ForumCategoriePage() {
             <div className="flex-1 overflow-y-auto p-4">
               {/* Message principal */}
               <div className="bg-[#E0F7FA] rounded-2xl p-4 mb-4">
+                <div className="mb-3"><AuthorBadge author={authors[authorKey(openSujet)]} /></div>
                 <p className="text-sm text-[#1E2025] leading-relaxed" style={{ fontFamily: 'Galey, sans-serif' }}>{openSujet.contenu}</p>
                 <p className="text-xs text-gray-400 mt-2">{fmtDate(openSujet.created_at)}</p>
               </div>
@@ -196,6 +303,7 @@ export default function ForumCategoriePage() {
                     return (
                       <div key={r.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[78%] px-3 py-2 rounded-2xl text-sm ${isMe ? 'bg-[#E0F7FA]' : 'bg-gray-100'}`} style={{ fontFamily: 'Galey, sans-serif' }}>
+                          {!isMe && <div className="mb-1.5"><AuthorBadge author={authors[authorKey(r)]} size={20} /></div>}
                           <p className="text-[#1E2025]">{r.contenu}</p>
                           <p className="text-xs text-gray-400 mt-1">{fmtDate(r.created_at)}</p>
                         </div>

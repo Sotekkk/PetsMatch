@@ -172,6 +172,13 @@ String? _socialTypeLabel(String? type) {
 
 const _kAuthorCols = 'id, uid, firstname, lastname, avatar_url, profile_picture_url_pro, profile_type, nom, is_influencer, social_pseudo';
 
+// ─── Wrappers publics — réutilisation hors Pets Social (ex. Forum communauté) ──
+// pour garder une seule source de vérité sur l'identité affichée d'un profil.
+const kSocialAuthorCols = _kAuthorCols;
+String socialProfileName(Map<String, dynamic>? p) => _profileName(p);
+String? socialProfileTypeLabel(String? type) => _socialTypeLabel(type);
+String? socialProfilePhoto(Map<String, dynamic>? p) => _profilePhoto(p);
+
 /// Id du profil PARTICULIER d'un uid — identité utilisée dans le réseau social,
 /// jamais le profil pro / is_main. Mémoïsé (les inserts like/follow l'appellent
 /// souvent).
@@ -310,6 +317,9 @@ Future<String?> _activeAuthorProfileId(String uid) async {
   // Repli : particulier sinon is_main — jamais null pour un compte existant.
   return _socialProfileId(uid);
 }
+
+/// Wrapper public — réutilisation hors Pets Social (ex. Forum communauté).
+Future<String?> resolveActiveAuthorProfileId(String uid) => _activeAuthorProfileId(uid);
 
 /// Insère un like et envoie une push notif à l'auteur du post.
 Future<void> _insertLike(String postId, String uid) async {

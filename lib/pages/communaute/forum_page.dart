@@ -1,10 +1,110 @@
 import 'package:PetsMatch/main.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart'
+    show SocialProfilePage, resolveActiveAuthorProfileId, socialProfileName,
+         socialProfileTypeLabel, socialProfilePhoto, kSocialAuthorCols;
 
 const _tealC = Color(0xFF00ACC1);
+
+// ── Identité auteur (avatar/nom/badge) — même logique que Pets Social ─────────
+
+/// Clé d'identité d'une ligne forum : `auteur_profile_id` si connu, sinon
+/// repli `u:<uid>` (lignes créées avant la migration).
+String _authorKey(Map<String, dynamic> row) {
+  final pid = row['auteur_profile_id']?.toString();
+  if (pid != null && pid.isNotEmpty) return pid;
+  return 'u:${row['auteur_uid']}';
+}
+
+/// Résout en un batch l'identité Pets Social (avatar/nom/type) des auteurs
+/// d'une liste de sujets/réponses. Même stratégie que `_resolveAuthors` côté
+/// Pets Social : par profil quand connu, repli sur le profil particulier
+/// principal de l'uid pour les lignes historiques.
+Future<Map<String, Map<String, dynamic>>> _resolveForumAuthors(List<Map<String, dynamic>> rows) async {
+  final supa = Supabase.instance.client;
+  final out = <String, Map<String, dynamic>>{};
+
+  final profIds = rows
+      .map((r) => r['auteur_profile_id']?.toString())
+      .where((id) => id != null && id.isNotEmpty)
+      .cast<String>()
+      .toSet()
+      .toList();
+  if (profIds.isNotEmpty) {
+    final byId = await supa.from('user_profiles').select(kSocialAuthorCols).inFilter('id', profIds);
+    for (final r in byId as List) {
+      out[r['id'] as String] = Map<String, dynamic>.from(r as Map);
+    }
+  }
+
+  final legacyUids = rows
+      .where((r) => (r['auteur_profile_id']?.toString().isNotEmpty ?? false) != true)
+      .map((r) => r['auteur_uid']?.toString())
+      .where((u) => u != null && u.isNotEmpty)
+      .cast<String>()
+      .toSet()
+      .toList();
+  if (legacyUids.isNotEmpty) {
+    final byUid = await supa.from('user_profiles').select(kSocialAuthorCols)
+        .inFilter('uid', legacyUids).eq('profile_type', 'particulier').eq('is_main', true);
+    for (final r in byUid as List) {
+      out.putIfAbsent('u:${r['uid']}', () => Map<String, dynamic>.from(r as Map));
+    }
+  }
+  return out;
+}
+
+/// Ligne cliquable avatar + nom + badge pro, ouvrant le profil Pets Social
+/// de l'auteur (avec son statut suivi/ami visible depuis là-bas).
+class _AuthorRow extends StatelessWidget {
+  final Map<String, dynamic>? profile;
+  final String fallbackUid;
+  final double avatarSize;
+  final TextStyle? nameStyle;
+  const _AuthorRow({required this.profile, required this.fallbackUid, this.avatarSize = 22, this.nameStyle});
+
+  @override
+  Widget build(BuildContext context) {
+    final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final targetUid = profile?['uid']?.toString() ?? fallbackUid;
+    final name = socialProfileName(profile);
+    final photo = socialProfilePhoto(profile);
+    final badge = socialProfileTypeLabel(profile?['profile_type']?.toString());
+
+    return GestureDetector(
+      onTap: targetUid.isEmpty ? null : () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => SocialProfilePage(
+          targetUid: targetUid,
+          myUid: myUid,
+          targetProfileId: profile?['id']?.toString(),
+        )),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        CircleAvatar(
+          radius: avatarSize / 2,
+          backgroundColor: const Color(0xFFE0F2F1),
+          backgroundImage: (photo != null && photo.isNotEmpty) ? CachedNetworkImageProvider(photo) : null,
+          child: (photo == null || photo.isEmpty) ? Icon(Icons.person, size: avatarSize * 0.55, color: _tealC) : null,
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Text(name,
+                style: nameStyle ?? const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1E2025)),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+            if (badge != null)
+              Text(badge, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey)),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
 
 // ── Couleurs par type d'animal (alignées sur animaux_perdus_page) ─────────────
 
@@ -157,6 +257,7 @@ class _ForumCategorieePageState extends State<_ForumCategorieePage> {
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   List<Map<String, dynamic>> _sujets = [];
+  Map<String, Map<String, dynamic>> _authors = {};
   bool _loading = true;
 
   @override
@@ -174,9 +275,12 @@ class _ForumCategorieePageState extends State<_ForumCategorieePage> {
           .eq('categorie_slug', widget.cat.slug)
           .order('epingle', ascending: false)
           .order('created_at', ascending: false);
+      final sujets = List<Map<String, dynamic>>.from(data);
+      final authors = await _resolveForumAuthors(sujets);
       if (mounted) {
         setState(() {
-          _sujets = List<Map<String, dynamic>>.from(data);
+          _sujets = sujets;
+          _authors = authors;
           _loading = false;
         });
       }
@@ -232,6 +336,7 @@ class _ForumCategorieePageState extends State<_ForumCategorieePage> {
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (_, i) => _SujetTile(
                       sujet: _sujets[i],
+                      author: _authors[_authorKey(_sujets[i])],
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -264,9 +369,10 @@ class _ForumCategorieePageState extends State<_ForumCategorieePage> {
 
 class _SujetTile extends StatelessWidget {
   final Map<String, dynamic> sujet;
+  final Map<String, dynamic>? author;
   final VoidCallback onTap;
 
-  const _SujetTile({required this.sujet, required this.onTap});
+  const _SujetTile({required this.sujet, required this.author, required this.onTap});
 
   static String _fmtDate(String iso) {
     try {
@@ -307,6 +413,8 @@ class _SujetTile extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    _AuthorRow(profile: author, fallbackUid: sujet['auteur_uid']?.toString() ?? '', avatarSize: 20),
+                    const SizedBox(height: 8),
                     Row(children: [
                       if (epingle) ...[
                         Icon(Icons.push_pin, size: 13, color: animalColor),
@@ -378,6 +486,7 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   List<Map<String, dynamic>> _reponses = [];
+  Map<String, Map<String, dynamic>> _authors = {};
   bool _loading = true;
   String _newReponse = '';
   bool _sending = false;
@@ -396,9 +505,12 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
           .select()
           .eq('sujet_id', widget.sujet['id'])
           .order('created_at');
+      final reponses = List<Map<String, dynamic>>.from(data);
+      final authors = await _resolveForumAuthors([widget.sujet, ...reponses]);
       if (mounted) {
         setState(() {
-          _reponses = List<Map<String, dynamic>>.from(data);
+          _reponses = reponses;
+          _authors = authors;
           _loading = false;
         });
       }
@@ -412,15 +524,22 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
     if (texte.isEmpty || _uid.isEmpty) return;
     setState(() => _sending = true);
     try {
+      final pid = await resolveActiveAuthorProfileId(_uid);
       final inserted = await _supa.from('forum_reponses').insert({
         'sujet_id': widget.sujet['id'],
         'auteur_uid': _uid,
+        if (pid != null) 'auteur_profile_id': pid,
         'contenu': texte,
         'created_at': DateTime.now().toIso8601String(),
       }).select().single();
+      final row = Map<String, dynamic>.from(inserted);
+      if (!_authors.containsKey(_authorKey(row))) {
+        final resolved = await _resolveForumAuthors([row]);
+        _authors.addAll(resolved);
+      }
       if (mounted) {
         setState(() {
-          _reponses.add(Map<String, dynamic>.from(inserted));
+          _reponses.add(row);
           _newReponse = '';
           _sending = false;
         });
@@ -469,15 +588,23 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: _tealC.withValues(alpha: 0.2)),
                         ),
-                        child: Text(contenu,
-                            style: const TextStyle(
-                                fontFamily: 'Galey',
-                                fontSize: 14,
-                                color: Color(0xFF1E2025))),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          _AuthorRow(
+                            profile: _authors[_authorKey(widget.sujet)],
+                            fallbackUid: widget.sujet['auteur_uid']?.toString() ?? '',
+                            avatarSize: 26,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(contenu,
+                              style: const TextStyle(
+                                  fontFamily: 'Galey',
+                                  fontSize: 14,
+                                  color: Color(0xFF1E2025))),
+                        ]),
                       );
                     }
                     final r = _reponses[i - 1];
-                    return _ReponseCard(reponse: r);
+                    return _ReponseCard(reponse: r, author: _authors[_authorKey(r)]);
                   },
                 ),
         ),
@@ -543,7 +670,8 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
 
 class _ReponseCard extends StatelessWidget {
   final Map<String, dynamic> reponse;
-  const _ReponseCard({required this.reponse});
+  final Map<String, dynamic>? author;
+  const _ReponseCard({required this.reponse, required this.author});
 
   static String _fmtDate(String iso) {
     try {
@@ -577,6 +705,11 @@ class _ReponseCard extends StatelessWidget {
           ],
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (!isMe) ...[
+            _AuthorRow(profile: author, fallbackUid: auteur, avatarSize: 20,
+                nameStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF1E2025))),
+            const SizedBox(height: 6),
+          ],
           Text(contenu,
               style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025))),
           const SizedBox(height: 4),
@@ -613,9 +746,11 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
     _formKey.currentState!.save();
     setState(() => _saving = true);
     try {
+      final pid = await resolveActiveAuthorProfileId(_uid);
       await _supa.from('forum_sujets').insert({
         'categorie_slug': widget.categorieSlug,
         'auteur_uid': _uid,
+        if (pid != null) 'auteur_profile_id': pid,
         'titre': _titre,
         'contenu': _contenu,
         'created_at': DateTime.now().toIso8601String(),
