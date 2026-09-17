@@ -19,6 +19,8 @@ import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:PetsMatch/pages/petfriends/petfriends_page.dart';
+import 'package:PetsMatch/pages/petfriends/public_profile_page.dart' show PublicProfilePage;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ⚠️  MULTI-PROFIL — NOTE POUR NABIL (et tout dev sur Pets Social)
@@ -873,6 +875,11 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
     ));
   }
 
+  void _openPetFriends() {
+    if (_uid == null) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const PetFriendsPage()));
+  }
+
   void _openMyProfile() {
     if (_uid == null) return;
     Navigator.push(context, MaterialPageRoute(
@@ -984,6 +991,8 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
           ]),
         ),
         // ── Boutons header ───────────────────────────────────────
+        _headerBtn(Icons.people_alt_outlined, _openPetFriends),
+        const SizedBox(width: 8),
         _headerBtn(Icons.search_rounded, _openSearch),
         const SizedBox(width: 8),
         Stack(clipBehavior: Clip.none, children: [
@@ -5289,23 +5298,42 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
                     ] else
                       const SizedBox(height: 16),
 
-                    // ── Bouton suivre / mon profil ──────────────────
+                    // ── Boutons suivre + PetFriend (mutuel) ──────────
                     if (!_isMyProfile)
-                      GestureDetector(
-                        onTap: _toggleFollow,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
-                          decoration: BoxDecoration(
-                            gradient: _isFollowing ? null : const LinearGradient(colors: [_tealC, _green]),
-                            color: _isFollowing ? Colors.white.withValues(alpha: 0.12) : null,
-                            borderRadius: BorderRadius.circular(24),
-                            border: _isFollowing ? Border.all(color: Colors.white30) : null,
-                            boxShadow: _isFollowing ? null : [BoxShadow(color: _tealC.withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))],
+                      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        GestureDetector(
+                          onTap: _toggleFollow,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                            decoration: BoxDecoration(
+                              gradient: _isFollowing ? null : const LinearGradient(colors: [_tealC, _green]),
+                              color: _isFollowing ? Colors.white.withValues(alpha: 0.12) : null,
+                              borderRadius: BorderRadius.circular(24),
+                              border: _isFollowing ? Border.all(color: Colors.white30) : null,
+                              boxShadow: _isFollowing ? null : [BoxShadow(color: _tealC.withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))],
+                            ),
+                            child: Text(_isFollowing ? 'Abonné(e) ✓' : 'Suivre',
+                                style: const TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
                           ),
-                          child: Text(_isFollowing ? 'Abonné(e) ✓' : 'Suivre',
-                              style: const TextStyle(fontFamily: 'Galey', fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
                         ),
-                      ),
+                        const SizedBox(width: 10),
+                        // Relation mutuelle distincte du suivi (asymétrique) — gérée
+                        // entièrement par PublicProfilePage (demande/accepter/refuser/
+                        // message), pas dupliquée ici.
+                        GestureDetector(
+                          onTap: () => Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => PublicProfilePage(targetUid: widget.targetUid))),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFAD1457).withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(color: const Color(0xFFAD1457).withValues(alpha: 0.4)),
+                            ),
+                            child: const Icon(Icons.favorite, size: 18, color: Color(0xFFAD1457)),
+                          ),
+                        ),
+                      ]),
                     const SizedBox(height: 20),
 
                     // ── Séparateur ──────────────────────────────────
