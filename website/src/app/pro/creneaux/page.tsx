@@ -24,6 +24,9 @@ function getMonday(d: Date): Date {
 function toDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+function sameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
 function timeToMins(t: string): number {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
@@ -79,6 +82,10 @@ export default function ProCreneauxPage() {
   const [showRepModal, setShowRepModal]     = useState(false);
   const [repChoice, setRepChoice]           = useState<'4sem' | 'annee' | 'perso'>('4sem');
   const [repEndDate, setRepEndDate]         = useState('');
+  const [showCopyModal, setShowCopyModal]   = useState(false);
+  const [copySourceDay, setCopySourceDay]   = useState<Date | null>(null);
+  const [copyTargetDays, setCopyTargetDays] = useState<Set<string>>(new Set());
+  const [copying, setCopying]               = useState(false);
   const [showAddModal, setShowAddModal]     = useState(false);
   const [addDate, setAddDate]               = useState(() => toDateStr(new Date()));
   const [addMode, setAddMode]               = useState<SlotStatus>('disponible');
@@ -333,6 +340,49 @@ export default function ProCreneauxPage() {
     setReplicating(false);
   }
 
+  // Copie les créneaux disponibles d'un jour vers un ou plusieurs autres
+  // jours de la MÊME semaine affichée — complémentaire de "Répliquer…"
+  // (qui reporte toute la semaine sur les semaines suivantes). Miroir de
+  // _copyDay (app, pro_agenda.dart).
+  function openCopyDay(day: Date) {
+    setCopySourceDay(day);
+    setCopyTargetDays(new Set());
+    setShowCopyModal(true);
+  }
+
+  async function handleCopyDay() {
+    if (!user || !copySourceDay || copyTargetDays.size === 0) return;
+    const sourceKey = toDateStr(copySourceDay);
+    const daySlots = Object.entries(slots).filter(([k, v]) => k.startsWith(`${sourceKey}_`) && v === 'disponible');
+    if (!daySlots.length) { setShowCopyModal(false); return; }
+    setCopying(true); setShowCopyModal(false);
+    try {
+      const rows: Record<string, unknown>[] = [];
+      for (const targetKey of copyTargetDays) {
+        for (const [key] of daySlots) {
+          const hhmm = key.slice(sourceKey.length + 1);
+          const fin = minsToTime(timeToMins(hhmm) + 15);
+          rows.push({ pro_uid: user.uid, pro_profile_id: activeProfileId, date: targetKey,
+            heure_debut: `${hhmm}:00`, heure_fin: `${fin}:00`, statut: 'disponible',
+            type_prestation: slotTypes[key] ?? null,
+            domicile_ok: slotDomicile[key] ?? false,
+            type_garde: slotTypeGarde[key] ?? null,
+            capacite: slotCapacite[key] ?? 1,
+            ...(slotPrestationIds[key] ? { prestation_id: slotPrestationIds[key] } : {}) });
+        }
+      }
+      const seen = new Set<string>();
+      const deduped = rows.filter(r => {
+        const k = `${r.date}_${r.heure_debut}`;
+        return seen.has(k as string) ? false : (seen.add(k as string), true);
+      });
+      if (deduped.length) await supabase.from('creneaux_pro').upsert(deduped, { onConflict: 'pro_uid,pro_profile_id,date,heure_debut' });
+      await loadSlots();
+    } catch { /* ignore */ }
+    setCopying(false);
+    setCopySourceDay(null);
+  }
+
   const dispCount = Object.values(slots).filter(v => v === 'disponible').length;
 
   if (loading) return <div className="flex items-center justify-center min-h-screen text-gray-400">Chargement…</div>;
@@ -414,6 +464,7 @@ export default function ProCreneauxPage() {
               setAddTypeGarde(range.typeGarde ?? null); setAddCapacite(slotCapacite[key] ?? 1);
               setShowAddModal(true);
             }}
+            onCopyDay={openCopyDay}
           />
         </div>
       )}
@@ -640,6 +691,51 @@ export default function ProCreneauxPage() {
           <div className="bg-white rounded-2xl px-8 py-5 text-sm font-semibold shadow-xl"
             style={{ fontFamily: 'Galey, sans-serif', color: TEAL }}>
             Réplication en cours…
+          </div>
+        </div>
+      )}
+
+      {/* Modal copier un jour vers d'autres jours de la semaine */}
+      {showCopyModal && copySourceDay && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowCopyModal(false)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-base mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+              Copier {JOURS_FULL[copySourceDay.getDay() === 0 ? 6 : copySourceDay.getDay() - 1]} vers…
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">Choisissez un ou plusieurs jours de cette semaine.</p>
+            <div className="flex flex-col gap-2.5 mb-5">
+              {days.filter(d => !sameDay(d, copySourceDay)).map(d => {
+                const key = toDateStr(d);
+                const checked = copyTargetDays.has(key);
+                return (
+                  <label key={key} className="flex items-center gap-2 cursor-pointer text-sm font-medium" style={{ fontFamily: 'Galey, sans-serif' }}>
+                    <input type="checkbox" checked={checked} style={{ accentColor: TEAL }}
+                      onChange={() => setCopyTargetDays(prev => {
+                        const n = new Set(prev);
+                        if (n.has(key)) n.delete(key); else n.add(key);
+                        return n;
+                      })} />
+                    {JOURS_FULL[d.getDay() === 0 ? 6 : d.getDay() - 1]} {d.getDate()} {MOIS[d.getMonth()]}
+                  </label>
+                );
+              })}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setShowCopyModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500">Annuler</button>
+              <button onClick={handleCopyDay} disabled={copyTargetDays.size === 0}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40" style={{ background: TEAL }}>Copier</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {copying && (
+        <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl px-8 py-5 text-sm font-semibold shadow-xl"
+            style={{ fontFamily: 'Galey, sans-serif', color: TEAL }}>
+            Copie en cours…
           </div>
         </div>
       )}

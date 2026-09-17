@@ -46,13 +46,17 @@ function minsToTime(m: number): string {
 }
 
 export default function CreneauxWeekGrid({
-  days, rangesByDay, rdvsByDay, onCreateRange, onTapRange, startHour = 6, endHour = 22,
+  days, rangesByDay, rdvsByDay, onCreateRange, onTapRange, onCopyDay, startHour = 6, endHour = 22,
 }: {
   days: Date[];
   rangesByDay: Record<string, WeekGridRange[]>;
   rdvsByDay: Record<string, WeekGridRdv[]>;
   onCreateRange: (day: Date, start: string, end: string) => void;
   onTapRange: (day: Date, range: WeekGridRange) => void;
+  // Copie les créneaux disponibles de ce jour vers d'autres jours de la
+  // même semaine (miroir de creneaux_week_grid.dart, app). Optionnel :
+  // l'icône n'apparaît que si fourni.
+  onCopyDay?: (day: Date) => void;
   startHour?: number;
   endHour?: number;
 }) {
@@ -131,11 +135,17 @@ export default function CreneauxWeekGrid({
           const isDragDay = drag?.day && sameDay(drag.day, day);
           return (
             <div key={key} style={{ width: DAY_COL_WIDTH, flexShrink: 0 }}>
-              <div style={{ height: HEADER_HEIGHT }} className="flex items-center justify-center">
+              <div style={{ height: HEADER_HEIGHT }} className="flex items-center justify-center gap-1">
                 <span className="text-[11px] font-galey font-bold px-2 py-0.5 rounded-full"
                   style={{ background: sameDay(day, today) ? TEAL : 'transparent', color: sameDay(day, today) ? 'white' : '#1F2937' }}>
                   {JOURS_COURTS[day.getDay() === 0 ? 6 : day.getDay() - 1]} {day.getDate()}
                 </span>
+                {onCopyDay && ranges.some(r => r.statut === 'disponible') && (
+                  <button type="button" onClick={() => onCopyDay(day)} title="Copier ce jour vers…"
+                    className="text-gray-400 hover:text-[#0C5C6C] text-[11px] leading-none">
+                    📋
+                  </button>
+                )}
               </div>
               <div
                 ref={el => { colRefs.current[key] = el; }}
