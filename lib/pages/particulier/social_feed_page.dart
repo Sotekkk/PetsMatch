@@ -225,6 +225,31 @@ Future<String?> _socialProfileId(String uid) async {
   }
 }
 
+/// Profils PetFriends **acceptés** de `profileId` (relation mutuelle —
+/// symétrique par construction, on lit les deux sens de la table
+/// `petfriends`). Sert à afficher le badge « Ami » et à autoriser la
+/// lecture des posts `visibilite = 'amis'`.
+Future<Set<String>> _friendProfileIds(String profileId) async {
+  if (profileId.isEmpty) return {};
+  try {
+    final supa = Supabase.instance.client;
+    final results = await Future.wait([
+      supa.from('petfriends').select('recepteur_profile_id')
+          .eq('demandeur_profile_id', profileId).eq('statut', 'accepte'),
+      supa.from('petfriends').select('demandeur_profile_id')
+          .eq('recepteur_profile_id', profileId).eq('statut', 'accepte'),
+    ]);
+    return {
+      for (final r in results[0] as List)
+        if ((r['recepteur_profile_id'] as String?)?.isNotEmpty == true) r['recepteur_profile_id'] as String,
+      for (final r in results[1] as List)
+        if ((r['demandeur_profile_id'] as String?)?.isNotEmpty == true) r['demandeur_profile_id'] as String,
+    };
+  } catch (_) {
+    return {};
+  }
+}
+
 /// Id du profil **actif** de l'utilisateur — c'est son identité dans Pets
 /// Social pour ce qu'il publie (post, commentaire, like, suivi).
 ///
@@ -669,6 +694,25 @@ Future<void> openSharedSocialPost(BuildContext context, String postId, {String? 
         .from('posts_socialmedia').select().eq('id', postId).maybeSingle();
     if (row == null || !context.mounted) return;
     final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+    // Post « Amis » ouvert via un lien partagé / une notif : vérifier que le
+    // lecteur est bien l'auteur ou un PetFriend accepté avant de l'afficher.
+    if (row['visibilite'] == 'amis') {
+      final apid = row['author_profile_id'] as String?;
+      final mpid = await _activeAuthorProfileId(myUid);
+      final allowed = apid != null && mpid != null &&
+          (apid == mpid || (await _friendProfileIds(mpid)).contains(apid));
+      if (!allowed) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Cette publication est réservée aux amis de son auteur.',
+                  style: TextStyle(fontFamily: 'Galey'))));
+        }
+        return;
+      }
+    }
+    if (!context.mounted) return;
+
     await showDialog(
       context: context,
       barrierColor: Colors.black87,
@@ -1309,6 +1353,7 @@ class _FeedListState extends State<_FeedList>
   Set<String> _liked     = {};
   Set<String> _following = {};
   Set<String> _followingPids = {}; // abonnements du profil actif (following_profile_id)
+  Set<String> _friendPids = {}; // PetFriends acceptés du profil actif
   bool   _loading   = true;
   String? _feedError;
   // Anti-double-tap : un appui répété sur « Suivre » avant la mise à jour de
@@ -1343,9 +1388,11 @@ class _FeedListState extends State<_FeedList>
               if ((r['following_profile_id'] as String?)?.isNotEmpty == true)
                 r['following_profile_id'] as String,
           };
+          _friendPids = pid == null ? {} : await _friendProfileIds(pid);
         } catch (_) {
           _following = {};
           _followingPids = {};
+          _friendPids = {};
         }
       }
 
@@ -1414,6 +1461,17 @@ class _FeedListState extends State<_FeedList>
           return 0;
         });
       }
+
+      // Posts « Amis » : visibles seulement par l'auteur et ses PetFriends
+      // acceptés — filtré ici pour couvrir les 3 sources (abonnements,
+      // tagué animal, découverte), avant toute autre transformation.
+      posts = posts.where((p) {
+        if ((p['visibilite'] as String?) != 'amis') return true;
+        final apid = p['author_profile_id'] as String?;
+        if (apid == null) return true; // legacy sans profil : pas de restriction
+        if (apid == activePid) return true;
+        return _friendPids.contains(apid);
+      }).toList();
 
       if (posts.isEmpty) {
         if (mounted) setState(() { _posts = []; _loading = false; });
@@ -1671,6 +1729,7 @@ class _FeedListState extends State<_FeedList>
           final isFollowingAuthor = isLegacyKey
               ? _following.contains(originalUid)
               : _followingPids.contains(origKey);
+          final isFriendAuthor = !isLegacyKey && _friendPids.contains(origKey);
           return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
             if (isRepost) Padding(
               padding: const EdgeInsets.only(left: 14, bottom: 6),
@@ -1686,6 +1745,7 @@ class _FeedListState extends State<_FeedList>
             profile: displayProfile,
             isLiked: _liked.contains(effectiveId),
             isFollowing: isFollowingAuthor,
+            isFriend: isFriendAuthor,
             isMyPost: originalUid == widget.myUid,
             myUid: widget.myUid,
             onLike: () => _toggleLike(effectiveId),
@@ -1724,6 +1784,7 @@ class _SocialPostCard extends StatefulWidget {
   final Map<String, dynamic>? profile;
   final bool isLiked;
   final bool isFollowing;
+  final bool isFriend; // PetFriend accepté avec l'auteur
   final bool isMyPost;
   final String myUid;
   final VoidCallback onLike;
@@ -1736,6 +1797,7 @@ class _SocialPostCard extends StatefulWidget {
     required this.profile,
     required this.isLiked,
     required this.isFollowing,
+    this.isFriend = false,
     required this.isMyPost,
     required this.myUid,
     required this.onLike,
@@ -2262,6 +2324,26 @@ class _SocialPostCardState extends State<_SocialPostCard> {
                                         decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF6E9E57), Color(0xFF0C5C6C)]), shape: BoxShape.circle),
                                         child: const Icon(Icons.auto_awesome, size: 9, color: Colors.white),
                                       ),
+                                    ],
+                                    if (widget.isFriend) ...[
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFAD1457).withValues(alpha: 0.10),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: const Color(0xFFAD1457).withValues(alpha: 0.3)),
+                                        ),
+                                        child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                                          Icon(Icons.favorite, size: 9, color: Color(0xFFAD1457)),
+                                          SizedBox(width: 3),
+                                          Text('Ami', style: TextStyle(fontFamily: 'Galey', fontSize: 9, color: Color(0xFFAD1457), fontWeight: FontWeight.w700)),
+                                        ]),
+                                      ),
+                                    ],
+                                    if (widget.post['visibilite'] == 'amis') ...[
+                                      const SizedBox(width: 6),
+                                      Icon(Icons.people_alt_outlined, size: 12, color: Colors.grey.shade400),
                                     ],
                                     if (_isBoosted(widget.post['boosted_until']?.toString())) ...[
                                       const SizedBox(width: 6),
@@ -3235,6 +3317,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   String? _replyToName;
   String? _replyToId;
   Set<String> _following = {};
+  Set<String> _friendPids = {}; // PetFriends acceptés du profil actif
   String? _myProfileId;
   final Map<String, GlobalKey> _itemKeys = {};
   String? _highlightId;
@@ -3244,7 +3327,6 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     super.initState();
     _highlightId = widget.highlightCommentId;
     _load();
-    _activeAuthorProfileId(widget.myUid).then((id) { if (mounted) _myProfileId = id; });
   }
 
   void _scrollToHighlight() {
@@ -3268,6 +3350,9 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     final rows = await _supa.from('post_comments').select()
         .eq('post_id', widget.postId).order('created_at') as List;
     _following = await _activeFollowingUids(widget.myUid);
+    final pid = await _activeAuthorProfileId(widget.myUid);
+    _myProfileId = pid;
+    _friendPids = pid == null ? {} : await _friendProfileIds(pid);
     if (rows.isNotEmpty) {
       _profiles = await _resolveAuthors(rows);
     }
@@ -3630,6 +3715,10 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                                           child: const Icon(Icons.auto_awesome, size: 8, color: Colors.white),
                                                         ),
                                                       ],
+                                                      if (!_authorKey(c).startsWith('u:') && _friendPids.contains(_authorKey(c))) ...[
+                                                        const SizedBox(width: 4),
+                                                        Icon(Icons.favorite, size: 10, color: const Color(0xFFAD1457)),
+                                                      ],
                                                     ]),
                                                     const SizedBox(height: 3),
                                                     commentText(),
@@ -3849,6 +3938,8 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   String? _myProfileName;
   String? _myProfileType;
   String? _error;
+  // 'public' (tout le monde) ou 'amis' (PetFriends acceptés uniquement).
+  String _visibilite = 'public';
 
   // Animaux du compte que l'on peut taguer sur la publication.
   List<Map<String, dynamic>> _myAnimals = [];
@@ -3969,6 +4060,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
         if (mediaValue != null) 'media_url': mediaValue,
         if (_taggedAnimalIds.isNotEmpty)
           'tagged_animal_ids': _taggedAnimalIds.toList(),
+        'visibilite': _visibilite,
       });
       if (mounted) {
         Navigator.pop(context);
@@ -4180,6 +4272,40 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
                   ]),
                 ),
               ],
+              const SizedBox(height: 10),
+
+              // Visibilité : public (tout le monde) ou amis (PetFriends acceptés).
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(children: [
+                  for (final v in const [
+                    ('public', Icons.public, 'Public'),
+                    ('amis', Icons.people_alt_outlined, 'Amis'),
+                  ])
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: GestureDetector(
+                        onTap: () => setState(() => _visibilite = v.$1),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: _visibilite == v.$1 ? _tealC : Colors.white.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color: _visibilite == v.$1 ? _tealC : Colors.white.withValues(alpha: 0.20)),
+                          ),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(v.$2, size: 13, color: _visibilite == v.$1 ? Colors.white : Colors.white60),
+                            const SizedBox(width: 5),
+                            Text(v.$3,
+                                style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                                    color: _visibilite == v.$1 ? Colors.white : Colors.white60)),
+                          ]),
+                        ),
+                      ),
+                    ),
+                ]),
+              ),
               const SizedBox(height: 12),
 
               // Champ de texte
@@ -4939,7 +5065,16 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
       } catch (_) {}
     }
 
-    final allPosts = (results[1] as List).cast<Map<String, dynamic>>();
+    var allPosts = (results[1] as List).cast<Map<String, dynamic>>();
+
+    // Posts « Amis » du profil visité : visibles seulement si on est ce
+    // profil, ou PetFriend accepté avec lui.
+    if (!_isMyProfile && tpid != null) {
+      final iAmFriend = mpid != null && (await _friendProfileIds(mpid)).contains(tpid);
+      if (!iAmFriend) {
+        allPosts = allPosts.where((p) => (p['visibilite'] as String?) != 'amis').toList();
+      }
+    }
 
     if (mounted) {
       setState(() {
@@ -5509,6 +5644,7 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
   Map<String, dynamic>? _profile;
   bool _isLiked    = false;
   bool _isFollowing = false;
+  bool _isFriend   = false;
   bool _loading    = true;
   String? _authorProfileId; // profil de l'auteur affiché (pour suivre/désuivre)
 
@@ -5599,11 +5735,18 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
       final ring = (authorPid != null ? abp[authorPid] as String? : null)
           ?? cosmeticRow?['active_value'] as String?;
       if (prof != null && ring != null) prof['_ring'] = ring;
+      final effectiveAuthorPid = authorPid ?? prof?['id'] as String?;
+      var isFriend = false;
+      if (myPid != null && effectiveAuthorPid != null) {
+        isFriend = (await _friendProfileIds(myPid)).contains(effectiveAuthorPid);
+      }
+      if (!mounted) return;
       setState(() {
         _profile     = prof;
-        _authorProfileId = authorPid ?? prof?['id'] as String?;
+        _authorProfileId = effectiveAuthorPid;
         _isLiked     = results[1] != null;
         _isFollowing = results[2] != null;
+        _isFriend    = isFriend;
         _loading     = false;
       });
     }
@@ -5643,6 +5786,7 @@ class _PostDetailSheetState extends State<_PostDetailSheet> {
           profile: _profile,
           isLiked: _isLiked,
           isFollowing: _isFollowing,
+          isFriend: _isFriend,
           isMyPost: _authorUid == widget.myUid,
           myUid: widget.myUid,
           onLike: _toggleLike,
