@@ -1321,7 +1321,7 @@ class _MessageBubble extends StatelessWidget {
                             ),
                           ),
                         if (isLocation)
-                          _LocationCard(
+                          LocationCard(
                             lat: (data['lat'] as num).toDouble(),
                             lng: (data['lng'] as num).toDouble(),
                             isMe: isMe,
@@ -1369,10 +1369,10 @@ class _MessageBubble extends StatelessWidget {
 
 // ── Location card ──────────────────────────────────────────────────────────────
 
-class _LocationCard extends StatelessWidget {
+class LocationCard extends StatelessWidget {
   final double lat, lng;
   final bool isMe;
-  const _LocationCard({required this.lat, required this.lng, required this.isMe});
+  const LocationCard({required this.lat, required this.lng, required this.isMe});
 
   Future<void> _openMaps() async {
     final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');

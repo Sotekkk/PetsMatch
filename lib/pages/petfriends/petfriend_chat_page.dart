@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
+import 'package:PetsMatch/pages/chatScreen.dart' show LocationCard;
 
 class PetFriendChatPage extends StatefulWidget {
   final String conversationId;
@@ -121,9 +123,9 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
     } catch (_) {}
   }
 
-  Future<void> _send({String? text, String? imageUrl}) async {
+  Future<void> _send({String? text, String? imageUrl, double? lat, double? lng}) async {
     final t = text?.trim() ?? '';
-    if (t.isEmpty && imageUrl == null) return;
+    if (t.isEmpty && imageUrl == null && lat == null) return;
     setState(() => _sending = true);
     try {
       final myInfo = _participantsInfo[_myUid] as Map? ?? {};
@@ -134,7 +136,9 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
         'sender_id':       _myUid,
         'text':            t.isNotEmpty ? t : null,
         'image_url':       imageUrl,
-        'msg_type':        imageUrl != null ? 'image' : 'text',
+        'msg_type':        imageUrl != null ? 'image' : (lat != null ? 'location' : 'text'),
+        'lat':             lat,
+        'lng':             lng,
         'is_read':         false,
       });
 
@@ -166,7 +170,7 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
           }
         }
         await _supa.from('conversations').update({
-          'last_message': imageUrl != null ? '📷 Photo' : t,
+          'last_message': imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : t),
           'updated_at':   DateTime.now().toIso8601String(),
           'unread_count': unread,
           'participants_info': updatedInfo,
@@ -176,6 +180,39 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
       _ctrl.clear();
     } catch (_) {}
     if (mounted) setState(() => _sending = false);
+  }
+
+  Future<void> _shareLocation() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Activez la localisation', style: TextStyle(fontFamily: 'Galey'))));
+      return;
+    }
+    LocationPermission perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+    if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) return;
+    if (!mounted) return;
+    final confirm = await showDialog<bool>(context: context, builder: (_) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text('Partager ma position', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+      content: const Text('Envoyer vos coordonnées GPS actuelles à cet ami ? Pratique pour organiser une balade.',
+          style: TextStyle(fontFamily: 'Galey')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+        TextButton(onPressed: () => Navigator.pop(context, true),
+            child: const Text('Envoyer', style: TextStyle(color: _green, fontWeight: FontWeight.w700))),
+      ],
+    ));
+    if (confirm != true) return;
+    try {
+      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      if (!mounted) return;
+      await _send(lat: pos.latitude, lng: pos.longitude);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur GPS : $e', style: const TextStyle(fontFamily: 'Galey'))));
+    }
   }
 
   Future<void> _pickImage() async {
@@ -260,6 +297,12 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
               onPressed: _picking ? null : _pickImage,
               icon: const Icon(Icons.image_outlined, color: _green),
             ),
+            if (!widget.isGroupe)
+              IconButton(
+                onPressed: _shareLocation,
+                icon: const Icon(Icons.location_on_outlined, color: _green),
+                tooltip: 'Partager ma position',
+              ),
             Expanded(
               child: TextField(
                 controller: _ctrl,
@@ -302,6 +345,7 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
     final isMe = msg['sender_id']?.toString() == _myUid;
     final text = msg['text']?.toString() ?? '';
     final imageUrl = msg['image_url']?.toString() ?? '';
+    final isLocation = msg['msg_type'] == 'location';
     final time = _fmtTime(msg['created_at']?.toString());
     final senderId = msg['sender_id']?.toString() ?? '';
 
@@ -341,7 +385,7 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
                   ),
                 Container(
                   constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
-                  padding: imageUrl.isNotEmpty
+                  padding: imageUrl.isNotEmpty || isLocation
                       ? EdgeInsets.zero
                       : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
@@ -361,11 +405,17 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
                             width: 200, height: 200, fit: BoxFit.cover,
                           ),
                         )
-                      : Text(text,
-                          style: TextStyle(
-                            fontFamily: 'Galey', fontSize: 14,
-                            color: isMe ? Colors.white : const Color(0xFF1F2A2E),
-                          )),
+                      : isLocation
+                          ? LocationCard(
+                              lat: (msg['lat'] as num).toDouble(),
+                              lng: (msg['lng'] as num).toDouble(),
+                              isMe: isMe,
+                            )
+                          : Text(text,
+                              style: TextStyle(
+                                fontFamily: 'Galey', fontSize: 14,
+                                color: isMe ? Colors.white : const Color(0xFF1F2A2E),
+                              )),
                 ),
                 const SizedBox(height: 2),
                 Text(time, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey)),
