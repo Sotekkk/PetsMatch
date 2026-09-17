@@ -201,13 +201,33 @@ export async function POST(req: NextRequest) {
       }
 
       // ── Paiement crédits Pets Social confirmé ────────────────────────────
+      // Filet de sécurité : la confirmation principale se fait côté appli
+      // via la Cloud Function confirmCreditPayment (juste après le Payment
+      // Sheet), ce webhook couvre le cas où l'appli n'a pas pu confirmer
+      // (app tuée, offline...). Metadata posée par createCreditPaymentIntent
+      // (functions/stripe.js) : `packId` (pas `pack_id`), pas de `nom`
+      // systématique. Idempotent sur pi.id (même ref_id que la Cloud
+      // Function) pour ne jamais créditer deux fois le même paiement.
       case 'payment_intent.succeeded': {
         const pi = event.data.object as import('stripe').default.PaymentIntent;
-        const { uid, pack_id, credits } = pi.metadata ?? {};
-        if (!uid || !pack_id || !credits) break;
+        // Deux origines possibles, deux conventions de clé : l'appli
+        // (functions/stripe.js createCreditPaymentIntent) pose `packId`,
+        // le site (api/stripe/credits, netlify/functions/stripe-credits)
+        // pose `pack_id` — on accepte les deux plutôt que d'en privilégier
+        // une et de silencieusement ignorer l'autre origine.
+        const { uid, credits, nom } = pi.metadata ?? {};
+        const packId = pi.metadata?.packId || pi.metadata?.pack_id;
+        if (!uid || !packId || !credits) break;
 
         const creditsInt = parseInt(credits, 10);
         if (isNaN(creditsInt) || creditsInt <= 0) break;
+
+        const { data: already } = await supabase
+          .from('credit_transactions')
+          .select('id')
+          .eq('ref_id', pi.id)
+          .limit(1);
+        if (already && already.length > 0) break;
 
         // Upsert wallet (ajoute les crédits au solde existant)
         const { data: wallet } = await supabase
@@ -229,8 +249,8 @@ export async function POST(req: NextRequest) {
         await supabase.from('credit_transactions').insert({
           uid,
           montant: creditsInt,
-          motif: `Achat pack crédits`,
-          ref_id: pack_id,
+          motif: `Achat pack ${nom || packId}`,
+          ref_id: pi.id,
         });
 
         break;

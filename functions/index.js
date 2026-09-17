@@ -20,6 +20,7 @@ const abonnementFunctions = require("./abonnements");
 // Stripe + messagerie
 exports.createStripePaymentIntent = stripeFunctions.createStripePaymentIntent;
 exports.createCreditPaymentIntent = stripeFunctions.createCreditPaymentIntent;
+exports.confirmCreditPayment = stripeFunctions.confirmCreditPayment;
 exports.createStripeSubscription = stripeFunctions.createStripeSubscription;
 exports.cancelStripeSubscription = stripeFunctions.cancelStripeSubscription;
 exports.stripeWebhook = stripeFunctions.stripeWebhook;

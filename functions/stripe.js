@@ -1,10 +1,18 @@
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
+const {createClient} = require("@supabase/supabase-js");
 const stripe = require("stripe")(
     "sk_test_51Pagp22MpEB6OUl5N3RDJvFx7l8dpxO1Az9RIWYEe8acl9eLtRz9xdfKd8W5GZKFuwJx1EX4sxHUP3CxLcPO0l0N00VDQZrUkb",
 );
 
 admin.initializeApp();
+
+// eslint-disable-next-line require-jsdoc
+function getSupabase() {
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY ||
+        (functions.config().supabase || {}).service_key || "";
+    return createClient("https://zyvpngcvzrkdytypjlyq.supabase.co", key);
+}
 
 exports.createCreditPaymentIntent = functions
     .region("europe-west1")
@@ -36,6 +44,68 @@ exports.createCreditPaymentIntent = functions
         } catch (err) {
             console.error("[createCreditPaymentIntent]", err);
             throw new functions.https.HttpsError("internal", "Erreur création PaymentIntent.");
+        }
+    });
+
+// Appelée par l'appli juste après presentPaymentSheet() : vérifie côté
+// serveur (API Stripe) que le paiement a bien abouti, puis crédite le
+// wallet via credit_grant (RPC réservée au service_role — l'appli ne peut
+// plus écrire credit_wallets/credit_transactions directement depuis la
+// sécurisation RLS, cf. migration_credits_secure.sql). Idempotente : le
+// PaymentIntent.id sert de ref_id, un second appel (retry, double webhook…)
+// ne crédite pas deux fois.
+exports.confirmCreditPayment = functions
+    .region("europe-west1")
+    .https.onCall(async (data, context) => {
+        const paymentIntentId = data.paymentIntentId;
+        if (!paymentIntentId) {
+            throw new functions.https.HttpsError("invalid-argument", "paymentIntentId requis.");
+        }
+
+        let pi;
+        try {
+            pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+        } catch (err) {
+            console.error("[confirmCreditPayment] retrieve", err);
+            throw new functions.https.HttpsError("internal", "Paiement introuvable.");
+        }
+        if (pi.status !== "succeeded") {
+            throw new functions.https.HttpsError("failed-precondition", "Paiement non confirmé.");
+        }
+
+        const uid = pi.metadata && pi.metadata.uid;
+        const credits = parseInt((pi.metadata && pi.metadata.credits) || "0", 10);
+        const nom = (pi.metadata && (pi.metadata.nom || pi.metadata.packId)) || "pack crédits";
+        if (!uid || !credits || credits <= 0) {
+            throw new functions.https.HttpsError("internal", "Métadonnées de paiement manquantes.");
+        }
+        // L'appelant doit être le titulaire du paiement (jamais créditer
+        // un autre compte que celui authentifié).
+        if (context.auth && context.auth.uid && context.auth.uid !== uid) {
+            throw new functions.https.HttpsError("permission-denied", "Ce paiement ne vous appartient pas.");
+        }
+
+        const supa = getSupabase();
+        try {
+            const {data: existing} = await supa.from("credit_transactions")
+                .select("id").eq("ref_id", paymentIntentId).limit(1);
+            if (existing && existing.length > 0) {
+                const {data: wallet} = await supa.from("credit_wallets")
+                    .select("solde").eq("uid", uid).maybeSingle();
+                return {ok: true, solde: wallet ? wallet.solde : 0, alreadyGranted: true};
+            }
+
+            const {data: result, error} = await supa.rpc("credit_grant", {
+                p_uid: uid,
+                p_amount: credits,
+                p_motif: `Achat pack ${nom}`,
+                p_ref_id: paymentIntentId,
+            });
+            if (error) throw error;
+            return {ok: true, solde: result.solde};
+        } catch (err) {
+            console.error("[confirmCreditPayment] grant", err);
+            throw new functions.https.HttpsError("internal", "Erreur lors du crédit du wallet.");
         }
     });
 

@@ -350,26 +350,16 @@ class CreditPacksSheetState extends State<CreditPacksSheet> {
       // 3. Présenter le Payment Sheet
       await Stripe.instance.presentPaymentSheet();
 
-      // 4. Paiement réussi — créditer le wallet côté Flutter (immédiat)
-      final supa = Supabase.instance.client;
-      final credits = pack['credits'] as int;
-      final walletRow = await supa.from('credit_wallets').select().eq('uid', widget.myUid).maybeSingle();
-      final soldeActuel = (walletRow?['solde'] as int?) ?? 0;
-      final totalActuel = (walletRow?['total_achete'] as int?) ?? 0;
-      await Future.wait([
-        supa.from('credit_wallets').upsert({
-          'uid': widget.myUid,
-          'solde': soldeActuel + credits,
-          'total_achete': totalActuel + credits,
-          'updated_at': DateTime.now().toIso8601String(),
-        }, onConflict: 'uid'),
-        supa.from('credit_transactions').insert({
-          'uid': widget.myUid,
-          'montant': credits,
-          'motif': 'Achat pack ${pack['nom']}',
-          'ref_id': packId,
-        }),
-      ]);
+      // 4. Paiement réussi — créditer le wallet côté SERVEUR (credit_wallets
+      // / credit_transactions sont verrouillées en écriture pour anon/
+      // authenticated depuis migration_credits_secure.sql ; seule la
+      // fonction Cloud confirmCreditPayment, via credit_grant/service_role,
+      // peut créditer). Elle revérifie le paiement auprès de Stripe avant
+      // de créditer — idempotente sur le PaymentIntent.id.
+      final paymentIntentId = clientSecret.split('_secret_').first;
+      await FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('confirmCreditPayment')
+          .call({'paymentIntentId': paymentIntentId});
 
       if (mounted) Navigator.pop(context);
       widget.onSuccess();
