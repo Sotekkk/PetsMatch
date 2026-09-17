@@ -41,6 +41,27 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
     _load();
   }
 
+  /// Résout MON profil particulier — jamais l'uid seul, jamais vide.
+  /// `User_Info.activeProfileId` reste '' tant qu'on n'a pas explicitement
+  /// changé de profil actif (cas le plus courant : un compte avec un seul
+  /// profil particulier, jamais "switché"). Sans ce repli, toutes les
+  /// requêtes filtrées par profil (relation, demandes reçues…) ne
+  /// trouvaient rien → impossible d'accepter/refuser une demande reçue.
+  Future<String?> _myProfileId() async {
+    final active = User_Info.activeProfileId;
+    if (active.isNotEmpty) return active;
+    try {
+      final row = await _supa.from('user_profiles').select('id')
+          .eq('uid', _myUid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+      if (row?['id'] != null) return row!['id'] as String;
+      final main = await _supa.from('user_profiles').select('id')
+          .eq('uid', _myUid).eq('is_main', true).maybeSingle();
+      return main?['id'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _load() async {
     if (!mounted) return;
     setState(() => _loading = true);
@@ -49,12 +70,16 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
     Map<String, dynamic>? profileData;
     String? targetProfileId;
     try {
-      final up = await _supa
-          .from('user_profiles')
-          .select('id, uid, firstname, lastname, avatar_url, ville')
-          .eq('uid', widget.targetUid)
-          .eq('is_main', true)
-          .maybeSingle();
+      const cols = 'id, uid, firstname, lastname, avatar_url, ville';
+      // PetFriends est scopé au profil PARTICULIER (pas forcément le profil
+      // is_main : un compte peut avoir un profil pro/éleveur en principal,
+      // cf. Natacha). Sans ce filtre, la relation (créée sur le profil
+      // particulier de l'autre) restait introuvable → "Demander en ami"
+      // s'affichait alors qu'on était déjà PetFriends.
+      var up = await _supa.from('user_profiles').select(cols)
+          .eq('uid', widget.targetUid).eq('profile_type', 'particulier').maybeSingle();
+      up ??= await _supa.from('user_profiles').select(cols)
+          .eq('uid', widget.targetUid).eq('is_main', true).maybeSingle();
       if (up != null) {
         targetProfileId = up['id']?.toString();
         profileData = {
@@ -72,7 +97,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
 
     // Étape 2 : relation PetFriend — scopée au profil actif (chaque profil a
     // sa propre liste de PetFriends, cf. demandeur_profile_id/recepteur_profile_id)
-    final myProfileId = User_Info.activeProfileId;
+    final myProfileId = await _myProfileId() ?? '';
     String? relStatut, relDir, relId;
     try {
       if (!_isMe && _myUid.isNotEmpty && myProfileId.isNotEmpty && targetProfileId != null) {
@@ -129,7 +154,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
   Future<void> _sendRequest() async {
     setState(() => _saving = true);
     try {
-      final myProfileId = User_Info.activeProfileId;
+      final myProfileId = await _myProfileId() ?? '';
       final res = await _supa.from('petfriends').insert({
         'uid_demandeur': _myUid,
         if (myProfileId.isNotEmpty) 'demandeur_profile_id': myProfileId,
@@ -150,14 +175,12 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
       final nom = me != null
           ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim()
           : 'Quelqu\'un';
-      final targetProfile = await _supa.from('user_profiles')
-          .select('id').eq('uid', widget.targetUid).eq('is_main', true).maybeSingle();
       await _supa.from('notifications').insert({
         'uid': widget.targetUid,
         'type': 'petfriend_request',
         'title': '🐾 Nouvelle demande PetFriend',
         'body': '$nom veut être ton PetFriend !',
-        if (targetProfile?['id'] != null) 'profile_id': targetProfile!['id'],
+        if (_targetProfileId != null) 'profile_id': _targetProfileId,
         'data': {'fromUid': _myUid},
         'read': false,
         'created_at': DateTime.now().toIso8601String(),
@@ -194,14 +217,12 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
     // Notifier le demandeur
     final me = await _supa.from('user_profiles').select('firstname, lastname').eq('uid', _myUid).eq('is_main', true).maybeSingle();
     final nom = me != null ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim() : 'Quelqu\'un';
-    final targetProfile = await _supa.from('user_profiles')
-        .select('id').eq('uid', widget.targetUid).eq('is_main', true).maybeSingle();
     await _supa.from('notifications').insert({
       'uid': widget.targetUid,
       'type': 'petfriend_accepted',
       'title': '🐾 PetFriend accepté !',
       'body': '$nom a accepté ta demande PetFriend.',
-      if (targetProfile?['id'] != null) 'profile_id': targetProfile!['id'],
+      if (_targetProfileId != null) 'profile_id': _targetProfileId,
       'data': {'fromUid': _myUid},
       'read': false,
       'created_at': DateTime.now().toIso8601String(),

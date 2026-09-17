@@ -62,6 +62,27 @@ class _PetFriendsPageState extends State<PetFriendsPage>
     super.dispose();
   }
 
+  /// Résout MON profil particulier — jamais l'uid seul, jamais vide.
+  /// `User_Info.activeProfileId` reste '' tant qu'on n'a pas explicitement
+  /// changé de profil actif (cas le plus courant : un seul profil
+  /// particulier, jamais "switché"). Sans ce repli, `.eq('...', '')` ne
+  /// trouvait aucune demande/ami — la liste et l'onglet Demandes restaient
+  /// vides même quand une demande existait bel et bien en base.
+  Future<String?> _myProfileId() async {
+    final active = User_Info.activeProfileId;
+    if (active.isNotEmpty) return active;
+    try {
+      final row = await _supa.from('user_profiles').select('id')
+          .eq('uid', _myUid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+      if (row?['id'] != null) return row!['id'] as String;
+      final main = await _supa.from('user_profiles').select('id')
+          .eq('uid', _myUid).eq('is_main', true).maybeSingle();
+      return main?['id'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ─── Chargement groupes Supabase ─────────────────────────────────────────
 
   Future<void> _loadGroupes() async {
@@ -100,12 +121,15 @@ class _PetFriendsPageState extends State<PetFriendsPage>
 
   Future<void> _loadAllUsers() async {
     try {
+      // PAS de filtre is_main : PetFriends porte sur le profil PARTICULIER de
+      // chacun, qui n'est pas forcément le profil principal du compte (un
+      // compte peut avoir un profil pro/éleveur en principal, cf. Natacha) —
+      // sinon ces comptes étaient invisibles à la recherche PetFriends.
       final rows = await _supa
           .from('user_profiles')
           .select('uid, firstname, lastname, profile_picture_url:avatar_url, ville')
           .neq('uid', _myUid)
           .eq('profile_type', 'particulier')
-          .eq('is_main', true)
           .limit(500);
       if (mounted) setState(() {
         _allUsers = List<Map<String, dynamic>>.from(rows as List);
@@ -119,7 +143,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final myProfileId = User_Info.activeProfileId;
+      final myProfileId = await _myProfileId() ?? '';
       final sent     = await _supa.from('petfriends').select('id, uid_recepteur, statut').eq('demandeur_profile_id', myProfileId);
       final received = await _supa.from('petfriends').select('id, uid_demandeur, statut').eq('recepteur_profile_id', myProfileId);
 
@@ -138,7 +162,7 @@ class _PetFriendsPageState extends State<PetFriendsPage>
 
       final profiles = await _supa.from('user_profiles')
           .select('uid, firstname, lastname, profile_picture_url:avatar_url, ville')
-          .inFilter('uid', byUid.keys.toList()).eq('is_main', true);
+          .inFilter('uid', byUid.keys.toList()).eq('profile_type', 'particulier');
       final Map<String, Map<String, dynamic>> profMap = {
         for (final p in (profiles as List)) p['uid'].toString(): p as Map<String, dynamic>
       };
@@ -188,8 +212,9 @@ class _PetFriendsPageState extends State<PetFriendsPage>
 
   Future<void> _sendRequest(String targetUid) async {
     try {
-      final myProfileId = User_Info.activeProfileId;
-      final tgPRow = await _supa.from('user_profiles').select('id').eq('uid', targetUid).eq('is_main', true).maybeSingle();
+      final myProfileId = await _myProfileId() ?? '';
+      var tgPRow = await _supa.from('user_profiles').select('id').eq('uid', targetUid).eq('profile_type', 'particulier').maybeSingle();
+      tgPRow ??= await _supa.from('user_profiles').select('id').eq('uid', targetUid).eq('is_main', true).maybeSingle();
       final targetProfileId = tgPRow?['id'] as String?;
       await _supa.from('petfriends').insert({
         'uid_demandeur': _myUid,
@@ -215,7 +240,8 @@ class _PetFriendsPageState extends State<PetFriendsPage>
     await _supa.from('petfriends').update({'statut': 'accepte', 'updated_at': DateTime.now().toIso8601String()}).eq('id', row.relId);
     final me = await _supa.from('user_profiles').select('firstname, lastname').eq('uid', _myUid).eq('is_main', true).maybeSingle();
     final nom = me != null ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim() : 'Quelqu\'un';
-    final targetProfile = await _supa.from('user_profiles').select('id').eq('uid', row.uid).eq('is_main', true).maybeSingle();
+    var targetProfile = await _supa.from('user_profiles').select('id').eq('uid', row.uid).eq('profile_type', 'particulier').maybeSingle();
+    targetProfile ??= await _supa.from('user_profiles').select('id').eq('uid', row.uid).eq('is_main', true).maybeSingle();
     await _supa.from('notifications').insert({
       'uid': row.uid, 'type': 'petfriend_accepted',
       'title': '🐾 PetFriend accepté !', 'body': '$nom a accepté ta demande PetFriend.',

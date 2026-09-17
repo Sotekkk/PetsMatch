@@ -174,6 +174,27 @@ Future<void> finalizeContratSigne({
   }
 }
 
+/// Libellés des deux parties selon le type de contrat — un pet-sitter n'est
+/// pas « l'éleveur ». Même classification que `_signerRoles`
+/// (contrat_signature_page.dart) et `signer()` côté site.
+({String vendeur, String acquereur}) _partiesLabels(String type) {
+  switch (type) {
+    case 'contrat_garde':
+    case 'contrat_hebergement':
+    case 'contrat_prestation':
+    case 'contrat_prestation_photo':
+    case 'contrat_education':
+    case 'contrat_sante':
+      return (vendeur: 'Le prestataire', acquereur: 'Le client');
+    case 'contrat_adoption':
+      return (vendeur: 'L\'association', acquereur: 'L\'adoptant(e)');
+    case 'contrat_saillie':
+      return (vendeur: 'Le propriétaire de l\'étalon', acquereur: 'Le propriétaire de la femelle');
+    default:
+      return (vendeur: 'L\'éleveur', acquereur: 'L\'acquéreur');
+  }
+}
+
 /// Notifie l'autre partie après une signature (partielle ou complète).
 /// [role] = 'eleveur' | 'acquereur' (celui qui vient de signer).
 Future<void> notifierContratSignature({
@@ -188,11 +209,10 @@ Future<void> notifierContratSignature({
   final aConfirmer = !bothSigned && role == 'acquereur'
       && nb(meta['signature_eleveur']) && nb(meta['signature_acquereur']);
   final type = doc['type'] as String? ?? '';
-  final isAdoption = type == 'contrat_adoption';
   final titre = (doc['titre'] as String?) ?? 'le contrat';
-  final acqNom = (meta['acquereur_nom'] as String?) ??
-      (isAdoption ? 'L\'adoptant(e)' : 'L\'acquéreur');
-  final partieVendeur = isAdoption ? 'L\'association' : 'L\'éleveur';
+  final labels = _partiesLabels(type);
+  final acqNom = (meta['acquereur_nom'] as String?) ?? labels.acquereur;
+  final partieVendeur = labels.vendeur;
   final eleveurUid = doc['uid_eleveur'] as String?;
   // Profil PRO qui a émis le contrat (garde, pension, éducation…) — la notif
   // « signé » doit y atterrir, pas sur is_main (souvent un autre profil).
