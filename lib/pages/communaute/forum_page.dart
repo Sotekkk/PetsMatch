@@ -49,8 +49,13 @@ Future<Map<String, Map<String, dynamic>>> _resolveForumAuthors(List<Map<String, 
       .toSet()
       .toList();
   if (legacyUids.isNotEmpty) {
+    // Repli sur le profil particulier de l'uid — SANS filtrer is_main : un
+    // compte peut très bien avoir un profil pro/éleveur comme principal
+    // (ex. Natacha, is_main = éleveur) et un profil particulier secondaire ;
+    // filtrer is_main affichait alors "Membre" à la place de son vrai nom.
+    // Même logique que _resolveAuthors côté Pets Social.
     final byUid = await supa.from('user_profiles').select(kSocialAuthorCols)
-        .inFilter('uid', legacyUids).eq('profile_type', 'particulier').eq('is_main', true);
+        .inFilter('uid', legacyUids).eq('profile_type', 'particulier');
     for (final r in byUid as List) {
       out.putIfAbsent('u:${r['uid']}', () => Map<String, dynamic>.from(r as Map));
     }

@@ -81,8 +81,12 @@ async function resolveAuthors(rows: { auteur_profile_id?: string | null; auteur_
     rows.filter(r => !r.auteur_profile_id).map(r => r.auteur_uid).filter(Boolean)
   ));
   if (legacyUids.length > 0) {
+    // Repli sur le profil particulier de l'uid — SANS filtrer is_main : un
+    // compte peut avoir un profil pro/éleveur comme principal et un profil
+    // particulier secondaire ; filtrer is_main affichait "Membre" à la
+    // place du vrai nom. Même logique que côté appli.
     const { data } = await supabase.from('user_profiles').select(AUTHOR_COLS)
-      .in('uid', legacyUids).eq('profile_type', 'particulier').eq('is_main', true);
+      .in('uid', legacyUids).eq('profile_type', 'particulier');
     for (const r of (data ?? []) as Author[]) {
       const key = `u:${r.uid}`;
       if (!out[key]) out[key] = r;
