@@ -121,6 +121,7 @@ function profileName(p) {
 
 const PALIERS = [
     {key: "j30", days: 30, phrase: "dans 1 mois"},
+    {key: "j14", days: 14, phrase: "dans 2 semaines"},
     {key: "j7", days: 7, phrase: "dans 1 semaine"},
     {key: "j2", days: 2, phrase: "dans 48 h"},
     {key: "j0", days: 0, phrase: "aujourd'hui"},
@@ -128,11 +129,13 @@ const PALIERS = [
 
 /**
  * Schedulée chaque jour à 8h (Paris).
- * Pour chaque animal cédé avec `sterilisation_requise=true` et non validée :
+ * Pour chaque animal cédé avec `sterilisation_requise=true` et non validée,
+ * mêmes paliers par rapport à `sterilisation_echeance` — J-30, J-14, J-7,
+ * J-2, Jour J, puis chaque jour tant que l'échéance est dépassée :
  *   - si la stérilisation a été DÉCLARÉE (animaux.sterilise=true) mais pas
- *     encore validée : rappel quotidien à l'éleveur (« à valider »).
- *   - sinon : rappels au propriétaire ET à l'éleveur aux paliers J-30, J-7,
- *     J-48h, Jour J, puis chaque jour tant que l'échéance est dépassée.
+ *     encore validée : rappel à l'éleveur seul (« à valider »).
+ *   - sinon : rappel au propriétaire (automatique s'il utilise l'appli,
+ *     uid résolu via uid_acquereur ou animaux_proprietes) ET à l'éleveur.
  * Dédup via notifs_sent.
  */
 exports.sendSterilisationReminders = functions
@@ -159,7 +162,34 @@ exports.sendSterilisationReminders = functions
             const eleveurProfileId = a.sterilisation_eleveur_profile_id || null;
             const nom = a.nom || "l'animal";
 
+            // Fenêtre de rappel commune (déclarée ou non) : J-30/J-14/J-7/J-2,
+            // puis chaque jour à partir de l'échéance tant que ce n'est pas
+            // validé. Sans ce filtre, une stérilisation déclarée très en
+            // avance sur l'échéance déclenchait un rappel "à valider" tous
+            // les jours dès la déclaration — bien trop tôt.
+            const ech = a.sterilisation_echeance ? new Date(`${a.sterilisation_echeance}T00:00:00`) : null;
+            if (!ech || isNaN(ech.getTime())) continue;
+            const diffDays = Math.round((ech - today) / 86400000);
+            const echStr = new Date(ech).toLocaleDateString("fr-FR");
+
+            let palierKey = null;
+            let phrase = null;
+            let overdue = false;
+            const palier = PALIERS.find((p) => p.days === diffDays);
+            if (palier) {
+                palierKey = palier.key;
+                phrase = palier.phrase;
+            } else if (diffDays < 0) {
+                overdue = true;
+                palierKey = `overdue_${todayStr}`;
+                phrase = `en retard de ${-diffDays} jour${diffDays < -1 ? "s" : ""}`;
+            } else {
+                continue; // hors fenêtre de rappel ce jour
+            }
+
             // Propriétaire courant : uid_acquereur sinon animaux_proprietes.
+            // Automatique dès lors qu'il utilise l'appli (uid résolu) — mêmes
+            // paliers que l'éleveur, cf. notifications ci-dessous.
             let proprioUid = a.uid_acquereur || null;
             let proprioProfileId = null;
             if (!proprioUid) {
@@ -176,13 +206,18 @@ exports.sendSterilisationReminders = functions
                 proprioProfileId = p && p.id ? p.id : null;
             }
 
-            // ── Stérilisation déclarée, pas encore validée → l'éleveur valide.
+            const acquereur = a.destinataire_nom || "l'acquéreur";
+
+            // ── Stérilisation déclarée, pas encore validée → l'éleveur valide,
+            // sur la même cadence que le rappel d'échéance ci-dessous.
             if (a.sterilise === true) {
-                const key = `steril_valider_${a.id}_${todayStr}`;
+                const key = `steril_valider_${a.id}_${palierKey}`;
                 if (await alreadySent(key)) continue;
-                const title = `✂️ À valider — ${nom}`;
-                const body = `Le propriétaire de ${nom} a déclaré la stérilisation. ` +
-                    "Validez-la dans le suivi des cessions.";
+                const title = overdue ?
+                    `⚠️ À valider — ${nom} (en retard)` :
+                    `✂️ À valider — ${nom}`;
+                const body = `Le propriétaire de ${nom} a déclaré la stérilisation ` +
+                    `(échéance ${echStr}, ${phrase}). Validez-la dans le suivi des cessions.`;
                 if (await sendPush(eleveurUid, title, body,
                     {type: "sterilisation_a_valider", animalId: String(a.id), tab: "suivi_cessions"},
                     {profileId: eleveurProfileId})) sent++;
@@ -202,29 +237,7 @@ exports.sendSterilisationReminders = functions
                 continue;
             }
 
-            // ── Rappels d'échéance.
-            const ech = a.sterilisation_echeance ? new Date(`${a.sterilisation_echeance}T00:00:00`) : null;
-            if (!ech || isNaN(ech.getTime())) continue;
-            const diffDays = Math.round((ech - today) / 86400000);
-
-            const acquereur = a.destinataire_nom || "l'acquéreur";
-            const echStr = new Date(ech).toLocaleDateString("fr-FR");
-            let palierKey = null;
-            let phrase = null;
-            let overdue = false;
-
-            const palier = PALIERS.find((p) => p.days === diffDays);
-            if (palier) {
-                palierKey = palier.key;
-                phrase = palier.phrase;
-            } else if (diffDays < 0) {
-                overdue = true;
-                palierKey = `overdue_${todayStr}`;
-                phrase = `en retard de ${-diffDays} jour${diffDays < -1 ? "s" : ""}`;
-            } else {
-                continue; // rien à faire ce jour
-            }
-
+            // ── Rappels d'échéance (pas encore déclarée) — propriétaire + éleveur.
             const key = `steril_${a.id}_${palierKey}`;
             if (await alreadySent(key)) continue;
 
