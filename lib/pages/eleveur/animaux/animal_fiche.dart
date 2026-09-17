@@ -2525,7 +2525,7 @@ class _IdentiteTab extends StatelessWidget {
                 if (a['created_at'] != null)
                   Text(() {
                     try {
-                      return 'Depuis le ${DateFormat('dd/MM/yyyy').format(DateTime.parse(a['created_at'].toString()))}';
+                      return 'Depuis le ${DateFormat('dd/MM/yyyy').format(DateTime.parse(a['created_at'].toString()).toLocal())}';
                     } catch (_) { return ''; }
                   }(),
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
@@ -13899,7 +13899,7 @@ class _RdvLinkSectionState extends State<_RdvLinkSection> {
   Widget build(BuildContext context) {
     if (!_loaded) return const SizedBox.shrink();
     final label = _rdv != null
-        ? 'Consultation du ${_rdv!['date_heure'] != null ? DateFormat('dd/MM/yyyy').format(DateTime.tryParse(_rdv!['date_heure'].toString()) ?? DateTime.now()) : '—'}'
+        ? 'Consultation du ${_rdv!['date_heure'] != null ? DateFormat('dd/MM/yyyy').format(DateTime.tryParse(_rdv!['date_heure'].toString())?.toLocal() ?? DateTime.now()) : '—'}'
         : 'Consultation vétérinaire';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),

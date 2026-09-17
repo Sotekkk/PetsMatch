@@ -331,7 +331,7 @@ class _EducationContratsPageState extends State<EducationContratsPage> {
                       final c = _contrats[i];
                       final meta = (c['metadata'] as Map?) ?? {};
                       final sm = _statutMeta(c['statut'] as String?);
-                      final dt = DateTime.tryParse(c['created_at']?.toString() ?? '');
+                      final dt = DateTime.tryParse(c['created_at']?.toString() ?? '')?.toLocal();
                       final issuDevis = meta['devis_id'] != null;
                       return InkWell(
                         onTap: () => _ouvrir(c['token'] as String),

@@ -192,7 +192,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
       final cours = await _supa.from('cours_collectifs').select('titre, date_heure, pro_profile_id')
           .eq('id', coursId).maybeSingle();
       if (cours != null) {
-        final dateStr = DateFormat('dd/MM à HH:mm').format(DateTime.tryParse(cours['date_heure']?.toString() ?? '') ?? DateTime.now());
+        final dateStr = DateFormat('dd/MM à HH:mm').format((DateTime.tryParse(cours['date_heure']?.toString() ?? '') ?? DateTime.now()).toLocal());
         await _supa.from('notifications').insert({
           'uid': row['client_uid'],
           'type': 'cours_collectif_place_liberee',
@@ -352,7 +352,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
           : 'Un client';
       final proUid = _proData?['uid']?.toString();
       if (proUid != null) {
-        final dateStr = DateFormat('dd/MM à HH:mm').format(DateTime.tryParse(cours['date_heure']?.toString() ?? '') ?? DateTime.now());
+        final dateStr = DateFormat('dd/MM à HH:mm').format((DateTime.tryParse(cours['date_heure']?.toString() ?? '') ?? DateTime.now()).toLocal());
         await _supa.from('notifications').insert({
           'uid': proUid,
           'type': 'cours_collectif_inscription',
@@ -1149,7 +1149,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
                 _sectionTitle('Cours collectifs disponibles'),
                 const SizedBox(height: 10),
                 ..._coursCollectifs.map((c) {
-                  final d = DateTime.tryParse(c['date_heure']?.toString() ?? '');
+                  final d = DateTime.tryParse(c['date_heure']?.toString() ?? '')?.toLocal();
                   final inscrits = _participantsCount[c['id']] ?? 0;
                   final capacite = c['capacite_max'] as int? ?? 0;
                   final complet = inscrits >= capacite;

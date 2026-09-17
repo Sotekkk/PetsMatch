@@ -217,7 +217,7 @@ class _ToilettageFicheClientPageState extends State<ToilettageFicheClientPage> {
                       Text('Aucun RDV terminé pour l\'instant.', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade400))
                     else
                       ..._historique.map((h) {
-                        final dh = DateTime.tryParse(h['date_heure']?.toString() ?? '');
+                        final dh = DateTime.tryParse(h['date_heure']?.toString() ?? '')?.toLocal();
                         final dateStr = dh != null ? DateFormat('d MMM yyyy', 'fr_FR').format(dh) : '';
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 6),

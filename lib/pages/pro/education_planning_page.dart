@@ -133,11 +133,11 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
   List<Map<String, dynamic>> _sessionsForDay(DateTime day) {
     final sessions = <Map<String, dynamic>>[];
     for (final r in _rdvs) {
-      final d = DateTime.tryParse(r['date_heure']?.toString() ?? '');
+      final d = DateTime.tryParse(r['date_heure']?.toString() ?? '')?.toLocal();
       if (d != null && _sameDay(d, day)) sessions.add({...r, '_kind': 'rdv'});
     }
     for (final c in _cours) {
-      final d = DateTime.tryParse(c['date_heure']?.toString() ?? '');
+      final d = DateTime.tryParse(c['date_heure']?.toString() ?? '')?.toLocal();
       if (d != null && _sameDay(d, day)) sessions.add({...c, '_kind': 'cours'});
     }
     sessions.sort((a, b) => (a['date_heure'] as String).compareTo(b['date_heure'] as String));
@@ -230,7 +230,7 @@ class _EducationPlanningPageState extends State<EducationPlanningPage> {
 
   Widget _sessionCard(Map<String, dynamic> s) {
     final isCours = s['_kind'] == 'cours';
-    final d = DateTime.tryParse(s['date_heure']?.toString() ?? '');
+    final d = DateTime.tryParse(s['date_heure']?.toString() ?? '')?.toLocal();
     final heure = d != null ? DateFormat('HH:mm').format(d) : '--:--';
     final titre = isCours
         ? (s['titre']?.toString() ?? 'Cours collectif')
@@ -620,7 +620,7 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
     if (participant['client_uid'] == null) return; // participant manuel, pas de compte à notifier
     try {
       final titre = _cours?['titre']?.toString() ?? 'un cours';
-      final d = DateTime.tryParse(_cours?['date_heure']?.toString() ?? '');
+      final d = DateTime.tryParse(_cours?['date_heure']?.toString() ?? '')?.toLocal();
       final dateStr = d != null ? DateFormat('dd/MM à HH:mm').format(d) : '';
       await _supa.from('notifications').insert({
         'uid': participant['client_uid'],
@@ -647,7 +647,7 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
       final row = attente.first;
       await _supa.from('cours_collectifs_participants').update({'statut': 'inscrit'}).eq('id', row['id']);
       final titre = _cours?['titre']?.toString() ?? 'un cours';
-      final d = DateTime.tryParse(_cours?['date_heure']?.toString() ?? '');
+      final d = DateTime.tryParse(_cours?['date_heure']?.toString() ?? '')?.toLocal();
       final dateStr = d != null ? DateFormat('dd/MM à HH:mm').format(d) : '';
       await _supa.from('notifications').insert({
         'uid': row['client_uid'],

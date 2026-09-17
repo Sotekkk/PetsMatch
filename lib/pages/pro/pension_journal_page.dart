@@ -273,7 +273,7 @@ class _PensionJournalPageState extends State<PensionJournalPage> {
                       itemCount: _updates.length,
                       itemBuilder: (_, i) {
                         final u = _updates[i];
-                        final date = DateTime.tryParse(u['created_at']?.toString() ?? '');
+                        final date = DateTime.tryParse(u['created_at']?.toString() ?? '')?.toLocal();
                         return Container(
                           margin: const EdgeInsets.only(bottom: 12),
                           decoration: BoxDecoration(

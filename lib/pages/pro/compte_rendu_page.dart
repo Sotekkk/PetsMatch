@@ -580,7 +580,7 @@ class _CrCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final date = DateTime.tryParse(cr['created_at']?.toString() ?? '');
+    final date = DateTime.tryParse(cr['created_at']?.toString() ?? '')?.toLocal();
     final contenu = cr['contenu']?.toString() ?? '';
     final docUrl  = cr['doc_url']?.toString() ?? '';
 

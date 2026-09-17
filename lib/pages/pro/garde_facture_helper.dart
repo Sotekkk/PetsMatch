@@ -103,7 +103,7 @@ Future<List<Map<String, dynamic>>> gardeJoursAFacturer(Map<String, dynamic> rdv)
 /// Libellé « du JJ/MM au JJ/MM » (ou « le JJ/MM » si un seul jour).
 String gardePeriodeLabel(List<Map<String, dynamic>> jours) {
   final dates = jours
-      .map((j) => DateTime.tryParse(j['date_heure']?.toString() ?? ''))
+      .map((j) => DateTime.tryParse(j['date_heure']?.toString() ?? '')?.toLocal())
       .whereType<DateTime>()
       .toList()
     ..sort();

@@ -237,7 +237,7 @@ class _MesAnnoncesParticulierPageState extends State<MesAnnoncesParticulierPage>
     final statut = (r['statut'] as String?) ?? 'disponible';
     final isPause = statut == 'pause';
     final isBrouillon = statut == 'brouillon';
-    final created = DateTime.tryParse(r['created_at']?.toString() ?? '');
+    final created = DateTime.tryParse(r['created_at']?.toString() ?? '')?.toLocal();
     final boostUntil = DateTime.tryParse(r['boost_until']?.toString() ?? '');
     final isBoosted = boostUntil != null && boostUntil.isAfter(DateTime.now());
     return Container(

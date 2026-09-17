@@ -847,7 +847,7 @@ class _ItemDetailSheetState extends State<_ItemDetailSheet> {
                           final m    = _mouvements[i];
                           final type = m['type'] as String? ?? 'consommation';
                           final qte  = (m['quantite'] as num).toDouble();
-                          final date = DateTime.tryParse(m['created_at'] as String? ?? '');
+                          final date = DateTime.tryParse(m['created_at'] as String? ?? '')?.toLocal();
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             child: Row(children: [

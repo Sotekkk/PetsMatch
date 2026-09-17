@@ -21,10 +21,10 @@ class GardeSejour {
     required this.clientUid,
     required this.clientProfileId,
     required this.jours,
-  })  : dateEntree = DateTime.parse(jours.first['date_heure'].toString()),
-        dateSortiePrevue = DateTime.parse(jours.last['date_heure'].toString()),
-        arriveeValideeLe = DateTime.tryParse(jours.first['arrivee_validee_le']?.toString() ?? ''),
-        departValideLe = DateTime.tryParse(jours.last['depart_valide_le']?.toString() ?? '');
+  })  : dateEntree = DateTime.parse(jours.first['date_heure'].toString()).toLocal(),
+        dateSortiePrevue = DateTime.parse(jours.last['date_heure'].toString()).toLocal(),
+        arriveeValideeLe = DateTime.tryParse(jours.first['arrivee_validee_le']?.toString() ?? '')?.toLocal(),
+        departValideLe = DateTime.tryParse(jours.last['depart_valide_le']?.toString() ?? '')?.toLocal();
 
   /// 'a_venir' (aucune validation) → 'en_garde' (arrivée validée) → 'termine' (départ validé).
   /// Rétrocompatibilité : les gardes déjà marquées « terminée » (rdv.statut)
@@ -53,8 +53,8 @@ class GardeSejour {
 List<GardeSejour> groupeGardeSejours(List<Map<String, dynamic>> rdvRows) {
   final joursGarde = rdvRows.where(estGardeJournee).toList()
     ..sort((a, b) {
-      final da = DateTime.tryParse(a['date_heure']?.toString() ?? '') ?? DateTime(0);
-      final db = DateTime.tryParse(b['date_heure']?.toString() ?? '') ?? DateTime(0);
+      final da = DateTime.tryParse(a['date_heure']?.toString() ?? '')?.toLocal() ?? DateTime(0);
+      final db = DateTime.tryParse(b['date_heure']?.toString() ?? '')?.toLocal() ?? DateTime(0);
       return da.compareTo(db);
     });
 
@@ -78,7 +78,7 @@ List<GardeSejour> groupeGardeSejours(List<Map<String, dynamic>> rdvRows) {
   for (final r in joursGarde) {
     final clientUid = r['client_uid']?.toString();
     final animalId = r['animal_id']?.toString();
-    final date = DateTime.tryParse(r['date_heure']?.toString() ?? '');
+    final date = DateTime.tryParse(r['date_heure']?.toString() ?? '')?.toLocal();
     if (date == null) continue;
     final jourSeul = DateTime(date.year, date.month, date.day);
 

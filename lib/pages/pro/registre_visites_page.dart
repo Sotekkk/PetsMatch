@@ -654,7 +654,7 @@ class _VisiteCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dh = DateTime.tryParse(rdv['date_heure']?.toString() ?? '');
+    final dh = DateTime.tryParse(rdv['date_heure']?.toString() ?? '')?.toLocal();
     final dateStr = dh != null ? DateFormat('EEE d MMM · HH:mm', 'fr_FR').format(dh) : '';
     final isTermine = rdv['statut'] == 'termine';
 

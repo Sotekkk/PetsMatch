@@ -1160,7 +1160,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
                     itemCount: impayees.length,
                     itemBuilder: (_, i) {
                       final f = impayees[i];
-                      final dEnvoi = DateTime.tryParse(f['date']?.toString() ?? '');
+                      final dEnvoi = DateTime.tryParse(f['date']?.toString() ?? '')?.toLocal();
                       final montant = (f['montant'] as num?)?.toDouble() ?? 0;
                       return Container(
                         margin: const EdgeInsets.only(bottom: 10),

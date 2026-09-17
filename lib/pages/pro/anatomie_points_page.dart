@@ -847,7 +847,7 @@ class _PointDetailSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final cat = point['categorie'] as String? ?? 'autre';
     final note = point['note'] as String?;
-    final createdAt = DateTime.tryParse(point['created_at']?.toString() ?? '');
+    final createdAt = DateTime.tryParse(point['created_at']?.toString() ?? '')?.toLocal();
     return Container(
       decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       padding: const EdgeInsets.all(20),

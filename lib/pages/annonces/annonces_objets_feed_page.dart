@@ -703,7 +703,7 @@ class _AnnonceObjetDetailPageState extends State<AnnonceObjetDetailPage> {
   Widget build(BuildContext context) {
     final d = widget.data;
     final photos = List<String>.from(d['photos'] ?? const []);
-    final created = DateTime.tryParse(d['created_at']?.toString() ?? '');
+    final created = DateTime.tryParse(d['created_at']?.toString() ?? '')?.toLocal();
     final loc = [d['ville'], d['code_postal'], d['departement'], d['region']]
         .where((s) => (s ?? '').toString().isNotEmpty).join(' · ');
     return Scaffold(

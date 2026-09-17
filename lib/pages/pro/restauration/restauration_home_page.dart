@@ -334,7 +334,7 @@ class _RestaurationHomePageState extends State<RestaurationHomePage> {
         final note = (a['note'] as num?)?.toDouble() ?? 0;
         final comment = a['commentaire']?.toString() ?? '';
         final date = a['created_at'] != null
-            ? DateTime.tryParse(a['created_at'].toString())
+            ? DateTime.tryParse(a['created_at'].toString())?.toLocal()
             : null;
         final dateStr = date != null
             ? '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}'

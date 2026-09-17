@@ -329,7 +329,7 @@ class _SanteContratsPageState extends State<SanteContratsPage> {
                       final c = _contrats[i];
                       final meta = (c['metadata'] as Map?) ?? {};
                       final sm = _statutMeta(c['statut'] as String?);
-                      final dt = DateTime.tryParse(c['created_at']?.toString() ?? '');
+                      final dt = DateTime.tryParse(c['created_at']?.toString() ?? '')?.toLocal();
                       return InkWell(
                         onTap: () => _ouvrir(c['token'] as String),
                         borderRadius: BorderRadius.circular(14),
