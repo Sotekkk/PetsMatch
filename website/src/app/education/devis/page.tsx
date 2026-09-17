@@ -48,6 +48,14 @@ const STATUT_LABEL: Record<string, string> = {
   brouillon: 'Brouillon', envoye: 'Envoyé', accepte: 'Accepté', refuse: 'Refusé', expire: 'Expiré',
 };
 
+// Le contrat signable généré à partir d'un devis doit porter le type du
+// métier qui l'a créé — sinon un devis pet-sitter (catPro 'garde') se
+// retrouvait toujours en 'contrat_education', invisible dans "Mes contrats"
+// côté app (filtré strictement sur 'contrat_garde', cf. registre_visites_page.dart).
+function contratTypeFor(pt: string): string {
+  return pt === 'garde' ? 'contrat_garde' : 'contrat_education';
+}
+
 export default function DevisPage() {
   return (
     <Suspense fallback={<div className="flex justify-center py-32 text-gray-400">Chargement…</div>}>
@@ -123,7 +131,7 @@ function DevisPageInner() {
       // Charger les tokens des contrats (documents_animaux) rattachés aux devis
       // déjà envoyés/répondus — pour les liens "Voir le lien" / email.
       const { data: docs } = await supabase.from('documents_animaux')
-        .select('token, metadata').eq('uid_eleveur', user.uid).eq('type', 'contrat_education');
+        .select('token, metadata').eq('uid_eleveur', user.uid).eq('type', contratTypeFor(pt));
       const tokMap: Record<string, string> = {};
       for (const doc of (docs ?? []) as { token: string | null; metadata: Record<string, unknown> | null }[]) {
         const devisId = doc.metadata?.devis_id as string | undefined;
@@ -268,17 +276,19 @@ function DevisPageInner() {
     setError('');
   }
 
-  // Un devis envoyé devient un contrat signable (documents_animaux,
-  // type='contrat_education') — même système que les contrats éleveur/garde :
-  // le client le lit et le signe via /signer-contrat/<token de CE document>
-  // (pas le token_acceptation du devis, gardé pour compat des anciens liens
+  // Un devis envoyé devient un contrat signable (documents_animaux, type
+  // 'contrat_garde' ou 'contrat_education' selon le métier du profil actif)
+  // — même système que les contrats éleveur/garde : le client le lit et le
+  // signe via /signer-contrat/<token de CE document> (pas le
+  // token_acceptation du devis, gardé pour compat des anciens liens
   // /devis/[token]). Renvoie le token du document pour construire le lien.
   async function syncContratDocument(d: Devis, statut: string): Promise<string | null> {
     if (!user) return null;
+    const docType = contratTypeFor(catPro);
     const docStatut = statut === 'accepte' ? 'signe' : statut === 'refuse' ? 'refuse' : statut === 'brouillon' ? 'brouillon' : 'en_attente';
     const clientNom = `${d.prenom_client ?? ''} ${d.nom_client ?? ''}`.trim() || d.nom_client || 'Client';
     const { data: existing } = await supabase.from('documents_animaux').select('id, token')
-      .eq('type', 'contrat_education').contains('metadata', { devis_id: d.id }).maybeSingle();
+      .eq('type', docType).contains('metadata', { devis_id: d.id }).maybeSingle();
     if (existing) {
       await supabase.from('documents_animaux').update({ statut: docStatut }).eq('id', existing.id);
       return existing.token as string;
@@ -287,7 +297,7 @@ function DevisPageInner() {
       animal_id: d.animal_id || null,
       uid_eleveur: user.uid,
       pro_profile_id: activeProfileId || null,
-      type: 'contrat_education',
+      type: docType,
       titre: `Devis — ${d.total_ttc.toFixed(2)} €`,
       statut: docStatut,
       metadata: {
