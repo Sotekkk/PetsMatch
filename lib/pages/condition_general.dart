@@ -596,7 +596,15 @@ void _sendRegistrationEmail(Object uid) async {
 
 class _MentionsLegalesState extends State<MentionsLegales> {
   bool _isAcceptedMentions = false;
+  // Un double-tap sur "Accepter et Continuer" (bouton jamais désactivé
+  // pendant l'appel async) déclenchait deux createUserWithEmailAndPassword
+  // quasi simultanés → deux comptes Firebase distincts pour le même email
+  // (repéré : deux uid créés à moins de 0,1s d'écart). Verrou + désactivation
+  // du bouton pendant la création.
+  bool _submitting = false;
   void _validateAndContinue() async {
+    if (_submitting) return;
+    setState(() => _submitting = true);
     try {
       final User user;
       if (isCurrentUserGoogleAuth) {
@@ -696,6 +704,8 @@ class _MentionsLegalesState extends State<MentionsLegales> {
           duration: const Duration(seconds: 5),
         ),
       );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
@@ -810,13 +820,17 @@ class _MentionsLegalesState extends State<MentionsLegales> {
                     minimumSize: const Size(220, 46),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                   ),
-                  onPressed: _isAcceptedMentions
-                      ? () async {
+                  onPressed: _isAcceptedMentions && !_submitting
+                      ? () {
                           _validateAndContinue();
                         }
                       : null,
-                  child: const Text("Accepter et Continuer",
-                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                  child: _submitting
+                      ? const SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text("Accepter et Continuer",
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
                 ),
                 SizedBox(
                     height:
