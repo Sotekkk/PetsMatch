@@ -4,6 +4,7 @@ import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_map_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
+import 'package:PetsMatch/pages/eleveur_list_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -104,6 +105,15 @@ class _TrouverCompagnonPageState extends State<TrouverCompagnonPage> {
                   subtitle: 'Filtrez par espèce, race, région…',
                   onTap: () => Navigator.push(context, MaterialPageRoute(
                       builder: (_) => const AnnoncesPublicPage())),
+                ),
+                const SizedBox(height: 10),
+                _ModeCard(
+                  icon: Icons.storefront_outlined,
+                  color: const Color(0xFF8B5CF6),
+                  title: 'Voir les élevages',
+                  subtitle: 'Parcourez les éleveurs près de chez vous',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const EleveurListPage())),
                 ),
 
                 const SizedBox(height: 20),
