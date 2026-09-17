@@ -1,6 +1,7 @@
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show SocialProfilePage;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
@@ -259,15 +260,39 @@ class _AssociationDetailPageState extends State<AssociationDetailPage> {
                                       style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white70)),
                                 ]),
                               const SizedBox(height: 4),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.white24,
-                                  borderRadius: BorderRadius.circular(10),
+                              Wrap(spacing: 6, runSpacing: 6, children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white24,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Text('Association / Refuge',
+                                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white)),
                                 ),
-                                child: const Text('Association / Refuge',
-                                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white)),
-                              ),
+                                GestureDetector(
+                                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                                    builder: (_) => SocialProfilePage(
+                                      targetUid: widget.uid,
+                                      myUid: FirebaseAuth.instance.currentUser?.uid ?? '',
+                                      targetProfileId: widget.profileId,
+                                    ),
+                                  )),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFAD1457).withValues(alpha: 0.35),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                                      Icon(Icons.pets, size: 11, color: Colors.white),
+                                      SizedBox(width: 4),
+                                      Text('Pets Social',
+                                          style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white)),
+                                    ]),
+                                  ),
+                                ),
+                              ]),
                             ],
                           ),
                         ),

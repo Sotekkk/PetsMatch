@@ -12,6 +12,7 @@ import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/widgets/avis_pro_widget.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart' show kPensionEspeces;
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show SocialProfilePage;
 import 'package:intl/intl.dart';
 
 class ServiceDetailPage extends StatefulWidget {
@@ -814,6 +815,30 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
             ],
           ]),
         ],
+        const SizedBox(height: 10),
+        GestureDetector(
+          onTap: () => Navigator.push(context, MaterialPageRoute(
+            builder: (_) => SocialProfilePage(
+              targetUid: widget.proUid,
+              myUid: FirebaseAuth.instance.currentUser?.uid ?? '',
+              targetProfileId: _proData?['id']?.toString(),
+            ),
+          )),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFAD1457).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFAD1457).withValues(alpha: 0.3)),
+            ),
+            child: const Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.pets, size: 14, color: Color(0xFFAD1457)),
+              SizedBox(width: 6),
+              Text('Voir sur Pets Social',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFAD1457))),
+            ]),
+          ),
+        ),
         if (_especes.isNotEmpty) ...[
           const SizedBox(height: 12),
           Wrap(
