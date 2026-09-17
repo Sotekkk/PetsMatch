@@ -41,6 +41,7 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
   Map<String, dynamic> _participantsInfo = {};
   bool _sending = false;
   RealtimeChannel? _channel;
+  String? _myProfileId;
 
   @override
   void initState() {
@@ -123,9 +124,9 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
     } catch (_) {}
   }
 
-  Future<void> _send({String? text, String? imageUrl, double? lat, double? lng}) async {
+  Future<void> _send({String? text, String? imageUrl, double? lat, double? lng, String? gardeId}) async {
     final t = text?.trim() ?? '';
-    if (t.isEmpty && imageUrl == null && lat == null) return;
+    if (t.isEmpty && imageUrl == null && lat == null && gardeId == null) return;
     setState(() => _sending = true);
     try {
       final myInfo = _participantsInfo[_myUid] as Map? ?? {};
@@ -136,9 +137,10 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
         'sender_id':       _myUid,
         'text':            t.isNotEmpty ? t : null,
         'image_url':       imageUrl,
-        'msg_type':        imageUrl != null ? 'image' : (lat != null ? 'location' : 'text'),
+        'msg_type':        imageUrl != null ? 'image' : (lat != null ? 'location' : (gardeId != null ? 'garde_request' : 'text')),
         'lat':             lat,
         'lng':             lng,
+        'garde_id':        gardeId,
         'is_read':         false,
       });
 
@@ -170,7 +172,7 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
           }
         }
         await _supa.from('conversations').update({
-          'last_message': imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : t),
+          'last_message': imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : (gardeId != null ? '🐾 Demande de dépannage' : t)),
           'updated_at':   DateTime.now().toIso8601String(),
           'unread_count': unread,
           'participants_info': updatedInfo,
@@ -212,6 +214,165 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Erreur GPS : $e', style: const TextStyle(fontFamily: 'Galey'))));
+    }
+  }
+
+  Future<String?> _resolveMyProfileId() async {
+    if (_myProfileId != null) return _myProfileId;
+    final row = await _supa.from('user_profiles')
+        .select('id')
+        .eq('uid', _myUid).eq('profile_type', 'particulier').eq('is_main', true)
+        .maybeSingle();
+    _myProfileId = row?['id']?.toString();
+    return _myProfileId;
+  }
+
+  Future<List<Map<String, dynamic>>> _loadMyAnimaux(String myProfileId) async {
+    final ownRows = await _supa.from('animaux_proprietes')
+        .select('animal_id')
+        .eq('uid_proprio', _myUid)
+        .eq('profile_id_proprio', myProfileId)
+        .isFilter('date_fin', null);
+    final ids = List<Map<String, dynamic>>.from(ownRows as List)
+        .map((r) => r['animal_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList();
+    if (ids.isEmpty) return [];
+    return List<Map<String, dynamic>>.from(
+      await _supa.from('animaux').select('id, nom, espece, photo_url').inFilter('id', ids) as List,
+    );
+  }
+
+  Future<void> _requestGardeEntraide() async {
+    final myProfileId = await _resolveMyProfileId();
+    if (myProfileId == null) return;
+
+    final conv = await _supa.from('conversations')
+        .select('participants').eq('id', widget.conversationId).maybeSingle();
+    final members = List<String>.from((conv?['participants'] as List?)?.map((e) => e.toString()) ?? []);
+    final otherUid = members.firstWhere((u) => u != _myUid, orElse: () => '');
+    if (otherUid.isEmpty) return;
+    final otherProfile = await _supa.from('user_profiles')
+        .select('id').eq('uid', otherUid).eq('profile_type', 'particulier').eq('is_main', true).maybeSingle();
+
+    final animaux = await _loadMyAnimaux(myProfileId);
+    if (!mounted) return;
+
+    Map<String, dynamic>? selectedAnimal = animaux.isNotEmpty ? animaux.first : null;
+    DateTimeRange? range;
+    final msgCtrl = TextEditingController();
+
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setModal) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Demander un dépannage', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+            const SizedBox(height: 4),
+            const Text('Demandez à votre ami de s\'occuper d\'un de vos animaux sur une période.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+            const SizedBox(height: 16),
+            if (animaux.isEmpty)
+              const Text('Vous n\'avez aucun animal enregistré.', style: TextStyle(fontFamily: 'Galey', color: Colors.grey))
+            else
+              Wrap(spacing: 8, runSpacing: 8, children: animaux.map((a) {
+                final sel = selectedAnimal?['id'] == a['id'];
+                return ChoiceChip(
+                  label: Text('${a['nom'] ?? ''}', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                  selected: sel,
+                  selectedColor: _green.withValues(alpha: 0.15),
+                  labelStyle: TextStyle(color: sel ? _green : Colors.black87, fontWeight: sel ? FontWeight.w700 : FontWeight.w400),
+                  onSelected: (_) => setModal(() => selectedAnimal = a),
+                );
+              }).toList()),
+            const SizedBox(height: 14),
+            InkWell(
+              onTap: () async {
+                final r = await showDateRangePicker(
+                  context: ctx,
+                  firstDate: DateTime.now(),
+                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                  initialDateRange: range,
+                  locale: const Locale('fr'),
+                );
+                if (r != null) setModal(() => range = r);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                decoration: BoxDecoration(color: const Color(0xFFF5F5F5), borderRadius: BorderRadius.circular(12)),
+                child: Row(children: [
+                  const Icon(Icons.date_range, color: _green, size: 20),
+                  const SizedBox(width: 10),
+                  Text(
+                    range == null
+                        ? 'Choisir les dates'
+                        : '${DateFormat('dd/MM/yyyy').format(range!.start)} → ${DateFormat('dd/MM/yyyy').format(range!.end)}',
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+                  ),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: msgCtrl,
+              maxLines: 3,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: InputDecoration(
+                hintText: 'Précisions (facultatif)…',
+                filled: true,
+                fillColor: const Color(0xFFF5F5F5),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.all(14),
+              ),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: (selectedAnimal == null || range == null)
+                    ? null
+                    : () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _green, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text('Envoyer la demande', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
+        ),
+      )),
+    );
+
+    if (result != true || selectedAnimal == null || range == null) return;
+
+    setState(() => _sending = true);
+    try {
+      final row = await _supa.from('garde_entraide').insert({
+        'uid_demandeur': _myUid,
+        'uid_recepteur': otherUid,
+        'demandeur_profile_id': myProfileId,
+        'recepteur_profile_id': otherProfile?['id'],
+        'conversation_id': widget.conversationId,
+        'animal_id': selectedAnimal!['id'],
+        'animal_nom': selectedAnimal!['nom'],
+        'date_debut': DateFormat('yyyy-MM-dd').format(range!.start),
+        'date_fin': DateFormat('yyyy-MM-dd').format(range!.end),
+        'message': msgCtrl.text.trim().isNotEmpty ? msgCtrl.text.trim() : null,
+      }).select('id').single();
+      await _send(gardeId: row['id'].toString());
+    } catch (_) {
+      if (mounted) setState(() => _sending = false);
     }
   }
 
@@ -297,12 +458,18 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
               onPressed: _picking ? null : _pickImage,
               icon: const Icon(Icons.image_outlined, color: _green),
             ),
-            if (!widget.isGroupe)
+            if (!widget.isGroupe) ...[
               IconButton(
                 onPressed: _shareLocation,
                 icon: const Icon(Icons.location_on_outlined, color: _green),
                 tooltip: 'Partager ma position',
               ),
+              IconButton(
+                onPressed: _sending ? null : _requestGardeEntraide,
+                icon: const Icon(Icons.pets, color: _green),
+                tooltip: 'Demander un dépannage',
+              ),
+            ],
             Expanded(
               child: TextField(
                 controller: _ctrl,
@@ -346,6 +513,7 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
     final text = msg['text']?.toString() ?? '';
     final imageUrl = msg['image_url']?.toString() ?? '';
     final isLocation = msg['msg_type'] == 'location';
+    final isGardeRequest = msg['msg_type'] == 'garde_request';
     final time = _fmtTime(msg['created_at']?.toString());
     final senderId = msg['sender_id']?.toString() ?? '';
 
@@ -385,7 +553,7 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
                   ),
                 Container(
                   constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
-                  padding: imageUrl.isNotEmpty || isLocation
+                  padding: imageUrl.isNotEmpty || isLocation || isGardeRequest
                       ? EdgeInsets.zero
                       : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
@@ -411,11 +579,17 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
                               lng: (msg['lng'] as num).toDouble(),
                               isMe: isMe,
                             )
-                          : Text(text,
-                              style: TextStyle(
-                                fontFamily: 'Galey', fontSize: 14,
-                                color: isMe ? Colors.white : const Color(0xFF1F2A2E),
-                              )),
+                          : isGardeRequest
+                              ? _GardeRequestCard(
+                                  gardeId: msg['garde_id'].toString(),
+                                  isMe: isMe,
+                                  myUid: _myUid,
+                                )
+                              : Text(text,
+                                  style: TextStyle(
+                                    fontFamily: 'Galey', fontSize: 14,
+                                    color: isMe ? Colors.white : const Color(0xFF1F2A2E),
+                                  )),
                 ),
                 const SizedBox(height: 2),
                 Text(time, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey)),
@@ -424,6 +598,148 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Carte affichée dans le chat PetFriends pour une demande de garde/dépannage
+/// entre particuliers (entraide informelle, ≠ module garde PRO).
+class _GardeRequestCard extends StatefulWidget {
+  final String gardeId;
+  final bool isMe;
+  final String myUid;
+
+  const _GardeRequestCard({required this.gardeId, required this.isMe, required this.myUid});
+
+  @override
+  State<_GardeRequestCard> createState() => _GardeRequestCardState();
+}
+
+class _GardeRequestCardState extends State<_GardeRequestCard> {
+  static final _supa = Supabase.instance.client;
+  static const _green = Color(0xFF2E7D5E);
+
+  Map<String, dynamic>? _row;
+  bool _loading = true;
+  bool _updating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final row = await _supa.from('garde_entraide').select().eq('id', widget.gardeId).maybeSingle();
+      if (mounted) setState(() { _row = row; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _updateStatut(String statut) async {
+    setState(() => _updating = true);
+    try {
+      await _supa.from('garde_entraide')
+          .update({'statut': statut, 'updated_at': DateTime.now().toIso8601String()})
+          .eq('id', widget.gardeId);
+      if (mounted) setState(() { _row = {...?_row, 'statut': statut}; _updating = false; });
+    } catch (_) {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.all(14),
+        child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: _green)),
+      );
+    }
+    if (_row == null) {
+      return const Padding(
+        padding: EdgeInsets.all(14),
+        child: Text('Demande introuvable', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey)),
+      );
+    }
+
+    final animalNom = _row!['animal_nom']?.toString() ?? 'un animal';
+    final debut = DateTime.tryParse(_row!['date_debut']?.toString() ?? '');
+    final fin = DateTime.tryParse(_row!['date_fin']?.toString() ?? '');
+    final dateStr = (debut != null && fin != null)
+        ? '${DateFormat('dd/MM/yyyy').format(debut)} → ${DateFormat('dd/MM/yyyy').format(fin)}'
+        : '';
+    final message = _row!['message']?.toString() ?? '';
+    final statut = _row!['statut']?.toString() ?? 'en_attente';
+    final iAmRecepteur = _row!['uid_recepteur']?.toString() == widget.myUid;
+
+    Color badgeColor;
+    String badgeLabel;
+    switch (statut) {
+      case 'accepte':
+        badgeColor = _green; badgeLabel = 'Acceptée';
+        break;
+      case 'refuse':
+        badgeColor = Colors.redAccent; badgeLabel = 'Refusée';
+        break;
+      case 'annule':
+        badgeColor = Colors.grey; badgeLabel = 'Annulée';
+        break;
+      default:
+        badgeColor = Colors.orange; badgeLabel = 'En attente';
+    }
+
+    return Container(
+      width: 240,
+      padding: const EdgeInsets.all(14),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.pets, color: _green, size: 18),
+          const SizedBox(width: 6),
+          Expanded(child: Text('Dépannage pour $animalNom',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13,
+                  color: widget.isMe ? Colors.white : const Color(0xFF1F2A2E)))),
+        ]),
+        if (dateStr.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(dateStr, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+              color: widget.isMe ? Colors.white70 : Colors.black54)),
+        ],
+        if (message.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(message, style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+              color: widget.isMe ? Colors.white70 : Colors.black54)),
+        ],
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(color: badgeColor.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(20)),
+          child: Text(badgeLabel, style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: badgeColor)),
+        ),
+        if (statut == 'en_attente' && iAmRecepteur) ...[
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _updating ? null : () => _updateStatut('refuse'),
+                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 8)),
+                child: const Text('Refuser', style: TextStyle(fontFamily: 'Galey', fontSize: 12)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _updating ? null : () => _updateStatut('accepte'),
+                style: ElevatedButton.styleFrom(backgroundColor: _green, foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 8)),
+                child: const Text('Accepter', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
+        ],
+      ]),
     );
   }
 }
