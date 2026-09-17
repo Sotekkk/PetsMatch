@@ -473,6 +473,14 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     }
   }
 
+  /// « Modifier les informations » ouvre un formulaire de VENTE d'animal
+  /// (TVA, acompte/tranches, médiateur, clauses « Transfert de propriété »…)
+  /// — n'a de sens que pour un contrat de cession éleveur, jamais pour une
+  /// prestation de service (garde/éducation/santé/toilettage…). On se base
+  /// sur `_signerRoles` (même classification que les libellés Vendeur/
+  /// Acquéreur) plutôt que de dupliquer la liste des types.
+  bool get _isEleveurVenteContract => !widget.isCertificatEngagement && _signerRoles.vendeurLabel == 'Vendeur';
+
   // ── Signature — documents_animaux ─────────────────────────────────────────
 
   Future<void> _signerDocument(String role, String dataUrl) async {
@@ -1108,7 +1116,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
             if (canEdit) ...[
               const SizedBox(height: 8),
               Wrap(spacing: 12, children: [
-                if (_importedPdfUrl == null)
+                if (_importedPdfUrl == null && _isEleveurVenteContract)
                   TextButton.icon(
                     onPressed: () { _editerInfos(); },
                     icon: const Icon(Icons.edit_outlined, size: 15),

@@ -639,8 +639,12 @@ function typeEmoji(type: string): string {
 // ACTIVE_PROFILE_KEY et PROFILE_CHANGE_EVENT importés depuis useActiveProfile
 
 // ── Navigation par type de notification ──────────────────────────────────────
-function getNotifUrl(n: Notif): string | null {
+// `proType` (profil actif du destinataire) route les cas où le lien dépend
+// du métier (ex. devis : /garde/devis vs /education/devis) — sans lui,
+// c'était toujours /education/devis en dur, même pour un pet-sitter.
+function getNotifUrl(n: Notif, proType?: string): string | null {
   const d = n.data ?? {};
+  const devisPath = proType === 'garde' ? '/garde/devis' : '/education/devis';
   switch (n.type) {
     case 'like':
       return d.annonceId
@@ -740,10 +744,10 @@ function getNotifUrl(n: Notif): string | null {
       return '/education/planning';
     case 'devis_recu':
       // Nouveau : le devis est un contrat signable (d.url = /signer-contrat/<token>)
-      return d.url ?? (d.token ? `/devis/${d.token}` : '/education/devis');
+      return d.url ?? (d.token ? `/devis/${d.token}` : devisPath);
     case 'devis_accepte':
     case 'devis_refuse':
-      return '/education/devis';
+      return devisPath;
     case 'rdv_demande':
     case 'rdv_contre_proposition':
     case 'rdv_annule_client':
@@ -1395,7 +1399,7 @@ export default function Header() {
                     {notifs.map(n => {
                       const notifProfileType = (n as Notif & { profile_type?: string }).profile_type;
                       const isDifferentProfile = notifProfileType && notifProfileType !== effectiveType;
-                      const dest = getNotifUrl(n);
+                      const dest = getNotifUrl(n, effectiveType);
                       const isExternal = dest?.startsWith('http') ?? false;
                       const isActionable = isDifferentProfile || n.type === 'pension_acces' || n.type === 'annonce_expiration' || !!dest;
 
