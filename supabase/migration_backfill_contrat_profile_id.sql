@@ -37,7 +37,7 @@ with cible as (
   from documents_animaux d
   join rdv r
     on r.client_uid = (d.metadata ->> 'client_uid')
-   and r.pro_profile_id = d.pro_profile_id
+   and r.pro_profile_id = d.pro_profile_id::text
   where d.type = 'contrat_garde'
     and (d.metadata ->> 'client_profile_id') is null
     and r.client_profile_id is not null
