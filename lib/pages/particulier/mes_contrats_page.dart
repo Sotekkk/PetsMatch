@@ -58,7 +58,7 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
     try {
       final sel = _supa
           .from('documents_animaux')
-          .select('id, type, titre, statut, token, uid_acquereur, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)');
+          .select('id, type, titre, statut, token, uid_acquereur, uid_eleveur, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)');
       // Destinataire d'un contrat : acquéreur (vente/cession) OU client
       // (prestation de garde/pet-sitting → metadata.client_uid / client_email).
       final rows = await (uid != null
@@ -76,6 +76,12 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
       // pas afficher dans « Mes Achats » côté éleveur).
       final activePid = await _resolveActivePid(uid ?? '');
       final filtered = List<Map<String, dynamic>>.from(rows).where((d) {
+        // Un document que J'AI ÉMIS en tant que pro (uid_eleveur = moi) n'est
+        // jamais « reçu » par moi-même, même si une correspondance de repli
+        // (email/uid de test) l'a fait remonter dans la requête ci-dessus —
+        // il doit rester dans la vue pro qui l'a créé (devis, registre…), pas
+        // apparaître comme un contrat que je reçois.
+        if (uid != null && uid.isNotEmpty && d['uid_eleveur'] == uid) return false;
         final meta = (d['metadata'] as Map?) ?? {};
         final target = (meta['client_profile_id'] ?? meta['acquereur_profile_id']) as String?;
         if (target == null || target.isEmpty || activePid == null || activePid.isEmpty) return true;

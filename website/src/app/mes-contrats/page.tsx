@@ -18,6 +18,7 @@ interface DocRow {
   created_at: string;
   metadata: Record<string, string | number | boolean | null>;
   animaux: { nom: string; espece: string } | null;
+  uid_eleveur: string | null;
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -56,16 +57,20 @@ export default function MesContratsPage() {
     const email = user?.email ?? '-';
     supabase
       .from('documents_animaux')
-      .select('id, type, titre, statut, token, uid_acquereur, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)')
+      .select('id, type, titre, statut, token, uid_acquereur, uid_eleveur, signe_le, pdf_signe_url, rejection_reason, created_at, metadata, animaux(nom, espece)')
       .or(`metadata->>acquereur_email.eq.${email},uid_acquereur.eq.${user?.uid ?? '-'},metadata->>acquereur_uid.eq.${user?.uid ?? '-'}`)
       .order('created_at', { ascending: false })
       .then(({ data }) => {
-        // Multi-profil : si le document porte un profil destinataire
-        // (client_profile_id / acquereur_profile_id) et qu'il diffère du
-        // profil actif, il appartient à un autre profil du compte — à ne
-        // pas afficher ici (même règle que côté appli).
         const all = (data ?? []) as unknown as DocRow[];
         const rows = all.filter(d => {
+          // Un document que J'AI ÉMIS en tant que pro (uid_eleveur = moi)
+          // n'est jamais « reçu » par moi-même — il reste dans la vue pro qui
+          // l'a créé, jamais dans mes contrats reçus.
+          if (user?.uid && d.uid_eleveur === user.uid) return false;
+          // Multi-profil : si le document porte un profil destinataire
+          // (client_profile_id / acquereur_profile_id) et qu'il diffère du
+          // profil actif, il appartient à un autre profil du compte — à ne
+          // pas afficher ici (même règle que côté appli).
           const target = (d.metadata?.client_profile_id ?? d.metadata?.acquereur_profile_id) as string | null | undefined;
           if (!target || !activePid) return true;
           return target === activePid;
