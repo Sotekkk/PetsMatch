@@ -33,6 +33,23 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
     _load();
   }
 
+  /// Résout l'id du profil actif **même quand l'utilisateur n'a jamais
+  /// explicitement changé de profil** (`User_Info.activeProfileId` reste
+  /// alors vide alors que `activeType` reflète correctement le profil
+  /// principal / le profil depuis lequel cette page a été ouverte).
+  Future<String?> _resolveActivePid(String uid) async {
+    if (User_Info.activeProfileId.isNotEmpty) return User_Info.activeProfileId;
+    if (uid.isEmpty) return null;
+    try {
+      final base = _supa.from('user_profiles').select('id').eq('uid', uid);
+      final rows = User_Info.activeType.isNotEmpty
+          ? await base.eq('profile_type', User_Info.activeType).order('is_main', ascending: false).limit(1)
+          : await base.order('is_main', ascending: false).limit(1);
+      if ((rows as List).isNotEmpty) return rows.first['id'] as String?;
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> _load() async {
     final user = FirebaseAuth.instance.currentUser;
     final email = user?.email;
@@ -57,11 +74,11 @@ class _MesContratsParticulierPageState extends State<MesContratsParticulierPage>
       // acquereur_profile_id) et qu'il diffère du profil actif, il appartient à
       // un autre de mes profils (ex. contrat de garde reçu en particulier, à ne
       // pas afficher dans « Mes Achats » côté éleveur).
-      final activePid = User_Info.activeProfileId;
+      final activePid = await _resolveActivePid(uid ?? '');
       final filtered = List<Map<String, dynamic>>.from(rows).where((d) {
         final meta = (d['metadata'] as Map?) ?? {};
         final target = (meta['client_profile_id'] ?? meta['acquereur_profile_id']) as String?;
-        if (target == null || target.isEmpty || activePid.isEmpty) return true;
+        if (target == null || target.isEmpty || activePid == null || activePid.isEmpty) return true;
         return target == activePid;
       }).toList();
       if (mounted) {
