@@ -207,7 +207,10 @@ export default function ContratsPage() {
     if (!user) return;
     setFetching(true);
     const [docsRes, animauxRes, profileRes, userRowRes] = await Promise.all([
-      supabase.from('documents_animaux').select('*').eq('uid_eleveur', user.uid).neq('type', 'contrat_adoption').neq('type', 'facture').order('created_at', { ascending: false }),
+      // Uniquement les documents « éleveur » (vente/réservation/cession/
+      // saillie) — sinon les devis/contrats émis en tant qu'éducateur, garde,
+      // etc. sur ce même compte se mélangent ici (même bug que côté appli).
+      supabase.from('documents_animaux').select('*').eq('uid_eleveur', user.uid).in('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession', 'contrat_saillie']).order('created_at', { ascending: false }),
       supabase.from('animaux').select('id, nom, espece, race, identification, date_naissance, sexe, couleur, pedigree_numero, pedigree_lof, nom_pere, puce_pere, nom_mere, puce_mere').eq('uid_eleveur', user.uid).or('is_association.is.null,is_association.eq.false').not('statut', 'in', '(sorti,decede)').order('nom'),
       supabase.from('user_profiles').select('firstname,lastname,nom,profile_type,adresse,rue,ville,ville_pro,code_postal,siret,numero_elevage,phone_number,email_contact').eq('uid', user.uid).eq('is_main', true).maybeSingle(),
       supabase.from('users').select('email').eq('uid', user.uid).maybeSingle(),

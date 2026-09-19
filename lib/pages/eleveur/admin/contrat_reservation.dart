@@ -46,10 +46,13 @@ class _ContratReservationPageState extends State<ContratReservationPage> {
     final eleveurProfileId = profileRes?['id'] as String?;
 
     final [docs, animaux, profil] = await Future.wait([
+      // Uniquement les documents « éleveur » (vente/réservation/cession/
+      // saillie) — pas tous les documents créés par cet uid, sans quoi les
+      // devis/contrats émis en tant qu'éducateur, garde, etc. s'y mélangent.
       _supa.from('documents_animaux')
           .select()
           .eq('uid_eleveur', uid)
-          .neq('type', 'facture')
+          .inFilter('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession', 'contrat_saillie'])
           .order('created_at', ascending: false),
       eleveurProfileId != null
           ? _supa.from('animaux')
