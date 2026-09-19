@@ -3476,6 +3476,8 @@ class _CommentsSheet extends StatefulWidget {
 class _CommentsSheetState extends State<_CommentsSheet> {
   final _supa = Supabase.instance.client;
   final _ctrl = TextEditingController();
+  MentionController? _mentionCtrl;
+  List<MentionSuggestion>? _mentionSuggestions;
   List<Map<String, dynamic>> _comments  = [];
   Map<String, Map<String, dynamic>> _profiles = {};
   bool _loading = true;
@@ -3491,6 +3493,11 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   void initState() {
     super.initState();
     _highlightId = widget.highlightCommentId;
+    _mentionCtrl = MentionController(
+      textController: _ctrl,
+      excludeUid: widget.myUid,
+      onSuggestionsChanged: (s) { if (mounted) setState(() => _mentionSuggestions = s); },
+    );
     _load();
   }
 
@@ -3509,7 +3516,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   }
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() { _mentionCtrl?.dispose(); _ctrl.dispose(); super.dispose(); }
 
   Future<void> _load() async {
     final rows = await _supa.from('post_comments').select()
@@ -3631,6 +3638,19 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         titleSuffix: 'a commenté votre post',
         body: text.length > 60 ? '${text.substring(0, 60)}…' : text,
       );
+      // @mentions dans le commentaire — fire-and-forget
+      unawaited(() async {
+        final me = pid != null ? await _supa.from('user_profiles').select(_kAuthorCols).eq('id', pid).maybeSingle() : null;
+        final actorName = me != null ? _profileName(Map<String, dynamic>.from(me)) : 'Quelqu\'un';
+        await notifyMentions(
+          text: text,
+          actorUid: widget.myUid,
+          notifType: 'social_mention',
+          title: '📣 Tu as été mentionné(e)',
+          body: '$actorName t\'a mentionné(e) dans un commentaire Pets Social',
+          data: {'post_id': widget.postId},
+        );
+      }());
     } catch (_) {
       if (mounted) setState(() => _sending = false);
     }
@@ -3732,16 +3752,26 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                         final photo   = _profilePhoto(prof);
                         final cUid    = c['uid'] as String;
                         final text    = c['texte']?.toString() ?? '';
-                        final isReply = c['parent_id'] != null || text.startsWith('@');
+                        // « @[Nom](id) » (vraie mention) ne doit jamais être
+                        // pris pour le préfixe historique « @Nom » (réponse à
+                        // quelqu'un, posé par le bouton Répondre) — sinon un
+                        // commentaire commençant par une mention réelle
+                        // s'affichait coupé au milieu du markup.
+                        final isReply = c['parent_id'] != null ||
+                            (text.startsWith('@') && !text.startsWith('@['));
 
                         // Parse @mention for rich display
                         Widget commentText() {
                           if (!isReply) {
-                            return Text(text,
-                                style: const TextStyle(
-                                    fontFamily: 'Galey',
-                                    fontSize: 13,
-                                    color: Colors.white));
+                            return MentionHashtagText(
+                              text: text,
+                              enableHashtags: false,
+                              style: const TextStyle(
+                                  fontFamily: 'Galey',
+                                  fontSize: 13,
+                                  color: Colors.white),
+                              onMentionTap: (pid) => openMentionedProfile(context, widget.myUid, pid),
+                            );
                           }
                           final sp = text.indexOf(' ');
                           if (sp == -1) {
@@ -3752,23 +3782,28 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                     color: _green,
                                     fontWeight: FontWeight.w700));
                           }
-                          return RichText(
-                            text: TextSpan(children: [
-                              TextSpan(
-                                  text: '${text.substring(0, sp + 1)} ',
-                                  style: const TextStyle(
-                                      fontFamily: 'Galey',
-                                      fontSize: 13,
-                                      color: _green,
-                                      fontWeight: FontWeight.w700)),
-                              TextSpan(
-                                  text: text.substring(sp + 1),
-                                  style: const TextStyle(
-                                      fontFamily: 'Galey',
-                                      fontSize: 13,
-                                      color: Colors.white)),
-                            ]),
-                          );
+                          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            RichText(
+                              text: TextSpan(children: [
+                                TextSpan(
+                                    text: text.substring(0, sp + 1),
+                                    style: const TextStyle(
+                                        fontFamily: 'Galey',
+                                        fontSize: 13,
+                                        color: _green,
+                                        fontWeight: FontWeight.w700)),
+                              ]),
+                            ),
+                            MentionHashtagText(
+                              text: text.substring(sp + 1),
+                              enableHashtags: false,
+                              style: const TextStyle(
+                                  fontFamily: 'Galey',
+                                  fontSize: 13,
+                                  color: Colors.white),
+                              onMentionTap: (pid) => openMentionedProfile(context, widget.myUid, pid),
+                            ),
+                          ]);
                         }
 
                         final commentId = c['id']?.toString() ?? '';
@@ -4013,6 +4048,11 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                   ),
                 ]),
               ),
+            if (_mentionSuggestions != null)
+              MentionSuggestionsBar(
+                suggestions: _mentionSuggestions!,
+                onSelect: (s) { _mentionCtrl?.select(s); setState(() => _mentionSuggestions = null); },
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
               child: Row(children: [
@@ -4222,7 +4262,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
               ? urls.first
               : jsonEncode(urls);
       final pid = _myProfileId ?? await _activeAuthorProfileId(widget.myUid);
-      await _supa.from('posts_socialmedia').insert({
+      final inserted = await _supa.from('posts_socialmedia').insert({
         'uid': widget.myUid,
         if (pid != null) 'author_profile_id': pid,
         if (text.isNotEmpty) 'texte': text,
@@ -4230,7 +4270,17 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
         if (_taggedAnimalIds.isNotEmpty)
           'tagged_animal_ids': _taggedAnimalIds.toList(),
         'visibilite': _visibilite,
-      });
+      }).select('id').single();
+      if (text.isNotEmpty) {
+        unawaited(notifyMentions(
+          text: text,
+          actorUid: widget.myUid,
+          notifType: 'social_mention',
+          title: '📣 Tu as été mentionné(e)',
+          body: '${_myProfileName ?? 'Quelqu\'un'} t\'a mentionné(e) dans un post Pets Social',
+          data: {'post_id': inserted['id']},
+        ));
+      }
       if (mounted) {
         Navigator.pop(context);
         await Future.delayed(const Duration(milliseconds: 400));

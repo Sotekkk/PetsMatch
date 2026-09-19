@@ -38,6 +38,8 @@ import 'package:PetsMatch/pages/promenades/promenade_detail_page.dart';
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show openSharedSocialPost;
 import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/pages/communaute/forum_page.dart' show openForumSujet;
+import 'package:PetsMatch/pages/communaute/groupe_detail_page.dart' show openGroupeById;
 
 // YYYY-MM-DD → DD/MM/YYYY
 String _isoToFrFacture(dynamic v) {
@@ -810,15 +812,22 @@ class _NotificationsPageState extends State<NotificationsPage> {
           builder: (_) => PublicProfilePage(targetUid: fromUid),
         ));
       }
-    } else if (type == 'social_like' || type == 'social_comment') {
-      // "a aimé votre post" / "a commenté votre post" (Pets Social) — ouvre
-      // le post, et pour un commentaire, scrolle jusqu'à lui et le surligne.
+    } else if (type == 'social_like' || type == 'social_comment' || type == 'social_mention') {
+      // "a aimé votre post" / "a commenté votre post" / "vous a mentionné"
+      // (Pets Social) — ouvre le post, et pour un commentaire, scrolle
+      // jusqu'à lui et le surligne.
       final postId = data is Map ? data['post_id'] as String? : null;
       final commentId = data is Map ? data['comment_id'] as String? : null;
       if (postId != null) {
         await openSharedSocialPost(context, postId,
             highlightCommentId: type == 'social_comment' ? commentId : null);
       }
+    } else if (type == 'forum_mention') {
+      final sujetId = data is Map ? data['sujetId'] as String? : null;
+      if (sujetId != null) await openForumSujet(context, sujetId);
+    } else if (type == 'groupe_mention') {
+      final groupeId = data is Map ? data['groupeId'] as String? : null;
+      if (groupeId != null) await openGroupeById(context, groupeId);
     } else if (type == 'social_follow') {
       final actorUid = data is Map ? data['actor_uid'] as String? : null;
       if (actorUid != null) {
@@ -1012,6 +1021,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'social_like':    return Icons.favorite_outline;
       case 'social_comment': return Icons.mode_comment_outlined;
       case 'social_follow':  return Icons.person_add_alt_outlined;
+      case 'social_mention':
+      case 'forum_mention':
+      case 'groupe_mention': return Icons.alternate_email;
       case 'chaleur':       return Icons.spa;
       case 'rappel_vaccin': return Icons.vaccines_outlined;
       case 'tache':         return Icons.task_alt;
@@ -1092,6 +1104,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'social_like':    return Colors.redAccent;
       case 'social_comment': return _teal;
       case 'social_follow':  return const Color(0xFF7B5EA7);
+      case 'social_mention':
+      case 'forum_mention':
+      case 'groupe_mention': return const Color(0xFF1565C0);
       case 'chaleur':       return const Color(0xFFE91E8C);
       case 'rappel_vaccin': return const Color(0xFF26A69A);
       case 'tache':         return const Color(0xFF6E9E57);

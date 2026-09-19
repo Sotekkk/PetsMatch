@@ -31,6 +31,44 @@ Future<List<Map<String, dynamic>>> searchMentionableProfiles(String query, {Stri
 }
 
 final RegExp _mentionHashtagRegExp = RegExp(r'@\[([^\]]+)\]\(([^)]+)\)|#([\p{L}0-9_]+)', unicode: true);
+final RegExp _mentionOnlyRegExp = RegExp(r'@\[([^\]]+)\]\(([^)]+)\)');
+
+/// Notifie chaque profil @mentionné dans [text] (jamais soi-même) —
+/// fire-and-forget, n'échoue jamais la publication elle-même. Réutilise la
+/// table `notifications` déjà utilisée pour le reste de l'appli (bulle du
+/// menu du bas, pas le cœur Pets Social qui lui est calculé dynamiquement).
+Future<void> notifyMentions({
+  required String text,
+  required String actorUid,
+  required String notifType,
+  required String title,
+  required String body,
+  required Map<String, dynamic> data,
+}) async {
+  final profileIds = <String>{
+    for (final m in _mentionOnlyRegExp.allMatches(text)) m.group(2)!,
+  };
+  if (profileIds.isEmpty) return;
+  try {
+    final supa = Supabase.instance.client;
+    final rows = await supa.from('user_profiles').select('id, uid').inFilter('id', profileIds.toList());
+    for (final r in rows as List) {
+      final targetUid = r['uid'] as String?;
+      final targetPid = r['id'] as String?;
+      if (targetUid == null || targetUid == actorUid) continue;
+      await supa.from('notifications').insert({
+        'uid': targetUid,
+        'type': notifType,
+        'title': title,
+        'body': body,
+        if (targetPid != null) 'profile_id': targetPid,
+        'data': data,
+        'read': false,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    }
+  } catch (_) {}
+}
 
 /// Texte enrichi : @mentions (tappables vers le profil) et #hashtags
 /// (tappables vers une recherche). Gère le cycle de vie des

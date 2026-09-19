@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -125,6 +126,18 @@ class GroupeDetailPage extends StatefulWidget {
 
   @override
   State<GroupeDetailPage> createState() => _GroupeDetailPageState();
+}
+
+/// Ouvre un groupe par son id — utilisé par les notifications de @mention
+/// (on ne connaît que l'id, pas la ligne complète du groupe à l'appel).
+Future<void> openGroupeById(BuildContext context, String groupeId) async {
+  try {
+    final row = await Supabase.instance.client.from('groupes').select().eq('id', groupeId).maybeSingle();
+    if (row == null || !context.mounted) return;
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => GroupeDetailPage(groupe: Map<String, dynamic>.from(row)),
+    ));
+  } catch (_) {}
 }
 
 class _GroupeDetailPageState extends State<GroupeDetailPage> {
@@ -1484,6 +1497,19 @@ class _CommentsSheetState extends State<_CommentsSheet> {
           _sending = false;
         });
       }
+      final pidForNotif = _profileId;
+      unawaited(() async {
+        final me = pidForNotif != null ? await _supa.from('user_profiles').select('firstname, lastname, nom, profile_type, social_pseudo').eq('id', pidForNotif).maybeSingle() : null;
+        final actorName = me != null ? _profileName(_toProfileMap(Map<String, dynamic>.from(me))) : 'Quelqu\'un';
+        await notifyMentions(
+          text: text,
+          actorUid: _uid,
+          notifType: 'groupe_mention',
+          title: '📣 Tu as été mentionné(e)',
+          body: '$actorName t\'a mentionné(e) dans un commentaire de groupe',
+          data: {'groupeId': widget.post['groupe_id']},
+        );
+      }());
     } catch (_) {
       if (mounted) setState(() => _sending = false);
     }
@@ -1817,6 +1843,20 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
         if (imageUrl != null) 'image_url': imageUrl,
         'created_at': DateTime.now().toIso8601String(),
       });
+      if (text.isNotEmpty) {
+        unawaited(() async {
+          final me = profileId != null ? await _supa.from('user_profiles').select('firstname, lastname, nom, profile_type, social_pseudo').eq('id', profileId).maybeSingle() : null;
+          final actorName = me != null ? _profileName(_toProfileMap(Map<String, dynamic>.from(me))) : 'Quelqu\'un';
+          await notifyMentions(
+            text: text,
+            actorUid: _uid,
+            notifType: 'groupe_mention',
+            title: '📣 Tu as été mentionné(e)',
+            body: '$actorName t\'a mentionné(e) dans une publication de groupe',
+            data: {'groupeId': widget.groupeId},
+          );
+        }());
+      }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
