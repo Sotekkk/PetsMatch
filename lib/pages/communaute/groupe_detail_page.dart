@@ -5,8 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart'
+    show SocialProfilePage, resolveActiveAuthorProfileId;
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 
@@ -182,10 +183,14 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
       final membresUids = membresRows.map((e) => e['user_uid'].toString()).toList();
 
       // 4. Mes amis dans le groupe — scopés au profil actif (chaque profil a
-      // sa propre liste de PetFriends, cf. demandeur_profile_id/recepteur_profile_id)
+      // sa propre liste de PetFriends, cf. demandeur_profile_id/recepteur_profile_id).
+      // User_Info.activeProfileId reste '' tant qu'on n'a pas explicitement
+      // changé de profil actif (cas courant) — resolveActiveAuthorProfileId
+      // retombe alors sur le profil particulier, jamais vide pour un compte
+      // existant. Sans ce repli, « X amis dans ce groupe » restait à 0.
       List<String> friendsInGroup = [];
-      final myProfileId = User_Info.activeProfileId;
-      if (_uid.isNotEmpty && myProfileId.isNotEmpty) {
+      final myProfileId = _uid.isNotEmpty ? await resolveActiveAuthorProfileId(_uid) : null;
+      if (_uid.isNotEmpty && myProfileId != null) {
         final friendsData = await _supa
             .from('petfriends')
             .select('uid_demandeur, uid_recepteur')
@@ -947,8 +952,10 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
               final isMe = uid == _uid;
               final name = _profileName(prof, isMe: isMe);
               final photo = _profilePhoto(prof);
+              final isFriend = !isMe && _friendsInGroup.contains(uid);
               return InkWell(
-                onTap: isMe ? null : () => _openMessageWithMember(uid),
+                onTap: isMe ? null : () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => SocialProfilePage(targetUid: uid, myUid: _uid))),
                 borderRadius: BorderRadius.circular(10),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6),
@@ -968,11 +975,18 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
                               fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: _darkC),
                           overflow: TextOverflow.ellipsis),
                     ),
+                    if (isFriend) ...[
+                      const Icon(Icons.favorite, size: 13, color: Color(0xFFAD1457)),
+                      const SizedBox(width: 6),
+                    ],
                     if (role == 'admin') _roleBadge('Admin', const Color(0xFF00838F)),
                     if (role == 'moderateur') _roleBadge('Modérateur', const Color(0xFF8E24AA)),
                     if (!isMe) ...[
                       const SizedBox(width: 8),
-                      const Icon(Icons.chat_bubble_outline_rounded, size: 18, color: _tealC),
+                      GestureDetector(
+                        onTap: () => _openMessageWithMember(uid),
+                        child: const Icon(Icons.chat_bubble_outline_rounded, size: 18, color: _tealC),
+                      ),
                     ],
                   ]),
                 ),
@@ -1105,23 +1119,28 @@ class _PostCardState extends State<_PostCard> {
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 10, 0),
           child: Row(children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null,
-              backgroundColor: _tealC.withValues(alpha: 0.15),
-              child: photoUrl == null
-                  ? const Icon(Icons.person_outline, size: 20, color: _tealC)
-                  : null,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(displayName,
-                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _darkC)),
-                Text(_fmtDate(date),
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _greyC)),
+            GestureDetector(
+              onTap: isMyPost ? null : () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => SocialProfilePage(targetUid: auteurUid, myUid: widget.myUid))),
+              child: Row(children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null,
+                  backgroundColor: _tealC.withValues(alpha: 0.15),
+                  child: photoUrl == null
+                      ? const Icon(Icons.person_outline, size: 20, color: _tealC)
+                      : null,
+                ),
+                const SizedBox(width: 10),
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(displayName,
+                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _darkC)),
+                  Text(_fmtDate(date),
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _greyC)),
+                ]),
               ]),
             ),
+            const Spacer(),
             if (epingle)
               const Padding(
                 padding: EdgeInsets.only(right: 6),
