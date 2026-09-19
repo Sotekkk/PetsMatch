@@ -7,9 +7,10 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart'
-    show SocialProfilePage, resolveActiveAuthorProfileId;
+    show SocialProfilePage, resolveActiveAuthorProfileId, openMentionedProfile;
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
+import 'package:PetsMatch/widgets/mention_hashtag.dart';
 
 const _tealC = Color(0xFF00ACC1);
 const _darkC = Color(0xFF1E2025);
@@ -1197,8 +1198,12 @@ class _PostCardState extends State<_PostCard> {
         if (contenu.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-            child: Text(contenu,
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: _darkC)),
+            child: MentionHashtagText(
+              text: contenu,
+              enableHashtags: false,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: _darkC),
+              onMentionTap: (pid) => openMentionedProfile(context, widget.myUid, pid),
+            ),
           ),
         // Photo du post
         if (widget.post['image_url'] != null) ...[
@@ -1301,6 +1306,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   final _supa = Supabase.instance.client;
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   final _ctrl = TextEditingController();
+  MentionController? _mentionCtrl;
+  List<MentionSuggestion>? _mentionSuggestions;
   List<Map<String, dynamic>> _comments = [];
   Map<String, Map<String, dynamic>> _profiles = {};
   Set<String> _myCommentLikes = {};
@@ -1312,11 +1319,17 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   @override
   void initState() {
     super.initState();
+    _mentionCtrl = MentionController(
+      textController: _ctrl,
+      excludeUid: _uid,
+      onSuggestionsChanged: (s) { if (mounted) setState(() => _mentionSuggestions = s); },
+    );
     _load();
   }
 
   @override
   void dispose() {
+    _mentionCtrl?.dispose();
     _ctrl.dispose();
     super.dispose();
   }
@@ -1573,7 +1586,12 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                               : bubbleRadius,
                                         ),
                                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                          Text(contenu, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _darkC)),
+                                          MentionHashtagText(
+                                            text: contenu,
+                                            enableHashtags: false,
+                                            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _darkC),
+                                            onMentionTap: (pid) => openMentionedProfile(context, _uid, pid),
+                                          ),
                                           const SizedBox(height: 2),
                                           Text(_fmtDate(c['created_at'] ?? ''),
                                               style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: _greyC)),
@@ -1703,6 +1721,11 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                   ),
                 ),
               ]),
+              if (_mentionSuggestions != null)
+                MentionSuggestionsBar(
+                  suggestions: _mentionSuggestions!,
+                  onSelect: (s) { _mentionCtrl?.select(s); setState(() => _mentionSuggestions = null); },
+                ),
             ]),
           ),
       ]),
@@ -1728,11 +1751,24 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   final _supa = Supabase.instance.client;
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   final _ctrl = TextEditingController();
+  MentionController? _mentionCtrl;
+  List<MentionSuggestion>? _mentionSuggestions;
   File? _imageFile;
   bool _saving = false;
 
   @override
+  void initState() {
+    super.initState();
+    _mentionCtrl = MentionController(
+      textController: _ctrl,
+      excludeUid: _uid,
+      onSuggestionsChanged: (s) { if (mounted) setState(() => _mentionSuggestions = s); },
+    );
+  }
+
+  @override
   void dispose() {
+    _mentionCtrl?.dispose();
     _ctrl.dispose();
     super.dispose();
   }
@@ -1818,7 +1854,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
             autofocus: _imageFile == null,
             maxLines: 5,
             decoration: InputDecoration(
-              hintText: 'Partagez quelque chose avec le groupe…',
+              hintText: 'Partagez quelque chose avec le groupe… (@ pour mentionner)',
               hintStyle: const TextStyle(fontFamily: 'Galey', color: _greyC),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
               enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
@@ -1828,6 +1864,14 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
               fillColor: const Color(0xFFF8F8F8),
             ),
           ),
+          if (_mentionSuggestions != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: MentionSuggestionsBar(
+                suggestions: _mentionSuggestions!,
+                onSelect: (s) { _mentionCtrl?.select(s); setState(() => _mentionSuggestions = null); },
+              ),
+            ),
           // Prévisualisation image sélectionnée
           if (_imageFile != null) ...[
             const SizedBox(height: 12),

@@ -245,7 +245,9 @@ export default function SharedPostPage({ params }: { params: Promise<{ id: strin
           </div>
 
           {post.texte && (
-            <p className="px-4 pb-3 text-[15px] text-gray-800 leading-relaxed whitespace-pre-wrap">{post.texte}</p>
+            <p className="px-4 pb-3 text-[15px] text-gray-800 leading-relaxed whitespace-pre-wrap">
+              {post.texte.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1')}
+            </p>
           )}
 
           {medias.length > 0 && (

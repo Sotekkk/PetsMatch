@@ -21,6 +21,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/petfriends/petfriends_page.dart';
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart' show PublicProfilePage;
+import 'package:PetsMatch/widgets/mention_hashtag.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ⚠️  MULTI-PROFIL — NOTE POUR NABIL (et tout dev sur Pets Social)
@@ -736,6 +737,135 @@ Future<void> openSharedSocialPost(BuildContext context, String postId, {String? 
     );
   } catch (_) {}
 }
+
+/// Ouvre le profil Pets Social visé par une @mention — le texte ne stocke
+/// que le profile_id (`@[Nom](profileId)`), l'uid est résolu à l'ouverture.
+/// Publique : réutilisée par les forums et les groupes.
+Future<void> openMentionedProfile(BuildContext context, String myUid, String profileId) async {
+  try {
+    final row = await Supabase.instance.client
+        .from('user_profiles').select('uid').eq('id', profileId).maybeSingle();
+    if (row == null || !context.mounted) return;
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => SocialProfilePage(targetUid: row['uid'] as String, myUid: myUid, targetProfileId: profileId),
+    ));
+  } catch (_) {}
+}
+
+/// Ouvre les publications Pets Social contenant un #hashtag.
+Future<void> openHashtagResults(BuildContext context, String tag) async {
+  Navigator.push(context, MaterialPageRoute(builder: (_) => _HashtagResultsPage(tag: tag)));
+}
+
+class _HashtagResultsPage extends StatefulWidget {
+  final String tag;
+  const _HashtagResultsPage({required this.tag});
+  @override
+  State<_HashtagResultsPage> createState() => _HashtagResultsPageState();
+}
+
+class _HashtagResultsPageState extends State<_HashtagResultsPage> {
+  List<Map<String, dynamic>> _posts = [];
+  Map<String, Map<String, dynamic>> _profiles = {};
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('posts_socialmedia')
+          .select()
+          .ilike('texte', '%#${widget.tag}%')
+          .eq('visibilite', 'public')
+          .order('created_at', ascending: false)
+          .limit(50);
+      final posts = List<Map<String, dynamic>>.from(rows as List);
+      final profiles = await _resolveAuthors(posts);
+      if (mounted) setState(() { _posts = posts; _profiles = profiles; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    return Scaffold(
+      backgroundColor: const Color(0xFF0D2A2E),
+      appBar: AppBar(
+        backgroundColor: _tealC,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: Text('#${widget.tag}', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: _tealC))
+          : _posts.isEmpty
+              ? const Center(child: Text('Aucune publication avec ce hashtag',
+                  style: TextStyle(fontFamily: 'Galey', color: Colors.white60)))
+              : ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _posts.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) {
+                    final p = _posts[i];
+                    final authorKey = (p['author_profile_id'] as String?)?.isNotEmpty == true
+                        ? p['author_profile_id'] as String
+                        : 'u:${p['uid']}';
+                    final prof = _profiles[authorKey];
+                    final text = p['texte']?.toString() ?? '';
+                    return GestureDetector(
+                      onTap: () => openSharedSocialPost(context, p['id'] as String),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                        ),
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Row(children: [
+                            _avatarWidget(_profilePhoto(prof), 16),
+                            const SizedBox(width: 8),
+                            Text(_profileName(prof),
+                                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Colors.white)),
+                          ]),
+                          if (text.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            MentionHashtagText(
+                              text: text,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white70),
+                              onMentionTap: (pid) => openMentionedProfile(context, myUid, pid),
+                              onHashtagTap: (tag) => openHashtagResults(context, tag),
+                            ),
+                          ],
+                        ]),
+                      ),
+                    );
+                  },
+                ),
+    );
+  }
+}
+
+/// Rendu texte brut d'une @mention (`@[Nom](id)` → `@Nom`) — pour les
+/// contextes où le texte n'est pas rendu par MentionHashtagText (partage,
+/// aperçus non interactifs). Publique : réutilisée par les forums et les
+/// groupes.
+String stripMentionMarkup(String text) =>
+    text.replaceAllMapped(RegExp(r'@\[([^\]]+)\]\([^)]+\)'), (m) => '@${m.group(1)}');
+String _stripMentionMarkup(String text) => stripMentionMarkup(text);
 
 String _fmtDate(String iso) {
   try {
@@ -1922,7 +2052,7 @@ class _SocialPostCardState extends State<_SocialPostCard> {
   }
 
   void _share() {
-    final text = widget.post['texte']?.toString() ?? '';
+    final text = _stripMentionMarkup(widget.post['texte']?.toString() ?? '');
     final name = _profileName(widget.profile);
     // Lien vers le post : l'original si c'est un repost.
     final shareId = (widget.post['is_repost'] == true
@@ -2453,9 +2583,14 @@ class _SocialPostCardState extends State<_SocialPostCard> {
                 if (text.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-                    child: Text(text, style: const TextStyle(
-                        fontFamily: 'Galey', fontSize: 14,
-                        color: Color(0xFF0D2A2E), height: 1.5)),
+                    child: MentionHashtagText(
+                      text: text,
+                      style: const TextStyle(
+                          fontFamily: 'Galey', fontSize: 14,
+                          color: Color(0xFF0D2A2E), height: 1.5),
+                      onMentionTap: (pid) => openMentionedProfile(context, widget.myUid, pid),
+                      onHashtagTap: (tag) => openHashtagResults(context, tag),
+                    ),
                   ),
 
                 // ── Animaux tagués ───────────────────────────────────
@@ -2986,12 +3121,16 @@ class _MyPostsListState extends State<_MyPostsList>
                         if (text.isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-                            child: Text(text,
-                                style: const TextStyle(
-                                    fontFamily: 'Galey',
-                                    fontSize: 14,
-                                    color: Color(0xFF0D2A2E),
-                                    height: 1.5)),
+                            child: MentionHashtagText(
+                              text: text,
+                              style: const TextStyle(
+                                  fontFamily: 'Galey',
+                                  fontSize: 14,
+                                  color: Color(0xFF0D2A2E),
+                                  height: 1.5),
+                              onMentionTap: (pid) => openMentionedProfile(context, widget.myUid, pid),
+                              onHashtagTap: (tag) => openHashtagResults(context, tag),
+                            ),
                           ),
                         if (mediaUrl != null) ...[
                           const SizedBox(height: 12),
@@ -3966,12 +4105,21 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   List<Map<String, dynamic>> _myAnimals = [];
   final Set<String> _taggedAnimalIds = {};
 
+  // @mentions — suggestions affichées pendant la frappe.
+  MentionController? _mentionCtrl;
+  List<MentionSuggestion>? _mentionSuggestions;
+
   static const _maxChars = 2000;
 
   @override
   void initState() {
     super.initState();
     _ctrl.addListener(() { if (mounted) setState(() => _charCount = _ctrl.text.length); });
+    _mentionCtrl = MentionController(
+      textController: _ctrl,
+      excludeUid: widget.myUid,
+      onSuggestionsChanged: (s) { if (mounted) setState(() => _mentionSuggestions = s); },
+    );
     _loadTaggableAnimals(widget.myUid).then((list) {
       if (mounted) setState(() => _myAnimals = list);
     });
@@ -3992,7 +4140,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   }
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() { _mentionCtrl?.dispose(); _ctrl.dispose(); super.dispose(); }
 
   Future<void> _pickImages(ImageSource source) async {
     if (source == ImageSource.camera) {
@@ -4363,6 +4511,13 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
             ]),
           ),
         ),
+
+        // ── Suggestions @mention pendant la frappe ─────────────────
+        if (_mentionSuggestions != null)
+          MentionSuggestionsBar(
+            suggestions: _mentionSuggestions!,
+            onSelect: (s) { _mentionCtrl?.select(s); setState(() => _mentionSuggestions = null); },
+          ),
 
         // ── Chips animaux tagués ──────────────────────────────────
         if (_taggedAnimalIds.isNotEmpty)
@@ -5477,7 +5632,7 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
               decoration: const BoxDecoration(color: Color(0xFF1A3A42)),
               child: thumb != null
                   ? Image.network(thumb, fit: BoxFit.cover)
-                  : Center(child: Text(post['texte']?.toString() ?? '',
+                  : Center(child: Text(_stripMentionMarkup(post['texte']?.toString() ?? ''),
                       style: const TextStyle(fontFamily: 'Galey', color: Colors.white70, fontSize: 11),
                       maxLines: 4, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center)),
             ),

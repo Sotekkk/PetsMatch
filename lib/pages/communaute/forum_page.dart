@@ -8,9 +8,11 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart'
     show SocialProfilePage, resolveActiveAuthorProfileId, socialProfileName,
-         socialProfileTypeLabel, socialProfilePhoto, kSocialAuthorCols;
+         socialProfileTypeLabel, socialProfilePhoto, kSocialAuthorCols,
+         openMentionedProfile, stripMentionMarkup;
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 import 'package:PetsMatch/widgets/inline_video.dart';
+import 'package:PetsMatch/widgets/mention_hashtag.dart';
 
 const _tealC = Color(0xFF00ACC1);
 const int _kMaxVideoBytes = 50 * 1024 * 1024; // 50 Mo, même limite que le journal pension
@@ -571,7 +573,7 @@ class _SujetTile extends StatelessWidget {
                     ]),
                     if (contenu.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Text(contenu,
+                      Text(stripMentionMarkup(contenu),
                           style: const TextStyle(
                               fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
                           maxLines: 2,
@@ -625,7 +627,9 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
   List<Map<String, dynamic>> _reponses = [];
   Map<String, Map<String, dynamic>> _authors = {};
   bool _loading = true;
-  String _newReponse = '';
+  final _reponseCtrl = TextEditingController();
+  MentionController? _mentionCtrl;
+  List<MentionSuggestion>? _mentionSuggestions;
   File? _replyPhoto;
   File? _replyVideo;
   bool _sending = false;
@@ -633,7 +637,19 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
   @override
   void initState() {
     super.initState();
+    _mentionCtrl = MentionController(
+      textController: _reponseCtrl,
+      excludeUid: _uid,
+      onSuggestionsChanged: (s) { if (mounted) setState(() => _mentionSuggestions = s); },
+    );
     _loadReponses();
+  }
+
+  @override
+  void dispose() {
+    _mentionCtrl?.dispose();
+    _reponseCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadReponses() async {
@@ -659,7 +675,7 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
   }
 
   Future<void> _envoyer() async {
-    final texte = _newReponse.trim();
+    final texte = _reponseCtrl.text.trim();
     if (texte.isEmpty && _replyPhoto == null && _replyVideo == null) return;
     if (_uid.isEmpty) return;
     setState(() => _sending = true);
@@ -683,7 +699,7 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
       if (mounted) {
         setState(() {
           _reponses.add(row);
-          _newReponse = '';
+          _reponseCtrl.clear();
           _replyPhoto = null;
           _replyVideo = null;
           _sending = false;
@@ -740,11 +756,15 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
                             avatarSize: 26,
                           ),
                           const SizedBox(height: 10),
-                          Text(contenu,
-                              style: const TextStyle(
-                                  fontFamily: 'Galey',
-                                  fontSize: 14,
-                                  color: Color(0xFF1E2025))),
+                          MentionHashtagText(
+                            text: contenu,
+                            enableHashtags: false,
+                            style: const TextStyle(
+                                fontFamily: 'Galey',
+                                fontSize: 14,
+                                color: Color(0xFF1E2025)),
+                            onMentionTap: (pid) => openMentionedProfile(context, _uid, pid),
+                          ),
                           if ((widget.sujet['photo_url']?.toString().isNotEmpty ?? false) ||
                               (widget.sujet['video_url']?.toString().isNotEmpty ?? false)) ...[
                             const SizedBox(height: 10),
@@ -811,9 +831,9 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
               ),
               Expanded(
                 child: TextFormField(
-                  initialValue: _newReponse,
+                  controller: _reponseCtrl,
                   decoration: InputDecoration(
-                    hintText: 'Votre réponse…',
+                    hintText: 'Votre réponse… (@ pour mentionner)',
                     hintStyle:
                         const TextStyle(fontFamily: 'Galey', color: Colors.grey),
                     border: OutlineInputBorder(
@@ -831,7 +851,6 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
                     fillColor: const Color(0xFFF8F8F8),
                   ),
                   maxLines: null,
-                  onChanged: (v) => _newReponse = v,
                 ),
               ),
               const SizedBox(width: 10),
@@ -852,6 +871,11 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
                 ),
               ),
               ]),
+              if (_mentionSuggestions != null)
+                MentionSuggestionsBar(
+                  suggestions: _mentionSuggestions!,
+                  onSelect: (s) { _mentionCtrl?.select(s); setState(() => _mentionSuggestions = null); },
+                ),
             ]),
           ),
       ]),
@@ -904,8 +928,12 @@ class _ReponseCard extends StatelessWidget {
             const SizedBox(height: 6),
           ],
           if (contenu.isNotEmpty)
-            Text(contenu,
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025))),
+            MentionHashtagText(
+              text: contenu,
+              enableHashtags: false,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025)),
+              onMentionTap: (pid) => openMentionedProfile(context, FirebaseAuth.instance.currentUser?.uid ?? '', pid),
+            ),
           if ((reponse['photo_url']?.toString().isNotEmpty ?? false) ||
               (reponse['video_url']?.toString().isNotEmpty ?? false)) ...[
             if (contenu.isNotEmpty) const SizedBox(height: 8),
@@ -936,14 +964,34 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   String _titre = '';
-  String _contenu = '';
+  final _contenuCtrl = TextEditingController();
+  MentionController? _mentionCtrl;
+  List<MentionSuggestion>? _mentionSuggestions;
   String? _animalType;
   File? _photo;
   File? _video;
   bool _saving = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _mentionCtrl = MentionController(
+      textController: _contenuCtrl,
+      excludeUid: _uid,
+      onSuggestionsChanged: (s) { if (mounted) setState(() => _mentionSuggestions = s); },
+    );
+  }
+
+  @override
+  void dispose() {
+    _mentionCtrl?.dispose();
+    _contenuCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_contenuCtrl.text.trim().isEmpty) return;
     _formKey.currentState!.save();
     setState(() => _saving = true);
     try {
@@ -954,7 +1002,7 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
         'auteur_uid': _uid,
         if (pid != null) 'auteur_profile_id': pid,
         'titre': _titre,
-        'contenu': _contenu,
+        'contenu': _contenuCtrl.text.trim(),
         'created_at': DateTime.now().toIso8601String(),
         if (_animalType != null) 'animal_type': _animalType,
         if (media.photoUrl != null) 'photo_url': media.photoUrl,
@@ -1051,11 +1099,19 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
 
                 _lbl('Contenu *'),
                 TextFormField(
-                  decoration: _dec('Décrivez votre sujet en détail…'),
+                  controller: _contenuCtrl,
+                  decoration: _dec('Décrivez votre sujet en détail… (@ pour mentionner quelqu\'un)'),
                   maxLines: 5,
                   validator: (v) => (v?.trim().isEmpty ?? true) ? 'Obligatoire' : null,
-                  onSaved: (v) => _contenu = v?.trim() ?? '',
                 ),
+                if (_mentionSuggestions != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: MentionSuggestionsBar(
+                      suggestions: _mentionSuggestions!,
+                      onSelect: (s) { _mentionCtrl?.select(s); setState(() => _mentionSuggestions = null); },
+                    ),
+                  ),
                 const SizedBox(height: 12),
 
                 _MediaPickerRow(
