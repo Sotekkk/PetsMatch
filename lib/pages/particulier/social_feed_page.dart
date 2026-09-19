@@ -898,11 +898,6 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
     ));
   }
 
-  void _openPetFriends() {
-    if (_uid == null) return;
-    Navigator.push(context, MaterialPageRoute(builder: (_) => const PetFriendsPage()));
-  }
-
   void _openMyProfile() {
     if (_uid == null) return;
     Navigator.push(context, MaterialPageRoute(
@@ -1014,8 +1009,9 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
           ]),
         ),
         // ── Boutons header ───────────────────────────────────────
-        _headerBtn(Icons.people_alt_outlined, _openPetFriends),
-        const SizedBox(width: 8),
+        // PetFriends déplacé sur « Mon profil » (bouton de l'AppBar) : cette
+        // rangée était trop chargée (4 icônes) et pouvait chevaucher le
+        // titre « Pets Social » sur petit écran.
         _headerBtn(Icons.search_rounded, _openSearch),
         const SizedBox(width: 8),
         Stack(clipBehavior: Clip.none, children: [
@@ -5167,12 +5163,19 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
                     pinned: false,
                     flexibleSpace: null,
                     actions: [
-                      if (_isMyProfile)
+                      if (_isMyProfile) ...[
+                        IconButton(
+                          icon: const Icon(Icons.people_alt_outlined, color: Colors.white),
+                          tooltip: 'Mes PetFriends',
+                          onPressed: () => Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const PetFriendsPage())),
+                        ),
                         IconButton(
                           icon: const Icon(Icons.auto_awesome, color: Colors.white),
                           tooltip: 'Boutique cosmétiques',
                           onPressed: () => _openShop(),
                         ),
+                      ],
                     ],
                     title: Text(name,
                         style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
