@@ -803,6 +803,18 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
   void initState() {
     super.initState();
     _initNotifCount();
+    // Côté particulier, SocialFeedPage est un onglet persistant (jamais
+    // détruit/recréé quand on change d'onglet) — sans ce listener, changer
+    // de PROFIL ne redéclenchait jamais le recalcul : _myProfileId restait
+    // celui du profil précédent tant que la page ne repassait pas par
+    // initState (cas éleveur/pro, poussée via Navigator à chaque fois).
+    User_Info.profileNotifier.addListener(_initNotifCount);
+  }
+
+  @override
+  void dispose() {
+    User_Info.profileNotifier.removeListener(_initNotifCount);
+    super.dispose();
   }
 
   /// Résout le profil actif AVANT de compter — évite la course entre cet
@@ -5635,6 +5647,24 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
                               ),
                               child: ListTile(
                                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                // La ligne entière n'ouvrait rien (seule la
+                                // petite bulle avatar naviguait) — on tape sur
+                                // le texte, pas sur l'avatar, la plupart du
+                                // temps.
+                                onTap: () {
+                                  if (isFollow) {
+                                    final uid = prof?['uid'] as String?;
+                                    if (uid == null) return;
+                                    Navigator.push(context, MaterialPageRoute(
+                                        builder: (_) => SocialProfilePage(
+                                            targetUid: uid, myUid: widget.myUid,
+                                            targetProfileId: prof?['id'] as String?)));
+                                  } else {
+                                    final postId = n['post_id'] as String?;
+                                    if (postId == null) return;
+                                    openSharedSocialPost(context, postId);
+                                  }
+                                },
                                 leading: GestureDetector(
                                   onTap: () {
                                     final uid = prof?['uid'] as String?;
