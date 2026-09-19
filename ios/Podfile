@@ -314,7 +314,13 @@ post_install do |installer|
       next if header_files.empty?
       real = File.realpath(header_files.first) rescue nil
       next unless real && File.exist?(real)
-      inner = File.read(real).scan(/^#import\s+"([^"]+)"/).flatten
+      real_content = File.read(real)
+      # A genuine class/protocol header (e.g. AppAuth's OIDAuthorizationRequest.h,
+      # which imports 3 sibling headers but also *declares* a real @interface) must
+      # never be dropped just because it shares imports with the umbrella — only
+      # pure re-export barrels (no declarations of their own) are safe to remove.
+      next if real_content =~ /^\s*@(interface|protocol)\b/
+      inner = real_content.scan(/^#import\s+"([^"]+)"/).flatten
       overlap = inner.count { |h| direct_imports.include?(h) }
       sub_umbrellas << imp if overlap >= 3
     end
