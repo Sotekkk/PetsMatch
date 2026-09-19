@@ -5,9 +5,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/petfriends/petfriend_chat_page.dart';
+import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart'
     show resolveActiveAuthorProfileId, socialProfileName, socialProfilePhoto,
-         socialProfileTypeLabel, kSocialAuthorCols;
+         socialProfileTypeLabel, kSocialAuthorCols, SocialProfilePage;
 
 class PublicProfilePage extends StatefulWidget {
   final String targetUid;
@@ -230,60 +231,35 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
   }
 
   Future<void> _openDm() async {
-    final sorted = ([_myUid, widget.targetUid]..sort()).join('_');
-
-    // Chercher une conversation directe existante (type=direct ou null, participant_ids=sorted)
-    final existing = await _supa
-        .from('conversations')
-        .select('id, participants_info')
-        .eq('participant_ids', sorted)
-        .or('type.eq.direct,type.is.null')
-        .maybeSingle();
-
-    String convId;
-    if (existing != null) {
-      convId = existing['id'].toString();
-    } else {
-      // Créer la conversation DM dans Supabase
-      final myData = await _supa.from('user_profiles')
-          .select('firstname, lastname, profile_picture_url:avatar_url')
-          .eq('uid', _myUid).eq('is_main', true).maybeSingle();
-      final otherData = await _supa.from('user_profiles')
-          .select('firstname, lastname, profile_picture_url:avatar_url')
-          .eq('uid', widget.targetUid).eq('is_main', true).maybeSingle();
-      final myName    = '${myData?['firstname'] ?? ''} ${myData?['lastname'] ?? ''}'.trim();
-      final otherName = '${otherData?['firstname'] ?? ''} ${otherData?['lastname'] ?? ''}'.trim();
-
-      final Map<String, dynamic> participantsInfo = {
-        _myUid: {'name': myName.isEmpty ? 'Utilisateur' : myName,
-          if ((myData?['profile_picture_url'] as String?)?.isNotEmpty == true) 'photo': myData!['profile_picture_url']},
-        widget.targetUid: {'name': otherName.isEmpty ? 'Utilisateur' : otherName,
-          if ((otherData?['profile_picture_url'] as String?)?.isNotEmpty == true) 'photo': otherData!['profile_picture_url']},
-      };
-
-      final pid = await _myProfileId() ?? '';
-      final created = await _supa.from('conversations').insert({
-        'type':              'direct',
-        'participants':      [_myUid, widget.targetUid],
-        'participant_ids':   sorted,
-        'participants_info': participantsInfo,
-        'last_message':      '',
-        'unread_count':      {_myUid: 0, widget.targetUid: 0},
-        'updated_at':        DateTime.now().toIso8601String(),
-        if (pid.isNotEmpty) 'pro_profile_id': pid,
-      }).select('id').single();
-      convId = created['id'].toString();
+    setState(() => _saving = true);
+    try {
+      // Réutilise le helper partagé (déjà utilisé par la fiche pro et la
+      // fiche association) au lieu de refaire la recherche/création de
+      // conversation à la main : son .limit(1).maybeSingle() est robuste
+      // même si une conversation en double existe déjà pour cette paire —
+      // l'ancienne requête .maybeSingle() seule plantait (silencieusement,
+      // en release) dès qu'il y en avait plus d'une, empêchant tout envoi
+      // de message.
+      final convId = await MessagingHelper.openOrCreateConversation(
+        otherUid: widget.targetUid,
+      );
+      if (!mounted) return;
+      final p = _profile!;
+      final nom = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+      Navigator.push(context, MaterialPageRoute(
+        builder: (_) => PetFriendChatPage(
+          conversationId: convId,
+          convNom: nom.isNotEmpty ? nom : 'Message',
+        ),
+      ));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Impossible d\'ouvrir la conversation : $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
-
-    if (!mounted) return;
-    final p = _profile!;
-    final nom = '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
-    Navigator.push(context, MaterialPageRoute(
-      builder: (_) => PetFriendChatPage(
-        conversationId: convId,
-        convNom: nom.isNotEmpty ? nom : 'Message',
-      ),
-    ));
   }
 
   Future<void> _removeFriend() async {
@@ -492,6 +468,23 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
           ),
           const SizedBox(height: 8),
         ],
+        OutlinedButton.icon(
+          onPressed: () => Navigator.push(context, MaterialPageRoute(
+            builder: (_) => SocialProfilePage(
+              targetUid: widget.targetUid,
+              myUid: _myUid,
+              targetProfileId: _targetProfileId,
+            ),
+          )),
+          style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFAD1457),
+              side: const BorderSide(color: Color(0xFFAD1457)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10)),
+          icon: const Icon(Icons.pets, size: 18),
+          label: const Text('Voir ses publications Pets Social',
+              style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+        ),
+        const SizedBox(height: 8),
         TextButton.icon(
           onPressed: _removeFriend,
           icon: const Icon(Icons.person_remove_outlined, size: 16, color: Colors.red),

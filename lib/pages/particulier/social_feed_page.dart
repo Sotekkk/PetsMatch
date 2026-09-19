@@ -2344,22 +2344,9 @@ class _SocialPostCardState extends State<_SocialPostCard> {
                                         child: const Icon(Icons.auto_awesome, size: 9, color: Colors.white),
                                       ),
                                     ],
-                                    if (widget.isFriend) ...[
-                                      const SizedBox(width: 6),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFAD1457).withValues(alpha: 0.10),
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: const Color(0xFFAD1457).withValues(alpha: 0.3)),
-                                        ),
-                                        child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                                          Icon(Icons.favorite, size: 9, color: Color(0xFFAD1457)),
-                                          SizedBox(width: 3),
-                                          Text('Ami', style: TextStyle(fontFamily: 'Galey', fontSize: 9, color: Color(0xFFAD1457), fontWeight: FontWeight.w700)),
-                                        ]),
-                                      ),
-                                    ],
+                                    // Le badge « Ami » n'est plus affiché ici (il
+                                    // écrasait le nom sur les posts longs) — il
+                                    // vit désormais uniquement sur SocialProfilePage.
                                     if (widget.post['visibilite'] == 'amis') ...[
                                       const SizedBox(width: 6),
                                       Icon(Icons.people_alt_outlined, size: 12, color: Colors.grey.shade400),
@@ -3336,7 +3323,6 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   String? _replyToName;
   String? _replyToId;
   Set<String> _following = {};
-  Set<String> _friendPids = {}; // PetFriends acceptés du profil actif
   String? _myProfileId;
   final Map<String, GlobalKey> _itemKeys = {};
   String? _highlightId;
@@ -3371,7 +3357,6 @@ class _CommentsSheetState extends State<_CommentsSheet> {
     _following = await _activeFollowingUids(widget.myUid);
     final pid = await _activeAuthorProfileId(widget.myUid);
     _myProfileId = pid;
-    _friendPids = pid == null ? {} : await _friendProfileIds(pid);
     if (rows.isNotEmpty) {
       _profiles = await _resolveAuthors(rows);
     }
@@ -3733,10 +3718,6 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                                           decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF6E9E57), Color(0xFF0C5C6C)]), borderRadius: BorderRadius.circular(6)),
                                                           child: const Icon(Icons.auto_awesome, size: 8, color: Colors.white),
                                                         ),
-                                                      ],
-                                                      if (!_authorKey(c).startsWith('u:') && _friendPids.contains(_authorKey(c))) ...[
-                                                        const SizedBox(width: 4),
-                                                        Icon(Icons.favorite, size: 10, color: const Color(0xFFAD1457)),
                                                       ],
                                                     ]),
                                                     const SizedBox(height: 3),
@@ -4943,6 +4924,7 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
   List<String> _ownedBanners = [];
   List<Map<String, String?>> _mutualProfiles = [];
   int _mutualTotal = 0;
+  bool _isFriend = false; // PetFriend accepté avec le profil affiché
 
   bool get _isMyProfile => widget.targetUid == widget.myUid;
 
@@ -5088,8 +5070,9 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
 
     // Posts « Amis » du profil visité : visibles seulement si on est ce
     // profil, ou PetFriend accepté avec lui.
+    var iAmFriend = false;
     if (!_isMyProfile && tpid != null) {
-      final iAmFriend = mpid != null && (await _friendProfileIds(mpid)).contains(tpid);
+      iAmFriend = mpid != null && (await _friendProfileIds(mpid)).contains(tpid);
       if (!iAmFriend) {
         allPosts = allPosts.where((p) => (p['visibilite'] as String?) != 'amis').toList();
       }
@@ -5104,6 +5087,7 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
         _followersCount = (results[2] as List).length;
         _followingCount = (results[3] as List).length;
         _isFollowing = followCheck != null;
+        _isFriend = iAmFriend;
         _activeRing = ring; _activeBanner = banner;
         _ownedRings = ownedRings; _ownedBanners = ownedBanners;
         _mutualProfiles = mutualProfiles;
@@ -5230,6 +5214,22 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
                         ),
                       ],
                     ]),
+                    if (!_isMyProfile && _isFriend) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFAD1457).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFAD1457).withValues(alpha: 0.4)),
+                        ),
+                        child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.favorite, size: 12, color: Color(0xFFAD1457)),
+                          SizedBox(width: 4),
+                          Text('Vous êtes PetFriends', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFFAD1457), fontWeight: FontWeight.w700)),
+                        ]),
+                      ),
+                    ],
                     const SizedBox(height: 20),
 
                     // ── Stats ───────────────────────────────────────
