@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 interface DocRow {
   id: string;
@@ -38,6 +39,7 @@ const STATUT: Record<string, { label: string; cls: string }> = {
 
 export default function MesContratsPage() {
   const { user, loading } = useAuth();
+  const activePid = useActiveProfile();
   const router = useRouter();
   const [docs, setDocs] = useState<DocRow[]>([]);
   const [fetching, setFetching] = useState(true);
@@ -58,7 +60,16 @@ export default function MesContratsPage() {
       .or(`metadata->>acquereur_email.eq.${email},uid_acquereur.eq.${user?.uid ?? '-'},metadata->>acquereur_uid.eq.${user?.uid ?? '-'}`)
       .order('created_at', { ascending: false })
       .then(({ data }) => {
-        const rows = (data ?? []) as unknown as DocRow[];
+        // Multi-profil : si le document porte un profil destinataire
+        // (client_profile_id / acquereur_profile_id) et qu'il diffère du
+        // profil actif, il appartient à un autre profil du compte — à ne
+        // pas afficher ici (même règle que côté appli).
+        const all = (data ?? []) as unknown as DocRow[];
+        const rows = all.filter(d => {
+          const target = (d.metadata?.client_profile_id ?? d.metadata?.acquereur_profile_id) as string | null | undefined;
+          if (!target || !activePid) return true;
+          return target === activePid;
+        });
         setDocs(rows);
         setFetching(false);
         // ?doc=<token> depuis une notif → ouvrir directement la signature
@@ -67,7 +78,7 @@ export default function MesContratsPage() {
           router.push(`/signer-contrat/${wantToken}`);
         }
       });
-  }, [user?.uid, user?.email]);
+  }, [user?.uid, user?.email, activePid]);
 
   async function refuser() {
     if (!refuseModal) return;

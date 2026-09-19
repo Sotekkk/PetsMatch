@@ -46,6 +46,7 @@ Future<String?> _syncContratDocument(Map<String, dynamic> devisRow, String devis
         'devis_id': devisId,
         'acquereur_nom': nomClient.isEmpty ? devisRow['nom_client'] : nomClient,
         'acquereur_email': devisRow['email_client'],
+        if (devisRow['client_profile_id'] != null) 'client_profile_id': devisRow['client_profile_id'],
         'lignes': devisRow['lignes'],
         'total_ttc': devisRow['total_ttc'],
         'date_validite': devisRow['date_validite'],
