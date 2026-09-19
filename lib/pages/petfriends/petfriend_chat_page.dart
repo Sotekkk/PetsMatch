@@ -434,6 +434,14 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
               style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16),
               maxLines: 1, overflow: TextOverflow.ellipsis)),
         ]),
+        actions: [
+          if (!widget.isGroupe)
+            IconButton(
+              onPressed: _sending ? null : _requestGardeEntraide,
+              icon: const Icon(Icons.pets, color: Colors.white),
+              tooltip: 'Demander un dépannage',
+            ),
+        ],
       ),
       body: Column(children: [
         // ── Messages ──
@@ -458,18 +466,12 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
               onPressed: _picking ? null : _pickImage,
               icon: const Icon(Icons.image_outlined, color: _green),
             ),
-            if (!widget.isGroupe) ...[
+            if (!widget.isGroupe)
               IconButton(
                 onPressed: _shareLocation,
                 icon: const Icon(Icons.location_on_outlined, color: _green),
                 tooltip: 'Partager ma position',
               ),
-              IconButton(
-                onPressed: _sending ? null : _requestGardeEntraide,
-                icon: const Icon(Icons.pets, color: _green),
-                tooltip: 'Demander un dépannage',
-              ),
-            ],
             Expanded(
               child: TextField(
                 controller: _ctrl,
