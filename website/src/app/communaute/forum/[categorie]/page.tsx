@@ -17,9 +17,35 @@ const CAT_INFO: Record<string, { label: string; emoji: string }> = {
 interface Sujet {
   id: string; titre: string; contenu: string;
   auteur_uid: string; auteur_profile_id?: string | null; epingle: boolean; created_at: string;
+  photo_url?: string | null; video_url?: string | null;
 }
 interface Reponse {
   id: string; sujet_id: string; auteur_uid: string; auteur_profile_id?: string | null; contenu: string; created_at: string;
+  photo_url?: string | null; video_url?: string | null;
+}
+
+/** Photo (upload web) ou vidéo (créée depuis l'appli, lecture seule ici). */
+function ForumMedia({ photoUrl, videoUrl }: { photoUrl?: string | null; videoUrl?: string | null }) {
+  if (videoUrl) {
+    return (
+      <video controls className="w-full max-h-64 rounded-xl bg-black">
+        <source src={videoUrl} />
+      </video>
+    );
+  }
+  if (photoUrl) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={photoUrl} alt="" className="w-full max-h-64 object-cover rounded-xl" />;
+  }
+  return null;
+}
+
+async function uploadForumPhoto(file: File, uid: string): Promise<string> {
+  const ext = file.name.split('.').pop() ?? 'jpg';
+  const path = `forum_media/${uid}_${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from('media').upload(path, file, { upsert: true });
+  if (error) throw error;
+  return supabase.storage.from('media').getPublicUrl(path).data.publicUrl;
 }
 
 // ── Identité auteur (avatar/nom/badge) — même logique que Pets Social ─────────
@@ -139,12 +165,14 @@ export default function ForumCategoriePage() {
   const [reponses, setReponses] = useState<Reponse[]>([]);
   const [loadingReponses, setLoadingReponses] = useState(false);
   const [newReponse, setNewReponse] = useState('');
+  const [replyPhoto, setReplyPhoto] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
 
   // Création
   const [showCreate, setShowCreate] = useState(false);
   const [newTitre, setNewTitre] = useState('');
   const [newContenu, setNewContenu] = useState('');
+  const [newPhoto, setNewPhoto] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
 
   const loadSujets = useCallback(async () => {
@@ -177,13 +205,15 @@ export default function ForumCategoriePage() {
   }
 
   async function sendReponse() {
-    if (!user?.uid || !newReponse.trim() || !openSujet) return;
+    if (!user?.uid || (!newReponse.trim() && !replyPhoto) || !openSujet) return;
     setSending(true);
     try {
+      const photoUrl = replyPhoto ? await uploadForumPhoto(replyPhoto, user.uid) : null;
       const { data } = await supabase.from('forum_reponses').insert({
         sujet_id: openSujet.id, auteur_uid: user.uid,
         auteur_profile_id: activeProfileId || null,
         contenu: newReponse.trim(), created_at: new Date().toISOString(),
+        ...(photoUrl ? { photo_url: photoUrl } : {}),
       }).select().single();
       if (data) {
         const row = data as Reponse;
@@ -194,6 +224,7 @@ export default function ForumCategoriePage() {
         }
       }
       setNewReponse('');
+      setReplyPhoto(null);
     } finally { setSending(false); }
   }
 
@@ -201,16 +232,19 @@ export default function ForumCategoriePage() {
     if (!user?.uid || !newTitre.trim() || !newContenu.trim()) return;
     setSaving(true);
     try {
+      const photoUrl = newPhoto ? await uploadForumPhoto(newPhoto, user.uid) : null;
       const { data } = await supabase.from('forum_sujets').insert({
         categorie_slug: categorie, auteur_uid: user.uid,
         auteur_profile_id: activeProfileId || null,
         titre: newTitre.trim(), contenu: newContenu.trim(),
         created_at: new Date().toISOString(),
+        ...(photoUrl ? { photo_url: photoUrl } : {}),
       }).select().single();
       if (data) setSujets(prev => [data as Sujet, ...prev]);
       setShowCreate(false);
       setNewTitre('');
       setNewContenu('');
+      setNewPhoto(null);
     } finally { setSaving(false); }
   }
 
@@ -266,7 +300,9 @@ export default function ForumCategoriePage() {
                   {s.epingle && <span className="text-[#00ACC1] mt-0.5">📌</span>}
                   <div className="flex-1">
                     <div className="mb-2"><AuthorBadge author={authors[authorKey(s)]} size={22} /></div>
-                    <p className="font-bold text-[#1E2025] text-sm mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>{s.titre}</p>
+                    <p className="font-bold text-[#1E2025] text-sm mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+                      {(s.video_url ? '🎥 ' : s.photo_url ? '📷 ' : '')}{s.titre}
+                    </p>
                     <p className="text-xs text-gray-500 line-clamp-2" style={{ fontFamily: 'Galey, sans-serif' }}>{s.contenu}</p>
                     <p className="text-xs text-gray-400 mt-2">{fmtDate(s.created_at)}</p>
                   </div>
@@ -294,6 +330,11 @@ export default function ForumCategoriePage() {
               <div className="bg-[#E0F7FA] rounded-2xl p-4 mb-4">
                 <div className="mb-3"><AuthorBadge author={authors[authorKey(openSujet)]} /></div>
                 <p className="text-sm text-[#1E2025] leading-relaxed" style={{ fontFamily: 'Galey, sans-serif' }}>{openSujet.contenu}</p>
+                {(openSujet.photo_url || openSujet.video_url) && (
+                  <div className="mt-3">
+                    <ForumMedia photoUrl={openSujet.photo_url} videoUrl={openSujet.video_url} />
+                  </div>
+                )}
                 <p className="text-xs text-gray-400 mt-2">{fmtDate(openSujet.created_at)}</p>
               </div>
 
@@ -308,7 +349,12 @@ export default function ForumCategoriePage() {
                       <div key={r.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[78%] px-3 py-2 rounded-2xl text-sm ${isMe ? 'bg-[#E0F7FA]' : 'bg-gray-100'}`} style={{ fontFamily: 'Galey, sans-serif' }}>
                           {!isMe && <div className="mb-1.5"><AuthorBadge author={authors[authorKey(r)]} size={20} /></div>}
-                          <p className="text-[#1E2025]">{r.contenu}</p>
+                          {r.contenu && <p className="text-[#1E2025]">{r.contenu}</p>}
+                          {(r.photo_url || r.video_url) && (
+                            <div className={r.contenu ? 'mt-2' : ''}>
+                              <ForumMedia photoUrl={r.photo_url} videoUrl={r.video_url} />
+                            </div>
+                          )}
                           <p className="text-xs text-gray-400 mt-1">{fmtDate(r.created_at)}</p>
                         </div>
                       </div>
@@ -323,7 +369,20 @@ export default function ForumCategoriePage() {
               )}
             </div>
             {user && (
-              <div className="border-t border-gray-100 p-3 flex gap-2">
+              <div className="border-t border-gray-100 p-3">
+                {replyPhoto && (
+                  <div className="mb-2 flex items-center gap-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={URL.createObjectURL(replyPhoto)} alt="" className="w-14 h-14 rounded-lg object-cover" />
+                    <button onClick={() => setReplyPhoto(null)} className="text-xs text-gray-400 hover:text-gray-600">Retirer</button>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                <label className="w-9 h-9 flex items-center justify-center rounded-full text-[#00ACC1] hover:bg-gray-50 cursor-pointer shrink-0" title="Ajouter une photo">
+                  📷
+                  <input type="file" accept="image/*" className="hidden"
+                    onChange={e => setReplyPhoto(e.target.files?.[0] ?? null)} />
+                </label>
                 <input
                   value={newReponse}
                   onChange={e => setNewReponse(e.target.value)}
@@ -334,11 +393,12 @@ export default function ForumCategoriePage() {
                 />
                 <button
                   onClick={sendReponse}
-                  disabled={sending || !newReponse.trim()}
+                  disabled={sending || (!newReponse.trim() && !replyPhoto)}
                   className="w-9 h-9 bg-[#00ACC1] rounded-full flex items-center justify-center text-white disabled:opacity-50"
                 >
                   {sending ? '…' : '➤'}
                 </button>
+                </div>
               </div>
             )}
           </div>
@@ -375,6 +435,24 @@ export default function ForumCategoriePage() {
                     className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#00ACC1] resize-none"
                     style={{ fontFamily: 'Galey, sans-serif' }}
                   />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>Photo (facultatif)</label>
+                  {newPhoto ? (
+                    <div className="flex items-center gap-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={URL.createObjectURL(newPhoto)} alt="" className="w-16 h-16 rounded-lg object-cover" />
+                      <button onClick={() => setNewPhoto(null)} className="text-xs text-gray-400 hover:text-gray-600">Retirer</button>
+                    </div>
+                  ) : (
+                    <label className="inline-block px-4 py-2 border border-gray-200 rounded-xl text-sm text-gray-600 cursor-pointer hover:border-[#00ACC1]"
+                      style={{ fontFamily: 'Galey, sans-serif' }}>
+                      📷 Choisir une photo
+                      <input type="file" accept="image/*" className="hidden"
+                        onChange={e => setNewPhoto(e.target.files?.[0] ?? null)} />
+                    </label>
+                  )}
+                  <p className="text-[11px] text-gray-400 mt-1">Pour joindre une vidéo, publiez depuis l&apos;application.</p>
                 </div>
                 <button
                   onClick={createSujet}

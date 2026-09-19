@@ -1,14 +1,139 @@
+import 'dart:io';
 import 'package:PetsMatch/main.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart'
     show SocialProfilePage, resolveActiveAuthorProfileId, socialProfileName,
          socialProfileTypeLabel, socialProfilePhoto, kSocialAuthorCols;
+import 'package:PetsMatch/utils/storage_helper.dart' as storage;
+import 'package:PetsMatch/widgets/inline_video.dart';
 
 const _tealC = Color(0xFF00ACC1);
+const int _kMaxVideoBytes = 50 * 1024 * 1024; // 50 Mo, même limite que le journal pension
+
+// ── Photo / vidéo jointe à un sujet ou une réponse ─────────────────────────────
+// Un seul média par publication (comme le journal pension) : photo OU vidéo.
+
+Future<File?> _pickForumPhoto() async {
+  final file = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+  return file == null ? null : File(file.path);
+}
+
+Future<File?> _pickForumVideo(BuildContext context) async {
+  final file = await ImagePicker().pickVideo(source: ImageSource.gallery);
+  if (file == null) return null;
+  final size = await File(file.path).length();
+  if (size > _kMaxVideoBytes) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Vidéo trop lourde (max 50 Mo).', style: TextStyle(fontFamily: 'Galey'))));
+    }
+    return null;
+  }
+  return File(file.path);
+}
+
+Future<({String? photoUrl, String? videoUrl})> _uploadForumMedia(
+    String uid, File? photo, File? video) async {
+  String? photoUrl;
+  String? videoUrl;
+  if (photo != null) {
+    final path = 'forum_media/${uid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    photoUrl = await storage.uploadPhoto(photo, path, quality: 80);
+  }
+  if (video != null) {
+    final ext = video.path.split('.').last.toLowerCase();
+    final path = 'forum_media/${uid}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+    videoUrl = await storage.uploadRawFile(video, path);
+  }
+  return (photoUrl: photoUrl, videoUrl: videoUrl);
+}
+
+/// Aperçu média joint (photo ou vidéo) affiché sous un sujet/une réponse.
+Widget _forumMedia(Map<String, dynamic> row) {
+  final photoUrl = row['photo_url']?.toString();
+  final videoUrl = row['video_url']?.toString();
+  if (videoUrl != null && videoUrl.isNotEmpty) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: InlineVideo(url: videoUrl, placeholderHeight: 200),
+    );
+  }
+  if (photoUrl != null && photoUrl.isNotEmpty) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: CachedNetworkImage(
+        imageUrl: photoUrl,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: 200,
+        placeholder: (_, __) => Container(height: 200, color: const Color(0xFFF0F0F0)),
+        errorWidget: (_, __, ___) => const SizedBox.shrink(),
+      ),
+    );
+  }
+  return const SizedBox.shrink();
+}
+
+/// Bouton photo + bouton vidéo + aperçu, pour les formulaires de création
+/// (sujet / réponse). [onChanged] reçoit (photo, video) à chaque sélection
+/// ou suppression.
+class _MediaPickerRow extends StatelessWidget {
+  final File? photo;
+  final File? video;
+  final void Function(File? photo, File? video) onChanged;
+  const _MediaPickerRow({required this.photo, required this.video, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    if (photo != null || video != null) {
+      return Stack(children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: photo != null
+              ? Image.file(photo!, width: double.infinity, height: 160, fit: BoxFit.cover)
+              : Container(
+                  width: double.infinity, height: 160, color: Colors.black87,
+                  child: const Center(child: Icon(Icons.videocam, color: Colors.white, size: 40)),
+                ),
+        ),
+        Positioned(
+          top: 6, right: 6,
+          child: GestureDetector(
+            onTap: () => onChanged(null, null),
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+              child: const Icon(Icons.close, size: 16, color: Colors.white),
+            ),
+          ),
+        ),
+      ]);
+    }
+    return Row(children: [
+      IconButton(
+        onPressed: () async {
+          final f = await _pickForumPhoto();
+          if (f != null) onChanged(f, null);
+        },
+        icon: const Icon(Icons.image_outlined, color: _tealC),
+        tooltip: 'Ajouter une photo',
+      ),
+      IconButton(
+        onPressed: () async {
+          final f = await _pickForumVideo(context);
+          if (f != null) onChanged(null, f);
+        },
+        icon: const Icon(Icons.videocam_outlined, color: _tealC),
+        tooltip: 'Ajouter une vidéo',
+      ),
+    ]);
+  }
+}
 
 // ── Identité auteur (avatar/nom/badge) — même logique que Pets Social ─────────
 
@@ -425,6 +550,13 @@ class _SujetTile extends StatelessWidget {
                         Icon(Icons.push_pin, size: 13, color: animalColor),
                         const SizedBox(width: 4),
                       ],
+                      if ((sujet['video_url']?.toString().isNotEmpty ?? false)) ...[
+                        Icon(Icons.videocam, size: 13, color: Colors.grey.shade500),
+                        const SizedBox(width: 4),
+                      ] else if ((sujet['photo_url']?.toString().isNotEmpty ?? false)) ...[
+                        Icon(Icons.image, size: 13, color: Colors.grey.shade500),
+                        const SizedBox(width: 4),
+                      ],
                       Expanded(
                         child: Text(titre,
                             style: const TextStyle(
@@ -494,6 +626,8 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
   Map<String, Map<String, dynamic>> _authors = {};
   bool _loading = true;
   String _newReponse = '';
+  File? _replyPhoto;
+  File? _replyVideo;
   bool _sending = false;
 
   @override
@@ -526,16 +660,20 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
 
   Future<void> _envoyer() async {
     final texte = _newReponse.trim();
-    if (texte.isEmpty || _uid.isEmpty) return;
+    if (texte.isEmpty && _replyPhoto == null && _replyVideo == null) return;
+    if (_uid.isEmpty) return;
     setState(() => _sending = true);
     try {
       final pid = await resolveActiveAuthorProfileId(_uid);
+      final media = await _uploadForumMedia(_uid, _replyPhoto, _replyVideo);
       final inserted = await _supa.from('forum_reponses').insert({
         'sujet_id': widget.sujet['id'],
         'auteur_uid': _uid,
         if (pid != null) 'auteur_profile_id': pid,
         'contenu': texte,
         'created_at': DateTime.now().toIso8601String(),
+        if (media.photoUrl != null) 'photo_url': media.photoUrl,
+        if (media.videoUrl != null) 'video_url': media.videoUrl,
       }).select().single();
       final row = Map<String, dynamic>.from(inserted);
       if (!_authors.containsKey(_authorKey(row))) {
@@ -546,6 +684,8 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
         setState(() {
           _reponses.add(row);
           _newReponse = '';
+          _replyPhoto = null;
+          _replyVideo = null;
           _sending = false;
         });
       }
@@ -605,6 +745,11 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
                                   fontFamily: 'Galey',
                                   fontSize: 14,
                                   color: Color(0xFF1E2025))),
+                          if ((widget.sujet['photo_url']?.toString().isNotEmpty ?? false) ||
+                              (widget.sujet['video_url']?.toString().isNotEmpty ?? false)) ...[
+                            const SizedBox(height: 10),
+                            _forumMedia(widget.sujet),
+                          ],
                         ]),
                       );
                     }
@@ -621,7 +766,49 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
                 right: 16,
                 top: 10,
                 bottom: MediaQuery.of(context).padding.bottom + 10),
-            child: Row(children: [
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if (_replyPhoto != null || _replyVideo != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Stack(children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: _replyPhoto != null
+                          ? Image.file(_replyPhoto!, width: 90, height: 90, fit: BoxFit.cover)
+                          : Container(width: 90, height: 90, color: Colors.black87,
+                              child: const Icon(Icons.videocam, color: Colors.white)),
+                    ),
+                    Positioned(
+                      top: 2, right: 2,
+                      child: GestureDetector(
+                        onTap: () => setState(() { _replyPhoto = null; _replyVideo = null; }),
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                          child: const Icon(Icons.close, size: 14, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ]),
+                ),
+              Row(children: [
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.add_circle_outline, color: _tealC),
+                tooltip: 'Joindre un média',
+                onSelected: (val) async {
+                  if (val == 'photo') {
+                    final f = await _pickForumPhoto();
+                    if (f != null) setState(() { _replyPhoto = f; _replyVideo = null; });
+                  } else if (val == 'video') {
+                    final f = await _pickForumVideo(context);
+                    if (f != null) setState(() { _replyVideo = f; _replyPhoto = null; });
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'photo', child: Text('Photo', style: TextStyle(fontFamily: 'Galey'))),
+                  PopupMenuItem(value: 'video', child: Text('Vidéo', style: TextStyle(fontFamily: 'Galey'))),
+                ],
+              ),
               Expanded(
                 child: TextFormField(
                   initialValue: _newReponse,
@@ -664,6 +851,7 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
                           color: Colors.white, size: 20),
                 ),
               ),
+              ]),
             ]),
           ),
       ]),
@@ -715,8 +903,14 @@ class _ReponseCard extends StatelessWidget {
                 nameStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF1E2025))),
             const SizedBox(height: 6),
           ],
-          Text(contenu,
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025))),
+          if (contenu.isNotEmpty)
+            Text(contenu,
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025))),
+          if ((reponse['photo_url']?.toString().isNotEmpty ?? false) ||
+              (reponse['video_url']?.toString().isNotEmpty ?? false)) ...[
+            if (contenu.isNotEmpty) const SizedBox(height: 8),
+            SizedBox(width: 220, child: _forumMedia(reponse)),
+          ],
           const SizedBox(height: 4),
           Text(_fmtDate(date),
               style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey)),
@@ -744,6 +938,8 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
   String _titre = '';
   String _contenu = '';
   String? _animalType;
+  File? _photo;
+  File? _video;
   bool _saving = false;
 
   Future<void> _save() async {
@@ -752,6 +948,7 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
     setState(() => _saving = true);
     try {
       final pid = await resolveActiveAuthorProfileId(_uid);
+      final media = await _uploadForumMedia(_uid, _photo, _video);
       await _supa.from('forum_sujets').insert({
         'categorie_slug': widget.categorieSlug,
         'auteur_uid': _uid,
@@ -760,6 +957,8 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
         'contenu': _contenu,
         'created_at': DateTime.now().toIso8601String(),
         if (_animalType != null) 'animal_type': _animalType,
+        if (media.photoUrl != null) 'photo_url': media.photoUrl,
+        if (media.videoUrl != null) 'video_url': media.videoUrl,
       });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -857,7 +1056,14 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
                   validator: (v) => (v?.trim().isEmpty ?? true) ? 'Obligatoire' : null,
                   onSaved: (v) => _contenu = v?.trim() ?? '',
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
+
+                _MediaPickerRow(
+                  photo: _photo,
+                  video: _video,
+                  onChanged: (p, v) => setState(() { _photo = p; _video = v; }),
+                ),
+                const SizedBox(height: 12),
 
                 SizedBox(
                   width: double.infinity,
