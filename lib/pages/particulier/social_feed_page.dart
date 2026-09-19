@@ -802,14 +802,19 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
   @override
   void initState() {
     super.initState();
+    _initNotifCount();
+  }
+
+  /// Résout le profil actif AVANT de compter — évite la course entre cet
+  /// appel et l'ancien double-appel (un avec pid déjà connu, l'autre encore
+  /// null) qui pouvait laisser le compteur d'un profil précédent gagner la
+  /// course et réafficher la bulle après un changement de profil.
+  Future<void> _initNotifCount() async {
     final uid = _uid;
-    if (uid != null) {
-      _activeAuthorProfileId(uid).then((id) {
-        if (!mounted) return;
-        setState(() => _myProfileId = id);
-        _loadNotifCount(); // recompte avec le bon profil une fois résolu
-      });
-    }
+    if (uid == null) return;
+    final id = await _activeAuthorProfileId(uid);
+    if (!mounted) return;
+    setState(() => _myProfileId = id);
     _loadNotifCount();
   }
 
@@ -819,8 +824,13 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
     try {
       final pid = _myProfileId ?? await _activeAuthorProfileId(uid);
       if (pid == null) return;
+      // Marqueur « vu » scopé au PROFIL (pas à l'uid) : chaque profil a ses
+      // propres notifications (commentaires sur SES posts, SES abonnés) —
+      // un marqueur partagé par uid pouvait laisser la bulle d'un profil
+      // masquer à tort celle d'un autre, ou l'inverse, après un changement
+      // de profil.
       final prefs = await SharedPreferences.getInstance();
-      final lastSeenStr = prefs.getString('notif_seen_at_$uid');
+      final lastSeenStr = prefs.getString('notif_seen_at_$pid');
       final lastSeen = lastSeenStr != null ? DateTime.tryParse(lastSeenStr) : null;
 
       final myPosts = await _supa.from('posts_socialmedia').select('id')
@@ -850,10 +860,13 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
   }
 
   Future<void> _markNotifSeen() async {
-    final uid = _uid;
-    if (uid == null) return;
+    final pid = _myProfileId ?? await _activeAuthorProfileId(_uid ?? '');
+    if (pid == null) return;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('notif_seen_at_$uid', DateTime.now().toIso8601String());
+    // .toUtc() est indispensable : created_at (Postgres) est en UTC, une
+    // heure locale envoyée telle quelle au filtre .gt() était interprétée
+    // comme UTC côté serveur (décalage de 1-2h selon l'heure d'été/hiver).
+    await prefs.setString('notif_seen_at_$pid', DateTime.now().toUtc().toIso8601String());
   }
 
   void _openCreate() {
