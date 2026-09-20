@@ -8,6 +8,7 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_form_page.dart';
+import 'package:PetsMatch/pages/animaux/morpho/morpho_detail_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_fiche_client_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
@@ -3563,15 +3564,42 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               : null,
           // Accès direct au compte-rendu morpho depuis le RDV (était
           // seulement accessible via le menu « Mon activité santé > Mes
-          // suivis », peu visible juste après une séance).
+          // suivis », peu visible juste après une séance). Si un suivi existe
+          // déjà pour CE rdv, on rouvre celui-là (lecture/PDF/envoi) au lieu
+          // d'en recréer un nouveau à chaque tap.
           onSuiviMorpho: (showProTools && hasAnimal && User_Info.catPro == 'sante')
-              ? () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => MorphoFormPage(
-                    animalId: animalId,
-                    espece: rdv['_animal_espece']?.toString() ?? '',
-                    proProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
-                    proNom: User_Info.primaryLabel,
-                  )))
+              ? () async {
+                  final rdvId = rdv['id']?.toString();
+                  Map<String, dynamic>? existing;
+                  if (rdvId != null) {
+                    try {
+                      existing = await Supabase.instance.client
+                          .from('suivis_morpho').select().eq('rdv_id', rdvId).maybeSingle();
+                    } catch (_) {}
+                  }
+                  if (!context.mounted) return;
+                  if (existing != null) {
+                    await Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => MorphoDetailPage(
+                              suivi: existing!,
+                              espece: rdv['_animal_espece']?.toString() ?? '',
+                              readOnly: false,
+                            )));
+                  } else {
+                    await Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => MorphoFormPage(
+                              animalId: animalId,
+                              espece: rdv['_animal_espece']?.toString() ?? '',
+                              proProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+                              rdvId: rdvId,
+                              // Pas de proNom : User_Info.primaryLabel reflète le
+                              // profil PRINCIPAL du compte (ex. l'élevage), pas
+                              // forcément le profil santé actif — le champ reste
+                              // vide et éditable, comme dans
+                              // sante_suivis_morpho_page.dart.
+                            )));
+                  }
+                }
               : null,
           // Pet-sitter : nouvelles / photo au propriétaire (rapport de visite ou
           // journal de garde selon la prestation).

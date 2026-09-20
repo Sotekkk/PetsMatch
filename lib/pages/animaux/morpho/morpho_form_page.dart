@@ -22,6 +22,9 @@ class MorphoFormPage extends StatefulWidget {
   final String? proNom;
   final String? animalNomLibre;
   final String? clientNomLibre;
+  /// RDV pendant lequel ce suivi est réalisé — permet de le retrouver
+  /// directement depuis la carte RDV plutôt que d'en recréer un nouveau.
+  final String? rdvId;
   /// Non-null pour modifier un suivi existant (pro uniquement) — pré-remplit
   /// tout le formulaire ; l'enregistrement met à jour la même ligne au lieu
   /// d'en créer une nouvelle (aucune notification renvoyée au propriétaire).
@@ -36,6 +39,7 @@ class MorphoFormPage extends StatefulWidget {
     this.animalNomLibre,
     this.clientNomLibre,
     this.existingSuivi,
+    this.rdvId,
   });
 
   @override
@@ -315,6 +319,7 @@ class _MorphoFormPageState extends State<MorphoFormPage> {
           if (widget.animalId != null) 'animal_id': widget.animalId,
           'uid_auteur': uid,
           if (widget.proProfileId != null) 'pro_profile_id': widget.proProfileId,
+          if (widget.rdvId != null) 'rdv_id': widget.rdvId,
           'source': source,
           ...headerData,
         }).select('id').single();
