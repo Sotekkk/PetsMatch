@@ -63,6 +63,7 @@ import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_planning_employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_dashboard_page.dart';
+import 'package:PetsMatch/pages/pro/toilettage_contrats_page.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_contrats_page.dart';
 import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
@@ -1427,65 +1428,107 @@ class _EleveurNavState extends State<EleveurNav> {
                     ),
                   ],
                   if (User_Info.catPro == 'toilettage') ...[
-                    _DrawerItem(
+                    _DrawerSection(
                       icon: Icons.content_cut,
-                      label: 'Mes prestations',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const ToilettagePrestationsPage(),
-                        ));
-                      },
+                      label: 'Mon activité toilettage',
+                      children: [
+                        _DrawerSubItem(
+                          label: 'Mon agenda RDV',
+                          icon: Icons.event_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const ProAgendaPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Mes prestations',
+                          icon: Icons.content_cut,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const ToilettagePrestationsPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Mes employés',
+                          icon: Icons.groups_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const ToilettageEmployesPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Planning employés',
+                          icon: Icons.calendar_view_day_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const ToilettagePlanningEmployesPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Tableau de bord',
+                          icon: Icons.bar_chart_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const ToilettageDashboardPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Mon abonnement',
+                          icon: Icons.workspace_premium_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const ToilettageAbonnementPage(),
+                            ));
+                          },
+                        ),
+                      ],
                     ),
-                    _DrawerItem(
-                      icon: Icons.groups_outlined,
-                      label: 'Mes employés',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const ToilettageEmployesPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.calendar_view_day_outlined,
-                      label: 'Planning employés',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const ToilettagePlanningEmployesPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.receipt_long_outlined,
-                      label: 'Mes factures',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const FacturationPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.bar_chart_outlined,
-                      label: 'Tableau de bord',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const ToilettageDashboardPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.workspace_premium_outlined,
-                      label: 'Mon abonnement',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const ToilettageAbonnementPage(),
-                        ));
-                      },
+                    _DrawerSection(
+                      icon: Icons.folder_open_outlined,
+                      label: 'Administratif',
+                      children: [
+                        _DrawerSubItem(
+                          label: 'Devis',
+                          icon: Icons.request_quote_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const DevisPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Mes contrats',
+                          icon: Icons.description_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const ToilettageContratsPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Facturation',
+                          icon: Icons.receipt_long_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const FacturationPage(),
+                            ));
+                          },
+                        ),
+                      ],
                     ),
                   ],
                 ],
