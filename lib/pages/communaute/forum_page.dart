@@ -642,7 +642,7 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
   List<Map<String, dynamic>> _reponses = [];
   Map<String, Map<String, dynamic>> _authors = {};
   bool _loading = true;
-  final _reponseCtrl = TextEditingController();
+  final _reponseCtrl = MentionTextEditingController();
   MentionController? _mentionCtrl;
   List<MentionSuggestion>? _mentionSuggestions;
   File? _replyPhoto;
@@ -690,7 +690,7 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
   }
 
   Future<void> _envoyer() async {
-    final texte = _reponseCtrl.text.trim();
+    final texte = _reponseCtrl.resolveMarkup().trim();
     if (texte.isEmpty && _replyPhoto == null && _replyVideo == null) return;
     if (_uid.isEmpty) return;
     setState(() => _sending = true);
@@ -991,7 +991,7 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   String _titre = '';
-  final _contenuCtrl = TextEditingController();
+  final _contenuCtrl = MentionTextEditingController();
   MentionController? _mentionCtrl;
   List<MentionSuggestion>? _mentionSuggestions;
   String? _animalType;
@@ -1024,7 +1024,7 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
     try {
       final pid = await resolveActiveAuthorProfileId(_uid);
       final media = await _uploadForumMedia(_uid, _photo, _video);
-      final contenu = _contenuCtrl.text.trim();
+      final contenu = _contenuCtrl.resolveMarkup().trim();
       final inserted = await _supa.from('forum_sujets').insert({
         'categorie_slug': widget.categorieSlug,
         'auteur_uid': _uid,

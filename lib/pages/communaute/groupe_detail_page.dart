@@ -1318,7 +1318,7 @@ class _CommentsSheet extends StatefulWidget {
 class _CommentsSheetState extends State<_CommentsSheet> {
   final _supa = Supabase.instance.client;
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
-  final _ctrl = TextEditingController();
+  final _ctrl = MentionTextEditingController();
   MentionController? _mentionCtrl;
   List<MentionSuggestion>? _mentionSuggestions;
   List<Map<String, dynamic>> _comments = [];
@@ -1458,7 +1458,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   }
 
   Future<void> _send() async {
-    final text = _ctrl.text.trim();
+    final text = _ctrl.resolveMarkup().trim();
     if (text.isEmpty && _imageFile == null) return;
     if (_uid.isEmpty) return;
 
@@ -1776,7 +1776,7 @@ class _CreatePostSheet extends StatefulWidget {
 class _CreatePostSheetState extends State<_CreatePostSheet> {
   final _supa = Supabase.instance.client;
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
-  final _ctrl = TextEditingController();
+  final _ctrl = MentionTextEditingController();
   MentionController? _mentionCtrl;
   List<MentionSuggestion>? _mentionSuggestions;
   File? _imageFile;
@@ -1809,7 +1809,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   }
 
   Future<void> _publish() async {
-    final text = _ctrl.text.trim();
+    final text = _ctrl.resolveMarkup().trim();
     if (text.isEmpty && _imageFile == null) return;
     if (_uid.isEmpty) return;
 

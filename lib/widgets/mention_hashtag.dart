@@ -179,7 +179,7 @@ class MentionSuggestion {
 /// détache elle-même du controller — pas de listener à gérer côté appelant
 /// au-delà de `dispose()`.
 class MentionController {
-  final TextEditingController textController;
+  final MentionTextEditingController textController;
   final void Function(List<MentionSuggestion>? suggestions) onSuggestionsChanged;
   final String? excludeUid;
 
@@ -253,7 +253,11 @@ class MentionController {
     }).toList());
   }
 
-  /// Insère `@[Nom](profileId) ` à la place de la « @requête » en cours.
+  /// Insère la mention à la place de la « @requête » en cours — un seul
+  /// caractère marqueur (rendu comme une puce « @Nom » par
+  /// [MentionTextEditingController.buildTextSpan]), jamais l'identifiant en
+  /// clair. Voir `MentionTextEditingController.resolveMarkup()` pour la
+  /// conversion vers le balisage stocké en base au moment de l'envoi.
   void select(MentionSuggestion s) {
     final atIndex = _pendingAtIndex;
     if (atIndex == null) return;
@@ -261,12 +265,76 @@ class MentionController {
     final cursor = textController.selection.baseOffset;
     final before = text.substring(0, atIndex);
     final after = cursor >= 0 && cursor <= text.length ? text.substring(cursor) : '';
-    final insert = '@[${s.displayName}](${s.profileId}) ';
+    final marker = textController.registerMention(s);
+    final insert = '$marker ';
     textController.value = TextEditingValue(
       text: '$before$insert$after',
       selection: TextSelection.collapsed(offset: before.length + insert.length),
     );
     _clear();
+  }
+}
+
+/// [TextEditingController] qui affiche chaque mention comme une puce
+/// « @Nom » (sans crochets ni identifiant visibles) tout en gardant, sous le
+/// capot, un seul caractère marqueur par mention (zone Unicode privée) — donc
+/// aucun souci de correspondance curseur/sélection, et un retour arrière
+/// supprime la puce entière en un coup, comme un vrai tag.
+///
+/// Le texte affiché/édité n'est PAS le format stocké en base : appeler
+/// [resolveMarkup] juste avant l'envoi pour reconvertir chaque puce en
+/// `@[Nom](profileId)` (le format lu partout ailleurs dans l'appli).
+class MentionTextEditingController extends TextEditingController {
+  final Map<String, MentionSuggestion> _markers = {};
+
+  MentionTextEditingController({super.text});
+
+  /// Enregistre [s] et renvoie le caractère marqueur à insérer dans le texte.
+  String registerMention(MentionSuggestion s) {
+    final marker = String.fromCharCode(0xE000 + (_markers.length % 6000));
+    _markers[marker] = s;
+    return marker;
+  }
+
+  /// Texte prêt pour l'envoi : chaque puce redevient `@[Nom](profileId)`.
+  String resolveMarkup() {
+    final buf = StringBuffer();
+    for (var i = 0; i < text.length; i++) {
+      final ch = text[i];
+      final s = _markers[ch];
+      buf.write(s != null ? '@[${s.displayName}](${s.profileId})' : ch);
+    }
+    return buf.toString();
+  }
+
+  @override
+  TextSpan buildTextSpan({required BuildContext context, TextStyle? style, required bool withComposing}) {
+    final children = <InlineSpan>[];
+    final buf = StringBuffer();
+    void flush() {
+      if (buf.isNotEmpty) { children.add(TextSpan(text: buf.toString(), style: style)); buf.clear(); }
+    }
+    for (var i = 0; i < text.length; i++) {
+      final ch = text[i];
+      final s = _markers[ch];
+      if (s == null) { buf.write(ch); continue; }
+      flush();
+      children.add(WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+          margin: const EdgeInsets.symmetric(horizontal: 1),
+          decoration: BoxDecoration(
+            color: mentionHashtagColor.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text('@${s.displayName}',
+              style: (style ?? const TextStyle()).copyWith(color: mentionHashtagColor, fontWeight: FontWeight.w600)),
+        ),
+      ));
+    }
+    flush();
+    return TextSpan(style: style, children: children);
   }
 }
 

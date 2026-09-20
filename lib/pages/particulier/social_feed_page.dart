@@ -3475,7 +3475,7 @@ class _CommentsSheet extends StatefulWidget {
 
 class _CommentsSheetState extends State<_CommentsSheet> {
   final _supa = Supabase.instance.client;
-  final _ctrl = TextEditingController();
+  final _ctrl = MentionTextEditingController();
   MentionController? _mentionCtrl;
   List<MentionSuggestion>? _mentionSuggestions;
   List<Map<String, dynamic>> _comments  = [];
@@ -3599,7 +3599,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   }
 
   Future<void> _send() async {
-    final text = _ctrl.text.trim();
+    final text = _ctrl.resolveMarkup().trim();
     if (text.isEmpty || _sending) return;
     setState(() => _sending = true);
     try {
@@ -3617,6 +3617,15 @@ class _CommentsSheetState extends State<_CommentsSheet> {
           .single();
       _ctrl.clear();
       widget.onCommentAdded();
+      // Mon propre profil n'est pas forcément déjà dans _profiles (ex. premier
+      // commentaire sur ce post) — sans lui, l'auteur du commentaire qu'on
+      // vient d'ajouter localement retombe sur « Membre » jusqu'au prochain
+      // _load() qui, lui, le résout via _resolveAuthors.
+      final authorKey = inserted['author_profile_id']?.toString() ?? inserted['uid']?.toString();
+      if (authorKey != null && !_profiles.containsKey(authorKey)) {
+        final mine = await _resolveAuthors([inserted]);
+        _profiles.addAll(mine);
+      }
       if (mounted) {
         setState(() {
           _comments.add(inserted);
@@ -4130,7 +4139,7 @@ class _CreatePostSheet extends StatefulWidget {
 
 class _CreatePostSheetState extends State<_CreatePostSheet> {
   final _supa   = Supabase.instance.client;
-  final _ctrl   = TextEditingController();
+  final _ctrl   = MentionTextEditingController();
   final _images = <File>[];
   bool  _posting = false;
   int   _charCount = 0;
@@ -4235,7 +4244,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
 
   Future<void> _post() async {
     FocusScope.of(context).unfocus();
-    final text = _ctrl.text.trim();
+    final text = _ctrl.resolveMarkup().trim();
     if (text.isEmpty && _images.isEmpty && _taggedAnimalIds.isEmpty) {
       setState(() => _error = 'Ajoutez un texte, une photo ou un animal tagué.');
       return;
