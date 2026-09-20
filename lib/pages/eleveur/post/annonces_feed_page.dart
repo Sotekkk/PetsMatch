@@ -306,6 +306,13 @@ class _AnnoncesFeedPageState extends State<AnnoncesFeedPage> {
       if (_race   != null)         q = q.eq('race', _race!);
       if (_typeVente == 'saillie') q = q.eq('type_vente', 'saillie');
       if (_typeVente == 'vente')   q = q.neq('type_vente', 'saillie');
+      // Vue "Tous" d'un particulier : jamais de saillie mélangée aux
+      // annonces d'adoption/vente — l'onglet Saillie lui-même est déjà
+      // bloqué (réservé aux éleveurs, cf. _buildFeed ci-dessous), donc la
+      // vue par défaut doit respecter la même règle.
+      if (_typeVente == 'tous' && !User_Info.isElevage) {
+        q = q.neq('type_vente', 'saillie');
+      }
 
       final rows = await q.order('created_at', ascending: false);
       var items = _buildFeedItems(List<Map<String, dynamic>>.from(rows));
