@@ -25,7 +25,7 @@ function genId(): string {
 }
 
 interface MyHorse {
-  id: string; nom: string | null; race: string | null; sexe: string | null;
+  id: string; nom: string | null; race: string | null; sexe: string | null; sterilise: boolean | null;
   couleur: string | null; date_naissance: string | null; num_sire: string | null; photo_url: string | null;
 }
 
@@ -82,7 +82,7 @@ function CreerAnnonceChevalInner() {
   const loadMyHorses = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase.from('animaux')
-      .select('id, nom, race, sexe, couleur, date_naissance, num_sire, photo_url, espece')
+      .select('id, nom, race, sexe, sterilise, couleur, date_naissance, num_sire, photo_url, espece')
       .or(`uid_eleveur.eq.${user.uid},uid_acquereur.eq.${user.uid}`);
     setMyHorses(((data ?? []) as Record<string, unknown>[])
       .filter(a => a.espece === 'cheval')
@@ -133,7 +133,13 @@ function CreerAnnonceChevalInner() {
     if (!race && h.race) setRace(h.race);
     if (!robe && h.couleur) setRobe(h.couleur);
     if (!numSIRE && h.num_sire) setNumSIRE(h.num_sire);
-    if (h.sexe && ['jument', 'hongre', 'entier'].includes(h.sexe)) setSexe(h.sexe as typeof sexe);
+    // La fiche animal générique ne connaît que 'male'/'femelle' (pas de
+    // notion équine hongre/entier/jument) — on traduit à partir de ça + du
+    // champ stérilisé déjà suivi pour la reproduction : un mâle non
+    // stérilisé est entier, un mâle stérilisé est hongre.
+    if (h.sexe === 'jument' || h.sexe === 'hongre' || h.sexe === 'entier') setSexe(h.sexe as typeof sexe);
+    else if (h.sexe === 'femelle') setSexe('jument');
+    else if (h.sexe === 'male') setSexe(h.sterilise ? 'hongre' : 'entier');
     if (!dateNaissance && h.date_naissance) setDateNaissance(String(h.date_naissance).slice(0, 10));
     if (!titre && h.nom) setTitre(h.nom);
   }
