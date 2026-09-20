@@ -159,7 +159,15 @@ export default function ContratsAdoptionPage() {
     } else {
       const { data: cps } = await supabase.from('user_profiles').select(cpFields)
         .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%`).eq('is_main', true).limit(8);
-      setUserResults((cps ?? []).map(cp => toResult(cp)));
+      // email_contact est souvent vide alors que le compte a bien un email
+      // de connexion (table users) — sans ce complément, un utilisateur
+      // pourtant déjà inscrit ressort sans email pré-rempli.
+      const uids = (cps ?? []).map(c => c.uid as string);
+      const { data: loginUsers } = uids.length
+        ? await supabase.from('users').select('uid,email').in('uid', uids)
+        : { data: [] as { uid: string; email: string }[] };
+      const emailByUid = new Map((loginUsers ?? []).map(u => [u.uid, u.email as string]));
+      setUserResults((cps ?? []).map(cp => toResult(cp, emailByUid.get(cp.uid as string))));
     }
   }
 

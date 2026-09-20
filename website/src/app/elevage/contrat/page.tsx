@@ -259,7 +259,15 @@ export default function ContratsPage() {
     } else {
       const { data: cps } = await supabase.from('user_profiles').select(cpFields)
         .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,nom.ilike.%${q}%`).eq('is_main', true).limit(8);
-      setUserResults((cps ?? []).map(cp => toResult(cp)));
+      // email_contact est souvent vide alors que le compte a bien un email
+      // de connexion (table users) — sans ce complément, un utilisateur
+      // pourtant déjà inscrit ressort sans email pré-rempli.
+      const uids = (cps ?? []).map(c => c.uid as string);
+      const { data: loginUsers } = uids.length
+        ? await supabase.from('users').select('uid,email').in('uid', uids)
+        : { data: [] as { uid: string; email: string }[] };
+      const emailByUid = new Map((loginUsers ?? []).map(u => [u.uid, u.email as string]));
+      setUserResults((cps ?? []).map(cp => toResult(cp, emailByUid.get(cp.uid as string))));
     }
   }
 
@@ -403,7 +411,7 @@ export default function ContratsPage() {
         }
       }
       let certToken: string | null = null;
-      if ((formType === 'contrat_vente' || formType === 'certificat_cession') && certMode !== 'skip') {
+      if ((formType === 'contrat_vente' || formType === 'certificat_cession' || formType === 'contrat_reservation') && certMode !== 'skip') {
         certToken = await createCertificatEngagement(selectedAnimal);
       }
       const win = window.open(`/signer-contrat/${token}`, '_blank', 'width=900,height=700');
@@ -834,7 +842,7 @@ export default function ContratsPage() {
               </label>
             )}
 
-            {(formType === 'contrat_vente' || formType === 'certificat_cession') && (
+            {(formType === 'contrat_vente' || formType === 'certificat_cession' || formType === 'contrat_reservation') && (
               <div className="space-y-2">
                 <p className="text-sm font-semibold text-[#1F2A2E]">Certificat d&apos;engagement (loi 2021-1539)</p>
                 {([
