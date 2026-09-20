@@ -10,6 +10,7 @@ import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_form_page.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_detail_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_fiche_client_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
@@ -1272,6 +1273,98 @@ class _ProAgendaPageState extends State<ProAgendaPage>
             .update({'statut': 'en_attente'})
             .eq('rdv_id', rdv['id'])
             .eq('type', 'contrat_prestation_toilettage');
+      }
+      if (token == null) return;
+      if (mounted) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ContratSignaturePage(token: token),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  // Maréchal-ferrant — génère (ou récupère) le contrat de prestation, même
+  // principe que _genererContratPhoto / _genererContratToilettage.
+  Future<void> _genererContratMarechal(Map<String, dynamic> rdv) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final planCode = await PlanService.getPlanCode(uid, profilType: 'marechal_ferrant');
+    if (planCode == 'free') {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Signature — Abonnement requis',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            content: const Text('La signature électronique de contrats est disponible à partir de l\'abonnement Pro.',
+                style: TextStyle(fontFamily: 'Galey')),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const SanteAbonnementPage(profilType: 'marechal_ferrant')));
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706)),
+                child: const Text('👑 Voir les plans', style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
+    try {
+      final supa = Supabase.instance.client;
+      final existing = await supa
+          .from('documents_animaux')
+          .select('token')
+          .eq('rdv_id', rdv['id'])
+          .eq('type', 'contrat_prestation_marechal')
+          .maybeSingle();
+
+      String? token = existing?['token'] as String?;
+      if (token == null) {
+        final row = await supa.from('documents_animaux').insert({
+          'uid_eleveur': uid,
+          if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
+          'animal_id': rdv['animal_id'],
+          'rdv_id': rdv['id'],
+          'type': 'contrat_prestation_marechal',
+          'titre': 'Contrat de prestation maréchalerie — ${rdv['_client_name'] ?? ''}',
+          'statut': 'en_attente',
+          'metadata': {
+            'client_nom': rdv['_client_name'],
+          },
+        }).select('token').single();
+        token = row['token'] as String?;
+        final clientUid = rdv['client_uid']?.toString();
+        if (clientUid != null && clientUid.isNotEmpty && token != null) {
+          try {
+            await supa.from('notifications').insert({
+              'uid': clientUid,
+              'type': 'contrat_invite',
+              'title': '🐴 Contrat de prestation à signer',
+              'body': 'Votre maréchal-ferrant vous envoie un contrat de prestation — vérifiez et signez',
+              if ((rdv['client_profile_id']?.toString() ?? '').isNotEmpty) 'profile_id': rdv['client_profile_id'],
+              'data': {'token': token, 'url': '$kSiteBaseUrl/signer-contrat/$token'},
+              'read': false,
+            });
+          } catch (_) {}
+        }
+      } else {
+        await supa.from('documents_animaux')
+            .update({'statut': 'en_attente'})
+            .eq('rdv_id', rdv['id'])
+            .eq('type', 'contrat_prestation_marechal');
       }
       if (token == null) return;
       if (mounted) {
@@ -3728,7 +3821,9 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               ? () => _genererContratPhoto(rdv)
               : (showProTools && User_Info.catPro == 'toilettage')
                   ? () => _genererContratToilettage(rdv)
-                  : null,
+                  : (showProTools && User_Info.catPro == 'marechal_ferrant')
+                      ? () => _genererContratMarechal(rdv)
+                      : null,
           onFacturer: (showProTools && rdv['statut'] == 'termine' &&
                   const {
                     'photographe', 'toilettage',

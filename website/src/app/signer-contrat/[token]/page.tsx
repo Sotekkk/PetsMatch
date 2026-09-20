@@ -12,6 +12,7 @@ import { generateContratHebergementHTML } from '@/lib/contrat-pension';
 import { generateContratGardeHTML } from '@/lib/contrat-garde';
 import { generateContratPrestationPhotoHTML } from '@/lib/contrat-photographe';
 import { generateContratPrestationToilettageHTML } from '@/lib/contrat-toilettage';
+import { generateContratPrestationMarechalHTML } from '@/lib/contrat-marechal';
 import { generateContratEducationHTML, type LigneEducation } from '@/lib/contrat-education';
 import { generateContratSanteHTML, type LigneSante } from '@/lib/contrat-sante';
 import { useAuth } from '@/lib/auth-context';
@@ -356,6 +357,48 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           {
             prestationNom: prestationInfo.nom ?? meta.prestation_nom,
             prixTotal: prestationInfo.prix_base ?? (meta.prix_total ? Number(meta.prix_total) : undefined),
+            notes: meta.notes,
+          },
+        );
+      } else if (data.type === 'contrat_prestation_marechal') {
+        const { data: rdv } = await supabase
+          .from('rdv')
+          .select('animal_id, client_uid, date_heure, adresse_depart')
+          .eq('id', data.rdv_id)
+          .maybeSingle();
+        let animalInfo: { nom?: string; espece?: string } = {};
+        let clientInfo: { nom?: string; contact?: string } = {};
+        if (rdv?.animal_id) {
+          const { data: an } = await supabase.from('animaux').select('nom, espece').eq('id', rdv.animal_id).maybeSingle();
+          animalInfo = an ?? {};
+        }
+        if (rdv?.client_uid) {
+          const { data: cp2 } = await supabase.from('user_profiles')
+            .select('firstname, lastname, email_contact').eq('uid', rdv.client_uid).eq('is_main', true).maybeSingle();
+          clientInfo = {
+            nom: `${cp2?.firstname ?? ''} ${cp2?.lastname ?? ''}`.trim(),
+            contact: cp2?.email_contact ?? '',
+          };
+        }
+        generatedHtml = generateContratPrestationMarechalHTML(
+          {
+            client_nom: meta.client_nom || clientInfo.nom,
+            client_contact: meta.client_contact || clientInfo.contact,
+            animal_nom: animalInfo.nom ?? meta.acquereur_nom ?? '',
+            espece: animalInfo.espece,
+            date_prestation: rdv?.date_heure ?? meta.date_prestation,
+            lieu: rdv?.adresse_depart ?? meta.lieu,
+          },
+          {
+            nom: elvNom,
+            adresse: profil?.adress_elevage ?? profil?.adress ?? '',
+            email: profil?.email ?? '',
+            tel: elvTel,
+            siret: profil?.siret ?? '',
+          },
+          {
+            prestationNom: meta.prestation_nom,
+            prixTotal: meta.prix_total ? Number(meta.prix_total) : undefined,
             notes: meta.notes,
           },
         );
@@ -719,6 +762,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         case 'contrat_hebergement':
         case 'contrat_prestation_photo':
         case 'contrat_prestation_toilettage':
+        case 'contrat_prestation_marechal':
         case 'contrat_education':
         case 'contrat_sante':
           return { partieVendeur: 'Le prestataire', partieAcquereurDefaut: 'Le client' };
@@ -738,6 +782,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         case 'contrat_hebergement': return 'pension';
         case 'contrat_prestation_photo': return 'photographe';
         case 'contrat_prestation_toilettage': return 'toilettage';
+        case 'contrat_prestation_marechal': return 'marechal_ferrant';
         case 'contrat_education': return 'education';
         case 'contrat_sante': return 'sante';
         case 'contrat_adoption': return 'association';
@@ -955,6 +1000,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       case 'contrat_hebergement':
       case 'contrat_prestation_photo':
       case 'contrat_prestation_toilettage':
+      case 'contrat_prestation_marechal':
       case 'contrat_education':
       case 'contrat_sante':
         return { vendeur: 'Signature du prestataire', acquereur: 'Signature du client', vendeurNoun: 'Le prestataire', acquereurNoun: 'Le client', vendeurA: 'au prestataire', acquereurA: 'au client' };

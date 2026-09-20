@@ -64,6 +64,7 @@ import 'package:PetsMatch/pages/pro/toilettage_employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_planning_employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_dashboard_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_contrats_page.dart';
+import 'package:PetsMatch/pages/pro/marechal_contrats_page.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 import 'package:PetsMatch/pages/pro/education_contrats_page.dart';
 import 'package:PetsMatch/pages/pro/education_bibliotheque_page.dart';
@@ -1004,7 +1005,8 @@ class _EleveurNavState extends State<EleveurNav> {
                               fontSize: 11, color: Colors.grey.shade500, letterSpacing: 0.8)),
                     ),
                   ],
-                  if (User_Info.catPro != 'pension' && User_Info.catPro != 'education' && User_Info.catPro != 'garde' && User_Info.catPro != 'sante') _DrawerItem(
+                  if (User_Info.catPro != 'pension' && User_Info.catPro != 'education' && User_Info.catPro != 'garde' && User_Info.catPro != 'sante' &&
+                      User_Info.catPro != 'photographe' && User_Info.catPro != 'toilettage' && User_Info.catPro != 'marechal_ferrant') _DrawerItem(
                     icon: Icons.calendar_month_outlined,
                     label: 'Mon agenda RDV',
                     onTap: () {
@@ -1024,13 +1026,9 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                  if (User_Info.catPro == 'marechal_ferrant' || User_Info.catPro == 'photographe') _DrawerItem(
-                    icon: User_Info.catPro == 'marechal_ferrant'
-                        ? Icons.handyman_outlined
-                        : Icons.people_outline,
-                    label: User_Info.catPro == 'marechal_ferrant'
-                        ? 'Mes équidés suivis'
-                        : 'Mes clients',
+                  if (User_Info.catPro == 'photographe') _DrawerItem(
+                    icon: Icons.people_outline,
+                    label: 'Mes clients',
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(
@@ -1038,12 +1036,11 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                  // Veterinaire/marechal_ferrant n'ont pas de bloc dédié plus bas
-                  // (contrairement à garde/taxi/photographe/toilettage/sante)
-                  // — ajouté ici pour qu'une facture créée depuis
+                  // Veterinaire n'a pas de bloc dédié plus bas (contrairement à
+                  // garde/taxi/photographe/toilettage/sante/maréchal-ferrant) —
+                  // ajouté ici pour qu'une facture créée depuis
                   // _facturerConsultation (pro_agenda.dart) reste consultable.
-                  if (User_Info.catPro == 'veterinaire' ||
-                      User_Info.catPro == 'marechal_ferrant') _DrawerItem(
+                  if (User_Info.catPro == 'veterinaire') _DrawerItem(
                     icon: Icons.receipt_long_outlined,
                     label: 'Mes Factures',
                     onTap: () {
@@ -1053,16 +1050,13 @@ class _EleveurNavState extends State<EleveurNav> {
                       ));
                     },
                   ),
-                  if (User_Info.catPro == 'veterinaire' ||
-                      User_Info.catPro == 'marechal_ferrant') _DrawerItem(
+                  if (User_Info.catPro == 'veterinaire') _DrawerItem(
                     icon: Icons.workspace_premium_outlined,
                     label: 'Mon abonnement',
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => User_Info.catPro == 'veterinaire'
-                            ? const VetAbonnementPage()
-                            : SanteAbonnementPage(profilType: User_Info.catPro),
+                        builder: (_) => const VetAbonnementPage(),
                       ));
                     },
                   ),
@@ -1515,6 +1509,80 @@ class _EleveurNavState extends State<EleveurNav> {
                             Navigator.pop(context);
                             Navigator.push(context, MaterialPageRoute(
                               builder: (_) => const ToilettageContratsPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Facturation',
+                          icon: Icons.receipt_long_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const FacturationPage(),
+                            ));
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (User_Info.catPro == 'marechal_ferrant') ...[
+                    _DrawerSection(
+                      icon: Icons.handyman_outlined,
+                      label: 'Mon activité maréchalerie',
+                      children: [
+                        _DrawerSubItem(
+                          label: 'Mon agenda RDV',
+                          icon: Icons.event_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const ProAgendaPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Mes équidés suivis',
+                          icon: Icons.pets_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const ProClientsPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Mon abonnement',
+                          icon: Icons.workspace_premium_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => SanteAbonnementPage(profilType: User_Info.catPro),
+                            ));
+                          },
+                        ),
+                      ],
+                    ),
+                    _DrawerSection(
+                      icon: Icons.folder_open_outlined,
+                      label: 'Administratif',
+                      children: [
+                        _DrawerSubItem(
+                          label: 'Devis',
+                          icon: Icons.request_quote_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const DevisPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Mes contrats',
+                          icon: Icons.description_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const MarechalContratsPage(),
                             ));
                           },
                         ),

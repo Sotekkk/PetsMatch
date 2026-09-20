@@ -450,6 +450,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       case 'contrat_prestation':
       case 'contrat_prestation_photo':
       case 'contrat_prestation_toilettage':
+      case 'contrat_prestation_marechal':
       case 'contrat_education':
       case 'contrat_sante':
         return (
