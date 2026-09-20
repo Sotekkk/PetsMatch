@@ -85,6 +85,9 @@ export default function ContratsAdoptionPage() {
   const [dateDoc, setDateDoc]       = useState(new Date().toISOString().split('T')[0]);
   const [avecSteril, setAvecSteril] = useState(true);
   const [notes, setNotes]           = useState('');
+  // Certificat d'engagement (loi 2021-1539) : proposé en option à la
+  // réservation, jamais obligatoire — au choix de l'association.
+  const [alsoCertificat, setAlsoCertificat] = useState(false);
 
   // Recherche adoptant PetsMatch
   const [userSearch, setUserSearch]   = useState('');
@@ -182,7 +185,7 @@ export default function ContratsAdoptionPage() {
     setAnimalId(''); setSelectedAnimal(null); setAcqNom(''); setAcqPrenom('');
     setAcqEmail(''); setAcqTel(''); setAcqAdresse(''); setParticipation('');
     setDateDoc(new Date().toISOString().split('T')[0]); setNotes(''); setAvecSteril(true);
-    setUserSearch(''); setUserResults([]);
+    setUserSearch(''); setUserResults([]); setAlsoCertificat(false);
   }
 
   function assoInfo(): AssociationInfo {
@@ -220,6 +223,31 @@ export default function ContratsAdoptionPage() {
     return token;
   }
 
+  async function createCertificatEngagement(animal: Animal): Promise<string | null> {
+    if (!user) return null;
+    const estDelai = animal.espece === 'chien' || animal.espece === 'chat';
+    const now = new Date();
+    const payload = {
+      cedant_uid: user.uid,
+      animal_id: animal.id,
+      espece: animal.espece,
+      race: animal.race || '',
+      nom_animal: animal.nom,
+      date_naissance_animal: animal.date_naissance || null,
+      num_identification: animal.identification || '',
+      acquereur_nom: acqNom, acquereur_prenom: acqPrenom, acquereur_email: acqEmail,
+      acquereur_telephone: acqTel, acquereur_adresse: acqAdresse,
+      modalite_cession: 'adoption',
+      prix: participation ? Number(participation) : null,
+      date_remise: now.toISOString(),
+      date_limite_signature: estDelai ? new Date(now.getTime() + 7 * 86400000).toISOString() : null,
+      profil_source: 'association',
+    };
+    const { data, error } = await supabase.from('certificats_engagement').insert(payload).select('token_signature').single();
+    if (error || !data) return null;
+    return data.token_signature as string;
+  }
+
   async function openAndSign() {
     if (!selectedAnimal || !user) return;
     setSaving(true);
@@ -236,7 +264,12 @@ export default function ContratsAdoptionPage() {
           }
         } catch { /* ignore */ }
       }
+      let certToken: string | null = null;
+      if (alsoCertificat) certToken = await createCertificatEngagement(selectedAnimal);
       popupRef.current = window.open(url, '_blank', 'width=900,height=700,scrollbars=yes');
+      if (certToken) {
+        alert(`Certificat d'engagement également créé :\n${window.location.origin}/certificat/${certToken}`);
+      }
       setShowForm(false);
       resetForm();
     }
@@ -439,6 +472,14 @@ export default function ContratsAdoptionPage() {
                   <span className="text-sm font-galey text-gray-700">Inclure clause de stérilisation obligatoire</span>
                 </label>
               )}
+
+              <label className="flex items-start gap-2 cursor-pointer bg-teal-50 border border-teal-100 rounded-xl p-3">
+                <input type="checkbox" checked={alsoCertificat} onChange={e => setAlsoCertificat(e.target.checked)} className="w-4 h-4 rounded text-teal-600 mt-0.5" />
+                <span>
+                  <span className="block text-sm font-galey font-semibold text-gray-700">Aussi générer un certificat d&apos;engagement</span>
+                  <span className="block text-xs font-galey text-gray-500">Optionnel — au choix de l&apos;association, loi 2021-1539 (chien/chat : délai légal 7 jours).</span>
+                </span>
+              </label>
 
               {/* Adoptant */}
               <div>

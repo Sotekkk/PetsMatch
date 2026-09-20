@@ -316,6 +316,11 @@ class _CreerContratSheetState extends State<_CreerContratSheet> {
 
   Map<String, dynamic>? _selectedAnimal;
 
+  // Certificat d'engagement (loi 2021-1539) : proposé en option à la
+  // réservation, jamais obligatoire — au choix de l'association.
+  bool _alsoCertificat = false;
+  String? _certToken;
+
   // Recherche adoptant PetsMatch
   final _searchCtrl       = TextEditingController();
   List<Map<String, dynamic>> _userResults = [];
@@ -456,7 +461,36 @@ class _CreerContratSheetState extends State<_CreerContratSheet> {
           'date_adoption':    DateTime.now().toIso8601String().split('T').first,
         },
       }).select('token').single();
-      if (mounted) setState(() { _token = res['token'] as String?; _saving = false; });
+
+      String? certToken;
+      if (_alsoCertificat) {
+        try {
+          final estDelai = espece == 'chien' || espece == 'chat';
+          final now = DateTime.now();
+          final cert = await _supa.from('certificats_engagement').insert({
+            'cedant_uid':            uid,
+            'animal_id':             animalId,
+            'espece':                espece,
+            'race':                  animal['race'] ?? '',
+            'nom_animal':            nomAnimal,
+            'date_naissance_animal': animal['date_naissance'],
+            'num_identification':    animal['identification'] ?? '',
+            'acquereur_nom':         _nomCtrl.text.trim(),
+            'acquereur_prenom':      _prenomCtrl.text.trim(),
+            'acquereur_email':       _emailCtrl.text.trim(),
+            'acquereur_telephone':   _telCtrl.text.trim(),
+            'acquereur_adresse':     _adresseCtrl.text.trim(),
+            'modalite_cession':      'adoption',
+            'prix':                  participation > 0 ? participation : null,
+            'date_remise':           now.toIso8601String(),
+            'date_limite_signature': estDelai ? now.add(const Duration(days: 7)).toIso8601String() : null,
+            'profil_source':         'association',
+          }).select('token_signature').single();
+          certToken = cert['token_signature'] as String?;
+        } catch (_) {}
+      }
+
+      if (mounted) setState(() { _token = res['token'] as String?; _certToken = certToken; _saving = false; });
       widget.onCreated();
     } catch (e) {
       if (mounted) {
@@ -538,6 +572,29 @@ class _CreerContratSheetState extends State<_CreerContratSheet> {
                     ),
                   ),
                 ]),
+                if (_certToken != null) ...[
+                  const SizedBox(height: 14),
+                  const Divider(height: 1),
+                  const SizedBox(height: 10),
+                  const Text('📋 Certificat d\'engagement également créé :',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF3D6B33))),
+                  const SizedBox(height: 6),
+                  Text('petsmatchapp.com/certificat/$_certToken',
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _teal)),
+                  const SizedBox(height: 10),
+                  SizedBox(width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.edit_document, size: 16),
+                      label: const Text('Ouvrir le certificat', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                      style: OutlinedButton.styleFrom(foregroundColor: _teal, side: const BorderSide(color: _teal),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                      onPressed: () => Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => ContratSignaturePage(certificatEngagementToken: _certToken!),
+                      )),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 4),
                 TextButton(onPressed: () => Navigator.pop(context),
                     child: const Text('Fermer', style: TextStyle(fontFamily: 'Galey', color: Color(0xFF6F767B)))),
               ]),
@@ -637,7 +694,37 @@ class _CreerContratSheetState extends State<_CreerContratSheet> {
             const SizedBox(height: 10),
             TextField(controller: _adresseCtrl, decoration: iDec('Adresse complète'),
                 style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
+
+            // ── Certificat d'engagement (optionnel) ──────────────────────────
+            GestureDetector(
+              onTap: () => setState(() => _alsoCertificat = !_alsoCertificat),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _alsoCertificat ? _teal.withValues(alpha: 0.06) : const Color(0xFFF5F5F0),
+                  border: Border.all(color: _alsoCertificat ? _teal : const Color(0xFFE4E7E2)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Checkbox(
+                    value: _alsoCertificat,
+                    onChanged: (v) => setState(() => _alsoCertificat = v ?? false),
+                    activeColor: _teal,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Aussi générer un certificat d\'engagement', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: _dark)),
+                    SizedBox(height: 2),
+                    Text('Optionnel — au choix de l\'association, loi 2021-1539 (chien/chat : délai légal 7 jours).',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
+                  ])),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 20),
 
             SizedBox(
               width: double.infinity,
