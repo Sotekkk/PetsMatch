@@ -132,6 +132,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final currentType = _currentProfileType;
       final activeProfileId = User_Info.activeProfileId;
       final filtered = (data as List).where((n) {
+        // Likes/mentions Pets Social : affichés dans le cœur (bulle rouge du
+        // fil Pets Social), pas ici, pour éviter le doublon — plus logique
+        // pour l'utilisateur (demande explicite).
+        final type = n['type'] as String? ?? '';
+        if (type == 'social_like' || type == 'social_mention') return false;
         // profile_id est la source la plus fiable (multi-profil) — s'il est
         // renseigné, il prime sur profile_type (souvent absent à la création).
         final pid = (n['profile_id'] as String?) ?? '';
@@ -1688,14 +1693,18 @@ class _NotifBadgeState extends State<NotifBadge> with WidgetsBindingObserver {
     try {
       final data = await _supa
           .from('notifications')
-          .select('id, profile_id, profile_type')
+          .select('id, profile_id, profile_type, type')
           .eq('uid', _uid)
           .eq('read', false);
       final currentType = _currentBadgeProfileType;
       final activeProfileId = User_Info.activeProfileId;
       // Même priorité que la liste de notifications (_fetch()) : profile_id
-      // prime s'il est renseigné, sinon repli sur profile_type.
+      // prime s'il est renseigné, sinon repli sur profile_type. Likes/
+      // mentions Pets Social exclus : affichés dans le cœur, pas ici (cf.
+      // _fetch()).
       final count = (data as List).where((n) {
+        final type = n['type'] as String? ?? '';
+        if (type == 'social_like' || type == 'social_mention') return false;
         final pid = (n['profile_id'] as String?) ?? '';
         if (pid.isNotEmpty) return pid == activeProfileId;
         final pt = (n['profile_type'] as String?) ?? '';

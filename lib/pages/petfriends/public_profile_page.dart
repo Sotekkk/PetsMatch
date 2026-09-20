@@ -161,16 +161,14 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
         'updated_at': DateTime.now().toIso8601String(),
       }).select('id').single();
 
-      // Notifier la cible
-      final me = await _supa
-          .from('user_profiles')
-          .select('firstname, lastname')
-          .eq('uid', _myUid)
-          .eq('is_main', true)
-          .maybeSingle();
-      final nom = me != null
-          ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim()
-          : 'Quelqu\'un';
+      // Notifier la cible — nom du profil ACTIF (celui qui envoie la
+      // demande), pas forcément le profil principal du compte.
+      Map<String, dynamic>? me;
+      if (myProfileId.isNotEmpty) {
+        me = await _supa.from('user_profiles').select(kSocialAuthorCols).eq('id', myProfileId).maybeSingle();
+      }
+      me ??= await _supa.from('user_profiles').select(kSocialAuthorCols).eq('uid', _myUid).eq('is_main', true).maybeSingle();
+      final nom = me != null ? socialProfileName(me) : 'Quelqu\'un';
       await _supa.from('notifications').insert({
         'uid': widget.targetUid,
         'type': 'petfriend_request',
@@ -210,9 +208,15 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
       'updated_at': DateTime.now().toIso8601String(),
     }).eq('id', _relId!);
 
-    // Notifier le demandeur
-    final me = await _supa.from('user_profiles').select('firstname, lastname').eq('uid', _myUid).eq('is_main', true).maybeSingle();
-    final nom = me != null ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim() : 'Quelqu\'un';
+    // Notifier le demandeur — nom du profil ACTIF (celui qui accepte),
+    // pas forcément le profil principal du compte.
+    final myProfileId = await _myProfileId() ?? '';
+    Map<String, dynamic>? me;
+    if (myProfileId.isNotEmpty) {
+      me = await _supa.from('user_profiles').select(kSocialAuthorCols).eq('id', myProfileId).maybeSingle();
+    }
+    me ??= await _supa.from('user_profiles').select(kSocialAuthorCols).eq('uid', _myUid).eq('is_main', true).maybeSingle();
+    final nom = me != null ? socialProfileName(me) : 'Quelqu\'un';
     await _supa.from('notifications').insert({
       'uid': widget.targetUid,
       'type': 'petfriend_accepted',

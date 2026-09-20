@@ -591,6 +591,7 @@ class _EleveurNavState extends State<EleveurNav> {
                         _DrawerSubItem(
                           label: 'Pets Social',
                           icon: Icons.photo_library_outlined,
+                          showSocialDot: true,
                           onTap: () {
                             Navigator.pop(context);
                             Navigator.push(context, MaterialPageRoute(
@@ -946,6 +947,7 @@ class _EleveurNavState extends State<EleveurNav> {
                     _DrawerItem(
                       icon: Icons.photo_library_outlined,
                       label: 'Pets Social',
+                      showSocialDot: true,
                       onTap: () {
                         Navigator.pop(context);
                         Navigator.push(context, MaterialPageRoute(
@@ -1696,16 +1698,18 @@ class _DrawerItem extends StatelessWidget {
   final VoidCallback onTap;
   final bool locked;
   final String badgeLabel;
+  final bool showSocialDot;
 
   const _DrawerItem({
     required this.icon, required this.label, required this.onTap,
-    this.locked = false, this.badgeLabel = 'Pro',
+    this.locked = false, this.badgeLabel = 'Pro', this.showSocialDot = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final iconWidget = Icon(icon, color: locked ? Colors.grey.shade400 : const Color(0xFF0C5C6C), size: 22);
     return ListTile(
-      leading: Icon(icon, color: locked ? Colors.grey.shade400 : const Color(0xFF0C5C6C), size: 22),
+      leading: showSocialDot ? _SocialNotifDot(child: iconWidget) : iconWidget,
       title: Row(children: [
         Flexible(child: Text(label,
             style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w500, fontSize: 15,
@@ -1726,6 +1730,58 @@ class _DrawerItem extends StatelessWidget {
       onTap: onTap,
       dense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
+    );
+  }
+}
+
+/// Petite pastille rouge (nouveauté Pets Social : likes/commentaires/abonnés/
+/// mentions) posée sur l'icône d'un item de menu — scopée au profil ACTIF
+/// (jamais mélangée entre profils d'un même compte, cf. socialUnseenCount).
+class _SocialNotifDot extends StatefulWidget {
+  final Widget child;
+  const _SocialNotifDot({required this.child});
+
+  @override
+  State<_SocialNotifDot> createState() => _SocialNotifDotState();
+}
+
+class _SocialNotifDotState extends State<_SocialNotifDot> {
+  bool _hasUnseen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    User_Info.profileNotifier.addListener(_load);
+  }
+
+  @override
+  void dispose() {
+    User_Info.profileNotifier.removeListener(_load);
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final count = await socialUnseenCount(uid);
+    if (mounted) setState(() => _hasUnseen = count > 0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        widget.child,
+        if (_hasUnseen)
+          Positioned(
+            right: -2, top: -2,
+            child: Container(
+              width: 9, height: 9,
+              decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -1782,19 +1838,21 @@ class _DrawerSubItem extends StatelessWidget {
   final VoidCallback onTap;
   final bool locked;
   final String badgeLabel;
+  final bool showSocialDot;
 
   const _DrawerSubItem({
     required this.label, required this.icon, required this.onTap,
-    this.locked = false, this.badgeLabel = 'Pro',
+    this.locked = false, this.badgeLabel = 'Pro', this.showSocialDot = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final iconWidget = Icon(icon, color: locked ? Colors.grey.shade400 : const Color(0xFF6E9E57), size: 18);
     return ListTile(
       leading: const SizedBox(width: 22),
       title: Row(
         children: [
-          Icon(icon, color: locked ? Colors.grey.shade400 : const Color(0xFF6E9E57), size: 18),
+          showSocialDot ? _SocialNotifDot(child: iconWidget) : iconWidget,
           const SizedBox(width: 10),
           Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 14,
               color: locked ? Colors.grey.shade400 : const Color(0xFF1F2A2E))),

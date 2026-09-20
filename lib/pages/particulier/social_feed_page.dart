@@ -179,6 +179,43 @@ String socialProfileName(Map<String, dynamic>? p) => _profileName(p);
 String? socialProfileTypeLabel(String? type) => _socialTypeLabel(type);
 String? socialProfilePhoto(Map<String, dynamic>? p) => _profilePhoto(p);
 
+/// Nombre de notifications Pets Social non vues (commentaires, nouveaux
+/// abonnés, likes, mentions) pour le profil ACTIF de [uid] — même calcul que
+/// `_SocialFeedPageState._loadNotifCount`, exposé pour la pastille rouge du
+/// menu (drawer) hors de l'écran Pets Social lui-même. Scopé strictement au
+/// profil actif : jamais mélangé entre profils d'un même compte.
+Future<int> socialUnseenCount(String uid) async {
+  if (uid.isEmpty) return 0;
+  try {
+    final supa = Supabase.instance.client;
+    final pid = await _activeAuthorProfileId(uid);
+    if (pid == null) return 0;
+    final profRow = await supa.from('user_profiles')
+        .select('social_notif_seen_at').eq('id', pid).maybeSingle();
+    final lastSeenStr = profRow?['social_notif_seen_at'] as String?;
+    final lastSeen = lastSeenStr != null ? DateTime.tryParse(lastSeenStr) : null;
+
+    final myPosts = await supa.from('posts_socialmedia').select('id').eq('author_profile_id', pid);
+    final postIds = (myPosts as List).map((p) => p['id'] as String).toList();
+    int count = 0;
+    if (postIds.isNotEmpty) {
+      var q = supa.from('post_comments').select('id').inFilter('post_id', postIds).neq('uid', uid);
+      if (lastSeen != null) q = q.gt('created_at', lastSeen.toIso8601String());
+      count += (await q.limit(99) as List).length;
+    }
+    var fq = supa.from('follows').select('follower_uid').eq('following_profile_id', pid);
+    if (lastSeen != null) fq = fq.gt('created_at', lastSeen.toIso8601String());
+    count += (await fq as List).length;
+    var nq = supa.from('notifications').select('id')
+        .eq('uid', uid).eq('profile_id', pid).inFilter('type', ['social_like', 'social_mention']);
+    if (lastSeen != null) nq = nq.gt('created_at', lastSeen.toIso8601String());
+    count += (await nq.limit(99) as List).length;
+    return count > 99 ? 99 : count;
+  } catch (_) {
+    return 0;
+  }
+}
+
 /// Id du profil PARTICULIER d'un uid — identité utilisée dans le réseau social,
 /// jamais le profil pro / is_main. Mémoïsé (les inserts like/follow l'appellent
 /// souvent).
@@ -999,6 +1036,17 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
       }
       final follows = await fq;
       count += (follows as List).length;
+      // Likes + mentions Pets Social : plus logique dans le cœur que dans la
+      // cloche générale (demande explicite) — réutilise les lignes déjà
+      // insérées par _sendSocialNotif/notifyMentions dans `notifications`.
+      var nq = _supa.from('notifications').select('id')
+          .eq('uid', uid).eq('profile_id', pid)
+          .inFilter('type', ['social_like', 'social_mention']);
+      if (lastSeen != null) {
+        nq = nq.gt('created_at', lastSeen.toIso8601String());
+      }
+      final likesMentions = await nq.limit(99);
+      count += (likesMentions as List).length;
       if (mounted) setState(() => _notifCount = count > 99 ? 99 : count);
     } catch (_) {}
   }
@@ -5765,6 +5813,16 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
         .order('created_at', ascending: false).limit(20);
     final followerRows = (followers as List).cast<Map<String, dynamic>>();
 
+    // 3. Likes + mentions Pets Social (scope strict par profil) — déjà
+    // insérés dans `notifications` par _sendSocialNotif/notifyMentions ; le
+    // titre/corps sont pré-formatés (nom de l'auteur déjà résolu à l'envoi),
+    // donc pas besoin de re-résoudre un profil ici.
+    final likesMentions = await _supa.from('notifications').select()
+        .eq('uid', widget.myUid).eq('profile_id', pid)
+        .inFilter('type', ['social_like', 'social_mention'])
+        .order('created_at', ascending: false).limit(30);
+    final likeMentionRows = (likesMentions as List).cast<Map<String, dynamic>>();
+
     // 3. Profils des acteurs — résolus par leur author_profile_id / follower_profile_id.
     final actorProfIds = <String>{
       for (final c in comments)
@@ -5811,6 +5869,16 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
         'follower_uid': f['follower_uid'],
       });
     }
+    for (final n in likeMentionRows) {
+      final data = n['data'] as Map<String, dynamic>? ?? {};
+      all.add({
+        'type': n['type'] == 'social_like' ? 'like' : 'mention',
+        'created_at': n['created_at'],
+        'title': n['title'],
+        'body': n['body'],
+        'post_id': data['post_id'],
+      });
+    }
     all.sort((a, b) => (b['created_at'] as String).compareTo(a['created_at'] as String));
 
     if (mounted) setState(() { _notifs = all; _loading = false; });
@@ -5849,13 +5917,25 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
                           itemCount: _notifs.length,
                           itemBuilder: (_, i) {
                             final n = _notifs[i];
+                            final type = n['type'] as String; // comment | follow | like | mention
                             final prof = n['profile'] as Map<String, dynamic>?;
-                            final name = _profileName(prof);
-                            final photo = _profilePhoto(prof);
-                            final isFollow = n['type'] == 'follow';
+                            final hasProfile = type == 'comment' || type == 'follow';
+                            final name = hasProfile ? _profileName(prof) : null;
+                            final photo = hasProfile ? _profilePhoto(prof) : null;
                             final date = n['created_at'] as String? ?? '';
+                            final icon = switch (type) {
+                              'follow' => Icons.person_add_rounded,
+                              'like' => Icons.favorite_rounded,
+                              'mention' => Icons.alternate_email_rounded,
+                              _ => Icons.chat_bubble_outline_rounded,
+                            };
+                            final suffix = switch (type) {
+                              'follow' => ' a commencé à te suivre',
+                              'like' => ' a aimé ton post',
+                              _ => ' a commenté ton post',
+                            };
                             return Dismissible(
-                              key: ValueKey('${n['type']}_${n['created_at']}_${prof?['uid']}'),
+                              key: ValueKey('${n['type']}_${n['created_at']}_${prof?['uid']}_$i'),
                               direction: DismissDirection.endToStart,
                               onDismissed: (_) => setState(() => _notifs.removeAt(i)),
                               background: Container(
@@ -5871,7 +5951,7 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
                                 // le texte, pas sur l'avatar, la plupart du
                                 // temps.
                                 onTap: () {
-                                  if (isFollow) {
+                                  if (type == 'follow') {
                                     final uid = prof?['uid'] as String?;
                                     if (uid == null) return;
                                     Navigator.push(context, MaterialPageRoute(
@@ -5879,34 +5959,49 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
                                             targetUid: uid, myUid: widget.myUid,
                                             targetProfileId: prof?['id'] as String?)));
                                   } else {
+                                    // comment, like, mention → toutes amènent
+                                    // au post concerné (le like/la mention
+                                    // pointe sur le post, pas sur un profil).
                                     final postId = n['post_id'] as String?;
                                     if (postId == null) return;
                                     openSharedSocialPost(context, postId);
                                   }
                                 },
-                                leading: GestureDetector(
-                                  onTap: () {
-                                    final uid = prof?['uid'] as String?;
-                                    if (uid == null) return;
-                                    Navigator.push(context, MaterialPageRoute(
-                                      builder: (_) => SocialProfilePage(
-                                        targetUid: uid, myUid: widget.myUid,
-                                        targetProfileId: prof?['id'] as String?)));
-                                  },
-                                  child: _avatarWidget(photo, 22),
-                                ),
-                                title: RichText(text: TextSpan(
-                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white),
-                                  children: [
-                                    TextSpan(text: name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                                    TextSpan(text: isFollow ? ' a commencé à te suivre' : ' a commenté ton post'),
-                                  ],
-                                )),
+                                leading: hasProfile
+                                    ? GestureDetector(
+                                        onTap: () {
+                                          final uid = prof?['uid'] as String?;
+                                          if (uid == null) return;
+                                          Navigator.push(context, MaterialPageRoute(
+                                            builder: (_) => SocialProfilePage(
+                                              targetUid: uid, myUid: widget.myUid,
+                                              targetProfileId: prof?['id'] as String?)));
+                                        },
+                                        child: _avatarWidget(photo, 22),
+                                      )
+                                    : CircleAvatar(
+                                        radius: 22,
+                                        backgroundColor: Colors.white10,
+                                        child: Icon(icon, color: Colors.white70, size: 18),
+                                      ),
+                                title: hasProfile
+                                    ? RichText(text: TextSpan(
+                                        style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white),
+                                        children: [
+                                          TextSpan(text: name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                          TextSpan(text: suffix),
+                                        ],
+                                      ))
+                                    : Text(n['title'] as String? ?? '',
+                                        style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
                                 subtitle: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    if (!isFollow)
+                                    if (type == 'comment')
                                       Text('"${() { final t = n['texte'] as String? ?? ''; return t.length > 50 ? '${t.substring(0, 50)}…' : t; }()}"',
+                                          style: const TextStyle(fontFamily: 'Galey', color: Colors.white54, fontSize: 12)),
+                                    if (type == 'mention')
+                                      Text(n['body'] as String? ?? '',
                                           style: const TextStyle(fontFamily: 'Galey', color: Colors.white54, fontSize: 12)),
                                     if (date.isNotEmpty)
                                       Text(_fmtDate(date),
@@ -5919,8 +6014,7 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
                                     gradient: const LinearGradient(colors: [_tealC, _green]),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: Icon(isFollow ? Icons.person_add_rounded : Icons.chat_bubble_outline_rounded,
-                                      color: Colors.white, size: 14),
+                                  child: Icon(icon, color: Colors.white, size: 14),
                                 ),
                               ),
                             );

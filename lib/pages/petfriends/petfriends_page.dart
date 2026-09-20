@@ -214,8 +214,12 @@ class _PetFriendsPageState extends State<PetFriendsPage>
         'statut': 'en_attente',
         'created_at': DateTime.now().toIso8601String(), 'updated_at': DateTime.now().toIso8601String(),
       });
-      final me = await _supa.from('user_profiles').select('firstname, lastname').eq('uid', _myUid).eq('is_main', true).maybeSingle();
-      final nom = me != null ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim() : 'Quelqu\'un';
+      Map<String, dynamic>? me;
+      if (myProfileId.isNotEmpty) {
+        me = await _supa.from('user_profiles').select(kSocialAuthorCols).eq('id', myProfileId).maybeSingle();
+      }
+      me ??= await _supa.from('user_profiles').select(kSocialAuthorCols).eq('uid', _myUid).eq('is_main', true).maybeSingle();
+      final nom = me != null ? socialProfileName(me) : 'Quelqu\'un';
       await _supa.from('notifications').insert({
         'uid': targetUid, 'type': 'petfriend_request',
         'title': '🐾 Nouvelle demande PetFriend', 'body': '$nom veut être ton PetFriend !',
@@ -228,8 +232,13 @@ class _PetFriendsPageState extends State<PetFriendsPage>
 
   Future<void> _accept(_FriendRow row) async {
     await _supa.from('petfriends').update({'statut': 'accepte', 'updated_at': DateTime.now().toIso8601String()}).eq('id', row.relId);
-    final me = await _supa.from('user_profiles').select('firstname, lastname').eq('uid', _myUid).eq('is_main', true).maybeSingle();
-    final nom = me != null ? '${me['firstname'] ?? ''} ${me['lastname'] ?? ''}'.trim() : 'Quelqu\'un';
+    final myProfileId = await _myProfileId() ?? '';
+    Map<String, dynamic>? me;
+    if (myProfileId.isNotEmpty) {
+      me = await _supa.from('user_profiles').select(kSocialAuthorCols).eq('id', myProfileId).maybeSingle();
+    }
+    me ??= await _supa.from('user_profiles').select(kSocialAuthorCols).eq('uid', _myUid).eq('is_main', true).maybeSingle();
+    final nom = me != null ? socialProfileName(me) : 'Quelqu\'un';
     await _supa.from('notifications').insert({
       'uid': row.uid, 'type': 'petfriend_accepted',
       'title': '🐾 PetFriend accepté !', 'body': '$nom a accepté ta demande PetFriend.',
