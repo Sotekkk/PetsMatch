@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
+import 'package:PetsMatch/pages/animaux/morpho/morpho_form_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_fiche_client_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
@@ -309,16 +310,21 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         } catch (_) {}
       }
 
-      // Compter les visites précédentes par client (confirme + terminé)
+      // Compter les visites précédentes par client (confirme + terminé) —
+      // scopé au PROFIL pro actif : un même uid peut avoir plusieurs profils
+      // pro (ex. ostéo + garde), sans le filtre pro_profile_id le compte
+      // mélangeait les RDV des deux métiers pour un même client.
       Map<String, int> visitCounts = {};
       if (clientUids.isNotEmpty) {
         try {
-          final history = await Supabase.instance.client
+          var historyQ = Supabase.instance.client
               .from('rdv')
               .select('client_uid')
               .eq('pro_uid', uid)
               .inFilter('client_uid', clientUids)
               .inFilter('statut', ['confirme', 'termine']);
+          if (pid.isNotEmpty) historyQ = historyQ.eq('pro_profile_id', pid);
+          final history = await historyQ;
           for (final h in history) {
             final cUid = h['client_uid'] as String? ?? '';
             if (cUid.isNotEmpty) visitCounts[cUid] = (visitCounts[cUid] ?? 0) + 1;
@@ -3555,6 +3561,18 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     isPension: User_Info.catPro == 'pension',
                   )))
               : null,
+          // Accès direct au compte-rendu morpho depuis le RDV (était
+          // seulement accessible via le menu « Mon activité santé > Mes
+          // suivis », peu visible juste après une séance).
+          onSuiviMorpho: (showProTools && hasAnimal && User_Info.catPro == 'sante')
+              ? () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => MorphoFormPage(
+                    animalId: animalId,
+                    espece: rdv['_animal_espece']?.toString() ?? '',
+                    proProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+                    proNom: User_Info.primaryLabel,
+                  )))
+              : null,
           // Pet-sitter : nouvelles / photo au propriétaire (rapport de visite ou
           // journal de garde selon la prestation).
           onNouvelles: (User_Info.catPro == 'garde' && hasAnimal)
@@ -3641,6 +3659,7 @@ class _RdvCard extends StatelessWidget {
   final VoidCallback onNotes;
   final VoidCallback? onCarnetSante;
   final VoidCallback? onCompteRendu;
+  final VoidCallback? onSuiviMorpho;
   final VoidCallback? onNouvelles;
   final VoidCallback? onContact;
   final VoidCallback? onDelete;
@@ -3662,6 +3681,7 @@ class _RdvCard extends StatelessWidget {
     required this.onNotes,
     this.onCarnetSante,
     this.onCompteRendu,
+    this.onSuiviMorpho,
     this.onNouvelles,
     this.onContact,
     this.onDelete,
@@ -3851,7 +3871,12 @@ class _RdvCard extends StatelessWidget {
           // Actions
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-            child: Row(children: [
+            // Colonne : icônes utilitaires en Wrap (passent à la ligne si trop
+            // nombreuses) puis, sur sa propre ligne, les actions principales
+            // (Terminé/Annuler…) — sur un Row simple, un métier avec plusieurs
+            // icônes (ex. ostéo) poussait ces boutons hors écran, invisibles.
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Wrap(crossAxisAlignment: WrapCrossAlignment.center, runSpacing: 6, children: [
               // Notes button always visible
               IconButton(
                 onPressed: onNotes,
@@ -3935,6 +3960,16 @@ class _RdvCard extends StatelessWidget {
                   constraints: const BoxConstraints(),
                 ),
               ],
+              if (onSuiviMorpho != null) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  onPressed: onSuiviMorpho,
+                  icon: const Icon(Icons.accessibility_new, size: 20, color: Color(0xFF6E9E57)),
+                  tooltip: 'Compte-rendu morpho',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
               if (onNouvelles != null) ...[
                 const SizedBox(width: 6),
                 IconButton(
@@ -3985,10 +4020,11 @@ class _RdvCard extends StatelessWidget {
                   constraints: const BoxConstraints(),
                 ),
               ],
-              const SizedBox(width: 8),
-
+            ]),
+            if (showActions || showCancel) ...[
+              const SizedBox(height: 8),
+              Wrap(alignment: WrapAlignment.end, crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, runSpacing: 6, children: [
               if (showActions) ...[
-                const Spacer(),
                 OutlinedButton(
                   onPressed: onDecline,
                   style: OutlinedButton.styleFrom(
@@ -4026,7 +4062,6 @@ class _RdvCard extends StatelessWidget {
                     constraints: const BoxConstraints(),
                   ),
                 ],
-                const Spacer(),
                 if (onModifier != null)
                   IconButton(
                     onPressed: onModifier,
@@ -4054,6 +4089,8 @@ class _RdvCard extends StatelessWidget {
                   child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
                 ),
               ],
+              ]),
+            ],
             ]),
           ),
         ],
