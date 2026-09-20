@@ -57,6 +57,7 @@ import 'package:PetsMatch/pages/pro/taxi_tournee_page.dart';
 import 'package:PetsMatch/pages/pro/taxi_trajets_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_prestations_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_dashboard_page.dart';
+import 'package:PetsMatch/pages/pro/photographe_contrats_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_employes_page.dart';
@@ -1342,45 +1343,87 @@ class _EleveurNavState extends State<EleveurNav> {
                     ),
                   ],
                   if (User_Info.catPro == 'photographe') ...[
-                    _DrawerItem(
+                    _DrawerSection(
                       icon: Icons.camera_alt_outlined,
-                      label: 'Mes prestations',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PhotographePrestationsPage(),
-                        ));
-                      },
+                      label: 'Mon activité photographe',
+                      children: [
+                        _DrawerSubItem(
+                          label: 'Mon agenda RDV',
+                          icon: Icons.event_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const ProAgendaPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Mes prestations',
+                          icon: Icons.camera_alt_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const PhotographePrestationsPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Tableau de bord',
+                          icon: Icons.dashboard_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const PhotographeDashboardPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Mon abonnement',
+                          icon: Icons.workspace_premium_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const PhotographeAbonnementPage(),
+                            ));
+                          },
+                        ),
+                      ],
                     ),
-                    _DrawerItem(
-                      icon: Icons.receipt_long_outlined,
-                      label: 'Mes factures',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const FacturationPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.dashboard_outlined,
-                      label: 'Tableau de bord',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PhotographeDashboardPage(),
-                        ));
-                      },
-                    ),
-                    _DrawerItem(
-                      icon: Icons.workspace_premium_outlined,
-                      label: 'Mon abonnement',
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const PhotographeAbonnementPage(),
-                        ));
-                      },
+                    _DrawerSection(
+                      icon: Icons.folder_open_outlined,
+                      label: 'Administratif',
+                      children: [
+                        _DrawerSubItem(
+                          label: 'Devis',
+                          icon: Icons.request_quote_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const DevisPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Mes contrats',
+                          icon: Icons.description_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const PhotographeContratsPage(),
+                            ));
+                          },
+                        ),
+                        _DrawerSubItem(
+                          label: 'Facturation',
+                          icon: Icons.receipt_long_outlined,
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => const FacturationPage(),
+                            ));
+                          },
+                        ),
+                      ],
                     ),
                   ],
                   if (User_Info.catPro == 'toilettage') ...[

@@ -1136,6 +1136,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         }
         final row = await supa.from('documents_animaux').insert({
           'uid_eleveur': uid,
+          if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
           'animal_id': rdv['animal_id'],
           'rdv_id': rdv['id'],
           'type': 'contrat_prestation_photo',

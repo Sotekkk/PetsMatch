@@ -402,6 +402,47 @@ const MENU_EDUCATION = [
   },
 ];
 
+// Calqué sur MENU_GARDE (mêmes sections que le drawer app, eleveur_nav.dart
+// bloc catPro == 'photographe') — « Mes prestations » et « Tableau de bord »
+// restent app-only pour l'instant (pas encore de page web équivalente).
+const MENU_PHOTOGRAPHE = [
+  {
+    section: 'Mon activité photographe',
+    icon: '📷',
+    items: [
+      { href: '/agenda',              label: 'Mon agenda',    icon: '📅' },
+      { href: '/mes-rdv',             label: 'Gérer mes RDV', icon: '🗓️' },
+      { href: '/pro/creneaux',        label: 'Mes créneaux',  icon: '⏰' },
+      { href: '/photographe/abonnement', label: 'Mon abonnement', icon: '💳' },
+    ],
+  },
+  {
+    section: 'Administratif',
+    icon: '🗂️',
+    items: [
+      { href: '/photographe/devis',   label: 'Devis',        icon: '📝' },
+      { href: '/photographe/contrat', label: 'Mes contrats', icon: '✍️' },
+      { href: '/elevage/facturation', label: 'Facturation',  icon: '🧾', premium: true },
+    ],
+  },
+  {
+    section: 'Mon Profil',
+    icon: '👤',
+    items: [
+      { href: '/profil', label: 'Modifier mon profil', icon: '✏️' },
+    ],
+  },
+  {
+    section: 'Annuaire & Communauté',
+    icon: '🔎',
+    items: [
+      { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
+      { href: '/communaute', label: 'Communauté',                  icon: '👥' },
+      { href: '/tarifs',     label: 'Tarifs',                      icon: '💶' },
+    ],
+  },
+];
+
 const MENU_ASSOCIATION = [
   {
     section: 'Mon Association',
@@ -644,7 +685,7 @@ function typeEmoji(type: string): string {
 // c'était toujours /education/devis en dur, même pour un pet-sitter.
 function getNotifUrl(n: Notif, proType?: string): string | null {
   const d = n.data ?? {};
-  const devisPath = proType === 'garde' ? '/garde/devis' : '/education/devis';
+  const devisPath = proType === 'garde' ? '/garde/devis' : proType === 'photographe' ? '/photographe/devis' : '/education/devis';
   switch (n.type) {
     case 'like':
       return d.annonceId
@@ -861,6 +902,9 @@ export default function Header() {
   const effectiveIsGarde = resolvedProfileType
     ? resolvedProfileType === 'garde'
     : (userData?.isPro === true && userData?.catPro === 'garde');
+  const effectiveIsPhotographe = resolvedProfileType
+    ? resolvedProfileType === 'photographe'
+    : (userData?.isPro === true && userData?.catPro === 'photographe');
   // Détection pro primaire (userData.isPro = true, aucun profil secondaire actif)
   const isPrimaryPro = !resolvedProfileType && userData?.isPro === true;
   const primaryCatPro = userData?.catPro ?? '';
@@ -907,7 +951,7 @@ export default function Header() {
     return sec;
   });
   const baseMenuSections = isEffectivelyPro
-    ? (effectiveIsPension ? MENU_PENSION : effectiveIsVet ? MENU_VET : effectiveIsEducation ? MENU_EDUCATION : effectiveIsGarde ? MENU_GARDE : MENU_PRO)
+    ? (effectiveIsPension ? MENU_PENSION : effectiveIsVet ? MENU_VET : effectiveIsEducation ? MENU_EDUCATION : effectiveIsGarde ? MENU_GARDE : effectiveIsPhotographe ? MENU_PHOTOGRAPHE : MENU_PRO)
     : effectiveIsAssociation ? MENU_ASSOCIATION
     : effectiveIsEleveur ? MENU_ELEVEUR
     : baseMenuParticulier;
