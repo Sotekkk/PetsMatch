@@ -542,7 +542,7 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
       // réelle de l'animal (vente/cession), pas pour une simple réservation
       // ni un contrat de saillie.
       String? certToken;
-      final concerneTransfert = _type == 'contrat_vente' || _type == 'certificat_cession';
+      final concerneTransfert = _type == 'contrat_vente' || _type == 'certificat_cession' || _type == 'contrat_reservation';
       if (concerneTransfert && _certMode != _CertMode.skip) {
         try {
           final animal = _selectedAnimal!;
@@ -821,7 +821,7 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
             // Certificat d'engagement (vente/cession uniquement) — jamais
             // obligatoire, toujours possible de passer l'étape ou d'apporter
             // son propre document déjà signé.
-            if (_type == 'contrat_vente' || _type == 'certificat_cession') ...[
+            if (_type == 'contrat_vente' || _type == 'certificat_cession' || _type == 'contrat_reservation') ...[
               const Text('Certificat d\'engagement (loi 2021-1539)',
                   style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 6),

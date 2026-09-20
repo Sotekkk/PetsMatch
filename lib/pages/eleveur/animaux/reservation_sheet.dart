@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -6,12 +8,18 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 
 const _teal  = Color(0xFF0C5C6C);
 const _amber = Color(0xFFD97706);
 const _dark  = Color(0xFF1F2A2E);
 
 const _especesDelaiLegal = {'chien', 'chat'};
+
+/// Choix pour chaque document (contrat de réservation / certificat
+/// d'engagement) — jamais imposé : toujours possible de passer l'étape,
+/// générer dans l'app, ou apporter son propre document déjà signé.
+enum _DocChoice { skip, generate, upload }
 
 ({String prenom, String nom}) _splitNom(String nomComplet) {
   final parts = nomComplet.trim().split(RegExp(r'\s+'));
@@ -57,12 +65,14 @@ class _ReservationSheetState extends State<ReservationSheet> {
   final _notesCtrl   = TextEditingController();
   late DateTime _dateReservation;
 
-  // Documents optionnels — contrat de réservation (app) et/ou certificat
-  // d'engagement (légal, chien/chat). Si aucun n'est coché, la réservation
-  // reste simple : le formulaire papier de l'éleveur reste possible en
-  // dehors de l'application.
-  bool _wantContrat = false;
-  bool _wantCertificat = false;
+  // Documents optionnels — contrat de réservation et/ou certificat
+  // d'engagement (légal, chien/chat). Chacun : passer l'étape, générer dans
+  // l'app, ou apporter son propre document déjà signé. Si les deux restent
+  // sur "passer", la réservation reste simple (papier hors application).
+  _DocChoice _contratChoice = _DocChoice.skip;
+  PlatformFile? _contratFile;
+  _DocChoice _certifChoice = _DocChoice.skip;
+  PlatformFile? _certifFile;
   final _certifPrenomCtrl = TextEditingController();
   final _certifNomCtrl    = TextEditingController();
   bool _certifNameTouched = false;
@@ -147,7 +157,17 @@ class _ReservationSheetState extends State<ReservationSheet> {
             .or('firstname.ilike.%$q%,lastname.ilike.%$q%,nom.ilike.%$q%')
             .eq('is_main', true)
             .limit(8);
-        rows = (cps as List).map((cp) => _mapProfile(Map<String, dynamic>.from(cp))).toList();
+        final cpList = List<Map<String, dynamic>>.from(cps as List);
+        // email_contact est souvent vide alors que le compte a bien un email
+        // de connexion (table users) — sans ce complément, un utilisateur
+        // pourtant déjà inscrit ressort sans email pré-rempli.
+        final uids = cpList.map((c) => c['uid'] as String).toSet().toList();
+        final loginEmails = uids.isEmpty
+            ? <Map<String, dynamic>>[]
+            : List<Map<String, dynamic>>.from(
+                await _supa.from('users').select('uid, email').inFilter('uid', uids) as List);
+        final emailByUid = { for (final u in loginEmails) u['uid'] as String: u['email'] as String? };
+        rows = cpList.map((cp) => _mapProfile(cp, email: emailByUid[cp['uid']])).toList();
       }
       final mapped = rows.map((r) {
         final isElv = r['is_elevage'] == true;
@@ -190,6 +210,20 @@ class _ReservationSheetState extends State<ReservationSheet> {
     });
   }
 
+  Future<void> _pickContratFile() async {
+    final res = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png']);
+    final f = res?.files.single;
+    if (f?.path == null) return;
+    setState(() => _contratFile = f);
+  }
+
+  Future<void> _pickCertifFile() async {
+    final res = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png']);
+    final f = res?.files.single;
+    if (f?.path == null) return;
+    setState(() => _certifFile = f);
+  }
+
   // Insère directement le document (comme cession_sheet.dart pour contrat_vente/
   // certificat_cession) — signer-contrat/[token] génère le HTML à la volée à
   // partir de ces métadonnées, pas besoin d'un formulaire interactif ici.
@@ -199,13 +233,23 @@ class _ReservationSheetState extends State<ReservationSheet> {
       final animalId = widget.animal['id'] as String;
       final nomAnimal = widget.animal['nom'] as String? ?? '';
       final pid = User_Info.activeProfileId;
+
+      String? uploadedUrl;
+      if (_contratChoice == _DocChoice.upload && _contratFile?.path != null) {
+        uploadedUrl = await storage.uploadDocument(
+          File(_contratFile!.path!),
+          'contrats_reservation/${widget.uid}/${DateTime.now().millisecondsSinceEpoch}_${_contratFile!.name}',
+        );
+      }
+
       final res = await _supa.from('documents_animaux').insert({
         'animal_id':   animalId,
         'uid_eleveur': widget.uid,
         if (pid.isNotEmpty) 'pro_profile_id': pid,
         'type':        'contrat_reservation',
         'titre':       'Contrat de réservation — $nomAnimal',
-        'statut':      'brouillon',
+        'statut':      uploadedUrl != null ? 'signe' : 'brouillon',
+        if (uploadedUrl != null) 'pdf_signe_url': uploadedUrl,
         'metadata': {
           'acquereur_nom':     _nomCtrl.text.trim(),
           'acquereur_email':   _emailCtrl.text.trim(),
@@ -218,15 +262,68 @@ class _ReservationSheetState extends State<ReservationSheet> {
       }).select('token').single();
 
       final token = res['token'] as String;
-      if (mounted) {
+      if (uploadedUrl == null && mounted) {
         await Navigator.push(context, MaterialPageRoute(
           builder: (_) => ContratSignaturePage(token: token),
         ));
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✅ Document ajouté au contrat')));
       }
     } catch (e) {
       setState(() => _error = 'Erreur : $e');
     } finally {
       setState(() => _generatingContrat = false);
+    }
+  }
+
+  /// Certificat apporté par l'éleveur (déjà signé hors app) — insertion
+  /// directe dans `certificats_engagement`, pas besoin de signature dans
+  /// l'appli ni de passer par l'API de création.
+  Future<void> _importerCertificatEngagement() async {
+    if (_certifPrenomCtrl.text.trim().isEmpty || _certifNomCtrl.text.trim().isEmpty || _emailCtrl.text.trim().isEmpty) {
+      setState(() => _certifError = 'Prénom, nom et email du futur propriétaire sont requis pour le certificat.');
+      return;
+    }
+    if (_certifFile?.path == null) return;
+    setState(() { _certifSaving = true; _certifError = null; });
+    try {
+      final uploadedUrl = await storage.uploadDocument(
+        File(_certifFile!.path!),
+        'certificats_engagement/${widget.uid}/${DateTime.now().millisecondsSinceEpoch}_${_certifFile!.name}',
+      );
+      final now = DateTime.now();
+      final res = await _supa.from('certificats_engagement').insert({
+        'cedant_uid':            widget.uid,
+        'animal_id':             widget.animal['id'],
+        'espece':                widget.animal['espece'] ?? '',
+        'race':                  widget.animal['race'],
+        'nom_animal':            widget.animal['nom'] ?? '',
+        'date_naissance_animal': widget.animal['date_naissance'],
+        'num_identification':    widget.animal['identification'],
+        'acquereur_uid':         _foundUser?['uid'],
+        'acquereur_nom':         _certifNomCtrl.text.trim(),
+        'acquereur_prenom':      _certifPrenomCtrl.text.trim(),
+        'acquereur_email':       _emailCtrl.text.trim(),
+        'acquereur_telephone':   _telCtrl.text.trim().isEmpty ? null : _telCtrl.text.trim(),
+        'acquereur_adresse':     _adresseCtrl.text.trim().isEmpty ? null : _adresseCtrl.text.trim(),
+        'modalite_cession':      _qualite == 'autre' ? 'gratuit' : 'vente',
+        'prix':                  _acompteCtrl.text.trim().isEmpty ? null : double.tryParse(_acompteCtrl.text.replaceAll(',', '.')),
+        'date_remise':           now.toIso8601String(),
+        'notes':                 _notesCtrl.text.trim(),
+        'profil_source':         User_Info.isAssociation ? 'association' : 'eleveur',
+        'pdf_url':               uploadedUrl,
+        'statut':                'signe',
+      }).select('token_signature').single();
+      setState(() => _certifToken = res['token_signature'] as String?);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✅ Certificat ajouté')));
+      }
+    } catch (e) {
+      setState(() => _certifError = 'Erreur : $e');
+    } finally {
+      setState(() => _certifSaving = false);
     }
   }
 
@@ -535,70 +632,68 @@ class _ReservationSheetState extends State<ReservationSheet> {
             )),
             const SizedBox(height: 14),
 
-            // Documents optionnels — laisse le choix entre gérer le papier
-            // soi-même ou générer les documents depuis l'application.
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Documents (optionnel)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey)),
-                const SizedBox(height: 6),
-                CheckboxListTile(
-                  value: _wantContrat,
-                  onChanged: (v) => setState(() => _wantContrat = v ?? false),
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  dense: true,
-                  title: const Text('Générer un contrat de réservation', style: TextStyle(fontSize: 13, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                  subtitle: const Text('Arrhes, conditions d\'annulation, engagement des deux parties.', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                ),
-                CheckboxListTile(
-                  value: _wantCertificat,
-                  onChanged: (v) => setState(() => _wantCertificat = v ?? false),
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  dense: true,
-                  title: const Text('Générer un certificat d\'engagement', style: TextStyle(fontSize: 13, fontFamily: 'Galey', fontWeight: FontWeight.w600)),
-                  subtitle: Text(
-                    _needsDelaiLegal
-                        ? 'Obligatoire pour chien/chat (loi du 30/11/2021) — délai légal de 7 jours avant signature.'
-                        : "Attestation d'engagement et de connaissance de l'acquéreur.",
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
-                ),
-                const Text('Rien à cocher si vous gérez ces documents vous-même en dehors de l\'application.',
-                    style: TextStyle(fontSize: 11, color: Colors.grey)),
-              ]),
+            // Documents optionnels — pour chacun : passer, générer dans
+            // l'app, ou apporter son propre document déjà signé.
+            _DocChoiceBlock(
+              title: 'Contrat de réservation',
+              subtitle: 'Arrhes, conditions d\'annulation, engagement des deux parties.',
+              value: _contratChoice,
+              onChanged: (v) {
+                setState(() => _contratChoice = v);
+                if (v == _DocChoice.upload) _pickContratFile();
+              },
+              fileName: _contratFile?.name,
+              onPickFile: _pickContratFile,
+            ),
+            const SizedBox(height: 10),
+            _DocChoiceBlock(
+              title: 'Certificat d\'engagement',
+              subtitle: _needsDelaiLegal
+                  ? 'Obligatoire pour chien/chat (loi du 30/11/2021) — délai légal de 7 jours avant signature.'
+                  : "Attestation d'engagement et de connaissance de l'acquéreur.",
+              value: _certifChoice,
+              onChanged: (v) {
+                setState(() => _certifChoice = v);
+                if (v == _DocChoice.upload) _pickCertifFile();
+              },
+              fileName: _certifFile?.name,
+              onPickFile: _pickCertifFile,
             ),
             const SizedBox(height: 14),
             ElevatedButton(
               onPressed: _nomCtrl.text.trim().isNotEmpty && !_saving
-                  ? (_wantContrat || _wantCertificat ? () => setState(() => _step = 2) : _save)
+                  ? ((_contratChoice != _DocChoice.skip || _certifChoice != _DocChoice.skip) ? () => setState(() => _step = 2) : _save)
                   : null,
-              style: ElevatedButton.styleFrom(backgroundColor: _wantContrat || _wantCertificat ? _teal : _amber, foregroundColor: Colors.white,
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: (_contratChoice != _DocChoice.skip || _certifChoice != _DocChoice.skip) ? _teal : _amber,
+                  foregroundColor: Colors.white,
                   minimumSize: const Size(double.infinity, 46),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               child: _saving
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : Text(_wantContrat || _wantCertificat ? 'Documents →' : '🔖 Réserver',
+                  : Text((_contratChoice != _DocChoice.skip || _certifChoice != _DocChoice.skip) ? 'Documents →' : '🔖 Réserver',
                       style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
             ),
           ],
 
           // ── Étape 2 : Documents ──────────────────────────────
           if (_step == 2) ...[
-            if (_wantContrat) ...[
+            if (_contratChoice != _DocChoice.skip) ...[
               const Text('🐾 Contrat de réservation', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _dark)),
               const SizedBox(height: 8),
+              if (_contratChoice == _DocChoice.upload && _contratFile != null)
+                Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [
+                  const Icon(Icons.description_outlined, size: 16, color: Color(0xFF6E9E57)),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text(_contratFile!.name, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6E9E57)), overflow: TextOverflow.ellipsis)),
+                  TextButton(onPressed: _pickContratFile, child: const Text('Changer', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
+                ])),
               OutlinedButton.icon(
                 onPressed: _generatingContrat ? null : _creerContratReservation,
                 icon: _generatingContrat
                     ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
                     : const Icon(Icons.add_circle_outline, size: 16),
-                label: Text(_generatingContrat ? 'Création…' : 'Créer le contrat', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                label: Text(_generatingContrat ? 'Création…' : (_contratChoice == _DocChoice.upload ? 'Ajouter le document' : 'Créer le contrat'), style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: _teal, side: const BorderSide(color: _teal),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -608,11 +703,11 @@ class _ReservationSheetState extends State<ReservationSheet> {
               ),
               const SizedBox(height: 16),
             ],
-            if (_wantContrat && _wantCertificat) const Divider(height: 1),
-            if (_wantContrat && _wantCertificat) const SizedBox(height: 16),
-            if (_wantCertificat) ...[
+            if (_contratChoice != _DocChoice.skip && _certifChoice != _DocChoice.skip) const Divider(height: 1),
+            if (_contratChoice != _DocChoice.skip && _certifChoice != _DocChoice.skip) const SizedBox(height: 16),
+            if (_certifChoice != _DocChoice.skip) ...[
               const Text('📜 Certificat d\'engagement', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _dark)),
-              if (_needsDelaiLegal) ...[
+              if (_needsDelaiLegal && _certifChoice == _DocChoice.generate) ...[
                 const SizedBox(height: 4),
                 const Text('⚠ Signature possible par l\'acquéreur seulement 7 jours après la remise (loi 30/11/2021).',
                     style: TextStyle(fontSize: 11, color: _amber)),
@@ -643,8 +738,8 @@ class _ReservationSheetState extends State<ReservationSheet> {
                   decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: const Color(0xFF6E9E57).withValues(alpha: 0.3))),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('✅ Certificat créé — partagez ce lien :',
-                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: Color(0xFF3D6B2E))),
+                    Text(_certifChoice == _DocChoice.upload ? '✅ Certificat ajouté — lien :' : '✅ Certificat créé — partagez ce lien :',
+                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: Color(0xFF3D6B2E))),
                     const SizedBox(height: 6),
                     Text('$kSiteBaseUrl/certificat/$_certifToken',
                         style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: Color(0xFF3D6B2E))),
@@ -656,13 +751,20 @@ class _ReservationSheetState extends State<ReservationSheet> {
                     ),
                   ]),
                 )
-              else
+              else ...[
+                if (_certifChoice == _DocChoice.upload && _certifFile != null)
+                  Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [
+                    const Icon(Icons.description_outlined, size: 16, color: Color(0xFF6E9E57)),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text(_certifFile!.name, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6E9E57)), overflow: TextOverflow.ellipsis)),
+                    TextButton(onPressed: _pickCertifFile, child: const Text('Changer', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
+                  ])),
                 OutlinedButton.icon(
-                  onPressed: _certifSaving ? null : _creerCertificatEngagement,
+                  onPressed: _certifSaving ? null : (_certifChoice == _DocChoice.upload ? _importerCertificatEngagement : _creerCertificatEngagement),
                   icon: _certifSaving
                       ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.add_circle_outline, size: 16),
-                  label: Text(_certifSaving ? 'Création…' : 'Créer le certificat', style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                  label: Text(_certifSaving ? 'Création…' : (_certifChoice == _DocChoice.upload ? 'Ajouter le document' : 'Créer le certificat'), style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _teal, side: const BorderSide(color: _teal),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -670,6 +772,7 @@ class _ReservationSheetState extends State<ReservationSheet> {
                     minimumSize: const Size(double.infinity, 0),
                   ),
                 ),
+              ],
             ],
             const SizedBox(height: 16),
             ElevatedButton(
@@ -710,4 +813,69 @@ class _FieldBlock extends StatelessWidget {
     const SizedBox(height: 4),
     child,
   ]);
+}
+
+/// Choix à 3 options pour un document (contrat/certificat) : passer,
+/// générer dans l'app, ou apporter son propre document déjà signé.
+class _DocChoiceBlock extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final _DocChoice value;
+  final ValueChanged<_DocChoice> onChanged;
+  final String? fileName;
+  final VoidCallback onPickFile;
+
+  const _DocChoiceBlock({
+    required this.title, required this.subtitle, required this.value,
+    required this.onChanged, required this.fileName, required this.onPickFile,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(12)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: const TextStyle(fontSize: 13, fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _dark)),
+        const SizedBox(height: 2),
+        Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+        const SizedBox(height: 8),
+        for (final opt in [
+          (_DocChoice.skip, 'Je m’en occupe autrement'),
+          (_DocChoice.generate, 'Générer et faire signer dans l’app'),
+          (_DocChoice.upload, 'J’ai déjà mon document'),
+        ])
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: GestureDetector(
+              onTap: () => onChanged(opt.$1),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: value == opt.$1 ? _teal.withValues(alpha: 0.06) : Colors.white,
+                  border: Border.all(color: value == opt.$1 ? _teal : Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(children: [
+                  Icon(value == opt.$1 ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                      size: 16, color: value == opt.$1 ? _teal : Colors.grey),
+                  const SizedBox(width: 8),
+                  Text(opt.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
+                ]),
+              ),
+            ),
+          ),
+        if (value == _DocChoice.upload && fileName != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Row(children: [
+              const Icon(Icons.description_outlined, size: 14, color: Color(0xFF6E9E57)),
+              const SizedBox(width: 6),
+              Expanded(child: Text(fileName!, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6E9E57)), overflow: TextOverflow.ellipsis)),
+              TextButton(onPressed: onPickFile, child: const Text('Changer', style: TextStyle(fontFamily: 'Galey', fontSize: 11))),
+            ]),
+          ),
+      ]),
+    );
+  }
 }
