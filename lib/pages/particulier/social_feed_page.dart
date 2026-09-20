@@ -9,7 +9,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
@@ -970,9 +969,12 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
       // propres notifications (commentaires sur SES posts, SES abonnés) —
       // un marqueur partagé par uid pouvait laisser la bulle d'un profil
       // masquer à tort celle d'un autre, ou l'inverse, après un changement
-      // de profil.
-      final prefs = await SharedPreferences.getInstance();
-      final lastSeenStr = prefs.getString('notif_seen_at_$pid');
+      // de profil. Stocké en base (user_profiles.social_notif_seen_at), pas
+      // seulement en local : sans ça, une réinstallation de l'app faisait
+      // réapparaître la bulle avec tout l'historique.
+      final profRow = await _supa.from('user_profiles')
+          .select('social_notif_seen_at').eq('id', pid).maybeSingle();
+      final lastSeenStr = profRow?['social_notif_seen_at'] as String?;
       final lastSeen = lastSeenStr != null ? DateTime.tryParse(lastSeenStr) : null;
 
       final myPosts = await _supa.from('posts_socialmedia').select('id')
@@ -1004,11 +1006,14 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
   Future<void> _markNotifSeen() async {
     final pid = _myProfileId ?? await _activeAuthorProfileId(_uid ?? '');
     if (pid == null) return;
-    final prefs = await SharedPreferences.getInstance();
     // .toUtc() est indispensable : created_at (Postgres) est en UTC, une
     // heure locale envoyée telle quelle au filtre .gt() était interprétée
     // comme UTC côté serveur (décalage de 1-2h selon l'heure d'été/hiver).
-    await prefs.setString('notif_seen_at_$pid', DateTime.now().toUtc().toIso8601String());
+    try {
+      await _supa.from('user_profiles')
+          .update({'social_notif_seen_at': DateTime.now().toUtc().toIso8601String()})
+          .eq('id', pid);
+    } catch (_) {}
   }
 
   void _openCreate() {
