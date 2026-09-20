@@ -403,16 +403,17 @@ const MENU_EDUCATION = [
 ];
 
 // Calqué sur MENU_GARDE (mêmes sections que le drawer app, eleveur_nav.dart
-// bloc catPro == 'photographe') — « Mes prestations » et « Tableau de bord »
-// restent app-only pour l'instant (pas encore de page web équivalente).
+// bloc catPro == 'photographe').
 const MENU_PHOTOGRAPHE = [
   {
     section: 'Mon activité photographe',
     icon: '📷',
     items: [
-      { href: '/agenda',              label: 'Mon agenda',    icon: '📅' },
-      { href: '/mes-rdv',             label: 'Gérer mes RDV', icon: '🗓️' },
-      { href: '/pro/creneaux',        label: 'Mes créneaux',  icon: '⏰' },
+      { href: '/agenda',              label: 'Mon agenda',       icon: '📅' },
+      { href: '/mes-rdv',             label: 'Gérer mes RDV',    icon: '🗓️' },
+      { href: '/pro/creneaux',        label: 'Mes créneaux',     icon: '⏰' },
+      { href: '/photographe/prestations', label: 'Mes prestations', icon: '📷' },
+      { href: '/photographe/dashboard',   label: 'Tableau de bord', icon: '📊' },
       { href: '/photographe/abonnement', label: 'Mon abonnement', icon: '💳' },
     ],
   },

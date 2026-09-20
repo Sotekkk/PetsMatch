@@ -1150,6 +1150,21 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           },
         }).select('token').single();
         token = row['token'] as String?;
+        // Notifie le client (uniquement à la création — pas à chaque réouverture).
+        final clientUid = rdv['client_uid']?.toString();
+        if (clientUid != null && clientUid.isNotEmpty && token != null) {
+          try {
+            await supa.from('notifications').insert({
+              'uid': clientUid,
+              'type': 'contrat_invite',
+              'title': '📷 Contrat de prestation à signer',
+              'body': 'Votre photographe vous envoie un contrat de prestation — vérifiez et signez',
+              if ((rdv['client_profile_id']?.toString() ?? '').isNotEmpty) 'profile_id': rdv['client_profile_id'],
+              'data': {'token': token, 'url': '$kSiteBaseUrl/signer-contrat/$token'},
+              'read': false,
+            });
+          } catch (_) {}
+        }
       } else {
         await supa.from('documents_animaux')
             .update({'statut': 'en_attente'})
