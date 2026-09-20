@@ -423,6 +423,7 @@ class _ReservationSheetState extends State<ReservationSheet> {
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.92),
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -444,6 +445,14 @@ class _ReservationSheetState extends State<ReservationSheet> {
               ),
           ]),
           const SizedBox(height: 16),
+
+          // Le contenu variable (surtout l'étape 1, alourdie par les 2 blocs
+          // de choix de documents) peut dépasser la hauteur de l'écran — sans
+          // scroll, tout ce qui dépasse est simplement invisible (coupé),
+          // comme si les options manquaient. D'où le Flexible + scroll ici.
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
           if (_error != null)
             Container(margin: const EdgeInsets.only(bottom: 10),
@@ -788,6 +797,9 @@ class _ReservationSheetState extends State<ReservationSheet> {
             const Center(child: Text('Les documents sont optionnels. Vous pouvez les ajouter plus tard.',
                 style: TextStyle(fontSize: 11, color: Colors.grey))),
           ],
+              ]),
+            ),
+          ),
         ]),
       ),
     );
