@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +9,11 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/certificats_engagement_page.dart';
+import 'package:PetsMatch/utils/storage_helper.dart' as storage;
+
+/// Choix pour le certificat d'engagement (loi 2021-1539) — jamais imposé :
+/// l'éleveur peut toujours passer l'étape ou apporter son propre document.
+enum _CertMode { skip, generate, upload }
 
 class ContratReservationPage extends StatefulWidget {
   /// Document à mettre en avant (ouvert automatiquement + carte surlignée),
@@ -411,6 +418,11 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
   String _type = 'contrat_vente';
   Map<String, dynamic>? _selectedAnimal;
   bool _avecSteril = true;
+  // Certificat d'engagement (loi 2021-1539, obligatoire légalement pour toute
+  // cession de chien/chat — mais on ne bloque jamais la création du contrat :
+  // toujours possible de passer l'étape ou d'apporter son propre document).
+  _CertMode _certMode = _CertMode.skip;
+  PlatformFile? _certFile;
 
   final _acqRaisonSocialeCtrl = TextEditingController();
   final _acqSiretCtrl    = TextEditingController();
@@ -478,6 +490,13 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
     }
   }
 
+  Future<void> _pickCertFile() async {
+    final res = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png']);
+    final f = res?.files.single;
+    if (f?.path == null) return;
+    setState(() => _certFile = f);
+  }
+
   Future<void> _creer() async {
     if (_selectedAnimal == null) return;
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -519,10 +538,59 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
 
       final token = result['token'] as String?;
 
+      // Certificat d'engagement (facultatif) — uniquement pour une cession
+      // réelle de l'animal (vente/cession), pas pour une simple réservation
+      // ni un contrat de saillie.
+      String? certToken;
+      final concerneTransfert = _type == 'contrat_vente' || _type == 'certificat_cession';
+      if (concerneTransfert && _certMode != _CertMode.skip) {
+        try {
+          final animal = _selectedAnimal!;
+          final espece = animal['espece'] as String? ?? '';
+          final estDelai = espece == 'chien' || espece == 'chat';
+          final now = DateTime.now();
+          String? uploadedUrl;
+          if (_certMode == _CertMode.upload && _certFile?.path != null) {
+            uploadedUrl = await storage.uploadDocument(
+              File(_certFile!.path!),
+              'certificats_engagement/$uid/${DateTime.now().millisecondsSinceEpoch}_${_certFile!.name}',
+            );
+          }
+          final cert = await widget.supa.from('certificats_engagement').insert({
+            'cedant_uid':            uid,
+            'animal_id':             animal['id'],
+            'espece':                espece,
+            'race':                  animal['race'] ?? '',
+            'nom_animal':            animal['nom'] ?? '',
+            'date_naissance_animal': animal['date_naissance'],
+            'num_identification':    animal['identification'] ?? '',
+            'acquereur_nom':         _acqNomCtrl.text.trim(),
+            'acquereur_prenom':      _acqPrenomCtrl.text.trim(),
+            'acquereur_email':       _acqEmailCtrl.text.trim(),
+            'acquereur_telephone':   _acqTelCtrl.text.trim(),
+            'acquereur_adresse':     _acqAdresseCtrl.text.trim(),
+            'modalite_cession':      'vente',
+            'prix':                  double.tryParse(_prixCtrl.text.replaceAll(',', '.')),
+            'date_remise':           now.toIso8601String(),
+            'date_limite_signature': (uploadedUrl == null && estDelai) ? now.add(const Duration(days: 7)).toIso8601String() : null,
+            'profil_source':         'eleveur',
+            if (uploadedUrl != null) 'pdf_url': uploadedUrl,
+            if (uploadedUrl != null) 'statut': 'signe',
+          }).select('token_signature').single();
+          certToken = cert['token_signature'] as String?;
+        } catch (_) {}
+      }
+
       widget.onSaved();
       setState(() => _saving = false);
 
       if (mounted) Navigator.pop(context);
+
+      if (certToken != null && _certMode == _CertMode.generate) {
+        // Document apporté par le pro : rien à signer dans l'app, pas besoin
+        // d'ouvrir un onglet dessus.
+        await launchUrl(Uri.parse('$kSiteBaseUrl/certificat/$certToken'), mode: LaunchMode.externalApplication);
+      }
 
       if (token != null) {
         final url = '$kSiteBaseUrl/signer-contrat/$token';
@@ -750,7 +818,60 @@ class _CreateContratSheetState extends State<_CreateContratSheet> {
                 ),
               ),
 
-            const SizedBox(height: 16),
+            // Certificat d'engagement (vente/cession uniquement) — jamais
+            // obligatoire, toujours possible de passer l'étape ou d'apporter
+            // son propre document déjà signé.
+            if (_type == 'contrat_vente' || _type == 'certificat_cession') ...[
+              const Text('Certificat d\'engagement (loi 2021-1539)',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 6),
+              for (final opt in [
+                (_CertMode.skip, 'Je m\'en occupe autrement', 'Passer cette étape'),
+                (_CertMode.generate, 'Générer et faire signer dans l\'app', 'Certificat numérique + signature tactile'),
+                (_CertMode.upload, 'J\'ai déjà mon document', 'Importer un PDF déjà signé'),
+              ])
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() => _certMode = opt.$1);
+                      if (opt.$1 == _CertMode.upload) _pickCertFile();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _certMode == opt.$1 ? _teal.withValues(alpha: 0.06) : Colors.white,
+                        border: Border.all(color: _certMode == opt.$1 ? _teal : const Color(0xFFE0E0E0)),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(children: [
+                        Icon(_certMode == opt.$1 ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                            size: 18, color: _certMode == opt.$1 ? _teal : Colors.grey),
+                        const SizedBox(width: 10),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(opt.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1F2A2E))),
+                          Text(opt.$3, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF888888))),
+                        ])),
+                      ]),
+                    ),
+                  ),
+                ),
+              if (_certMode == _CertMode.upload) ...[
+                if (_certFile != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(children: [
+                      const Icon(Icons.description_outlined, size: 16, color: Color(0xFF6E9E57)),
+                      const SizedBox(width: 6),
+                      Expanded(child: Text(_certFile!.name, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6E9E57)), overflow: TextOverflow.ellipsis)),
+                      TextButton(onPressed: _pickCertFile, child: const Text('Changer', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
+                    ]),
+                  ),
+              ],
+              const SizedBox(height: 10),
+            ],
+
+            const SizedBox(height: 6),
 
             // Boutons
             Row(children: [

@@ -86,8 +86,10 @@ export default function ContratsAdoptionPage() {
   const [avecSteril, setAvecSteril] = useState(true);
   const [notes, setNotes]           = useState('');
   // Certificat d'engagement (loi 2021-1539) : proposé en option à la
-  // réservation, jamais obligatoire — au choix de l'association.
-  const [alsoCertificat, setAlsoCertificat] = useState(false);
+  // réservation, jamais obligatoire — toujours possible de passer l'étape
+  // ou d'apporter son propre document déjà signé.
+  const [certMode, setCertMode] = useState<'skip' | 'generate' | 'upload'>('skip');
+  const [certFile, setCertFile] = useState<File | null>(null);
 
   // Recherche adoptant PetsMatch
   const [userSearch, setUserSearch]   = useState('');
@@ -185,7 +187,7 @@ export default function ContratsAdoptionPage() {
     setAnimalId(''); setSelectedAnimal(null); setAcqNom(''); setAcqPrenom('');
     setAcqEmail(''); setAcqTel(''); setAcqAdresse(''); setParticipation('');
     setDateDoc(new Date().toISOString().split('T')[0]); setNotes(''); setAvecSteril(true);
-    setUserSearch(''); setUserResults([]); setAlsoCertificat(false);
+    setUserSearch(''); setUserResults([]); setCertMode('skip'); setCertFile(null);
   }
 
   function assoInfo(): AssociationInfo {
@@ -223,10 +225,22 @@ export default function ContratsAdoptionPage() {
     return token;
   }
 
+  async function uploadCertificatFile(file: File, uid: string): Promise<string> {
+    const ext = file.name.split('.').pop() ?? 'pdf';
+    const path = `certificats_engagement/${uid}_${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from('documents').upload(path, file, { upsert: true });
+    if (error) throw error;
+    return supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
+  }
+
   async function createCertificatEngagement(animal: Animal): Promise<string | null> {
     if (!user) return null;
     const estDelai = animal.espece === 'chien' || animal.espece === 'chat';
     const now = new Date();
+    let uploadedUrl: string | null = null;
+    if (certMode === 'upload' && certFile) {
+      try { uploadedUrl = await uploadCertificatFile(certFile, user.uid); } catch { return null; }
+    }
     const payload = {
       cedant_uid: user.uid,
       animal_id: animal.id,
@@ -240,8 +254,9 @@ export default function ContratsAdoptionPage() {
       modalite_cession: 'adoption',
       prix: participation ? Number(participation) : null,
       date_remise: now.toISOString(),
-      date_limite_signature: estDelai ? new Date(now.getTime() + 7 * 86400000).toISOString() : null,
+      date_limite_signature: (!uploadedUrl && estDelai) ? new Date(now.getTime() + 7 * 86400000).toISOString() : null,
       profil_source: 'association',
+      ...(uploadedUrl ? { pdf_url: uploadedUrl, statut: 'signe' } : {}),
     };
     const { data, error } = await supabase.from('certificats_engagement').insert(payload).select('token_signature').single();
     if (error || !data) return null;
@@ -265,7 +280,7 @@ export default function ContratsAdoptionPage() {
         } catch { /* ignore */ }
       }
       let certToken: string | null = null;
-      if (alsoCertificat) certToken = await createCertificatEngagement(selectedAnimal);
+      if (certMode !== 'skip') certToken = await createCertificatEngagement(selectedAnimal);
       popupRef.current = window.open(url, '_blank', 'width=900,height=700,scrollbars=yes');
       if (certToken) {
         alert(`Certificat d'engagement également créé :\n${window.location.origin}/certificat/${certToken}`);
@@ -473,13 +488,32 @@ export default function ContratsAdoptionPage() {
                 </label>
               )}
 
-              <label className="flex items-start gap-2 cursor-pointer bg-teal-50 border border-teal-100 rounded-xl p-3">
-                <input type="checkbox" checked={alsoCertificat} onChange={e => setAlsoCertificat(e.target.checked)} className="w-4 h-4 rounded text-teal-600 mt-0.5" />
-                <span>
-                  <span className="block text-sm font-galey font-semibold text-gray-700">Aussi générer un certificat d&apos;engagement</span>
-                  <span className="block text-xs font-galey text-gray-500">Optionnel — au choix de l&apos;association, loi 2021-1539 (chien/chat : délai légal 7 jours).</span>
-                </span>
-              </label>
+              <div className="space-y-2">
+                <p className="text-sm font-galey font-semibold text-gray-700">Certificat d&apos;engagement (loi 2021-1539)</p>
+                {([
+                  ['skip', 'Je m’en occupe autrement', 'Passer cette étape'],
+                  ['generate', 'Générer et faire signer dans l’app', 'Certificat numérique + signature tactile'],
+                  ['upload', 'J’ai déjà mon document', 'Importer un PDF déjà signé'],
+                ] as const).map(([mode, title, desc]) => (
+                  <label key={mode}
+                    className={`flex items-start gap-2 cursor-pointer border rounded-xl p-3 ${certMode === mode ? 'bg-teal-50 border-teal-300' : 'border-gray-200'}`}>
+                    <input type="radio" name="certMode" checked={certMode === mode}
+                      onChange={() => setCertMode(mode)} className="w-4 h-4 text-teal-600 mt-0.5" />
+                    <span>
+                      <span className="block text-sm font-galey font-semibold text-gray-700">{title}</span>
+                      <span className="block text-xs font-galey text-gray-500">{desc}</span>
+                    </span>
+                  </label>
+                ))}
+                {certMode === 'upload' && (
+                  <div className="pl-1">
+                    <input type="file" accept="application/pdf,image/*"
+                      onChange={e => setCertFile(e.target.files?.[0] ?? null)}
+                      className="text-sm font-galey text-gray-600" />
+                    {certFile && <p className="text-xs font-galey text-green-700 mt-1">{certFile.name}</p>}
+                  </div>
+                )}
+              </div>
 
               {/* Adoptant */}
               <div>

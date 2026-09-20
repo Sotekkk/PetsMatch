@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,11 +7,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
+import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
 const _dark  = Color(0xFF1F2A2E);
 const _bg    = Color(0xFFF8F8F6);
+
+/// Choix pour le certificat d'engagement (loi 2021-1539) — jamais imposé :
+/// l'association peut toujours passer l'étape ou apporter son propre document.
+enum _CertMode { skip, generate, upload }
 
 // Participation par défaut selon l'espèce
 int _participationDefaut(String? espece) => switch ((espece ?? '').toLowerCase()) {
@@ -317,8 +324,10 @@ class _CreerContratSheetState extends State<_CreerContratSheet> {
   Map<String, dynamic>? _selectedAnimal;
 
   // Certificat d'engagement (loi 2021-1539) : proposé en option à la
-  // réservation, jamais obligatoire — au choix de l'association.
-  bool _alsoCertificat = false;
+  // réservation, jamais obligatoire — toujours possible de passer l'étape
+  // ou d'apporter son propre document déjà signé.
+  _CertMode _certMode = _CertMode.skip;
+  PlatformFile? _certFile;
   String? _certToken;
 
   // Recherche adoptant PetsMatch
@@ -406,6 +415,13 @@ class _CreerContratSheetState extends State<_CreerContratSheet> {
     });
   }
 
+  Future<void> _pickCertFile() async {
+    final res = await FilePicker.pickFiles(type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png']);
+    final f = res?.files.single;
+    if (f?.path == null) return;
+    setState(() => _certFile = f);
+  }
+
   Future<void> _submit() async {
     if (_selectedAnimal == null) return;
     if (_emailCtrl.text.trim().isEmpty || _nomCtrl.text.trim().isEmpty) return;
@@ -463,10 +479,17 @@ class _CreerContratSheetState extends State<_CreerContratSheet> {
       }).select('token').single();
 
       String? certToken;
-      if (_alsoCertificat) {
+      if (_certMode != _CertMode.skip) {
         try {
           final estDelai = espece == 'chien' || espece == 'chat';
           final now = DateTime.now();
+          String? uploadedUrl;
+          if (_certMode == _CertMode.upload && _certFile?.path != null) {
+            uploadedUrl = await storage.uploadDocument(
+              File(_certFile!.path!),
+              'certificats_engagement/$uid/${DateTime.now().millisecondsSinceEpoch}_${_certFile!.name}',
+            );
+          }
           final cert = await _supa.from('certificats_engagement').insert({
             'cedant_uid':            uid,
             'animal_id':             animalId,
@@ -483,8 +506,10 @@ class _CreerContratSheetState extends State<_CreerContratSheet> {
             'modalite_cession':      'adoption',
             'prix':                  participation > 0 ? participation : null,
             'date_remise':           now.toIso8601String(),
-            'date_limite_signature': estDelai ? now.add(const Duration(days: 7)).toIso8601String() : null,
+            'date_limite_signature': (uploadedUrl == null && estDelai) ? now.add(const Duration(days: 7)).toIso8601String() : null,
             'profil_source':         'association',
+            if (uploadedUrl != null) 'pdf_url': uploadedUrl,
+            if (uploadedUrl != null) 'statut': 'signe',
           }).select('token_signature').single();
           certToken = cert['token_signature'] as String?;
         } catch (_) {}
@@ -697,34 +722,51 @@ class _CreerContratSheetState extends State<_CreerContratSheet> {
             const SizedBox(height: 16),
 
             // ── Certificat d'engagement (optionnel) ──────────────────────────
-            GestureDetector(
-              onTap: () => setState(() => _alsoCertificat = !_alsoCertificat),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: _alsoCertificat ? _teal.withValues(alpha: 0.06) : const Color(0xFFF5F5F0),
-                  border: Border.all(color: _alsoCertificat ? _teal : const Color(0xFFE4E7E2)),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Checkbox(
-                    value: _alsoCertificat,
-                    onChanged: (v) => setState(() => _alsoCertificat = v ?? false),
-                    activeColor: _teal,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
+            const Text('Certificat d\'engagement (loi 2021-1539)',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 12, color: Color(0xFF6F767B))),
+            const SizedBox(height: 6),
+            for (final opt in [
+              (_CertMode.skip, 'Je m\'en occupe autrement', 'Passer cette étape'),
+              (_CertMode.generate, 'Générer et faire signer dans l\'app', 'Certificat numérique + signature tactile'),
+              (_CertMode.upload, 'J\'ai déjà mon document', 'Importer un PDF déjà signé'),
+            ])
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() => _certMode = opt.$1);
+                    if (opt.$1 == _CertMode.upload) _pickCertFile();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: _certMode == opt.$1 ? _teal.withValues(alpha: 0.06) : Colors.white,
+                      border: Border.all(color: _certMode == opt.$1 ? _teal : const Color(0xFFE4E7E2)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(children: [
+                      Icon(_certMode == opt.$1 ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                          size: 18, color: _certMode == opt.$1 ? _teal : Colors.grey),
+                      const SizedBox(width: 10),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(opt.$2, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: _dark)),
+                        Text(opt.$3, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF888888))),
+                      ])),
+                    ]),
                   ),
-                  const SizedBox(width: 8),
-                  const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Aussi générer un certificat d\'engagement', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: _dark)),
-                    SizedBox(height: 2),
-                    Text('Optionnel — au choix de l\'association, loi 2021-1539 (chien/chat : délai légal 7 jours).',
-                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Color(0xFF6F767B))),
-                  ])),
+                ),
+              ),
+            if (_certMode == _CertMode.upload && _certFile != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(children: [
+                  const Icon(Icons.description_outlined, size: 16, color: _green),
+                  const SizedBox(width: 6),
+                  Expanded(child: Text(_certFile!.name, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _green), overflow: TextOverflow.ellipsis)),
+                  TextButton(onPressed: _pickCertFile, child: const Text('Changer', style: TextStyle(fontFamily: 'Galey', fontSize: 12))),
                 ]),
               ),
-            ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 14),
 
             SizedBox(
               width: double.infinity,

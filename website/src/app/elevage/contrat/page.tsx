@@ -99,6 +99,11 @@ export default function ContratsPage() {
   const [dateDoc, setDateDoc]         = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes]             = useState('');
   const [avecSteril, setAvecSteril]   = useState(true);
+  // Certificat d'engagement (loi 2021-1539) : proposé en option à la
+  // réservation, jamais obligatoire — toujours possible de passer l'étape
+  // ou d'apporter son propre document déjà signé.
+  const [certMode, setCertMode] = useState<'skip' | 'generate' | 'upload'>('skip');
+  const [certFile, setCertFile] = useState<File | null>(null);
   // Animal — modifiable (surcharge la fiche animale dans le contrat)
   const [animalNom, setAnimalNom]         = useState('');
   const [animalRace, setAnimalRace]       = useState('');
@@ -303,6 +308,7 @@ export default function ContratsPage() {
     setTvaAssujetti(false); setTvaTaux('20');
     setAnimalNom(''); setAnimalRace(''); setAnimalCouleur(''); setAnimalSexe(''); setAnimalDN('');
     setUserSearch(''); setUserResults([]);
+    setCertMode('skip'); setCertFile(null);
   }
 
   // Animal enrichi (fiche + champs modifiés)
@@ -325,6 +331,44 @@ export default function ContratsPage() {
     const adresse = profile.is_elevage ? (profile.adress_elevage || [profile.rue, profile.code_postal, profile.ville].filter(Boolean).join(', ')) : (profile.adress || [profile.rue, profile.code_postal, profile.ville].filter(Boolean).join(', '));
     const tel = profile.is_elevage ? `${profile.code_iso_elevage ?? '+33'} ${profile.numero_elevage ?? ''}`.trim() : `${profile.code_iso ?? '+33'} ${profile.phone_number ?? ''}`.trim();
     return { nom, adresse, tel, siret: profile.siret ?? '', email: profile.email ?? '' };
+  }
+
+  async function uploadCertificatFile(file: File, uid: string): Promise<string> {
+    const ext = file.name.split('.').pop() ?? 'pdf';
+    const path = `certificats_engagement/${uid}_${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from('documents').upload(path, file, { upsert: true });
+    if (error) throw error;
+    return supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
+  }
+
+  async function createCertificatEngagement(animal: Animal): Promise<string | null> {
+    if (!user) return null;
+    const estDelai = animal.espece === 'chien' || animal.espece === 'chat';
+    const now = new Date();
+    let uploadedUrl: string | null = null;
+    if (certMode === 'upload' && certFile) {
+      try { uploadedUrl = await uploadCertificatFile(certFile, user.uid); } catch { return null; }
+    }
+    const payload = {
+      cedant_uid: user.uid,
+      animal_id: animal.id,
+      espece: animal.espece,
+      race: animal.race || '',
+      nom_animal: animal.nom,
+      date_naissance_animal: animal.date_naissance || null,
+      num_identification: animal.identification || '',
+      acquereur_nom: acqNom, acquereur_prenom: acqPrenom, acquereur_email: acqEmail,
+      acquereur_telephone: acqTel, acquereur_adresse: acqAdresse,
+      modalite_cession: 'vente',
+      prix: prix.trim() ? (parseFloat(prix.replace(',', '.')) || null) : null,
+      date_remise: now.toISOString(),
+      date_limite_signature: (!uploadedUrl && estDelai) ? new Date(now.getTime() + 7 * 86400000).toISOString() : null,
+      profil_source: 'eleveur',
+      ...(uploadedUrl ? { pdf_url: uploadedUrl, statut: 'signe' } : {}),
+    };
+    const { data, error } = await supabase.from('certificats_engagement').insert(payload).select('token_signature').single();
+    if (error || !data) return null;
+    return data.token_signature as string;
   }
 
   async function openAndSign() {
@@ -358,8 +402,15 @@ export default function ContratsPage() {
           }
         }
       }
+      let certToken: string | null = null;
+      if ((formType === 'contrat_vente' || formType === 'certificat_cession') && certMode !== 'skip') {
+        certToken = await createCertificatEngagement(selectedAnimal);
+      }
       const win = window.open(`/signer-contrat/${token}`, '_blank', 'width=900,height=700');
       popupRef.current = win;
+      if (certToken) {
+        alert(`Certificat d'engagement également créé :\n${window.location.origin}/certificat/${certToken}`);
+      }
     } else {
       // Fallback : HTML en mémoire si l'insert a échoué
       const html = formType === 'contrat_reservation'
@@ -781,6 +832,35 @@ export default function ContratsPage() {
                   <p className="text-xs text-amber-700 mt-0.5">Inclure la pénalité financière si l&apos;acquéreur ne stérilise pas l&apos;animal dans le délai légal.</p>
                 </div>
               </label>
+            )}
+
+            {(formType === 'contrat_vente' || formType === 'certificat_cession') && (
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-[#1F2A2E]">Certificat d&apos;engagement (loi 2021-1539)</p>
+                {([
+                  ['skip', 'Je m’en occupe autrement', 'Passer cette étape'],
+                  ['generate', 'Générer et faire signer dans l’app', 'Certificat numérique + signature tactile'],
+                  ['upload', 'J’ai déjà mon document', 'Importer un PDF déjà signé'],
+                ] as const).map(([mode, title, desc]) => (
+                  <label key={mode}
+                    className={`flex items-start gap-3 p-3 border rounded-xl cursor-pointer ${certMode === mode ? 'bg-teal-50 border-teal-300' : 'border-gray-200'}`}>
+                    <input type="radio" name="certModeEleveur" checked={certMode === mode}
+                      onChange={() => setCertMode(mode)} className="mt-0.5 accent-[#0C5C6C]" />
+                    <div>
+                      <p className="text-xs font-semibold text-[#1F2A2E]">{title}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
+                    </div>
+                  </label>
+                ))}
+                {certMode === 'upload' && (
+                  <div className="pl-1">
+                    <input type="file" accept="application/pdf,image/*"
+                      onChange={e => setCertFile(e.target.files?.[0] ?? null)}
+                      className="text-sm text-gray-600" />
+                    {certFile && <p className="text-xs text-green-700 mt-1">{certFile.name}</p>}
+                  </div>
+                )}
+              </div>
             )}
 
             {formType === 'contrat_vente' && (
