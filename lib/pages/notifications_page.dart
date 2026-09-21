@@ -818,7 +818,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
           initialBebeIndex: bebeIndex,
         ),
       ));
-    } else if (type == 'chaleur') {
+    } else if (type == 'chaleur' || type == 'animal_evolution') {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => const MesAnimauxPage(),
       ));
@@ -1060,6 +1060,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'forum_mention':
       case 'groupe_mention': return Icons.alternate_email;
       case 'chaleur':       return Icons.spa;
+      case 'animal_evolution': return Icons.auto_awesome;
       case 'rappel_vaccin': return Icons.vaccines_outlined;
       case 'tache':         return Icons.task_alt;
       case 'employee_invite': return Icons.handshake_outlined;

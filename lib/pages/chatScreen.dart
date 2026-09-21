@@ -9,6 +9,7 @@ import 'package:PetsMatch/pages/main_feed.dart' show UserSelected;
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/utils/chat_theme.dart';
+import 'package:PetsMatch/services/conversation_streak_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -59,6 +60,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   String _themeId = 'default';
   OverlayEntry? _reactionOverlay;
 
+  // Partage d'animal / proposition de RDV n'ont de sens qu'avec un pro ou un
+  // éleveur en face — inutiles entre deux profils particuliers.
+  bool _otherIsProOrElevage = false;
+  bool get _showProChatOptions =>
+      widget.groupName != null || User_Info.isElevage || User_Info.isPro || _otherIsProOrElevage;
+
   @override
   void initState() {
     super.initState();
@@ -68,6 +75,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _subscribeRealtime();
     _markAsRead();
     _setActiveConversation(widget.conversationId);
+    if (widget.groupName == null) {
+      _getUserInfo(widget.eleveurId).then((info) {
+        if (!mounted) return;
+        final isElevage = info['isElevage'] as bool? ?? false;
+        final isPro = info['isPro'] as bool? ?? false;
+        if (isElevage || isPro) setState(() => _otherIsProOrElevage = true);
+      });
+    }
     if (widget.isNewConversation && widget.alerteId != null) {
       SchedulerBinding.instance.addPostFrameCallback((_) => _sendAlertRefMessage());
     }
@@ -516,6 +531,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           'deleted_for':       {},
         }).eq('id', widget.conversationId);
 
+        ConversationStreakService.instance.registerMessage(
+          conversationId: widget.conversationId, senderUid: uid, participants: members,
+        );
+
         // Notif push fire-and-forget pour chaque destinataire pas déjà dans la conv
         final previewText = imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : (animalData != null ? '🐾 ${animalData['nom'] ?? 'Animal'}' : (text.length > 80 ? '${text.substring(0, 80)}…' : text)));
         final recipients = members.where((p) => p != uid).toSet().toList();
@@ -961,8 +980,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               _PlusItem(icon: Icons.photo_outlined,           label: 'Galerie',             isDark: theme.isDark, onTap: () { Navigator.pop(ctx); _pickImage(); }),
               _PlusItem(icon: Icons.camera_alt_outlined,      label: 'Appareil photo',       isDark: theme.isDark, onTap: () { Navigator.pop(ctx); _takePhoto(); }),
               _PlusItem(icon: Icons.location_on_outlined,     label: 'Ma position',           isDark: theme.isDark, onTap: () { Navigator.pop(ctx); _shareLocation(); }),
-              _PlusItem(icon: Icons.calendar_today_outlined,  label: 'Proposer une visite',   isDark: theme.isDark, onTap: () { Navigator.pop(ctx); _proposeVisite(); }),
-              _PlusItem(icon: Icons.pets_rounded,             label: 'Partager un animal',    isDark: theme.isDark, onTap: () { Navigator.pop(ctx); _showAnimalPicker(); }),
+              if (_showProChatOptions) ...[
+                _PlusItem(icon: Icons.calendar_today_outlined,  label: 'Proposer une visite',   isDark: theme.isDark, onTap: () { Navigator.pop(ctx); _proposeVisite(); }),
+                _PlusItem(icon: Icons.pets_rounded,             label: 'Partager un animal',    isDark: theme.isDark, onTap: () { Navigator.pop(ctx); _showAnimalPicker(); }),
+              ],
             ]),
           ),
         ),

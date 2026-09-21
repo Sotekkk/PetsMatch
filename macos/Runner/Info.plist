@@ -28,5 +28,9 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>PetsMatch a besoin d'accéder à votre photothèque pour partager une photo.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>PetsMatch utilise la caméra pour permettre de prendre une photo.</string>
 </dict>
 </plist>
