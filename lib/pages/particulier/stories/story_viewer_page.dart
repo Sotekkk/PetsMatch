@@ -98,9 +98,12 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
         return;
       }
       if (_disposed || !mounted || !identical(currentItem, _item)) { ctrl.dispose(); return; }
-      // Musique en fond → on coupe le son natif de la vidéo (comme demandé :
-      // priorité à la musique choisie, pas de mix).
-      ctrl.setVolume(currentItem.music != null ? 0 : 1);
+      // Musique en fond → on coupe (quasiment) le son natif de la vidéo,
+      // priorité à la musique choisie. Volume à 0.0 exactement (plutôt que
+      // proche de zéro) figeait l'image dès la première frame sur certains
+      // appareils (MIUI notamment) — ExoPlayer synchronise le rendu vidéo
+      // sur l'horloge audio, qu'une piste totalement coupée peut désactiver.
+      ctrl.setVolume(currentItem.music != null ? 0.01 : 1);
       // La barre de progression suit la position RÉELLE du lecteur (pas une
       // minuterie indépendante) : sans ça, un ralentissement réseau figeait
       // l'image pendant que la barre continuait d'avancer sur son propre
@@ -285,14 +288,18 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
             onLongPressStart: (_) => _togglePause(),
             onLongPressEnd: (_) => _togglePause(),
             child: Stack(fit: StackFit.expand, children: [
-              item.mediaType == 'photo'
-                  ? CachedNetworkImage(imageUrl: item.mediaUrl, fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => Container(color: Colors.black))
-                  : (_videoCtrl != null && _videoCtrl!.value.isInitialized
-                      ? FittedBox(fit: BoxFit.cover,
-                          child: SizedBox(width: _videoCtrl!.value.size.width, height: _videoCtrl!.value.size.height,
-                              child: VideoPlayer(_videoCtrl!)))
-                      : const Center(child: CircularProgressIndicator(color: Colors.white))),
+              item.mediaType == 'texte'
+                  ? Container(decoration: BoxDecoration(gradient: LinearGradient(
+                      begin: Alignment.topLeft, end: Alignment.bottomRight,
+                      colors: storyFondColors(item.fond))))
+                  : item.mediaType == 'photo'
+                      ? CachedNetworkImage(imageUrl: item.mediaUrl, fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => Container(color: Colors.black))
+                      : (_videoCtrl != null && _videoCtrl!.value.isInitialized
+                          ? FittedBox(fit: BoxFit.cover,
+                              child: SizedBox(width: _videoCtrl!.value.size.width, height: _videoCtrl!.value.size.height,
+                                  child: VideoPlayer(_videoCtrl!)))
+                          : const Center(child: CircularProgressIndicator(color: Colors.white))),
               // Dégradé pour la lisibilité du haut.
               Positioned(top: 0, left: 0, right: 0, height: 140,
                   child: Container(decoration: const BoxDecoration(gradient: LinearGradient(
@@ -305,16 +312,22 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
                   left: (item.legendeX * MediaQuery.of(context).size.width).clamp(0, MediaQuery.of(context).size.width) - 90,
                   top: (item.legendeY * MediaQuery.of(context).size.height).clamp(0, MediaQuery.of(context).size.height) - 20,
                   width: 180,
-                  child: MentionHashtagText(
-                    text: item.legende!,
-                    enableHashtags: false,
-                    style: TextStyle(
-                      fontFamily: 'Galey',
-                      color: _parseHexColor(item.legendeCouleur),
-                      fontSize: switch (item.legendeTaille) { 's' => 14, 'l' => 22, _ => 17 },
-                      fontWeight: item.legendeGras ? FontWeight.w800 : FontWeight.w400,
+                  child: Container(
+                    padding: item.legendeSurlignee ? const EdgeInsets.symmetric(horizontal: 10, vertical: 4) : EdgeInsets.zero,
+                    decoration: item.legendeSurlignee
+                        ? BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6))
+                        : null,
+                    child: MentionHashtagText(
+                      text: item.legende!,
+                      enableHashtags: false,
+                      style: TextStyle(
+                        fontFamily: 'Galey',
+                        color: item.legendeSurlignee ? Colors.black : _parseHexColor(item.legendeCouleur),
+                        fontSize: switch (item.legendeTaille) { 's' => 14, 'l' => 22, _ => 17 },
+                        fontWeight: item.legendeGras ? FontWeight.w800 : FontWeight.w400,
+                      ),
+                      onMentionTap: (pid) => openMentionedProfile(context, widget.myUid, pid),
                     ),
-                    onMentionTap: (pid) => openMentionedProfile(context, widget.myUid, pid),
                   ),
                 ),
               SafeArea(

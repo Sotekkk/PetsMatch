@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'story_create_page.dart';
 import 'story_service.dart';
+import 'story_upload_service.dart';
 import 'story_viewer_page.dart';
 
 /// Bandeau horizontal des stories actives — mon profil en premier (avec un
@@ -22,11 +23,21 @@ class StoryRingState extends State<StoryRing> {
 
   List<StoryGroup> _groups = [];
   bool _loading = true;
+  String? _error; // diagnostic temporaire — affiché en tap sur le "!" si présent
 
   @override
   void initState() {
     super.initState();
     reload();
+    StoryUploadService.instance.onDone = reload;
+  }
+
+  @override
+  void dispose() {
+    if (StoryUploadService.instance.onDone == reload) {
+      StoryUploadService.instance.onDone = null;
+    }
+    super.dispose();
   }
 
   @override
@@ -38,9 +49,12 @@ class StoryRingState extends State<StoryRing> {
   Future<void> reload() async {
     try {
       final groups = await StoryService.loadActiveGroups(myUid: widget.myUid, myProfileId: widget.myProfileId);
-      if (mounted) setState(() { _groups = groups; _loading = false; });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() { _groups = groups; _loading = false; _error = null; });
+    } catch (e) {
+      // Diagnostic temporaire — sans ça, un échec de la requête ici rendait
+      // le bandeau silencieusement vide (rien à l'écran, pas d'erreur visible
+      // nulle part) : impossible à distinguer d'un simple "aucune story".
+      if (mounted) setState(() { _loading = false; _error = e.toString(); });
     }
   }
 
@@ -90,30 +104,53 @@ class StoryRingState extends State<StoryRing> {
 
   Widget _myCircle() {
     final mine = _mine;
-    return GestureDetector(
-      onTap: mine != null ? () => _openViewer(mine) : _openCreate,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 14),
-        child: Column(children: [
-          Stack(children: [
-            _ring(mine, size: 62, myProfilePhoto: true),
-            if (mine == null || mine.allSeen)
-              Positioned(
-                right: 0, bottom: 0,
-                child: GestureDetector(
-                  onTap: _openCreate,
-                  child: Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(color: _green, shape: BoxShape.circle, border: Border.all(color: const Color(0xFF0D1F22), width: 2)),
-                    child: const Icon(Icons.add, color: Colors.white, size: 14),
+    return ValueListenableBuilder<double?>(
+      valueListenable: StoryUploadService.instance.progress,
+      builder: (_, uploadProgress, __) {
+        final uploading = uploadProgress != null;
+        return GestureDetector(
+          onTap: uploading ? null : (mine != null ? () => _openViewer(mine) : _openCreate),
+          child: Padding(
+            padding: const EdgeInsets.only(right: 14),
+            child: Column(children: [
+              Stack(children: [
+                _ring(mine, size: 62, myProfilePhoto: true),
+                if (uploading)
+                  SizedBox(
+                    width: 62, height: 62,
+                    child: CircularProgressIndicator(
+                      value: uploadProgress > 0.02 ? uploadProgress : null,
+                      strokeWidth: 2.5, color: _green, backgroundColor: Colors.white24,
+                    ),
                   ),
+                if (!uploading && (mine == null || mine.allSeen))
+                  Positioned(
+                    right: 0, bottom: 0,
+                    child: GestureDetector(
+                      onTap: _openCreate,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(color: _green, shape: BoxShape.circle, border: Border.all(color: const Color(0xFF0D1F22), width: 2)),
+                        child: const Icon(Icons.add, color: Colors.white, size: 14),
+                      ),
+                    ),
+                  ),
+              ]),
+              const SizedBox(height: 4),
+              Text(uploading ? 'Publication…' : 'Ma story', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white70)),
+              if (_error != null)
+                GestureDetector(
+                  onTap: () => showDialog(context: context, builder: (_) => AlertDialog(
+                    title: const Text('Erreur stories (diagnostic)'),
+                    content: SingleChildScrollView(child: Text(_error!)),
+                    actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer'))],
+                  )),
+                  child: const Text('⚠️ voir erreur', style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.redAccent)),
                 ),
-              ),
-          ]),
-          const SizedBox(height: 4),
-          const Text('Ma story', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white70)),
-        ]),
-      ),
+            ]),
+          ),
+        );
+      },
     );
   }
 

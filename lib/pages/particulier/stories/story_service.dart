@@ -1,6 +1,25 @@
+import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show socialProfileName;
+
+/// Fonds proposés pour une story "texte" (sans photo/vidéo) — partagé entre
+/// la création et le visionnage pour rendre exactement le même dégradé.
+const kStoryFonds = <(String, List<Color>)>[
+  ('grad_sunset', [Color(0xFFFF6B6B), Color(0xFFFFD166)]),
+  ('grad_ocean',  [Color(0xFF0C5C6C), Color(0xFF4ECDC4)]),
+  ('grad_forest', [Color(0xFF2E7D5E), Color(0xFF6E9E57)]),
+  ('grad_purple', [Color(0xFF6A4C93), Color(0xFFB185DB)]),
+  ('grad_night',  [Color(0xFF0D1F22), Color(0xFF1F2A2E)]),
+  ('grad_pink',   [Color(0xFFFF8FA3), Color(0xFFFFC6D9)]),
+  ('solid_black', [Colors.black, Colors.black]),
+  ('solid_white', [Colors.white, Colors.white]),
+];
+
+List<Color> storyFondColors(String? fondId) {
+  final f = kStoryFonds.where((f) => f.$1 == fondId).firstOrNull;
+  return f?.$2 ?? kStoryFonds.first.$2;
+}
 
 /// Modèle + accès données pour les Stories Pets Social (éphémères 24h,
 /// musique piochée dans la bibliothèque maison — jamais d'import libre côté
@@ -29,12 +48,14 @@ class StoryItem {
   final String authorProfileId;
   final String authorUid;
   final String mediaUrl;
-  final String mediaType; // 'photo' | 'video'
+  final String mediaType; // 'photo' | 'video' | 'texte'
+  final String? fond; // fond choisi, uniquement pour mediaType == 'texte'
   final int? dureeSecondes;
   final String? legende; // balisage @[Nom](profileId), comme Pets Social/Forum/Groupes
   final String legendeCouleur;
   final String legendeTaille; // 's' | 'm' | 'l'
   final bool legendeGras;
+  final bool legendeSurlignee; // fond blanc + texte noir, juste sur la zone de texte
   final double legendeX; // 0..1, position libre sur le média (glisser-déposer)
   final double legendeY;
   final DateTime createdAt;
@@ -44,8 +65,9 @@ class StoryItem {
 
   StoryItem({
     required this.id, required this.authorProfileId, required this.authorUid,
-    required this.mediaUrl, required this.mediaType, this.dureeSecondes, this.legende,
+    required this.mediaUrl, required this.mediaType, this.fond, this.dureeSecondes, this.legende,
     this.legendeCouleur = '#FFFFFF', this.legendeTaille = 'm', this.legendeGras = false,
+    this.legendeSurlignee = false,
     this.legendeX = 0.5, this.legendeY = 0.85,
     required this.createdAt, required this.expiresAt, this.music, this.vue = false,
   });
@@ -58,11 +80,13 @@ class StoryItem {
       authorUid: r['uid'].toString(),
       mediaUrl: r['media_url']?.toString() ?? '',
       mediaType: r['media_type']?.toString() ?? 'photo',
+      fond: r['fond']?.toString(),
       dureeSecondes: r['duree_secondes'] as int?,
       legende: r['legende']?.toString(),
       legendeCouleur: r['legende_couleur']?.toString() ?? '#FFFFFF',
       legendeTaille: r['legende_taille']?.toString() ?? 'm',
       legendeGras: r['legende_gras'] as bool? ?? false,
+      legendeSurlignee: r['legende_surlignee'] as bool? ?? false,
       legendeX: (r['legende_x'] as num?)?.toDouble() ?? 0.5,
       legendeY: (r['legende_y'] as num?)?.toDouble() ?? 0.85,
       createdAt: DateTime.parse(r['created_at'].toString()),
@@ -81,33 +105,25 @@ class StoryGroup {
   bool get allSeen => items.every((s) => s.vue);
 }
 
-const _kStoryCols = 'id, uid, author_profile_id, media_url, media_type, duree_secondes, legende, '
-    'legende_couleur, legende_taille, legende_gras, legende_x, legende_y, '
+const _kStoryCols = 'id, uid, author_profile_id, media_url, media_type, fond, duree_secondes, legende, '
+    'legende_couleur, legende_taille, legende_gras, legende_surlignee, legende_x, legende_y, '
     'created_at, expires_at, story_music_tracks(id, titre, artiste, url_audio, duree_secondes)';
 
 class StoryService {
   static final _supa = Supabase.instance.client;
 
-  /// Groupes de stories actives (non expirées) DES PROFILS QUE JE SUIS (+
-  /// les miennes) — mêmes règles de visibilité que « Mon feed », pas les
-  /// stories de n'importe qui : si Natacha me suit, elle a bien MON profil
-  /// dans sa liste de « suivis » et voit donc mes stories ; ce n'est PAS
-  /// réciproque (je ne vois pas forcément les siennes si je ne la suis pas).
+  /// Groupes de stories actives (non expirées) — visibles par tout le monde
+  /// (comme l'onglet « Découverte »), ce qui couvre largement « mes abonnés
+  /// voient mes stories ». Une tentative de restreindre aux seuls profils
+  /// suivis a fait disparaître à la fois mes propres stories ET celles des
+  /// autres dès que la sous-requête `follows` échouait pour une raison
+  /// quelconque (silencieusement avalée par l'appelant) — trop fragile pour
+  /// une fonctionnalité éphémère 24h, on reste simple.
   /// Triées : moi d'abord, puis non-vues avant vues, puis plus récent d'abord.
   static Future<List<StoryGroup>> loadActiveGroups({required String myUid, String? myProfileId}) async {
     final nowIso = DateTime.now().toUtc().toIso8601String();
-    var q = _supa.from('stories').select(_kStoryCols).gt('expires_at', nowIso);
-    if (myProfileId != null && myProfileId.isNotEmpty) {
-      final follows = await _supa.from('follows').select('following_profile_id')
-          .eq('follower_profile_id', myProfileId);
-      final followedIds = (follows as List)
-          .map((f) => f['following_profile_id']?.toString())
-          .whereType<String>()
-          .toSet()
-        ..add(myProfileId);
-      q = q.inFilter('author_profile_id', followedIds.toList());
-    }
-    final rows = await q.order('created_at', ascending: true);
+    final rows = await _supa.from('stories').select(_kStoryCols)
+        .gt('expires_at', nowIso).order('created_at', ascending: true);
     final items = (rows as List).map((r) => StoryItem.fromRow(Map<String, dynamic>.from(r))).toList();
     if (items.isEmpty) return [];
 
@@ -235,16 +251,18 @@ class StoryService {
 
   static Future<String> createStory({
     required String uid, required String authorProfileId,
-    required String mediaUrl, required String mediaType,
+    String? mediaUrl, required String mediaType, String? fond,
     int? dureeSecondes, String? musicTrackId, String? legende,
     String legendeCouleur = '#FFFFFF', String legendeTaille = 'm', bool legendeGras = false,
+    bool legendeSurlignee = false,
     double legendeX = 0.5, double legendeY = 0.85,
   }) async {
     final res = await _supa.from('stories').insert({
       'uid': uid,
       'author_profile_id': authorProfileId,
-      'media_url': mediaUrl,
+      if (mediaUrl != null) 'media_url': mediaUrl,
       'media_type': mediaType,
+      if (fond != null) 'fond': fond,
       if (dureeSecondes != null) 'duree_secondes': dureeSecondes,
       if (musicTrackId != null) 'music_track_id': musicTrackId,
       if (legende != null && legende.isNotEmpty) ...{
@@ -252,6 +270,7 @@ class StoryService {
         'legende_couleur': legendeCouleur,
         'legende_taille': legendeTaille,
         'legende_gras': legendeGras,
+        'legende_surlignee': legendeSurlignee,
         'legende_x': legendeX,
         'legende_y': legendeY,
       },
@@ -259,8 +278,9 @@ class StoryService {
     return res['id'].toString();
   }
 
-  static Future<void> deleteStory(String storyId, {required String mediaUrl}) async {
+  static Future<void> deleteStory(String storyId, {String? mediaUrl}) async {
     await _supa.from('stories').delete().eq('id', storyId);
+    if (mediaUrl == null || mediaUrl.isEmpty) return;
     try {
       final path = Uri.parse(mediaUrl).pathSegments;
       final idx = path.indexOf('stories');

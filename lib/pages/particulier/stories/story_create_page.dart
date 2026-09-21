@@ -1,17 +1,14 @@
-import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 
 import 'package:PetsMatch/widgets/mention_hashtag.dart';
 import 'story_music_picker.dart';
 import 'story_service.dart';
+import 'story_upload_service.dart';
 
 /// Création d'une story (photo ou vidéo, 24h) — musique optionnelle, piochée
 /// uniquement dans la bibliothèque maison (jamais d'import libre, cf.
@@ -32,7 +29,8 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
   static const _legendeColors = [Colors.white, Colors.black, Color(0xFFFFE066), Color(0xFFFF6B6B), Color(0xFF6E9E57), Color(0xFF4ECDC4)];
 
   File? _mediaFile;
-  String _mediaType = 'photo'; // photo | video
+  String _mediaType = 'photo'; // photo | video | texte
+  String _fondId = kStoryFonds.first.$1; // fond choisi, uniquement pour mediaType == 'texte'
   VideoPlayerController? _videoCtrl;
   int? _videoDureeSecondes;
   StoryMusicTrack? _music;
@@ -42,10 +40,12 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
   Color _legendeColor = Colors.white;
   String _legendeTaille = 'm'; // s | m | l
   bool _legendeGras = false;
+  bool _legendeSurlignee = false; // fond blanc + texte noir, juste sur la zone de texte
   double _legendeX = 0.5; // 0..1, position libre glissée sur le média
   double _legendeY = 0.5;
   bool _editingText = false;
-  bool _posting = false;
+  AudioPlayer? _previewPlayer; // pré-écoute de la musique choisie, pendant l'édition
+  bool _musicPlaying = false;
 
   @override
   void initState() {
@@ -62,7 +62,26 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
     _videoCtrl?.dispose();
     _mentionCtrl?.dispose();
     _legendeCtrl.dispose();
+    try { _previewPlayer?.dispose(); } catch (_) {}
     super.dispose();
+  }
+
+  Future<void> _toggleMusicPreview() async {
+    final track = _music;
+    if (track == null) return;
+    if (_musicPlaying) {
+      try { await _previewPlayer?.stop(); } catch (_) {}
+      if (mounted) setState(() => _musicPlaying = false);
+      return;
+    }
+    _previewPlayer ??= AudioPlayer();
+    try {
+      await _previewPlayer!.play(UrlSource(track.urlAudio));
+      _previewPlayer!.onPlayerComplete.first.then((_) {
+        if (mounted) setState(() => _musicPlaying = false);
+      });
+      if (mounted) setState(() => _musicPlaying = true);
+    } catch (_) {}
   }
 
   double get _legendeFontSize => switch (_legendeTaille) { 's' => 14, 'l' => 22, _ => 17 };
@@ -86,95 +105,59 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
     setState(() {
       _mediaFile = file;
       _mediaType = 'video';
-      _videoCtrl = ctrl..setLooping(true)..play();
+      // Volume quasi nul plutôt que 0.0 exact : sur certains appareils
+      // (MIUI notamment), une piste totalement coupée peut faire stopper le
+      // rendu vidéo (ExoPlayer synchronise l'image sur l'horloge audio).
+      _videoCtrl = ctrl..setLooping(true)..setVolume(_music != null ? 0.01 : 1)..play();
       _videoDureeSecondes = ctrl.value.duration.inSeconds.clamp(1, 60);
     });
   }
 
   Future<void> _pickMusic() async {
+    try { await _previewPlayer?.stop(); } catch (_) {}
+    if (!mounted) return;
     final track = await showModalBottomSheet<StoryMusicTrack?>(
       context: context, isScrollControlled: true, backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => const StoryMusicPickerSheet(),
     );
-    if (track != null && mounted) setState(() => _music = track);
+    if (track != null && mounted) {
+      // La musique choisie prime sur le son natif de la vidéo, comme au
+      // visionnage — sinon la pré-écoute ne reflète pas ce que verront les
+      // spectateurs.
+      _videoCtrl?.setVolume(0.01);
+      setState(() { _music = track; _musicPlaying = false; });
+    }
   }
 
-  Future<void> _post() async {
-    final media = _mediaFile;
-    if (media == null || _posting) return;
-    setState(() => _posting = true);
-    try {
-      final supa = Supabase.instance.client;
-      Uint8List bytes;
-      String ext;
-      String contentType;
-      if (_mediaType == 'photo') {
-        final compressed = await FlutterImageCompress.compressWithFile(
-          media.path, quality: 82, minWidth: 1080, minHeight: 1080, keepExif: false,
-        );
-        bytes = compressed ?? await media.readAsBytes();
-        ext = 'jpg'; contentType = 'image/jpg';
-      } else {
-        // Compression vidéo — la caméra produit facilement 40-80 Mo pour
-        // 1 min ; sans ça le volume Storage explose (24h ou pas, ça reste
-        // téléchargé par chaque spectateur pendant ce temps).
-        File videoToUpload = media;
-        try {
-          final info = await VideoCompress.compressVideo(
-            media.path, quality: VideoQuality.MediumQuality, deleteOrigin: false,
-          );
-          if (info?.file != null) videoToUpload = info!.file!;
-        } catch (_) {
-          // Repli sur le fichier d'origine si la compression échoue.
-        }
-        bytes = await videoToUpload.readAsBytes();
-        ext = 'mp4'; contentType = 'video/mp4';
-      }
-      final path = '${widget.authorProfileId}/${DateTime.now().millisecondsSinceEpoch}.$ext';
-      await supa.storage.from('stories').uploadBinary(path, bytes,
-          fileOptions: FileOptions(contentType: contentType, upsert: false));
-      final url = supa.storage.from('stories').getPublicUrl(path);
+  bool get _hasContent => _mediaFile != null || _mediaType == 'texte';
 
-      final legende = _legendeCtrl.resolveMarkup().trim();
-      await StoryService.createStory(
-        uid: widget.myUid,
-        authorProfileId: widget.authorProfileId,
-        mediaUrl: url,
-        mediaType: _mediaType,
-        dureeSecondes: _mediaType == 'video' ? _videoDureeSecondes : null,
-        musicTrackId: _music?.id,
-        legende: legende,
-        legendeCouleur: _hex(_legendeColor),
-        legendeTaille: _legendeTaille,
-        legendeGras: _legendeGras,
-        legendeX: _legendeX,
-        legendeY: _legendeY,
-      );
-      if (legende.isNotEmpty) {
-        unawaited(notifyMentions(
-          text: legende,
-          actorUid: widget.myUid,
-          notifType: 'social_mention',
-          title: '📣 Tu as été mentionné(e)',
-          body: 'Tu as été mentionné(e) dans une story Pets Social',
-          data: const {},
-        ));
-      }
-
-      if (mounted) {
-        widget.onPosted?.call();
-        Navigator.pop(context, true);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
-            backgroundColor: Colors.red.shade800));
-      }
-    } finally {
-      if (mounted) setState(() => _posting = false);
-    }
+  // Publication en tâche de fond (comme Instagram) : on repart directement
+  // au fil pendant que compression + upload continuent ailleurs
+  // (StoryUploadService, pas lié au cycle de vie de cet écran) — l'anneau
+  // "Ma story" affiche la progression pendant ce temps.
+  void _post() {
+    if (!_hasContent) return;
+    try { _previewPlayer?.stop(); } catch (_) {}
+    final legende = _legendeCtrl.resolveMarkup().trim();
+    StoryUploadService.instance.upload(
+      myUid: widget.myUid,
+      authorProfileId: widget.authorProfileId,
+      media: _mediaFile,
+      mediaType: _mediaType,
+      videoDureeSecondes: _mediaType == 'video' ? _videoDureeSecondes : null,
+      music: _music,
+      legende: legende,
+      legendeCouleur: _hex(_legendeColor),
+      legendeTaille: _legendeTaille,
+      legendeGras: _legendeGras,
+      legendeSurlignee: _legendeSurlignee,
+      legendeX: _legendeX,
+      legendeY: _legendeY,
+      fond: _mediaType == 'texte' ? _fondId : null,
+    );
+    widget.onPosted?.call();
+    Navigator.pop(context, true);
   }
 
   @override
@@ -195,7 +178,7 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
             ]),
           ),
           Expanded(
-            child: _mediaFile == null ? _buildPicker() : _buildPreview(),
+            child: _hasContent ? _buildPreview() : _buildPicker(),
           ),
         ]),
       ),
@@ -212,6 +195,7 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
           _pickerBtn(Icons.photo_library_outlined, 'Galerie photo', () => _pickPhoto(ImageSource.gallery)),
           _pickerBtn(Icons.videocam_outlined, 'Vidéo (1 min max)', () => _pickVideo(ImageSource.camera)),
           _pickerBtn(Icons.video_library_outlined, 'Galerie vidéo', () => _pickVideo(ImageSource.gallery)),
+          _pickerBtn(Icons.title_rounded, 'Texte', () => setState(() { _mediaType = 'texte'; _editingText = true; })),
         ]),
       ]),
     );
@@ -239,13 +223,17 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
       final w = constraints.maxWidth;
       final h = constraints.maxHeight;
       return Stack(fit: StackFit.expand, children: [
-        _mediaType == 'photo'
-            ? Image.file(_mediaFile!, fit: BoxFit.cover)
-            : (_videoCtrl != null && _videoCtrl!.value.isInitialized
-                ? FittedBox(fit: BoxFit.cover,
-                    child: SizedBox(width: _videoCtrl!.value.size.width, height: _videoCtrl!.value.size.height,
-                        child: VideoPlayer(_videoCtrl!)))
-                : const Center(child: CircularProgressIndicator(color: Colors.white))),
+        _mediaType == 'texte'
+            ? Container(decoration: BoxDecoration(gradient: LinearGradient(
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
+                colors: storyFondColors(_fondId))))
+            : _mediaType == 'photo'
+                ? Image.file(_mediaFile!, fit: BoxFit.cover)
+                : (_videoCtrl != null && _videoCtrl!.value.isInitialized
+                    ? FittedBox(fit: BoxFit.cover,
+                        child: SizedBox(width: _videoCtrl!.value.size.width, height: _videoCtrl!.value.size.height,
+                            child: VideoPlayer(_videoCtrl!)))
+                    : const Center(child: CircularProgressIndicator(color: Colors.white))),
 
         // Texte glissé librement sur le média (comme Instagram/Snapchat) —
         // tap pour éditer, glisser pour repositionner.
@@ -260,11 +248,17 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
                 _legendeX = ((_legendeX * w + d.delta.dx) / w).clamp(0.0, 1.0);
                 _legendeY = ((_legendeY * h + d.delta.dy) / h).clamp(0.0, 1.0);
               }),
-              child: MentionHashtagText(
-                text: _legendeCtrl.resolveMarkup(),
-                enableHashtags: false,
-                style: TextStyle(fontFamily: 'Galey', color: _legendeColor,
-                    fontSize: _legendeFontSize, fontWeight: _legendeGras ? FontWeight.w800 : FontWeight.w400),
+              child: Container(
+                padding: _legendeSurlignee ? const EdgeInsets.symmetric(horizontal: 10, vertical: 4) : EdgeInsets.zero,
+                decoration: _legendeSurlignee
+                    ? BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6))
+                    : null,
+                child: MentionHashtagText(
+                  text: _legendeCtrl.resolveMarkup(),
+                  enableHashtags: false,
+                  style: TextStyle(fontFamily: 'Galey', color: _legendeSurlignee ? Colors.black : _legendeColor,
+                      fontSize: _legendeFontSize, fontWeight: _legendeGras ? FontWeight.w800 : FontWeight.w400),
+                ),
               ),
             ),
           ),
@@ -288,20 +282,51 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
           Positioned(
             left: 16, right: 16, bottom: 24,
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              if (_mediaType == 'texte')
+                Container(
+                  height: 40,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  child: ListView(scrollDirection: Axis.horizontal, children: [
+                    for (final f in kStoryFonds) ...[
+                      GestureDetector(
+                        onTap: () => setState(() => _fondId = f.$1),
+                        child: Container(
+                          width: 36, height: 36,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: f.$2),
+                            border: Border.all(color: Colors.white, width: _fondId == f.$1 ? 3 : 1),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                  ]),
+                ),
               if (_music != null)
                 Container(
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    const Icon(Icons.music_note, color: Colors.white, size: 16),
+                    GestureDetector(
+                      onTap: _toggleMusicPreview,
+                      child: Icon(_musicPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                          color: Colors.white, size: 20),
+                    ),
                     const SizedBox(width: 6),
                     Flexible(child: Text('${_music!.titre}${_music!.artiste != null ? ' — ${_music!.artiste}' : ''}',
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 12))),
                     const SizedBox(width: 6),
-                    GestureDetector(onTap: () => setState(() => _music = null),
-                        child: const Icon(Icons.close, color: Colors.white70, size: 16)),
+                    GestureDetector(
+                      onTap: () {
+                        try { _previewPlayer?.stop(); } catch (_) {}
+                        _videoCtrl?.setVolume(1);
+                        setState(() { _music = null; _musicPlaying = false; });
+                      },
+                      child: const Icon(Icons.close, color: Colors.white70, size: 16),
+                    ),
                   ]),
                 ),
               Row(children: [
@@ -317,11 +342,9 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: FilledButton(
-                    onPressed: _posting ? null : _post,
+                    onPressed: _post,
                     style: FilledButton.styleFrom(backgroundColor: _green, padding: const EdgeInsets.symmetric(vertical: 12)),
-                    child: _posting
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Text('Publier', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                    child: const Text('Publier', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
                   ),
                 ),
               ]),
@@ -380,6 +403,21 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
                     alignment: Alignment.center,
                     decoration: BoxDecoration(shape: BoxShape.circle, color: _legendeGras ? _green : Colors.white10),
                     child: const Text('B', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                GestureDetector(
+                  onTap: () => setState(() => _legendeSurlignee = !_legendeSurlignee),
+                  child: Container(
+                    width: 24, height: 24,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _legendeSurlignee ? Colors.white : Colors.white10,
+                      border: Border.all(color: Colors.white54, width: 1),
+                    ),
+                    child: Text('A', style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w900,
+                        color: _legendeSurlignee ? Colors.black : Colors.white)),
                   ),
                 ),
                 const SizedBox(width: 10),
