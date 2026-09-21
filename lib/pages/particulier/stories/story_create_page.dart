@@ -77,7 +77,7 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
   }
 
   Future<void> _pickVideo(ImageSource source) async {
-    final x = await ImagePicker().pickVideo(source: source, maxDuration: const Duration(seconds: 30));
+    final x = await ImagePicker().pickVideo(source: source, maxDuration: const Duration(minutes: 1));
     if (x == null) return;
     final file = File(x.path);
     final ctrl = VideoPlayerController.file(file);
@@ -87,7 +87,7 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
       _mediaFile = file;
       _mediaType = 'video';
       _videoCtrl = ctrl..setLooping(true)..play();
-      _videoDureeSecondes = ctrl.value.duration.inSeconds.clamp(1, 30);
+      _videoDureeSecondes = ctrl.value.duration.inSeconds.clamp(1, 60);
     });
   }
 
@@ -116,8 +116,8 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
         bytes = compressed ?? await media.readAsBytes();
         ext = 'jpg'; contentType = 'image/jpg';
       } else {
-        // Compression vidéo — la caméra produit facilement 20-40 Mo pour
-        // 30s ; sans ça le volume Storage explose (24h ou pas, ça reste
+        // Compression vidéo — la caméra produit facilement 40-80 Mo pour
+        // 1 min ; sans ça le volume Storage explose (24h ou pas, ça reste
         // téléchargé par chaque spectateur pendant ce temps).
         File videoToUpload = media;
         try {
@@ -210,7 +210,7 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
         Wrap(spacing: 12, runSpacing: 12, alignment: WrapAlignment.center, children: [
           _pickerBtn(Icons.camera_alt_outlined, 'Photo', () => _pickPhoto(ImageSource.camera)),
           _pickerBtn(Icons.photo_library_outlined, 'Galerie photo', () => _pickPhoto(ImageSource.gallery)),
-          _pickerBtn(Icons.videocam_outlined, 'Vidéo (30s max)', () => _pickVideo(ImageSource.camera)),
+          _pickerBtn(Icons.videocam_outlined, 'Vidéo (1 min max)', () => _pickVideo(ImageSource.camera)),
           _pickerBtn(Icons.video_library_outlined, 'Galerie vidéo', () => _pickVideo(ImageSource.gallery)),
         ]),
       ]),

@@ -130,7 +130,13 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
     if ((progress - _videoProgress).abs() > 0.002) setState(() => _videoProgress = progress);
     if (!_videoEnded && !_paused && v.position >= dur - const Duration(milliseconds: 200)) {
       _videoEnded = true;
-      _next();
+      // Différé au prochain frame : _next() dispose _videoCtrl, et on est
+      // ici DANS une notification de ce même contrôleur — le disposer à
+      // chaud, en plein milieu de son propre callback, pouvait planter le
+      // rendu de la texture vidéo (image figée à l'écran).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_disposed && mounted) _next();
+      });
     }
   }
 
