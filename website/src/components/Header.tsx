@@ -787,6 +787,19 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
       return d.post_id ? `/p/${d.post_id}` : null;
     case 'social_follow':
       return d.actor_uid ? `/profil/${d.actor_uid}` : null;
+    case 'petfriend_request':
+    case 'petfriend_accepted': {
+      // Sans le profil précis (émetteur + destinataire), la page retombait
+      // sur le profil is_main de l'émetteur et sur MON profil actif du
+      // moment — ce qui pouvait afficher une tout autre relation (ex. ma
+      // propre demande envoyée à un autre de ses profils).
+      const myPid = (n as Notif & { profile_id?: string }).profile_id;
+      const qs = new URLSearchParams();
+      if (d.fromProfileId) qs.set('fromProfileId', String(d.fromProfileId));
+      if (myPid) qs.set('myProfileId', myPid);
+      const qsStr = qs.toString();
+      return d.fromUid ? `/profil/${d.fromUid}${qsStr ? `?${qsStr}` : ''}` : '/petfriends';
+    }
     case 'alerte_perdu':
       return '/animaux-perdus';
     case 'chaleur':
@@ -898,9 +911,6 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     case 'promenade_annulee':
     case 'promenade_modifiee':
       return d.promenadeId ? `/promenades/${d.promenadeId}` : '/promenades';
-    case 'petfriend_request':
-    case 'petfriend_accepted':
-      return d.fromUid ? `/profil/${d.fromUid}` : '/petfriends';
     case 'employee_invite':
     case 'tache':
       return '/mes-employeurs';

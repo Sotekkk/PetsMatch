@@ -19,7 +19,13 @@ class PublicProfilePage extends StatefulWidget {
   /// comme Pets Social : chaque profil a sa propre liste de PetFriends.
   /// Si absent, on retombe sur le profil is_main de l'uid.
   final String? targetProfileId;
-  const PublicProfilePage({super.key, required this.targetUid, this.showMessageButton = true, this.targetProfileId});
+  /// Mon profil qui doit être utilisé pour la relation PetFriend (ex. celui
+  /// visé par une notification), à la place du profil ACTIF de l'appli.
+  /// Sans ça, ouvrir une notif « Natacha veut être ton PetFriend » alors
+  /// qu'un autre profil est actif en ce moment ramenait sur une AUTRE
+  /// relation (ex. ma propre demande envoyée) au lieu de la bonne.
+  final String? myProfileIdOverride;
+  const PublicProfilePage({super.key, required this.targetUid, this.showMessageButton = true, this.targetProfileId, this.myProfileIdOverride});
 
   @override
   State<PublicProfilePage> createState() => _PublicProfilePageState();
@@ -54,7 +60,11 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
   /// base sur le profil_id exactement comme Pets Social (un follow, une
   /// demande d'ami… appartiennent au profil actif, pas au compte entier) :
   /// même résolveur que `_activeAuthorProfileId` (posts/likes/follows).
-  Future<String?> _myProfileId() => resolveActiveAuthorProfileId(_myUid);
+  Future<String?> _myProfileId() async {
+    final override = widget.myProfileIdOverride;
+    if (override != null && override.isNotEmpty) return override;
+    return resolveActiveAuthorProfileId(_myUid);
+  }
 
   Future<void> _load() async {
     if (!mounted) return;
@@ -175,7 +185,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
         'title': '🐾 Nouvelle demande PetFriend',
         'body': '$nom veut être ton PetFriend !',
         if (_targetProfileId != null) 'profile_id': _targetProfileId,
-        'data': {'fromUid': _myUid},
+        'data': {'fromUid': _myUid, if (myProfileId.isNotEmpty) 'fromProfileId': myProfileId},
         'read': false,
         'created_at': DateTime.now().toIso8601String(),
       });
@@ -223,7 +233,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
       'title': '🐾 PetFriend accepté !',
       'body': '$nom a accepté ta demande PetFriend.',
       if (_targetProfileId != null) 'profile_id': _targetProfileId,
-      'data': {'fromUid': _myUid},
+      'data': {'fromUid': _myUid, if (myProfileId.isNotEmpty) 'fromProfileId': myProfileId},
       'read': false,
       'created_at': DateTime.now().toIso8601String(),
     });

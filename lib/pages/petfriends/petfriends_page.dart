@@ -224,7 +224,8 @@ class _PetFriendsPageState extends State<PetFriendsPage>
         'uid': targetUid, 'type': 'petfriend_request',
         'title': '🐾 Nouvelle demande PetFriend', 'body': '$nom veut être ton PetFriend !',
         'profile_id': targetProfileId,
-        'data': {'fromUid': _myUid}, 'read': false, 'created_at': DateTime.now().toIso8601String(),
+        'data': {'fromUid': _myUid, if (myProfileId.isNotEmpty) 'fromProfileId': myProfileId},
+        'read': false, 'created_at': DateTime.now().toIso8601String(),
       });
       if (mounted) setState(() => _searchStatuts[targetProfileId] = 'en_attente');
     } catch (_) {}
@@ -243,7 +244,8 @@ class _PetFriendsPageState extends State<PetFriendsPage>
       'uid': row.uid, 'type': 'petfriend_accepted',
       'title': '🐾 PetFriend accepté !', 'body': '$nom a accepté ta demande PetFriend.',
       'profile_id': row.profileId,
-      'data': {'fromUid': _myUid}, 'read': false, 'created_at': DateTime.now().toIso8601String(),
+      'data': {'fromUid': _myUid, if (myProfileId.isNotEmpty) 'fromProfileId': myProfileId},
+      'read': false, 'created_at': DateTime.now().toIso8601String(),
     });
     _load();
   }

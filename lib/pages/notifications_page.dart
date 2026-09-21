@@ -811,10 +811,20 @@ class _NotificationsPageState extends State<NotificationsPage> {
         ));
       }
     } else if (type == 'petfriend_request' || type == 'petfriend_accepted') {
+      // Sans le profil précis (émetteur + moi), on retombait sur le profil
+      // is_main de l'émetteur et sur MON profil actif du moment — ce qui
+      // pouvait afficher une tout autre relation (ex. ma propre demande
+      // envoyée à un autre de ses profils) au lieu de celle de la notif.
       final fromUid = data is Map ? data['fromUid'] as String? : null;
+      final fromProfileId = data is Map ? data['fromProfileId'] as String? : null;
+      final myTargetedProfileId = notif['profile_id'] as String?;
       if (fromUid != null) {
         await Navigator.push(context, MaterialPageRoute(
-          builder: (_) => PublicProfilePage(targetUid: fromUid),
+          builder: (_) => PublicProfilePage(
+            targetUid: fromUid,
+            targetProfileId: fromProfileId,
+            myProfileIdOverride: myTargetedProfileId,
+          ),
         ));
       }
     } else if (type == 'social_like' || type == 'social_comment' || type == 'social_mention') {

@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
@@ -27,6 +27,30 @@ interface Animal {
 type RelStatut = 'en_attente' | 'accepte' | null;
 type RelDir = 'sent' | 'received' | null;
 
+// Nom affiché pour une notification envoyée depuis le profil ACTIF (pas
+// forcément le profil principal du compte) — même logique que
+// _profileName côté appli (social_feed_page.dart).
+function profileDisplayName(p: { social_pseudo?: string | null; nom?: string | null; firstname?: string | null; lastname?: string | null; profile_type?: string | null } | null): string {
+  if (!p) return 'Quelqu\'un';
+  const pseudo = (p.social_pseudo ?? '').trim();
+  if (pseudo) return pseudo;
+  const ne = (p.nom ?? '').trim();
+  const n = `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim();
+  if (p.profile_type && p.profile_type !== 'particulier' && ne) return ne;
+  if (n) return n;
+  return ne || 'Quelqu\'un';
+}
+
+async function activeProfileName(uid: string, activePid: string | null): Promise<string> {
+  const cols = 'social_pseudo, nom, firstname, lastname, profile_type';
+  if (activePid) {
+    const { data } = await supabase.from('user_profiles').select(cols).eq('id', activePid).maybeSingle();
+    if (data) return profileDisplayName(data);
+  }
+  const { data } = await supabase.from('user_profiles').select(cols).eq('uid', uid).eq('is_main', true).maybeSingle();
+  return profileDisplayName(data);
+}
+
 function Avatar({ url, name, size = 48 }: { url?: string; name?: string; size?: number }) {
   return url ? (
     <Image src={url} alt={name ?? ''} width={size} height={size}
@@ -39,14 +63,23 @@ function Avatar({ url, name, size = 48 }: { url?: string; name?: string; size?: 
   );
 }
 
-export default function PublicProfilePage() {
+function PublicProfilePageInner() {
   const params = useParams<{ uid: string }>();
   const targetUid = params.uid;
   const router = useRouter();
   const { user } = useAuth();
   const myUid = user?.uid ?? '';
   const isMe = targetUid === myUid;
-  const activeProfileId = useActiveProfile();
+  const searchParams = useSearchParams();
+  // Depuis une notif PetFriend (demande/acceptation) : le profil précis de
+  // l'émetteur et MON profil précisément visé — sans ça on retombait sur le
+  // profil is_main de l'émetteur et sur mon profil actif du moment, ce qui
+  // pouvait afficher une tout autre relation (ex. ma propre demande envoyée
+  // à un autre de ses profils).
+  const notifFromProfileId = searchParams.get('fromProfileId');
+  const notifMyProfileId = searchParams.get('myProfileId');
+  const activeProfileIdRaw = useActiveProfile();
+  const activeProfileId = notifMyProfileId || activeProfileIdRaw;
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [animaux, setAnimaux] = useState<Animal[]>([]);
@@ -60,9 +93,13 @@ export default function PublicProfilePage() {
   async function load() {
     setLoading(true);
     try {
-      const { data: p } = await supabase.from('user_profiles')
-        .select('id, firstname, lastname, avatar_url, ville')
-        .eq('uid', targetUid).eq('is_main', true).maybeSingle();
+      const { data: p } = notifFromProfileId
+        ? await supabase.from('user_profiles')
+            .select('id, firstname, lastname, avatar_url, ville')
+            .eq('id', notifFromProfileId).maybeSingle()
+        : await supabase.from('user_profiles')
+            .select('id, firstname, lastname, avatar_url, ville')
+            .eq('uid', targetUid).eq('is_main', true).maybeSingle();
       setProfile(p ? {
         uid: targetUid,
         firstname: p.firstname,
@@ -107,7 +144,7 @@ export default function PublicProfilePage() {
     }
   }
 
-  useEffect(() => { if (targetUid) load(); }, [targetUid, myUid, activeProfileId]);
+  useEffect(() => { if (targetUid) load(); }, [targetUid, myUid, activeProfileId, notifFromProfileId]);
 
   async function sendRequest() {
     if (!myUid) return;
@@ -120,14 +157,14 @@ export default function PublicProfilePage() {
         ...(targetProfileId ? { recepteur_profile_id: targetProfileId } : {}),
         statut: 'en_attente', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
       }).select('id').single();
-      const { data: me } = await supabase.from('user_profiles').select('firstname, lastname').eq('uid', myUid).eq('is_main', true).maybeSingle();
-      const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
+      const nom = await activeProfileName(myUid, activeProfileId);
       await supabase.from('notifications').insert({
         uid: targetUid, type: 'petfriend_request',
         title: '🐾 Nouvelle demande PetFriend',
         body: `${nom} veut être ton PetFriend !`,
         ...(targetProfileId ? { profile_id: targetProfileId } : {}),
-        data: { fromUid: myUid }, read: false, created_at: new Date().toISOString(),
+        data: { fromUid: myUid, ...(activeProfileId ? { fromProfileId: activeProfileId } : {}) },
+        read: false, created_at: new Date().toISOString(),
       });
       setRelId(rel.id); setRelStatut('en_attente'); setRelDir('sent');
     } finally {
@@ -149,14 +186,14 @@ export default function PublicProfilePage() {
     await supabase.from('petfriends').update({
       statut: 'accepte', updated_at: new Date().toISOString()
     }).eq('id', relId);
-    const { data: me } = await supabase.from('user_profiles').select('firstname, lastname').eq('uid', myUid).eq('is_main', true).maybeSingle();
-    const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
+    const nom = await activeProfileName(myUid, activeProfileId);
     await supabase.from('notifications').insert({
       uid: targetUid, type: 'petfriend_accepted',
       title: '🐾 PetFriend accepté !',
       body: `${nom} a accepté ta demande PetFriend.`,
       ...(targetProfileId ? { profile_id: targetProfileId } : {}),
-      data: { fromUid: myUid }, read: false, created_at: new Date().toISOString(),
+      data: { fromUid: myUid, ...(activeProfileId ? { fromProfileId: activeProfileId } : {}) },
+      read: false, created_at: new Date().toISOString(),
     });
     setRelStatut('accepte'); setSaving(false);
     load();
@@ -249,6 +286,14 @@ export default function PublicProfilePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function PublicProfilePage() {
+  return (
+    <Suspense fallback={null}>
+      <PublicProfilePageInner />
+    </Suspense>
   );
 }
 
