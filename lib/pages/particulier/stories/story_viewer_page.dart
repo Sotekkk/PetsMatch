@@ -1,0 +1,287 @@
+import 'package:audioplayers/audioplayers.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
+
+import 'story_service.dart';
+
+/// Lecteur plein écran des stories (façon Instagram) : barres de progression
+/// segmentées, avance auto, tap gauche/droite, musique/audio synchronisée.
+class StoryViewerPage extends StatefulWidget {
+  final List<StoryGroup> groups;
+  final int startGroupIndex;
+  final String myUid;
+  final String? myProfileId;
+  const StoryViewerPage({
+    super.key, required this.groups, this.startGroupIndex = 0,
+    required this.myUid, this.myProfileId,
+  });
+
+  @override
+  State<StoryViewerPage> createState() => _StoryViewerPageState();
+}
+
+class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProviderStateMixin {
+  late final PageController _pageCtrl;
+  late int _groupIndex;
+  int _itemIndex = 0;
+  late AnimationController _progressCtrl;
+  VideoPlayerController? _videoCtrl;
+  final _musicPlayer = AudioPlayer();
+  bool _paused = false;
+
+  static const _defaultDuration = Duration(seconds: 6);
+
+  @override
+  void initState() {
+    super.initState();
+    _groupIndex = widget.startGroupIndex;
+    _pageCtrl = PageController(initialPage: _groupIndex);
+    _progressCtrl = AnimationController(vsync: this)
+      ..addStatusListener((s) { if (s == AnimationStatus.completed) _next(); });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _playCurrent());
+  }
+
+  @override
+  void dispose() {
+    _progressCtrl.dispose();
+    _videoCtrl?.dispose();
+    _musicPlayer.dispose();
+    _pageCtrl.dispose();
+    super.dispose();
+  }
+
+  StoryGroup get _group => widget.groups[_groupIndex];
+  StoryItem get _item => _group.items[_itemIndex];
+
+  Future<void> _playCurrent() async {
+    _progressCtrl.stop();
+    _progressCtrl.reset();
+    _videoCtrl?.dispose();
+    _videoCtrl = null;
+    await _musicPlayer.stop();
+
+    StoryService.markViewed(_item.id, viewerUid: widget.myUid, viewerProfileId: widget.myProfileId);
+
+    if (_item.mediaType == 'video') {
+      final ctrl = VideoPlayerController.networkUrl(Uri.parse(_item.mediaUrl));
+      await ctrl.initialize();
+      if (!mounted) return;
+      // Musique en fond → on coupe le son natif de la vidéo (comme demandé :
+      // priorité à la musique choisie, pas de mix).
+      ctrl.setVolume(_item.music != null ? 0 : 1);
+      ctrl.play();
+      setState(() => _videoCtrl = ctrl);
+      final dur = ctrl.value.duration.inMilliseconds > 0 ? ctrl.value.duration : _defaultDuration;
+      _progressCtrl.duration = dur;
+    } else {
+      _progressCtrl.duration = _defaultDuration;
+    }
+    if (_item.music != null) {
+      try { await _musicPlayer.play(UrlSource(_item.music!.urlAudio)); } catch (_) {}
+    }
+    if (!_paused) _progressCtrl.forward();
+  }
+
+  void _next() {
+    if (_itemIndex < _group.items.length - 1) {
+      setState(() => _itemIndex++);
+      _playCurrent();
+    } else if (_groupIndex < widget.groups.length - 1) {
+      _pageCtrl.nextPage(duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
+  void _prev() {
+    if (_itemIndex > 0) {
+      setState(() => _itemIndex--);
+      _playCurrent();
+    } else if (_groupIndex > 0) {
+      _pageCtrl.previousPage(duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    }
+  }
+
+  void _onGroupChanged(int i) {
+    setState(() { _groupIndex = i; _itemIndex = 0; });
+    _playCurrent();
+  }
+
+  void _togglePause() {
+    setState(() => _paused = !_paused);
+    if (_paused) {
+      _progressCtrl.stop();
+      _videoCtrl?.pause();
+      _musicPlayer.pause();
+    } else {
+      _progressCtrl.forward();
+      _videoCtrl?.play();
+      _musicPlayer.resume();
+    }
+  }
+
+  Future<void> _showViewers() async {
+    final viewers = await StoryService.viewers(_item.id);
+    if (!mounted) return;
+    _paused = true; _progressCtrl.stop(); _videoCtrl?.pause(); _musicPlayer.pause();
+    await showModalBottomSheet(
+      context: context, backgroundColor: const Color(0xFF1F2A2E),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Vu par ${viewers.length}', style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            if (viewers.isEmpty)
+              const Padding(padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Text('Personne n\'a encore vu cette story', style: TextStyle(fontFamily: 'Galey', color: Colors.white54)))
+            else
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 320),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: viewers.length,
+                  itemBuilder: (_, i) {
+                    final p = viewers[i]['profile'] as Map<String, dynamic>?;
+                    final nom = p?['social_pseudo']?.toString().trim().isNotEmpty == true
+                        ? p!['social_pseudo'].toString()
+                        : '${p?['firstname'] ?? ''} ${p?['lastname'] ?? ''}'.trim();
+                    final photo = (p?['avatar_url'] ?? p?['profile_picture_url_pro'])?.toString();
+                    return ListTile(
+                      leading: CircleAvatar(
+                        radius: 18, backgroundColor: Colors.white24,
+                        backgroundImage: photo?.isNotEmpty == true ? CachedNetworkImageProvider(photo!) : null,
+                        child: photo?.isNotEmpty != true ? const Icon(Icons.person_outline, color: Colors.white70, size: 18) : null,
+                      ),
+                      title: Text(nom.isEmpty ? 'Membre' : nom, style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 13)),
+                    );
+                  },
+                ),
+              ),
+          ]),
+        ),
+      ),
+    );
+    if (mounted) { _paused = false; _progressCtrl.forward(); _videoCtrl?.play(); _musicPlayer.resume(); }
+  }
+
+  Future<void> _delete() async {
+    final ok = await showDialog<bool>(context: context, builder: (_) => AlertDialog(
+      title: const Text('Supprimer cette story ?', style: TextStyle(fontFamily: 'Galey')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Supprimer', style: TextStyle(color: Colors.red))),
+      ],
+    ));
+    if (ok != true) return;
+    await StoryService.deleteStory(_item.id, mediaUrl: _item.mediaUrl);
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isMine = _group.authorProfileId == widget.myProfileId;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: PageView.builder(
+        controller: _pageCtrl,
+        itemCount: widget.groups.length,
+        onPageChanged: _onGroupChanged,
+        itemBuilder: (_, gi) {
+          final g = widget.groups[gi];
+          if (gi != _groupIndex) return const SizedBox.shrink();
+          final item = g.items[_itemIndex];
+          final nom = g.authorProfile?['social_pseudo']?.toString().trim().isNotEmpty == true
+              ? g.authorProfile!['social_pseudo'].toString()
+              : '${g.authorProfile?['firstname'] ?? ''} ${g.authorProfile?['lastname'] ?? ''}'.trim();
+          final photo = (g.authorProfile?['avatar_url'] ?? g.authorProfile?['profile_picture_url_pro'])?.toString();
+          return GestureDetector(
+            onTapUp: (d) {
+              final w = MediaQuery.of(context).size.width;
+              if (d.globalPosition.dx < w / 3) { _prev(); } else if (d.globalPosition.dx > w * 2 / 3) { _next(); }
+            },
+            onLongPressStart: (_) => _togglePause(),
+            onLongPressEnd: (_) => _togglePause(),
+            child: Stack(fit: StackFit.expand, children: [
+              item.mediaType == 'photo'
+                  ? CachedNetworkImage(imageUrl: item.mediaUrl, fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => Container(color: Colors.black))
+                  : (_videoCtrl != null && _videoCtrl!.value.isInitialized
+                      ? FittedBox(fit: BoxFit.cover,
+                          child: SizedBox(width: _videoCtrl!.value.size.width, height: _videoCtrl!.value.size.height,
+                              child: VideoPlayer(_videoCtrl!)))
+                      : const Center(child: CircularProgressIndicator(color: Colors.white))),
+              // Dégradé pour la lisibilité du haut.
+              Positioned(top: 0, left: 0, right: 0, height: 140,
+                  child: Container(decoration: const BoxDecoration(gradient: LinearGradient(
+                      begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                      colors: [Colors.black54, Colors.transparent])))),
+              SafeArea(
+                child: Column(children: [
+                  // Barres de progression segmentées.
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                    child: Row(children: [
+                      for (int i = 0; i < g.items.length; i++) ...[
+                        if (i > 0) const SizedBox(width: 4),
+                        Expanded(
+                          child: AnimatedBuilder(
+                            animation: _progressCtrl,
+                            builder: (_, __) => ClipRRect(
+                              borderRadius: BorderRadius.circular(2),
+                              child: LinearProgressIndicator(
+                                minHeight: 2.5,
+                                value: i < _itemIndex ? 1 : (i == _itemIndex ? _progressCtrl.value : 0),
+                                backgroundColor: Colors.white30,
+                                valueColor: const AlwaysStoppedAnimation(Colors.white),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ]),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 8, 0),
+                    child: Row(children: [
+                      CircleAvatar(radius: 16, backgroundColor: Colors.white24,
+                          backgroundImage: photo?.isNotEmpty == true ? CachedNetworkImageProvider(photo!) : null,
+                          child: photo?.isNotEmpty != true ? const Icon(Icons.person_outline, color: Colors.white70, size: 16) : null),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(nom.isEmpty ? 'Membre' : nom,
+                          style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13))),
+                      if (item.music != null) ...[
+                        const Icon(Icons.music_note, color: Colors.white70, size: 15),
+                        const SizedBox(width: 4),
+                      ],
+                      if (isMine)
+                        IconButton(icon: const Icon(Icons.delete_outline, color: Colors.white, size: 20), onPressed: _delete),
+                      IconButton(icon: const Icon(Icons.close, color: Colors.white, size: 22), onPressed: () => Navigator.pop(context)),
+                    ]),
+                  ),
+                  const Spacer(),
+                  if (item.legende != null && item.legende!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      child: Text(item.legende!, style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 14)),
+                    ),
+                  if (isMine)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: GestureDetector(
+                        onTap: _showViewers,
+                        child: const Text('👁 Vu par…',
+                            style: TextStyle(fontFamily: 'Galey', color: Colors.white70, fontSize: 12, decoration: TextDecoration.underline)),
+                      ),
+                    ),
+                ]),
+              ),
+            ]),
+          );
+        },
+      ),
+    );
+  }
+}

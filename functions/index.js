@@ -16,6 +16,7 @@ const retardFunctions = require("./retard");
 const pensionFunctions = require("./pension");
 const cessionSterilisationFunctions = require("./cession_sterilisation");
 const abonnementFunctions = require("./abonnements");
+const storiesCleanupFunctions = require("./stories_cleanup");
 
 // Stripe + messagerie
 exports.createStripePaymentIntent = stripeFunctions.createStripePaymentIntent;
@@ -91,3 +92,6 @@ exports.sendSterilisationReminders = cessionSterilisationFunctions.sendSterilisa
 
 // Cession — anniversaires des chiots cédés : rappel éleveur + message auto
 exports.sendCessionBirthdayReminders = cessionSterilisationFunctions.sendCessionBirthdayReminders;
+
+// Stories Pets Social — purge 24h
+exports.cleanupExpiredStories = storiesCleanupFunctions.cleanupExpiredStories;

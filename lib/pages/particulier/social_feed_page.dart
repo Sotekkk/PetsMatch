@@ -21,6 +21,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/petfriends/petfriends_page.dart';
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart' show PublicProfilePage;
 import 'package:PetsMatch/widgets/mention_hashtag.dart';
+import 'package:PetsMatch/pages/particulier/stories/story_ring.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ⚠️  MULTI-PROFIL — NOTE POUR NABIL (et tout dev sur Pets Social)
@@ -1120,6 +1121,7 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
         SafeArea(
           child: Column(children: [
             _buildHeader(),
+            StoryRing(myUid: uid, myProfileId: _myProfileId),
             _buildPillTabs(),
             Expanded(
               child: IndexedStack(

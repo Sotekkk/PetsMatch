@@ -10,6 +10,7 @@ import { notifyProfileValidated, sendNotification } from '@/lib/notifications';
 import AnimauxTab from './_components/AnimauxTab';
 import AnnoncesToutesTab from './_components/AnnoncesToutesTab';
 import ConsommationTab from './_components/ConsommationTab';
+import StoryMusicTab from './_components/StoryMusicTab';
 import PlanEditor from './_components/PlanEditor';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -84,7 +85,7 @@ interface DossierEntry {
   isSecondary?: boolean; profileTableId?: string;
 }
 
-type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs' | 'animaux' | 'annonces' | 'consommation' | 'lieux_naturels' | 'tarification' | 'signalements_conv';
+type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs' | 'animaux' | 'annonces' | 'consommation' | 'lieux_naturels' | 'tarification' | 'signalements_conv' | 'story_music';
 // 'tous' / 'en_attente' / 'admin' sont des filtres transverses ; toute autre
 // valeur est une catégorie dynamique (eleveur, association, particulier, ou
 // un métier pro), générée depuis les données — cf. entryCategory().
@@ -1163,6 +1164,7 @@ export default function AdminPage() {
           { key: 'lieux_naturels',label: 'Lieux naturels',icon: '🌲', badge: (naturalPlacesEnAttente.length + amenitySuggestions.length + photoSuggestions.length) || undefined },
           { key: 'tarification',  label: 'Tarification',  icon: '💰' },
           { key: 'signalements_conv', label: 'Conv. signalées', icon: '💬' },
+          { key: 'story_music',   label: 'Musique Stories',icon: '🎵' },
         ] as { key: AdminTab; label: string; icon: string; badge?: number }[]).map(t => (
           <button
             key={t.key}
@@ -1734,6 +1736,9 @@ export default function AdminPage() {
 
         {/* ─── Consommation ─────────────────────────────────────────────── */}
         {tab === 'consommation' && user && <ConsommationTab adminUid={user.uid} />}
+
+        {/* ─── Musique Stories ───────────────────────────────────────────── */}
+        {tab === 'story_music' && <StoryMusicTab />}
 
         {/* ─── Annonces modération ───────────────────────────────────────── */}
         {tab === 'annonces' && (
