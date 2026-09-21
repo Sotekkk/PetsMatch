@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 
 import 'package:PetsMatch/widgets/mention_hashtag.dart';
@@ -41,6 +42,9 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
   Color _legendeColor = Colors.white;
   String _legendeTaille = 'm'; // s | m | l
   bool _legendeGras = false;
+  double _legendeX = 0.5; // 0..1, position libre glissée sur le média
+  double _legendeY = 0.5;
+  bool _editingText = false;
   bool _posting = false;
 
   @override
@@ -112,7 +116,19 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
         bytes = compressed ?? await media.readAsBytes();
         ext = 'jpg'; contentType = 'image/jpg';
       } else {
-        bytes = await media.readAsBytes();
+        // Compression vidéo — la caméra produit facilement 20-40 Mo pour
+        // 30s ; sans ça le volume Storage explose (24h ou pas, ça reste
+        // téléchargé par chaque spectateur pendant ce temps).
+        File videoToUpload = media;
+        try {
+          final info = await VideoCompress.compressVideo(
+            media.path, quality: VideoQuality.MediumQuality, deleteOrigin: false,
+          );
+          if (info?.file != null) videoToUpload = info!.file!;
+        } catch (_) {
+          // Repli sur le fichier d'origine si la compression échoue.
+        }
+        bytes = await videoToUpload.readAsBytes();
         ext = 'mp4'; contentType = 'video/mp4';
       }
       final path = '${widget.authorProfileId}/${DateTime.now().millisecondsSinceEpoch}.$ext';
@@ -132,6 +148,8 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
         legendeCouleur: _hex(_legendeColor),
         legendeTaille: _legendeTaille,
         legendeGras: _legendeGras,
+        legendeX: _legendeX,
+        legendeY: _legendeY,
       );
       if (legende.isNotEmpty) {
         unawaited(notifyMentions(
@@ -217,121 +235,193 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
   }
 
   Widget _buildPreview() {
-    return Stack(fit: StackFit.expand, children: [
-      _mediaType == 'photo'
-          ? Image.file(_mediaFile!, fit: BoxFit.cover)
-          : (_videoCtrl != null && _videoCtrl!.value.isInitialized
-              ? FittedBox(fit: BoxFit.cover,
-                  child: SizedBox(width: _videoCtrl!.value.size.width, height: _videoCtrl!.value.size.height,
-                      child: VideoPlayer(_videoCtrl!)))
-              : const Center(child: CircularProgressIndicator(color: Colors.white))),
-      Positioned(
-        left: 16, right: 16, bottom: 24,
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          if (_music != null)
-            Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.music_note, color: Colors.white, size: 16),
-                const SizedBox(width: 6),
-                Flexible(child: Text('${_music!.titre}${_music!.artiste != null ? ' — ${_music!.artiste}' : ''}',
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 12))),
-                const SizedBox(width: 6),
-                GestureDetector(onTap: () => setState(() => _music = null),
-                    child: const Icon(Icons.close, color: Colors.white70, size: 16)),
-              ]),
-            ),
-          // Style du texte — couleur / taille / gras.
-          Row(children: [
-            for (final c in _legendeColors) ...[
-              GestureDetector(
-                onTap: () => setState(() => _legendeColor = c),
-                child: Container(
-                  width: 24, height: 24,
-                  decoration: BoxDecoration(
-                    color: c, shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: _legendeColor == c ? 2.5 : 1),
-                  ),
-                ),
+    return LayoutBuilder(builder: (context, constraints) {
+      final w = constraints.maxWidth;
+      final h = constraints.maxHeight;
+      return Stack(fit: StackFit.expand, children: [
+        _mediaType == 'photo'
+            ? Image.file(_mediaFile!, fit: BoxFit.cover)
+            : (_videoCtrl != null && _videoCtrl!.value.isInitialized
+                ? FittedBox(fit: BoxFit.cover,
+                    child: SizedBox(width: _videoCtrl!.value.size.width, height: _videoCtrl!.value.size.height,
+                        child: VideoPlayer(_videoCtrl!)))
+                : const Center(child: CircularProgressIndicator(color: Colors.white))),
+
+        // Texte glissé librement sur le média (comme Instagram/Snapchat) —
+        // tap pour éditer, glisser pour repositionner.
+        if (_legendeCtrl.text.isNotEmpty && !_editingText)
+          Positioned(
+            left: (_legendeX * w).clamp(0, w) - 90,
+            top: (_legendeY * h).clamp(0, h) - 20,
+            width: 180,
+            child: GestureDetector(
+              onTap: () => setState(() => _editingText = true),
+              onPanUpdate: (d) => setState(() {
+                _legendeX = ((_legendeX * w + d.delta.dx) / w).clamp(0.0, 1.0);
+                _legendeY = ((_legendeY * h + d.delta.dy) / h).clamp(0.0, 1.0);
+              }),
+              child: MentionHashtagText(
+                text: _legendeCtrl.resolveMarkup(),
+                enableHashtags: false,
+                style: TextStyle(fontFamily: 'Galey', color: _legendeColor,
+                    fontSize: _legendeFontSize, fontWeight: _legendeGras ? FontWeight.w800 : FontWeight.w400),
               ),
-              const SizedBox(width: 8),
-            ],
-            const Spacer(),
-            for (final t in const [('s', 'P'), ('m', 'M'), ('l', 'G')]) ...[
-              GestureDetector(
-                onTap: () => setState(() => _legendeTaille = t.$1),
-                child: Container(
-                  width: 26, height: 26,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _legendeTaille == t.$1 ? _green : Colors.white10,
-                  ),
-                  child: Text(t.$2, style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
-                ),
-              ),
-              const SizedBox(width: 6),
-            ],
-            GestureDetector(
-              onTap: () => setState(() => _legendeGras = !_legendeGras),
-              child: Container(
-                width: 26, height: 26,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(shape: BoxShape.circle, color: _legendeGras ? _green : Colors.white10),
-                child: const Text('B', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)),
-              ),
-            ),
-          ]),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _legendeCtrl,
-            maxLines: 3, minLines: 1,
-            style: TextStyle(fontFamily: 'Galey', color: _legendeColor,
-                fontSize: _legendeFontSize, fontWeight: _legendeGras ? FontWeight.w800 : FontWeight.w400),
-            decoration: InputDecoration(
-              hintText: 'Ajouter une légende… @ pour mentionner',
-              hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.white54, fontSize: 14),
-              filled: true, fillColor: Colors.black38,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
             ),
           ),
-          if (_mentionSuggestions != null)
-            Container(
-              margin: const EdgeInsets.only(top: 6),
-              decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(12)),
-              child: MentionSuggestionsBar(
-                suggestions: _mentionSuggestions!,
-                onSelect: (s) { _mentionCtrl?.select(s); setState(() => _mentionSuggestions = null); },
+
+        // Bouton "Aa" pour ouvrir/ajouter le texte.
+        if (!_editingText)
+          Positioned(
+            top: 8, right: 4,
+            child: IconButton(
+              onPressed: () => setState(() => _editingText = true),
+              icon: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
+                child: const Text('Aa', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
               ),
             ),
-          const SizedBox(height: 10),
-          Row(children: [
+          ),
+
+        // Puce musique + bouton musique/publier — fixes, en bas.
+        if (!_editingText)
+          Positioned(
+            left: 16, right: 16, bottom: 24,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              if (_music != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.music_note, color: Colors.white, size: 16),
+                    const SizedBox(width: 6),
+                    Flexible(child: Text('${_music!.titre}${_music!.artiste != null ? ' — ${_music!.artiste}' : ''}',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 12))),
+                    const SizedBox(width: 6),
+                    GestureDetector(onTap: () => setState(() => _music = null),
+                        child: const Icon(Icons.close, color: Colors.white70, size: 16)),
+                  ]),
+                ),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _pickMusic,
+                    style: OutlinedButton.styleFrom(foregroundColor: Colors.white,
+                        side: const BorderSide(color: Colors.white38), padding: const EdgeInsets.symmetric(vertical: 12)),
+                    icon: const Icon(Icons.music_note_outlined, size: 18),
+                    label: Text(_music == null ? 'Musique' : 'Changer', style: const TextStyle(fontFamily: 'Galey')),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: _posting ? null : _post,
+                    style: FilledButton.styleFrom(backgroundColor: _green, padding: const EdgeInsets.symmetric(vertical: 12)),
+                    child: _posting
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : const Text('Publier', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ]),
+            ]),
+          ),
+
+        // Éditeur de texte — scrim + style + champ, par-dessus le média.
+        if (_editingText) _buildTextEditor(),
+      ]);
+    });
+  }
+
+  Widget _buildTextEditor() {
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black54,
+        child: SafeArea(
+          child: Column(children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Row(children: [
+                // Style du texte — couleur / taille / gras.
+                for (final c in _legendeColors) ...[
+                  GestureDetector(
+                    onTap: () => setState(() => _legendeColor = c),
+                    child: Container(
+                      width: 22, height: 22,
+                      decoration: BoxDecoration(
+                        color: c, shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: _legendeColor == c ? 2.5 : 1),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                const Spacer(),
+                for (final t in const [('s', 'P'), ('m', 'M'), ('l', 'G')]) ...[
+                  GestureDetector(
+                    onTap: () => setState(() => _legendeTaille = t.$1),
+                    child: Container(
+                      width: 24, height: 24,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _legendeTaille == t.$1 ? _green : Colors.white10,
+                      ),
+                      child: Text(t.$2, style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                GestureDetector(
+                  onTap: () => setState(() => _legendeGras = !_legendeGras),
+                  child: Container(
+                    width: 24, height: 24,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: _legendeGras ? _green : Colors.white10),
+                    child: const Text('B', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                TextButton(
+                  onPressed: () => setState(() => _editingText = false),
+                  child: const Text('OK', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700)),
+                ),
+              ]),
+            ),
             Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _pickMusic,
-                style: OutlinedButton.styleFrom(foregroundColor: Colors.white,
-                    side: const BorderSide(color: Colors.white38), padding: const EdgeInsets.symmetric(vertical: 12)),
-                icon: const Icon(Icons.music_note_outlined, size: 18),
-                label: Text(_music == null ? 'Musique' : 'Changer', style: const TextStyle(fontFamily: 'Galey')),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: TextField(
+                    controller: _legendeCtrl,
+                    autofocus: true,
+                    maxLines: 4, minLines: 1,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontFamily: 'Galey', color: _legendeColor,
+                        fontSize: _legendeFontSize, fontWeight: _legendeGras ? FontWeight.w800 : FontWeight.w400),
+                    decoration: const InputDecoration(
+                      hintText: 'Ajouter du texte… @ pour mentionner',
+                      hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.white54, fontSize: 17),
+                      border: InputBorder.none,
+                    ),
+                  ),
+                ),
               ),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: FilledButton(
-                onPressed: _posting ? null : _post,
-                style: FilledButton.styleFrom(backgroundColor: _green, padding: const EdgeInsets.symmetric(vertical: 12)),
-                child: _posting
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : const Text('Publier', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            if (_mentionSuggestions != null)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(12)),
+                child: MentionSuggestionsBar(
+                  suggestions: _mentionSuggestions!,
+                  onSelect: (s) { _mentionCtrl?.select(s); setState(() => _mentionSuggestions = null); },
+                ),
               ),
-            ),
+            const SizedBox(height: 24),
           ]),
-        ]),
+        ),
       ),
-    ]);
+    );
   }
 }

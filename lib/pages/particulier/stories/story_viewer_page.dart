@@ -292,6 +292,25 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
                   child: Container(decoration: const BoxDecoration(gradient: LinearGradient(
                       begin: Alignment.topCenter, end: Alignment.bottomCenter,
                       colors: [Colors.black54, Colors.transparent])))),
+              // Texte positionné librement (glissé à la création), comme
+              // Instagram/Snapchat — pas figé en bas.
+              if (item.legende != null && item.legende!.isNotEmpty)
+                Positioned(
+                  left: (item.legendeX * MediaQuery.of(context).size.width).clamp(0, MediaQuery.of(context).size.width) - 90,
+                  top: (item.legendeY * MediaQuery.of(context).size.height).clamp(0, MediaQuery.of(context).size.height) - 20,
+                  width: 180,
+                  child: MentionHashtagText(
+                    text: item.legende!,
+                    enableHashtags: false,
+                    style: TextStyle(
+                      fontFamily: 'Galey',
+                      color: _parseHexColor(item.legendeCouleur),
+                      fontSize: switch (item.legendeTaille) { 's' => 14, 'l' => 22, _ => 17 },
+                      fontWeight: item.legendeGras ? FontWeight.w800 : FontWeight.w400,
+                    ),
+                    onMentionTap: (pid) => openMentionedProfile(context, widget.myUid, pid),
+                  ),
+                ),
               SafeArea(
                 child: Column(children: [
                   // Barres de progression segmentées.
@@ -340,21 +359,6 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
                     ]),
                   ),
                   const Spacer(),
-                  if (item.legende != null && item.legende!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      child: MentionHashtagText(
-                        text: item.legende!,
-                        enableHashtags: false,
-                        style: TextStyle(
-                          fontFamily: 'Galey',
-                          color: _parseHexColor(item.legendeCouleur),
-                          fontSize: switch (item.legendeTaille) { 's' => 14, 'l' => 22, _ => 17 },
-                          fontWeight: item.legendeGras ? FontWeight.w800 : FontWeight.w400,
-                        ),
-                        onMentionTap: (pid) => openMentionedProfile(context, widget.myUid, pid),
-                      ),
-                    ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     child: Row(children: [

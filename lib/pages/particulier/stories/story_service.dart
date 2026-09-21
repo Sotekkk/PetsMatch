@@ -35,6 +35,8 @@ class StoryItem {
   final String legendeCouleur;
   final String legendeTaille; // 's' | 'm' | 'l'
   final bool legendeGras;
+  final double legendeX; // 0..1, position libre sur le média (glisser-déposer)
+  final double legendeY;
   final DateTime createdAt;
   final DateTime expiresAt;
   final StoryMusicTrack? music;
@@ -44,6 +46,7 @@ class StoryItem {
     required this.id, required this.authorProfileId, required this.authorUid,
     required this.mediaUrl, required this.mediaType, this.dureeSecondes, this.legende,
     this.legendeCouleur = '#FFFFFF', this.legendeTaille = 'm', this.legendeGras = false,
+    this.legendeX = 0.5, this.legendeY = 0.85,
     required this.createdAt, required this.expiresAt, this.music, this.vue = false,
   });
 
@@ -60,6 +63,8 @@ class StoryItem {
       legendeCouleur: r['legende_couleur']?.toString() ?? '#FFFFFF',
       legendeTaille: r['legende_taille']?.toString() ?? 'm',
       legendeGras: r['legende_gras'] as bool? ?? false,
+      legendeX: (r['legende_x'] as num?)?.toDouble() ?? 0.5,
+      legendeY: (r['legende_y'] as num?)?.toDouble() ?? 0.85,
       createdAt: DateTime.parse(r['created_at'].toString()),
       expiresAt: DateTime.parse(r['expires_at'].toString()),
       music: musicRow != null ? StoryMusicTrack.fromRow(musicRow) : null,
@@ -77,7 +82,7 @@ class StoryGroup {
 }
 
 const _kStoryCols = 'id, uid, author_profile_id, media_url, media_type, duree_secondes, legende, '
-    'legende_couleur, legende_taille, legende_gras, '
+    'legende_couleur, legende_taille, legende_gras, legende_x, legende_y, '
     'created_at, expires_at, story_music_tracks(id, titre, artiste, url_audio, duree_secondes)';
 
 class StoryService {
@@ -233,6 +238,7 @@ class StoryService {
     required String mediaUrl, required String mediaType,
     int? dureeSecondes, String? musicTrackId, String? legende,
     String legendeCouleur = '#FFFFFF', String legendeTaille = 'm', bool legendeGras = false,
+    double legendeX = 0.5, double legendeY = 0.85,
   }) async {
     final res = await _supa.from('stories').insert({
       'uid': uid,
@@ -246,6 +252,8 @@ class StoryService {
         'legende_couleur': legendeCouleur,
         'legende_taille': legendeTaille,
         'legende_gras': legendeGras,
+        'legende_x': legendeX,
+        'legende_y': legendeY,
       },
     }).select('id').single();
     return res['id'].toString();
