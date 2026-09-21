@@ -37,6 +37,17 @@ class ChaleurIntervalService {
     }
   }
 
+  /// Intervalle défini par un protocole race (sans repli), pour affichage :
+  /// permet de distinguer "vient d'un protocole race" de "moyenne espèce".
+  static int? raceIntervalFor({
+    required Map<String, int> raceIntervals,
+    required String espece,
+    String? race,
+  }) {
+    if (race == null || race.trim().isEmpty) return null;
+    return raceIntervals[_key(espece, race)];
+  }
+
   /// Intervalle effectif (en jours) pour un animal donné.
   static int resolve({
     required Map<String, int> raceIntervals,

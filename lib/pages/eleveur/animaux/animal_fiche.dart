@@ -8185,9 +8185,18 @@ class _CycleSuspenduBanner extends StatelessWidget {
 class _NextHeatBanner extends StatelessWidget {
   final DateTime nextHeat;
   final String espece;
-  const _NextHeatBanner({required this.nextHeat, required this.espece});
+  final String? race;
+  final int? raceIntervalDays;
+  final int? animalOverrideDays;
+  const _NextHeatBanner({required this.nextHeat, required this.espece, this.race, this.raceIntervalDays, this.animalOverrideDays});
 
   String _intervalInfo() {
+    if (animalOverrideDays != null && animalOverrideDays! > 0) {
+      return 'Intervalle personnalisé (cet animal) : $animalOverrideDays j';
+    }
+    if (raceIntervalDays != null && raceIntervalDays! > 0) {
+      return 'Protocole ${race ?? ''} : $raceIntervalDays j';
+    }
     switch (espece.toLowerCase()) {
       case 'chien':  return 'Intervalle moyen : 6 mois';
       case 'chat':   return 'Intervalle moyen : 21 jours (si non stérilisée)';
@@ -8436,7 +8445,13 @@ class _ChaleursTabState extends State<_ChaleursTab> {
                 icon: Icons.child_friendly_outlined,
                 label: 'Mise-bas récente — cycle suspendu pendant l\'allaitement.')
           else if (nextHeat != null)
-            _NextHeatBanner(nextHeat: nextHeat, espece: widget.espece),
+            _NextHeatBanner(
+              nextHeat: nextHeat, espece: widget.espece, race: widget.race,
+              raceIntervalDays: ChaleurIntervalService.raceIntervalFor(
+                raceIntervals: _raceIntervals, espece: widget.espece, race: widget.race,
+              ),
+              animalOverrideDays: _intervalleCustom,
+            ),
           // Intervalle row
           GestureDetector(
             onTap: widget.readOnly ? null : _editIntervalle,

@@ -117,15 +117,20 @@ class _ProtocoleChaleurPageState extends State<ProtocoleChaleurPage> {
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
-            if (suggestions.where((s) => s.toLowerCase().contains(raceCtrl.text.trim().toLowerCase())).isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(spacing: 8, runSpacing: 8, children: suggestions
-                  .where((s) => s.toLowerCase().contains(raceCtrl.text.trim().toLowerCase()))
-                  .map((s) => ActionChip(
-                    label: Text(s, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
-                    onPressed: () => setModal(() => raceCtrl.text = s),
-                  )).toList()),
-            ],
+            if (raceCtrl.text.trim().isNotEmpty) ...(() {
+              final query = raceCtrl.text.trim().toLowerCase();
+              final matches = suggestions
+                  .where((s) => s.toLowerCase().contains(query) && s.toLowerCase() != query)
+                  .toList();
+              if (matches.isEmpty) return <Widget>[];
+              return [
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 8, children: matches.map((s) => ActionChip(
+                  label: Text(s, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+                  onPressed: () => setModal(() => raceCtrl.text = s),
+                )).toList()),
+              ];
+            })(),
             const SizedBox(height: 14),
             const Text('Intervalle (jours)', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
             const SizedBox(height: 6),
