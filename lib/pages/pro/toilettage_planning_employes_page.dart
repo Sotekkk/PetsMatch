@@ -42,8 +42,12 @@ class _ToilettagePlanningEmployesPageState extends State<ToilettagePlanningEmplo
       final end = DateTime(_date.year, _date.month, _date.day, 23, 59, 59).toUtc();
       final results = await Future.wait([
         pid.isNotEmpty
+            // .neq('type', 'benevole') excluait TOUT le monde : ce champ
+            // n'est jamais renseigné pour un employé normal (seuls les
+            // bénévoles association l'ont), et NULL != 'benevole' n'est
+            // jamais vrai en SQL — donc les lignes NULL étaient exclues.
             ? _supa.from('employes').select('id, prenom, nom, couleur_planning')
-                .eq('eleveur_profile_id', pid).eq('actif', true).neq('type', 'benevole')
+                .eq('eleveur_profile_id', pid).eq('actif', true).or('type.is.null,type.neq.benevole')
             : Future.value(<Map<String, dynamic>>[]),
         _supa.from('rdv').select('id, date_heure, duree_minutes, motif, employe_id, client_uid, statut')
             .eq('pro_uid', uid).eq('pro_profile_id', pid)

@@ -45,7 +45,11 @@ class _ToilettageEmployesPageState extends State<ToilettageEmployesPage> {
       final results = await Future.wait([
         PlanService.getToilettagePlanCode(uid),
         pid.isNotEmpty
-            ? _supa.from('employes').select().eq('eleveur_profile_id', pid).eq('actif', true).neq('type', 'benevole')
+            // .neq('type', 'benevole') excluait TOUT le monde : ce champ
+            // n'est jamais renseigné pour un employé normal (seuls les
+            // bénévoles association l'ont), et NULL != 'benevole' n'est
+            // jamais vrai en SQL — donc les lignes NULL étaient exclues.
+            ? _supa.from('employes').select().eq('eleveur_profile_id', pid).eq('actif', true).or('type.is.null,type.neq.benevole')
             : Future.value(<Map<String, dynamic>>[]),
       ]);
       final planCode = results[0] as String;

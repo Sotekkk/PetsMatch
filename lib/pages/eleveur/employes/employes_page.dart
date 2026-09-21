@@ -719,6 +719,28 @@ const _kPerms = [
   ('read_planning_pension', Icons.calendar_view_week_outlined, 'Planning pension', 'Voir le planning d\'occupation et les fiches des animaux en pension'),
 ];
 
+// Permissions pertinentes selon le métier — éviter de proposer « Suivi
+// reproducteur » à un toiletteur ou « Carnet de santé » à un maréchal-ferrant.
+// catPro vide = éleveur (convention de l'appli). Liste posée sur un jugement
+// raisonnable par métier ; à corriger au cas par cas si un domaine précis
+// a besoin d'une permission qui en est exclue ici.
+bool _permApplies(String key, String catPro) {
+  switch (key) {
+    case 'read_planning_pension':
+      return catPro == 'pension';
+    case 'write_repro': // saillies/gestations/portées : cœur de métier éleveur uniquement
+      return catPro.isEmpty;
+    case 'write_protocoles': // protocoles de soins : éleveur + véto/ostéo-kiné
+      return catPro.isEmpty || catPro == 'sante' || catPro == 'veterinaire';
+    case 'write_sante': // carnet de santé complet : éleveur, véto/santé, pension (suivi pendant la garde)
+      return catPro.isEmpty || catPro == 'sante' || catPro == 'veterinaire' || catPro == 'pension';
+    case 'write_inventaire': // gestion de stock : pas pertinent pour garde/éducation/photographe
+      return catPro != 'garde' && catPro != 'education' && catPro != 'photographe';
+    default: // write_animaux, write_planning, write_notes : pertinents partout
+      return true;
+  }
+}
+
 class _PermissionsSheetState extends State<_PermissionsSheet> {
   final _supa = Supabase.instance.client;
   bool _loading = true;
@@ -727,9 +749,8 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
   String? _employeProfileId;
   final Set<String> _perms = {};
 
-  // « Planning pension » n'a de sens que pour un employeur pension.
   List<(String, IconData, String, String)> get _visiblePerms => _kPerms
-      .where((p) => p.$1 != 'read_planning_pension' || User_Info.catPro == 'pension')
+      .where((p) => _permApplies(p.$1, User_Info.catPro))
       .toList();
 
   @override
