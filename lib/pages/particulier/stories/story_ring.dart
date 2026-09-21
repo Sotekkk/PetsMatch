@@ -23,6 +23,7 @@ class StoryRingState extends State<StoryRing> {
 
   List<StoryGroup> _groups = [];
   bool _loading = true;
+  String? _error; // diagnostic temporaire — affiché en tap sur le "!" si présent
 
   @override
   void initState() {
@@ -48,9 +49,12 @@ class StoryRingState extends State<StoryRing> {
   Future<void> reload() async {
     try {
       final groups = await StoryService.loadActiveGroups(myUid: widget.myUid, myProfileId: widget.myProfileId);
-      if (mounted) setState(() { _groups = groups; _loading = false; });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() { _groups = groups; _loading = false; _error = null; });
+    } catch (e) {
+      // Diagnostic temporaire — sans ça, un échec de la requête ici rendait
+      // le bandeau silencieusement vide (rien à l'écran, pas d'erreur visible
+      // nulle part) : impossible à distinguer d'un simple "aucune story".
+      if (mounted) setState(() { _loading = false; _error = e.toString(); });
     }
   }
 
@@ -134,6 +138,15 @@ class StoryRingState extends State<StoryRing> {
               ]),
               const SizedBox(height: 4),
               Text(uploading ? 'Publication…' : 'Ma story', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white70)),
+              if (_error != null)
+                GestureDetector(
+                  onTap: () => showDialog(context: context, builder: (_) => AlertDialog(
+                    title: const Text('Erreur stories (diagnostic)'),
+                    content: SingleChildScrollView(child: Text(_error!)),
+                    actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer'))],
+                  )),
+                  child: const Text('⚠️ voir erreur', style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.redAccent)),
+                ),
             ]),
           ),
         );
