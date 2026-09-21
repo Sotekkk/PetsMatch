@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
@@ -46,6 +47,8 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
   double _legendeY = 0.5;
   bool _editingText = false;
   bool _posting = false;
+  AudioPlayer? _previewPlayer; // pré-écoute de la musique choisie, pendant l'édition
+  bool _musicPlaying = false;
 
   @override
   void initState() {
@@ -62,7 +65,26 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
     _videoCtrl?.dispose();
     _mentionCtrl?.dispose();
     _legendeCtrl.dispose();
+    try { _previewPlayer?.dispose(); } catch (_) {}
     super.dispose();
+  }
+
+  Future<void> _toggleMusicPreview() async {
+    final track = _music;
+    if (track == null) return;
+    if (_musicPlaying) {
+      try { await _previewPlayer?.stop(); } catch (_) {}
+      if (mounted) setState(() => _musicPlaying = false);
+      return;
+    }
+    _previewPlayer ??= AudioPlayer();
+    try {
+      await _previewPlayer!.play(UrlSource(track.urlAudio));
+      _previewPlayer!.onPlayerComplete.first.then((_) {
+        if (mounted) setState(() => _musicPlaying = false);
+      });
+      if (mounted) setState(() => _musicPlaying = true);
+    } catch (_) {}
   }
 
   double get _legendeFontSize => switch (_legendeTaille) { 's' => 14, 'l' => 22, _ => 17 };
@@ -86,23 +108,32 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
     setState(() {
       _mediaFile = file;
       _mediaType = 'video';
-      _videoCtrl = ctrl..setLooping(true)..play();
+      _videoCtrl = ctrl..setLooping(true)..setVolume(_music != null ? 0 : 1)..play();
       _videoDureeSecondes = ctrl.value.duration.inSeconds.clamp(1, 60);
     });
   }
 
   Future<void> _pickMusic() async {
+    try { await _previewPlayer?.stop(); } catch (_) {}
+    if (!mounted) return;
     final track = await showModalBottomSheet<StoryMusicTrack?>(
       context: context, isScrollControlled: true, backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => const StoryMusicPickerSheet(),
     );
-    if (track != null && mounted) setState(() => _music = track);
+    if (track != null && mounted) {
+      // La musique choisie prime sur le son natif de la vidéo, comme au
+      // visionnage — sinon la pré-écoute ne reflète pas ce que verront les
+      // spectateurs.
+      _videoCtrl?.setVolume(0);
+      setState(() { _music = track; _musicPlaying = false; });
+    }
   }
 
   Future<void> _post() async {
     final media = _mediaFile;
     if (media == null || _posting) return;
+    try { await _previewPlayer?.stop(); } catch (_) {}
     setState(() => _posting = true);
     try {
       final supa = Supabase.instance.client;
@@ -119,12 +150,30 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
         // Compression vidéo — la caméra produit facilement 40-80 Mo pour
         // 1 min ; sans ça le volume Storage explose (24h ou pas, ça reste
         // téléchargé par chaque spectateur pendant ce temps).
+        //
+        // La sortie compressée est VÉRIFIÉE avant d'être utilisée (on la
+        // réinitialise avec le même lecteur que le visionnage) — un fichier
+        // compressé tronqué/illisible se voyait comme une story figée dès
+        // la première image, jamais comme une erreur d'upload.
         File videoToUpload = media;
         try {
           final info = await VideoCompress.compressVideo(
             media.path, quality: VideoQuality.MediumQuality, deleteOrigin: false,
           );
-          if (info?.file != null) videoToUpload = info!.file!;
+          final compressed = info?.file;
+          if (compressed != null && await compressed.exists() && await compressed.length() > 10000) {
+            final testCtrl = VideoPlayerController.file(compressed);
+            try {
+              await testCtrl.initialize().timeout(const Duration(seconds: 10));
+              if (testCtrl.value.isInitialized && testCtrl.value.duration.inMilliseconds > 0) {
+                videoToUpload = compressed;
+              }
+            } catch (_) {
+              // Compression illisible → on garde l'original.
+            } finally {
+              await testCtrl.dispose();
+            }
+          }
         } catch (_) {
           // Repli sur le fichier d'origine si la compression échoue.
         }
@@ -294,14 +343,24 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    const Icon(Icons.music_note, color: Colors.white, size: 16),
+                    GestureDetector(
+                      onTap: _toggleMusicPreview,
+                      child: Icon(_musicPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                          color: Colors.white, size: 20),
+                    ),
                     const SizedBox(width: 6),
                     Flexible(child: Text('${_music!.titre}${_music!.artiste != null ? ' — ${_music!.artiste}' : ''}',
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 12))),
                     const SizedBox(width: 6),
-                    GestureDetector(onTap: () => setState(() => _music = null),
-                        child: const Icon(Icons.close, color: Colors.white70, size: 16)),
+                    GestureDetector(
+                      onTap: () {
+                        try { _previewPlayer?.stop(); } catch (_) {}
+                        _videoCtrl?.setVolume(1);
+                        setState(() { _music = null; _musicPlaying = false; });
+                      },
+                      child: const Icon(Icons.close, color: Colors.white70, size: 16),
+                    ),
                   ]),
                 ),
               Row(children: [
