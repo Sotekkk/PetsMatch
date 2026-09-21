@@ -31,10 +31,11 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
   VideoPlayerController? _videoCtrl;
   double _videoProgress = 0; // vidéos : dérivé de la position RÉELLE du lecteur
   bool _videoEnded = false;
-  final _musicPlayer = AudioPlayer();
+  AudioPlayer? _musicPlayer; // lazy — créé seulement si une story a de la musique
   bool _paused = false;
   bool _liked = false;
   int _likesCount = 0;
+  bool _disposed = false;
 
   static const _defaultDuration = Duration(seconds: 6);
 
@@ -50,10 +51,11 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
 
   @override
   void dispose() {
+    _disposed = true;
     _progressCtrl.dispose();
     _videoCtrl?.removeListener(_onVideoTick);
     _videoCtrl?.dispose();
-    _musicPlayer.dispose();
+    try { _musicPlayer?.dispose(); } catch (_) {}
     _pageCtrl.dispose();
     super.dispose();
   }
@@ -62,6 +64,7 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
   StoryItem get _item => _group.items[_itemIndex];
 
   Future<void> _playCurrent() async {
+    if (_disposed) return;
     _progressCtrl.stop();
     _progressCtrl.reset();
     _videoCtrl?.removeListener(_onVideoTick);
@@ -69,7 +72,8 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
     _videoCtrl = null;
     _videoProgress = 0;
     _videoEnded = false;
-    await _musicPlayer.stop();
+    try { await _musicPlayer?.stop(); } catch (_) {}
+    if (_disposed) return;
 
     final currentItem = _item;
     StoryService.markViewed(currentItem.id, viewerUid: widget.myUid, viewerProfileId: widget.myProfileId);
@@ -90,10 +94,10 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
         // Vidéo injouable (réseau, format…) : on ne reste pas bloqué dessus,
         // on passe directement à la suite.
         ctrl.dispose();
-        if (mounted && identical(currentItem, _item)) _next();
+        if (!_disposed && mounted && identical(currentItem, _item)) _next();
         return;
       }
-      if (!mounted || !identical(currentItem, _item)) { ctrl.dispose(); return; }
+      if (_disposed || !mounted || !identical(currentItem, _item)) { ctrl.dispose(); return; }
       // Musique en fond → on coupe le son natif de la vidéo (comme demandé :
       // priorité à la musique choisie, pas de mix).
       ctrl.setVolume(currentItem.music != null ? 0 : 1);
@@ -109,11 +113,13 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
       if (!_paused) _progressCtrl.forward();
     }
     if (currentItem.music != null) {
-      try { await _musicPlayer.play(UrlSource(currentItem.music!.urlAudio)); } catch (_) {}
+      _musicPlayer ??= AudioPlayer();
+      try { await _musicPlayer!.play(UrlSource(currentItem.music!.urlAudio)); } catch (_) {}
     }
   }
 
   void _onVideoTick() {
+    if (_disposed) return;
     final ctrl = _videoCtrl;
     if (ctrl == null || !mounted) return;
     final v = ctrl.value;
@@ -135,7 +141,11 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
     } else if (_groupIndex < widget.groups.length - 1) {
       _pageCtrl.nextPage(duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
     } else {
-      Navigator.pop(context);
+      // Différer le pop au prochain frame — appeler Navigator.pop depuis
+      // un listener d'AnimationController (pendant un frame) gèle le rendu.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.pop(context);
+      });
     }
   }
 
@@ -158,18 +168,18 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
     if (_paused) {
       if (_item.mediaType == 'photo') _progressCtrl.stop();
       _videoCtrl?.pause();
-      _musicPlayer.pause();
+      try { _musicPlayer?.pause(); } catch (_) {}
     } else {
       if (_item.mediaType == 'photo') _progressCtrl.forward();
       _videoCtrl?.play();
-      _musicPlayer.resume();
+      try { _musicPlayer?.resume(); } catch (_) {}
     }
   }
 
   Future<void> _showViewers() async {
     final viewers = await StoryService.viewers(_item.id);
     if (!mounted) return;
-    _paused = true; _progressCtrl.stop(); _videoCtrl?.pause(); _musicPlayer.pause();
+    _paused = true; _progressCtrl.stop(); _videoCtrl?.pause(); try { _musicPlayer?.pause(); } catch (_) {}
     await showModalBottomSheet(
       context: context, backgroundColor: const Color(0xFF1F2A2E),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -213,7 +223,7 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
       _paused = false;
       if (_item.mediaType == 'photo') _progressCtrl.forward();
       _videoCtrl?.play();
-      _musicPlayer.resume();
+      try { _musicPlayer?.resume(); } catch (_) {}
     }
   }
 

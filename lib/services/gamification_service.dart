@@ -66,7 +66,22 @@ class GamificationService {
     int? dureeMinutes,
   }) async {
     final xpEarned = computeXp(distanceKm: distanceKm, dureeMinutes: dureeMinutes);
-    final pid = (profileId != null && profileId.isNotEmpty) ? profileId : null;
+    // Normalise l'espèce en minuscule pour correspondre à species_object_tiers
+    final especeKey = espece.trim().toLowerCase();
+
+    // Résout le profil actif — si absent, prend le profil principal (is_main)
+    // pour garantir que la flamme est toujours mise à jour (cf. note Angel :
+    // user_id seul ne suffit pas, il faut le profile_id pour éviter les doublons).
+    String? pid = (profileId != null && profileId.isNotEmpty) ? profileId : null;
+    if (pid == null && uid.isNotEmpty) {
+      final mainRow = await _supa
+          .from('user_profiles')
+          .select('id')
+          .eq('uid', uid)
+          .eq('is_main', true)
+          .maybeSingle();
+      pid = mainRow?['id']?.toString();
+    }
 
     await _supa.from('activity_log').insert({
       'uid': uid,
@@ -93,7 +108,7 @@ class GamificationService {
     final tiersRaw = await _supa
         .from('species_object_tiers')
         .select('tier, xp_threshold')
-        .eq('species', espece)
+        .eq('species', especeKey)
         .order('xp_threshold');
     var newTier = previousTier;
     for (final t in (tiersRaw as List)) {
