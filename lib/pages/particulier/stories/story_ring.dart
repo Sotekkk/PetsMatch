@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show socialProfileName;
 import 'story_create_page.dart';
 import 'story_service.dart';
 import 'story_upload_service.dart';
@@ -155,9 +156,7 @@ class StoryRingState extends State<StoryRing> {
   }
 
   Widget _circle(StoryGroup g) {
-    final nom = g.authorProfile?['social_pseudo']?.toString().trim().isNotEmpty == true
-        ? g.authorProfile!['social_pseudo'].toString()
-        : '${g.authorProfile?['firstname'] ?? ''} ${g.authorProfile?['lastname'] ?? ''}'.trim();
+    final nom = socialProfileName(g.authorProfile);
     return GestureDetector(
       onTap: () => _openViewer(g),
       child: Padding(

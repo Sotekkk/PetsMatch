@@ -416,8 +416,12 @@ class _RdvBookingPageState extends State<RdvBookingPage> {
   Future<void> _loadEmployesToilettage() async {
     if (widget.proProfileId == null || widget.proProfileId!.isEmpty) return;
     try {
+      // .neq('type', 'benevole') excluait TOUT le monde : ce champ n'est
+      // jamais renseigné pour un employé normal (seuls les bénévoles
+      // association l'ont), et NULL != 'benevole' n'est jamais vrai en SQL
+      // — donc les lignes NULL étaient exclues.
       final rows = await Supabase.instance.client.from('employes').select('id, prenom, nom, uid_employe')
-          .eq('eleveur_profile_id', widget.proProfileId!).eq('actif', true).neq('type', 'benevole');
+          .eq('eleveur_profile_id', widget.proProfileId!).eq('actif', true).or('type.is.null,type.neq.benevole');
       if (mounted) setState(() => _employesToilettage = List<Map<String, dynamic>>.from(rows as List));
     } catch (_) {}
   }

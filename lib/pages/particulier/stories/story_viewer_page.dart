@@ -3,7 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
-import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show openMentionedProfile;
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show openMentionedProfile, socialProfileName;
 import 'package:PetsMatch/widgets/mention_hashtag.dart';
 import 'story_service.dart';
 
@@ -117,7 +117,18 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
     }
     if (currentItem.music != null) {
       _musicPlayer ??= AudioPlayer();
-      try { await _musicPlayer!.play(UrlSource(currentItem.music!.urlAudio)); } catch (_) {}
+      try {
+        // Focus audio "none" : par défaut (AUDIOFOCUS_GAIN), démarrer ce
+        // lecteur coupait automatiquement la lecture vidéo en cours côté OS
+        // (Android considère alors que cette appli n'a plus qu'UNE seule
+        // source audio active) — c'était la vraie cause du blocage vidéo
+        // « dès la première image » dès qu'une musique était ajoutée, pas
+        // le volume à 0.
+        await _musicPlayer!.setAudioContext(AudioContext(
+          android: const AudioContextAndroid(audioFocus: AndroidAudioFocus.none),
+        ));
+        await _musicPlayer!.play(UrlSource(currentItem.music!.urlAudio));
+      } catch (_) {}
     }
   }
 
@@ -209,9 +220,7 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
                   itemCount: viewers.length,
                   itemBuilder: (_, i) {
                     final p = viewers[i]['profile'] as Map<String, dynamic>?;
-                    final nom = p?['social_pseudo']?.toString().trim().isNotEmpty == true
-                        ? p!['social_pseudo'].toString()
-                        : '${p?['firstname'] ?? ''} ${p?['lastname'] ?? ''}'.trim();
+                    final nom = socialProfileName(p);
                     final photo = (p?['avatar_url'] ?? p?['profile_picture_url_pro'])?.toString();
                     return ListTile(
                       leading: CircleAvatar(
@@ -276,9 +285,7 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
           final g = widget.groups[gi];
           if (gi != _groupIndex) return const SizedBox.shrink();
           final item = g.items[_itemIndex];
-          final nom = g.authorProfile?['social_pseudo']?.toString().trim().isNotEmpty == true
-              ? g.authorProfile!['social_pseudo'].toString()
-              : '${g.authorProfile?['firstname'] ?? ''} ${g.authorProfile?['lastname'] ?? ''}'.trim();
+          final nom = socialProfileName(g.authorProfile);
           final photo = (g.authorProfile?['avatar_url'] ?? g.authorProfile?['profile_picture_url_pro'])?.toString();
           return GestureDetector(
             onTapUp: (d) {

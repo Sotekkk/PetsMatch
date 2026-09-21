@@ -76,6 +76,11 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
     }
     _previewPlayer ??= AudioPlayer();
     try {
+      // Focus audio "none" : sinon la lecture de la vidéo en cours d'édition
+      // s'arrête net dès que la pré-écoute démarre (audio focus par défaut).
+      await _previewPlayer!.setAudioContext(AudioContext(
+        android: const AudioContextAndroid(audioFocus: AndroidAudioFocus.none),
+      ));
       await _previewPlayer!.play(UrlSource(track.urlAudio));
       _previewPlayer!.onPlayerComplete.first.then((_) {
         if (mounted) setState(() => _musicPlaying = false);
