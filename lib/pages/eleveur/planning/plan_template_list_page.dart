@@ -6,6 +6,7 @@ import 'package:PetsMatch/services/planning_service.dart';
 import 'package:PetsMatch/services/planning_pdf_service.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_form_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/apply_plan_sheet.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/protocole_chaleur_page.dart';
 
 class PlanTemplateListPage extends StatefulWidget {
   final bool isAssociation;
@@ -181,7 +182,30 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
           ),
         )).then((_) => _load()),
       ),
-      body: _loading
+      body: Column(children: [
+        if (!widget.isAssociation && widget.employerUid == null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => const ProtocoleChaleurPage(),
+                )),
+                icon: const Text('🌸', style: TextStyle(fontSize: 16)),
+                label: const Text('Protocole chaleur (par race)',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13.5)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _green,
+                  side: const BorderSide(color: _green),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ),
+        Expanded(
+          child: _loading
           ? const Center(child: CircularProgressIndicator(color: _green))
           : _templates.isEmpty
               ? _emptyState()
@@ -232,6 +256,8 @@ class _PlanTemplateListPageState extends State<PlanTemplateListPage> {
                     );
                   },
                 ),
+        ),
+      ]),
     );
   }
 

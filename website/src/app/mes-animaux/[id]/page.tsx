@@ -111,15 +111,23 @@ const CHALEURS_INFO: Record<string, string> = {
   lapin:  'Réceptive quasi-permanente',
 };
 
-function nextHeatDate(chaleurs: HealthRecord[], espece: string, customInterval?: number | null): Date | null {
-  const interval = customInterval ?? CHALEURS_INTERVAL[espece];
-  if (!interval || chaleurs.length === 0) return null;
-  const sorted = [...chaleurs].sort((a, b) =>
-    new Date(String(b.date ?? 0)).getTime() - new Date(String(a.date ?? 0)).getTime()
-  );
-  const lastDate = new Date(String(sorted[0].date ?? ''));
-  if (isNaN(lastDate.getTime())) return null;
-  return new Date(lastDate.getTime() + interval * 86400000);
+function nextHeatDate(
+  chaleurs: HealthRecord[], espece: string, customInterval?: number | null,
+  raceInterval?: number | null, lastMiseBas?: Date | null,
+): Date | null {
+  const interval = customInterval || raceInterval || CHALEURS_INTERVAL[espece];
+  if (!interval) return null;
+  let last: Date | null = null;
+  if (chaleurs.length > 0) {
+    const sorted = [...chaleurs].sort((a, b) =>
+      new Date(String(b.date ?? 0)).getTime() - new Date(String(a.date ?? 0)).getTime()
+    );
+    const d = new Date(String(sorted[0].date ?? ''));
+    if (!isNaN(d.getTime())) last = d;
+  }
+  const effectiveLast = (lastMiseBas && (!last || lastMiseBas.getTime() > last.getTime())) ? lastMiseBas : last;
+  if (!effectiveLast) return null;
+  return new Date(effectiveLast.getTime() + interval * 86400000);
 }
 
 function NextHeatBanner({ nextHeat, espece }: { nextHeat: Date; espece: string }) {
@@ -1572,6 +1580,8 @@ function PensionJournalTab({ animalId, animalNom }: { animalId: string; animalNo
 interface SuiviReproTabProps {
   isMale: boolean;
   espece: string;
+  race?: string | null;
+  uidEleveur?: string;
   animalId: string;
   userId: string;
   animalNom: string;
@@ -1591,11 +1601,38 @@ interface SuiviReproTabProps {
   readOnly?: boolean;
 }
 
-function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIdent, chaleurs, saillies, gestations, reproAdd, setReproAdd, savingRepro, saveRepro, saveSaillie, updateRepro, deleteRepro, intervalleCustom, onSaveIntervalleCustom, readOnly = false }: SuiviReproTabProps) {
+function SuiviReproTab({ isMale, espece, race, uidEleveur, animalId, userId, animalNom, animalIdent, chaleurs, saillies, gestations, reproAdd, setReproAdd, savingRepro, saveRepro, saveSaillie, updateRepro, deleteRepro, intervalleCustom, onSaveIntervalleCustom, readOnly = false }: SuiviReproTabProps) {
   const subtabs = isMale
     ? [{ key: 'saillies', label: 'Saillies' }]
     : [{ key: 'chaleurs', label: 'Chaleurs' }, { key: 'saillies', label: 'Saillies' }, { key: 'gestations', label: 'Gestations' }];
   const [subTab, setSubTab] = useState(subtabs[0].key);
+
+  // Protocole chaleur par race (configuré par l'éleveur) — prime sur le
+  // défaut par espèce, mais reste en dessous d'un override par animal.
+  const [raceInterval, setRaceInterval] = useState<number | null>(null);
+  useEffect(() => {
+    if (!uidEleveur || !race || !race.trim()) { setRaceInterval(null); return; }
+    let cancelled = false;
+    supabase.from('protocoles_chaleur_race').select('intervalle_jours')
+      .eq('uid_eleveur', uidEleveur).eq('espece', espece).ilike('race', race.trim()).maybeSingle()
+      .then(({ data }) => { if (!cancelled) setRaceInterval(data?.intervalle_jours ?? null); });
+    return () => { cancelled = true; };
+  }, [uidEleveur, espece, race]);
+
+  // Dernière mise-bas (gestations.date_naissance) : une mise-bas postérieure
+  // à la dernière chaleur enregistrée redémarre le cycle — sans ça, une
+  // femelle qui vient de mettre bas retombe sur sa dernière chaleur d'AVANT
+  // la gestation, largement dépassée.
+  const lastMiseBas = (() => {
+    let latest: Date | null = null;
+    for (const g of gestations) {
+      const raw = g.date_naissance as string | undefined;
+      if (!raw) continue;
+      const d = new Date(raw);
+      if (!isNaN(d.getTime()) && (!latest || d.getTime() > latest.getTime())) latest = d;
+    }
+    return latest;
+  })();
   const [editId, setEditId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Record<string, string>>({});
   const [partners, setPartners] = useState<{ id: string; nom: string; identification: string }[]>([]);
@@ -1709,7 +1746,7 @@ function SuiviReproTab({ isMale, espece, animalId, userId, animalNom, animalIden
               </div>
             </div>
           )}
-          {(() => { const next = nextHeatDate(chaleurs, espece, intervalleCustom); return next ? <NextHeatBanner nextHeat={next} espece={espece} /> : null; })()}
+          {(() => { const next = nextHeatDate(chaleurs, espece, intervalleCustom, raceInterval, lastMiseBas); return next ? <NextHeatBanner nextHeat={next} espece={espece} /> : null; })()}
           {reproAdd === 'chaleurs' && (
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <AddHealthForm saving={savingRepro} onCancel={() => setReproAdd(null)}
@@ -4600,6 +4637,8 @@ function AnimalFichePageInner() {
         <SuiviReproTab
           isMale={isMale}
           espece={animal.espece ?? 'chien'}
+          race={animal.race ?? null}
+          uidEleveur={animal.uid_eleveur ?? user?.uid ?? ''}
           animalId={id ?? ''}
           userId={user?.uid ?? ''}
           animalNom={animal.nom ?? ''}

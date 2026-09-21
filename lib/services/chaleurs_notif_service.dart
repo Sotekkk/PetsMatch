@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/services/chaleur_interval_service.dart';
 
 class ChaleursNotifService {
   static const _channelId   = 'chaleurs_channel';
@@ -102,6 +103,10 @@ class ChaleursNotifService {
       }
     } catch (_) {}
 
+    // Protocoles chaleur par race (configurés par l'éleveur) — priment sur
+    // le défaut par espèce, mais restent en dessous d'un override par animal.
+    final raceIntervals = await ChaleurIntervalService.loadRaceIntervals(uid);
+
     final now = DateTime.now();
     int notifId = 2000;
 
@@ -123,7 +128,9 @@ class ChaleursNotifService {
       final race    = a['race'] as String?;
       final espece  = a['espece'] as String? ?? '';
       final custom  = a['intervalle_chaleurs_jours'] as int?;
-      final interval = custom ?? _intervalChaleurs(espece);
+      final interval = ChaleurIntervalService.resolve(
+        raceIntervals: raceIntervals, espece: espece, race: race, animalOverride: custom,
+      );
       if (interval == 0) continue;
 
       // Retraite : au-delà de l'âge de reproduction, plus de cycle à suivre.

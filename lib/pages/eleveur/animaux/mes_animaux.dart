@@ -3,6 +3,7 @@ import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_form_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_annonce_page.dart';
 import 'package:PetsMatch/services/chip_scanner_service.dart';
+import 'package:PetsMatch/services/chaleur_interval_service.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_poids_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_soin_sheet.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/portee_edit_sheet.dart';
@@ -215,6 +216,11 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       Map<String, bool> gFlags = {};
 
       if (femIds.isNotEmpty) {
+        // Protocoles chaleur par race (configurés par l'éleveur) — priment
+        // sur le défaut par espèce, mais restent en dessous d'un override
+        // par animal.
+        final raceIntervals = await ChaleurIntervalService.loadRaceIntervals(_uid!);
+
         // Dernières chaleurs
         final chaleurs = await supa.from('chaleurs')
             .select('animal_id, date')
@@ -250,8 +256,11 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           final id = a['id'] as String? ?? '';
           if (!femIds.contains(id)) continue;
           final espece = a['espece'] as String? ?? '';
+          final race = a['race'] as String?;
           final customInterval = a['intervalle_chaleurs_jours'] as int?;
-          final interval = customInterval ?? _intervalChaleurs(espece);
+          final interval = ChaleurIntervalService.resolve(
+            raceIntervals: raceIntervals, espece: espece, race: race, animalOverride: customInterval,
+          );
           if (interval == 0) continue;
 
           // Retraite : au-delà de l'âge de reproduction, plus de cycle à suivre.

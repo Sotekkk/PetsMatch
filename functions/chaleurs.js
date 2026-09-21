@@ -142,6 +142,19 @@ exports.sendChaleursNotifications = functions
         const chaleursRaw = await supabaseSelect("chaleurs",
             `animal_id=in.(${femIds.join(",")})&order=date.desc`);
 
+        // Protocoles chaleur par race (configurés par l'éleveur) — priment sur
+        // le défaut par espèce, mais restent en dessous d'un override par animal.
+        const eleveurUids = [...new Set(animaux.map((a) => a.uid_eleveur).filter(Boolean))];
+        const raceIntervalByKey = {};
+        if (eleveurUids.length) {
+            const protocolesRaw = await supabaseSelect("protocoles_chaleur_race",
+                `uid_eleveur=in.(${eleveurUids.join(",")})`);
+            for (const p of protocolesRaw) {
+                const key = `${p.uid_eleveur}|${(p.espece || "").toLowerCase()}|${(p.race || "").toLowerCase().trim()}`;
+                raceIntervalByKey[key] = p.intervalle_jours;
+            }
+        }
+
         // Résolution du profil propriétaire courant (animaux.profile_id n'est pas fiable —
         // voir migration_fix_animaux_proprietes_unique_constraint.sql)
         const proprietesRaw = await supabaseSelect("animaux_proprietes",
@@ -197,7 +210,10 @@ exports.sendChaleursNotifications = functions
                 ? miseBas : last;
             if (!effectiveLast) continue;
 
-            const interval = animal.intervalle_chaleurs_jours || intervalChaleurs(animal.espece);
+            const raceKey = `${animal.uid_eleveur}|${(animal.espece || "").toLowerCase()}|${(animal.race || "").toLowerCase().trim()}`;
+            const interval = animal.intervalle_chaleurs_jours ||
+                raceIntervalByKey[raceKey] ||
+                intervalChaleurs(animal.espece);
             if (!interval) continue;
 
             const nextHeat = new Date(effectiveLast.getTime() + interval * 86400000);
