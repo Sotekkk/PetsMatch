@@ -22,6 +22,7 @@ import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/pages/pro/animal_devis_page.dart';
 import 'package:PetsMatch/pages/pro/education_rapports_page.dart';
 import 'package:PetsMatch/services/planning_service.dart';
+import 'package:PetsMatch/services/chaleur_interval_service.dart';
 import 'package:PetsMatch/pages/particulier/alerte_perdu_form_page.dart';
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show AnimalTaggedPostsPage;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -2173,7 +2174,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                 // plan du propriétaire.
                 if (User_Info.catPro == 'garde')
                   AbsorbPointer(absorbing: widget.readOnly, child: _AlimentationTab(this)),
-                _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly('write_repro'), sterilise: _sterilise, dateNaissance: _dateNaissance),
+                _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly("write_repro"), sterilise: _sterilise, dateNaissance: _dateNaissance),
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
                 if (_isHealthPro)
                   _ConsultationsVetTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text, rdvId: widget.rdvId),
@@ -2219,7 +2220,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                         : [
                             _IdentiteTab(this),
                             _DocumentsTab(animalId: widget.animalId ?? ''),
-                            _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly('write_repro'), sterilise: _sterilise, dateNaissance: _dateNaissance),
+                            _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly("write_repro"), sterilise: _sterilise, dateNaissance: _dateNaissance),
                             _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
                             _AlimentationTab(this),
                             _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
@@ -4656,11 +4657,13 @@ class _SuiviReproTab extends StatelessWidget {
   final String? animalId;
   final String espece;
   final String sexe;
+  final String? race;
+  final String? uidEleveur;
   final int? intervalleChaleursCustom;
   final bool readOnly;
   final bool sterilise;
   final DateTime? dateNaissance;
-  const _SuiviReproTab({this.animalId, required this.espece, required this.sexe, this.intervalleChaleursCustom, this.readOnly = false, this.sterilise = false, this.dateNaissance});
+  const _SuiviReproTab({this.animalId, required this.espece, required this.sexe, this.race, this.uidEleveur, this.intervalleChaleursCustom, this.readOnly = false, this.sterilise = false, this.dateNaissance});
 
   @override
   Widget build(BuildContext context) {
@@ -4678,7 +4681,8 @@ class _SuiviReproTab extends StatelessWidget {
 
     final views = <Widget>[
       if (!isMale)
-        _ChaleursTab(animalId: animalId!, espece: espece, intervalleCustom: intervalleChaleursCustom, readOnly: readOnly,
+        _ChaleursTab(animalId: animalId!, espece: espece, race: race, uidEleveur: uidEleveur,
+            intervalleCustom: intervalleChaleursCustom, readOnly: readOnly,
             sterilise: sterilise, dateNaissance: dateNaissance),
       _ReproList(
         animalId: animalId!, collection: 'saillies', readOnly: readOnly,
@@ -8250,12 +8254,14 @@ class _NextHeatBanner extends StatelessWidget {
 class _ChaleursTab extends StatefulWidget {
   final String animalId;
   final String espece;
+  final String? race;
+  final String? uidEleveur;
   final int? intervalleCustom;
   final bool readOnly;
   final bool sterilise;
   final DateTime? dateNaissance;
-  const _ChaleursTab({required this.animalId, required this.espece, this.intervalleCustom, this.readOnly = false,
-      this.sterilise = false, this.dateNaissance});
+  const _ChaleursTab({required this.animalId, required this.espece, this.race, this.uidEleveur,
+      this.intervalleCustom, this.readOnly = false, this.sterilise = false, this.dateNaissance});
   @override State<_ChaleursTab> createState() => _ChaleursTabState();
 }
 
@@ -8265,6 +8271,7 @@ class _ChaleursTabState extends State<_ChaleursTab> {
   bool _loading = true;
   int? _intervalleCustom; // local copy, editable
   DateTime? _lastMiseBas;
+  Map<String, int> _raceIntervals = {};
 
   // Même convention que le rappel de chaleurs (chaleurs_notif_service.dart) :
   // âge de retraite par espèce + fenêtre de lactation suspendant le cycle.
@@ -8313,9 +8320,11 @@ class _ChaleursTabState extends State<_ChaleursTab> {
             .maybeSingle();
         if (gest != null) lastMiseBas = DateTime.tryParse(gest['date_naissance'] ?? '');
       } catch (_) {}
+      final raceIntervals = await ChaleurIntervalService.loadRaceIntervals(widget.uidEleveur ?? '');
       if (mounted) setState(() {
         _data = List<Map<String, dynamic>>.from(rows);
         _lastMiseBas = lastMiseBas;
+        _raceIntervals = raceIntervals;
         _loading = false;
       });
     } catch (_) {
@@ -8374,7 +8383,9 @@ class _ChaleursTabState extends State<_ChaleursTab> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator(color: Color(0xFF6E9E57)));
-    final effectiveInterval = _intervalleCustom ?? _intervalChaleursJours(widget.espece);
+    final effectiveInterval = ChaleurIntervalService.resolve(
+      raceIntervals: _raceIntervals, espece: widget.espece, race: widget.race, animalOverride: _intervalleCustom,
+    );
     // Stérilisée / en retraite / mise-bas récente (< 8 sem., allaitement) :
     // le cycle est suspendu ou terminé — pas d'alerte « chaleurs » trompeuse.
     final cycleSuspendu = widget.sterilise || _enRetraite || _enLactation;

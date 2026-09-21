@@ -493,9 +493,14 @@ function MesAnimauxPageInner() {
 
       if (femIds.length === 0) return;
 
-      const [{ data: chaleurs }, { data: gests }] = await Promise.all([
+      const eleveurUids = [...new Set(merged.map((a) => a.uid_eleveur).filter((u): u is string => !!u))];
+      const [{ data: chaleurs }, { data: gests }, { data: naissances }, { data: protocoles }] = await Promise.all([
         supabase.from('chaleurs').select('animal_id, date').in('animal_id', femIds).order('date', { ascending: false }),
         supabase.from('gestations').select('animal_id').in('animal_id', femIds).eq('gestation_confirmee', true).is('date_naissance', null),
+        supabase.from('gestations').select('animal_id, date_naissance').in('animal_id', femIds).not('date_naissance', 'is', null).order('date_naissance', { ascending: false }),
+        eleveurUids.length
+          ? supabase.from('protocoles_chaleur_race').select('uid_eleveur, espece, race, intervalle_jours').in('uid_eleveur', eleveurUids)
+          : Promise.resolve({ data: [] as { uid_eleveur: string; espece: string; race: string; intervalle_jours: number }[] }),
       ]);
 
       const lastChaleur: Record<string, Date> = {};
@@ -504,13 +509,39 @@ function MesAnimauxPageInner() {
         if (!lastChaleur[aid]) { const d = new Date(c.date as string); if (!isNaN(d.getTime())) lastChaleur[aid] = d; }
       }
 
+      const lastMiseBas: Record<string, Date> = {};
+      for (const n of (naissances ?? [])) {
+        const aid = n.animal_id as string;
+        if (!lastMiseBas[aid]) { const d = new Date(n.date_naissance as string); if (!isNaN(d.getTime())) lastMiseBas[aid] = d; }
+      }
+
+      const raceIntervalByKey: Record<string, number> = {};
+      for (const p of (protocoles ?? [])) {
+        const key = `${p.uid_eleveur}|${(p.espece || '').toLowerCase()}|${(p.race || '').toLowerCase().trim()}`;
+        raceIntervalByKey[key] = p.intervalle_jours;
+      }
+
+      const JOURS_LACTATION = 56;
       const cFlags: Record<string, boolean> = {};
       const now = new Date();
       for (const a of merged) {
-        if (!(a.id in lastChaleur)) continue;
-        const interval = (a.intervalle_chaleurs_jours ?? CHALEURS_INTERVAL_WEB[a.espece ?? ''] ?? 0);
+        const miseBas = lastMiseBas[a.id];
+        // Mise-bas récente : cycle suspendu pendant l'allaitement.
+        if (miseBas && (now.getTime() - miseBas.getTime()) / 86400000 < JOURS_LACTATION) continue;
+
+        const raceKey = `${a.uid_eleveur}|${(a.espece || '').toLowerCase()}|${(a.race || '').toLowerCase().trim()}`;
+        const interval = a.intervalle_chaleurs_jours || raceIntervalByKey[raceKey] || CHALEURS_INTERVAL_WEB[a.espece ?? ''] || 0;
         if (!interval) continue;
-        const next = new Date(lastChaleur[a.id].getTime() + interval * 86400000);
+
+        // Une mise-bas postérieure à la dernière chaleur enregistrée redémarre
+        // le cycle : sans ça, une femelle qui vient de mettre bas retombe,
+        // une fois la lactation passée, sur sa dernière chaleur d'AVANT la
+        // gestation, largement dépassée.
+        const last = lastChaleur[a.id];
+        const effectiveLast = (miseBas && (!last || miseBas.getTime() > last.getTime())) ? miseBas : last;
+        if (!effectiveLast) continue;
+
+        const next = new Date(effectiveLast.getTime() + interval * 86400000);
         if ((next.getTime() - now.getTime()) / 86400000 <= 7) cFlags[a.id] = true;
       }
 
