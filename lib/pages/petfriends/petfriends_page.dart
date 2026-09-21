@@ -262,7 +262,12 @@ class _PetFriendsPageState extends State<PetFriendsPage>
 
   Future<void> _createGroupe() async {
     final nomCtrl = TextEditingController();
+    final memberSearchCtrl = TextEditingController();
     final selectedUids = <String>{};
+    // Comme Facebook/Instagram : un groupe peut inclure n'importe qui, pas
+    // seulement des PetFriends déjà acceptés — on cherche dans tous les
+    // profils, avec un badge 🐾 pour repérer les PetFriends existants.
+    final friendUids = _friends.map((f) => f.uid).toSet();
 
     await showModalBottomSheet(
       context: context,
@@ -270,7 +275,12 @@ class _PetFriendsPageState extends State<PetFriendsPage>
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModal) => DraggableScrollableSheet(
+        builder: (ctx, setModal) {
+          final query = memberSearchCtrl.text.trim().toLowerCase();
+          final candidates = query.isEmpty
+              ? _allUsers
+              : _allUsers.where((u) => socialProfileName(u).toLowerCase().contains(query)).toList();
+          return DraggableScrollableSheet(
           initialChildSize: 0.75, maxChildSize: 0.95, minChildSize: 0.5, expand: false,
           builder: (_, sc) => Padding(
             padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
@@ -292,32 +302,50 @@ class _PetFriendsPageState extends State<PetFriendsPage>
                 ),
               ),
               const SizedBox(height: 16),
-              const Text('Ajouter des PetFriends',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+              Text('Ajouter des membres (${selectedUids.length})',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: memberSearchCtrl,
+                onChanged: (_) => setModal(() {}),
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'Rechercher n\'importe qui (pas seulement vos PetFriends)…',
+                  hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey),
+                  prefixIcon: const Icon(Icons.search, size: 18, color: _green),
+                  isDense: true,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                ),
+              ),
               const SizedBox(height: 8),
               Expanded(
-                child: _friends.isEmpty
-                    ? const Center(child: Text('Aucun PetFriend pour le moment',
+                child: candidates.isEmpty
+                    ? const Center(child: Text('Aucun résultat',
                         style: TextStyle(fontFamily: 'Galey', color: Colors.grey)))
                     : ListView.builder(
                         controller: sc,
-                        itemCount: _friends.length,
+                        itemCount: candidates.length,
                         itemBuilder: (_, i) {
-                          final f = _friends[i];
-                          final sel = selectedUids.contains(f.uid);
+                          final u = candidates[i];
+                          final uid = u['uid'].toString();
+                          final sel = selectedUids.contains(uid);
+                          final isFriend = friendUids.contains(uid);
+                          final photo = socialProfilePhoto(u) ?? '';
                           return CheckboxListTile(
                             value: sel, activeColor: _green,
                             onChanged: (_) => setModal(() {
-                              if (sel) selectedUids.remove(f.uid); else selectedUids.add(f.uid);
+                              if (sel) selectedUids.remove(uid); else selectedUids.add(uid);
                             }),
-                            title: Text(f.fullName, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
-                            subtitle: f.city.isNotEmpty
-                                ? Text(f.city, style: const TextStyle(fontFamily: 'Galey', fontSize: 12)) : null,
+                            title: Text(socialProfileName(u), style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                            subtitle: Text(
+                              [if (isFriend) '🐾 PetFriend', if ((u['ville']?.toString() ?? '').isNotEmpty) u['ville'].toString()].join(' · '),
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
                             secondary: CircleAvatar(
                               radius: 20,
                               backgroundColor: const Color(0xFFE8F5E9),
-                              backgroundImage: f.photoUrl.isNotEmpty ? CachedNetworkImageProvider(f.photoUrl) : null,
-                              child: f.photoUrl.isEmpty ? const Icon(Icons.person_outline, size: 20, color: _green) : null,
+                              backgroundImage: photo.isNotEmpty ? CachedNetworkImageProvider(photo) : null,
+                              child: photo.isEmpty ? const Icon(Icons.person_outline, size: 20, color: _green) : null,
                             ),
                           );
                         },
@@ -375,7 +403,8 @@ class _PetFriendsPageState extends State<PetFriendsPage>
               ),
             ]),
           ),
-        ),
+        );
+        },
       ),
     );
   }

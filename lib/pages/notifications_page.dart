@@ -36,6 +36,7 @@ import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/promenades/promenade_detail_page.dart';
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
+import 'package:PetsMatch/pages/petfriends/petfriend_chat_page.dart';
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show openSharedSocialPost;
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/communaute/forum_page.dart' show openForumSujet;
@@ -230,10 +231,29 @@ class _NotificationsPageState extends State<NotificationsPage> {
     if (!mounted) return;
 
     // Message de chat → ouvre directement la conversation plutôt que de
-    // rester sur la liste des notifications.
+    // rester sur la liste des notifications. Un groupe PetFriends n'a pas
+    // « un seul autre participant » — ChatScreen (conçu pour du 1-1) n'a pas
+    // sa place ici, direction PetFriendChatPage comme depuis l'onglet
+    // Conversations.
     if (type == 'message') {
       final conversationId = data is Map ? data['conversation_id'] as String? : null;
       if (conversationId != null && conversationId.isNotEmpty) {
+        try {
+          final conv = await _supa.from('conversations')
+              .select('type, nom').eq('id', conversationId).maybeSingle();
+          if (conv != null && conv['type'] == 'groupe') {
+            if (mounted) {
+              await Navigator.push(context, MaterialPageRoute(
+                builder: (_) => PetFriendChatPage(
+                  conversationId: conversationId,
+                  convNom: conv['nom']?.toString() ?? 'Groupe',
+                  isGroupe: true,
+                ),
+              ));
+            }
+            return;
+          }
+        } catch (_) {}
         final otherUid = await resolveConversationOtherUid(conversationId);
         if (otherUid != null && mounted) {
           await Navigator.push(context, MaterialPageRoute(

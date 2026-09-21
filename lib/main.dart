@@ -44,16 +44,19 @@ GlobalKey<ScaffoldState> drawerKey = GlobalKey<ScaffoldState>();
 // dépendre d'un pull-to-refresh manuel.
 final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
 
-// Résout l'autre participant d'une conversation (Firestore
-// conversations/{id}.participants) pour ouvrir ChatScreen directement
-// depuis une notif — celle-ci ne transporte que le conversationId.
+// Résout l'autre participant d'une conversation (Supabase
+// conversations.participants) pour ouvrir ChatScreen directement depuis une
+// notif — celle-ci ne transporte que le conversationId. La messagerie a été
+// migrée vers Supabase (cf. message.dart/chatScreen.dart) ; ce résolveur
+// interrogeait encore Firestore, où ces conversations n'existent jamais —
+// le tap sur une notif de message ne menait donc nulle part.
 Future<String?> resolveConversationOtherUid(String conversationId) async {
   try {
     final myUid = FirebaseAuth.instance.currentUser?.uid;
     if (myUid == null) return null;
-    final doc = await FirebaseFirestore.instance
-        .collection('conversations').doc(conversationId).get();
-    final participants = (doc.data()?['participants'] as List? ?? [])
+    final row = await Supabase.instance.client
+        .from('conversations').select('participants').eq('id', conversationId).maybeSingle();
+    final participants = (row?['participants'] as List? ?? [])
         .map((p) => p.toString())
         .where((p) => p != myUid)
         .toList();

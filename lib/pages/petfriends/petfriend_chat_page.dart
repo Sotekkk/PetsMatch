@@ -49,14 +49,24 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
     _loadMessages();
     _subscribeRealtime();
     _markRead();
+    _setActiveConversation(widget.conversationId);
   }
 
   @override
   void dispose() {
+    _setActiveConversation(null);
     _channel?.unsubscribe();
     _ctrl.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  // Évite de notifier quelqu'un qui a déjà la conversation ouverte — même
+  // mécanisme que chatScreen.dart (users.active_conversation_id).
+  void _setActiveConversation(String? convId) {
+    if (_myUid.isEmpty) return;
+    _supa.from('users').update({'active_conversation_id': convId})
+        .eq('uid', _myUid).then((_) {}).catchError((_) {});
   }
 
   Future<void> _loadMessages() async {
@@ -171,12 +181,36 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
             setState(() => _participantsInfo = updatedInfo);
           }
         }
+        final previewText = imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : (gardeId != null ? '🐾 Demande de dépannage' : (t.length > 80 ? '${t.substring(0, 80)}…' : t)));
         await _supa.from('conversations').update({
-          'last_message': imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : (gardeId != null ? '🐾 Demande de dépannage' : t)),
+          'last_message': previewText,
           'updated_at':   DateTime.now().toIso8601String(),
           'unread_count': unread,
           'participants_info': updatedInfo,
         }).eq('id', widget.conversationId);
+
+        // Notif push fire-and-forget pour chaque destinataire pas déjà dans
+        // la conv (1-1 ET groupe — ni l'un ni l'autre n'en envoyaient avant).
+        final senderName = (updatedInfo[_myUid] as Map?)?['name']?.toString();
+        final recipients = members.where((u) => u != _myUid).toSet().toList();
+        if (recipients.isNotEmpty) {
+          final userRows = await _supa.from('users')
+              .select('uid, active_conversation_id')
+              .inFilter('uid', recipients);
+          for (final r in (userRows as List)) {
+            final uid = r['uid'] as String;
+            if (r['active_conversation_id'] == widget.conversationId) continue;
+            _supa.from('notifications').insert({
+              'uid':   uid,
+              'type':  'message',
+              'title': (senderName?.isNotEmpty == true ? senderName! : 'Nouveau message')
+                  + (widget.isGroupe ? ' · ${widget.convNom}' : ''),
+              'body':  previewText,
+              'data':  {'conversation_id': widget.conversationId},
+              'read':  false,
+            }).then((_) {}).catchError((_) {});
+          }
+        }
       }
 
       _ctrl.clear();
