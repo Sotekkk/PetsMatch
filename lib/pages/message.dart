@@ -638,7 +638,7 @@ class _MessagePageState extends State<MessagePage> {
                     const SizedBox(height: 3),
                     Row(children: [
                       Expanded(child: Text(
-                        msgStreak > 0 ? '$lastMsg · $msgStreak🔥' : lastMsg,
+                        lastMsg,
                         maxLines: 1, overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontFamily: 'Galey', fontSize: 12,
                             color: shown > 0 ? Colors.black87 : Colors.grey.shade500,
@@ -649,7 +649,11 @@ class _MessagePageState extends State<MessagePage> {
                           decoration: BoxDecoration(color: _teal, borderRadius: BorderRadius.circular(10)),
                           child: Text(shown > 9 ? '9+' : '$shown',
                             style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
-                        ),
+                        )
+                      else if (msgStreak > 0)
+                        Text('$msgStreak🔥',
+                          style: const TextStyle(fontFamily: 'Galey', fontSize: 12,
+                              color: Colors.black87, fontWeight: FontWeight.w600)),
                     ]),
                     if (cat != null && _catBadgeLabel.containsKey(cat)) ...[
                       const SizedBox(height: 5),
