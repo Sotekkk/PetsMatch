@@ -17,7 +17,7 @@ class _ProtocoleChaleurPageState extends State<ProtocoleChaleurPage> {
   static const _green = Color(0xFF6E9E57);
 
   static const _especes = [
-    'chien', 'chat', 'lapin', 'cheval', 'ovin', 'caprin', 'porcin',
+    'chien', 'chat', 'lapin', 'oiseau', 'nac', 'cheval', 'ovin', 'caprin', 'porcin', 'autre',
   ];
 
   final _supa = Supabase.instance.client;
@@ -86,7 +86,9 @@ class _ProtocoleChaleurPageState extends State<ProtocoleChaleurPage> {
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModal) => Padding(
+        builder: (ctx, setModal) => ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.85),
+          child: SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(existing == null ? 'Nouveau protocole chaleur' : 'Modifier le protocole',
@@ -107,25 +109,28 @@ class _ProtocoleChaleurPageState extends State<ProtocoleChaleurPage> {
             const SizedBox(height: 14),
             const Text('Race', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
             const SizedBox(height: 6),
-            Autocomplete<String>(
-              initialValue: TextEditingValue(text: raceCtrl.text),
-              optionsBuilder: (v) => v.text.isEmpty
-                  ? suggestions
-                  : suggestions.where((s) => s.toLowerCase().contains(v.text.toLowerCase())),
-              onSelected: (v) => raceCtrl.text = v,
-              fieldViewBuilder: (fCtx, ctrl, focus, onSubmit) {
-                ctrl.text = raceCtrl.text;
-                ctrl.addListener(() => raceCtrl.text = ctrl.text);
-                return TextField(
-                  controller: ctrl,
-                  focusNode: focus,
-                  decoration: InputDecoration(
-                    hintText: 'Ex. Pomsky, Spitz…',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                );
-              },
+            TextField(
+              controller: raceCtrl,
+              onChanged: (_) => setModal(() {}),
+              decoration: InputDecoration(
+                hintText: 'Ex. Pomsky, Spitz…',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
             ),
+            if (raceCtrl.text.trim().isNotEmpty) ...(() {
+              final query = raceCtrl.text.trim().toLowerCase();
+              final matches = suggestions
+                  .where((s) => s.toLowerCase().contains(query) && s.toLowerCase() != query)
+                  .toList();
+              if (matches.isEmpty) return <Widget>[];
+              return [
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 8, children: matches.map((s) => ActionChip(
+                  label: Text(s, style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5)),
+                  onPressed: () => setModal(() => raceCtrl.text = s),
+                )).toList()),
+              ];
+            })(),
             const SizedBox(height: 14),
             const Text('Intervalle (jours)', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
             const SizedBox(height: 6),
@@ -145,8 +150,18 @@ class _ProtocoleChaleurPageState extends State<ProtocoleChaleurPage> {
                 style: FilledButton.styleFrom(backgroundColor: _green, padding: const EdgeInsets.symmetric(vertical: 14)),
                 onPressed: () async {
                   final race = raceCtrl.text.trim();
-                  final jours = int.tryParse(joursCtrl.text.trim());
-                  if (race.isEmpty || jours == null || jours <= 0) return;
+                  final joursText = joursCtrl.text.trim();
+                  final jours = int.tryParse(joursText);
+                  if (race.isEmpty) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                        content: Text('Indiquez une race.', style: TextStyle(fontFamily: 'Galey'))));
+                    return;
+                  }
+                  if (jours == null || jours <= 0) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                        content: Text('Indiquez un nombre de jours valide.', style: TextStyle(fontFamily: 'Galey'))));
+                    return;
+                  }
                   try {
                     if (existing != null) {
                       await _supa.from('protocoles_chaleur_race').update({
@@ -162,10 +177,10 @@ class _ProtocoleChaleurPageState extends State<ProtocoleChaleurPage> {
                     }
                     if (ctx.mounted) Navigator.pop(ctx);
                     _load();
-                  } catch (_) {
+                  } catch (e) {
                     if (ctx.mounted) {
-                      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
-                          content: Text('Une erreur est survenue.', style: TextStyle(fontFamily: 'Galey'))));
+                      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey'))));
                     }
                   }
                 },
@@ -173,6 +188,7 @@ class _ProtocoleChaleurPageState extends State<ProtocoleChaleurPage> {
               ),
             ),
           ]),
+          ),
         ),
       ),
     );
