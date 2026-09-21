@@ -59,7 +59,7 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
     _progressCtrl.reset();
     _videoCtrl?.dispose();
     _videoCtrl = null;
-    await _musicPlayer.stop();
+    try { await _musicPlayer.stop(); } catch (_) {}
 
     StoryService.markViewed(_item.id, viewerUid: widget.myUid, viewerProfileId: widget.myProfileId);
 
