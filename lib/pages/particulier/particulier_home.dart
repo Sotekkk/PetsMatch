@@ -33,6 +33,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
 
   String? _photoUrl;
   int _nbAnimaux = 0;
+  int _streakCount = 0;
   bool _loading = true;
   List<Map<String, dynamic>> _animaux = [];
   List<Map<String, dynamic>> _mesAlertes = [];
@@ -53,13 +54,16 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
       final activeProfileId = User_Info.activeProfileId;
 
       // Photo du profil actif : user_profiles.avatar_url (pas le doc partagé).
+      // streak_count = flamme (série de jours actifs, cf. gamification Phase 1).
       String? profileAvatar;
+      int streakCount = 0;
       try {
         final prow = activeProfileId.isNotEmpty
-            ? await _supa.from('user_profiles').select('avatar_url').eq('id', activeProfileId).maybeSingle()
-            : await _supa.from('user_profiles').select('avatar_url')
+            ? await _supa.from('user_profiles').select('avatar_url, streak_count').eq('id', activeProfileId).maybeSingle()
+            : await _supa.from('user_profiles').select('avatar_url, streak_count')
                 .eq('uid', uid).eq('is_main', true).maybeSingle();
         profileAvatar = (prow?['avatar_url'] as String?)?.trim();
+        streakCount = (prow?['streak_count'] as num?)?.toInt() ?? 0;
       } catch (_) {}
 
       List ownRows;
@@ -122,6 +126,7 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
             : (activeProfileId.isEmpty ? firestorePic : null);
         _animaux = List<Map<String, dynamic>>.from(animaux as List);
         _nbAnimaux = _animaux.length;
+        _streakCount = streakCount;
         _mesAlertes = List<Map<String, dynamic>>.from(alertesMes as List);
         _annonces = List<Map<String, dynamic>>.from(annonces as List);
         _loading = false;
@@ -327,25 +332,35 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
 
   Widget _buildStatsRow() {
     final nb = _mesAlertes.length;
-    return Row(
-      children: [
-        _StatCard(
-          value: '$_nbAnimaux',
-          label: 'Animal${_nbAnimaux > 1 ? 'x' : ''}',
-          icon: Icons.pets,
-          onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const UserParticulierFeed(initialTab: 1))),
-        ),
-        const SizedBox(width: 12),
-        _StatCard(
-          value: '$nb',
-          label: 'Alerte${nb > 1 ? 's' : ''} active${nb > 1 ? 's' : ''}',
-          icon: Icons.location_searching,
-          highlight: nb > 0,
-          onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const MesAlertesPage())),
-        ),
-      ],
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _StatCard(
+            value: '$_nbAnimaux',
+            label: 'Animal${_nbAnimaux > 1 ? 'x' : ''}',
+            icon: Icons.pets,
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const UserParticulierFeed(initialTab: 1))),
+          ),
+          const SizedBox(width: 12),
+          _StatCard(
+            value: '$_streakCount',
+            label: 'Jour${_streakCount > 1 ? 's' : ''} de suite',
+            icon: Icons.local_fire_department,
+            highlight: _streakCount > 0,
+          ),
+          const SizedBox(width: 12),
+          _StatCard(
+            value: '$nb',
+            label: 'Alerte${nb > 1 ? 's' : ''} active${nb > 1 ? 's' : ''}',
+            icon: Icons.location_searching,
+            highlight: nb > 0,
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const MesAlertesPage())),
+          ),
+        ],
+      ),
     );
   }
 

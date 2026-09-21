@@ -9,6 +9,7 @@ import 'package:PetsMatch/pages/nature/natural_places_page.dart';
 import 'package:PetsMatch/pages/petfriends/petfriends_page.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/balades_ludiques/balades_ludiques_hub_page.dart';
+import 'package:PetsMatch/main.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 const _teal = Color(0xFF0C5C6C);
@@ -76,9 +77,17 @@ class CommunauteHubPage extends StatelessWidget {
     ),
   ];
 
+  // PetFriends (groupes, flamme de discussion) est réservé aux profils
+  // particulier — un compte éleveur/association ne doit pas le voir dans
+  // le hub, même s'il y accède aussi via CommunauteHubPage.
+  List<_CommunauteSection> get _visibleSections => User_Info.activeType == 'particulier'
+      ? _sections
+      : _sections.where((s) => s.label != 'PetFriends').toList();
+
   @override
   Widget build(BuildContext context) {
     final canPop = Navigator.canPop(context);
+    final sections = _visibleSections;
     return Scaffold(
       backgroundColor: _bg,
       body: CustomScrollView(
@@ -175,11 +184,11 @@ class CommunauteHubPage extends StatelessWidget {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: _sections.length,
+                  itemCount: sections.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (ctx, i) => _SectionCard(
-                    section: _sections[i],
-                    onTap: () => _navigate(ctx, _sections[i]),
+                    section: sections[i],
+                    onTap: () => _navigate(ctx, sections[i]),
                   ),
                 ),
 

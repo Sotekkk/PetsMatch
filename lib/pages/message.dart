@@ -560,6 +560,7 @@ class _MessagePageState extends State<MessagePage> {
         final isExpiringSoon = activeCat != '__archived__' && daysOld >= 60 && daysOld < 90;
         final unread  = (unreadMap[uid] as int?) ?? 0;
         final shown   = isMuted ? 0 : unread;
+        final msgStreak = (data['msg_streak_count'] as num?)?.toInt() ?? 0;
 
         final participants = (data['participants'] as List? ?? [])
             .where((p) => p.toString() != uid).toList();
@@ -636,7 +637,9 @@ class _MessagePageState extends State<MessagePage> {
                     ]),
                     const SizedBox(height: 3),
                     Row(children: [
-                      Expanded(child: Text(lastMsg, maxLines: 1, overflow: TextOverflow.ellipsis,
+                      Expanded(child: Text(
+                        msgStreak > 0 ? '$lastMsg · $msgStreak🔥' : lastMsg,
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
                         style: TextStyle(fontFamily: 'Galey', fontSize: 12,
                             color: shown > 0 ? Colors.black87 : Colors.grey.shade500,
                             fontWeight: shown > 0 ? FontWeight.w600 : FontWeight.normal))),

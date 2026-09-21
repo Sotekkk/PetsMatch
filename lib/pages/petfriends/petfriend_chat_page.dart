@@ -9,6 +9,9 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 import 'package:PetsMatch/pages/chatScreen.dart' show LocationCard;
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart'
+    show resolveActiveAuthorProfileId, socialProfileName, socialProfilePhoto, kSocialAuthorCols;
+import 'package:PetsMatch/services/conversation_streak_service.dart';
 
 class PetFriendChatPage extends StatefulWidget {
   final String conversationId;
@@ -39,6 +42,8 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
 
   List<Map<String, dynamic>> _messages = [];
   Map<String, dynamic> _participantsInfo = {};
+  List<String> _participants = [];
+  String? _createdBy;
   bool _sending = false;
   RealtimeChannel? _channel;
   String? _myProfileId;
@@ -64,11 +69,15 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
       // Charger la conversation pour récupérer participants_info
       final conv = await _supa
           .from('conversations')
-          .select('participants_info')
+          .select('participants, participants_info, created_by')
           .eq('id', widget.conversationId)
           .maybeSingle();
       if (conv != null && conv['participants_info'] != null) {
         _participantsInfo = Map<String, dynamic>.from(conv['participants_info'] as Map);
+      }
+      if (conv != null) _createdBy = conv['created_by']?.toString();
+      if (conv != null && conv['participants'] != null) {
+        _participants = List<String>.from((conv['participants'] as List).map((e) => e.toString()));
       }
 
       final rows = await _supa
@@ -177,11 +186,218 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
           'unread_count': unread,
           'participants_info': updatedInfo,
         }).eq('id', widget.conversationId);
+
+        ConversationStreakService.instance.registerMessage(
+          conversationId: widget.conversationId, senderUid: _myUid, participants: members,
+        );
       }
 
       _ctrl.clear();
     } catch (_) {}
     if (mounted) setState(() => _sending = false);
+  }
+
+  // ── Ajout de membres à un groupe existant ───────────────────────────────
+
+  Future<List<Map<String, dynamic>>> _loadAddableFriends() async {
+    final myProfileId = await resolveActiveAuthorProfileId(_myUid) ?? '';
+    if (myProfileId.isEmpty) return [];
+    final sent = await _supa.from('petfriends')
+        .select('uid_recepteur, recepteur_profile_id, statut')
+        .eq('demandeur_profile_id', myProfileId).eq('statut', 'accepte');
+    final received = await _supa.from('petfriends')
+        .select('uid_demandeur, demandeur_profile_id, statut')
+        .eq('recepteur_profile_id', myProfileId).eq('statut', 'accepte');
+    final Map<String, String> uidByProfileId = {};
+    for (final r in (sent as List)) {
+      final pid = r['recepteur_profile_id']?.toString();
+      if (pid != null && pid.isNotEmpty) uidByProfileId[pid] = r['uid_recepteur'].toString();
+    }
+    for (final r in (received as List)) {
+      final pid = r['demandeur_profile_id']?.toString();
+      if (pid != null && pid.isNotEmpty) uidByProfileId[pid] = r['uid_demandeur'].toString();
+    }
+    // Exclure les PetFriends déjà membres du groupe.
+    uidByProfileId.removeWhere((_, uid) => _participants.contains(uid));
+    if (uidByProfileId.isEmpty) return [];
+    final profiles = await _supa.from('user_profiles')
+        .select(kSocialAuthorCols)
+        .inFilter('id', uidByProfileId.keys.toList());
+    return (profiles as List).map((p) {
+      final prof = p as Map<String, dynamic>;
+      final pid = prof['id'].toString();
+      return {
+        'uid': uidByProfileId[pid]!,
+        'name': socialProfileName(prof),
+        'photo': socialProfilePhoto(prof) ?? '',
+      };
+    }).toList();
+  }
+
+  Future<void> _addMembers(List<Map<String, dynamic>> selected) async {
+    if (selected.isEmpty) return;
+    try {
+      final newUids = selected.map((f) => f['uid'] as String).toList();
+      final updatedParticipants = [..._participants, ...newUids];
+      final updatedInfo = Map<String, dynamic>.from(_participantsInfo);
+      final conv = await _supa.from('conversations')
+          .select('unread_count').eq('id', widget.conversationId).maybeSingle();
+      final unread = Map<String, dynamic>.from(conv?['unread_count'] as Map? ?? {});
+      for (final f in selected) {
+        updatedInfo[f['uid'] as String] = {
+          'name': f['name'],
+          if ((f['photo'] as String).isNotEmpty) 'photo': f['photo'],
+        };
+        unread[f['uid'] as String] = 0;
+      }
+      await _supa.from('conversations').update({
+        'participants': updatedParticipants,
+        'participant_ids': updatedParticipants.join(','),
+        'participants_info': updatedInfo,
+        'unread_count': unread,
+      }).eq('id', widget.conversationId);
+      if (mounted) {
+        setState(() { _participants = updatedParticipants; _participantsInfo = updatedInfo; });
+      }
+    } catch (_) {}
+  }
+
+  void _showAddMembersSheet() {
+    // Ouvre le tiroir IMMÉDIATEMENT (avec un loader) plutôt que d'attendre la
+    // requête réseau avant même d'afficher quoi que ce soit — sinon, tant que
+    // _loadAddableFriends() n'a pas répondu, l'appui sur l'icône ne produit
+    // visiblement rien.
+    final selectedUids = <String>{};
+    final friendsFuture = _loadAddableFriends();
+    var loadedFriends = <Map<String, dynamic>>[];
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) => DraggableScrollableSheet(
+          initialChildSize: 0.6, maxChildSize: 0.9, minChildSize: 0.35, expand: false,
+          builder: (_, sc) => Padding(
+            padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Center(child: Container(width: 40, height: 4,
+                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 16),
+              const Text('Ajouter des membres',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+              const SizedBox(height: 14),
+              Expanded(
+                child: FutureBuilder<List<Map<String, dynamic>>>(
+                  future: friendsFuture,
+                  builder: (_, snap) {
+                    if (snap.connectionState != ConnectionState.done) {
+                      return const Center(child: CircularProgressIndicator(color: _green));
+                    }
+                    if (snap.hasError) {
+                      return Center(child: Text('Erreur : ${snap.error}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontFamily: 'Galey', color: Colors.red)));
+                    }
+                    final friends = snap.data ?? [];
+                    loadedFriends = friends;
+                    if (friends.isEmpty) {
+                      return const Center(child: Text('Aucun PetFriend à ajouter (déjà tous dans le groupe, ou aucun PetFriend accepté)',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontFamily: 'Galey', color: Colors.grey)));
+                    }
+                    return ListView.builder(
+                      controller: sc,
+                      itemCount: friends.length,
+                      itemBuilder: (_, i) {
+                        final f = friends[i];
+                        final uid = f['uid'] as String;
+                        final sel = selectedUids.contains(uid);
+                        return CheckboxListTile(
+                          value: sel, activeColor: _green,
+                          onChanged: (_) => setModal(() {
+                            if (sel) selectedUids.remove(uid); else selectedUids.add(uid);
+                          }),
+                          title: Text(f['name'] as String, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                          secondary: CircleAvatar(
+                            radius: 20,
+                            backgroundColor: const Color(0xFFE8F5E9),
+                            backgroundImage: (f['photo'] as String).isNotEmpty
+                                ? CachedNetworkImageProvider(f['photo'] as String) : null,
+                            child: (f['photo'] as String).isEmpty
+                                ? const Icon(Icons.person_outline, size: 20, color: _green) : null,
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: _green,
+                      padding: const EdgeInsets.symmetric(vertical: 14)),
+                  onPressed: selectedUids.isEmpty ? null : () async {
+                    final chosen = loadedFriends.where((f) => selectedUids.contains(f['uid'])).toList();
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    await _addMembers(chosen);
+                  },
+                  child: const Text('Ajouter',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                ),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _confirmDialog(String title, String body) async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(title, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+        content: Text(body, style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(d, true),
+              child: const Text('Confirmer', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    ) ?? false;
+  }
+
+  bool get _isGroupCreator => _createdBy != null && _createdBy == _myUid;
+
+  Future<void> _deleteOrLeaveGroup() async {
+    final isCreator = _isGroupCreator;
+    final ok = await _confirmDialog(
+      isCreator ? 'Supprimer le groupe' : 'Quitter le groupe',
+      isCreator
+          ? 'Le groupe "${widget.convNom}" sera définitivement supprimé pour tout le monde.'
+          : 'Vous quitterez le groupe "${widget.convNom}" et ne recevrez plus ses messages.',
+    );
+    if (!ok || !mounted) return;
+    try {
+      if (isCreator) {
+        await _supa.from('messages').delete().eq('conversation_id', widget.conversationId);
+        await _supa.from('conversations').delete().eq('id', widget.conversationId);
+      } else {
+        final updated = _participants.where((u) => u != _myUid).toList();
+        await _supa.from('conversations').update({'participants': updated, 'participant_ids': updated.join(',')})
+            .eq('id', widget.conversationId);
+      }
+      if (mounted) Navigator.pop(context);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Une erreur est survenue.', style: TextStyle(fontFamily: 'Galey'))));
+      }
+    }
   }
 
   Future<void> _shareLocation() async {
@@ -435,6 +651,22 @@ class _PetFriendChatPageState extends State<PetFriendChatPage> {
               maxLines: 1, overflow: TextOverflow.ellipsis)),
         ]),
         actions: [
+          if (widget.isGroupe)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, color: Colors.white),
+              onSelected: (v) {
+                if (v == 'add') _showAddMembersSheet();
+                if (v == 'delete') _deleteOrLeaveGroup();
+              },
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'add', child: Text('Ajouter des membres', style: TextStyle(fontFamily: 'Galey'))),
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Text(_isGroupCreator ? 'Supprimer le groupe' : 'Quitter le groupe',
+                      style: const TextStyle(fontFamily: 'Galey', color: Colors.red)),
+                ),
+              ],
+            ),
           if (!widget.isGroupe)
             IconButton(
               onPressed: _sending ? null : _requestGardeEntraide,

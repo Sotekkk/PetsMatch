@@ -23,6 +23,8 @@ import 'package:PetsMatch/pages/particulier/partage_animal_sheet.dart';
 import 'package:PetsMatch/pages/particulier/proprietaires_animal_sheet.dart';
 import 'package:PetsMatch/pages/particulier/create_annonce_cheval_page.dart';
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show AnimalTaggedPostsPage;
+import 'package:PetsMatch/pages/particulier/enregistrer_balade_page.dart';
+import 'package:PetsMatch/services/gamification_service.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_constants.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_timeline_tab.dart';
@@ -128,6 +130,11 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   List<Map<String, dynamic>> _testsGenetiques = [];
   List<Map<String, dynamic>> _poids = [];
 
+  // Gamification Phase 1 — XP / palier d'objet évolutif (par animal)
+  int _xp = 0;
+  String _objectTier = 'decouverte';
+  List<Map<String, dynamic>> _objectTiers = [];
+
   Map<String, List<String>> _allBreeds = {};
 
   static const _especes = [
@@ -175,6 +182,121 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     } catch (_) {}
     _loadPensionAcces();
     _loadProprietaires();
+    _loadObjectTiers();
+  }
+
+  /// Paliers d'objet évolutif pour l'espèce de l'animal (species_object_tiers).
+  Future<void> _loadObjectTiers() async {
+    try {
+      final rows = await _supa
+          .from('species_object_tiers')
+          .select('tier, xp_threshold')
+          .eq('species', _espece)
+          .order('xp_threshold');
+      if (mounted) setState(() => _objectTiers = List<Map<String, dynamic>>.from(rows as List));
+    } catch (_) {}
+  }
+
+  Future<void> _ouvrirEnregistrerBalade() async {
+    if (_animalId == null) return;
+    final result = await Navigator.push<BaladeResult>(context, MaterialPageRoute(
+      builder: (_) => EnregistrerBaladePage(
+        animalId: _animalId!,
+        animalNom: _nomCtrl.text.trim().isEmpty ? 'cet animal' : _nomCtrl.text.trim(),
+        espece: _espece,
+      ),
+    ));
+    if (result == null || !mounted) return;
+    await _refreshFromSupabase();
+    if (!mounted) return;
+    if (result.tierEvolved) {
+      await showDialog<void>(context: context, builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('✨ Évolution débloquée !', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text(
+          '${_nomCtrl.text.trim().isEmpty ? 'Votre animal' : _nomCtrl.text.trim()} passe au palier '
+          '${GamificationService.tierLabel(result.newTier)} ! (+${result.xpEarned} XP)',
+          style: const TextStyle(fontFamily: 'Galey'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context),
+              child: const Text('Super !', style: TextStyle(fontFamily: 'Galey', color: _teal, fontWeight: FontWeight.w700))),
+        ],
+      ));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Balade enregistrée : +${result.xpEarned} XP', style: const TextStyle(fontFamily: 'Galey')),
+        backgroundColor: _teal,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
+
+  /// Carte de progression (flamme/XP Phase 1) : palier actuel + XP restant
+  /// avant le prochain palier, avec le raccourci pour enregistrer une balade.
+  Widget _evolutionCard() {
+    Map<String, dynamic>? nextTier;
+    for (final t in _objectTiers) {
+      if ((t['xp_threshold'] as num).toInt() > _xp) { nextTier = t; break; }
+    }
+    double? progress;
+    int? xpRestant;
+    if (nextTier != null) {
+      final currentIdx = _objectTiers.indexOf(nextTier) - 1;
+      final prevThreshold = currentIdx >= 0 ? (_objectTiers[currentIdx]['xp_threshold'] as num).toInt() : 0;
+      final nextThreshold = (nextTier['xp_threshold'] as num).toInt();
+      final span = (nextThreshold - prevThreshold).clamp(1, 1 << 30);
+      progress = ((_xp - prevThreshold) / span).clamp(0, 1).toDouble();
+      xpRestant = nextThreshold - _xp;
+    }
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF2F4),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Text('🏅', style: TextStyle(fontSize: 20)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text('Palier ${GamificationService.tierLabel(_objectTier)} · $_xp XP',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13.5)),
+          ),
+        ]),
+        if (progress != null) ...[
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: progress, minHeight: 6,
+              backgroundColor: Colors.white,
+              valueColor: const AlwaysStoppedAnimation(_teal),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text('$xpRestant XP avant le prochain palier',
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.black54)),
+        ],
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _ouvrirEnregistrerBalade,
+            icon: const Icon(Icons.directions_walk, size: 16),
+            label: const Text('Enregistrer une balade',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _teal,
+              side: const BorderSide(color: _teal),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+      ]),
+    );
   }
 
   Future<void> _loadProprietaires() async {
@@ -358,6 +480,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       _contactsUrgence.add(_ContactUrgenceP(
           nomVal: raw['nom'] ?? '', telVal: raw['tel'] ?? ''));
     }
+    _xp         = (d['xp'] as num?)?.toInt() ?? 0;
+    _objectTier = d['object_tier'] as String? ?? 'decouverte';
     _espece    = d['espece'] ?? 'chien';
     _especeAutreCtrl.text = d['espece_autre'] ?? '';
     _sexe      = d['sexe'] ?? 'male';
@@ -945,6 +1069,10 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
             ),
           ),
         ],
+
+        const SizedBox(height: 16),
+
+        if (_animalId != null) _evolutionCard(),
 
         const SizedBox(height: 8),
 
