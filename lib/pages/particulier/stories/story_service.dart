@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show socialProfileName;
+
 /// Modèle + accès données pour les Stories Pets Social (éphémères 24h,
 /// musique piochée dans la bibliothèque maison — jamais d'import libre côté
 /// utilisateur, cf. supabase/migration_stories.sql).
@@ -29,7 +31,12 @@ class StoryItem {
   final String mediaUrl;
   final String mediaType; // 'photo' | 'video'
   final int? dureeSecondes;
-  final String? legende;
+  final String? legende; // balisage @[Nom](profileId), comme Pets Social/Forum/Groupes
+  final String legendeCouleur;
+  final String legendeTaille; // 's' | 'm' | 'l'
+  final bool legendeGras;
+  final double legendeX; // 0..1, position libre sur le média (glisser-déposer)
+  final double legendeY;
   final DateTime createdAt;
   final DateTime expiresAt;
   final StoryMusicTrack? music;
@@ -38,6 +45,8 @@ class StoryItem {
   StoryItem({
     required this.id, required this.authorProfileId, required this.authorUid,
     required this.mediaUrl, required this.mediaType, this.dureeSecondes, this.legende,
+    this.legendeCouleur = '#FFFFFF', this.legendeTaille = 'm', this.legendeGras = false,
+    this.legendeX = 0.5, this.legendeY = 0.85,
     required this.createdAt, required this.expiresAt, this.music, this.vue = false,
   });
 
@@ -51,6 +60,11 @@ class StoryItem {
       mediaType: r['media_type']?.toString() ?? 'photo',
       dureeSecondes: r['duree_secondes'] as int?,
       legende: r['legende']?.toString(),
+      legendeCouleur: r['legende_couleur']?.toString() ?? '#FFFFFF',
+      legendeTaille: r['legende_taille']?.toString() ?? 'm',
+      legendeGras: r['legende_gras'] as bool? ?? false,
+      legendeX: (r['legende_x'] as num?)?.toDouble() ?? 0.5,
+      legendeY: (r['legende_y'] as num?)?.toDouble() ?? 0.85,
       createdAt: DateTime.parse(r['created_at'].toString()),
       expiresAt: DateTime.parse(r['expires_at'].toString()),
       music: musicRow != null ? StoryMusicTrack.fromRow(musicRow) : null,
@@ -68,17 +82,32 @@ class StoryGroup {
 }
 
 const _kStoryCols = 'id, uid, author_profile_id, media_url, media_type, duree_secondes, legende, '
+    'legende_couleur, legende_taille, legende_gras, legende_x, legende_y, '
     'created_at, expires_at, story_music_tracks(id, titre, artiste, url_audio, duree_secondes)';
 
 class StoryService {
   static final _supa = Supabase.instance.client;
 
-  /// Groupes de stories actives (non expirées), triées : moi d'abord, puis
-  /// non-vues avant vues, puis plus récent d'abord.
+  /// Groupes de stories actives (non expirées) DES PROFILS QUE JE SUIS (+
+  /// les miennes) — mêmes règles de visibilité que « Mon feed », pas les
+  /// stories de n'importe qui : si Natacha me suit, elle a bien MON profil
+  /// dans sa liste de « suivis » et voit donc mes stories ; ce n'est PAS
+  /// réciproque (je ne vois pas forcément les siennes si je ne la suis pas).
+  /// Triées : moi d'abord, puis non-vues avant vues, puis plus récent d'abord.
   static Future<List<StoryGroup>> loadActiveGroups({required String myUid, String? myProfileId}) async {
     final nowIso = DateTime.now().toUtc().toIso8601String();
-    final rows = await _supa.from('stories').select(_kStoryCols)
-        .gt('expires_at', nowIso).order('created_at', ascending: true);
+    var q = _supa.from('stories').select(_kStoryCols).gt('expires_at', nowIso);
+    if (myProfileId != null && myProfileId.isNotEmpty) {
+      final follows = await _supa.from('follows').select('following_profile_id')
+          .eq('follower_profile_id', myProfileId);
+      final followedIds = (follows as List)
+          .map((f) => f['following_profile_id']?.toString())
+          .whereType<String>()
+          .toSet()
+        ..add(myProfileId);
+      q = q.inFilter('author_profile_id', followedIds.toList());
+    }
+    final rows = await q.order('created_at', ascending: true);
     final items = (rows as List).map((r) => StoryItem.fromRow(Map<String, dynamic>.from(r))).toList();
     if (items.isEmpty) return [];
 
@@ -150,10 +179,66 @@ class StoryService {
     }).toList();
   }
 
+  static Future<bool> isLiked(String storyId, String? profileId) async {
+    if (profileId == null || profileId.isEmpty) return false;
+    final row = await _supa.from('story_likes').select('id')
+        .eq('story_id', storyId).eq('liker_profile_id', profileId).maybeSingle();
+    return row != null;
+  }
+
+  static Future<int> likesCount(String storyId) async {
+    final rows = await _supa.from('story_likes').select('id').eq('story_id', storyId);
+    return (rows as List).length;
+  }
+
+  /// Bascule le like et renvoie le nouvel état. Notifie l'auteur uniquement
+  /// au moment où le like est posé (pas au retrait), en évitant les
+  /// doublons si l'utilisateur tape plusieurs fois d'affilée.
+  static Future<bool> toggleLike(
+    String storyId, {
+    required String uid, required String? profileId,
+    required String authorUid, required String authorProfileId,
+  }) async {
+    if (profileId == null || profileId.isEmpty) return false;
+    final existing = await _supa.from('story_likes').select('id')
+        .eq('story_id', storyId).eq('liker_profile_id', profileId).maybeSingle();
+    if (existing != null) {
+      await _supa.from('story_likes').delete().eq('id', existing['id']);
+      return false;
+    }
+    await _supa.from('story_likes').insert({'story_id': storyId, 'uid': uid, 'liker_profile_id': profileId});
+    if (authorUid != uid) {
+      try {
+        final since = DateTime.now().toUtc().subtract(const Duration(minutes: 1)).toIso8601String();
+        final dup = await _supa.from('notifications').select('id')
+            .eq('uid', authorUid).eq('type', 'story_like').eq('profile_id', authorProfileId)
+            .contains('data', {'story_id': storyId, 'liker_profile_id': profileId})
+            .gte('created_at', since).limit(1).maybeSingle();
+        if (dup == null) {
+          final me = await _supa.from('user_profiles').select('firstname, lastname, nom, social_pseudo, profile_type')
+              .eq('id', profileId).maybeSingle();
+          final nom = me != null ? socialProfileName(me) : 'Quelqu\'un';
+          await _supa.from('notifications').insert({
+            'uid': authorUid,
+            'type': 'story_like',
+            'profile_id': authorProfileId,
+            'title': '$nom a aimé ta story',
+            'body': '❤️',
+            'data': {'story_id': storyId, 'liker_profile_id': profileId},
+            'read': false,
+          });
+        }
+      } catch (_) {}
+    }
+    return true;
+  }
+
   static Future<String> createStory({
     required String uid, required String authorProfileId,
     required String mediaUrl, required String mediaType,
     int? dureeSecondes, String? musicTrackId, String? legende,
+    String legendeCouleur = '#FFFFFF', String legendeTaille = 'm', bool legendeGras = false,
+    double legendeX = 0.5, double legendeY = 0.85,
   }) async {
     final res = await _supa.from('stories').insert({
       'uid': uid,
@@ -162,7 +247,14 @@ class StoryService {
       'media_type': mediaType,
       if (dureeSecondes != null) 'duree_secondes': dureeSecondes,
       if (musicTrackId != null) 'music_track_id': musicTrackId,
-      if (legende != null && legende.isNotEmpty) 'legende': legende,
+      if (legende != null && legende.isNotEmpty) ...{
+        'legende': legende,
+        'legende_couleur': legendeCouleur,
+        'legende_taille': legendeTaille,
+        'legende_gras': legendeGras,
+        'legende_x': legendeX,
+        'legende_y': legendeY,
+      },
     }).select('id').single();
     return res['id'].toString();
   }

@@ -37,6 +37,20 @@ const AndroidNotificationChannel channel = AndroidNotificationChannel(
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
+/// Remet le badge iOS à 0 (silencieux, sans notification visible).
+Future<void> clearAppBadge() async {
+  if (!Platform.isIOS) return;
+  try {
+    await flutterLocalNotificationsPlugin.show(
+      id: 0, title: null, body: null,
+      notificationDetails: const NotificationDetails(iOS: DarwinNotificationDetails(
+        presentAlert: false, presentSound: false,
+        presentBadge: true, badgeNumber: 0,
+      )),
+    );
+  } catch (_) {}
+}
+
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 GlobalKey<ScaffoldState> drawerKey = GlobalKey<ScaffoldState>();
 // Permet aux écrans persistants (ex. accueil pro) de savoir quand ils
@@ -986,6 +1000,7 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       // L'application est ouverte
       UserStatus.setOnline();
+      clearAppBadge();
     } else if (state == AppLifecycleState.paused) {
       // L'application est en arrière-plan
       UserStatus.setOffline();

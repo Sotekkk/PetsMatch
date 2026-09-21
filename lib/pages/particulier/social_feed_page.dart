@@ -208,7 +208,7 @@ Future<int> socialUnseenCount(String uid) async {
     if (lastSeen != null) fq = fq.gt('created_at', lastSeen.toIso8601String());
     count += (await fq as List).length;
     var nq = supa.from('notifications').select('id')
-        .eq('uid', uid).eq('profile_id', pid).inFilter('type', ['social_like', 'social_mention']);
+        .eq('uid', uid).eq('profile_id', pid).inFilter('type', ['social_like', 'social_mention', 'story_like']);
     if (lastSeen != null) nq = nq.gt('created_at', lastSeen.toIso8601String());
     count += (await nq.limit(99) as List).length;
     return count > 99 ? 99 : count;
@@ -1042,7 +1042,7 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
       // insérées par _sendSocialNotif/notifyMentions dans `notifications`.
       var nq = _supa.from('notifications').select('id')
           .eq('uid', uid).eq('profile_id', pid)
-          .inFilter('type', ['social_like', 'social_mention']);
+          .inFilter('type', ['social_like', 'social_mention', 'story_like']);
       if (lastSeen != null) {
         nq = nq.gt('created_at', lastSeen.toIso8601String());
       }
@@ -5821,7 +5821,7 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
     // donc pas besoin de re-résoudre un profil ici.
     final likesMentions = await _supa.from('notifications').select()
         .eq('uid', widget.myUid).eq('profile_id', pid)
-        .inFilter('type', ['social_like', 'social_mention'])
+        .inFilter('type', ['social_like', 'social_mention', 'story_like'])
         .order('created_at', ascending: false).limit(30);
     final likeMentionRows = (likesMentions as List).cast<Map<String, dynamic>>();
 
@@ -5874,7 +5874,7 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
     for (final n in likeMentionRows) {
       final data = n['data'] as Map<String, dynamic>? ?? {};
       all.add({
-        'type': n['type'] == 'social_like' ? 'like' : 'mention',
+        'type': n['type'] == 'social_like' ? 'like' : (n['type'] == 'story_like' ? 'story_like' : 'mention'),
         'created_at': n['created_at'],
         'title': n['title'],
         'body': n['body'],
@@ -5928,12 +5928,14 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
                             final icon = switch (type) {
                               'follow' => Icons.person_add_rounded,
                               'like' => Icons.favorite_rounded,
+                              'story_like' => Icons.auto_stories_rounded,
                               'mention' => Icons.alternate_email_rounded,
                               _ => Icons.chat_bubble_outline_rounded,
                             };
                             final suffix = switch (type) {
                               'follow' => ' a commencé à te suivre',
                               'like' => ' a aimé ton post',
+                              'story_like' => ' a aimé ta story',
                               _ => ' a commenté ton post',
                             };
                             return Dismissible(
@@ -5960,6 +5962,11 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
                                         builder: (_) => SocialProfilePage(
                                             targetUid: uid, myUid: widget.myUid,
                                             targetProfileId: prof?['id'] as String?)));
+                                  } else if (type == 'story_like') {
+                                    // La story est éphémère (24h) — pas de
+                                    // lien direct fiable, retour au fil où
+                                    // vit le bandeau de stories.
+                                    Navigator.pop(context);
                                   } else {
                                     // comment, like, mention → toutes amènent
                                     // au post concerné (le like/la mention

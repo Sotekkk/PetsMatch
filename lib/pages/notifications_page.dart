@@ -37,7 +37,7 @@ import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/promenades/promenade_detail_page.dart';
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
 import 'package:PetsMatch/pages/petfriends/petfriend_chat_page.dart';
-import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show openSharedSocialPost;
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show openSharedSocialPost, SocialFeedPage;
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/communaute/forum_page.dart' show openForumSujet;
 import 'package:PetsMatch/pages/communaute/groupe_detail_page.dart' show openGroupeById;
@@ -137,7 +137,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
         // fil Pets Social), pas ici, pour éviter le doublon — plus logique
         // pour l'utilisateur (demande explicite).
         final type = n['type'] as String? ?? '';
-        if (type == 'social_like' || type == 'social_mention') return false;
+        if (type == 'social_like' || type == 'social_mention' || type == 'story_like') return false;
         // profile_id est la source la plus fiable (multi-profil) — s'il est
         // renseigné, il prime sur profile_type (souvent absent à la création).
         final pid = (n['profile_id'] as String?) ?? '';
@@ -193,6 +193,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
         final idx = _notifs.indexWhere((n) => n['id'] == notif['id']);
         if (idx != -1) _notifs[idx] = {..._notifs[idx], 'read': true};
       });
+      // Si plus aucune notif non lue, clear le badge iOS
+      final anyUnread = _notifs.any((n) => n['read'] != true);
+      if (!anyUnread) clearAppBadge();
     } catch (_) {}
   }
 
@@ -857,6 +860,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
         await openSharedSocialPost(context, postId,
             highlightCommentId: type == 'social_comment' ? commentId : null);
       }
+    } else if (type == 'story_like') {
+      // La story elle-même est éphémère (24h) — pas de lien direct fiable,
+      // on ramène sur le fil Pets Social où vit le bandeau de stories.
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const SocialFeedPage()));
     } else if (type == 'forum_mention') {
       final sujetId = data is Map ? data['sujetId'] as String? : null;
       if (sujetId != null) await openForumSujet(context, sujetId);
@@ -1735,7 +1742,7 @@ class _NotifBadgeState extends State<NotifBadge> with WidgetsBindingObserver {
       // _fetch()).
       final count = (data as List).where((n) {
         final type = n['type'] as String? ?? '';
-        if (type == 'social_like' || type == 'social_mention') return false;
+        if (type == 'social_like' || type == 'social_mention' || type == 'story_like') return false;
         final pid = (n['profile_id'] as String?) ?? '';
         if (pid.isNotEmpty) return pid == activeProfileId;
         final pt = (n['profile_type'] as String?) ?? '';

@@ -96,12 +96,11 @@ serve(async (req) => {
       }
     }
 
-    // Récupérer le FCM token de l'utilisateur cible
-    const { data: userRow } = await supa
-      .from('users')
-      .select('fcm_token')
-      .eq('uid', uid)
-      .single();
+    // Récupérer le FCM token + nombre de notifs non lues du destinataire
+    const [{ data: userRow }, { count: unreadCount }] = await Promise.all([
+      supa.from('users').select('fcm_token').eq('uid', uid).single(),
+      supa.from('notifications').select('id', { count: 'exact', head: true }).eq('uid', uid).eq('read', false),
+    ]);
 
     const fcmToken = userRow?.fcm_token as string | null;
     if (!fcmToken) {
@@ -150,7 +149,7 @@ serve(async (req) => {
                 aps: {
                   alert: { title, body: (notifBody ?? '') + profileSuffix },
                   sound: 'default',
-                  badge: 1,
+                  badge: (unreadCount ?? 1),
                   'content-available': 1,
                   'mutable-content': 1,
                 },
