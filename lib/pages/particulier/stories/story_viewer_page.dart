@@ -117,7 +117,18 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
     }
     if (currentItem.music != null) {
       _musicPlayer ??= AudioPlayer();
-      try { await _musicPlayer!.play(UrlSource(currentItem.music!.urlAudio)); } catch (_) {}
+      try {
+        // Focus audio "none" : par défaut (AUDIOFOCUS_GAIN), démarrer ce
+        // lecteur coupait automatiquement la lecture vidéo en cours côté OS
+        // (Android considère alors que cette appli n'a plus qu'UNE seule
+        // source audio active) — c'était la vraie cause du blocage vidéo
+        // « dès la première image » dès qu'une musique était ajoutée, pas
+        // le volume à 0.
+        await _musicPlayer!.setAudioContext(AudioContext(
+          android: const AudioContextAndroid(audioFocus: AndroidAudioFocus.none),
+        ));
+        await _musicPlayer!.play(UrlSource(currentItem.music!.urlAudio));
+      } catch (_) {}
     }
   }
 

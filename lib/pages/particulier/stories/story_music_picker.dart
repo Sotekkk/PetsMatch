@@ -51,6 +51,9 @@ class _StoryMusicPickerSheetState extends State<StoryMusicPickerSheet> {
     await _player.stop();
     setState(() => _playingId = t.id);
     try {
+      await _player.setAudioContext(AudioContext(
+        android: const AudioContextAndroid(audioFocus: AndroidAudioFocus.none),
+      ));
       await _player.play(UrlSource(t.urlAudio));
     } catch (_) {}
   }
