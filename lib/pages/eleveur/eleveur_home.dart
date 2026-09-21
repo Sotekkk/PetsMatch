@@ -42,6 +42,13 @@ import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/sante_suivis_morpho_page.dart';
 import 'package:PetsMatch/pages/pro/sante_contrats_page.dart';
+import 'package:PetsMatch/pages/pro/photographe_prestations_page.dart';
+import 'package:PetsMatch/pages/pro/photographe_dashboard_page.dart';
+import 'package:PetsMatch/pages/pro/photographe_contrats_page.dart';
+import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart';
+import 'package:PetsMatch/pages/pro/toilettage_dashboard_page.dart';
+import 'package:PetsMatch/pages/pro/toilettage_contrats_page.dart';
+import 'package:PetsMatch/pages/pro/marechal_contrats_page.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -316,6 +323,18 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
                         if (User_Info.catPro == 'sante') ...[
                           const SizedBox(height: 12),
                           _buildSanteShortcuts(context),
+                        ],
+                        if (User_Info.catPro == 'photographe') ...[
+                          const SizedBox(height: 12),
+                          _buildPhotographeShortcuts(context),
+                        ],
+                        if (User_Info.catPro == 'toilettage') ...[
+                          const SizedBox(height: 12),
+                          _buildToilettageShortcuts(context),
+                        ],
+                        if (User_Info.catPro == 'marechal_ferrant') ...[
+                          const SizedBox(height: 12),
+                          _buildMarechalShortcuts(context),
                         ],
                         if (User_Info.catPro == 'pension' && _logementsTotal > 0) ...[
                           const SizedBox(height: 12),
@@ -689,6 +708,87 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
             onTap: () => go(const FacturationPage())),
         _QuickTile(icon: Icons.workspace_premium_outlined, label: 'Mon\nabonnement', color: const Color(0xFFD97706),
             onTap: () => go(const SanteAbonnementPage(profilType: 'sante'))),
+      ],
+    );
+  }
+
+  Widget _buildPhotographeShortcuts(BuildContext context) {
+    void go(Widget page) =>
+        Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    return GridView.count(
+      crossAxisCount: 3,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 1.0,
+      children: [
+        _QuickTile(icon: Icons.event_outlined, label: 'Mon\nagenda RDV', color: const Color(0xFF90A4AE),
+            onTap: () => go(const ProAgendaPage())),
+        _QuickTile(icon: Icons.camera_alt_outlined, label: 'Mes\nprestations', color: const Color(0xFF5F9EAA),
+            onTap: () => go(const PhotographePrestationsPage())),
+        _QuickTile(icon: Icons.request_quote_outlined, label: 'Devis', color: const Color(0xFF5B8648),
+            onTap: () => go(const DevisPage())),
+        _QuickTile(icon: Icons.description_outlined, label: 'Mes\ncontrats', color: const Color(0xFFB8860B),
+            onTap: () => go(const PhotographeContratsPage())),
+        _QuickTile(icon: Icons.receipt_long_outlined, label: 'Factu-\nration', color: const Color(0xFF6E9E57),
+            onTap: () => go(const FacturationPage())),
+        _QuickTile(icon: Icons.dashboard_outlined, label: 'Tableau\nde bord', color: const Color(0xFF7B5EA7),
+            onTap: () => go(const PhotographeDashboardPage())),
+      ],
+    );
+  }
+
+  Widget _buildToilettageShortcuts(BuildContext context) {
+    void go(Widget page) =>
+        Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    return GridView.count(
+      crossAxisCount: 3,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 1.0,
+      children: [
+        _QuickTile(icon: Icons.event_outlined, label: 'Mon\nagenda RDV', color: const Color(0xFFFFB74D),
+            onTap: () => go(const ProAgendaPage())),
+        _QuickTile(icon: Icons.content_cut, label: 'Mes\nprestations', color: const Color(0xFF5F9EAA),
+            onTap: () => go(const ToilettagePrestationsPage())),
+        _QuickTile(icon: Icons.request_quote_outlined, label: 'Devis', color: const Color(0xFF5B8648),
+            onTap: () => go(const DevisPage())),
+        _QuickTile(icon: Icons.description_outlined, label: 'Mes\ncontrats', color: const Color(0xFFB8860B),
+            onTap: () => go(const ToilettageContratsPage())),
+        _QuickTile(icon: Icons.receipt_long_outlined, label: 'Factu-\nration', color: const Color(0xFF6E9E57),
+            onTap: () => go(const FacturationPage())),
+        _QuickTile(icon: Icons.dashboard_outlined, label: 'Tableau\nde bord', color: const Color(0xFF7B5EA7),
+            onTap: () => go(const ToilettageDashboardPage())),
+      ],
+    );
+  }
+
+  Widget _buildMarechalShortcuts(BuildContext context) {
+    void go(Widget page) =>
+        Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    return GridView.count(
+      crossAxisCount: 3,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 1.0,
+      children: [
+        _QuickTile(icon: Icons.event_outlined, label: 'Mon\nagenda RDV', color: const Color(0xFF8D6E63),
+            onTap: () => go(const ProAgendaPage())),
+        _QuickTile(icon: Icons.pets_outlined, label: 'Mes\néquidés suivis', color: const Color(0xFF5F9EAA),
+            onTap: () => go(const ProClientsPage())),
+        _QuickTile(icon: Icons.request_quote_outlined, label: 'Devis', color: const Color(0xFF5B8648),
+            onTap: () => go(const DevisPage())),
+        _QuickTile(icon: Icons.description_outlined, label: 'Mes\ncontrats', color: const Color(0xFFB8860B),
+            onTap: () => go(const MarechalContratsPage())),
+        _QuickTile(icon: Icons.receipt_long_outlined, label: 'Factu-\nration', color: const Color(0xFF6E9E57),
+            onTap: () => go(const FacturationPage())),
+        _QuickTile(icon: Icons.workspace_premium_outlined, label: 'Mon\nabonnement', color: const Color(0xFFD97706),
+            onTap: () => go(const SanteAbonnementPage(profilType: 'marechal_ferrant'))),
       ],
     );
   }

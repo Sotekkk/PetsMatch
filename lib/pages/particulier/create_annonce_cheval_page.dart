@@ -160,7 +160,7 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
       }
       final owned = await Supabase.instance.client
           .from('animaux')
-          .select('id, nom, espece, race, sexe, couleur, date_naissance, photo_url, num_sire')
+          .select('id, nom, espece, race, sexe, sterilise, couleur, date_naissance, photo_url, num_sire')
           .or('uid_eleveur.eq.$uid,uid_acquereur.eq.$uid');
       final rows = <Map<String, dynamic>>[];
       for (final a in (owned as List)) {
@@ -169,7 +169,7 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
       if (ids.isNotEmpty) {
         final linked = await Supabase.instance.client
             .from('animaux')
-            .select('id, nom, espece, race, sexe, couleur, date_naissance, photo_url, num_sire')
+            .select('id, nom, espece, race, sexe, sterilise, couleur, date_naissance, photo_url, num_sire')
             .inFilter('id', ids.toList());
         for (final a in (linked as List)) {
           if ((a['espece']?.toString() ?? '') == 'cheval' &&
@@ -198,8 +198,18 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
       if (_raceCtrl.text.isEmpty) _raceCtrl.text = a['race']?.toString() ?? '';
       if (_couleurCtrl.text.isEmpty) _couleurCtrl.text = a['couleur']?.toString() ?? '';
       if (_sireCtrl.text.isEmpty) _sireCtrl.text = a['num_sire']?.toString() ?? '';
+      // La fiche animal générique ne connaît que 'male'/'femelle' (pas de
+      // notion équine hongre/entier/jument) — on traduit à partir de ça +
+      // du champ stérilisé déjà suivi pour la reproduction : un mâle non
+      // stérilisé est entier, un mâle stérilisé est hongre.
       final s = a['sexe']?.toString();
-      if (s == 'male' || s == 'femelle' || s == 'hongre' || s == 'entier' || s == 'jument') _sexe = s!;
+      if (s == 'jument' || s == 'hongre' || s == 'entier') {
+        _sexe = s!;
+      } else if (s == 'femelle') {
+        _sexe = 'jument';
+      } else if (s == 'male') {
+        _sexe = a['sterilise'] == true ? 'hongre' : 'entier';
+      }
       final dn = a['date_naissance']?.toString();
       if (dn != null && dn.isNotEmpty) _dateNaissance = DateTime.tryParse(dn);
       if (_titreCtrl.text.isEmpty && _linkedAnimalNom?.isNotEmpty == true) {

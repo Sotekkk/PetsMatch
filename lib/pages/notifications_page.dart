@@ -38,6 +38,8 @@ import 'package:PetsMatch/pages/promenades/promenade_detail_page.dart';
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart';
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show openSharedSocialPost;
 import 'package:PetsMatch/pages/chatScreen.dart';
+import 'package:PetsMatch/pages/communaute/forum_page.dart' show openForumSujet;
+import 'package:PetsMatch/pages/communaute/groupe_detail_page.dart' show openGroupeById;
 
 // YYYY-MM-DD → DD/MM/YYYY
 String _isoToFrFacture(dynamic v) {
@@ -130,6 +132,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
       final currentType = _currentProfileType;
       final activeProfileId = User_Info.activeProfileId;
       final filtered = (data as List).where((n) {
+        // Likes/mentions Pets Social : affichés dans le cœur (bulle rouge du
+        // fil Pets Social), pas ici, pour éviter le doublon — plus logique
+        // pour l'utilisateur (demande explicite).
+        final type = n['type'] as String? ?? '';
+        if (type == 'social_like' || type == 'social_mention') return false;
         // profile_id est la source la plus fiable (multi-profil) — s'il est
         // renseigné, il prime sur profile_type (souvent absent à la création).
         final pid = (n['profile_id'] as String?) ?? '';
@@ -804,21 +811,38 @@ class _NotificationsPageState extends State<NotificationsPage> {
         ));
       }
     } else if (type == 'petfriend_request' || type == 'petfriend_accepted') {
+      // Sans le profil précis (émetteur + moi), on retombait sur le profil
+      // is_main de l'émetteur et sur MON profil actif du moment — ce qui
+      // pouvait afficher une tout autre relation (ex. ma propre demande
+      // envoyée à un autre de ses profils) au lieu de celle de la notif.
       final fromUid = data is Map ? data['fromUid'] as String? : null;
+      final fromProfileId = data is Map ? data['fromProfileId'] as String? : null;
+      final myTargetedProfileId = notif['profile_id'] as String?;
       if (fromUid != null) {
         await Navigator.push(context, MaterialPageRoute(
-          builder: (_) => PublicProfilePage(targetUid: fromUid),
+          builder: (_) => PublicProfilePage(
+            targetUid: fromUid,
+            targetProfileId: fromProfileId,
+            myProfileIdOverride: myTargetedProfileId,
+          ),
         ));
       }
-    } else if (type == 'social_like' || type == 'social_comment') {
-      // "a aimé votre post" / "a commenté votre post" (Pets Social) — ouvre
-      // le post, et pour un commentaire, scrolle jusqu'à lui et le surligne.
+    } else if (type == 'social_like' || type == 'social_comment' || type == 'social_mention') {
+      // "a aimé votre post" / "a commenté votre post" / "vous a mentionné"
+      // (Pets Social) — ouvre le post, et pour un commentaire, scrolle
+      // jusqu'à lui et le surligne.
       final postId = data is Map ? data['post_id'] as String? : null;
       final commentId = data is Map ? data['comment_id'] as String? : null;
       if (postId != null) {
         await openSharedSocialPost(context, postId,
             highlightCommentId: type == 'social_comment' ? commentId : null);
       }
+    } else if (type == 'forum_mention') {
+      final sujetId = data is Map ? data['sujetId'] as String? : null;
+      if (sujetId != null) await openForumSujet(context, sujetId);
+    } else if (type == 'groupe_mention') {
+      final groupeId = data is Map ? data['groupeId'] as String? : null;
+      if (groupeId != null) await openGroupeById(context, groupeId);
     } else if (type == 'social_follow') {
       final actorUid = data is Map ? data['actor_uid'] as String? : null;
       if (actorUid != null) {
@@ -1012,6 +1036,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'social_like':    return Icons.favorite_outline;
       case 'social_comment': return Icons.mode_comment_outlined;
       case 'social_follow':  return Icons.person_add_alt_outlined;
+      case 'social_mention':
+      case 'forum_mention':
+      case 'groupe_mention': return Icons.alternate_email;
       case 'chaleur':       return Icons.spa;
       case 'animal_evolution': return Icons.auto_awesome;
       case 'rappel_vaccin': return Icons.vaccines_outlined;
@@ -1093,6 +1120,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
       case 'social_like':    return Colors.redAccent;
       case 'social_comment': return _teal;
       case 'social_follow':  return const Color(0xFF7B5EA7);
+      case 'social_mention':
+      case 'forum_mention':
+      case 'groupe_mention': return const Color(0xFF1565C0);
       case 'chaleur':       return const Color(0xFFE91E8C);
       case 'rappel_vaccin': return const Color(0xFF26A69A);
       case 'tache':         return const Color(0xFF6E9E57);
@@ -1674,14 +1704,18 @@ class _NotifBadgeState extends State<NotifBadge> with WidgetsBindingObserver {
     try {
       final data = await _supa
           .from('notifications')
-          .select('id, profile_id, profile_type')
+          .select('id, profile_id, profile_type, type')
           .eq('uid', _uid)
           .eq('read', false);
       final currentType = _currentBadgeProfileType;
       final activeProfileId = User_Info.activeProfileId;
       // Même priorité que la liste de notifications (_fetch()) : profile_id
-      // prime s'il est renseigné, sinon repli sur profile_type.
+      // prime s'il est renseigné, sinon repli sur profile_type. Likes/
+      // mentions Pets Social exclus : affichés dans le cœur, pas ici (cf.
+      // _fetch()).
       final count = (data as List).where((n) {
+        final type = n['type'] as String? ?? '';
+        if (type == 'social_like' || type == 'social_mention') return false;
         final pid = (n['profile_id'] as String?) ?? '';
         if (pid.isNotEmpty) return pid == activeProfileId;
         final pt = (n['profile_type'] as String?) ?? '';

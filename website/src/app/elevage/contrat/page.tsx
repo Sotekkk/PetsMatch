@@ -99,6 +99,11 @@ export default function ContratsPage() {
   const [dateDoc, setDateDoc]         = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes]             = useState('');
   const [avecSteril, setAvecSteril]   = useState(true);
+  // Certificat d'engagement (loi 2021-1539) : proposé en option à la
+  // réservation, jamais obligatoire — toujours possible de passer l'étape
+  // ou d'apporter son propre document déjà signé.
+  const [certMode, setCertMode] = useState<'skip' | 'generate' | 'upload'>('skip');
+  const [certFile, setCertFile] = useState<File | null>(null);
   // Animal — modifiable (surcharge la fiche animale dans le contrat)
   const [animalNom, setAnimalNom]         = useState('');
   const [animalRace, setAnimalRace]       = useState('');
@@ -207,7 +212,10 @@ export default function ContratsPage() {
     if (!user) return;
     setFetching(true);
     const [docsRes, animauxRes, profileRes, userRowRes] = await Promise.all([
-      supabase.from('documents_animaux').select('*').eq('uid_eleveur', user.uid).neq('type', 'contrat_adoption').neq('type', 'facture').order('created_at', { ascending: false }),
+      // Uniquement les documents « éleveur » (vente/réservation/cession/
+      // saillie) — sinon les devis/contrats émis en tant qu'éducateur, garde,
+      // etc. sur ce même compte se mélangent ici (même bug que côté appli).
+      supabase.from('documents_animaux').select('*').eq('uid_eleveur', user.uid).in('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession', 'contrat_saillie']).order('created_at', { ascending: false }),
       supabase.from('animaux').select('id, nom, espece, race, identification, date_naissance, sexe, couleur, pedigree_numero, pedigree_lof, nom_pere, puce_pere, nom_mere, puce_mere').eq('uid_eleveur', user.uid).or('is_association.is.null,is_association.eq.false').not('statut', 'in', '(sorti,decede)').order('nom'),
       supabase.from('user_profiles').select('firstname,lastname,nom,profile_type,adresse,rue,ville,ville_pro,code_postal,siret,numero_elevage,phone_number,email_contact').eq('uid', user.uid).eq('is_main', true).maybeSingle(),
       supabase.from('users').select('email').eq('uid', user.uid).maybeSingle(),
@@ -251,7 +259,15 @@ export default function ContratsPage() {
     } else {
       const { data: cps } = await supabase.from('user_profiles').select(cpFields)
         .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%,nom.ilike.%${q}%`).eq('is_main', true).limit(8);
-      setUserResults((cps ?? []).map(cp => toResult(cp)));
+      // email_contact est souvent vide alors que le compte a bien un email
+      // de connexion (table users) — sans ce complément, un utilisateur
+      // pourtant déjà inscrit ressort sans email pré-rempli.
+      const uids = (cps ?? []).map(c => c.uid as string);
+      const { data: loginUsers } = uids.length
+        ? await supabase.from('users').select('uid,email').in('uid', uids)
+        : { data: [] as { uid: string; email: string }[] };
+      const emailByUid = new Map((loginUsers ?? []).map(u => [u.uid, u.email as string]));
+      setUserResults((cps ?? []).map(cp => toResult(cp, emailByUid.get(cp.uid as string))));
     }
   }
 
@@ -300,6 +316,7 @@ export default function ContratsPage() {
     setTvaAssujetti(false); setTvaTaux('20');
     setAnimalNom(''); setAnimalRace(''); setAnimalCouleur(''); setAnimalSexe(''); setAnimalDN('');
     setUserSearch(''); setUserResults([]);
+    setCertMode('skip'); setCertFile(null);
   }
 
   // Animal enrichi (fiche + champs modifiés)
@@ -322,6 +339,44 @@ export default function ContratsPage() {
     const adresse = profile.is_elevage ? (profile.adress_elevage || [profile.rue, profile.code_postal, profile.ville].filter(Boolean).join(', ')) : (profile.adress || [profile.rue, profile.code_postal, profile.ville].filter(Boolean).join(', '));
     const tel = profile.is_elevage ? `${profile.code_iso_elevage ?? '+33'} ${profile.numero_elevage ?? ''}`.trim() : `${profile.code_iso ?? '+33'} ${profile.phone_number ?? ''}`.trim();
     return { nom, adresse, tel, siret: profile.siret ?? '', email: profile.email ?? '' };
+  }
+
+  async function uploadCertificatFile(file: File, uid: string): Promise<string> {
+    const ext = file.name.split('.').pop() ?? 'pdf';
+    const path = `certificats_engagement/${uid}_${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from('documents').upload(path, file, { upsert: true });
+    if (error) throw error;
+    return supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
+  }
+
+  async function createCertificatEngagement(animal: Animal): Promise<string | null> {
+    if (!user) return null;
+    const estDelai = animal.espece === 'chien' || animal.espece === 'chat';
+    const now = new Date();
+    let uploadedUrl: string | null = null;
+    if (certMode === 'upload' && certFile) {
+      try { uploadedUrl = await uploadCertificatFile(certFile, user.uid); } catch { return null; }
+    }
+    const payload = {
+      cedant_uid: user.uid,
+      animal_id: animal.id,
+      espece: animal.espece,
+      race: animal.race || '',
+      nom_animal: animal.nom,
+      date_naissance_animal: animal.date_naissance || null,
+      num_identification: animal.identification || '',
+      acquereur_nom: acqNom, acquereur_prenom: acqPrenom, acquereur_email: acqEmail,
+      acquereur_telephone: acqTel, acquereur_adresse: acqAdresse,
+      modalite_cession: 'vente',
+      prix: prix.trim() ? (parseFloat(prix.replace(',', '.')) || null) : null,
+      date_remise: now.toISOString(),
+      date_limite_signature: (!uploadedUrl && estDelai) ? new Date(now.getTime() + 7 * 86400000).toISOString() : null,
+      profil_source: 'eleveur',
+      ...(uploadedUrl ? { pdf_url: uploadedUrl, statut: 'signe' } : {}),
+    };
+    const { data, error } = await supabase.from('certificats_engagement').insert(payload).select('token_signature').single();
+    if (error || !data) return null;
+    return data.token_signature as string;
   }
 
   async function openAndSign() {
@@ -355,8 +410,15 @@ export default function ContratsPage() {
           }
         }
       }
+      let certToken: string | null = null;
+      if ((formType === 'contrat_vente' || formType === 'certificat_cession' || formType === 'contrat_reservation') && certMode !== 'skip') {
+        certToken = await createCertificatEngagement(selectedAnimal);
+      }
       const win = window.open(`/signer-contrat/${token}`, '_blank', 'width=900,height=700');
       popupRef.current = win;
+      if (certToken) {
+        alert(`Certificat d'engagement également créé :\n${window.location.origin}/certificat/${certToken}`);
+      }
     } else {
       // Fallback : HTML en mémoire si l'insert a échoué
       const html = formType === 'contrat_reservation'
@@ -778,6 +840,35 @@ export default function ContratsPage() {
                   <p className="text-xs text-amber-700 mt-0.5">Inclure la pénalité financière si l&apos;acquéreur ne stérilise pas l&apos;animal dans le délai légal.</p>
                 </div>
               </label>
+            )}
+
+            {(formType === 'contrat_vente' || formType === 'certificat_cession' || formType === 'contrat_reservation') && (
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-[#1F2A2E]">Certificat d&apos;engagement (loi 2021-1539)</p>
+                {([
+                  ['skip', 'Je m’en occupe autrement', 'Passer cette étape'],
+                  ['generate', 'Générer et faire signer dans l’app', 'Certificat numérique + signature tactile'],
+                  ['upload', 'J’ai déjà mon document', 'Importer un PDF déjà signé'],
+                ] as const).map(([mode, title, desc]) => (
+                  <label key={mode}
+                    className={`flex items-start gap-3 p-3 border rounded-xl cursor-pointer ${certMode === mode ? 'bg-teal-50 border-teal-300' : 'border-gray-200'}`}>
+                    <input type="radio" name="certModeEleveur" checked={certMode === mode}
+                      onChange={() => setCertMode(mode)} className="mt-0.5 accent-[#0C5C6C]" />
+                    <div>
+                      <p className="text-xs font-semibold text-[#1F2A2E]">{title}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
+                    </div>
+                  </label>
+                ))}
+                {certMode === 'upload' && (
+                  <div className="pl-1">
+                    <input type="file" accept="application/pdf,image/*"
+                      onChange={e => setCertFile(e.target.files?.[0] ?? null)}
+                      className="text-sm text-gray-600" />
+                    {certFile && <p className="text-xs text-green-700 mt-1">{certFile.name}</p>}
+                  </div>
+                )}
+              </div>
             )}
 
             {formType === 'contrat_vente' && (

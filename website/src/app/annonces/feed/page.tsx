@@ -258,6 +258,11 @@ function FeedPageContent() {
     if (espece !== 'tous') q = q.eq('espece', espece);
     if (type === 'saillie') q = q.eq('type_vente', 'saillie');
     if (type === 'vente') q = q.neq('type_vente', 'saillie');
+    // Vue "Tous" d'un particulier : jamais de saillie mélangée aux annonces
+    // d'adoption/vente — l'onglet Saillie lui-même est déjà verrouillé
+    // (réservé aux éleveurs, cf. `locked` plus bas), la vue par défaut doit
+    // respecter la même règle.
+    if (type === 'tous' && userData?.isElevage !== true) q = q.neq('type_vente', 'saillie');
 
     const { data } = await q;
     let feed = buildFeedItems((data ?? []) as RawAnnonce[]);

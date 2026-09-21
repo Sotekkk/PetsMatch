@@ -35,6 +35,30 @@ interface ConvRow {
   unread_count?: Record<string, number>;
 }
 
+// Nom affiché pour une notification envoyée depuis le profil ACTIF (pas
+// forcément le profil principal du compte) — même logique que
+// _profileName côté appli (social_feed_page.dart).
+function profileDisplayName(p: { social_pseudo?: string | null; nom?: string | null; firstname?: string | null; lastname?: string | null; profile_type?: string | null } | null): string {
+  if (!p) return 'Quelqu\'un';
+  const pseudo = (p.social_pseudo ?? '').trim();
+  if (pseudo) return pseudo;
+  const ne = (p.nom ?? '').trim();
+  const n = `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim();
+  if (p.profile_type && p.profile_type !== 'particulier' && ne) return ne;
+  if (n) return n;
+  return ne || 'Quelqu\'un';
+}
+
+async function activeProfileName(uid: string, activePid: string | null): Promise<string> {
+  const cols = 'social_pseudo, nom, firstname, lastname, profile_type';
+  if (activePid) {
+    const { data } = await supabase.from('user_profiles').select(cols).eq('id', activePid).maybeSingle();
+    if (data) return profileDisplayName(data);
+  }
+  const { data } = await supabase.from('user_profiles').select(cols).eq('uid', uid).eq('is_main', true).maybeSingle();
+  return profileDisplayName(data);
+}
+
 function Avatar({ url, name, size = 48 }: { url?: string; name?: string; size?: number }) {
   return url ? (
     <Image src={url} alt={name ?? ''} width={size} height={size}
@@ -186,8 +210,7 @@ export default function PetFriendsPage() {
       ...(tgPid ? { recepteur_profile_id: tgPid } : {}),
       statut: 'en_attente', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     });
-    const { data: me } = await supabase.from('user_profiles').select('firstname, lastname').eq('uid', myUid).eq('is_main', true).maybeSingle();
-    const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
+    const nom = await activeProfileName(myUid, myPid);
     await supabase.from('notifications').insert({
       uid: targetUid, type: 'petfriend_request',
       title: '🐾 Nouvelle demande PetFriend', body: `${nom} veut être ton PetFriend !`,
@@ -199,8 +222,7 @@ export default function PetFriendsPage() {
 
   async function accept(row: FriendRow) {
     await supabase.from('petfriends').update({ statut: 'accepte', updated_at: new Date().toISOString() }).eq('id', row.relId);
-    const { data: me } = await supabase.from('user_profiles').select('firstname, lastname').eq('uid', myUid).eq('is_main', true).maybeSingle();
-    const nom = me ? `${me.firstname ?? ''} ${me.lastname ?? ''}`.trim() || 'Quelqu\'un' : 'Quelqu\'un';
+    const nom = await activeProfileName(myUid, activeProfileId || null);
     const { data: targetProfile } = await supabase.from('user_profiles').select('id').eq('uid', row.uid).eq('is_main', true).maybeSingle();
     await supabase.from('notifications').insert({
       uid: row.uid, type: 'petfriend_accepted',

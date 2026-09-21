@@ -85,6 +85,11 @@ export default function ContratsAdoptionPage() {
   const [dateDoc, setDateDoc]       = useState(new Date().toISOString().split('T')[0]);
   const [avecSteril, setAvecSteril] = useState(true);
   const [notes, setNotes]           = useState('');
+  // Certificat d'engagement (loi 2021-1539) : proposé en option à la
+  // réservation, jamais obligatoire — toujours possible de passer l'étape
+  // ou d'apporter son propre document déjà signé.
+  const [certMode, setCertMode] = useState<'skip' | 'generate' | 'upload'>('skip');
+  const [certFile, setCertFile] = useState<File | null>(null);
 
   // Recherche adoptant PetsMatch
   const [userSearch, setUserSearch]   = useState('');
@@ -154,7 +159,15 @@ export default function ContratsAdoptionPage() {
     } else {
       const { data: cps } = await supabase.from('user_profiles').select(cpFields)
         .or(`firstname.ilike.%${q}%,lastname.ilike.%${q}%`).eq('is_main', true).limit(8);
-      setUserResults((cps ?? []).map(cp => toResult(cp)));
+      // email_contact est souvent vide alors que le compte a bien un email
+      // de connexion (table users) — sans ce complément, un utilisateur
+      // pourtant déjà inscrit ressort sans email pré-rempli.
+      const uids = (cps ?? []).map(c => c.uid as string);
+      const { data: loginUsers } = uids.length
+        ? await supabase.from('users').select('uid,email').in('uid', uids)
+        : { data: [] as { uid: string; email: string }[] };
+      const emailByUid = new Map((loginUsers ?? []).map(u => [u.uid, u.email as string]));
+      setUserResults((cps ?? []).map(cp => toResult(cp, emailByUid.get(cp.uid as string))));
     }
   }
 
@@ -182,7 +195,7 @@ export default function ContratsAdoptionPage() {
     setAnimalId(''); setSelectedAnimal(null); setAcqNom(''); setAcqPrenom('');
     setAcqEmail(''); setAcqTel(''); setAcqAdresse(''); setParticipation('');
     setDateDoc(new Date().toISOString().split('T')[0]); setNotes(''); setAvecSteril(true);
-    setUserSearch(''); setUserResults([]);
+    setUserSearch(''); setUserResults([]); setCertMode('skip'); setCertFile(null);
   }
 
   function assoInfo(): AssociationInfo {
@@ -220,6 +233,44 @@ export default function ContratsAdoptionPage() {
     return token;
   }
 
+  async function uploadCertificatFile(file: File, uid: string): Promise<string> {
+    const ext = file.name.split('.').pop() ?? 'pdf';
+    const path = `certificats_engagement/${uid}_${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from('documents').upload(path, file, { upsert: true });
+    if (error) throw error;
+    return supabase.storage.from('documents').getPublicUrl(path).data.publicUrl;
+  }
+
+  async function createCertificatEngagement(animal: Animal): Promise<string | null> {
+    if (!user) return null;
+    const estDelai = animal.espece === 'chien' || animal.espece === 'chat';
+    const now = new Date();
+    let uploadedUrl: string | null = null;
+    if (certMode === 'upload' && certFile) {
+      try { uploadedUrl = await uploadCertificatFile(certFile, user.uid); } catch { return null; }
+    }
+    const payload = {
+      cedant_uid: user.uid,
+      animal_id: animal.id,
+      espece: animal.espece,
+      race: animal.race || '',
+      nom_animal: animal.nom,
+      date_naissance_animal: animal.date_naissance || null,
+      num_identification: animal.identification || '',
+      acquereur_nom: acqNom, acquereur_prenom: acqPrenom, acquereur_email: acqEmail,
+      acquereur_telephone: acqTel, acquereur_adresse: acqAdresse,
+      modalite_cession: 'adoption',
+      prix: participation ? Number(participation) : null,
+      date_remise: now.toISOString(),
+      date_limite_signature: (!uploadedUrl && estDelai) ? new Date(now.getTime() + 7 * 86400000).toISOString() : null,
+      profil_source: 'association',
+      ...(uploadedUrl ? { pdf_url: uploadedUrl, statut: 'signe' } : {}),
+    };
+    const { data, error } = await supabase.from('certificats_engagement').insert(payload).select('token_signature').single();
+    if (error || !data) return null;
+    return data.token_signature as string;
+  }
+
   async function openAndSign() {
     if (!selectedAnimal || !user) return;
     setSaving(true);
@@ -236,7 +287,12 @@ export default function ContratsAdoptionPage() {
           }
         } catch { /* ignore */ }
       }
+      let certToken: string | null = null;
+      if (certMode !== 'skip') certToken = await createCertificatEngagement(selectedAnimal);
       popupRef.current = window.open(url, '_blank', 'width=900,height=700,scrollbars=yes');
+      if (certToken) {
+        alert(`Certificat d'engagement également créé :\n${window.location.origin}/certificat/${certToken}`);
+      }
       setShowForm(false);
       resetForm();
     }
@@ -439,6 +495,33 @@ export default function ContratsAdoptionPage() {
                   <span className="text-sm font-galey text-gray-700">Inclure clause de stérilisation obligatoire</span>
                 </label>
               )}
+
+              <div className="space-y-2">
+                <p className="text-sm font-galey font-semibold text-gray-700">Certificat d&apos;engagement (loi 2021-1539)</p>
+                {([
+                  ['skip', 'Je m’en occupe autrement', 'Passer cette étape'],
+                  ['generate', 'Générer et faire signer dans l’app', 'Certificat numérique + signature tactile'],
+                  ['upload', 'J’ai déjà mon document', 'Importer un PDF déjà signé'],
+                ] as const).map(([mode, title, desc]) => (
+                  <label key={mode}
+                    className={`flex items-start gap-2 cursor-pointer border rounded-xl p-3 ${certMode === mode ? 'bg-teal-50 border-teal-300' : 'border-gray-200'}`}>
+                    <input type="radio" name="certMode" checked={certMode === mode}
+                      onChange={() => setCertMode(mode)} className="w-4 h-4 text-teal-600 mt-0.5" />
+                    <span>
+                      <span className="block text-sm font-galey font-semibold text-gray-700">{title}</span>
+                      <span className="block text-xs font-galey text-gray-500">{desc}</span>
+                    </span>
+                  </label>
+                ))}
+                {certMode === 'upload' && (
+                  <div className="pl-1">
+                    <input type="file" accept="application/pdf,image/*"
+                      onChange={e => setCertFile(e.target.files?.[0] ?? null)}
+                      className="text-sm font-galey text-gray-600" />
+                    {certFile && <p className="text-xs font-galey text-green-700 mt-1">{certFile.name}</p>}
+                  </div>
+                )}
+              </div>
 
               {/* Adoptant */}
               <div>

@@ -304,6 +304,7 @@ function DevisPageInner() {
         devis_id: d.id,
         acquereur_nom: clientNom,
         acquereur_email: d.email_client,
+        ...(d.client_profile_id ? { client_profile_id: d.client_profile_id } : {}),
         lignes: d.lignes,
         total_ttc: d.total_ttc,
         date_validite: d.date_validite,

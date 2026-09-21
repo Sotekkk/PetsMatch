@@ -7,6 +7,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/pro/compte_rendu_page.dart';
+import 'package:PetsMatch/pages/animaux/morpho/morpho_form_page.dart';
+import 'package:PetsMatch/pages/animaux/morpho/morpho_detail_page.dart';
+import 'package:PetsMatch/pages/pro/toilettage_abonnement_page.dart';
+import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_album_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_fiche_client_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
@@ -309,16 +313,21 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         } catch (_) {}
       }
 
-      // Compter les visites précédentes par client (confirme + terminé)
+      // Compter les visites précédentes par client (confirme + terminé) —
+      // scopé au PROFIL pro actif : un même uid peut avoir plusieurs profils
+      // pro (ex. ostéo + garde), sans le filtre pro_profile_id le compte
+      // mélangeait les RDV des deux métiers pour un même client.
       Map<String, int> visitCounts = {};
       if (clientUids.isNotEmpty) {
         try {
-          final history = await Supabase.instance.client
+          var historyQ = Supabase.instance.client
               .from('rdv')
               .select('client_uid')
               .eq('pro_uid', uid)
               .inFilter('client_uid', clientUids)
               .inFilter('statut', ['confirme', 'termine']);
+          if (pid.isNotEmpty) historyQ = historyQ.eq('pro_profile_id', pid);
+          final history = await historyQ;
           for (final h in history) {
             final cUid = h['client_uid'] as String? ?? '';
             if (cUid.isNotEmpty) visitCounts[cUid] = (visitCounts[cUid] ?? 0) + 1;
@@ -1129,6 +1138,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         }
         final row = await supa.from('documents_animaux').insert({
           'uid_eleveur': uid,
+          if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
           'animal_id': rdv['animal_id'],
           'rdv_id': rdv['id'],
           'type': 'contrat_prestation_photo',
@@ -1142,11 +1152,219 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           },
         }).select('token').single();
         token = row['token'] as String?;
+        // Notifie le client (uniquement à la création — pas à chaque réouverture).
+        final clientUid = rdv['client_uid']?.toString();
+        if (clientUid != null && clientUid.isNotEmpty && token != null) {
+          try {
+            await supa.from('notifications').insert({
+              'uid': clientUid,
+              'type': 'contrat_invite',
+              'title': '📷 Contrat de prestation à signer',
+              'body': 'Votre photographe vous envoie un contrat de prestation — vérifiez et signez',
+              if ((rdv['client_profile_id']?.toString() ?? '').isNotEmpty) 'profile_id': rdv['client_profile_id'],
+              'data': {'token': token, 'url': '$kSiteBaseUrl/signer-contrat/$token'},
+              'read': false,
+            });
+          } catch (_) {}
+        }
       } else {
         await supa.from('documents_animaux')
             .update({'statut': 'en_attente'})
             .eq('rdv_id', rdv['id'])
             .eq('type', 'contrat_prestation_photo');
+      }
+      if (token == null) return;
+      if (mounted) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ContratSignaturePage(token: token),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  // Toiletteur — génère (ou récupère) le contrat de prestation, même
+  // principe que _genererContratPhoto.
+  Future<void> _genererContratToilettage(Map<String, dynamic> rdv) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final planCode = await PlanService.getPlanCode(uid, profilType: 'toilettage');
+    if (planCode == 'free') {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Signature — Abonnement requis',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            content: const Text('La signature électronique de contrats est disponible à partir de l\'abonnement Pro.',
+                style: TextStyle(fontFamily: 'Galey')),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const ToilettageAbonnementPage()));
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706)),
+                child: const Text('👑 Voir les plans', style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
+    try {
+      final supa = Supabase.instance.client;
+      final existing = await supa
+          .from('documents_animaux')
+          .select('token')
+          .eq('rdv_id', rdv['id'])
+          .eq('type', 'contrat_prestation_toilettage')
+          .maybeSingle();
+
+      String? token = existing?['token'] as String?;
+      if (token == null) {
+        Map<String, dynamic>? prestation;
+        final prestationId = rdv['prestation_id']?.toString();
+        if (prestationId != null && prestationId.isNotEmpty) {
+          prestation = await supa.from('prestations_toilettage')
+              .select('nom, prix_base')
+              .eq('id', prestationId).maybeSingle();
+        }
+        final row = await supa.from('documents_animaux').insert({
+          'uid_eleveur': uid,
+          if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
+          'animal_id': rdv['animal_id'],
+          'rdv_id': rdv['id'],
+          'type': 'contrat_prestation_toilettage',
+          'titre': 'Contrat de prestation toilettage — ${rdv['_client_name'] ?? ''}',
+          'statut': 'en_attente',
+          'metadata': {
+            'client_nom': rdv['_client_name'],
+            'prestation_nom': prestation?['nom'],
+            'prix_total': prestation?['prix_base']?.toString(),
+          },
+        }).select('token').single();
+        token = row['token'] as String?;
+        final clientUid = rdv['client_uid']?.toString();
+        if (clientUid != null && clientUid.isNotEmpty && token != null) {
+          try {
+            await supa.from('notifications').insert({
+              'uid': clientUid,
+              'type': 'contrat_invite',
+              'title': '✂️ Contrat de prestation à signer',
+              'body': 'Votre toiletteur vous envoie un contrat de prestation — vérifiez et signez',
+              if ((rdv['client_profile_id']?.toString() ?? '').isNotEmpty) 'profile_id': rdv['client_profile_id'],
+              'data': {'token': token, 'url': '$kSiteBaseUrl/signer-contrat/$token'},
+              'read': false,
+            });
+          } catch (_) {}
+        }
+      } else {
+        await supa.from('documents_animaux')
+            .update({'statut': 'en_attente'})
+            .eq('rdv_id', rdv['id'])
+            .eq('type', 'contrat_prestation_toilettage');
+      }
+      if (token == null) return;
+      if (mounted) {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ContratSignaturePage(token: token),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey')),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  // Maréchal-ferrant — génère (ou récupère) le contrat de prestation, même
+  // principe que _genererContratPhoto / _genererContratToilettage.
+  Future<void> _genererContratMarechal(Map<String, dynamic> rdv) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final planCode = await PlanService.getPlanCode(uid, profilType: 'marechal_ferrant');
+    if (planCode == 'free') {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Signature — Abonnement requis',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            content: const Text('La signature électronique de contrats est disponible à partir de l\'abonnement Pro.',
+                style: TextStyle(fontFamily: 'Galey')),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const SanteAbonnementPage(profilType: 'marechal_ferrant')));
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706)),
+                child: const Text('👑 Voir les plans', style: TextStyle(fontFamily: 'Galey', color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
+    try {
+      final supa = Supabase.instance.client;
+      final existing = await supa
+          .from('documents_animaux')
+          .select('token')
+          .eq('rdv_id', rdv['id'])
+          .eq('type', 'contrat_prestation_marechal')
+          .maybeSingle();
+
+      String? token = existing?['token'] as String?;
+      if (token == null) {
+        final row = await supa.from('documents_animaux').insert({
+          'uid_eleveur': uid,
+          if (User_Info.activeProfileId.isNotEmpty) 'pro_profile_id': User_Info.activeProfileId,
+          'animal_id': rdv['animal_id'],
+          'rdv_id': rdv['id'],
+          'type': 'contrat_prestation_marechal',
+          'titre': 'Contrat de prestation maréchalerie — ${rdv['_client_name'] ?? ''}',
+          'statut': 'en_attente',
+          'metadata': {
+            'client_nom': rdv['_client_name'],
+          },
+        }).select('token').single();
+        token = row['token'] as String?;
+        final clientUid = rdv['client_uid']?.toString();
+        if (clientUid != null && clientUid.isNotEmpty && token != null) {
+          try {
+            await supa.from('notifications').insert({
+              'uid': clientUid,
+              'type': 'contrat_invite',
+              'title': '🐴 Contrat de prestation à signer',
+              'body': 'Votre maréchal-ferrant vous envoie un contrat de prestation — vérifiez et signez',
+              if ((rdv['client_profile_id']?.toString() ?? '').isNotEmpty) 'profile_id': rdv['client_profile_id'],
+              'data': {'token': token, 'url': '$kSiteBaseUrl/signer-contrat/$token'},
+              'read': false,
+            });
+          } catch (_) {}
+        }
+      } else {
+        await supa.from('documents_animaux')
+            .update({'statut': 'en_attente'})
+            .eq('rdv_id', rdv['id'])
+            .eq('type', 'contrat_prestation_marechal');
       }
       if (token == null) return;
       if (mounted) {
@@ -3555,6 +3773,45 @@ class _ProAgendaPageState extends State<ProAgendaPage>
                     isPension: User_Info.catPro == 'pension',
                   )))
               : null,
+          // Accès direct au compte-rendu morpho depuis le RDV (était
+          // seulement accessible via le menu « Mon activité santé > Mes
+          // suivis », peu visible juste après une séance). Si un suivi existe
+          // déjà pour CE rdv, on rouvre celui-là (lecture/PDF/envoi) au lieu
+          // d'en recréer un nouveau à chaque tap.
+          onSuiviMorpho: (showProTools && hasAnimal && User_Info.catPro == 'sante')
+              ? () async {
+                  final rdvId = rdv['id']?.toString();
+                  Map<String, dynamic>? existing;
+                  if (rdvId != null) {
+                    try {
+                      existing = await Supabase.instance.client
+                          .from('suivis_morpho').select().eq('rdv_id', rdvId).maybeSingle();
+                    } catch (_) {}
+                  }
+                  if (!context.mounted) return;
+                  if (existing != null) {
+                    await Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => MorphoDetailPage(
+                              suivi: existing!,
+                              espece: rdv['_animal_espece']?.toString() ?? '',
+                              readOnly: false,
+                            )));
+                  } else {
+                    await Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => MorphoFormPage(
+                              animalId: animalId,
+                              espece: rdv['_animal_espece']?.toString() ?? '',
+                              proProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+                              rdvId: rdvId,
+                              // Pas de proNom : User_Info.primaryLabel reflète le
+                              // profil PRINCIPAL du compte (ex. l'élevage), pas
+                              // forcément le profil santé actif — le champ reste
+                              // vide et éditable, comme dans
+                              // sante_suivis_morpho_page.dart.
+                            )));
+                  }
+                }
+              : null,
           // Pet-sitter : nouvelles / photo au propriétaire (rapport de visite ou
           // journal de garde selon la prestation).
           onNouvelles: (User_Info.catPro == 'garde' && hasAnimal)
@@ -3562,7 +3819,11 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               : null,
           onContrat: (showProTools && User_Info.catPro == 'photographe')
               ? () => _genererContratPhoto(rdv)
-              : null,
+              : (showProTools && User_Info.catPro == 'toilettage')
+                  ? () => _genererContratToilettage(rdv)
+                  : (showProTools && User_Info.catPro == 'marechal_ferrant')
+                      ? () => _genererContratMarechal(rdv)
+                      : null,
           onFacturer: (showProTools && rdv['statut'] == 'termine' &&
                   const {
                     'photographe', 'toilettage',
@@ -3641,6 +3902,7 @@ class _RdvCard extends StatelessWidget {
   final VoidCallback onNotes;
   final VoidCallback? onCarnetSante;
   final VoidCallback? onCompteRendu;
+  final VoidCallback? onSuiviMorpho;
   final VoidCallback? onNouvelles;
   final VoidCallback? onContact;
   final VoidCallback? onDelete;
@@ -3662,6 +3924,7 @@ class _RdvCard extends StatelessWidget {
     required this.onNotes,
     this.onCarnetSante,
     this.onCompteRendu,
+    this.onSuiviMorpho,
     this.onNouvelles,
     this.onContact,
     this.onDelete,
@@ -3851,7 +4114,12 @@ class _RdvCard extends StatelessWidget {
           // Actions
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-            child: Row(children: [
+            // Colonne : icônes utilitaires en Wrap (passent à la ligne si trop
+            // nombreuses) puis, sur sa propre ligne, les actions principales
+            // (Terminé/Annuler…) — sur un Row simple, un métier avec plusieurs
+            // icônes (ex. ostéo) poussait ces boutons hors écran, invisibles.
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Wrap(crossAxisAlignment: WrapCrossAlignment.center, runSpacing: 6, children: [
               // Notes button always visible
               IconButton(
                 onPressed: onNotes,
@@ -3935,6 +4203,16 @@ class _RdvCard extends StatelessWidget {
                   constraints: const BoxConstraints(),
                 ),
               ],
+              if (onSuiviMorpho != null) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  onPressed: onSuiviMorpho,
+                  icon: const Icon(Icons.accessibility_new, size: 20, color: Color(0xFF6E9E57)),
+                  tooltip: 'Compte-rendu morpho',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
               if (onNouvelles != null) ...[
                 const SizedBox(width: 6),
                 IconButton(
@@ -3985,10 +4263,11 @@ class _RdvCard extends StatelessWidget {
                   constraints: const BoxConstraints(),
                 ),
               ],
-              const SizedBox(width: 8),
-
+            ]),
+            if (showActions || showCancel) ...[
+              const SizedBox(height: 8),
+              Wrap(alignment: WrapAlignment.end, crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, runSpacing: 6, children: [
               if (showActions) ...[
-                const Spacer(),
                 OutlinedButton(
                   onPressed: onDecline,
                   style: OutlinedButton.styleFrom(
@@ -4026,7 +4305,6 @@ class _RdvCard extends StatelessWidget {
                     constraints: const BoxConstraints(),
                   ),
                 ],
-                const Spacer(),
                 if (onModifier != null)
                   IconButton(
                     onPressed: onModifier,
@@ -4054,6 +4332,8 @@ class _RdvCard extends StatelessWidget {
                   child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
                 ),
               ],
+              ]),
+            ],
             ]),
           ),
         ],

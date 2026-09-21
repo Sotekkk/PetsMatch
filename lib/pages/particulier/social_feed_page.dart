@@ -9,7 +9,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
@@ -179,6 +178,43 @@ const kSocialAuthorCols = _kAuthorCols;
 String socialProfileName(Map<String, dynamic>? p) => _profileName(p);
 String? socialProfileTypeLabel(String? type) => _socialTypeLabel(type);
 String? socialProfilePhoto(Map<String, dynamic>? p) => _profilePhoto(p);
+
+/// Nombre de notifications Pets Social non vues (commentaires, nouveaux
+/// abonnés, likes, mentions) pour le profil ACTIF de [uid] — même calcul que
+/// `_SocialFeedPageState._loadNotifCount`, exposé pour la pastille rouge du
+/// menu (drawer) hors de l'écran Pets Social lui-même. Scopé strictement au
+/// profil actif : jamais mélangé entre profils d'un même compte.
+Future<int> socialUnseenCount(String uid) async {
+  if (uid.isEmpty) return 0;
+  try {
+    final supa = Supabase.instance.client;
+    final pid = await _activeAuthorProfileId(uid);
+    if (pid == null) return 0;
+    final profRow = await supa.from('user_profiles')
+        .select('social_notif_seen_at').eq('id', pid).maybeSingle();
+    final lastSeenStr = profRow?['social_notif_seen_at'] as String?;
+    final lastSeen = lastSeenStr != null ? DateTime.tryParse(lastSeenStr) : null;
+
+    final myPosts = await supa.from('posts_socialmedia').select('id').eq('author_profile_id', pid);
+    final postIds = (myPosts as List).map((p) => p['id'] as String).toList();
+    int count = 0;
+    if (postIds.isNotEmpty) {
+      var q = supa.from('post_comments').select('id').inFilter('post_id', postIds).neq('uid', uid);
+      if (lastSeen != null) q = q.gt('created_at', lastSeen.toIso8601String());
+      count += (await q.limit(99) as List).length;
+    }
+    var fq = supa.from('follows').select('follower_uid').eq('following_profile_id', pid);
+    if (lastSeen != null) fq = fq.gt('created_at', lastSeen.toIso8601String());
+    count += (await fq as List).length;
+    var nq = supa.from('notifications').select('id')
+        .eq('uid', uid).eq('profile_id', pid).inFilter('type', ['social_like', 'social_mention']);
+    if (lastSeen != null) nq = nq.gt('created_at', lastSeen.toIso8601String());
+    count += (await nq.limit(99) as List).length;
+    return count > 99 ? 99 : count;
+  } catch (_) {
+    return 0;
+  }
+}
 
 /// Id du profil PARTICULIER d'un uid — identité utilisée dans le réseau social,
 /// jamais le profil pro / is_main. Mémoïsé (les inserts like/follow l'appellent
@@ -970,9 +1006,12 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
       // propres notifications (commentaires sur SES posts, SES abonnés) —
       // un marqueur partagé par uid pouvait laisser la bulle d'un profil
       // masquer à tort celle d'un autre, ou l'inverse, après un changement
-      // de profil.
-      final prefs = await SharedPreferences.getInstance();
-      final lastSeenStr = prefs.getString('notif_seen_at_$pid');
+      // de profil. Stocké en base (user_profiles.social_notif_seen_at), pas
+      // seulement en local : sans ça, une réinstallation de l'app faisait
+      // réapparaître la bulle avec tout l'historique.
+      final profRow = await _supa.from('user_profiles')
+          .select('social_notif_seen_at').eq('id', pid).maybeSingle();
+      final lastSeenStr = profRow?['social_notif_seen_at'] as String?;
       final lastSeen = lastSeenStr != null ? DateTime.tryParse(lastSeenStr) : null;
 
       final myPosts = await _supa.from('posts_socialmedia').select('id')
@@ -997,6 +1036,17 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
       }
       final follows = await fq;
       count += (follows as List).length;
+      // Likes + mentions Pets Social : plus logique dans le cœur que dans la
+      // cloche générale (demande explicite) — réutilise les lignes déjà
+      // insérées par _sendSocialNotif/notifyMentions dans `notifications`.
+      var nq = _supa.from('notifications').select('id')
+          .eq('uid', uid).eq('profile_id', pid)
+          .inFilter('type', ['social_like', 'social_mention']);
+      if (lastSeen != null) {
+        nq = nq.gt('created_at', lastSeen.toIso8601String());
+      }
+      final likesMentions = await nq.limit(99);
+      count += (likesMentions as List).length;
       if (mounted) setState(() => _notifCount = count > 99 ? 99 : count);
     } catch (_) {}
   }
@@ -1004,11 +1054,14 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
   Future<void> _markNotifSeen() async {
     final pid = _myProfileId ?? await _activeAuthorProfileId(_uid ?? '');
     if (pid == null) return;
-    final prefs = await SharedPreferences.getInstance();
     // .toUtc() est indispensable : created_at (Postgres) est en UTC, une
     // heure locale envoyée telle quelle au filtre .gt() était interprétée
     // comme UTC côté serveur (décalage de 1-2h selon l'heure d'été/hiver).
-    await prefs.setString('notif_seen_at_$pid', DateTime.now().toUtc().toIso8601String());
+    try {
+      await _supa.from('user_profiles')
+          .update({'social_notif_seen_at': DateTime.now().toUtc().toIso8601String()})
+          .eq('id', pid);
+    } catch (_) {}
   }
 
   void _openCreate() {
@@ -3475,7 +3528,9 @@ class _CommentsSheet extends StatefulWidget {
 
 class _CommentsSheetState extends State<_CommentsSheet> {
   final _supa = Supabase.instance.client;
-  final _ctrl = TextEditingController();
+  final _ctrl = MentionTextEditingController();
+  MentionController? _mentionCtrl;
+  List<MentionSuggestion>? _mentionSuggestions;
   List<Map<String, dynamic>> _comments  = [];
   Map<String, Map<String, dynamic>> _profiles = {};
   bool _loading = true;
@@ -3491,6 +3546,11 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   void initState() {
     super.initState();
     _highlightId = widget.highlightCommentId;
+    _mentionCtrl = MentionController(
+      textController: _ctrl,
+      excludeUid: widget.myUid,
+      onSuggestionsChanged: (s) { if (mounted) setState(() => _mentionSuggestions = s); },
+    );
     _load();
   }
 
@@ -3509,7 +3569,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   }
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() { _mentionCtrl?.dispose(); _ctrl.dispose(); super.dispose(); }
 
   Future<void> _load() async {
     final rows = await _supa.from('post_comments').select()
@@ -3592,7 +3652,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
   }
 
   Future<void> _send() async {
-    final text = _ctrl.text.trim();
+    final text = _ctrl.resolveMarkup().trim();
     if (text.isEmpty || _sending) return;
     setState(() => _sending = true);
     try {
@@ -3610,6 +3670,15 @@ class _CommentsSheetState extends State<_CommentsSheet> {
           .single();
       _ctrl.clear();
       widget.onCommentAdded();
+      // Mon propre profil n'est pas forcément déjà dans _profiles (ex. premier
+      // commentaire sur ce post) — sans lui, l'auteur du commentaire qu'on
+      // vient d'ajouter localement retombe sur « Membre » jusqu'au prochain
+      // _load() qui, lui, le résout via _resolveAuthors.
+      final authorKey = inserted['author_profile_id']?.toString() ?? inserted['uid']?.toString();
+      if (authorKey != null && !_profiles.containsKey(authorKey)) {
+        final mine = await _resolveAuthors([inserted]);
+        _profiles.addAll(mine);
+      }
       if (mounted) {
         setState(() {
           _comments.add(inserted);
@@ -3631,6 +3700,19 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         titleSuffix: 'a commenté votre post',
         body: text.length > 60 ? '${text.substring(0, 60)}…' : text,
       );
+      // @mentions dans le commentaire — fire-and-forget
+      unawaited(() async {
+        final me = pid != null ? await _supa.from('user_profiles').select(_kAuthorCols).eq('id', pid).maybeSingle() : null;
+        final actorName = me != null ? _profileName(Map<String, dynamic>.from(me)) : 'Quelqu\'un';
+        await notifyMentions(
+          text: text,
+          actorUid: widget.myUid,
+          notifType: 'social_mention',
+          title: '📣 Tu as été mentionné(e)',
+          body: '$actorName t\'a mentionné(e) dans un commentaire Pets Social',
+          data: {'post_id': widget.postId},
+        );
+      }());
     } catch (_) {
       if (mounted) setState(() => _sending = false);
     }
@@ -3732,16 +3814,26 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                         final photo   = _profilePhoto(prof);
                         final cUid    = c['uid'] as String;
                         final text    = c['texte']?.toString() ?? '';
-                        final isReply = c['parent_id'] != null || text.startsWith('@');
+                        // « @[Nom](id) » (vraie mention) ne doit jamais être
+                        // pris pour le préfixe historique « @Nom » (réponse à
+                        // quelqu'un, posé par le bouton Répondre) — sinon un
+                        // commentaire commençant par une mention réelle
+                        // s'affichait coupé au milieu du markup.
+                        final isReply = c['parent_id'] != null ||
+                            (text.startsWith('@') && !text.startsWith('@['));
 
                         // Parse @mention for rich display
                         Widget commentText() {
                           if (!isReply) {
-                            return Text(text,
-                                style: const TextStyle(
-                                    fontFamily: 'Galey',
-                                    fontSize: 13,
-                                    color: Colors.white));
+                            return MentionHashtagText(
+                              text: text,
+                              enableHashtags: false,
+                              style: const TextStyle(
+                                  fontFamily: 'Galey',
+                                  fontSize: 13,
+                                  color: Colors.white),
+                              onMentionTap: (pid) => openMentionedProfile(context, widget.myUid, pid),
+                            );
                           }
                           final sp = text.indexOf(' ');
                           if (sp == -1) {
@@ -3752,23 +3844,28 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                     color: _green,
                                     fontWeight: FontWeight.w700));
                           }
-                          return RichText(
-                            text: TextSpan(children: [
-                              TextSpan(
-                                  text: '${text.substring(0, sp + 1)} ',
-                                  style: const TextStyle(
-                                      fontFamily: 'Galey',
-                                      fontSize: 13,
-                                      color: _green,
-                                      fontWeight: FontWeight.w700)),
-                              TextSpan(
-                                  text: text.substring(sp + 1),
-                                  style: const TextStyle(
-                                      fontFamily: 'Galey',
-                                      fontSize: 13,
-                                      color: Colors.white)),
-                            ]),
-                          );
+                          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            RichText(
+                              text: TextSpan(children: [
+                                TextSpan(
+                                    text: text.substring(0, sp + 1),
+                                    style: const TextStyle(
+                                        fontFamily: 'Galey',
+                                        fontSize: 13,
+                                        color: _green,
+                                        fontWeight: FontWeight.w700)),
+                              ]),
+                            ),
+                            MentionHashtagText(
+                              text: text.substring(sp + 1),
+                              enableHashtags: false,
+                              style: const TextStyle(
+                                  fontFamily: 'Galey',
+                                  fontSize: 13,
+                                  color: Colors.white),
+                              onMentionTap: (pid) => openMentionedProfile(context, widget.myUid, pid),
+                            ),
+                          ]);
                         }
 
                         final commentId = c['id']?.toString() ?? '';
@@ -4013,6 +4110,11 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                   ),
                 ]),
               ),
+            if (_mentionSuggestions != null)
+              MentionSuggestionsBar(
+                suggestions: _mentionSuggestions!,
+                onSelect: (s) { _mentionCtrl?.select(s); setState(() => _mentionSuggestions = null); },
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
               child: Row(children: [
@@ -4090,7 +4192,7 @@ class _CreatePostSheet extends StatefulWidget {
 
 class _CreatePostSheetState extends State<_CreatePostSheet> {
   final _supa   = Supabase.instance.client;
-  final _ctrl   = TextEditingController();
+  final _ctrl   = MentionTextEditingController();
   final _images = <File>[];
   bool  _posting = false;
   int   _charCount = 0;
@@ -4195,7 +4297,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
 
   Future<void> _post() async {
     FocusScope.of(context).unfocus();
-    final text = _ctrl.text.trim();
+    final text = _ctrl.resolveMarkup().trim();
     if (text.isEmpty && _images.isEmpty && _taggedAnimalIds.isEmpty) {
       setState(() => _error = 'Ajoutez un texte, une photo ou un animal tagué.');
       return;
@@ -4222,7 +4324,7 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
               ? urls.first
               : jsonEncode(urls);
       final pid = _myProfileId ?? await _activeAuthorProfileId(widget.myUid);
-      await _supa.from('posts_socialmedia').insert({
+      final inserted = await _supa.from('posts_socialmedia').insert({
         'uid': widget.myUid,
         if (pid != null) 'author_profile_id': pid,
         if (text.isNotEmpty) 'texte': text,
@@ -4230,7 +4332,17 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
         if (_taggedAnimalIds.isNotEmpty)
           'tagged_animal_ids': _taggedAnimalIds.toList(),
         'visibilite': _visibilite,
-      });
+      }).select('id').single();
+      if (text.isNotEmpty) {
+        unawaited(notifyMentions(
+          text: text,
+          actorUid: widget.myUid,
+          notifType: 'social_mention',
+          title: '📣 Tu as été mentionné(e)',
+          body: '${_myProfileName ?? 'Quelqu\'un'} t\'a mentionné(e) dans un post Pets Social',
+          data: {'post_id': inserted['id']},
+        ));
+      }
       if (mounted) {
         Navigator.pop(context);
         await Future.delayed(const Duration(milliseconds: 400));
@@ -5701,6 +5813,16 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
         .order('created_at', ascending: false).limit(20);
     final followerRows = (followers as List).cast<Map<String, dynamic>>();
 
+    // 3. Likes + mentions Pets Social (scope strict par profil) — déjà
+    // insérés dans `notifications` par _sendSocialNotif/notifyMentions ; le
+    // titre/corps sont pré-formatés (nom de l'auteur déjà résolu à l'envoi),
+    // donc pas besoin de re-résoudre un profil ici.
+    final likesMentions = await _supa.from('notifications').select()
+        .eq('uid', widget.myUid).eq('profile_id', pid)
+        .inFilter('type', ['social_like', 'social_mention'])
+        .order('created_at', ascending: false).limit(30);
+    final likeMentionRows = (likesMentions as List).cast<Map<String, dynamic>>();
+
     // 3. Profils des acteurs — résolus par leur author_profile_id / follower_profile_id.
     final actorProfIds = <String>{
       for (final c in comments)
@@ -5747,6 +5869,16 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
         'follower_uid': f['follower_uid'],
       });
     }
+    for (final n in likeMentionRows) {
+      final data = n['data'] as Map<String, dynamic>? ?? {};
+      all.add({
+        'type': n['type'] == 'social_like' ? 'like' : 'mention',
+        'created_at': n['created_at'],
+        'title': n['title'],
+        'body': n['body'],
+        'post_id': data['post_id'],
+      });
+    }
     all.sort((a, b) => (b['created_at'] as String).compareTo(a['created_at'] as String));
 
     if (mounted) setState(() { _notifs = all; _loading = false; });
@@ -5785,13 +5917,25 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
                           itemCount: _notifs.length,
                           itemBuilder: (_, i) {
                             final n = _notifs[i];
+                            final type = n['type'] as String; // comment | follow | like | mention
                             final prof = n['profile'] as Map<String, dynamic>?;
-                            final name = _profileName(prof);
-                            final photo = _profilePhoto(prof);
-                            final isFollow = n['type'] == 'follow';
+                            final hasProfile = type == 'comment' || type == 'follow';
+                            final name = hasProfile ? _profileName(prof) : null;
+                            final photo = hasProfile ? _profilePhoto(prof) : null;
                             final date = n['created_at'] as String? ?? '';
+                            final icon = switch (type) {
+                              'follow' => Icons.person_add_rounded,
+                              'like' => Icons.favorite_rounded,
+                              'mention' => Icons.alternate_email_rounded,
+                              _ => Icons.chat_bubble_outline_rounded,
+                            };
+                            final suffix = switch (type) {
+                              'follow' => ' a commencé à te suivre',
+                              'like' => ' a aimé ton post',
+                              _ => ' a commenté ton post',
+                            };
                             return Dismissible(
-                              key: ValueKey('${n['type']}_${n['created_at']}_${prof?['uid']}'),
+                              key: ValueKey('${n['type']}_${n['created_at']}_${prof?['uid']}_$i'),
                               direction: DismissDirection.endToStart,
                               onDismissed: (_) => setState(() => _notifs.removeAt(i)),
                               background: Container(
@@ -5807,7 +5951,7 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
                                 // le texte, pas sur l'avatar, la plupart du
                                 // temps.
                                 onTap: () {
-                                  if (isFollow) {
+                                  if (type == 'follow') {
                                     final uid = prof?['uid'] as String?;
                                     if (uid == null) return;
                                     Navigator.push(context, MaterialPageRoute(
@@ -5815,34 +5959,49 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
                                             targetUid: uid, myUid: widget.myUid,
                                             targetProfileId: prof?['id'] as String?)));
                                   } else {
+                                    // comment, like, mention → toutes amènent
+                                    // au post concerné (le like/la mention
+                                    // pointe sur le post, pas sur un profil).
                                     final postId = n['post_id'] as String?;
                                     if (postId == null) return;
                                     openSharedSocialPost(context, postId);
                                   }
                                 },
-                                leading: GestureDetector(
-                                  onTap: () {
-                                    final uid = prof?['uid'] as String?;
-                                    if (uid == null) return;
-                                    Navigator.push(context, MaterialPageRoute(
-                                      builder: (_) => SocialProfilePage(
-                                        targetUid: uid, myUid: widget.myUid,
-                                        targetProfileId: prof?['id'] as String?)));
-                                  },
-                                  child: _avatarWidget(photo, 22),
-                                ),
-                                title: RichText(text: TextSpan(
-                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white),
-                                  children: [
-                                    TextSpan(text: name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                                    TextSpan(text: isFollow ? ' a commencé à te suivre' : ' a commenté ton post'),
-                                  ],
-                                )),
+                                leading: hasProfile
+                                    ? GestureDetector(
+                                        onTap: () {
+                                          final uid = prof?['uid'] as String?;
+                                          if (uid == null) return;
+                                          Navigator.push(context, MaterialPageRoute(
+                                            builder: (_) => SocialProfilePage(
+                                              targetUid: uid, myUid: widget.myUid,
+                                              targetProfileId: prof?['id'] as String?)));
+                                        },
+                                        child: _avatarWidget(photo, 22),
+                                      )
+                                    : CircleAvatar(
+                                        radius: 22,
+                                        backgroundColor: Colors.white10,
+                                        child: Icon(icon, color: Colors.white70, size: 18),
+                                      ),
+                                title: hasProfile
+                                    ? RichText(text: TextSpan(
+                                        style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white),
+                                        children: [
+                                          TextSpan(text: name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                          TextSpan(text: suffix),
+                                        ],
+                                      ))
+                                    : Text(n['title'] as String? ?? '',
+                                        style: const TextStyle(fontFamily: 'Galey', fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
                                 subtitle: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    if (!isFollow)
+                                    if (type == 'comment')
                                       Text('"${() { final t = n['texte'] as String? ?? ''; return t.length > 50 ? '${t.substring(0, 50)}…' : t; }()}"',
+                                          style: const TextStyle(fontFamily: 'Galey', color: Colors.white54, fontSize: 12)),
+                                    if (type == 'mention')
+                                      Text(n['body'] as String? ?? '',
                                           style: const TextStyle(fontFamily: 'Galey', color: Colors.white54, fontSize: 12)),
                                     if (date.isNotEmpty)
                                       Text(_fmtDate(date),
@@ -5855,8 +6014,7 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
                                     gradient: const LinearGradient(colors: [_tealC, _green]),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: Icon(isFollow ? Icons.person_add_rounded : Icons.chat_bubble_outline_rounded,
-                                      color: Colors.white, size: 14),
+                                  child: Icon(icon, color: Colors.white, size: 14),
                                 ),
                               ),
                             );

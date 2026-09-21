@@ -212,6 +212,50 @@ const MENU_VET = [
   },
 ];
 
+// Maréchal-ferrant tombait sur MENU_VET (générique, partagé avec
+// véto/santé) — dédié comme les autres métiers, avec Devis/Contrats en plus
+// (absents de MENU_VET). Pas de « Mes prestations »/tableau de bord : ce
+// métier n'a pas de catalogue de prestations, comme le vétérinaire.
+const MENU_MARECHAL = [
+  {
+    section: 'Mon activité maréchalerie',
+    icon: '🐴',
+    items: [
+      { href: '/agenda',        label: 'Mon agenda',        icon: '📅' },
+      { href: '/mes-rdv',       label: 'Gérer mes RDV',     icon: '🗓️' },
+      { href: '/pro/creneaux',  label: 'Mes créneaux',      icon: '⏰' },
+      { href: '/mes-patients',  label: 'Mes équidés suivis', icon: '🐾' },
+      { href: '/marechal-ferrant/abonnement', label: 'Mon abonnement', icon: '💳' },
+    ],
+  },
+  {
+    section: 'Administratif',
+    icon: '🗂️',
+    items: [
+      { href: '/marechal-ferrant/devis',   label: 'Devis',        icon: '📝' },
+      { href: '/marechal-ferrant/contrat', label: 'Mes contrats', icon: '✍️' },
+      { href: '/elevage/facturation',      label: 'Facturation',  icon: '🧾', premium: true },
+    ],
+  },
+  {
+    section: 'Mon Profil',
+    icon: '👤',
+    items: [
+      { href: '/profil',     label: 'Modifier mon profil', icon: '✏️' },
+      { href: '/mes-taches', label: 'Mes tâches',           icon: '✅' },
+    ],
+  },
+  {
+    section: 'Annuaire & Communauté',
+    icon: '🔎',
+    items: [
+      { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
+      { href: '/communaute', label: 'Communauté',                  icon: '👥' },
+      { href: '/tarifs',     label: 'Tarifs',                      icon: '💶' },
+    ],
+  },
+];
+
 // Menu générique pour tous les pros sauf pension/vet
 const MENU_PRO = [
   {
@@ -398,6 +442,91 @@ const MENU_EDUCATION = [
       { href: '/services',    label: 'Annuaire des professionnels', icon: '🔎' },
       { href: '/communaute',  label: 'Communauté',                  icon: '👥' },
       { href: '/tarifs',      label: 'Tarifs',                      icon: '💶' },
+    ],
+  },
+];
+
+// Calqué sur MENU_GARDE (mêmes sections que le drawer app, eleveur_nav.dart
+// bloc catPro == 'photographe').
+const MENU_PHOTOGRAPHE = [
+  {
+    section: 'Mon activité photographe',
+    icon: '📷',
+    items: [
+      { href: '/agenda',              label: 'Mon agenda',       icon: '📅' },
+      { href: '/mes-rdv',             label: 'Gérer mes RDV',    icon: '🗓️' },
+      { href: '/pro/creneaux',        label: 'Mes créneaux',     icon: '⏰' },
+      { href: '/photographe/prestations', label: 'Mes prestations', icon: '📷' },
+      { href: '/photographe/dashboard',   label: 'Tableau de bord', icon: '📊' },
+      { href: '/photographe/abonnement', label: 'Mon abonnement', icon: '💳' },
+    ],
+  },
+  {
+    section: 'Administratif',
+    icon: '🗂️',
+    items: [
+      { href: '/photographe/devis',   label: 'Devis',        icon: '📝' },
+      { href: '/photographe/contrat', label: 'Mes contrats', icon: '✍️' },
+      { href: '/elevage/facturation', label: 'Facturation',  icon: '🧾', premium: true },
+    ],
+  },
+  {
+    section: 'Mon Profil',
+    icon: '👤',
+    items: [
+      { href: '/profil', label: 'Modifier mon profil', icon: '✏️' },
+    ],
+  },
+  {
+    section: 'Annuaire & Communauté',
+    icon: '🔎',
+    items: [
+      { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
+      { href: '/communaute', label: 'Communauté',                  icon: '👥' },
+      { href: '/tarifs',     label: 'Tarifs',                      icon: '💶' },
+    ],
+  },
+];
+
+// Calqué sur MENU_PHOTOGRAPHE (mêmes sections que le drawer app,
+// eleveur_nav.dart bloc catPro == 'toilettage').
+const MENU_TOILETTAGE = [
+  {
+    section: 'Mon activité toilettage',
+    icon: '✂️',
+    items: [
+      { href: '/agenda',              label: 'Mon agenda',       icon: '📅' },
+      { href: '/mes-rdv',             label: 'Gérer mes RDV',    icon: '🗓️' },
+      { href: '/pro/creneaux',        label: 'Mes créneaux',     icon: '⏰' },
+      { href: '/toilettage/prestations', label: 'Mes prestations', icon: '✂️' },
+      { href: '/elevage/employes',    label: 'Mes employés',     icon: '👥' },
+      { href: '/toilettage/dashboard',   label: 'Tableau de bord', icon: '📊' },
+      { href: '/toilettage/abonnement', label: 'Mon abonnement', icon: '💳' },
+    ],
+  },
+  {
+    section: 'Administratif',
+    icon: '🗂️',
+    items: [
+      { href: '/toilettage/devis',   label: 'Devis',        icon: '📝' },
+      { href: '/toilettage/contrat', label: 'Mes contrats', icon: '✍️' },
+      { href: '/elevage/facturation', label: 'Facturation', icon: '🧾', premium: true },
+    ],
+  },
+  {
+    section: 'Mon Profil',
+    icon: '👤',
+    items: [
+      { href: '/profil', label: 'Modifier mon profil', icon: '✏️' },
+    ],
+  },
+  {
+    section: 'Annuaire & Communauté',
+    icon: '🔎',
+    items: [
+      { href: '/services',   label: 'Annuaire des professionnels', icon: '🔎' },
+      { href: '/communaute', label: 'Communauté',                  icon: '👥' },
+      { href: '/tarifs',     label: 'Tarifs',                      icon: '💶' },
     ],
   },
 ];
@@ -644,7 +773,7 @@ function typeEmoji(type: string): string {
 // c'était toujours /education/devis en dur, même pour un pet-sitter.
 function getNotifUrl(n: Notif, proType?: string): string | null {
   const d = n.data ?? {};
-  const devisPath = proType === 'garde' ? '/garde/devis' : '/education/devis';
+  const devisPath = proType === 'garde' ? '/garde/devis' : proType === 'photographe' ? '/photographe/devis' : proType === 'toilettage' ? '/toilettage/devis' : proType === 'marechal_ferrant' ? '/marechal-ferrant/devis' : '/education/devis';
   switch (n.type) {
     case 'like':
       return d.annonceId
@@ -658,6 +787,19 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
       return d.post_id ? `/p/${d.post_id}` : null;
     case 'social_follow':
       return d.actor_uid ? `/profil/${d.actor_uid}` : null;
+    case 'petfriend_request':
+    case 'petfriend_accepted': {
+      // Sans le profil précis (émetteur + destinataire), la page retombait
+      // sur le profil is_main de l'émetteur et sur MON profil actif du
+      // moment — ce qui pouvait afficher une tout autre relation (ex. ma
+      // propre demande envoyée à un autre de ses profils).
+      const myPid = (n as Notif & { profile_id?: string }).profile_id;
+      const qs = new URLSearchParams();
+      if (d.fromProfileId) qs.set('fromProfileId', String(d.fromProfileId));
+      if (myPid) qs.set('myProfileId', myPid);
+      const qsStr = qs.toString();
+      return d.fromUid ? `/profil/${d.fromUid}${qsStr ? `?${qsStr}` : ''}` : '/petfriends';
+    }
     case 'alerte_perdu':
       return '/animaux-perdus';
     case 'chaleur':
@@ -769,9 +911,6 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     case 'promenade_annulee':
     case 'promenade_modifiee':
       return d.promenadeId ? `/promenades/${d.promenadeId}` : '/promenades';
-    case 'petfriend_request':
-    case 'petfriend_accepted':
-      return d.fromUid ? `/profil/${d.fromUid}` : '/petfriends';
     case 'employee_invite':
     case 'tache':
       return '/mes-employeurs';
@@ -861,6 +1000,15 @@ export default function Header() {
   const effectiveIsGarde = resolvedProfileType
     ? resolvedProfileType === 'garde'
     : (userData?.isPro === true && userData?.catPro === 'garde');
+  const effectiveIsPhotographe = resolvedProfileType
+    ? resolvedProfileType === 'photographe'
+    : (userData?.isPro === true && userData?.catPro === 'photographe');
+  const effectiveIsToilettage = resolvedProfileType
+    ? resolvedProfileType === 'toilettage'
+    : (userData?.isPro === true && userData?.catPro === 'toilettage');
+  const effectiveIsMarechal = resolvedProfileType
+    ? resolvedProfileType === 'marechal_ferrant'
+    : (userData?.isPro === true && userData?.catPro === 'marechal_ferrant');
   // Détection pro primaire (userData.isPro = true, aucun profil secondaire actif)
   const isPrimaryPro = !resolvedProfileType && userData?.isPro === true;
   const primaryCatPro = userData?.catPro ?? '';
@@ -907,7 +1055,7 @@ export default function Header() {
     return sec;
   });
   const baseMenuSections = isEffectivelyPro
-    ? (effectiveIsPension ? MENU_PENSION : effectiveIsVet ? MENU_VET : effectiveIsEducation ? MENU_EDUCATION : effectiveIsGarde ? MENU_GARDE : MENU_PRO)
+    ? (effectiveIsPension ? MENU_PENSION : effectiveIsMarechal ? MENU_MARECHAL : effectiveIsVet ? MENU_VET : effectiveIsEducation ? MENU_EDUCATION : effectiveIsGarde ? MENU_GARDE : effectiveIsPhotographe ? MENU_PHOTOGRAPHE : effectiveIsToilettage ? MENU_TOILETTAGE : MENU_PRO)
     : effectiveIsAssociation ? MENU_ASSOCIATION
     : effectiveIsEleveur ? MENU_ELEVEUR
     : baseMenuParticulier;
