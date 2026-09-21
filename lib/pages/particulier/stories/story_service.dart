@@ -1,6 +1,25 @@
+import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show socialProfileName;
+
+/// Fonds proposés pour une story "texte" (sans photo/vidéo) — partagé entre
+/// la création et le visionnage pour rendre exactement le même dégradé.
+const kStoryFonds = <(String, List<Color>)>[
+  ('grad_sunset', [Color(0xFFFF6B6B), Color(0xFFFFD166)]),
+  ('grad_ocean',  [Color(0xFF0C5C6C), Color(0xFF4ECDC4)]),
+  ('grad_forest', [Color(0xFF2E7D5E), Color(0xFF6E9E57)]),
+  ('grad_purple', [Color(0xFF6A4C93), Color(0xFFB185DB)]),
+  ('grad_night',  [Color(0xFF0D1F22), Color(0xFF1F2A2E)]),
+  ('grad_pink',   [Color(0xFFFF8FA3), Color(0xFFFFC6D9)]),
+  ('solid_black', [Colors.black, Colors.black]),
+  ('solid_white', [Colors.white, Colors.white]),
+];
+
+List<Color> storyFondColors(String? fondId) {
+  final f = kStoryFonds.where((f) => f.$1 == fondId).firstOrNull;
+  return f?.$2 ?? kStoryFonds.first.$2;
+}
 
 /// Modèle + accès données pour les Stories Pets Social (éphémères 24h,
 /// musique piochée dans la bibliothèque maison — jamais d'import libre côté
@@ -29,7 +48,8 @@ class StoryItem {
   final String authorProfileId;
   final String authorUid;
   final String mediaUrl;
-  final String mediaType; // 'photo' | 'video'
+  final String mediaType; // 'photo' | 'video' | 'texte'
+  final String? fond; // fond choisi, uniquement pour mediaType == 'texte'
   final int? dureeSecondes;
   final String? legende; // balisage @[Nom](profileId), comme Pets Social/Forum/Groupes
   final String legendeCouleur;
@@ -44,7 +64,7 @@ class StoryItem {
 
   StoryItem({
     required this.id, required this.authorProfileId, required this.authorUid,
-    required this.mediaUrl, required this.mediaType, this.dureeSecondes, this.legende,
+    required this.mediaUrl, required this.mediaType, this.fond, this.dureeSecondes, this.legende,
     this.legendeCouleur = '#FFFFFF', this.legendeTaille = 'm', this.legendeGras = false,
     this.legendeX = 0.5, this.legendeY = 0.85,
     required this.createdAt, required this.expiresAt, this.music, this.vue = false,
@@ -58,6 +78,7 @@ class StoryItem {
       authorUid: r['uid'].toString(),
       mediaUrl: r['media_url']?.toString() ?? '',
       mediaType: r['media_type']?.toString() ?? 'photo',
+      fond: r['fond']?.toString(),
       dureeSecondes: r['duree_secondes'] as int?,
       legende: r['legende']?.toString(),
       legendeCouleur: r['legende_couleur']?.toString() ?? '#FFFFFF',
@@ -81,7 +102,7 @@ class StoryGroup {
   bool get allSeen => items.every((s) => s.vue);
 }
 
-const _kStoryCols = 'id, uid, author_profile_id, media_url, media_type, duree_secondes, legende, '
+const _kStoryCols = 'id, uid, author_profile_id, media_url, media_type, fond, duree_secondes, legende, '
     'legende_couleur, legende_taille, legende_gras, legende_x, legende_y, '
     'created_at, expires_at, story_music_tracks(id, titre, artiste, url_audio, duree_secondes)';
 
@@ -235,7 +256,7 @@ class StoryService {
 
   static Future<String> createStory({
     required String uid, required String authorProfileId,
-    required String mediaUrl, required String mediaType,
+    String? mediaUrl, required String mediaType, String? fond,
     int? dureeSecondes, String? musicTrackId, String? legende,
     String legendeCouleur = '#FFFFFF', String legendeTaille = 'm', bool legendeGras = false,
     double legendeX = 0.5, double legendeY = 0.85,
@@ -243,8 +264,9 @@ class StoryService {
     final res = await _supa.from('stories').insert({
       'uid': uid,
       'author_profile_id': authorProfileId,
-      'media_url': mediaUrl,
+      if (mediaUrl != null) 'media_url': mediaUrl,
       'media_type': mediaType,
+      if (fond != null) 'fond': fond,
       if (dureeSecondes != null) 'duree_secondes': dureeSecondes,
       if (musicTrackId != null) 'music_track_id': musicTrackId,
       if (legende != null && legende.isNotEmpty) ...{
@@ -259,8 +281,9 @@ class StoryService {
     return res['id'].toString();
   }
 
-  static Future<void> deleteStory(String storyId, {required String mediaUrl}) async {
+  static Future<void> deleteStory(String storyId, {String? mediaUrl}) async {
     await _supa.from('stories').delete().eq('id', storyId);
+    if (mediaUrl == null || mediaUrl.isEmpty) return;
     try {
       final path = Uri.parse(mediaUrl).pathSegments;
       final idx = path.indexOf('stories');

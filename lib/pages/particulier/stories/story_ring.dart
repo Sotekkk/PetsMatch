@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'story_create_page.dart';
 import 'story_service.dart';
+import 'story_upload_service.dart';
 import 'story_viewer_page.dart';
 
 /// Bandeau horizontal des stories actives — mon profil en premier (avec un
@@ -27,6 +28,15 @@ class StoryRingState extends State<StoryRing> {
   void initState() {
     super.initState();
     reload();
+    StoryUploadService.instance.onDone = reload;
+  }
+
+  @override
+  void dispose() {
+    if (StoryUploadService.instance.onDone == reload) {
+      StoryUploadService.instance.onDone = null;
+    }
+    super.dispose();
   }
 
   @override
@@ -90,30 +100,44 @@ class StoryRingState extends State<StoryRing> {
 
   Widget _myCircle() {
     final mine = _mine;
-    return GestureDetector(
-      onTap: mine != null ? () => _openViewer(mine) : _openCreate,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 14),
-        child: Column(children: [
-          Stack(children: [
-            _ring(mine, size: 62, myProfilePhoto: true),
-            if (mine == null || mine.allSeen)
-              Positioned(
-                right: 0, bottom: 0,
-                child: GestureDetector(
-                  onTap: _openCreate,
-                  child: Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(color: _green, shape: BoxShape.circle, border: Border.all(color: const Color(0xFF0D1F22), width: 2)),
-                    child: const Icon(Icons.add, color: Colors.white, size: 14),
+    return ValueListenableBuilder<double?>(
+      valueListenable: StoryUploadService.instance.progress,
+      builder: (_, uploadProgress, __) {
+        final uploading = uploadProgress != null;
+        return GestureDetector(
+          onTap: uploading ? null : (mine != null ? () => _openViewer(mine) : _openCreate),
+          child: Padding(
+            padding: const EdgeInsets.only(right: 14),
+            child: Column(children: [
+              Stack(children: [
+                _ring(mine, size: 62, myProfilePhoto: true),
+                if (uploading)
+                  SizedBox(
+                    width: 62, height: 62,
+                    child: CircularProgressIndicator(
+                      value: uploadProgress > 0.02 ? uploadProgress : null,
+                      strokeWidth: 2.5, color: _green, backgroundColor: Colors.white24,
+                    ),
                   ),
-                ),
-              ),
-          ]),
-          const SizedBox(height: 4),
-          const Text('Ma story', style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white70)),
-        ]),
-      ),
+                if (!uploading && (mine == null || mine.allSeen))
+                  Positioned(
+                    right: 0, bottom: 0,
+                    child: GestureDetector(
+                      onTap: _openCreate,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(color: _green, shape: BoxShape.circle, border: Border.all(color: const Color(0xFF0D1F22), width: 2)),
+                        child: const Icon(Icons.add, color: Colors.white, size: 14),
+                      ),
+                    ),
+                  ),
+              ]),
+              const SizedBox(height: 4),
+              Text(uploading ? 'Publication…' : 'Ma story', style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white70)),
+            ]),
+          ),
+        );
+      },
     );
   }
 
