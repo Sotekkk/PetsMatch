@@ -1202,6 +1202,9 @@ PODS:
     - PromisesObjC (~> 2.4)
     - PromisesSwift (~> 2.4)
     - RecaptchaInterop (~> 101.0)
+  - audioplayers_darwin (0.0.1):
+    - Flutter
+    - FlutterMacOS
   - BoringSSL-GRPC (0.0.37):
     - BoringSSL-GRPC/Implementation (= 0.0.37)
     - BoringSSL-GRPC/Interface (= 0.0.37)
@@ -1656,6 +1659,7 @@ PODS:
 
 DEPENDENCIES:
   - app_links (from `.symlinks/plugins/app_links/ios`)
+  - audioplayers_darwin (from `.symlinks/plugins/audioplayers_darwin/darwin`)
   - cloud_firestore (from `.symlinks/plugins/cloud_firestore/ios`)
   - cloud_functions (from `.symlinks/plugins/cloud_functions/ios`)
   - file_picker (from `.symlinks/plugins/file_picker/ios`)
@@ -1746,6 +1750,8 @@ SPEC REPOS:
 EXTERNAL SOURCES:
   app_links:
     :path: ".symlinks/plugins/app_links/ios"
+  audioplayers_darwin:
+    :path: ".symlinks/plugins/audioplayers_darwin/darwin"
   cloud_firestore:
     :path: ".symlinks/plugins/cloud_firestore/ios"
   cloud_functions:
@@ -1818,6 +1824,7 @@ SPEC CHECKSUMS:
   app_links: a754cbec3c255bd4bbb4d236ecc06f28cd9a7ce8
   AppAuth: ef4da5a3fc2e10b90c09a0a94a9baeaedc0341d5
   AppCheckCore: be8fce5469f68d7f6a29aa94b25f097409ff7fdc
+  audioplayers_darwin: 835ced6edd4c9fc8ebb0a7cc9e294a91d99917d5
   BoringSSL-GRPC: dded2a44897e45f28f08ae87a55ee4bcd19bc508
   cloud_firestore: 9233f35ca10ef27d5e5131f930507d00d5bc794d
   cloud_functions: 87096942a5fc49359e6b3e8f011c044142c32b09

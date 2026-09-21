@@ -188,13 +188,19 @@ exports.sendChaleursNotifications = functions
                 if (joursDepuis < JOURS_LACTATION) continue;
             }
 
+            // Une mise-bas postérieure à la dernière chaleur enregistrée
+            // redémarre le cycle : sans ça, une femelle qui vient de mettre
+            // bas retombe, une fois la lactation passée, sur sa dernière
+            // chaleur d'AVANT la gestation, largement dépassée.
             const last = lastChaleur[animal.id];
-            if (!last) continue;
+            const effectiveLast = (miseBas && (!last || miseBas.getTime() > last.getTime()))
+                ? miseBas : last;
+            if (!effectiveLast) continue;
 
             const interval = animal.intervalle_chaleurs_jours || intervalChaleurs(animal.espece);
             if (!interval) continue;
 
-            const nextHeat = new Date(last.getTime() + interval * 86400000);
+            const nextHeat = new Date(effectiveLast.getTime() + interval * 86400000);
             const diffMs = nextHeat.getTime() - now.getTime();
             const diff = Math.trunc(diffMs / 86400000);
 
