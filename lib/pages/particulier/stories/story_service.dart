@@ -55,6 +55,7 @@ class StoryItem {
   final String legendeCouleur;
   final String legendeTaille; // 's' | 'm' | 'l'
   final bool legendeGras;
+  final bool legendeSurlignee; // fond blanc + texte noir, juste sur la zone de texte
   final double legendeX; // 0..1, position libre sur le média (glisser-déposer)
   final double legendeY;
   final DateTime createdAt;
@@ -66,6 +67,7 @@ class StoryItem {
     required this.id, required this.authorProfileId, required this.authorUid,
     required this.mediaUrl, required this.mediaType, this.fond, this.dureeSecondes, this.legende,
     this.legendeCouleur = '#FFFFFF', this.legendeTaille = 'm', this.legendeGras = false,
+    this.legendeSurlignee = false,
     this.legendeX = 0.5, this.legendeY = 0.85,
     required this.createdAt, required this.expiresAt, this.music, this.vue = false,
   });
@@ -84,6 +86,7 @@ class StoryItem {
       legendeCouleur: r['legende_couleur']?.toString() ?? '#FFFFFF',
       legendeTaille: r['legende_taille']?.toString() ?? 'm',
       legendeGras: r['legende_gras'] as bool? ?? false,
+      legendeSurlignee: r['legende_surlignee'] as bool? ?? false,
       legendeX: (r['legende_x'] as num?)?.toDouble() ?? 0.5,
       legendeY: (r['legende_y'] as num?)?.toDouble() ?? 0.85,
       createdAt: DateTime.parse(r['created_at'].toString()),
@@ -103,7 +106,7 @@ class StoryGroup {
 }
 
 const _kStoryCols = 'id, uid, author_profile_id, media_url, media_type, fond, duree_secondes, legende, '
-    'legende_couleur, legende_taille, legende_gras, legende_x, legende_y, '
+    'legende_couleur, legende_taille, legende_gras, legende_surlignee, legende_x, legende_y, '
     'created_at, expires_at, story_music_tracks(id, titre, artiste, url_audio, duree_secondes)';
 
 class StoryService {
@@ -259,6 +262,7 @@ class StoryService {
     String? mediaUrl, required String mediaType, String? fond,
     int? dureeSecondes, String? musicTrackId, String? legende,
     String legendeCouleur = '#FFFFFF', String legendeTaille = 'm', bool legendeGras = false,
+    bool legendeSurlignee = false,
     double legendeX = 0.5, double legendeY = 0.85,
   }) async {
     final res = await _supa.from('stories').insert({
@@ -274,6 +278,7 @@ class StoryService {
         'legende_couleur': legendeCouleur,
         'legende_taille': legendeTaille,
         'legende_gras': legendeGras,
+        'legende_surlignee': legendeSurlignee,
         'legende_x': legendeX,
         'legende_y': legendeY,
       },

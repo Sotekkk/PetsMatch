@@ -312,16 +312,22 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
                   left: (item.legendeX * MediaQuery.of(context).size.width).clamp(0, MediaQuery.of(context).size.width) - 90,
                   top: (item.legendeY * MediaQuery.of(context).size.height).clamp(0, MediaQuery.of(context).size.height) - 20,
                   width: 180,
-                  child: MentionHashtagText(
-                    text: item.legende!,
-                    enableHashtags: false,
-                    style: TextStyle(
-                      fontFamily: 'Galey',
-                      color: _parseHexColor(item.legendeCouleur),
-                      fontSize: switch (item.legendeTaille) { 's' => 14, 'l' => 22, _ => 17 },
-                      fontWeight: item.legendeGras ? FontWeight.w800 : FontWeight.w400,
+                  child: Container(
+                    padding: item.legendeSurlignee ? const EdgeInsets.symmetric(horizontal: 10, vertical: 4) : EdgeInsets.zero,
+                    decoration: item.legendeSurlignee
+                        ? BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6))
+                        : null,
+                    child: MentionHashtagText(
+                      text: item.legende!,
+                      enableHashtags: false,
+                      style: TextStyle(
+                        fontFamily: 'Galey',
+                        color: item.legendeSurlignee ? Colors.black : _parseHexColor(item.legendeCouleur),
+                        fontSize: switch (item.legendeTaille) { 's' => 14, 'l' => 22, _ => 17 },
+                        fontWeight: item.legendeGras ? FontWeight.w800 : FontWeight.w400,
+                      ),
+                      onMentionTap: (pid) => openMentionedProfile(context, widget.myUid, pid),
                     ),
-                    onMentionTap: (pid) => openMentionedProfile(context, widget.myUid, pid),
                   ),
                 ),
               SafeArea(

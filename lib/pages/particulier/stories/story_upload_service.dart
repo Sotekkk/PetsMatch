@@ -8,6 +8,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+import 'package:PetsMatch/main.dart' show flutterLocalNotificationsPlugin;
 import 'package:PetsMatch/widgets/mention_hashtag.dart' show notifyMentions;
 import 'story_service.dart';
 
@@ -34,6 +37,7 @@ class StoryUploadService {
     String legendeCouleur = '#FFFFFF',
     String legendeTaille = 'm',
     bool legendeGras = false,
+    bool legendeSurlignee = false,
     double legendeX = 0.5,
     double legendeY = 0.5,
     String? fond,
@@ -106,6 +110,7 @@ class StoryUploadService {
         legendeCouleur: legendeCouleur,
         legendeTaille: legendeTaille,
         legendeGras: legendeGras,
+        legendeSurlignee: legendeSurlignee,
         legendeX: legendeX,
         legendeY: legendeY,
         fond: fond,
@@ -122,13 +127,33 @@ class StoryUploadService {
           data: const {},
         ));
       }
+      unawaited(_showLocalNotif('✅ Story publiée', 'Ta story est maintenant visible 24h.'));
     } catch (e) {
       error.value = e.toString();
+      unawaited(_showLocalNotif('❌ Échec de la publication', 'La story n\'a pas pu être envoyée — réessaie.'));
     } finally {
       sub?.unsubscribe();
       await Future.delayed(const Duration(milliseconds: 500));
       progress.value = null;
       onDone?.call();
     }
+  }
+
+  Future<void> _showLocalNotif(String title, String body) async {
+    try {
+      await flutterLocalNotificationsPlugin.show(
+        id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
+        title: title,
+        body: body,
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'high_importance_channel',
+            'High Importance Notifications',
+            importance: Importance.max,
+            priority: Priority.high,
+          ),
+        ),
+      );
+    } catch (_) {}
   }
 }

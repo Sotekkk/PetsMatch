@@ -40,6 +40,7 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
   Color _legendeColor = Colors.white;
   String _legendeTaille = 'm'; // s | m | l
   bool _legendeGras = false;
+  bool _legendeSurlignee = false; // fond blanc + texte noir, juste sur la zone de texte
   double _legendeX = 0.5; // 0..1, position libre glissée sur le média
   double _legendeY = 0.5;
   bool _editingText = false;
@@ -150,6 +151,7 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
       legendeCouleur: _hex(_legendeColor),
       legendeTaille: _legendeTaille,
       legendeGras: _legendeGras,
+      legendeSurlignee: _legendeSurlignee,
       legendeX: _legendeX,
       legendeY: _legendeY,
       fond: _mediaType == 'texte' ? _fondId : null,
@@ -246,11 +248,17 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
                 _legendeX = ((_legendeX * w + d.delta.dx) / w).clamp(0.0, 1.0);
                 _legendeY = ((_legendeY * h + d.delta.dy) / h).clamp(0.0, 1.0);
               }),
-              child: MentionHashtagText(
-                text: _legendeCtrl.resolveMarkup(),
-                enableHashtags: false,
-                style: TextStyle(fontFamily: 'Galey', color: _legendeColor,
-                    fontSize: _legendeFontSize, fontWeight: _legendeGras ? FontWeight.w800 : FontWeight.w400),
+              child: Container(
+                padding: _legendeSurlignee ? const EdgeInsets.symmetric(horizontal: 10, vertical: 4) : EdgeInsets.zero,
+                decoration: _legendeSurlignee
+                    ? BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(6))
+                    : null,
+                child: MentionHashtagText(
+                  text: _legendeCtrl.resolveMarkup(),
+                  enableHashtags: false,
+                  style: TextStyle(fontFamily: 'Galey', color: _legendeSurlignee ? Colors.black : _legendeColor,
+                      fontSize: _legendeFontSize, fontWeight: _legendeGras ? FontWeight.w800 : FontWeight.w400),
+                ),
               ),
             ),
           ),
@@ -395,6 +403,21 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
                     alignment: Alignment.center,
                     decoration: BoxDecoration(shape: BoxShape.circle, color: _legendeGras ? _green : Colors.white10),
                     child: const Text('B', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                GestureDetector(
+                  onTap: () => setState(() => _legendeSurlignee = !_legendeSurlignee),
+                  child: Container(
+                    width: 24, height: 24,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _legendeSurlignee ? Colors.white : Colors.white10,
+                      border: Border.all(color: Colors.white54, width: 1),
+                    ),
+                    child: Text('A', style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w900,
+                        color: _legendeSurlignee ? Colors.black : Colors.white)),
                   ),
                 ),
                 const SizedBox(width: 10),
