@@ -3,6 +3,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show openMentionedProfile;
+import 'package:PetsMatch/widgets/mention_hashtag.dart';
 import 'story_service.dart';
 
 /// Lecteur plein écran des stories (façon Instagram) : barres de progression
@@ -25,10 +27,14 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
   late final PageController _pageCtrl;
   late int _groupIndex;
   int _itemIndex = 0;
-  late AnimationController _progressCtrl;
+  late AnimationController _progressCtrl; // photos uniquement (durée fixe)
   VideoPlayerController? _videoCtrl;
+  double _videoProgress = 0; // vidéos : dérivé de la position RÉELLE du lecteur
+  bool _videoEnded = false;
   final _musicPlayer = AudioPlayer();
   bool _paused = false;
+  bool _liked = false;
+  int _likesCount = 0;
 
   static const _defaultDuration = Duration(seconds: 6);
 
@@ -45,6 +51,7 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
   @override
   void dispose() {
     _progressCtrl.dispose();
+    _videoCtrl?.removeListener(_onVideoTick);
     _videoCtrl?.dispose();
     _musicPlayer.dispose();
     _pageCtrl.dispose();
@@ -57,30 +64,68 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
   Future<void> _playCurrent() async {
     _progressCtrl.stop();
     _progressCtrl.reset();
+    _videoCtrl?.removeListener(_onVideoTick);
     _videoCtrl?.dispose();
     _videoCtrl = null;
+    _videoProgress = 0;
+    _videoEnded = false;
     await _musicPlayer.stop();
 
-    StoryService.markViewed(_item.id, viewerUid: widget.myUid, viewerProfileId: widget.myProfileId);
+    final currentItem = _item;
+    StoryService.markViewed(currentItem.id, viewerUid: widget.myUid, viewerProfileId: widget.myProfileId);
+    _liked = false;
+    _likesCount = 0;
+    StoryService.isLiked(currentItem.id, widget.myProfileId).then((v) {
+      if (mounted && identical(currentItem, _item)) setState(() => _liked = v);
+    });
+    StoryService.likesCount(currentItem.id).then((v) {
+      if (mounted && identical(currentItem, _item)) setState(() => _likesCount = v);
+    });
 
-    if (_item.mediaType == 'video') {
-      final ctrl = VideoPlayerController.networkUrl(Uri.parse(_item.mediaUrl));
-      await ctrl.initialize();
-      if (!mounted) return;
+    if (currentItem.mediaType == 'video') {
+      final ctrl = VideoPlayerController.networkUrl(Uri.parse(currentItem.mediaUrl));
+      try {
+        await ctrl.initialize().timeout(const Duration(seconds: 15));
+      } catch (_) {
+        // Vidéo injouable (réseau, format…) : on ne reste pas bloqué dessus,
+        // on passe directement à la suite.
+        ctrl.dispose();
+        if (mounted && identical(currentItem, _item)) _next();
+        return;
+      }
+      if (!mounted || !identical(currentItem, _item)) { ctrl.dispose(); return; }
       // Musique en fond → on coupe le son natif de la vidéo (comme demandé :
       // priorité à la musique choisie, pas de mix).
-      ctrl.setVolume(_item.music != null ? 0 : 1);
+      ctrl.setVolume(currentItem.music != null ? 0 : 1);
+      // La barre de progression suit la position RÉELLE du lecteur (pas une
+      // minuterie indépendante) : sans ça, un ralentissement réseau figeait
+      // l'image pendant que la barre continuait d'avancer sur son propre
+      // rythme, donnant l'impression que la vidéo « se bloque ».
+      ctrl.addListener(_onVideoTick);
       ctrl.play();
       setState(() => _videoCtrl = ctrl);
-      final dur = ctrl.value.duration.inMilliseconds > 0 ? ctrl.value.duration : _defaultDuration;
-      _progressCtrl.duration = dur;
     } else {
       _progressCtrl.duration = _defaultDuration;
+      if (!_paused) _progressCtrl.forward();
     }
-    if (_item.music != null) {
-      try { await _musicPlayer.play(UrlSource(_item.music!.urlAudio)); } catch (_) {}
+    if (currentItem.music != null) {
+      try { await _musicPlayer.play(UrlSource(currentItem.music!.urlAudio)); } catch (_) {}
     }
-    if (!_paused) _progressCtrl.forward();
+  }
+
+  void _onVideoTick() {
+    final ctrl = _videoCtrl;
+    if (ctrl == null || !mounted) return;
+    final v = ctrl.value;
+    if (!v.isInitialized || v.hasError) return;
+    final dur = v.duration;
+    if (dur.inMilliseconds <= 0) return;
+    final progress = (v.position.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0);
+    if ((progress - _videoProgress).abs() > 0.002) setState(() => _videoProgress = progress);
+    if (!_videoEnded && !_paused && v.position >= dur - const Duration(milliseconds: 200)) {
+      _videoEnded = true;
+      _next();
+    }
   }
 
   void _next() {
@@ -111,11 +156,11 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
   void _togglePause() {
     setState(() => _paused = !_paused);
     if (_paused) {
-      _progressCtrl.stop();
+      if (_item.mediaType == 'photo') _progressCtrl.stop();
       _videoCtrl?.pause();
       _musicPlayer.pause();
     } else {
-      _progressCtrl.forward();
+      if (_item.mediaType == 'photo') _progressCtrl.forward();
       _videoCtrl?.play();
       _musicPlayer.resume();
     }
@@ -164,7 +209,12 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
         ),
       ),
     );
-    if (mounted) { _paused = false; _progressCtrl.forward(); _videoCtrl?.play(); _musicPlayer.resume(); }
+    if (mounted) {
+      _paused = false;
+      if (_item.mediaType == 'photo') _progressCtrl.forward();
+      _videoCtrl?.play();
+      _musicPlayer.resume();
+    }
   }
 
   Future<void> _delete() async {
@@ -178,6 +228,20 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
     if (ok != true) return;
     await StoryService.deleteStory(_item.id, mediaUrl: _item.mediaUrl);
     if (mounted) Navigator.pop(context);
+  }
+
+  Future<void> _toggleLike() async {
+    final item = _item;
+    final wasLiked = _liked;
+    setState(() { _liked = !wasLiked; _likesCount += wasLiked ? -1 : 1; });
+    final liked = await StoryService.toggleLike(
+      item.id,
+      uid: widget.myUid, profileId: widget.myProfileId,
+      authorUid: _group.authorUid, authorProfileId: _group.authorProfileId,
+    );
+    if (mounted && identical(item, _item) && liked != _liked) {
+      setState(() { _liked = liked; });
+    }
   }
 
   @override
@@ -233,7 +297,11 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
                               borderRadius: BorderRadius.circular(2),
                               child: LinearProgressIndicator(
                                 minHeight: 2.5,
-                                value: i < _itemIndex ? 1 : (i == _itemIndex ? _progressCtrl.value : 0),
+                                value: i < _itemIndex
+                                    ? 1
+                                    : (i == _itemIndex
+                                        ? (_item.mediaType == 'video' ? _videoProgress : _progressCtrl.value)
+                                        : 0),
                                 backgroundColor: Colors.white30,
                                 valueColor: const AlwaysStoppedAnimation(Colors.white),
                               ),
@@ -265,17 +333,47 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
                   if (item.legende != null && item.legende!.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      child: Text(item.legende!, style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 14)),
-                    ),
-                  if (isMine)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: GestureDetector(
-                        onTap: _showViewers,
-                        child: const Text('👁 Vu par…',
-                            style: TextStyle(fontFamily: 'Galey', color: Colors.white70, fontSize: 12, decoration: TextDecoration.underline)),
+                      child: MentionHashtagText(
+                        text: item.legende!,
+                        enableHashtags: false,
+                        style: TextStyle(
+                          fontFamily: 'Galey',
+                          color: _parseHexColor(item.legendeCouleur),
+                          fontSize: switch (item.legendeTaille) { 's' => 14, 'l' => 22, _ => 17 },
+                          fontWeight: item.legendeGras ? FontWeight.w800 : FontWeight.w400,
+                        ),
+                        onMentionTap: (pid) => openMentionedProfile(context, widget.myUid, pid),
                       ),
                     ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Row(children: [
+                      if (isMine) ...[
+                        GestureDetector(
+                          onTap: _showViewers,
+                          child: const Text('👁 Vu par…',
+                              style: TextStyle(fontFamily: 'Galey', color: Colors.white70, fontSize: 12, decoration: TextDecoration.underline)),
+                        ),
+                        const Spacer(),
+                        if (_likesCount > 0) ...[
+                          const Icon(Icons.favorite, color: Colors.redAccent, size: 16),
+                          const SizedBox(width: 4),
+                          Text('$_likesCount', style: const TextStyle(fontFamily: 'Galey', color: Colors.white70, fontSize: 12)),
+                        ],
+                      ] else ...[
+                        const Spacer(),
+                        GestureDetector(
+                          onTap: _toggleLike,
+                          child: AnimatedScale(
+                            scale: _liked ? 1.15 : 1,
+                            duration: const Duration(milliseconds: 150),
+                            child: Icon(_liked ? Icons.favorite : Icons.favorite_border,
+                                color: _liked ? Colors.redAccent : Colors.white, size: 28),
+                          ),
+                        ),
+                      ],
+                    ]),
+                  ),
                 ]),
               ),
             ]),
@@ -283,5 +381,14 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
         },
       ),
     );
+  }
+}
+
+Color _parseHexColor(String hex) {
+  final h = hex.replaceAll('#', '');
+  try {
+    return Color(int.parse('FF$h', radix: 16));
+  } catch (_) {
+    return Colors.white;
   }
 }

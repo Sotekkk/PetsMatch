@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -7,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:video_player/video_player.dart';
 
+import 'package:PetsMatch/widgets/mention_hashtag.dart';
 import 'story_music_picker.dart';
 import 'story_service.dart';
 
@@ -26,20 +28,42 @@ class StoryCreatePage extends StatefulWidget {
 class _StoryCreatePageState extends State<StoryCreatePage> {
   static const _green = Color(0xFF6E9E57);
 
+  static const _legendeColors = [Colors.white, Colors.black, Color(0xFFFFE066), Color(0xFFFF6B6B), Color(0xFF6E9E57), Color(0xFF4ECDC4)];
+
   File? _mediaFile;
   String _mediaType = 'photo'; // photo | video
   VideoPlayerController? _videoCtrl;
   int? _videoDureeSecondes;
   StoryMusicTrack? _music;
-  final _legendeCtrl = TextEditingController();
+  final _legendeCtrl = MentionTextEditingController();
+  MentionController? _mentionCtrl;
+  List<MentionSuggestion>? _mentionSuggestions;
+  Color _legendeColor = Colors.white;
+  String _legendeTaille = 'm'; // s | m | l
+  bool _legendeGras = false;
   bool _posting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _mentionCtrl = MentionController(
+      textController: _legendeCtrl,
+      excludeUid: widget.myUid,
+      onSuggestionsChanged: (s) { if (mounted) setState(() => _mentionSuggestions = s); },
+    );
+  }
 
   @override
   void dispose() {
     _videoCtrl?.dispose();
+    _mentionCtrl?.dispose();
     _legendeCtrl.dispose();
     super.dispose();
   }
+
+  double get _legendeFontSize => switch (_legendeTaille) { 's' => 14, 'l' => 22, _ => 17 };
+
+  String _hex(Color c) => '#${c.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
 
   Future<void> _pickPhoto(ImageSource source) async {
     final x = await ImagePicker().pickImage(source: source, imageQuality: 90, maxWidth: 1440);
@@ -96,6 +120,7 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
           fileOptions: FileOptions(contentType: contentType, upsert: false));
       final url = supa.storage.from('stories').getPublicUrl(path);
 
+      final legende = _legendeCtrl.resolveMarkup().trim();
       await StoryService.createStory(
         uid: widget.myUid,
         authorProfileId: widget.authorProfileId,
@@ -103,8 +128,21 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
         mediaType: _mediaType,
         dureeSecondes: _mediaType == 'video' ? _videoDureeSecondes : null,
         musicTrackId: _music?.id,
-        legende: _legendeCtrl.text.trim(),
+        legende: legende,
+        legendeCouleur: _hex(_legendeColor),
+        legendeTaille: _legendeTaille,
+        legendeGras: _legendeGras,
       );
+      if (legende.isNotEmpty) {
+        unawaited(notifyMentions(
+          text: legende,
+          actorUid: widget.myUid,
+          notifType: 'social_mention',
+          title: '📣 Tu as été mentionné(e)',
+          body: 'Tu as été mentionné(e) dans une story Pets Social',
+          data: const {},
+        ));
+      }
 
       if (mounted) {
         widget.onPosted?.call();
@@ -206,17 +244,70 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
                     child: const Icon(Icons.close, color: Colors.white70, size: 16)),
               ]),
             ),
+          // Style du texte — couleur / taille / gras.
+          Row(children: [
+            for (final c in _legendeColors) ...[
+              GestureDetector(
+                onTap: () => setState(() => _legendeColor = c),
+                child: Container(
+                  width: 24, height: 24,
+                  decoration: BoxDecoration(
+                    color: c, shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: _legendeColor == c ? 2.5 : 1),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+            const Spacer(),
+            for (final t in const [('s', 'P'), ('m', 'M'), ('l', 'G')]) ...[
+              GestureDetector(
+                onTap: () => setState(() => _legendeTaille = t.$1),
+                child: Container(
+                  width: 26, height: 26,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _legendeTaille == t.$1 ? _green : Colors.white10,
+                  ),
+                  child: Text(t.$2, style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+            GestureDetector(
+              onTap: () => setState(() => _legendeGras = !_legendeGras),
+              child: Container(
+                width: 26, height: 26,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: _legendeGras ? _green : Colors.white10),
+                child: const Text('B', style: TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 8),
           TextField(
             controller: _legendeCtrl,
-            style: const TextStyle(fontFamily: 'Galey', color: Colors.white),
+            maxLines: 3, minLines: 1,
+            style: TextStyle(fontFamily: 'Galey', color: _legendeColor,
+                fontSize: _legendeFontSize, fontWeight: _legendeGras ? FontWeight.w800 : FontWeight.w400),
             decoration: InputDecoration(
-              hintText: 'Ajouter une légende…',
-              hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.white54),
+              hintText: 'Ajouter une légende… @ pour mentionner',
+              hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.white54, fontSize: 14),
               filled: true, fillColor: Colors.black38,
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
             ),
           ),
+          if (_mentionSuggestions != null)
+            Container(
+              margin: const EdgeInsets.only(top: 6),
+              decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(12)),
+              child: MentionSuggestionsBar(
+                suggestions: _mentionSuggestions!,
+                onSelect: (s) { _mentionCtrl?.select(s); setState(() => _mentionSuggestions = null); },
+              ),
+            ),
           const SizedBox(height: 10),
           Row(children: [
             Expanded(
