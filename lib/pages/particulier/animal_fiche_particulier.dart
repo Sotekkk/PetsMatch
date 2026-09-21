@@ -145,11 +145,16 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 4, vsync: this,
-        initialIndex: widget.initialTab.clamp(0, 3));
     _animalId = widget.animalId;
     _editing = widget.animalId == null; // nouveau animal → direct en édition
     _fillFromData(widget.initialData);
+    // Créé après _fillFromData : _showMorphoTab dépend de _espece, qui doit
+    // déjà être connue pour que la longueur initiale du contrôleur corresponde
+    // au nombre réel d'onglets (sinon crash immédiat à l'ouverture pour les
+    // espèces qui affichent l'onglet Morphologie dès le départ, ex. chien/chat).
+    final initialLength = 4 + (_showMorphoTab ? 1 : 0);
+    _tabs = TabController(length: initialLength, vsync: this,
+        initialIndex: widget.initialTab.clamp(0, initialLength - 1));
     _loadBreeds();
     if (_animalId != null) { _loadHealthRecords(); _loadActiveAlerte(); _refreshFromSupabase(); }
   }
@@ -178,7 +183,9 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   Future<void> _refreshFromSupabase() async {
     try {
       final data = await _supa.from('animaux').select('*').eq('id', _animalId!).single();
-      if (mounted) setState(() => _fillFromData(Map<String, dynamic>.from(data)));
+      if (mounted) {
+        setState(() { _fillFromData(Map<String, dynamic>.from(data)); _syncTabs(); });
+      }
     } catch (_) {}
     _loadPensionAcces();
     _loadProprietaires();
@@ -1458,7 +1465,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
             value: _espece,
             items: _especes,
             display: _capitalize,
-            onChanged: (v) => setState(() { _espece = v; _raceCtrl.clear(); }),
+            onChanged: (v) => setState(() { _espece = v; _raceCtrl.clear(); _syncTabs(); }),
           ),
           const SizedBox(height: 18),
 

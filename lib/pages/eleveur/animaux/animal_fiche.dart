@@ -341,7 +341,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 6, vsync: this); // réajusté après chargement via _tabCount
+    _tabs = TabController(length: _tabCount, vsync: this); // réajusté après chargement via _refreshFromSupabase si _tabCount change
     if (widget.isAssociation && widget.animalId == null) _statut = 'en_soin';
     if (widget.initialTabIndex != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -8378,15 +8378,25 @@ class _ChaleursTabState extends State<_ChaleursTab> {
     // Stérilisée / en retraite / mise-bas récente (< 8 sem., allaitement) :
     // le cycle est suspendu ou terminé — pas d'alerte « chaleurs » trompeuse.
     final cycleSuspendu = widget.sterilise || _enRetraite || _enLactation;
-    final nextHeat = !cycleSuspendu && _data.isNotEmpty && effectiveInterval > 0
+    final nextHeat = !cycleSuspendu && effectiveInterval > 0
         ? (() {
-            final sorted = [..._data]..sort((a, b) {
-                final da = DateTime.tryParse(a['date'] ?? '') ?? DateTime(2000);
-                final db = DateTime.tryParse(b['date'] ?? '') ?? DateTime(2000);
-                return db.compareTo(da);
-              });
-            final last = DateTime.tryParse(sorted.first['date'] ?? '');
-            return last?.add(Duration(days: effectiveInterval));
+            DateTime? last;
+            if (_data.isNotEmpty) {
+              final sorted = [..._data]..sort((a, b) {
+                  final da = DateTime.tryParse(a['date'] ?? '') ?? DateTime(2000);
+                  final db = DateTime.tryParse(b['date'] ?? '') ?? DateTime(2000);
+                  return db.compareTo(da);
+                });
+              last = DateTime.tryParse(sorted.first['date'] ?? '');
+            }
+            // Une mise-bas postérieure à la dernière chaleur enregistrée
+            // redémarre le cycle : sans ça, une femelle qui vient de mettre
+            // bas retombe, une fois la lactation passée, sur sa dernière
+            // chaleur d'AVANT la gestation, largement dépassée.
+            final miseBas = _lastMiseBas;
+            final effectiveLast = (miseBas != null && (last == null || miseBas.isAfter(last)))
+                ? miseBas : last;
+            return effectiveLast?.add(Duration(days: effectiveInterval));
           })()
         : null;
 

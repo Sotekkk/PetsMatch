@@ -266,9 +266,14 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           final miseBas = lastMiseBas[id];
           if (miseBas != null && now.difference(miseBas).inDays < _joursLactation) continue;
 
+          // Une mise-bas postérieure à la dernière chaleur enregistrée redémarre
+          // le cycle : sans ça, une femelle qui vient de mettre bas retombe sur
+          // sa dernière chaleur d'AVANT la gestation, largement dépassée.
           final last = lastChaleur[id];
-          if (last == null) continue;
-          final diff = last.add(Duration(days: interval)).difference(now).inDays;
+          final effectiveLast = (miseBas != null && (last == null || miseBas.isAfter(last)))
+              ? miseBas : last;
+          if (effectiveLast == null) continue;
+          final diff = effectiveLast.add(Duration(days: interval)).difference(now).inDays;
           if (diff <= 7) cFlags[id] = true;
         }
 
