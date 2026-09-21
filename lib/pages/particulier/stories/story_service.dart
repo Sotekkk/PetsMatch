@@ -112,26 +112,18 @@ const _kStoryCols = 'id, uid, author_profile_id, media_url, media_type, fond, du
 class StoryService {
   static final _supa = Supabase.instance.client;
 
-  /// Groupes de stories actives (non expirées) DES PROFILS QUE JE SUIS (+
-  /// les miennes) — mêmes règles de visibilité que « Mon feed », pas les
-  /// stories de n'importe qui : si Natacha me suit, elle a bien MON profil
-  /// dans sa liste de « suivis » et voit donc mes stories ; ce n'est PAS
-  /// réciproque (je ne vois pas forcément les siennes si je ne la suis pas).
+  /// Groupes de stories actives (non expirées) — visibles par tout le monde
+  /// (comme l'onglet « Découverte »), ce qui couvre largement « mes abonnés
+  /// voient mes stories ». Une tentative de restreindre aux seuls profils
+  /// suivis a fait disparaître à la fois mes propres stories ET celles des
+  /// autres dès que la sous-requête `follows` échouait pour une raison
+  /// quelconque (silencieusement avalée par l'appelant) — trop fragile pour
+  /// une fonctionnalité éphémère 24h, on reste simple.
   /// Triées : moi d'abord, puis non-vues avant vues, puis plus récent d'abord.
   static Future<List<StoryGroup>> loadActiveGroups({required String myUid, String? myProfileId}) async {
     final nowIso = DateTime.now().toUtc().toIso8601String();
-    var q = _supa.from('stories').select(_kStoryCols).gt('expires_at', nowIso);
-    if (myProfileId != null && myProfileId.isNotEmpty) {
-      final follows = await _supa.from('follows').select('following_profile_id')
-          .eq('follower_profile_id', myProfileId);
-      final followedIds = (follows as List)
-          .map((f) => f['following_profile_id']?.toString())
-          .whereType<String>()
-          .toSet()
-        ..add(myProfileId);
-      q = q.inFilter('author_profile_id', followedIds.toList());
-    }
-    final rows = await q.order('created_at', ascending: true);
+    final rows = await _supa.from('stories').select(_kStoryCols)
+        .gt('expires_at', nowIso).order('created_at', ascending: true);
     final items = (rows as List).map((r) => StoryItem.fromRow(Map<String, dynamic>.from(r))).toList();
     if (items.isEmpty) return [];
 
