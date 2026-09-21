@@ -27,8 +27,9 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
   int _itemIndex = 0;
   late AnimationController _progressCtrl;
   VideoPlayerController? _videoCtrl;
-  final _musicPlayer = AudioPlayer();
+  AudioPlayer? _musicPlayer;
   bool _paused = false;
+  bool _disposed = false;
 
   static const _defaultDuration = Duration(seconds: 6);
 
@@ -44,9 +45,10 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
 
   @override
   void dispose() {
+    _disposed = true;
     _progressCtrl.dispose();
     _videoCtrl?.dispose();
-    _musicPlayer.dispose();
+    try { _musicPlayer?.dispose(); } catch (_) {}
     _pageCtrl.dispose();
     super.dispose();
   }
@@ -55,18 +57,20 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
   StoryItem get _item => _group.items[_itemIndex];
 
   Future<void> _playCurrent() async {
+    if (_disposed) return;
     _progressCtrl.stop();
     _progressCtrl.reset();
     _videoCtrl?.dispose();
     _videoCtrl = null;
-    try { await _musicPlayer.stop(); } catch (_) {}
+    try { await _musicPlayer?.stop(); } catch (_) {}
+    if (_disposed) return;
 
     StoryService.markViewed(_item.id, viewerUid: widget.myUid, viewerProfileId: widget.myProfileId);
 
     if (_item.mediaType == 'video') {
       final ctrl = VideoPlayerController.networkUrl(Uri.parse(_item.mediaUrl));
       await ctrl.initialize();
-      if (!mounted) return;
+      if (_disposed || !mounted) return;
       // Musique en fond → on coupe le son natif de la vidéo (comme demandé :
       // priorité à la musique choisie, pas de mix).
       ctrl.setVolume(_item.music != null ? 0 : 1);
@@ -78,7 +82,8 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
       _progressCtrl.duration = _defaultDuration;
     }
     if (_item.music != null) {
-      try { await _musicPlayer.play(UrlSource(_item.music!.urlAudio)); } catch (_) {}
+      _musicPlayer ??= AudioPlayer();
+      try { await _musicPlayer!.play(UrlSource(_item.music!.urlAudio)); } catch (_) {}
     }
     if (!_paused) _progressCtrl.forward();
   }
@@ -90,7 +95,11 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
     } else if (_groupIndex < widget.groups.length - 1) {
       _pageCtrl.nextPage(duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
     } else {
-      Navigator.pop(context);
+      // Différer le pop au prochain frame — appeler Navigator.pop depuis
+      // un listener d'AnimationController (pendant un frame) gèle le rendu.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.pop(context);
+      });
     }
   }
 
@@ -113,18 +122,18 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
     if (_paused) {
       _progressCtrl.stop();
       _videoCtrl?.pause();
-      _musicPlayer.pause();
+      try { _musicPlayer?.pause(); } catch (_) {}
     } else {
       _progressCtrl.forward();
       _videoCtrl?.play();
-      _musicPlayer.resume();
+      try { _musicPlayer?.resume(); } catch (_) {}
     }
   }
 
   Future<void> _showViewers() async {
     final viewers = await StoryService.viewers(_item.id);
     if (!mounted) return;
-    _paused = true; _progressCtrl.stop(); _videoCtrl?.pause(); _musicPlayer.pause();
+    _paused = true; _progressCtrl.stop(); _videoCtrl?.pause(); try { _musicPlayer?.pause(); } catch (_) {}
     await showModalBottomSheet(
       context: context, backgroundColor: const Color(0xFF1F2A2E),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -164,7 +173,7 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
         ),
       ),
     );
-    if (mounted) { _paused = false; _progressCtrl.forward(); _videoCtrl?.play(); _musicPlayer.resume(); }
+    if (mounted) { _paused = false; _progressCtrl.forward(); _videoCtrl?.play(); try { _musicPlayer?.resume(); } catch (_) {} }
   }
 
   Future<void> _delete() async {

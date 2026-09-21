@@ -193,6 +193,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
         final idx = _notifs.indexWhere((n) => n['id'] == notif['id']);
         if (idx != -1) _notifs[idx] = {..._notifs[idx], 'read': true};
       });
+      // Si plus aucune notif non lue, clear le badge iOS
+      final anyUnread = _notifs.any((n) => n['read'] != true);
+      if (!anyUnread) clearAppBadge();
     } catch (_) {}
   }
 
