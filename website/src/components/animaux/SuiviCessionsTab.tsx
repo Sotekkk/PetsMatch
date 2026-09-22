@@ -23,7 +23,11 @@ interface AnimalLite {
 
 interface Props {
   animaux: AnimalLite[];
+  /** uid du gérant principal (propriétaire réel de l'élevage). */
   uid: string;
+  /** uid Firebase réel de la personne connectée (identité des messages
+   * envoyés). Différent de `uid` pour un cogérant ; par défaut = uid. */
+  myUid?: string;
   activeProfileId?: string | null;
   onLocalUpdate: (id: string, patch: Partial<AnimalLite>) => void;
 }
@@ -46,7 +50,8 @@ function waPhone(raw: string): string {
   return d;
 }
 
-export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLocalUpdate }: Props) {
+export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId, onLocalUpdate }: Props) {
+  const senderUid = myUid ?? uid;
   const [nonFaitesOnly, setNonFaitesOnly] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [annivAuto, setAnnivAuto] = useState(false);
@@ -168,7 +173,7 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
   }
 
   async function openOrCreateConv(acqUid: string, a?: AnimalLite): Promise<string> {
-    const sorted = [uid, acqUid].sort().join('_');
+    const sorted = [senderUid, acqUid].sort().join('_');
     const { pro, consumer } = await convTags(acqUid, a);
     const { data: existing } = await supabase.from('conversations')
       .select('id, pro_profile_id, consumer_profile_id, categorie, deleted_for')
@@ -183,21 +188,21 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
       return existing.id;
     }
     const { data: me } = await supabase.from('user_profiles')
-      .select('firstname, lastname, nom, avatar_url').eq('uid', uid).eq('is_main', true).maybeSingle();
+      .select('firstname, lastname, nom, avatar_url').eq('uid', senderUid).eq('is_main', true).maybeSingle();
     const { data: other } = await supabase.from('user_profiles')
       .select('firstname, lastname, nom, avatar_url').eq('uid', acqUid).eq('is_main', true).maybeSingle();
     const myName = (me?.nom || `${me?.firstname ?? ''} ${me?.lastname ?? ''}`.trim()) || 'Élevage';
     const otherName = `${other?.firstname ?? ''} ${other?.lastname ?? ''}`.trim() || (other?.nom ?? 'Utilisateur');
     const { data: created } = await supabase.from('conversations').insert({
       type: 'direct',
-      participants: [uid, acqUid],
+      participants: [senderUid, acqUid],
       participant_ids: sorted,
       participants_info: {
-        [uid]: { name: myName, ...(me?.avatar_url ? { photo: me.avatar_url } : {}) },
+        [senderUid]: { name: myName, ...(me?.avatar_url ? { photo: me.avatar_url } : {}) },
         [acqUid]: { name: otherName, ...(other?.avatar_url ? { photo: other.avatar_url } : {}) },
       },
       last_message: '',
-      unread_count: { [uid]: 0, [acqUid]: 0 },
+      unread_count: { [senderUid]: 0, [acqUid]: 0 },
       updated_at: new Date().toISOString(),
       categorie: 'contact-elevage',
       ...(pro ? { pro_profile_id: pro } : {}),
@@ -208,14 +213,14 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
 
   async function postToConv(convId: string, texte: string) {
     await supabase.from('messages').insert({
-      conversation_id: convId, sender_id: uid, text: texte, msg_type: 'text', is_read: false,
+      conversation_id: convId, sender_id: senderUid, text: texte, msg_type: 'text', is_read: false,
     });
     const { data: conv } = await supabase.from('conversations')
       .select('participants, unread_count').eq('id', convId).maybeSingle();
     if (conv) {
       const members: string[] = (conv.participants ?? []).map((x: unknown) => String(x));
       const unread: Record<string, number> = { ...(conv.unread_count ?? {}) };
-      for (const m of members) if (m !== uid) unread[m] = (unread[m] ?? 0) + 1;
+      for (const m of members) if (m !== senderUid) unread[m] = (unread[m] ?? 0) + 1;
       await supabase.from('conversations').update({
         last_message: texte, unread_count: unread, updated_at: new Date().toISOString(),
         // Un nouveau message fait réapparaître la conversation si le
@@ -248,7 +253,7 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
   /// réutilisé par le canal « Application » de la relance et des vœux.
   async function envoyerInApp(a: AnimalLite, texte: string, notifType: string, notifTitre: string, onDone: () => void) {
     if (!a.uid_acquereur || !texte) return;
-    if (a.uid_acquereur === uid) {
+    if (a.uid_acquereur === senderUid) {
       alert("L'acquéreur est votre propre compte : le message in-app ne peut pas s'afficher. "
         + 'Testez avec un autre compte, ou par WhatsApp / Email.');
       return;
@@ -479,7 +484,7 @@ export default function SuiviCessionsTab({ animaux, uid, activeProfileId, onLoca
                 {a.uid_acquereur && (
                   <button onClick={async () => {
                       const { data: me } = await supabase.from('user_profiles')
-                        .select('firstname, lastname, nom').eq('uid', uid).eq('is_main', true).maybeSingle();
+                        .select('firstname, lastname, nom').eq('uid', senderUid).eq('is_main', true).maybeSingle();
                       const myName = (me?.nom || `${me?.firstname ?? ''} ${me?.lastname ?? ''}`.trim()) || 'Votre éleveur';
                       envoyerInApp(a, voeuxMsg.trim(), 'message', `💬 ${myName}`, () => setVoeux(null));
                     }}

@@ -1122,7 +1122,8 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           _buildPresentsTab(),
           _buildAnciensTab(),
           SuiviCessionsTab(
-            uid: _uid,
+            uid: _ownerUid ?? _uid,
+            myUid: _uid,
             animaux: _animauxData,
             loading: _loading,
             onChanged: _loadAnimaux,

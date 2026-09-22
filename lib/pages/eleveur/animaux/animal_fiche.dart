@@ -2036,7 +2036,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                 'identification': _identCtrl.text.isNotEmpty ? _identCtrl.text : null,
                 'date_naissance': _dateNaissance?.toIso8601String(),
               },
-              uid: FirebaseAuth.instance.currentUser!.uid,
+              uid: _ownerUid ?? FirebaseAuth.instance.currentUser!.uid,
               nomElevage: _nomElevage ?? '',
               isReCession: _isNewOwner && !User_Info.isElevage && !User_Info.isAssociation,
               reservation: _statut == 'reserve' ? _reservation : null,

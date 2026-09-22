@@ -894,7 +894,7 @@ const DOC_LIBRE_CATS: { value: string; label: string; icon: string }[] = [
 
 interface DocLibre { nom: string; url: string; categorie?: string; type?: string; ajoute_le?: string; date_expiration?: string }
 
-function DocumentsAnimalTab({ animalId }: { animalId: string }) {
+function DocumentsAnimalTab({ animalId, ownerUid: ownerUidProp }: { animalId: string; ownerUid?: string | null }) {
   const { user } = useAuth();
   const activeProfileId = useActiveProfile();
   const [docs, setDocs] = useState<Record<string,unknown>[]>([]);
@@ -949,7 +949,7 @@ function DocumentsAnimalTab({ animalId }: { animalId: string }) {
         if (rappel < new Date()) rappel = exp;
         rappel.setHours(8, 0, 0, 0);
         await supabase.from('agenda_events').insert({
-          uid: user.uid,
+          uid: ownerUidProp ?? user.uid,
           titre: `Document à renouveler : ${DOC_LIBRE_CATS.find(c => c.value === cat)?.label ?? file.name}`,
           type: 'autre',
           date_debut: rappel.toISOString(),
@@ -2271,6 +2271,24 @@ function AnimalFichePageInner() {
   const { user, userData } = useAuth();
   const activeProfileId = useActiveProfile();
   const router = useRouter();
+  // uid Firebase réel du propriétaire du profil actif (élevage) — jamais
+  // forcément user.uid : un cogérant (elevage_cogerants) a un uid différent
+  // du gérant. Pour un animal déjà chargé, `animal.uid_eleveur` (lu
+  // directement depuis la ligne animaux) est encore plus fiable et prime.
+  const [ownerUid, setOwnerUid] = useState<string | null>(null);
+  useEffect(() => {
+    if (!user) { setOwnerUid(null); return; }
+    let cancelled = false;
+    (async () => {
+      let resolved = user.uid;
+      if (activeProfileId) {
+        const { data } = await supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+        resolved = (data?.uid as string | undefined) ?? user.uid;
+      }
+      if (!cancelled) setOwnerUid(resolved);
+    })();
+    return () => { cancelled = true; };
+  }, [user, activeProfileId]);
   const searchParams = useSearchParams();
   const isEleveur = userData?.isElevage === true;
   // isOwner = l'utilisateur est bien le propriétaire de cet animal (pas juste un employé)
@@ -2305,6 +2323,20 @@ function AnimalFichePageInner() {
   // unique_constraint.sql), contrairement à animaux.uid_eleveur/uid_
   // proprietaire qui ne bougent pas forcément à chaque cession/transfert.
   const [currentProprioUid, setCurrentProprioUid] = useState<string | null>(null);
+  // Cogérance (elevage_cogerants) : un cogérant actif a exactement les mêmes
+  // droits que le gérant principal sur les animaux de l'élevage — lire,
+  // éditer, céder. Miroir de signer-contrat/[token]/page.tsx::isCogerantActif.
+  const [isCogerantActif, setIsCogerantActif] = useState(false);
+  useEffect(() => {
+    const gerantUid = animal.uid_eleveur;
+    if (!user || !gerantUid || gerantUid === user.uid) { setIsCogerantActif(false); return; }
+    let cancelled = false;
+    supabase.from('elevage_cogerants').select('id')
+      .eq('uid_gerant', gerantUid).eq('uid_cogerant', user.uid)
+      .eq('statut', 'actif').is('date_fin', null).maybeSingle()
+      .then(({ data }) => { if (!cancelled) setIsCogerantActif(!!data); });
+    return () => { cancelled = true; };
+  }, [animal.uid_eleveur, user]);
   const steriliseSavedRef = useRef(false);
   const [breeds, setBreeds] = useState<string[]>([]);
 
@@ -2516,9 +2548,9 @@ function AnimalFichePageInner() {
   const loadMouvements = useCallback(async () => {
     if (!id || isNew || !user) return;
     const { data } = await supabase.from('registre_mouvements').select('id, type, date_mouvement, motif, provenance_qualite, provenance_nom, destinataire_qualite, destinataire_nom')
-      .eq('animal_id', id).eq('uid_eleveur', user.uid).order('date_mouvement', { ascending: false });
+      .eq('animal_id', id).eq('uid_eleveur', animal.uid_eleveur ?? ownerUid ?? user.uid).order('date_mouvement', { ascending: false });
     setMouvements(data ?? []);
-  }, [id, isNew, user]);
+  }, [id, isNew, user, animal.uid_eleveur, ownerUid]);
 
   const loadCessionEnCours = useCallback(async () => {
     if (!id || isNew || animal.statut !== 'cession_en_cours') return;
@@ -2536,6 +2568,7 @@ function AnimalFichePageInner() {
   async function confirmerCession() {
     if (!cessionEnCours || !user) return;
     setConfirmingCession(true);
+    const cedantUid = animal.uid_eleveur ?? ownerUid ?? user.uid;
     const now = new Date().toISOString();
     const dateCession = (cessionEnCours.date_cession as string) ?? now.split('T')[0];
     await supabase.from('cessions').update({ statut: 'confirme', confirmed_at: now }).eq('id', cessionEnCours.id);
@@ -2562,7 +2595,7 @@ function AnimalFichePageInner() {
     await supabase.from('animaux_proprietes')
       .update({ date_fin: dateCession })
       .eq('animal_id', id)
-      .eq('uid_proprio', user.uid)
+      .eq('uid_proprio', cedantUid)
       .is('date_fin', null);
     if (acqUidC) {
       await supabase.from('animaux_proprietes').upsert({
@@ -2589,7 +2622,7 @@ function AnimalFichePageInner() {
           const acqEleveur = acqU?.is_elevage === true;
           const acqAsso = acqU?.is_association === true;
           await supabase.from('registre_mouvements').insert({
-            animal_id: id, uid_eleveur: user.uid, type: 'sortie',
+            animal_id: id, uid_eleveur: cedantUid, type: 'sortie',
             date_mouvement: dateCession, motif: 'cession',
             destinataire_qualite: acqEleveur ? 'eleveur' : acqAsso ? 'association' : 'particulier',
             destinataire_nom: acqNom, cession_id: cessionEnCours.id,
@@ -2693,8 +2726,8 @@ function AnimalFichePageInner() {
       (r.data ?? []).length > 0 || (o.data ?? []).length > 0 || (e.data ?? []).length > 0 || (f.data ?? []).length > 0 || (at.data ?? []).length > 0));
   }, [id, isNew]);
   useEffect(() => {
-    if (!user || !isEleveur) return;
-    supabase.from('user_profiles').select('nom, rue_pro, ville_pro').eq('uid', user.uid).eq('is_main', true).maybeSingle()
+    if (!user || !isEleveur || !ownerUid) return;
+    supabase.from('user_profiles').select('nom, rue_pro, ville_pro').eq('uid', ownerUid).eq('is_main', true).maybeSingle()
       .then(({ data }) => {
         if (data) {
           setNomElevage((data as {nom?:string}).nom ?? '');
@@ -2702,17 +2735,17 @@ function AnimalFichePageInner() {
           setAdresseElevage(parts.join(', '));
         }
       });
-  }, [user, isEleveur]);
+  }, [user, isEleveur, ownerUid]);
 
   useEffect(() => {
-    if (!user || !isEleveur) return;
+    if (!user || !isEleveur || !ownerUid) return;
     supabase.from('animaux').select('id, nom, identification, race, photo_url, date_naissance')
-      .eq('uid_eleveur', user.uid).eq('sexe', 'femelle').order('nom')
+      .eq('uid_eleveur', ownerUid).eq('sexe', 'femelle').order('nom')
       .then(({ data }) => setMesFemelles((data ?? []) as {id:string;nom:string;identification?:string;race?:string;photo_url?:string;date_naissance?:string}[]));
     supabase.from('animaux').select('id, nom, identification, race, photo_url')
-      .eq('uid_eleveur', user.uid).eq('sexe', 'male').order('nom')
+      .eq('uid_eleveur', ownerUid).eq('sexe', 'male').order('nom')
       .then(({ data }) => setMesMales((data ?? []) as {id:string;nom:string;identification?:string;race?:string;photo_url?:string}[]));
-  }, [user, isEleveur]);
+  }, [user, isEleveur, ownerUid]);
 
   // ── Sauvegarde identité
   async function approveVetAcces(grantId: string) {
@@ -2783,14 +2816,27 @@ function AnimalFichePageInner() {
 
       if (isNew || !id) {
         const newId = crypto.randomUUID();
+        const creatorUid = isEleveur ? (ownerUid ?? user.uid) : user.uid;
         const row = {
           ...payload, id: newId,
-          uid_eleveur: isEleveur ? user.uid : null,
-          uid_proprietaire: !isEleveur ? user.uid : null,
+          uid_eleveur: isEleveur ? creatorUid : null,
+          uid_proprietaire: !isEleveur ? creatorUid : null,
           created_at: new Date().toISOString(),
         };
         const { error } = await supabase.from('animaux').insert(row);
         if (error) throw error;
+        // Initialise animaux_proprietes avec le profil actif — sans ça,
+        // l'animal n'apparaît jamais dans "Mes Animaux" une fois la
+        // migration profile_id_proprio jouée sur l'élevage (miroir app).
+        try {
+          const dateStr = (animal.date_entree || new Date().toISOString()).split('T')[0];
+          await supabase.from('animaux_proprietes').upsert({
+            animal_id: newId,
+            uid_proprio: creatorUid,
+            date_debut: dateStr,
+            ...(activeProfileId ? { profile_id_proprio: activeProfileId } : {}),
+          }, { onConflict: 'animal_id,uid_proprio' });
+        } catch {}
         router.replace(`/mes-animaux/${newId}`);
       } else {
         // Stérilisation déclarée (false → true) alors que l'éleveur l'exige :
@@ -2953,7 +2999,7 @@ function AnimalFichePageInner() {
     if (!dateActe) return;
     try {
       await supabase.from('registre_sanitaire').upsert({
-        uid_eleveur: user.uid,
+        uid_eleveur: animal.uid_eleveur ?? ownerUid ?? user.uid,
         ...(activeProfileId ? { eleveur_profile_id: activeProfileId } : {}),
         animal_id: id,
         animal_nom: animal.nom ?? '',
@@ -3068,6 +3114,7 @@ function AnimalFichePageInner() {
   async function saveRepro(table: string, data: Record<string,string>) {
     if (!id || !user) return;
     setSavingRepro(true);
+    const reproOwnerUid = animal.uid_eleveur ?? ownerUid ?? user.uid;
     const processed: Record<string, unknown> = { ...data };
     if ('gestation_confirmee' in processed) {
       processed.gestation_confirmee = processed.gestation_confirmee === 'true';
@@ -3081,7 +3128,7 @@ function AnimalFichePageInner() {
     // Protocoles automatiques
     if (table === 'chaleurs' && data.date) {
       triggerAutoProtocoles({
-        uid: user.uid, declencheur: 'chaleurs',
+        uid: reproOwnerUid, declencheur: 'chaleurs',
         animalId: id, dateEvenement: new Date(data.date),
         espece: animal.espece,
       }).catch(() => {});
@@ -3100,7 +3147,7 @@ function AnimalFichePageInner() {
           if (rappel.getTime() > Date.now()) {
             const dateAt8 = new Date(rappel.getFullYear(), rappel.getMonth(), rappel.getDate(), 8, 0, 0);
             await supabase.from('agenda_events').insert({
-              uid: user.uid,
+              uid: reproOwnerUid,
               titre: `Chaleurs prévues J-${offset} — ${nomAnimal}`,
               type: 'medication',
               date_debut: dateAt8.toISOString(),
@@ -3112,7 +3159,7 @@ function AnimalFichePageInner() {
     }
     if (table === 'gestations' && processed.gestation_confirmee === true && data.date_prevue) {
       triggerAutoProtocoles({
-        uid: user.uid, declencheur: 'gestation',
+        uid: reproOwnerUid, declencheur: 'gestation',
         animalId: id, dateEvenement: new Date(data.date_prevue),
         espece: animal.espece,
       }).catch(() => {});
@@ -3157,7 +3204,7 @@ function AnimalFichePageInner() {
         const prev = gestations.find(g => g.id === recordId);
         if (!prev?.gestation_confirmee) {
           triggerAutoProtocoles({
-            uid: user.uid, declencheur: 'gestation',
+            uid: animal.uid_eleveur ?? ownerUid ?? user.uid, declencheur: 'gestation',
             animalId: id, dateEvenement: new Date(data.date_prevue),
             espece: animal.espece,
           }).catch(() => {});
@@ -3345,9 +3392,10 @@ function AnimalFichePageInner() {
   // uid_eleveur/uid_proprietaire/uid_acquereur si l'animal n'a pas (encore)
   // de ligne animaux_proprietes (ex: anciennes fiches jamais migrées).
   const isOwner = !!user && (
-    currentProprioUid != null
+    isCogerantActif
+    || (currentProprioUid != null
       ? user.uid === currentProprioUid
-      : (user.uid === animal.uid_eleveur || user.uid === animal.uid_proprietaire || isAcquereur)
+      : (user.uid === animal.uid_eleveur || user.uid === animal.uid_proprietaire || isAcquereur))
   );
   // canWrite : propriétaire OU employé avec write_animaux
   const canWrite = isOwner || (isEmployeOfOwner && employePerms.includes('write_animaux'));
@@ -3355,7 +3403,7 @@ function AnimalFichePageInner() {
   const canWriteSante = isOwner || (isEmployeOfOwner && (employePerms.includes('write_sante') || employePerms.includes('write_animaux')));
   // isCede du point de vue de l'éleveur original (pas de l'acquéreur qui a les droits d'écriture)
   const isCede = (animal.statut === 'sorti' || animal.statut === 'decede') && !isAcquereur;
-  const isOriginalBreeder = isEleveur && !!user && user.uid === animal.uid_eleveur;
+  const isOriginalBreeder = isEleveur && !!user && (user.uid === animal.uid_eleveur || isCogerantActif);
   // Animal cédé vu par l'éleveur d'origine → lecture seule, juste Identité
   const tabs = (isCede && isOriginalBreeder && !isAcquereur)
     ? [{ key:'identite', label:'Identité' }, { key:'documents', label:'Documents' }]
@@ -3432,11 +3480,11 @@ function AnimalFichePageInner() {
                     .update({ statut: 'decede', date_sortie: dateStr }).eq('id', id);
                   if (error) throw error;
                   try {
-                    const ownerUid = animal.uid_eleveur || animal.uid_proprietaire || user?.uid;
-                    if (ownerUid) {
+                    const deathOwnerUid = animal.uid_eleveur || animal.uid_proprietaire || user?.uid;
+                    if (deathOwnerUid) {
                       await supabase.from('animaux_proprietes')
                         .update({ date_fin: dateStr })
-                        .eq('animal_id', id).eq('uid_proprio', ownerUid).is('date_fin', null);
+                        .eq('animal_id', id).eq('uid_proprio', deathOwnerUid).is('date_fin', null);
                     }
                   } catch {}
                   set('statut', 'decede');
@@ -4650,9 +4698,9 @@ function AnimalFichePageInner() {
           isMale={isMale}
           espece={animal.espece ?? 'chien'}
           race={animal.race ?? null}
-          uidEleveur={animal.uid_eleveur ?? user?.uid ?? ''}
+          uidEleveur={animal.uid_eleveur ?? ownerUid ?? user?.uid ?? ''}
           animalId={id ?? ''}
-          userId={user?.uid ?? ''}
+          userId={animal.uid_eleveur ?? ownerUid ?? user?.uid ?? ''}
           animalNom={animal.nom ?? ''}
           animalIdent={animal.identification ?? ''}
           chaleurs={chaleurs}
@@ -4693,14 +4741,14 @@ function AnimalFichePageInner() {
           sterilise={animal.sterilise ?? false}
           dateNaissance={animal.date_naissance}
           nom={animal.nom}
-          userId={user?.uid ?? ''}
+          userId={animal.uid_eleveur ?? ownerUid ?? user?.uid ?? ''}
           poidsFiche={animal.poids}
         />
       )}
 
       {/* ── TAB DOCUMENTS ───────────────────────────────────────────────── */}
       {tab === 'documents' && !isNew && (
-        <DocumentsAnimalTab animalId={id ?? ''} />
+        <DocumentsAnimalTab animalId={id ?? ''} ownerUid={animal.uid_eleveur ?? ownerUid} />
       )}
 
       {tab === 'education' && !isNew && (
@@ -4804,7 +4852,7 @@ function AnimalFichePageInner() {
       {showCession && user && (
         <CessionModal
           animal={animal}
-          uid={user.uid}
+          uid={animal.uid_eleveur ?? ownerUid ?? user.uid}
           profileId={activeProfileId || null}
           eleveurInfo={{ nom: nomElevage || user.email || 'Éleveur', adresse: adresseElevage, email: user.email ?? '' }}
           reservation={animal.statut === 'reserve' ? reservation : null}
@@ -4816,7 +4864,7 @@ function AnimalFichePageInner() {
       {showReservation && user && (
         <ReservationModal
           animal={animal}
-          uid={user.uid}
+          uid={animal.uid_eleveur ?? ownerUid ?? user.uid}
           profileId={activeProfileId || null}
           onClose={() => setShowReservation(false)}
           onReserved={() => { setShowReservation(false); loadAnimal(); loadReservation(); }}
@@ -4870,7 +4918,7 @@ function AnimalFichePageInner() {
                 <button disabled={savingMvt} onClick={async () => {
                   setSavingMvt(true);
                   const payload: Record<string,string> = {
-                    animal_id: id as string, uid_eleveur: user.uid,
+                    animal_id: id as string, uid_eleveur: animal.uid_eleveur ?? ownerUid ?? user.uid,
                     type: mvtForm.type, date_mouvement: mvtForm.date,
                     ...(activeProfileId ? { eleveur_profile_id: activeProfileId } : {}),
                   };

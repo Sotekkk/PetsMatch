@@ -15,7 +15,13 @@ const _dark  = Color(0xFF1F2A2E);
 /// Onglet « Suivi » de Mes Animaux : suivi des chiots cédés — condition de
 /// stérilisation (rappels, validation) + anniversaires à venir.
 class SuiviCessionsTab extends StatefulWidget {
+  /// uid du gérant principal (propriétaire réel de l'élevage) — sert à
+  /// résoudre le réglage anniv. auto et le profil éleveur à taguer.
   final String? uid;
+  /// uid Firebase réel de la personne connectée — sert pour l'identité des
+  /// messages envoyés (sender_id, garde-fou « vous ne pouvez pas vous
+  /// contacter vous-même »). Différent de [uid] pour un cogérant.
+  final String? myUid;
   final List<Map<String, dynamic>> animaux;
   final bool loading;
   final Future<void> Function() onChanged;
@@ -23,6 +29,7 @@ class SuiviCessionsTab extends StatefulWidget {
   const SuiviCessionsTab({
     super.key,
     required this.uid,
+    this.myUid,
     required this.animaux,
     required this.loading,
     required this.onChanged,
@@ -391,7 +398,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
     required String notifType,
     required String notifTitre,
   }) async {
-    if (acqUid == (widget.uid ?? '')) {
+    if (acqUid == (widget.myUid ?? widget.uid ?? '')) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('L\'acquéreur est votre propre compte : le message in-app '
@@ -408,9 +415,10 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
         otherUid: acqUid, categorie: 'contact-elevage',
       );
       await _taguerConversation(convId, acqUid, acqProfileId);
+      final senderUid = widget.myUid ?? widget.uid;
       await _supa.from('messages').insert({
         'conversation_id': convId,
-        'sender_id':       widget.uid,
+        'sender_id':       senderUid,
         'text':            texte,
         'msg_type':        'text',
         'is_read':         false,
@@ -422,7 +430,7 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
             (conv['participants'] as List?)?.map((e) => e.toString()) ?? []);
         final unread = Map<String, dynamic>.from(conv['unread_count'] as Map? ?? {});
         for (final u in members) {
-          if (u != widget.uid) unread[u] = (unread[u] as int? ?? 0) + 1;
+          if (u != senderUid) unread[u] = (unread[u] as int? ?? 0) + 1;
         }
         await _supa.from('conversations').update({
           'last_message': texte,

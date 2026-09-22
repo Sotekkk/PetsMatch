@@ -376,6 +376,26 @@ function MesAnimauxPageInner() {
   // Recherche
   const [search, setSearch] = useState('');
 
+  // uid Firebase réel du propriétaire du profil actif — jamais forcément
+  // user.uid : un cogérant (elevage_cogerants) a un uid différent du gérant,
+  // mais la ligne user_profiles du profil emprunté (activeProfileId) reste
+  // celle du gérant. Sans ça, "Mes Animaux" resterait scopé sur le compte
+  // personnel du cogérant (0 animal trouvé).
+  const [ownerUid, setOwnerUid] = useState<string | null>(null);
+  useEffect(() => {
+    if (!user) { setOwnerUid(null); return; }
+    let cancelled = false;
+    (async () => {
+      let resolved = user.uid;
+      if (activeProfileId) {
+        const { data } = await supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+        resolved = (data?.uid as string | undefined) ?? user.uid;
+      }
+      if (!cancelled) setOwnerUid(resolved);
+    })();
+    return () => { cancelled = true; };
+  }, [user, activeProfileId]);
+
   // UI state
   const [filterOpen, setFilterOpen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -411,8 +431,8 @@ function MesAnimauxPageInner() {
   }, [user]);
 
   useEffect(() => {
-    if (!user || !isEleveur) return;
-    supabase.from('user_profiles').select('nom, rue_pro, ville_pro').eq('uid', user.uid).eq('is_main', true).maybeSingle()
+    if (!user || !isEleveur || !ownerUid) return;
+    supabase.from('user_profiles').select('nom, rue_pro, ville_pro').eq('uid', ownerUid).eq('is_main', true).maybeSingle()
       .then(({ data }) => {
         if (data) {
           setNomElevage((data as {nom?:string}).nom ?? '');
@@ -420,7 +440,7 @@ function MesAnimauxPageInner() {
           setAdresseElevage(parts.join(', '));
         }
       });
-  }, [user, isEleveur]);
+  }, [user, isEleveur, ownerUid]);
 
   useEffect(() => {
     // Attendre que l'auth ET le profil actif soient chargés avant de requêter
@@ -431,6 +451,15 @@ function MesAnimauxPageInner() {
     async function loadAll() {
       const uid = user!.uid;
 
+      // uid réel du propriétaire du profil actif (résolu localement, sans
+      // dépendre du state `ownerUid` pour éviter tout décalage de timing).
+      let resolvedOwnerUid = uid;
+      if (activeProfileId) {
+        const { data: ownerRow } = await supabase.from('user_profiles')
+          .select('uid').eq('id', activeProfileId).maybeSingle();
+        resolvedOwnerUid = (ownerRow?.uid as string | undefined) ?? uid;
+      }
+
       // Source : animaux_proprietes — filtré par profile_id_proprio (post-migration V2.05)
       // Vérifie d'abord si la migration a été jouée, sinon retombe sur uid_proprio
       let ownRows: { animal_id: string; date_fin: string | null; role_proprio?: string | null }[] = [];
@@ -438,7 +467,7 @@ function MesAnimauxPageInner() {
         const { data: check } = await supabase
           .from('animaux_proprietes')
           .select('animal_id')
-          .eq('uid_proprio', uid)
+          .eq('uid_proprio', resolvedOwnerUid)
           .not('profile_id_proprio', 'is', null)
           .limit(1);
         if ((check ?? []).length > 0) {
@@ -446,7 +475,7 @@ function MesAnimauxPageInner() {
           const { data: byProfile } = await supabase
             .from('animaux_proprietes')
             .select('animal_id, date_fin, role_proprio')
-            .eq('uid_proprio', uid)
+            .eq('uid_proprio', resolvedOwnerUid)
             .eq('profile_id_proprio', activeProfileId)
             .eq('statut', 'actif');
           ownRows = (byProfile ?? []) as typeof ownRows;
@@ -455,7 +484,7 @@ function MesAnimauxPageInner() {
           const { data: fallback } = await supabase
             .from('animaux_proprietes')
             .select('animal_id, date_fin, role_proprio')
-            .eq('uid_proprio', uid)
+            .eq('uid_proprio', resolvedOwnerUid)
             .eq('statut', 'actif');
           ownRows = (fallback ?? []) as typeof ownRows;
         }
@@ -463,7 +492,7 @@ function MesAnimauxPageInner() {
         const { data } = await supabase
           .from('animaux_proprietes')
           .select('animal_id, date_fin, role_proprio')
-          .eq('uid_proprio', uid)
+          .eq('uid_proprio', resolvedOwnerUid)
           .eq('statut', 'actif');
         ownRows = (data ?? []) as typeof ownRows;
       }
@@ -823,7 +852,8 @@ function MesAnimauxPageInner() {
       {tab === 'suivi' && isEleveur && user && (
         <SuiviCessionsTab
           animaux={animaux}
-          uid={user.uid}
+          uid={ownerUid ?? user.uid}
+          myUid={user.uid}
           activeProfileId={activeProfileId ?? null}
           onLocalUpdate={(id, patch) => setAnimaux(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a))}
         />
@@ -1106,8 +1136,8 @@ function MesAnimauxPageInner() {
             onToggleReproducteur={isEleveur && tab === 'presents' && !selectMode ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
             onToggleReproPublic={isEleveur && tab === 'presents' && !selectMode ? () => toggleReproPublic(a.id, !!a.reproducteur_public) : undefined}
             onToggleRetraite={isEleveur && tab === 'presents' && !selectMode ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined}
-            onCeder={isEleveur && tab === 'presents' && !selectMode && a.uid_eleveur === user?.uid ? () => setCederAnimal(a) : undefined}
-            onTransferer={tab === 'presents' && !selectMode && a.uid_eleveur !== user?.uid && a.uid_acquereur === user?.uid ? () => setCederAnimal(a) : undefined} />)}
+            onCeder={isEleveur && tab === 'presents' && !selectMode && a.uid_eleveur === (ownerUid ?? user?.uid) ? () => setCederAnimal(a) : undefined}
+            onTransferer={tab === 'presents' && !selectMode && a.uid_eleveur !== (ownerUid ?? user?.uid) && a.uid_acquereur === (ownerUid ?? user?.uid) ? () => setCederAnimal(a) : undefined} />)}
         </div>
       )}
       </>
@@ -1186,7 +1216,7 @@ function MesAnimauxPageInner() {
     {soinPorteeAnimals && (
       <PorteeSoinModal
         animals={soinPorteeAnimals}
-        uid={user?.uid ?? ''}
+        uid={ownerUid ?? user?.uid ?? ''}
         activeProfileId={activeProfileId ?? null}
         onClose={() => setSoinPorteeAnimals(null)}
       />
@@ -1206,7 +1236,7 @@ function MesAnimauxPageInner() {
       <EditPorteeModal
         pid={editPorteeGroup.pid}
         members={editPorteeGroup.members}
-        uid={user?.uid ?? ''}
+        uid={ownerUid ?? user?.uid ?? ''}
         activeProfileId={activeProfileId ?? null}
         onClose={() => setEditPorteeGroup(null)}
         onSaved={(fields) => {
@@ -1220,16 +1250,17 @@ function MesAnimauxPageInner() {
     {cederAnimal && user && (
       <CessionModal
         animal={cederAnimal}
-        uid={user.uid}
+        uid={ownerUid ?? user.uid}
         profileId={activeProfileId || null}
         eleveurInfo={{ nom: nomElevage || user.email || 'Éleveur', adresse: adresseElevage, email: user.email ?? '' }}
-        isReCession={cederAnimal.uid_eleveur !== user.uid && cederAnimal.uid_acquereur === user.uid}
+        isReCession={cederAnimal.uid_eleveur !== (ownerUid ?? user.uid) && cederAnimal.uid_acquereur === (ownerUid ?? user.uid)}
         onClose={() => setCederAnimal(null)}
         onCeded={() => {
           setCederAnimal(null);
           setFetching(true);
+          const ouid = ownerUid ?? user.uid;
           supabase.from('animaux')
-            .select('*').or(`uid_eleveur.eq.${user.uid},uid_acquereur.eq.${user.uid}`)
+            .select('*').or(`uid_eleveur.eq.${ouid},uid_acquereur.eq.${ouid}`)
             .order('nom', { ascending: true })
             .then(({ data }) => { setAnimaux((data ?? []) as Animal[]); setFetching(false); });
         }}
