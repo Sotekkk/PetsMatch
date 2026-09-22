@@ -251,9 +251,21 @@ class _AgendaPageState extends State<AgendaPage> {
 
   Future<void> _loadEmployes() async {
     try {
-      final eleveurProfileData = await _supa.from('user_profiles')
-          .select('id,firstname,lastname,nom,profile_type').eq('uid', _uid).eq('is_main', true).maybeSingle();
-      final eleveurProfileId = eleveurProfileData?['id'] as String?;
+      // Profil actif (pid) prioritaire sur "mon profil principal" par uid :
+      // pour un cogérant, pid EST déjà le profil élevage emprunté — repasser
+      // par _uid le ferait résoudre son propre profil principal (le sien, pas
+      // celui de l'élevage), donc aucun employé trouvé.
+      final pid = User_Info.activeProfileId;
+      String? eleveurProfileId = pid.isNotEmpty ? pid : null;
+      Map<String, dynamic>? eleveurProfileData;
+      if (eleveurProfileId != null) {
+        eleveurProfileData = await _supa.from('user_profiles')
+            .select('id,firstname,lastname,nom,profile_type').eq('id', eleveurProfileId).maybeSingle();
+      } else {
+        eleveurProfileData = await _supa.from('user_profiles')
+            .select('id,firstname,lastname,nom,profile_type').eq('uid', _uid).eq('is_main', true).maybeSingle();
+        eleveurProfileId = eleveurProfileData?['id'] as String?;
+      }
       final nomMoi = eleveurProfileData != null
           ? (eleveurProfileData['profile_type'] == 'eleveur'
               ? (eleveurProfileData['nom'] ?? 'Moi')
@@ -322,10 +334,13 @@ class _AgendaPageState extends State<AgendaPage> {
       // sur le profil primaire (pid vide, ex : éleveur lui-même).
       final dynamic data;
       if (pid.isNotEmpty) {
+        // Filtre uniquement par profile_id, jamais par uid en plus : un
+        // cogérant qui emprunte ce profil (elevage_cogerants) a un uid
+        // Firebase différent du gérant, un AND sur 'uid' l'exclurait alors
+        // même que le profile_id correspond bien à l'élevage cogéré.
         data = await _supa
             .from('agenda_events')
             .select()
-            .eq('uid', _uid)
             .eq('pro_profile_id', pid)
             .gte('date_debut', from.toIso8601String())
             .lte('date_debut', to.toIso8601String())
@@ -515,19 +530,22 @@ class _AgendaPageState extends State<AgendaPage> {
       if (isParticulierView) {
         // pas de tâches "possédées" pour un particulier — d1 reste vide.
       } else if (pid.isNotEmpty) {
+        // Filtre uniquement par profile_id (jamais uid_eleveur en plus) — un
+        // cogérant qui emprunte ce profil (elevage_cogerants) a un uid
+        // Firebase différent du gérant, cf. commentaire sur agenda_events.
         d1 = await _supa.from('taches_elevage')
             .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
-            .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
+            .gte('date', from).lte('date', to)
             .eq('profile_id', pid);
         if ((d1 as List).isEmpty) {
           d1 = _taskProfilSource == 'eleveur'
               ? await _supa.from('taches_elevage')
                   .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
-                  .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
+                  .gte('date', from).lte('date', to)
                   .or('profil_source.is.null,profil_source.eq.eleveur')
               : await _supa.from('taches_elevage')
                   .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
-                  .eq('uid_eleveur', _uid).gte('date', from).lte('date', to)
+                  .gte('date', from).lte('date', to)
                   .eq('profil_source', _taskProfilSource);
         }
       } else {
@@ -563,21 +581,20 @@ class _AgendaPageState extends State<AgendaPage> {
         if (isParticulierView) {
           // pas de tâches "possédées" pour un particulier/profil pro — p1 reste vide.
         } else if (pid.isNotEmpty) {
+          // Filtre uniquement par profile_id (jamais uid_eleveur en plus) —
+          // même raison que pour taches_elevage/agenda_events ci-dessus.
           p1 = await _supa.from('plan_taches')
               .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
-              .eq('uid_eleveur', _uid)
               .gte('date_prevue', from).lte('date_prevue', to)
               .eq('profile_id', pid);
           if ((p1 as List).isEmpty) {
             p1 = _taskProfilSource == 'eleveur'
                 ? await _supa.from('plan_taches')
                     .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
-                    .eq('uid_eleveur', _uid)
                     .gte('date_prevue', from).lte('date_prevue', to)
                     .or('profil_source.is.null,profil_source.eq.eleveur')
                 : await _supa.from('plan_taches')
                     .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
-                    .eq('uid_eleveur', _uid)
                     .gte('date_prevue', from).lte('date_prevue', to)
                     .eq('profil_source', _taskProfilSource);
           }
