@@ -8280,7 +8280,7 @@ class _ChaleursTabState extends State<_ChaleursTab> {
   bool _loading = true;
   int? _intervalleCustom; // local copy, editable
   DateTime? _lastMiseBas;
-  Map<String, int> _raceIntervals = {};
+  List<RaceIntervalEntry> _raceIntervals = [];
 
   // Même convention que le rappel de chaleurs (chaleurs_notif_service.dart) :
   // âge de retraite par espèce + fenêtre de lactation suspendant le cycle.
@@ -8467,9 +8467,14 @@ class _ChaleursTabState extends State<_ChaleursTab> {
                 Icon(Icons.tune_rounded, size: 16, color: Colors.grey.shade500),
                 const SizedBox(width: 8),
                 Expanded(child: Text(
-                  _intervalleCustom != null
-                      ? 'Intervalle personnalisé : $_intervalleCustom jours'
-                      : 'Intervalle par défaut (${widget.espece}) : ${_intervalChaleursJours(widget.espece)} jours',
+                  (() {
+                    if (_intervalleCustom != null) return 'Intervalle personnalisé : $_intervalleCustom jours';
+                    final raceInterval = ChaleurIntervalService.raceIntervalFor(
+                      raceIntervals: _raceIntervals, espece: widget.espece, race: widget.race,
+                    );
+                    if (raceInterval != null) return 'Protocole ${widget.race} : $raceInterval jours';
+                    return 'Intervalle par défaut (${widget.espece}) : ${_intervalChaleursJours(widget.espece)} jours';
+                  })(),
                   style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600),
                 )),
                 Icon(Icons.edit_outlined, size: 14, color: Colors.grey.shade400),

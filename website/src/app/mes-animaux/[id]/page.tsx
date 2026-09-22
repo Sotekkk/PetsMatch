@@ -1613,9 +1613,21 @@ function SuiviReproTab({ isMale, espece, race, uidEleveur, animalId, userId, ani
   useEffect(() => {
     if (!uidEleveur || !race || !race.trim()) { setRaceInterval(null); return; }
     let cancelled = false;
-    supabase.from('protocoles_chaleur_race').select('intervalle_jours')
-      .eq('uid_eleveur', uidEleveur).eq('espece', espece).ilike('race', race.trim()).maybeSingle()
-      .then(({ data }) => { if (!cancelled) setRaceInterval(data?.intervalle_jours ?? null); });
+    // Correspondance souple (sous-chaîne dans les deux sens) : la race
+    // stockée sur l'animal vient souvent du sélecteur officiel (ex. "Spitz
+    // Allemand") alors que l'éleveur tape un raccourci dans le protocole
+    // (ex. "Spitz") — une correspondance exacte les manquerait.
+    supabase.from('protocoles_chaleur_race').select('race, intervalle_jours')
+      .eq('uid_eleveur', uidEleveur).eq('espece', espece)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const r = race.trim().toLowerCase();
+        const match = (data ?? []).find((p) => {
+          const pr = (p.race || '').trim().toLowerCase();
+          return pr && (pr.includes(r) || r.includes(pr));
+        });
+        setRaceInterval(match?.intervalle_jours ?? null);
+      });
     return () => { cancelled = true; };
   }, [uidEleveur, espece, race]);
 

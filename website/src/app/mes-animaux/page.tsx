@@ -515,10 +515,22 @@ function MesAnimauxPageInner() {
         if (!lastMiseBas[aid]) { const d = new Date(n.date_naissance as string); if (!isNaN(d.getTime())) lastMiseBas[aid] = d; }
       }
 
-      const raceIntervalByKey: Record<string, number> = {};
-      for (const p of (protocoles ?? [])) {
-        const key = `${p.uid_eleveur}|${(p.espece || '').toLowerCase()}|${(p.race || '').toLowerCase().trim()}`;
-        raceIntervalByKey[key] = p.intervalle_jours;
+      // Correspondance souple (sous-chaîne dans les deux sens) : la race
+      // stockée sur l'animal vient souvent du sélecteur officiel (ex.
+      // "Spitz Allemand") alors que l'éleveur tape un raccourci dans le
+      // protocole (ex. "Spitz") — une correspondance exacte les manquerait.
+      const raceProtocoles = protocoles ?? [];
+      function raceIntervalFor(uidEleveur: string | null | undefined, espece: string, race: string | null | undefined): number | null {
+        const e = espece.toLowerCase().trim();
+        const r = (race || '').toLowerCase().trim();
+        if (!r) return null;
+        for (const p of raceProtocoles) {
+          if (p.uid_eleveur !== uidEleveur) continue;
+          if ((p.espece || '').toLowerCase().trim() !== e) continue;
+          const pr = (p.race || '').toLowerCase().trim();
+          if (pr && (pr.includes(r) || r.includes(pr))) return p.intervalle_jours;
+        }
+        return null;
       }
 
       const JOURS_LACTATION = 56;
@@ -529,8 +541,7 @@ function MesAnimauxPageInner() {
         // Mise-bas récente : cycle suspendu pendant l'allaitement.
         if (miseBas && (now.getTime() - miseBas.getTime()) / 86400000 < JOURS_LACTATION) continue;
 
-        const raceKey = `${a.uid_eleveur}|${(a.espece || '').toLowerCase()}|${(a.race || '').toLowerCase().trim()}`;
-        const interval = a.intervalle_chaleurs_jours || raceIntervalByKey[raceKey] || CHALEURS_INTERVAL_WEB[a.espece ?? ''] || 0;
+        const interval = a.intervalle_chaleurs_jours || raceIntervalFor(a.uid_eleveur, a.espece ?? '', a.race) || CHALEURS_INTERVAL_WEB[a.espece ?? ''] || 0;
         if (!interval) continue;
 
         // Une mise-bas postérieure à la dernière chaleur enregistrée redémarre

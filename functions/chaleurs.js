@@ -145,14 +145,26 @@ exports.sendChaleursNotifications = functions
         // Protocoles chaleur par race (configurés par l'éleveur) — priment sur
         // le défaut par espèce, mais restent en dessous d'un override par animal.
         const eleveurUids = [...new Set(animaux.map((a) => a.uid_eleveur).filter(Boolean))];
-        const raceIntervalByKey = {};
+        let raceProtocoles = [];
         if (eleveurUids.length) {
-            const protocolesRaw = await supabaseSelect("protocoles_chaleur_race",
+            raceProtocoles = await supabaseSelect("protocoles_chaleur_race",
                 `uid_eleveur=in.(${eleveurUids.join(",")})`);
-            for (const p of protocolesRaw) {
-                const key = `${p.uid_eleveur}|${(p.espece || "").toLowerCase()}|${(p.race || "").toLowerCase().trim()}`;
-                raceIntervalByKey[key] = p.intervalle_jours;
+        }
+        // Correspondance souple (sous-chaîne dans les deux sens) : la race
+        // stockée sur l'animal vient souvent du sélecteur officiel (ex.
+        // "Spitz Allemand") alors que l'éleveur tape un raccourci dans le
+        // protocole (ex. "Spitz") — une correspondance exacte les manquerait.
+        function raceIntervalFor(uidEleveur, espece, race) {
+            const e = (espece || "").toLowerCase().trim();
+            const r = (race || "").toLowerCase().trim();
+            if (!r) return null;
+            for (const p of raceProtocoles) {
+                if (p.uid_eleveur !== uidEleveur) continue;
+                if ((p.espece || "").toLowerCase().trim() !== e) continue;
+                const pr = (p.race || "").toLowerCase().trim();
+                if (pr && (pr.includes(r) || r.includes(pr))) return p.intervalle_jours;
             }
+            return null;
         }
 
         // Résolution du profil propriétaire courant (animaux.profile_id n'est pas fiable —
@@ -210,9 +222,8 @@ exports.sendChaleursNotifications = functions
                 ? miseBas : last;
             if (!effectiveLast) continue;
 
-            const raceKey = `${animal.uid_eleveur}|${(animal.espece || "").toLowerCase()}|${(animal.race || "").toLowerCase().trim()}`;
             const interval = animal.intervalle_chaleurs_jours ||
-                raceIntervalByKey[raceKey] ||
+                raceIntervalFor(animal.uid_eleveur, animal.espece, animal.race) ||
                 intervalChaleurs(animal.espece);
             if (!interval) continue;
 
