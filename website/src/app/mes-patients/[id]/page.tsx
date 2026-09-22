@@ -4,7 +4,8 @@ import { Suspense, useEffect, useState } from 'react';
 import Image from 'next/image';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { RichText, RichTextEditor, richTextIsEmpty, richTextToPlain } from '@/lib/rich-text';
@@ -61,6 +62,28 @@ interface Ordonnance {
 }
 interface RadioEntry {
   id: string; date: string; titre: string | null; notes: string | null; veterinaire: string | null;
+}
+// Miroir des 4 domaines carnet manquants côté web (déjà écrits par le véto
+// depuis l'appli — animal_fiche.dart, cf. VET06) : vermifuges, antiparasitaires,
+// chirurgies, allergies.
+interface VermifugeEntry {
+  id: string; date: string; produit: string; dosage: string | null;
+  date_rappel: string | null; frequence: string | null; notes: string | null;
+  source: string | null; veterinaire: string | null;
+}
+interface AntiparasitaireEntry {
+  id: string; date: string; produit: string; type: string | null;
+  date_rappel: string | null; frequence: string | null; notes: string | null;
+  source: string | null; veterinaire: string | null;
+}
+interface ChirurgieEntry {
+  id: string; date: string; type: string | null; intitule: string; statut: string | null;
+  clinique: string | null; protocole_preop: string | null; protocole_postop: string | null;
+  notes: string | null; source: string | null; veterinaire: string | null;
+}
+interface AllergieEntry {
+  id: string; date: string | null; type: string | null; description: string;
+  severite: string | null; notes: string | null; source: string | null;
 }
 interface Chaleur { id: string; date: string; date_fin: string | null; duree: number | null; notes: string | null; }
 interface Saillie { id: string; date: string; nom_partenaire: string | null; methode: string | null; notes: string | null; }
@@ -218,6 +241,10 @@ function PatientDetailPageInner() {
   const [vaccins, setVaccins] = useState<VaccinEntry[]>([]);
   const [visites, setVisites] = useState<VisiteEntry[]>([]);
   const [traitements, setTraitements] = useState<TraitementEntry[]>([]);
+  const [vermifuges, setVermifuges] = useState<VermifugeEntry[]>([]);
+  const [antiparasitaires, setAntiparasitaires] = useState<AntiparasitaireEntry[]>([]);
+  const [chirurgies, setChirurgies] = useState<ChirurgieEntry[]>([]);
+  const [allergies, setAllergies] = useState<AllergieEntry[]>([]);
   // Consultations (soignants)
   const [comptesRendus, setComptesRendus] = useState<CompteRendu[]>([]);
   const [ordonnances, setOrdonnances] = useState<Ordonnance[]>([]);
@@ -257,7 +284,8 @@ function PatientDetailPageInner() {
   const [deleteRapportConfirmId, setDeleteRapportConfirmId] = useState<string | null>(null);
 
   // Add entry form
-  type AddType = null | 'vaccin' | 'visite' | 'traitement' | 'ordonnance' | 'radio' | 'cr' | 'mesure';
+  type AddType = null | 'vaccin' | 'visite' | 'traitement' | 'ordonnance' | 'radio' | 'cr' | 'mesure'
+    | 'vermifuge' | 'antiparasitaire' | 'chirurgie' | 'allergie';
   const [addingType, setAddingType] = useState<AddType>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [formDate, setFormDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -270,6 +298,17 @@ function PatientDetailPageInner() {
   const [formPosologie, setFormPosologie] = useState('');
   const [formDateFin, setFormDateFin] = useState('');
   const [formTitre, setFormTitre] = useState('');
+  // vermifuge/antiparasitaire/chirurgie/allergie
+  const [formDosage, setFormDosage] = useState('');
+  const [formFrequence, setFormFrequence] = useState('');
+  const [formSubType, setFormSubType] = useState('');
+  const [formIntitule, setFormIntitule] = useState('');
+  const [formClinique, setFormClinique] = useState('');
+  const [formPreop, setFormPreop] = useState('');
+  const [formPostop, setFormPostop] = useState('');
+  const [formStatut, setFormStatut] = useState('prevu');
+  const [formSeverite, setFormSeverite] = useState('');
+  const [formDescription, setFormDescription] = useState('');
   const [formPoids, setFormPoids] = useState('');
   const [formTaille, setFormTaille] = useState('');
   const [savingForm, setSavingForm] = useState(false);
@@ -355,6 +394,10 @@ function PatientDetailPageInner() {
         supabase.from('exercices_attribues').select('id, titre_snapshot, description_snapshot, cadence, echeance, statut, rappels_actifs').eq('animal_id', animalId).order('assigned_at', { ascending: false }),
         supabase.from('forfaits_souscrits').select('id, nom_snapshot, nb_seances_total, nb_seances_utilisees, statut').eq('animal_id', animalId).order('souscrit_le', { ascending: false }),
         supabase.from('alimentations').select('id, type_ration, marque, gamme, niveau_activite, densite_calorique, notes').eq('animal_id', animalId).maybeSingle(),
+        supabase.from('vermifuges').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
+        supabase.from('antiparasitaires').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
+        supabase.from('chirurgies').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
+        supabase.from('allergies').select('*').eq('animal_id', animalId).order('date', { ascending: false }),
       ]);
 
       const get = <T,>(i: number): T[] => {
@@ -384,6 +427,10 @@ function PatientDetailPageInner() {
       setAttribues(attr);
       setForfaitsSous(get<ForfaitSous>(13).filter(f => f.statut !== 'annule'));
       setAlimentation(getSingle<AlimentationEntry>(14));
+      setVermifuges(get<VermifugeEntry>(15));
+      setAntiparasitaires(get<AntiparasitaireEntry>(16));
+      setChirurgies(get<ChirurgieEntry>(17));
+      setAllergies(get<AllergieEntry>(18));
       if (attr.length) {
         const { data: rt } = await supabase.from('exercices_retours')
           .select('id, attribution_id, note, media, ressenti, from_pro')
@@ -399,24 +446,56 @@ function PatientDetailPageInner() {
     load();
   }, [user, animalId, activeProfileId]);
 
+  // Notifie le propriétaire (in-app + push FCM) — même Cloud Function que
+  // l'appli (functions/vet_notifications.js:notifyOwnerVetEntry), jamais
+  // câblée côté site jusqu'ici malgré l'écriture directe déjà en place.
+  async function notifyOwner(typeActe: string, vetName: string) {
+    try {
+      await httpsCallable(functions, 'notifyOwnerVetEntry')({ animalId, vetName, typeActe });
+    } catch { /* best-effort */ }
+  }
+
   async function saveForm() {
     if (!user?.uid || !animalId) return;
     setSavingForm(true);
-    const vetName = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || undefined;
-    const base = { animal_id: animalId, vet_id: user.uid, source: 'veterinaire', veterinaire: vetName };
+    const vetName = (userData?.nameElevage ?? (`${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim())) || '';
+    const base = { animal_id: animalId, vet_id: user.uid, source: 'veterinaire', veterinaire: vetName || undefined };
     try {
       if (addingType === 'vaccin') {
         await supabase.from('vaccinations').insert({ ...base, vaccin: formNom.trim(), date: formDate, date_rappel: formRappel || null, lot: formLot.trim() || null });
         const { data } = await supabase.from('vaccinations').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setVaccins((data ?? []) as VaccinEntry[]);
+        await notifyOwner('vaccin', vetName);
       } else if (addingType === 'visite') {
         await supabase.from('visites').insert({ ...base, ...(activeProfileId ? { vet_profile_id: activeProfileId } : {}), date: formDate, motif: formMotif.trim() || null, diagnostic: formDiag.trim() || null, notes: formNotes.trim() || null });
         const { data } = await supabase.from('visites').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setVisites((data ?? []) as VisiteEntry[]);
+        await notifyOwner('visite', vetName);
       } else if (addingType === 'traitement') {
         await supabase.from('traitements').insert({ ...base, nom: formNom.trim(), posologie: formPosologie.trim() || null, date: formDate, date_fin: formDateFin || null, notes: formNotes.trim() || null });
         const { data } = await supabase.from('traitements').select('*').eq('animal_id', animalId).order('date', { ascending: false });
         setTraitements((data ?? []) as TraitementEntry[]);
+        await notifyOwner('traitement', vetName);
+      } else if (addingType === 'vermifuge') {
+        await supabase.from('vermifuges').insert({ ...base, produit: formNom.trim(), dosage: formDosage.trim() || null, date: formDate, date_rappel: formRappel || null, frequence: formFrequence.trim() || null, notes: formNotes.trim() || null });
+        const { data } = await supabase.from('vermifuges').select('*').eq('animal_id', animalId).order('date', { ascending: false });
+        setVermifuges((data ?? []) as VermifugeEntry[]);
+        await notifyOwner('vermifuge', vetName);
+      } else if (addingType === 'antiparasitaire') {
+        await supabase.from('antiparasitaires').insert({ ...base, produit: formNom.trim(), type: formSubType.trim() || null, date: formDate, date_rappel: formRappel || null, frequence: formFrequence.trim() || null, notes: formNotes.trim() || null });
+        const { data } = await supabase.from('antiparasitaires').select('*').eq('animal_id', animalId).order('date', { ascending: false });
+        setAntiparasitaires((data ?? []) as AntiparasitaireEntry[]);
+        await notifyOwner('antiparasitaire', vetName);
+      } else if (addingType === 'chirurgie') {
+        await supabase.from('chirurgies').insert({ ...base, type: formSubType || 'chirurgie', intitule: formIntitule.trim(), date: formDate, statut: formStatut, clinique: formClinique.trim() || null, protocole_preop: formPreop.trim() || null, protocole_postop: formPostop.trim() || null, notes: formNotes.trim() || null });
+        const { data } = await supabase.from('chirurgies').select('*').eq('animal_id', animalId).order('date', { ascending: false });
+        setChirurgies((data ?? []) as ChirurgieEntry[]);
+        await notifyOwner(formSubType === 'hospitalisation' ? 'hospitalisation' : 'chirurgie', vetName);
+      } else if (addingType === 'allergie') {
+        await supabase.from('allergies').insert({ animal_id: animalId, vet_id: user.uid, source: 'veterinaire', type: formSubType.trim() || null, description: formDescription.trim(), severite: formSeverite.trim() || null, date: formDate, notes: formNotes.trim() || null });
+        const { data } = await supabase.from('allergies').select('*').eq('animal_id', animalId).order('date', { ascending: false });
+        setAllergies((data ?? []) as AllergieEntry[]);
+        await notifyOwner('allergie', vetName);
       } else if (addingType === 'ordonnance') {
         const ownerUid = animal?.uid_proprietaire ?? animal?.uid_eleveur ?? null;
         let ownerProfileId: string | null = null;
@@ -463,6 +542,9 @@ function PatientDetailPageInner() {
       setFormNom(''); setFormLot(''); setFormRappel(''); setFormMotif(''); setFormDiag('');
       setFormNotes(''); setFormPosologie(''); setFormDateFin(''); setFormTitre('');
       setFormPoids(''); setFormTaille('');
+      setFormDosage(''); setFormFrequence(''); setFormSubType(''); setFormIntitule('');
+      setFormClinique(''); setFormPreop(''); setFormPostop(''); setFormStatut('prevu');
+      setFormSeverite(''); setFormDescription('');
       setFormDate(new Date().toISOString().slice(0, 10));
       setAddingType(null); setSavingForm(false);
     }
@@ -1743,6 +1825,10 @@ function PatientDetailPageInner() {
                       { type: 'vaccin',     label: '💉 Vaccin',               show: true },
                       { type: 'visite',     label: '🩺 Visite vétérinaire',   show: isVet },
                       { type: 'traitement', label: '💊 Traitement',            show: true },
+                      { type: 'vermifuge',       label: '🪱 Vermifuge',                    show: isVet },
+                      { type: 'antiparasitaire', label: '🦟 Antiparasitaire',              show: isVet },
+                      { type: 'chirurgie',       label: '🏥 Chirurgie / Hospitalisation',  show: isVet },
+                      { type: 'allergie',        label: '⚠️ Allergie / pathologie',        show: isVet },
                       { type: 'ordonnance', label: '📄 Ordonnance',            show: isVet },
                       { type: 'radio',      label: '🩻 Radio / Examen',        show: isVet },
                       { type: 'mesure',     label: '⚖️ Nouvelle mesure',       show: isVet },
@@ -1823,6 +1909,89 @@ function PatientDetailPageInner() {
                       {t.posologie && <p className="text-xs text-gray-600">{t.posologie}</p>}
                       {t.date_fin && <p className="text-xs text-gray-400">Fin : {fmtDateShort(t.date_fin)}</p>}
                       {t.notes && <p className="text-xs text-gray-400 mt-1">{t.notes}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* Vermifuges */}
+            <Card title={`🪱 Vermifuges (${vermifuges.length})`}>
+              {vermifuges.length === 0 ? <EmptyState text="Aucun vermifuge enregistré" /> : (
+                <div className="space-y-2">
+                  {vermifuges.map(v => {
+                    const due = v.date_rappel && new Date(v.date_rappel) <= new Date();
+                    return (
+                      <div key={v.id} className="border border-gray-100 rounded-xl p-3">
+                        <div className="flex items-center justify-between">
+                          <p className="font-semibold text-sm text-[#1F2A2E]">{v.produit}</p>
+                          <p className="text-xs text-gray-400">{fmtDateShort(v.date)}</p>
+                        </div>
+                        {v.dosage && <p className="text-xs text-gray-600">{v.dosage}</p>}
+                        {v.date_rappel && <p className={`text-xs mt-0.5 ${due ? 'text-red-500 font-medium' : 'text-[#0C5C6C]'}`}>{due ? '⚠️ Rappel dû' : '📅 Rappel'} le {fmtDateShort(v.date_rappel)}</p>}
+                        {v.notes && <p className="text-xs text-gray-400 mt-1">{v.notes}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+
+            {/* Antiparasitaires */}
+            <Card title={`🦟 Antiparasitaires (${antiparasitaires.length})`}>
+              {antiparasitaires.length === 0 ? <EmptyState text="Aucun antiparasitaire enregistré" /> : (
+                <div className="space-y-2">
+                  {antiparasitaires.map(a => {
+                    const due = a.date_rappel && new Date(a.date_rappel) <= new Date();
+                    return (
+                      <div key={a.id} className="border border-gray-100 rounded-xl p-3">
+                        <div className="flex items-center justify-between">
+                          <p className="font-semibold text-sm text-[#1F2A2E]">{a.produit}</p>
+                          <p className="text-xs text-gray-400">{fmtDateShort(a.date)}</p>
+                        </div>
+                        {a.type && <p className="text-xs text-gray-600">{a.type}</p>}
+                        {a.date_rappel && <p className={`text-xs mt-0.5 ${due ? 'text-red-500 font-medium' : 'text-[#0C5C6C]'}`}>{due ? '⚠️ Rappel dû' : '📅 Rappel'} le {fmtDateShort(a.date_rappel)}</p>}
+                        {a.notes && <p className="text-xs text-gray-400 mt-1">{a.notes}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+
+            {/* Chirurgies / Hospitalisations */}
+            <Card title={`🏥 Chirurgies / Hospitalisations (${chirurgies.length})`}>
+              {chirurgies.length === 0 ? <EmptyState text="Aucune chirurgie enregistrée" /> : (
+                <div className="space-y-2">
+                  {chirurgies.map(c => (
+                    <div key={c.id} className="border border-gray-100 rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="font-semibold text-sm text-[#1F2A2E]">{c.intitule}</p>
+                        <p className="text-xs text-gray-400">{fmtDateShort(c.date)}</p>
+                      </div>
+                      {c.statut && <span className="text-[10px] bg-[#E3F2FD] text-[#0C5C6C] px-2 py-0.5 rounded-full">{c.statut === 'realise' ? 'Réalisée' : c.statut === 'annule' ? 'Annulée' : 'Prévue'}</span>}
+                      {c.clinique && <p className="text-xs text-gray-500 mt-1">{c.clinique}</p>}
+                      {c.protocole_preop && <p className="text-xs text-gray-400 mt-1"><span className="font-medium">Pré-op : </span>{c.protocole_preop}</p>}
+                      {c.protocole_postop && <p className="text-xs text-gray-400 mt-1"><span className="font-medium">Post-op : </span>{c.protocole_postop}</p>}
+                      {c.notes && <p className="text-xs text-gray-400 mt-1">{c.notes}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* Allergies */}
+            <Card title={`⚠️ Allergies / pathologies (${allergies.length})`}>
+              {allergies.length === 0 ? <EmptyState text="Aucune allergie enregistrée" /> : (
+                <div className="space-y-2">
+                  {allergies.map(a => (
+                    <div key={a.id} className="border border-gray-100 rounded-xl p-3">
+                      <div className="flex items-center justify-between">
+                        <p className="font-semibold text-sm text-[#1F2A2E]">{a.description}</p>
+                        {a.date && <p className="text-xs text-gray-400">{fmtDateShort(a.date)}</p>}
+                      </div>
+                      {(a.type || a.severite) && <p className="text-xs text-gray-600">{[a.type, a.severite].filter(Boolean).join(' · ')}</p>}
+                      {a.notes && <p className="text-xs text-gray-400 mt-1">{a.notes}</p>}
                     </div>
                   ))}
                 </div>
@@ -1912,6 +2081,10 @@ function PatientDetailPageInner() {
                 {addingType === 'vaccin' && '💉 Nouveau vaccin'}
                 {addingType === 'visite' && '🩺 Nouvelle visite'}
                 {addingType === 'traitement' && '💊 Nouveau traitement'}
+                {addingType === 'vermifuge' && '🪱 Nouveau vermifuge'}
+                {addingType === 'antiparasitaire' && '🦟 Nouvel antiparasitaire'}
+                {addingType === 'chirurgie' && '🏥 Chirurgie / Hospitalisation'}
+                {addingType === 'allergie' && '⚠️ Nouvelle allergie / pathologie'}
                 {addingType === 'ordonnance' && '📄 Nouvelle ordonnance'}
                 {addingType === 'radio' && '🩻 Radio / Examen'}
                 {addingType === 'mesure' && '⚖️ Nouvelle mesure'}
@@ -1994,6 +2167,146 @@ function PatientDetailPageInner() {
                 <label className="text-xs font-medium text-gray-500 block mb-1">Notes</label>
                 <textarea value={formNotes} onChange={e => setFormNotes(e.target.value)} rows={2}
                   placeholder="Notes complémentaires…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] resize-none" />
+              </div>
+            </>)}
+
+            {/* Vermifuge */}
+            {addingType === 'vermifuge' && (<>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Produit *</label>
+                <input value={formNom} onChange={e => setFormNom(e.target.value)} placeholder="Ex : Milbemax, Drontal…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Dosage</label>
+                <input value={formDosage} onChange={e => setFormDosage(e.target.value)} placeholder="Ex : 1 comprimé…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Fréquence</label>
+                <input value={formFrequence} onChange={e => setFormFrequence(e.target.value)} placeholder="Ex : 3 mois…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Date de rappel</label>
+                <input type="date" value={formRappel} onChange={e => setFormRappel(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Notes</label>
+                <textarea value={formNotes} onChange={e => setFormNotes(e.target.value)} rows={2}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] resize-none" />
+              </div>
+            </>)}
+
+            {/* Antiparasitaire */}
+            {addingType === 'antiparasitaire' && (<>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Produit *</label>
+                <input value={formNom} onChange={e => setFormNom(e.target.value)} placeholder="Ex : Frontline, Advantix…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Type</label>
+                <input value={formSubType} onChange={e => setFormSubType(e.target.value)} placeholder="Ex : Pipette, Collier, Spray…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Fréquence</label>
+                <input value={formFrequence} onChange={e => setFormFrequence(e.target.value)} placeholder="Ex : 1 mois…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Date de rappel</label>
+                <input type="date" value={formRappel} onChange={e => setFormRappel(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Notes</label>
+                <textarea value={formNotes} onChange={e => setFormNotes(e.target.value)} rows={2}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] resize-none" />
+              </div>
+            </>)}
+
+            {/* Chirurgie / Hospitalisation */}
+            {addingType === 'chirurgie' && (<>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Type</label>
+                <select value={formSubType || 'chirurgie'} onChange={e => setFormSubType(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white">
+                  <option value="chirurgie">Chirurgie</option>
+                  <option value="hospitalisation">Hospitalisation</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Intervention *</label>
+                <input value={formIntitule} onChange={e => setFormIntitule(e.target.value)} placeholder="Ex : Stérilisation, Détartrage sous AG…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Statut</label>
+                <select value={formStatut} onChange={e => setFormStatut(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white">
+                  <option value="prevu">Prévue</option>
+                  <option value="realise">Réalisée</option>
+                  <option value="annule">Annulée</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Clinique / vétérinaire</label>
+                <input value={formClinique} onChange={e => setFormClinique(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Protocole pré-opératoire</label>
+                <textarea value={formPreop} onChange={e => setFormPreop(e.target.value)} rows={2}
+                  placeholder="Jeûne, prémédication, anesthésie…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] resize-none" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Protocole post-opératoire</label>
+                <textarea value={formPostop} onChange={e => setFormPostop(e.target.value)} rows={2}
+                  placeholder="Analgésie, soins de plaie, repos, contrôle…"
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] resize-none" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Notes</label>
+                <textarea value={formNotes} onChange={e => setFormNotes(e.target.value)} rows={2}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] resize-none" />
+              </div>
+            </>)}
+
+            {/* Allergie */}
+            {addingType === 'allergie' && (<>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Type</label>
+                <select value={formSubType} onChange={e => setFormSubType(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white">
+                  <option value="">— Sélectionner —</option>
+                  {['alimentaire', 'médicamenteuse', 'environnementale', 'maladie chronique', 'autre'].map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Description *</label>
+                <input value={formDescription} onChange={e => setFormDescription(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Sévérité</label>
+                <select value={formSeverite} onChange={e => setFormSeverite(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white">
+                  <option value="">— Sélectionner —</option>
+                  {['légère', 'modérée', 'sévère'].map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Notes / antécédents</label>
+                <textarea value={formNotes} onChange={e => setFormNotes(e.target.value)} rows={2}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#0C5C6C] resize-none" />
               </div>
             </>)}
