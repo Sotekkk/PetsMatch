@@ -6,7 +6,7 @@
 -- éleveur, association...). (auth.jwt() ->> 'sub') reflète le vrai uid
 -- Firebase connecté (Third-Party Auth actif côté Supabase).
 --
--- ⚠️ CORRECTIF sur la 1ʳᵉ tentative : la policy animaux_proprietes se
+-- ⚠️ CORRECTIF #1 (1ʳᵉ tentative) : la policy animaux_proprietes se
 -- référençait elle-même (vérifier "suis-je le propriétaire PRINCIPAL de cet
 -- animal ?" en reconsultant animaux_proprietes depuis sa propre policy).
 -- Postgres détecte ça et lève "infinite recursion detected in policy for
@@ -14,9 +14,18 @@
 -- disparaître "Mes Animaux" ET, par ricochet, le compteur d'annonces de la
 -- page d'accueil (les deux compteurs sont chargés dans le même Future.wait
 -- côté app, qui échoue entièrement si une seule requête plante). Corrigé en
--- sortant cette vérification dans une fonction SECURITY DEFINER : la
--- fonction s'exécute avec les privilèges de son propriétaire (contourne RLS
--- pour SA PROPRE requête interne), donc plus de boucle.
+-- sortant cette vérification dans une fonction SECURITY DEFINER.
+--
+-- ⚠️ CORRECTIF #2 (2ᵉ tentative) : même famille de bug, mais CROISÉ entre
+-- deux tables cette fois. La policy `animaux` vérifiait l'accès pro via un
+-- EXISTS direct sur `animal_access`, et la policy `animal_access` (vague
+-- 6/N) vérifie la propriété de l'animal via un EXISTS direct sur `animaux`
+-- — chaque table dépend de l'autre, même erreur de récursion infinie,
+-- cette fois déclenchée en ajoutant la vague 6/N (a cassé "Mes Patients"
+-- d'un profil pro santé). Corrigé de la même façon : le check `animal_access`
+-- dans la policy `animaux` passe maintenant par une fonction SECURITY
+-- DEFINER (public.has_animal_access) au lieu d'un EXISTS direct — la
+-- dépendance devient à sens unique (animal_access → animaux uniquement).
 --
 -- Rôles couverts pour `animaux` :
 --   - Lecture publique si reproducteur_public = true (vitrine reproducteurs).
@@ -53,12 +62,22 @@
 --   4. Un co-propriétaire (particulier) voit l'animal partagé, peut le
 --      modifier ; le propriétaire principal peut gérer/retirer un
 --      co-propriétaire.
---   5. Un vétérinaire avec accès accordé voit la fiche (carnet de santé) ;
---      s'il a l'écriture (active_write), il peut ajouter un acte.
+--   5. Un pro avec accès accordé (véto, santé/ostéo, pension, garde,
+--      éducation...) voit bien sa liste "Mes Patients" ET la fiche/carnet
+--      de santé de chaque animal listé ; s'il a l'écriture (active_write),
+--      il peut ajouter un acte.
 --   6. La vitrine "Reproducteurs" publique (profil éleveur public) affiche
 --      toujours les animaux marqués reproducteur_public.
 --   7. Créer un nouvel animal, céder un animal, fonctionnent toujours.
--- Si un de ces cas échoue, exécuter la section ROLLBACK tout en bas.
+--
+-- ⚠️ Cette migration doit être réexécutée APRÈS avoir réappliqué la vague
+-- 6/N (migration_rls_tighten_animalaccess_likes_favoris.sql), puisque les
+-- deux se référencent désormais l'une l'autre sans risque de boucle
+-- uniquement dans cet ordre (animaux d'abord, avec ses fonctions ; puis
+-- animal_access). Si l'ordre exact importe peu en pratique (les policies
+-- ne s'activent qu'une fois les DEUX présentes), le plus sûr reste de
+-- rejouer les deux fichiers l'un après l'autre dans cet ordre.
+-- Si un des tests ci-dessus échoue, exécuter la section ROLLBACK tout en bas.
 -- ══════════════════════════════════════════════════════════════════════════
 
 -- ── Fonction utilitaire (évite la self-référence RLS) ───────────────────
@@ -85,6 +104,29 @@ AS $$
   );
 $$;
 GRANT EXECUTE ON FUNCTION public.is_principal_owner_or_cogerant(TEXT, TEXT) TO anon, authenticated;
+
+-- Casse la dépendance croisée animaux <-> animal_access (voir CORRECTIF #2
+-- ci-dessus) : SECURITY DEFINER, donc sa requête interne sur animal_access
+-- ne redéclenche pas l'évaluation de la policy animal_access.
+CREATE OR REPLACE FUNCTION public.has_animal_access(p_animal_id TEXT, p_uid TEXT, p_require_write BOOLEAN DEFAULT false)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM animal_access aa
+    JOIN user_profiles up ON up.id = aa.pro_profile_id
+    WHERE aa.animal_id = p_animal_id
+      AND up.uid = p_uid
+      AND (
+        (p_require_write AND aa.statut = 'active_write')
+        OR (NOT p_require_write AND aa.statut IN ('active', 'active_write'))
+      )
+  );
+$$;
+GRANT EXECUTE ON FUNCTION public.has_animal_access(TEXT, TEXT, BOOLEAN) TO anon, authenticated;
 
 -- ── animaux_proprietes (prérequis : la logique animaux en dépend) ────────
 ALTER TABLE animaux_proprietes ENABLE ROW LEVEL SECURITY;
@@ -177,13 +219,7 @@ CREATE POLICY "animaux_public_or_related_select" ON animaux
         AND p.uid_proprio = (auth.jwt() ->> 'sub')
         AND p.date_fin IS NULL
     )
-    OR EXISTS (
-      SELECT 1 FROM animal_access aa
-      JOIN user_profiles up ON up.id = aa.pro_profile_id
-      WHERE aa.animal_id = animaux.id
-        AND up.uid = (auth.jwt() ->> 'sub')
-        AND aa.statut IN ('active', 'active_write')
-    )
+    OR public.has_animal_access(animaux.id, (auth.jwt() ->> 'sub'), false)
   );
 
 CREATE POLICY "animaux_related_insert" ON animaux
@@ -221,13 +257,7 @@ CREATE POLICY "animaux_related_update" ON animaux
         AND p.uid_proprio = (auth.jwt() ->> 'sub')
         AND p.date_fin IS NULL
     )
-    OR EXISTS (
-      SELECT 1 FROM animal_access aa
-      JOIN user_profiles up ON up.id = aa.pro_profile_id
-      WHERE aa.animal_id = animaux.id
-        AND up.uid = (auth.jwt() ->> 'sub')
-        AND aa.statut = 'active_write'
-    )
+    OR public.has_animal_access(animaux.id, (auth.jwt() ->> 'sub'), true)
   );
 
 -- Suppression : réservée au propriétaire ou à un cogérant actif (action
@@ -266,3 +296,4 @@ ORDER BY tablename, cmd;
 -- CREATE POLICY "firebase_allow_all" ON animaux FOR ALL USING (true) WITH CHECK (true);
 --
 -- DROP FUNCTION IF EXISTS public.is_principal_owner_or_cogerant(TEXT, TEXT);
+-- DROP FUNCTION IF EXISTS public.has_animal_access(TEXT, TEXT, BOOLEAN);
