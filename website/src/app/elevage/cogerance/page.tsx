@@ -186,7 +186,18 @@ export default function CogerancePage() {
     setInviteResults([]);
     setSearched(false);
     await run(async () => {
-      await supabase.from('elevage_cogerants').upsert({
+      // Pas d'upsert(onConflict) ici : l'index unique sur (elevage_profile_id,
+      // uid_cogerant) est PARTIEL (WHERE date_fin IS NULL, pour garder
+      // l'historique des résiliations) — le client Supabase ne sait pas
+      // cibler un index partiel via onConflict (erreur Postgres 42P10). On
+      // vérifie donc nous-mêmes s'il existe déjà un lien courant.
+      const { data: existing } = await supabase.from('elevage_cogerants')
+        .select('id')
+        .eq('elevage_profile_id', elevageProfileId)
+        .eq('uid_cogerant', pick.uid)
+        .is('date_fin', null)
+        .maybeSingle();
+      const data = {
         elevage_profile_id: elevageProfileId,
         uid_gerant: user!.uid,
         uid_cogerant: pick.uid,
@@ -194,7 +205,12 @@ export default function CogerancePage() {
         statut: 'invite',
         invite_par_profile_id: elevageProfileId,
         invite_le: new Date().toISOString(),
-      }, { onConflict: 'elevage_profile_id,uid_cogerant' });
+      };
+      if (existing) {
+        await supabase.from('elevage_cogerants').update(data).eq('id', existing.id);
+      } else {
+        await supabase.from('elevage_cogerants').insert(data);
+      }
       await notify(pick.uid, pick.profileId, 'cogerance_invitation',
         'Invitation de co-gérance', `${myName} vous invite à cogérer son élevage.`);
     });

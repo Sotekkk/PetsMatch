@@ -172,7 +172,18 @@ class _CogerancePageState extends State<CogerancePage> {
       return;
     }
     await _run(() async {
-      await _supa.from('elevage_cogerants').upsert({
+      // Pas d'upsert(onConflict) ici : l'index unique sur (elevage_profile_id,
+      // uid_cogerant) est PARTIEL (WHERE date_fin IS NULL, pour garder
+      // l'historique des résiliations) — les clients Supabase ne savent pas
+      // cibler un index partiel via onConflict (erreur Postgres 42P10). On
+      // vérifie donc nous-mêmes s'il existe déjà un lien courant.
+      final existing = await _supa.from('elevage_cogerants')
+          .select('id')
+          .eq('elevage_profile_id', elevageId)
+          .eq('uid_cogerant', picked.uid)
+          .isFilter('date_fin', null)
+          .maybeSingle();
+      final data = {
         'elevage_profile_id': elevageId,
         'uid_gerant': _uid,
         'uid_cogerant': picked.uid,
@@ -180,7 +191,12 @@ class _CogerancePageState extends State<CogerancePage> {
         'statut': 'invite',
         'invite_par_profile_id': elevageId,
         'invite_le': DateTime.now().toUtc().toIso8601String(),
-      }, onConflict: 'elevage_profile_id,uid_cogerant');
+      };
+      if (existing != null) {
+        await _supa.from('elevage_cogerants').update(data).eq('id', existing['id'] as String);
+      } else {
+        await _supa.from('elevage_cogerants').insert(data);
+      }
       await _notify(picked.uid, picked.profileId, 'cogerance_invitation',
           'Invitation de co-gérance',
           '$_myName vous invite à cogérer son élevage.');
