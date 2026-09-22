@@ -13,17 +13,28 @@ export default function ConnexionPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  // true = aucun compte trouvé pour cet email/mot de passe (le cas le plus
+  // fréquent en pratique étant simplement « pas encore de compte ») — on
+  // propose alors directement l'inscription plutôt qu'un message générique.
+  const [noAccount, setNoAccount] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    setNoAccount(false);
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
       router.push('/');
-    } catch {
-      setError('Email ou mot de passe incorrect.');
+    } catch (err) {
+      const code = (err as { code?: string })?.code ?? '';
+      if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
+        setNoAccount(true);
+        setError("Aucun compte ne correspond à cet email et ce mot de passe. Si vous n'avez pas encore de compte, créez-en un.");
+      } else {
+        setError('Email ou mot de passe incorrect.');
+      }
     } finally {
       setLoading(false);
     }
@@ -94,7 +105,19 @@ export default function ConnexionPage() {
               </div>
             </div>
 
-            {error && <p className="text-red-500 text-sm">{error}</p>}
+            {error && (
+              <p className="text-red-500 text-sm">
+                {error}
+                {noAccount && (
+                  <>
+                    {' '}
+                    <Link href="/inscription" className="text-[#0C5C6C] font-semibold hover:underline">
+                      Créer un compte
+                    </Link>
+                  </>
+                )}
+              </p>
+            )}
 
             <button
               type="submit"

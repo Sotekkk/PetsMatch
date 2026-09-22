@@ -68,11 +68,29 @@ class _LoginPageState extends State<LoginPage> {
         _emailError = true;
         _passwordError = true;
       });
+      // Firebase renvoie 'user-not-found' (ou 'invalid-credential' sur les
+      // versions récentes du SDK, qui fusionnent volontairement email
+      // inconnu / mauvais mot de passe) — dans les deux cas, le cas le
+      // plus fréquent en pratique est simplement « pas encore de compte ».
+      // On propose directement l'inscription au lieu du code d'erreur brut.
+      final noAccount = e.code == 'user-not-found' || e.code == 'invalid-credential';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erreur [${e.code}]: ${e.message}',
-              style: const TextStyle(fontFamily: 'Galey')),
+          content: Text(
+            noAccount
+                ? "Aucun compte ne correspond à cet email et ce mot de passe. Si vous n'avez pas encore de compte, créez-en un."
+                : 'Erreur [${e.code}]: ${e.message}',
+            style: const TextStyle(fontFamily: 'Galey'),
+          ),
           duration: const Duration(seconds: 8),
+          action: noAccount
+              ? SnackBarAction(
+                  label: 'CRÉER UN COMPTE',
+                  textColor: Colors.white,
+                  onPressed: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const InscriptionChoicePage())),
+                )
+              : null,
         ),
       );
     } finally {
