@@ -5044,7 +5044,7 @@ class SanteDetailPage extends StatelessWidget {
       case 'antiparasitaires': return AddAntiparasitaireDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'traitements':      return _AddTraitementDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'chirurgies':       return AddChirurgieDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
-      case 'allergies':        return _AddAllergieDialog(animalId: animalId);
+      case 'allergies':        return _AddAllergieDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'visites':          return _AddVisiteDialog(animalId: animalId, source: src, vetId: vid, vetName: vname);
       case 'radios':           return _AddRadioDialog(animalId: animalId);
       default:                 return _AddVaccinDialog(animalId: animalId, espece: espece, source: src, vetId: vid, vetName: vname);
@@ -7411,6 +7411,14 @@ class _AddChirurgieDialogState extends State<AddChirurgieDialog> {
           titre: '${_type == 'hospitalisation' ? 'Hospitalisation' : 'Chirurgie'} prévue — ${_intitule.text.trim()}',
         );
       }
+      if (widget.vetId != null) {
+        try {
+          await FirebaseFunctions.instanceFor(region: 'europe-west1')
+              .httpsCallable('notifyOwnerVetEntry')
+              .call({'animalId': widget.animalId, 'vetName': widget.vetName ?? '',
+                  'typeActe': _type == 'hospitalisation' ? 'hospitalisation' : 'chirurgie'});
+        } catch (_) {}
+      }
       return true;
     },
   );
@@ -7880,7 +7888,10 @@ class _BilanReproCardState extends State<_BilanReproCard> {
 
 class _AddAllergieDialog extends StatefulWidget {
   final String animalId;
-  const _AddAllergieDialog({required this.animalId});
+  final String source;
+  final String? vetId;
+  final String? vetName;
+  const _AddAllergieDialog({required this.animalId, this.source = 'owner', this.vetId, this.vetName});
   @override State<_AddAllergieDialog> createState() => _AddAllergieDialogState();
 }
 class _AddAllergieDialogState extends State<_AddAllergieDialog> {
@@ -7902,7 +7913,16 @@ class _AddAllergieDialogState extends State<_AddAllergieDialog> {
       'id': id, 'animal_id': widget.animalId,
       'type': _type, 'description': _description.text.trim(),
       'severite': _severite, 'notes': _notes.text.trim(),
+      'source': widget.source,
+      if (widget.vetId != null) 'vet_id': widget.vetId,
     });
+    if (widget.vetId != null) {
+      try {
+        await FirebaseFunctions.instanceFor(region: 'europe-west1')
+            .httpsCallable('notifyOwnerVetEntry')
+            .call({'animalId': widget.animalId, 'vetName': widget.vetName ?? '', 'typeActe': 'allergie'});
+      } catch (_) {}
+    }
     return true;
   });
 }
