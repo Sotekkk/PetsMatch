@@ -544,6 +544,13 @@ function AnnonceDetailPageInner() {
       .then(({ data }) => {
         if (!data) { setLoading(false); return; }
         setAnnonce(data as Annonce);
+        // Compteur de vues — via RPC (SECURITY DEFINER) car les annonces
+        // sont publiques : un visiteur non connecté doit pouvoir incrémenter
+        // le compteur sans passer les policies RLS d'écriture (réservées au
+        // propriétaire/cogérant). Jamais pour le propriétaire lui-même.
+        if (!user || user.uid !== data.uid_eleveur) {
+          supabase.rpc('increment_annonce_vues', { p_annonce_id: id }).then(() => {});
+        }
         if (data.uid_eleveur) {
           if (data.profil_source === 'association') {
             // Charge le profil association — query sans profile_type (RLS bloque) + filter client-side
