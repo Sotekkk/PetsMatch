@@ -416,6 +416,7 @@ class _SwitcherSheet extends StatelessWidget {
                 final id = p['id']?.toString() ?? '';
                 final type = p['profile_type']?.toString() ?? '';
                 final isMain = p['is_main'] == true;
+                final isCogerance = p['_is_cogerance'] == true;
                 return _ProfileRow(
                   label: p['nom']?.toString() ?? p['profile_label']?.toString() ?? typeLabel(type),
                   sublabel: typeLabel(type),
@@ -423,9 +424,10 @@ class _SwitcherSheet extends StatelessWidget {
                   avatarUrl: _ProfileSwitcherHeaderState._displayAvatar(p),
                   isActive: activeProfileId == id || (activeProfileId.isEmpty && isMain),
                   isMain: isMain,
+                  isCogerance: isCogerance,
                   unreadCount: unreadByProfile[id] ?? 0,
                   onTap: () => onSelect(p),
-                  onDelete: isMain ? null : () => onDelete(id),
+                  onDelete: (isMain || isCogerance) ? null : () => onDelete(id),
                 );
               }),
 
@@ -463,6 +465,7 @@ class _ProfileRow extends StatelessWidget {
   final String avatarUrl;
   final bool isActive;
   final bool isMain;
+  final bool isCogerance;
   final int unreadCount;
   final VoidCallback onTap;
   final VoidCallback? onDelete;
@@ -474,6 +477,7 @@ class _ProfileRow extends StatelessWidget {
     required this.avatarUrl,
     required this.isActive,
     this.isMain = false,
+    this.isCogerance = false,
     this.unreadCount = 0,
     required this.onTap,
     this.onDelete,
@@ -543,6 +547,18 @@ class _ProfileRow extends StatelessWidget {
             ),
             child: const Text('Principal',
               style: TextStyle(fontSize: 10, color: Color(0xFF6E9E57), fontFamily: 'Galey')),
+          ),
+        ],
+        if (isCogerance) ...[
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE3F2FD),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Text('Cogérance',
+              style: TextStyle(fontSize: 10, color: Color(0xFF0C5C6C), fontFamily: 'Galey')),
           ),
         ],
       ]),

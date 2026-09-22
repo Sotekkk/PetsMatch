@@ -32,6 +32,7 @@ interface UserProfile {
   avatar_url: string | null;
   name_elevage: string | null;
   cat_pro: string | null;
+  _is_cogerance?: boolean;
 }
 
 // ── Navigation selon profil ───────────────────────────────────────────────────
@@ -133,6 +134,7 @@ const MENU_ELEVEUR = [
       { href: '/elevage/registre-sanitaire',     label: 'Suivi sanitaire',    icon: '🏥', pro: true },
       { href: '/elevage/inventaire',              label: 'Inventaire',         icon: '📦' },
       { href: '/elevage/employes',                        label: 'Mes employés',       icon: '👥' },
+      { href: '/elevage/cogerance',              label: 'Co-gérance',        icon: '🤝' },
       { href: '/elevage/registre-entree-sortie', label: 'Entrée - Sortie',  icon: '📂', pro: true },
     ],
   },
@@ -1395,6 +1397,11 @@ export default function Header() {
                   {p.is_main && (
                     <span className="text-[10px] bg-[#EEF5EA] text-[#6E9E57] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0">
                       Principal
+                    </span>
+                  )}
+                  {p._is_cogerance === true && (
+                    <span className="text-[10px] bg-[#E3F2FD] text-[#0C5C6C] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0">
+                      Cogérance
                     </span>
                   )}
                 </div>

@@ -76,6 +76,25 @@ export interface Profile {
   [key: string]: unknown;
 }
 
+// Élevages cogérés activement (elevage_cogerants) : le profil élevage du
+// gérant principal, "emprunté" tel quel — même id, même profile_id utilisé
+// partout ailleurs dans le site. Marqué `_is_cogerance` pour l'affichage
+// (badge, pas de suppression possible) — champ synthétique, pas en base.
+// Même logique que ProfileService._loadCogerances côté appli.
+async function fetchCogerances(uid: string): Promise<Profile[]> {
+  try {
+    const { data: links } = await supabase.from('elevage_cogerants')
+      .select('elevage_profile_id')
+      .eq('uid_cogerant', uid).eq('statut', 'actif').is('date_fin', null);
+    const ids = (links ?? []).map(l => l.elevage_profile_id).filter(Boolean) as string[];
+    if (ids.length === 0) return [];
+    const { data: profs } = await supabase.from('user_profiles').select('*').in('id', ids);
+    return ((profs ?? []) as Profile[]).map(p => ({ ...p, _is_cogerance: true }));
+  } catch {
+    return [];
+  }
+}
+
 // Doit rester synchro avec _profileTypes (app: add_profile_page.dart),
 // seule source de vérité des profile_type réellement enregistrés en base.
 const PRO_TYPES = new Set([
@@ -232,11 +251,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .eq('uid', uid).maybeSingle(),
       ]);
 
-      const profiles = (profilesRes.data ?? []) as Profile[];
+      const owned = (profilesRes.data ?? []) as Profile[];
       const userRow = (userRes.data as Record<string, unknown> | null) ?? null;
       cachedUserRowRef.current = userRow;
       const cguAcceptedAt = (userRow?.cgu_accepted_at as string | undefined) ?? null;
 
+      const profiles = [...owned, ...(await fetchCogerances(uid))];
       setAvailableProfiles(profiles);
 
       if (profiles.length === 0) { setUserData(null); return; }
