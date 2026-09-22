@@ -92,11 +92,31 @@ function MesTachesPageInner() {
 
   useEffect(() => { load(); }, [load]);
 
+  // uid Firebase RÉEL du propriétaire du profil actif — jamais forcément
+  // user.uid : un cogérant (elevage_cogerants) a un uid différent du gérant,
+  // mais la ligne user_profiles du profil emprunté (profileId) reste celle
+  // du gérant. Miroir de elevage/agenda/page.tsx::resolveEffectiveUid.
+  const resolveEffectiveUid = useCallback(async (): Promise<string> => {
+    if (!profileId) return user!.uid;
+    const { data } = await supabase.from('user_profiles').select('uid').eq('id', profileId).maybeSingle();
+    return (data?.uid as string | undefined) ?? user!.uid;
+  }, [profileId, user]);
+
+  // Version mémorisée, pour le prop `uid` d'AddTacheModal.
+  const [ownerUid, setOwnerUid] = useState<string | null>(null);
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    resolveEffectiveUid().then(u => { if (!cancelled) setOwnerUid(u); });
+    return () => { cancelled = true; };
+  }, [user, resolveEffectiveUid]);
+
   // Charge les animaux et l'équipe (employés/bénévoles) pour la création de tâche.
   const loadEquipeEtAnimaux = useCallback(async () => {
     if (!user) return;
+    const ownerUid = await resolveEffectiveUid();
 
-    setMembres(await loadMembres(user.uid, profilSource));
+    setMembres(await loadMembres(ownerUid, profilSource, user.uid));
 
     if (profilSource === 'pension') {
       // Pension : pas d'animaux possédés, on propose les pensionnaires actuels.
@@ -114,7 +134,7 @@ function MesTachesPageInner() {
     // possédés en propre (is_association=true pour association) + reçus par
     // cession (animaux_proprietes.profile_id_proprio), sinon un animal du
     // profil élevage apparaît aussi dans le picker de tâche association.
-    let ownedQuery = supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere').eq('uid_eleveur', user.uid);
+    let ownedQuery = supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere').eq('uid_eleveur', ownerUid);
     ownedQuery = profilSource === 'association' ? ownedQuery.eq('is_association', true) : ownedQuery;
     const ownedRes = await ownedQuery.order('nom');
     const owned = (ownedRes.data ?? []) as AnimalOption[];
@@ -130,7 +150,7 @@ function MesTachesPageInner() {
       }
     }
     setAnimaux([...owned, ...received]);
-  }, [user, profilSource, profileId]);
+  }, [user, profilSource, profileId, resolveEffectiveUid]);
 
   useEffect(() => { loadEquipeEtAnimaux(); }, [loadEquipeEtAnimaux]);
 
@@ -331,7 +351,8 @@ function MesTachesPageInner() {
 
       {showAddTache && (
         <AddTacheModal
-          uid={user.uid}
+          uid={ownerUid ?? user.uid}
+          myUid={user.uid}
           profileId={profileId}
           profilSource={profilSource}
           animaux={animaux}

@@ -1039,6 +1039,16 @@ export default function AgendaElevagePage() {
     return (data?.uid as string | undefined) ?? user!.uid;
   }, [activeProfileId, user]);
 
+  // Version mémorisée, pour le prop `uid` d'AddTacheModal (écriture
+  // uid_eleveur à la création d'une tâche/d'un employé).
+  const [ownerUid, setOwnerUid] = useState<string | null>(null);
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    resolveEffectiveUid().then(u => { if (!cancelled) setOwnerUid(u); });
+    return () => { cancelled = true; };
+  }, [user, resolveEffectiveUid]);
+
   // Charge les employés de l'éleveur
   const loadEmployes = useCallback(async () => {
     if (!user) return;
@@ -1774,7 +1784,8 @@ export default function AgendaElevagePage() {
 
       {showAddTache && (
         <AddTacheModal
-          uid={user.uid}
+          uid={ownerUid ?? user.uid}
+          myUid={user.uid}
           profileId={activeProfileId}
           profilSource={profilSource}
           selectedDate={selectedDate}

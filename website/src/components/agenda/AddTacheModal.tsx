@@ -60,8 +60,13 @@ export async function loadMembres(uid: string, profilSource: 'eleveur' | 'associ
   return membres;
 }
 
-export function AddTacheModal({ uid, profileId, profilSource, selectedDate, animaux, membres, onClose, onSaved, onEmployeCreated }: {
+export function AddTacheModal({ uid, myUid, profileId, profilSource, selectedDate, animaux, membres, onClose, onSaved, onEmployeCreated }: {
+  /** Propriétaire de l'élevage (uid_eleveur écrit sur la tâche/l'employé créé). */
   uid: string;
+  /** Identité réelle de la personne connectée (défaut : `uid`) — sert
+   * uniquement à détecter "assigné à Moi" ; distincte de `uid` pour un
+   * cogérant (elevage_cogerants), dont l'uid Firebase diffère du gérant. */
+  myUid?: string;
   profileId: string | null;
   profilSource: 'eleveur' | 'association' | 'pension';
   selectedDate?: string;
@@ -119,7 +124,7 @@ export function AddTacheModal({ uid, profileId, profilSource, selectedDate, anim
     if (!titre.trim() || !date) return;
     setSaving(true);
 
-    const isSelf = assigneUid === uid;
+    const isSelf = assigneUid === (myUid ?? uid);
     let assigneProfileId: string | null = null;
     if (assigneUid && !isSelf) {
       const { data } = await supabase.from('user_profiles')

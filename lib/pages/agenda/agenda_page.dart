@@ -1225,7 +1225,9 @@ class _AgendaPageState extends State<AgendaPage> {
 
   // ── Add tâche manuelle ─────────────────────────────────────────────────────
 
-  void _showAddTacheSheet(DateTime day) {
+  Future<void> _showAddTacheSheet(DateTime day) async {
+    final ownerUid = await _effectiveUid();
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1237,7 +1239,8 @@ class _AgendaPageState extends State<AgendaPage> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _AddTacheSheet(
         day: day,
-        uid: _uid,
+        uid: ownerUid,
+        myUid: _uid,
         profilSource: _taskProfilSource,
         employes: _employes,
         onSaved: _loadTasks,
@@ -1247,7 +1250,9 @@ class _AgendaPageState extends State<AgendaPage> {
 
   // ── Édition tâche manuelle ─────────────────────────────────────────────────
 
-  void _showEditTacheSheet(Map<String, dynamic> tache) {
+  Future<void> _showEditTacheSheet(Map<String, dynamic> tache) async {
+    final ownerUid = await _effectiveUid();
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1259,7 +1264,7 @@ class _AgendaPageState extends State<AgendaPage> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _EditTacheSheet(
         tache: tache,
-        uid: _uid,
+        uid: ownerUid,
         employes: _employes,
         onSaved: _loadTasks,
       ),
@@ -1268,7 +1273,9 @@ class _AgendaPageState extends State<AgendaPage> {
 
   // ── Édition protocole ──────────────────────────────────────────────────────
 
-  void _showEditProtocoleSheet(List<Map<String, dynamic>> groupe) {
+  Future<void> _showEditProtocoleSheet(List<Map<String, dynamic>> groupe) async {
+    final ownerUid = await _effectiveUid();
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1280,7 +1287,7 @@ class _AgendaPageState extends State<AgendaPage> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _EditProtocoleSheet(
         groupe: groupe,
-        uid: _uid,
+        uid: ownerUid,
         employes: _employes,
         onSaved: _loadTasks,
       ),
@@ -3472,12 +3479,17 @@ class _AddProtocoleSheetState extends State<_AddProtocoleSheet> {
 
 class _AddTacheSheet extends StatefulWidget {
   final DateTime day;
+  /// Propriétaire de l'élevage (uid_eleveur écrit sur la tâche créée).
   final String uid;
+  /// Identité réelle de la personne connectée (défaut : [uid]) — sert
+  /// uniquement à détecter "assigné à Moi" ; distincte de [uid] pour un
+  /// cogérant (elevage_cogerants), dont l'uid Firebase diffère du gérant.
+  final String? myUid;
   final String profilSource;
   final List<Map<String, dynamic>> employes;
   final VoidCallback onSaved;
   const _AddTacheSheet({
-    required this.day, required this.uid, required this.profilSource,
+    required this.day, required this.uid, this.myUid, required this.profilSource,
     required this.employes, required this.onSaved,
   });
   @override State<_AddTacheSheet> createState() => _AddTacheSheetState();
@@ -3573,7 +3585,7 @@ class _AddTacheSheetState extends State<_AddTacheSheet> {
       final heureStr = '${_heure.hour.toString().padLeft(2, '0')}:${_heure.minute.toString().padLeft(2, '0')}';
       final supa = Supabase.instance.client;
       final profileIdTache = User_Info.activeProfileId;
-      final isSelfAssign = _selectedEmployeUid == widget.uid;
+      final isSelfAssign = _selectedEmployeUid == (widget.myUid ?? widget.uid);
       String? assigneProfileId;
       if (isSelfAssign) {
         assigneProfileId = profileIdTache.isNotEmpty ? profileIdTache : null;
