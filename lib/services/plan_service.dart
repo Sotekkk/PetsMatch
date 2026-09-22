@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
+import 'package:PetsMatch/main.dart' show User_Info;
 
 class PlanConfig {
   final String code;
@@ -217,6 +218,27 @@ class PhotographePlanConfig {
 class PlanService {
   static const String kWebsiteUrl = 'https://www.petsmatchapp.com';
 
+  // uid Firebase RÉEL du propriétaire du profil actif — jamais forcément
+  // l'uid passé en argument (presque toujours FirebaseAuth.currentUser.uid,
+  // "mon propre compte") : un cogérant (elevage_cogerants) a un uid
+  // différent du gérant, mais la ligne user_profiles du profil emprunté
+  // (User_Info.activeProfileId) reste celle du gérant. Centralisé ici une
+  // fois plutôt que dans chaque appelant (des dizaines à travers l'appli) :
+  // tous les getXxxPlanCode()/countActiveAnnonces() passent par cette
+  // résolution, donc toutes les vérifications de forfait/quota reflètent
+  // l'abonnement de l'élevage cogéré, pas celui du compte du cogérant.
+  static Future<String> _resolveOwnerUid(String uid) async {
+    final pid = User_Info.activeProfileId;
+    if (pid.isEmpty) return uid;
+    try {
+      final row = await Supabase.instance.client
+          .from('user_profiles').select('uid').eq('id', pid).maybeSingle();
+      return (row?['uid'] as String?) ?? uid;
+    } catch (_) {
+      return uid;
+    }
+  }
+
   // Fallback statique si plans_tarifaires est indisponible — les prix affichés
   // à l'utilisateur viennent toujours de la BDD (éditable depuis l'admin).
   static const Map<String, PensionPlanConfig> pensionConfigs = {
@@ -281,10 +303,11 @@ class PlanService {
   /// est scopé par profil_type, un même compte peut avoir les deux).
   static Future<String> getPensionPlanCode(String uid) async {
     try {
+      final ownerUid = await _resolveOwnerUid(uid);
       final res = await Supabase.instance.client
           .from('abonnements')
           .select('plan_code')
-          .eq('uid', uid)
+          .eq('uid', ownerUid)
           .eq('profil_type', 'pension')
           .eq('statut', 'actif')
           .order('created_at', ascending: false)
@@ -356,10 +379,11 @@ class PlanService {
   /// (abonnements est scopé par profil_type).
   static Future<String> getEducationPlanCode(String uid) async {
     try {
+      final ownerUid = await _resolveOwnerUid(uid);
       final res = await Supabase.instance.client
           .from('abonnements')
           .select('plan_code')
-          .eq('uid', uid)
+          .eq('uid', ownerUid)
           .eq('profil_type', 'education')
           .eq('statut', 'actif')
           .order('created_at', ascending: false)
@@ -432,10 +456,11 @@ class PlanService {
   /// (abonnements est scopé par profil_type).
   static Future<String> getGardePlanCode(String uid) async {
     try {
+      final ownerUid = await _resolveOwnerUid(uid);
       final res = await Supabase.instance.client
           .from('abonnements')
           .select('plan_code')
-          .eq('uid', uid)
+          .eq('uid', ownerUid)
           .eq('profil_type', 'garde')
           .eq('statut', 'actif')
           .order('created_at', ascending: false)
@@ -506,10 +531,11 @@ class PlanService {
   /// ou 'marechal_ferrant'.
   static Future<String> getSantePlanCode(String uid, String profilType) async {
     try {
+      final ownerUid = await _resolveOwnerUid(uid);
       final res = await Supabase.instance.client
           .from('abonnements')
           .select('plan_code')
-          .eq('uid', uid)
+          .eq('uid', ownerUid)
           .eq('profil_type', profilType)
           .eq('statut', 'actif')
           .order('created_at', ascending: false)
@@ -595,10 +621,11 @@ class PlanService {
   /// (abonnements est scopé par profil_type).
   static Future<String> getToilettagePlanCode(String uid) async {
     try {
+      final ownerUid = await _resolveOwnerUid(uid);
       final res = await Supabase.instance.client
           .from('abonnements')
           .select('plan_code')
-          .eq('uid', uid)
+          .eq('uid', ownerUid)
           .eq('profil_type', 'toilettage')
           .eq('statut', 'actif')
           .order('created_at', ascending: false)
@@ -671,10 +698,11 @@ class PlanService {
   /// (abonnements est scopé par profil_type).
   static Future<String> getVetPlanCode(String uid) async {
     try {
+      final ownerUid = await _resolveOwnerUid(uid);
       final res = await Supabase.instance.client
           .from('abonnements')
           .select('plan_code')
-          .eq('uid', uid)
+          .eq('uid', ownerUid)
           .eq('profil_type', 'veterinaire')
           .eq('statut', 'actif')
           .order('created_at', ascending: false)
@@ -737,10 +765,11 @@ class PlanService {
   /// (abonnements est scopé par profil_type).
   static Future<String> getPhotographePlanCode(String uid) async {
     try {
+      final ownerUid = await _resolveOwnerUid(uid);
       final res = await Supabase.instance.client
           .from('abonnements')
           .select('plan_code')
-          .eq('uid', uid)
+          .eq('uid', ownerUid)
           .eq('profil_type', 'photographe')
           .eq('statut', 'actif')
           .order('created_at', ascending: false)
@@ -841,10 +870,11 @@ class PlanService {
 
   static Future<String> getPlanCode(String uid, {String profilType = 'eleveur'}) async {
     try {
+      final ownerUid = await _resolveOwnerUid(uid);
       final res = await Supabase.instance.client
           .from('abonnements')
           .select('plan_code')
-          .eq('uid', uid)
+          .eq('uid', ownerUid)
           .eq('profil_type', profilType)
           .eq('statut', 'actif')
           .order('created_at', ascending: false)
@@ -858,10 +888,11 @@ class PlanService {
 
   static Future<int> countActiveAnnonces(String uid) async {
     try {
+      final ownerUid = await _resolveOwnerUid(uid);
       final res = await Supabase.instance.client
           .from('annonces')
           .select('id')
-          .eq('uid_eleveur', uid)
+          .eq('uid_eleveur', ownerUid)
           // Le quota d'annonces est propre au plan éleveur — un compte qui a
           // aussi un profil association ne doit pas voir ses adoptions
           // association compter dans sa limite d'annonces éleveur.

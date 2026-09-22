@@ -306,6 +306,17 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
       final porteeId = 'portee_${DateTime.now().millisecondsSinceEpoch}';
       final dnIso    = _dateNaissance!.toIso8601String();
 
+      // uid Firebase RÉEL du propriétaire du profil actif — jamais forcément
+      // uid : un cogérant (elevage_cogerants) a un uid différent du gérant,
+      // mais la ligne user_profiles du profil emprunté (activeProfileId)
+      // reste celle du gérant.
+      String ownerUid = uid;
+      if (User_Info.activeProfileId.isNotEmpty) {
+        final ownerRow = await _supa.from('user_profiles')
+            .select('uid').eq('id', User_Info.activeProfileId).maybeSingle();
+        ownerUid = (ownerRow?['uid'] as String?) ?? uid;
+      }
+
       // Upload photos
       final photoUrls = <String?>[];
       for (int i = 0; i < _animaux.length; i++) {
@@ -325,7 +336,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
       final activeProfileId = User_Info.activeProfileId;
       final rows = _animaux.asMap().entries.map((e) => {
         'id':                  '${porteeId}_${e.key}',
-        'uid_eleveur':         uid,
+        'uid_eleveur':         ownerUid,
         if (activeProfileId.isNotEmpty) 'profile_id': activeProfileId,
         'portee_id':           porteeId,
         'espece':              _espece,
@@ -370,7 +381,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
         await _supa.from('animaux_proprietes').upsert(
           _animaux.asMap().entries.map((e) => {
             'animal_id':   '${porteeId}_${e.key}',
-            'uid_proprio': uid,
+            'uid_proprio': ownerUid,
             'date_debut':  dateStr,
             if (activeProfileId.isNotEmpty) 'profile_id_proprio': activeProfileId,
           }).toList(),

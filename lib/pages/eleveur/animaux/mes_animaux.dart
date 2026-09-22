@@ -2056,6 +2056,12 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         initialData: data,
         preselectedEspece: _filterEspece != 'tous' ? _filterEspece : null,
         readOnly: isCededByMe || isAcquereurPending,
+        // Un cogérant (elevage_cogerants) a un uid Firebase différent du
+        // gérant : sans ce relais, un animal créé/modifié depuis "Mes
+        // Animaux" s'enregistrerait avec uid_proprio = son propre uid au
+        // lieu de celui de l'élevage (animaux_proprietes.profile_id_proprio
+        // reste, lui, déjà correct — c'est activeProfileId directement).
+        eleveurUidOverride: _ownerUid,
       ),
     )).then((_) => _loadAnimaux());
   }

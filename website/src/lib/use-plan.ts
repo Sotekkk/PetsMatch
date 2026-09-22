@@ -3,6 +3,25 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
+
+// uid Firebase RÉEL du propriétaire du profil actif — jamais forcément
+// user.uid (presque toujours "mon propre compte") : un cogérant
+// (elevage_cogerants) a un uid différent du gérant, mais la ligne
+// user_profiles du profil emprunté (activeProfileId) reste celle du
+// gérant. Centralisé ici une fois plutôt que dans chaque hook : tous les
+// use*Plan()/useProfessionPlanCode() en dépendent, donc toute vérification
+// de forfait reflète l'abonnement de l'élevage cogéré, pas celui du compte
+// du cogérant. Miroir de PlanService._resolveOwnerUid côté appli.
+async function resolveOwnerUid(fallbackUid: string, activeProfileId: string): Promise<string> {
+  if (!activeProfileId) return fallbackUid;
+  try {
+    const { data } = await supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+    return (data?.uid as string | undefined) ?? fallbackUid;
+  } catch {
+    return fallbackUid;
+  }
+}
 
 export type PlanCode = 'free' | 'pro' | 'premium';
 
@@ -64,6 +83,7 @@ export interface UsePensionPlanResult {
  * par profil_type, un même compte peut avoir les deux simultanément). */
 export function usePensionPlan(): UsePensionPlanResult {
   const { user } = useAuth();
+  const activeProfileId = useActiveProfile();
   const [plan, setPlan] = useState<PlanCode>('free');
   const [config, setConfig] = useState<PensionPlanConfig>(PENSION_PLAN_FALLBACK.free);
   const [loading, setLoading] = useState(true);
@@ -72,10 +92,11 @@ export function usePensionPlan(): UsePensionPlanResult {
     if (!user) { setLoading(false); return; }
     (async () => {
       try {
+        const ownerUid = await resolveOwnerUid(user.uid, activeProfileId);
         const abo = await supabase
           .from('abonnements')
           .select('plan_code')
-          .eq('uid', user.uid)
+          .eq('uid', ownerUid)
           .eq('profil_type', 'pension')
           .eq('statut', 'actif')
           .order('created_at', { ascending: false })
@@ -113,7 +134,7 @@ export function usePensionPlan(): UsePensionPlanResult {
         setLoading(false);
       }
     })();
-  }, [user]);
+  }, [user, activeProfileId]);
 
   return { plan, config, loading };
 }
@@ -148,6 +169,7 @@ export interface UseGardePlanResult {
  * éducateur (abonnements est scopé par profil_type). */
 export function usePlanGarde(): UseGardePlanResult {
   const { user } = useAuth();
+  const activeProfileId = useActiveProfile();
   const [plan, setPlan] = useState<PlanCode>('free');
   const [config, setConfig] = useState<GardePlanConfig>(GARDE_PLAN_FALLBACK.free);
   const [loading, setLoading] = useState(true);
@@ -156,10 +178,11 @@ export function usePlanGarde(): UseGardePlanResult {
     if (!user) { setLoading(false); return; }
     (async () => {
       try {
+        const ownerUid = await resolveOwnerUid(user.uid, activeProfileId);
         const abo = await supabase
           .from('abonnements')
           .select('plan_code')
-          .eq('uid', user.uid)
+          .eq('uid', ownerUid)
           .eq('profil_type', 'garde')
           .eq('statut', 'actif')
           .order('created_at', { ascending: false })
@@ -195,7 +218,7 @@ export function usePlanGarde(): UseGardePlanResult {
         setLoading(false);
       }
     })();
-  }, [user]);
+  }, [user, activeProfileId]);
 
   return { plan, config, loading };
 }
@@ -229,6 +252,7 @@ export interface UseEducationPlanResult {
  * pension/garde (abonnements est scopé par profil_type). */
 export function useEducationPlan(): UseEducationPlanResult {
   const { user } = useAuth();
+  const activeProfileId = useActiveProfile();
   const [plan, setPlan] = useState<PlanCode>('free');
   const [config, setConfig] = useState<EducationPlanConfig>(EDUCATION_PLAN_FALLBACK.free);
   const [loading, setLoading] = useState(true);
@@ -237,10 +261,11 @@ export function useEducationPlan(): UseEducationPlanResult {
     if (!user) { setLoading(false); return; }
     (async () => {
       try {
+        const ownerUid = await resolveOwnerUid(user.uid, activeProfileId);
         const abo = await supabase
           .from('abonnements')
           .select('plan_code')
-          .eq('uid', user.uid)
+          .eq('uid', ownerUid)
           .eq('profil_type', 'education')
           .eq('statut', 'actif')
           .order('created_at', { ascending: false })
@@ -275,7 +300,7 @@ export function useEducationPlan(): UseEducationPlanResult {
         setLoading(false);
       }
     })();
-  }, [user]);
+  }, [user, activeProfileId]);
 
   return { plan, config, loading };
 }
@@ -306,58 +331,64 @@ export const PROFESSION_TOP_TIER: Record<string, string> = {
  */
 export function useProfessionPlanCode(profilType: string): { planCode: PlanCode; loading: boolean } {
   const { user } = useAuth();
+  const activeProfileId = useActiveProfile();
   const [planCode, setPlanCode] = useState<PlanCode>('free');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user || !profilType) { setLoading(false); return; }
     setLoading(true);
-    supabase.from('abonnements')
-      .select('plan_code')
-      .eq('uid', user.uid)
-      .eq('profil_type', profilType)
-      .eq('statut', 'actif')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-      .then(({ data }) => {
-        setPlanCode((data?.plan_code ?? 'free') as PlanCode);
-        setLoading(false);
-      });
-  }, [user, profilType]);
+    resolveOwnerUid(user.uid, activeProfileId).then(ownerUid =>
+      supabase.from('abonnements')
+        .select('plan_code')
+        .eq('uid', ownerUid)
+        .eq('profil_type', profilType)
+        .eq('statut', 'actif')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => {
+          setPlanCode((data?.plan_code ?? 'free') as PlanCode);
+          setLoading(false);
+        })
+    );
+  }, [user, profilType, activeProfileId]);
 
   return { planCode, loading };
 }
 
 export function usePlan(): UsePlanResult {
   const { user } = useAuth();
+  const activeProfileId = useActiveProfile();
   const [plan, setPlan] = useState<PlanCode>('free');
   const [activeAnnonces, setActiveAnnonces] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!user) { setLoading(false); return; }
-    Promise.all([
-      supabase
-        .from('abonnements')
-        .select('plan_code')
-        .eq('uid', user.uid)
-        .eq('profil_type', 'eleveur')
-        .eq('statut', 'actif')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from('annonces')
-        .select('id', { count: 'exact', head: true })
-        .eq('uid_eleveur', user.uid)
-        .in('statut', ['disponible', 'en_attente', 'pause', 'reserve']),
-    ]).then(([abo, ann]) => {
+    (async () => {
+      const ownerUid = await resolveOwnerUid(user.uid, activeProfileId);
+      const [abo, ann] = await Promise.all([
+        supabase
+          .from('abonnements')
+          .select('plan_code')
+          .eq('uid', ownerUid)
+          .eq('profil_type', 'eleveur')
+          .eq('statut', 'actif')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('annonces')
+          .select('id', { count: 'exact', head: true })
+          .eq('uid_eleveur', ownerUid)
+          .in('statut', ['disponible', 'en_attente', 'pause', 'reserve']),
+      ]);
       setPlan((abo.data?.plan_code ?? 'free') as PlanCode);
       setActiveAnnonces(ann.count ?? 0);
       setLoading(false);
-    }).catch(() => setLoading(false));
-  }, [user]);
+    })().catch(() => setLoading(false));
+  }, [user, activeProfileId]);
 
   return { plan, config: PLAN_CONFIG[plan], activeAnnonces, loading };
 }
