@@ -723,15 +723,17 @@ class _VetResultSheetState extends State<_VetResultSheet> {
         'permissions':           ['read_basic', 'read_health', 'write_health'],
         'statut':                'pending',
       }, onConflict: 'animal_id,pro_profile_id');
-      // Récupérer le nom de la structure ou du vétérinaire
+      // Récupérer le nom de la structure ou du vétérinaire — le profil ACTIF
+      // (véto/santé...) par son id, jamais is_main (le profil particulier) :
+      // un compte avec plusieurs profils affichait sinon le nom d'un autre
+      // métier (ex. "Pomsky de la Luna" au lieu du nom de la clinique).
       String vetNom = '';
       bool isClinic = false;
       try {
         final vetUser = await Supabase.instance.client
             .from('user_profiles')
             .select('firstname, lastname, nom')
-            .eq('uid', vetUid)
-            .eq('is_main', true)
+            .eq('id', vetProfileId)
             .maybeSingle();
         if (vetUser != null) {
           final clinic = (vetUser['nom'] ?? '').toString().trim();

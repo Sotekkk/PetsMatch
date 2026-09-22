@@ -116,8 +116,11 @@ export default function MesPatientsPage() {
         statut: 'pending',
       }, { onConflict: 'animal_id,pro_profile_id' });
 
+      // Le profil ACTIF (véto/santé...) par son id, jamais is_main (le profil
+      // particulier) — sinon le nom affiché est celui d'un autre métier du
+      // même compte.
       const { data: myProfile } = await supabase.from('user_profiles')
-        .select('firstname, lastname, nom').eq('uid', user.uid).eq('is_main', true).maybeSingle();
+        .select('firstname, lastname, nom').eq('id', activeProfileId).maybeSingle();
       const clinic = (myProfile?.nom ?? '').trim();
       const isClinic = clinic.length > 0;
       const displayName = isClinic ? clinic : `${myProfile?.firstname ?? ''} ${myProfile?.lastname ?? ''}`.trim();

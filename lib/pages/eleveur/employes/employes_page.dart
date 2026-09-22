@@ -218,21 +218,26 @@ class _EmployesTabState extends State<_EmployesTab> {
     try {
       final ownerUid = await _resolveOwnerUid(_supa, _uid);
       _ownerUid = ownerUid;
-      final profile = await _supa
-          .from('user_profiles')
-          .select('nom, firstname, lastname')
-          .eq('uid', ownerUid)
-          .eq('is_main', true)
-          .maybeSingle();
-      _nomElevage = (profile?['nom'] as String?)?.trim().isNotEmpty == true
-          ? profile!['nom'] as String
-          : '${profile?['firstname'] ?? ''} ${profile?['lastname'] ?? ''}'.trim();
 
       // Résoudre le profile_id de l'employeur à partir du contexte de la page
       // (widget.profileType / widget.isAssociation), pas de
       // User_Info.activeProfileId qui peut être périmé — voir _resolveOwnerProfileId.
       final eleveurProfileId = await _resolveOwnerProfileId(_supa, ownerUid, widget.isAssociation, profileType: widget.profileType);
       final type = _profileType;
+
+      // Nom affiché (invitations, notifications) : le profil de CE contexte
+      // (éleveur/toilettage/pension/...) via son profile_id, jamais is_main
+      // (le profil particulier) — un compte avec plusieurs métiers afficherait
+      // sinon le nom d'une autre activité (ex. "Salon de toilettage" alors
+      // qu'on invite un employé depuis le profil éleveur).
+      final profile = eleveurProfileId != null
+          ? await _supa.from('user_profiles').select('nom, firstname, lastname')
+              .eq('id', eleveurProfileId).maybeSingle()
+          : await _supa.from('user_profiles').select('nom, firstname, lastname')
+              .eq('uid', ownerUid).eq('is_main', true).maybeSingle();
+      _nomElevage = (profile?['nom'] as String?)?.trim().isNotEmpty == true
+          ? profile!['nom'] as String
+          : '${profile?['firstname'] ?? ''} ${profile?['lastname'] ?? ''}'.trim();
 
       dynamic rows;
       if (eleveurProfileId != null) {
