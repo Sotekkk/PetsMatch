@@ -10,16 +10,30 @@ const supabase = createClient(
 // GET /api/notifications?uid=xxx&countsByProfile=1 — pour le badge du
 // sélecteur de profil (Header.tsx) : {profile_id, profile_type} de chaque
 // notif non lue, sans le filtre par profil actif (on veut TOUS les profils).
+// uid réel du gérant principal si `profileId` désigne un profil élevage
+// emprunté via cogérance (elevage_cogerants) — les notifications de
+// l'élevage (rappels Cloud Functions, cessions, etc.) sont taguées avec
+// CET uid, jamais celui du cogérant connecté. Sans ça, un cogérant ne
+// verrait jamais aucune notification de l'élevage qu'il co-gère.
+async function resolveOwnerUid(uid: string, profileId: string | null): Promise<string> {
+  if (!profileId) return uid;
+  const { data } = await supabase.from('user_profiles').select('uid').eq('id', profileId).maybeSingle();
+  return (data?.uid as string | undefined) ?? uid;
+}
+
 export async function GET(req: NextRequest) {
   const uid = req.nextUrl.searchParams.get('uid');
   const profileId = req.nextUrl.searchParams.get('profileId');
   if (!uid) return NextResponse.json([]);
 
+  const ownerUid = await resolveOwnerUid(uid, profileId);
+  const uidFilter = ownerUid !== uid ? `uid.eq.${uid},uid.eq.${ownerUid}` : `uid.eq.${uid}`;
+
   if (req.nextUrl.searchParams.get('countsByProfile') === '1') {
     const { data } = await supabase
       .from('notifications')
       .select('profile_id, profile_type')
-      .eq('uid', uid)
+      .or(uidFilter)
       .eq('read', false);
     return NextResponse.json(data ?? []);
   }
@@ -27,7 +41,7 @@ export async function GET(req: NextRequest) {
   const { data } = await supabase
     .from('notifications')
     .select('*')
-    .eq('uid', uid)
+    .or(uidFilter)
     .eq('read', false)
     .order('created_at', { ascending: false })
     .limit(50);
@@ -50,10 +64,12 @@ export async function PATCH(req: NextRequest) {
   const { uid, profileId } = await req.json().catch(() => ({})) as { uid?: string; profileId?: string };
   if (!uid) return NextResponse.json({ error: 'uid requis' }, { status: 400 });
 
+  const ownerUid = await resolveOwnerUid(uid, profileId ?? null);
+  const uidFilter = ownerUid !== uid ? `uid.eq.${uid},uid.eq.${ownerUid}` : `uid.eq.${uid}`;
   const { data } = await supabase
     .from('notifications')
     .select('id, profile_id')
-    .eq('uid', uid)
+    .or(uidFilter)
     .eq('read', false);
 
   const ids = (data ?? [])

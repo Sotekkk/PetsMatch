@@ -121,13 +121,30 @@ class _NotificationsPageState extends State<NotificationsPage> {
     _fetch();
   }
 
+  /// uid réel du gérant principal si le profil actif est emprunté via une
+  /// cogérance (elevage_cogerants) — les notifications de l'élevage (rappels
+  /// Cloud Functions, cessions, etc.) sont taguées avec CET uid, jamais celui
+  /// du cogérant connecté. Sans ça, un cogérant ne verrait jamais aucune
+  /// notification de l'élevage qu'il co-gère.
+  Future<String> _resolveOwnerUid() async {
+    final activeProfileId = User_Info.activeProfileId;
+    if (activeProfileId.isEmpty) return _uid;
+    try {
+      final row = await _supa.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+      return (row?['uid'] as String?) ?? _uid;
+    } catch (_) {
+      return _uid;
+    }
+  }
+
   Future<void> _fetch() async {
     if (_uid.isEmpty) return;
     try {
+      final ownerUid = await _resolveOwnerUid();
       final data = await _supa
           .from('notifications')
           .select()
-          .eq('uid', _uid)
+          .or(ownerUid != _uid ? 'uid.eq.$_uid,uid.eq.$ownerUid' : 'uid.eq.$_uid')
           .order('created_at', ascending: false)
           .limit(200);
       final currentType = _currentProfileType;
@@ -1726,13 +1743,28 @@ class _NotifBadgeState extends State<NotifBadge> with WidgetsBindingObserver {
     return 'particulier';
   }
 
+  /// Miroir de _NotificationsPageState._resolveOwnerUid — un cogérant doit
+  /// voir le badge non-lu des notifications de l'élevage, taguées avec l'uid
+  /// du gérant principal, pas le sien.
+  Future<String> _resolveOwnerUid() async {
+    final activeProfileId = User_Info.activeProfileId;
+    if (activeProfileId.isEmpty) return _uid;
+    try {
+      final row = await _supa.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+      return (row?['uid'] as String?) ?? _uid;
+    } catch (_) {
+      return _uid;
+    }
+  }
+
   Future<void> _fetchUnread() async {
     if (_uid.isEmpty) return;
     try {
+      final ownerUid = await _resolveOwnerUid();
       final data = await _supa
           .from('notifications')
           .select('id, profile_id, profile_type, type')
-          .eq('uid', _uid)
+          .or(ownerUid != _uid ? 'uid.eq.$_uid,uid.eq.$ownerUid' : 'uid.eq.$_uid')
           .eq('read', false);
       final currentType = _currentBadgeProfileType;
       final activeProfileId = User_Info.activeProfileId;
