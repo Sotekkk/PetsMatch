@@ -17,6 +17,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:PetsMatch/config.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/contrats/contrat_finalize.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 import 'package:PetsMatch/widgets/signature_pad.dart';
@@ -77,6 +78,23 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
   String get _myUid => FirebaseAuth.instance.currentUser?.uid ?? '';
   String? get _myEmail => FirebaseAuth.instance.currentUser?.email?.toLowerCase();
 
+  // Cogérance (elevage_cogerants) : un cogérant actif a exactement les mêmes
+  // droits que le gérant principal sur ses contrats — lire, éditer, relancer,
+  // signer "pour le compte de" l'élevage. Sa signature reste identifiée comme
+  // la sienne (signataire_eleveur_uid/nom, cf. _signerDocument) : seule
+  // l'AUTORISATION de signer est élargie, jamais l'identité du signataire.
+  bool _isCogerantActif = false;
+
+  Future<void> _checkCogerance(String? gerantUid) async {
+    if (gerantUid == null || gerantUid.isEmpty || gerantUid == _myUid) return;
+    try {
+      final row = await _supa.from('elevage_cogerants').select('id')
+          .eq('uid_gerant', gerantUid).eq('uid_cogerant', _myUid)
+          .eq('statut', 'actif').isFilter('date_fin', null).maybeSingle();
+      if (mounted) setState(() => _isCogerantActif = row != null);
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
@@ -95,6 +113,10 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       } else {
         await _loadDocument();
       }
+      final gerantUid = widget.isCertificatEngagement
+          ? (_cert?['cedant_uid'] as String?)
+          : (_doc?['uid_eleveur'] as String?);
+      await _checkCogerance(gerantUid);
     } catch (e) {
       _error = 'Impossible de charger le contrat : $e';
     } finally {
@@ -402,9 +424,9 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
 
   bool get _isEleveur {
     if (widget.isCertificatEngagement) {
-      return _cert != null && _myUid == (_cert!['cedant_uid'] as String?);
+      return (_cert != null && _myUid == (_cert!['cedant_uid'] as String?)) || _isCogerantActif;
     }
-    return _doc != null && _myUid == (_doc!['uid_eleveur'] as String?);
+    return (_doc != null && _myUid == (_doc!['uid_eleveur'] as String?)) || _isCogerantActif;
   }
 
   bool get _isAcquereur {
@@ -500,6 +522,15 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       final dateField = role == 'eleveur' ? 'signe_eleveur_le'  : 'signe_acquereur_le';
       meta[sigField] = dataUrl;
       meta[dateField] = now;
+      // Identité réelle du signataire, distincte du uid_eleveur du contrat —
+      // un cogérant (elevage_cogerants) signe POUR le compte de l'élevage,
+      // mais reste identifié comme lui-même dans l'audit (jamais anonymisé
+      // en "le gérant"). Toujours renseigné, y compris quand c'est le gérant
+      // lui-même qui signe, pour rester cohérent.
+      if (role == 'eleveur') {
+        meta['signataire_eleveur_uid'] = _myUid;
+        meta['signataire_eleveur_nom'] = '${User_Info.firstname} ${User_Info.lastname}'.trim();
+      }
       bool notBlank(dynamic v) => v != null && '$v'.trim().isNotEmpty;
       final hasElv = notBlank(meta['signature_eleveur']);
       final hasAcq = notBlank(meta['signature_acquereur']);
@@ -1176,6 +1207,10 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
                 canSign: !isFinal && _isEleveur && sigElv == null,
                 signedAt: meta['signe_eleveur_le'] as String?,
                 onSign: (d) => _signerDocument('eleveur', d),
+                signataireNom: (meta['signataire_eleveur_uid'] != null &&
+                        meta['signataire_eleveur_uid'] != _doc?['uid_eleveur'])
+                    ? meta['signataire_eleveur_nom'] as String?
+                    : null,
               ),
               const SizedBox(height: 12),
               _sigZone(
@@ -1402,6 +1437,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
     required bool canSign,
     required String? signedAt,
     required Future<void> Function(String) onSign,
+    String? signataireNom,
   }) {
     final signed = existing != null;
     return Container(
@@ -1420,6 +1456,12 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
                 ? '✅ ${DateFormat('dd/MM/yyyy').format(DateTime.tryParse(signedAt) ?? DateTime.now())}'
                 : '✅ Signé', style: const TextStyle(fontSize: 11, color: _green, fontWeight: FontWeight.w600)),
         ]),
+        if (signed && signataireNom != null && signataireNom.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 2, bottom: 4),
+            child: Text('Signé par $signataireNom pour le compte de l\'élevage',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontStyle: FontStyle.italic)),
+          ),
         const SizedBox(height: 8),
         if (signed)
           SignatureView(existing)

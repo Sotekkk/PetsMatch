@@ -84,6 +84,23 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
   const canvasAcqRef        = useRef<HTMLCanvasElement>(null);
   const drawingElv          = useRef(false);
   const drawingAcq          = useRef(false);
+  // Cogérance (elevage_cogerants) : un cogérant actif a exactement les mêmes
+  // droits que le gérant principal sur ses contrats — lire, éditer, signer
+  // "pour le compte de" l'élevage. Sa signature reste identifiée comme la
+  // sienne (signataire_eleveur_uid/nom plus bas) : seule l'AUTORISATION de
+  // signer est élargie, jamais l'identité du signataire. Miroir de
+  // contrat_signature_page.dart::_isCogerantActif.
+  const [isCogerantActif, setIsCogerantActif] = useState(false);
+  useEffect(() => {
+    const gerantUid = doc?.uid_eleveur;
+    if (!user || !gerantUid || gerantUid === user.uid) { setIsCogerantActif(false); return; }
+    let cancelled = false;
+    supabase.from('elevage_cogerants').select('id')
+      .eq('uid_gerant', gerantUid).eq('uid_cogerant', user.uid)
+      .eq('statut', 'actif').is('date_fin', null).maybeSingle()
+      .then(({ data }) => { if (!cancelled) setIsCogerantActif(!!data); });
+    return () => { cancelled = true; };
+  }, [doc?.uid_eleveur, user]);
 
   useEffect(() => {
     async function load() {
@@ -632,6 +649,14 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       .select('metadata').eq('token', token).maybeSingle();
     const baseMeta = { ...(freshDoc?.metadata ?? doc.metadata ?? {}) } as Record<string, unknown>;
     const mergedMeta = { ...baseMeta, [sigField]: dataUrl, [dateField]: now };
+    // Identité réelle du signataire, distincte de uid_eleveur — un cogérant
+    // signe POUR le compte de l'élevage mais reste identifié comme lui-même
+    // dans l'audit. Toujours renseigné, y compris quand c'est le gérant
+    // lui-même, pour rester cohérent. Miroir de l'appli.
+    if (role === 'eleveur' && user) {
+      mergedMeta.signataire_eleveur_uid = user.uid;
+      mergedMeta.signataire_eleveur_nom = user.displayName ?? '';
+    }
     const notBlank = (v: unknown) => v != null && String(v).trim() !== '';
     const bothSigned = notBlank(mergedMeta.signature_eleveur) && notBlank(mergedMeta.signature_acquereur);
     const newStatut: DocStatut = bothSigned ? 'signe'
@@ -1021,7 +1046,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
   const isExpired   = doc?.statut === 'expire';
   const isFinal     = isSigned || isRefused || isCancelled || isExpired;
   // Éleveur/propriétaire = peut modifier les champs du contrat. Acquéreur = lecture seule sur les champs vendeur.
-  const isOwner = !!user && !!doc && user.uid === doc.uid_eleveur;
+  const isOwner = !!user && !!doc && (user.uid === doc.uid_eleveur || isCogerantActif);
   // Non modifiable une fois transmis au client / signé par l'acquéreur.
   const acqHasSigned = !!doc?.metadata?.signature_acquereur;
   const ownerCanEdit = isOwner && !isFinal && !isEnAttente && !acqHasSigned;
@@ -1198,7 +1223,9 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
           {/* Signature vendeur / association */}
           <SignatureZone
             label={signerLabels.vendeur}
-            sublabel={doc?.metadata?.acquereur_nom ? undefined : undefined}
+            sublabel={saved.eleveur && doc?.metadata?.signataire_eleveur_uid && doc.metadata.signataire_eleveur_uid !== doc?.uid_eleveur
+              ? `Signé par ${doc?.metadata?.signataire_eleveur_nom || 'un cogérant'} pour le compte de l'élevage`
+              : undefined}
             canvasRef={canvasElvRef}
             handlers={elvHandlers}
             isSigned={!!saved.eleveur}

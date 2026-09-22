@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { usePlan } from '@/lib/use-plan';
 import { generateContratHTML, generateContratVente, generateContratReservationHTML, generateCertificatCessionHTML } from '@/lib/contrat-vente';
 import { sendNotification } from '@/lib/notifications';
@@ -68,6 +69,21 @@ const STATUT_META: Record<string, { label: string; cls: string }> = {
 
 export default function ContratsPage() {
   const { user, loading } = useAuth();
+  const activeProfileId = useActiveProfile();
+  // uid Firebase RÉEL du propriétaire de l'élevage actif — jamais forcément
+  // user.uid : un cogérant (elevage_cogerants) a un uid différent du gérant,
+  // mais la ligne user_profiles du profil emprunté (activeProfileId) reste
+  // celle du gérant. Sans ça, cette page (contrats/animaux/en-tête PDF)
+  // resterait scopée sur le compte du cogérant, jamais sur l'élevage cogéré.
+  const [ownerUid, setOwnerUid] = useState<string | null>(null);
+  useEffect(() => {
+    if (!user) return;
+    if (!activeProfileId) { setOwnerUid(user.uid); return; }
+    let cancelled = false;
+    supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle()
+      .then(({ data }) => { if (!cancelled) setOwnerUid((data?.uid as string | undefined) ?? user.uid); });
+    return () => { cancelled = true; };
+  }, [user, activeProfileId]);
   const { config: planConfig, loading: planLoading } = usePlan();
   const router = useRouter();
 
@@ -122,9 +138,9 @@ export default function ContratsPage() {
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [loading, user, router]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !ownerUid) return;
     load();
-  }, [user]);
+  }, [user, ownerUid]);
 
   // Préremplissage depuis la modale de cession (via localStorage)
   useEffect(() => {
@@ -209,16 +225,16 @@ export default function ContratsPage() {
   }, []);
 
   async function load() {
-    if (!user) return;
+    if (!user || !ownerUid) return;
     setFetching(true);
     const [docsRes, animauxRes, profileRes, userRowRes] = await Promise.all([
       // Uniquement les documents « éleveur » (vente/réservation/cession/
       // saillie) — sinon les devis/contrats émis en tant qu'éducateur, garde,
       // etc. sur ce même compte se mélangent ici (même bug que côté appli).
-      supabase.from('documents_animaux').select('*').eq('uid_eleveur', user.uid).in('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession', 'contrat_saillie']).order('created_at', { ascending: false }),
-      supabase.from('animaux').select('id, nom, espece, race, identification, date_naissance, sexe, couleur, pedigree_numero, pedigree_lof, nom_pere, puce_pere, nom_mere, puce_mere').eq('uid_eleveur', user.uid).or('is_association.is.null,is_association.eq.false').not('statut', 'in', '(sorti,decede)').order('nom'),
-      supabase.from('user_profiles').select('firstname,lastname,nom,profile_type,adresse,rue,ville,ville_pro,code_postal,siret,numero_elevage,phone_number,email_contact').eq('uid', user.uid).eq('is_main', true).maybeSingle(),
-      supabase.from('users').select('email').eq('uid', user.uid).maybeSingle(),
+      supabase.from('documents_animaux').select('*').eq('uid_eleveur', ownerUid).in('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession', 'contrat_saillie']).order('created_at', { ascending: false }),
+      supabase.from('animaux').select('id, nom, espece, race, identification, date_naissance, sexe, couleur, pedigree_numero, pedigree_lof, nom_pere, puce_pere, nom_mere, puce_mere').eq('uid_eleveur', ownerUid).or('is_association.is.null,is_association.eq.false').not('statut', 'in', '(sorti,decede)').order('nom'),
+      supabase.from('user_profiles').select('firstname,lastname,nom,profile_type,adresse,rue,ville,ville_pro,code_postal,siret,numero_elevage,phone_number,email_contact').eq('uid', ownerUid).eq('is_main', true).maybeSingle(),
+      supabase.from('users').select('email').eq('uid', ownerUid).maybeSingle(),
     ]);
     setDocs((docsRes.data ?? []) as DocAnimal[]);
     setAnimaux((animauxRes.data ?? []) as Animal[]);
@@ -350,15 +366,15 @@ export default function ContratsPage() {
   }
 
   async function createCertificatEngagement(animal: Animal): Promise<string | null> {
-    if (!user) return null;
+    if (!user || !ownerUid) return null;
     const estDelai = animal.espece === 'chien' || animal.espece === 'chat';
     const now = new Date();
     let uploadedUrl: string | null = null;
     if (certMode === 'upload' && certFile) {
-      try { uploadedUrl = await uploadCertificatFile(certFile, user.uid); } catch { return null; }
+      try { uploadedUrl = await uploadCertificatFile(certFile, ownerUid); } catch { return null; }
     }
     const payload = {
-      cedant_uid: user.uid,
+      cedant_uid: ownerUid,
       animal_id: animal.id,
       espece: animal.espece,
       race: animal.race || '',
@@ -448,7 +464,7 @@ export default function ContratsPage() {
     const animalEnrichi = animalEnrichiForm();
     const opts = { animalId: selectedAnimal.id, supabaseUrl: '', supabaseKey: '' };
     let html = '';
-    if (formType === 'certificat_cession') html = generateCertificatCessionHTML(animalEnrichi, dataContrat, elvInfo, { ...opts, eleveurUid: user?.uid ?? '' });
+    if (formType === 'certificat_cession') html = generateCertificatCessionHTML(animalEnrichi, dataContrat, elvInfo, { ...opts, eleveurUid: ownerUid ?? user?.uid ?? '' });
     else if (formType === 'contrat_reservation') html = generateContratReservationHTML(animalEnrichi, dataContrat, elvInfo, opts);
     else html = generateContratHTML(animalEnrichi, dataContrat, elvInfo, opts);
     const win = window.open('', '_blank', 'width=900,height=700');
@@ -457,7 +473,7 @@ export default function ContratsPage() {
   }
 
   async function saveDraft(): Promise<string | null> {
-    if (!user || !selectedAnimal) return null;
+    if (!user || !ownerUid || !selectedAnimal) return null;
     const titreLabel = formType === 'contrat_vente' ? 'Contrat de vente' : formType === 'contrat_reservation' ? 'Contrat de réservation' : formType === 'contrat_saillie' ? 'Contrat de saillie' : 'Certificat de cession';
     // Résoudre l'acquéreur PetsMatch (uid + profil qui recevra l'animal)
     const qualiteAcq = acqRaisonSociale.trim() || acqSiret.trim() ? 'eleveur' : 'particulier';
@@ -470,7 +486,7 @@ export default function ContratsPage() {
     }
     const { data } = await supabase.from('documents_animaux').insert({
       animal_id:   selectedAnimal.id,
-      uid_eleveur: user.uid,
+      uid_eleveur: ownerUid,
       ...(acqUid ? { uid_acquereur: acqUid } : {}),
       ...(acqProfileId ? { acquereur_profile_id: acqProfileId } : {}),
       type:        formType,
