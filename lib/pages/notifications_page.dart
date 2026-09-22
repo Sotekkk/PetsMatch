@@ -11,6 +11,7 @@ import 'package:PetsMatch/pages/eleveur/post/annonces_feed_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/inventaire/inventaire_page.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
+import 'package:PetsMatch/pages/eleveur/cogerance_page.dart';
 import 'package:PetsMatch/pages/pro/animal_fiche_pension_page.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/pages/pro/education_rapports_page.dart';
@@ -894,6 +895,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
           builder: (_) => PublicProfilePage(targetUid: actorUid),
         ));
       }
+    } else if (type == 'cogerance_invitation' || type == 'cogerance_acceptee'
+        || type == 'cogerance_refusee' || type == 'cogerance_resiliee') {
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => const CogerancePage(),
+      ));
     } else if (type == 'employee_invite') {
       final eleveurUid = data is Map ? data['eleveurUid'] as String? : null;
       final eleveurNom = data is Map ? (data['eleveurNom'] as String? ?? 'Mon employeur') : 'Mon employeur';

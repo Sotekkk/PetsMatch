@@ -913,6 +913,11 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     case 'promenade_annulee':
     case 'promenade_modifiee':
       return d.promenadeId ? `/promenades/${d.promenadeId}` : '/promenades';
+    case 'cogerance_invitation':
+    case 'cogerance_acceptee':
+    case 'cogerance_refusee':
+    case 'cogerance_resiliee':
+      return '/elevage/cogerance';
     case 'employee_invite':
     case 'tache':
       return '/mes-employeurs';
@@ -1624,6 +1629,7 @@ export default function Header() {
                               : n.type === 'cours_collectif_refuse' ? '❌'
                               : n.type === 'rdv_refuse' || n.type?.includes('annule') ? '❌'
                               : n.type?.startsWith('rdv') ? '📅'
+                              : n.type?.startsWith('cogerance') ? '🤝'
                               : n.type === 'employee_invite' ? '🤝'
                               : n.type === 'tache' || n.type === 'tache_assignee' ? '✅'
                               : n.type === 'profil_valide' ? '✅'
