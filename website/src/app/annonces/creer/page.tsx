@@ -759,9 +759,19 @@ function CreerAnnoncePageInner() {
       if (prixMinPorteeNum && prixMinPorteeNum > 0 && PRIX_MIN[espDb] && prixMinPorteeNum < PRIX_MIN[espDb]) suspectReasons.push('prix_portee_bas');
       for (const w of BLACKLIST) { if (fullText.includes(w)) suspectReasons.push(`mot_suspect:${w}`); }
 
+      // uid Firebase RÉEL du propriétaire de l'élevage actif — jamais
+      // forcément user.uid : un cogérant (elevage_cogerants) a un uid
+      // différent du gérant, mais la ligne user_profiles du profil emprunté
+      // (activeProfileId) reste celle du gérant.
+      let ownerUid = user!.uid;
+      if (activeProfileId) {
+        const { data: ownerProf } = await supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+        ownerUid = (ownerProf?.uid as string | undefined) ?? user!.uid;
+      }
+
       const { error: insertError } = await supabase.from('annonces').insert({
         id: genId(),
-        uid_eleveur: user!.uid,
+        uid_eleveur: ownerUid,
         ...(activeProfileId ? { profile_id: activeProfileId } : {}),
         nom_eleveur: nomEleveur, ville_eleveur: villeEleveur,
         is_suspect: suspectReasons.length > 0,

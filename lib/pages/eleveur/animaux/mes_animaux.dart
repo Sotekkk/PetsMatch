@@ -95,6 +95,10 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
   late TabController _tabController;
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
+  // uid Firebase réel du propriétaire de l'élevage actif — résolu dans
+  // _loadAnimaux(), réutilisé pour les vérifications "suis-je le cédant/
+  // l'éleveur" ailleurs dans la page (cf. _openFiche).
+  String? _ownerUid;
   List<Map<String, dynamic>> _animauxData = [];
   Set<String> _currentOwnerIds    = {};   // date_fin IS NULL → propriétaire actuel
   Set<String> _formerOwnerIds     = {};   // date_fin NOT NULL → ancien propriétaire
@@ -151,33 +155,45 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       final supa = Supabase.instance.client;
       final activeProfileId = User_Info.activeProfileId;
 
+      // uid Firebase RÉEL du propriétaire du profil actif — jamais forcément
+      // _uid : un cogérant (elevage_cogerants) a un uid différent du gérant,
+      // mais la ligne user_profiles du profil emprunté (activeProfileId)
+      // reste celle du gérant. Sans ça, "Mes Animaux" resterait scopé sur
+      // le compte personnel du cogérant (0 animal trouvé).
+      String ownerUid = _uid!;
+      if (activeProfileId.isNotEmpty) {
+        final ownerRow = await supa.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+        ownerUid = (ownerRow?['uid'] as String?) ?? _uid!;
+      }
+      _ownerUid = ownerUid;
+
       // Vérifie si la migration V2.05 a été jouée (au moins une ligne avec profile_id_proprio)
       // → si oui, on filtre par profil ; si non, on retombe sur uid_proprio (rétrocompat)
       List ownRows;
       if (activeProfileId.isNotEmpty) {
         final check = await supa.from('animaux_proprietes')
             .select('animal_id')
-            .eq('uid_proprio', _uid!)
+            .eq('uid_proprio', ownerUid)
             .not('profile_id_proprio', 'is', null)
             .limit(1);
         if ((check as List).isNotEmpty) {
           // Migration faite → filtre strict par profil (liste vide = normal pour ce profil)
           ownRows = await supa.from('animaux_proprietes')
               .select('animal_id, date_fin, role_proprio')
-              .eq('uid_proprio', _uid!)
+              .eq('uid_proprio', ownerUid)
               .eq('profile_id_proprio', activeProfileId)
               .eq('statut', 'actif');
         } else {
           // Migration pas encore jouée → tous les animaux de l'uid
           ownRows = await supa.from('animaux_proprietes')
               .select('animal_id, date_fin, role_proprio')
-              .eq('uid_proprio', _uid!)
+              .eq('uid_proprio', ownerUid)
               .eq('statut', 'actif');
         }
       } else {
         ownRows = await supa.from('animaux_proprietes')
             .select('animal_id, date_fin, role_proprio')
-            .eq('uid_proprio', _uid!)
+            .eq('uid_proprio', ownerUid)
             .eq('statut', 'actif');
       }
 
@@ -219,7 +235,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         // Protocoles chaleur par race (configurés par l'éleveur) — priment
         // sur le défaut par espèce, mais restent en dessous d'un override
         // par animal.
-        final raceIntervals = await ChaleurIntervalService.loadRaceIntervals(_uid!);
+        final raceIntervals = await ChaleurIntervalService.loadRaceIntervals(ownerUid);
 
         // Dernières chaleurs
         final chaleurs = await supa.from('chaleurs')
@@ -302,7 +318,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       final existingIds = animaux.map((a) => a['id'] as String? ?? '').toSet();
       try {
         final mvts = await supa.from('registre_mouvements')
-            .select('animal_id').eq('uid_eleveur', _uid!);
+            .select('animal_id').eq('uid_eleveur', ownerUid);
         final mvtIds = (mvts as List)
             .map((m) => m['animal_id'] as String? ?? '')
             .where((id) => id.isNotEmpty && !existingIds.contains(id))
@@ -1043,7 +1059,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
           if (_uid != null)
             IconButton(
               icon: const Icon(Icons.sensors_rounded),
-              onPressed: () => ChipScannerService.scanFromElevage(context, _uid),
+              onPressed: () => ChipScannerService.scanFromElevage(context, _ownerUid ?? _uid),
               tooltip: 'Scanner une puce',
             ),
           if (_tabController.index != 2)
@@ -2026,11 +2042,13 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
 
   void _openFiche(BuildContext context, String? animalId, {Map<String, dynamic>? data}) {
     final statut = data != null ? (data['statut'] as String? ?? '') : '';
-    // Lecture seule si cédant original sur animal sorti
-    final isCededByMe = data != null && data['uid_eleveur'] == _uid
+    // Lecture seule si cédant original sur animal sorti — comparé à
+    // _ownerUid (l'élevage), pas _uid : un cogérant a un uid différent du
+    // gérant qui a réellement cédé l'animal.
+    final isCededByMe = data != null && data['uid_eleveur'] == (_ownerUid ?? _uid)
         && data['uid_acquereur'] != null && statut == 'sorti';
     // Lecture seule si acquéreur en attente de confirmation
-    final isAcquereurPending = data != null && data['uid_acquereur'] == _uid
+    final isAcquereurPending = data != null && data['uid_acquereur'] == (_ownerUid ?? _uid)
         && statut == 'cession_en_cours';
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => AnimalFichePage(

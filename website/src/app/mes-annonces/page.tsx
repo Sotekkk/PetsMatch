@@ -74,46 +74,60 @@ export default function MesAnnoncesPage() {
     const SELECT = 'id, titre, espece, race, type, type_vente, prix_unite, photos, prix, saillie_prix, prix_min_portee, prix_max_portee, ville_eleveur, statut, vues, contacts, created_at, expires_at, paiement_statut, boost_until';
 
     async function load() {
+      // uid Firebase RÉEL du propriétaire de l'élevage actif — jamais
+      // forcément user.uid : un cogérant (elevage_cogerants) a un uid
+      // différent du gérant, mais la ligne user_profiles du profil emprunté
+      // (activeProfileId) reste celle du gérant. Sans ça, "Mes annonces"
+      // resterait scopé sur le compte personnel du cogérant. Non pertinent
+      // pour un profil particulier (pas de cogérance à ce niveau).
+      let ownerUid = user!.uid;
+      if (!isParticulier && activeProfileId) {
+        const { data: prof } = await supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+        ownerUid = (prof?.uid as string | undefined) ?? user!.uid;
+      }
+
       let q = supabase.from('annonces').select(SELECT).order('created_at', { ascending: false });
       if (isParticulier) {
         // Particulier : uniquement ses annonces cheval (profil_source='particulier')
         q = q.eq('profil_source', 'particulier');
         const { data: check } = await supabase.from('annonces').select('id')
-          .eq('uid_eleveur', user!.uid).eq('profil_source', 'particulier')
+          .eq('uid_eleveur', ownerUid).eq('profil_source', 'particulier')
           .not('profile_id', 'is', null).limit(1);
         q = (check ?? []).length > 0 && activeProfileId
           ? q.eq('profile_id', activeProfileId)
-          : q.eq('uid_eleveur', user!.uid);
+          : q.eq('uid_eleveur', ownerUid);
       } else {
         // Vérifie si la migration profile_id a été jouée
         const { data: check } = await supabase.from('annonces').select('id')
-          .eq('uid_eleveur', user!.uid).not('profile_id', 'is', null).limit(1);
+          .eq('uid_eleveur', ownerUid).not('profile_id', 'is', null).limit(1);
         if ((check ?? []).length > 0 && activeProfileId) {
           q = q.eq('profile_id', activeProfileId);
         } else {
-          q = q.eq('uid_eleveur', user!.uid).or('profil_source.is.null,profil_source.neq.association');
+          q = q.eq('uid_eleveur', ownerUid).or('profil_source.is.null,profil_source.neq.association');
         }
       }
       const { data } = await q;
       setAnnonces((data ?? []) as Annonce[]);
       setFetching(false);
+
+      const channel = supabase
+        .channel(`mes-annonces-${ownerUid}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'annonces', filter: `uid_eleveur=eq.${ownerUid}` },
+          (payload) => setAnnonces(prev => [payload.new as Annonce, ...prev])
+        )
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'annonces', filter: `uid_eleveur=eq.${ownerUid}` },
+          (payload) => setAnnonces(prev => prev.map(a => a.id === (payload.new as Annonce).id ? payload.new as Annonce : a))
+        )
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'annonces', filter: `uid_eleveur=eq.${ownerUid}` },
+          (payload) => setAnnonces(prev => prev.filter(a => a.id !== (payload.old as Annonce).id))
+        )
+        .subscribe();
+      return channel;
     }
-    load().catch(() => setFetching(false));
+    let channelRef: ReturnType<typeof supabase.channel> | undefined;
+    load().then(ch => { channelRef = ch; }).catch(() => setFetching(false));
 
-    const channel = supabase
-      .channel(`mes-annonces-${user.uid}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'annonces', filter: `uid_eleveur=eq.${user.uid}` },
-        (payload) => setAnnonces(prev => [payload.new as Annonce, ...prev])
-      )
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'annonces', filter: `uid_eleveur=eq.${user.uid}` },
-        (payload) => setAnnonces(prev => prev.map(a => a.id === (payload.new as Annonce).id ? payload.new as Annonce : a))
-      )
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'annonces', filter: `uid_eleveur=eq.${user.uid}` },
-        (payload) => setAnnonces(prev => prev.filter(a => a.id !== (payload.old as Annonce).id))
-      )
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    return () => { if (channelRef) supabase.removeChannel(channelRef); };
   }, [user, loading, activeProfileId, isParticulier]);
 
   async function handleDelete(id: string) {

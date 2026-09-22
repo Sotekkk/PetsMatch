@@ -37,6 +37,25 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
   final String? _uid = FirebaseAuth.instance.currentUser?.uid;
   int _refreshKey = 0;
 
+  // uid Firebase RÉEL du propriétaire de l'élevage actif — jamais forcément
+  // _uid : un cogérant (elevage_cogerants) a un uid différent du gérant,
+  // mais la ligne user_profiles du profil emprunté (activeProfileId) reste
+  // celle du gérant. Sans ça, "Mes annonces" et le quota du forfait
+  // resteraient scopés sur le compte personnel du cogérant.
+  String? _ownerUid;
+
+  Future<void> _resolveOwnerUid() async {
+    final pid = User_Info.activeProfileId;
+    if (pid.isEmpty || _uid == null) { setState(() => _ownerUid = _uid); return; }
+    try {
+      final row = await Supabase.instance.client
+          .from('user_profiles').select('uid').eq('id', pid).maybeSingle();
+      if (mounted) setState(() => _ownerUid = (row?['uid'] as String?) ?? _uid);
+    } catch (_) {
+      if (mounted) setState(() => _ownerUid = _uid);
+    }
+  }
+
   String _planCode    = 'free';
   int    _activeCount = 0;
   bool   _planLoading = true;
@@ -49,14 +68,15 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    _loadPlan();
+    _resolveOwnerUid().then((_) => _loadPlan());
   }
 
   Future<void> _loadPlan() async {
-    if (_uid == null) { setState(() => _planLoading = false); return; }
+    final ownerUid = _ownerUid ?? _uid;
+    if (ownerUid == null) { setState(() => _planLoading = false); return; }
     final results = await Future.wait([
-      PlanService.getPlanCode(_uid!),
-      PlanService.countActiveAnnonces(_uid!),
+      PlanService.getPlanCode(ownerUid),
+      PlanService.countActiveAnnonces(ownerUid),
     ]);
     if (!mounted) return;
     final planCode = results[0] as String;
@@ -229,10 +249,10 @@ class _MesAnnoncesPageState extends State<MesAnnoncesPage>
           child: TabBarView(
             controller: _tabController,
             children: [
-              _AnnoncesList(uid: _uid, filter: 'all',      refreshKey: _refreshKey, isAssociation: widget.isAssociation),
-              _AnnoncesList(uid: _uid, filter: 'actives',  refreshKey: _refreshKey, isAssociation: widget.isAssociation),
-              _AnnoncesList(uid: _uid, filter: 'pause',    refreshKey: _refreshKey, isAssociation: widget.isAssociation),
-              _AnnoncesList(uid: _uid, filter: 'terminees',refreshKey: _refreshKey, isAssociation: widget.isAssociation),
+              _AnnoncesList(uid: _ownerUid ?? _uid, filter: 'all',      refreshKey: _refreshKey, isAssociation: widget.isAssociation),
+              _AnnoncesList(uid: _ownerUid ?? _uid, filter: 'actives',  refreshKey: _refreshKey, isAssociation: widget.isAssociation),
+              _AnnoncesList(uid: _ownerUid ?? _uid, filter: 'pause',    refreshKey: _refreshKey, isAssociation: widget.isAssociation),
+              _AnnoncesList(uid: _ownerUid ?? _uid, filter: 'terminees',refreshKey: _refreshKey, isAssociation: widget.isAssociation),
             ],
           ),
         ),

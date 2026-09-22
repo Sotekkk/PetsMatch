@@ -656,8 +656,16 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       }
 
       final uid = FirebaseAuth.instance.currentUser!.uid;
-      final userRow = await Supabase.instance.client
-          .from('user_profiles').select().eq('uid', uid).eq('is_main', true).single();
+      // Le profil actif directement, plutôt que "mon profil principal" par
+      // uid : pour un cogérant (elevage_cogerants), l'un et l'autre diffèrent
+      // — sans ça l'annonce se serait publiée avec le nom/ville du cogérant
+      // au lieu de ceux de l'élevage. userRow['uid'] redonne ensuite le vrai
+      // uid du gérant pour uid_eleveur plus bas.
+      final activeProfileId = User_Info.activeProfileId;
+      final userRow = activeProfileId.isNotEmpty
+          ? await Supabase.instance.client.from('user_profiles').select().eq('id', activeProfileId).single()
+          : await Supabase.instance.client.from('user_profiles').select().eq('uid', uid).eq('is_main', true).single();
+      final ownerUid = (userRow['uid'] as String?) ?? uid;
 
       final nomEleveur = (userRow['nom'] as String?)?.isNotEmpty == true
           ? userRow['nom'] as String
@@ -678,9 +686,8 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       }();
 
       final now = DateTime.now().toIso8601String();
-      final activeProfileId = User_Info.activeProfileId;
       final supaData = <String, dynamic>{
-        'uid_eleveur':          uid,
+        'uid_eleveur':          ownerUid,
         if (activeProfileId.isNotEmpty) 'profile_id': activeProfileId,
         'nom_eleveur':          nomEleveur,
         'ville_eleveur':        villeEleveur,
