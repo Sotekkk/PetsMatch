@@ -218,8 +218,8 @@ exports.sendChaleursNotifications = functions
             // bas retombe, une fois la lactation passée, sur sa dernière
             // chaleur d'AVANT la gestation, largement dépassée.
             const last = lastChaleur[animal.id];
-            const effectiveLast = (miseBas && (!last || miseBas.getTime() > last.getTime()))
-                ? miseBas : last;
+            const effectiveLast = (miseBas && (!last || miseBas.getTime() > last.getTime())) ?
+                miseBas : last;
             if (!effectiveLast) continue;
 
             const interval = animal.intervalle_chaleurs_jours ||

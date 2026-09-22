@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/utils/image_pick.dart';
 import 'package:PetsMatch/utils/storage_helper.dart';
@@ -120,6 +121,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
 
   // Health records
   bool _loadingHealth = false;
+  bool _scanningDocument = false;
   List<Map<String, dynamic>> _vaccinations = [];
   List<Map<String, dynamic>> _traitements = [];
   List<Map<String, dynamic>> _visites = [];
@@ -1956,6 +1958,8 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
         children: [
+          _AiScanCard(onTap: _scanVetDocument, busy: _scanningDocument),
+          const SizedBox(height: 16),
           if (especeHasGenetics(_espece))
             _HealthSection(
               title: 'Génétique & tests',
@@ -2142,13 +2146,178 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     }
   }
 
+  // ── Import IA (photo/PDF) ────────────────────────────────────────────────────
+
+  static const Map<String, String> _kAiDomaineLabels = {
+    'vaccination': 'Vaccination',
+    'traitement': 'Traitement',
+    'visite': 'Visite vétérinaire',
+    'vermifuge': 'Vermifuge',
+    'antiparasitaire': 'Antiparasitaire',
+    'chirurgie': 'Chirurgie / Hospitalisation',
+    'allergie': 'Allergie',
+  };
+
+  Future<void> _scanVetDocument() async {
+    final source = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(height: 8),
+          Container(width: 36, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 12),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 20),
+            child: Text('Ordonnance, compte-rendu, carnet de vaccination, facture...',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+          ),
+          const SizedBox(height: 8),
+          ListTile(
+            leading: const Icon(Icons.photo_camera_outlined, color: _teal),
+            title: const Text('Prendre une photo', style: TextStyle(fontFamily: 'Galey')),
+            onTap: () => Navigator.pop(ctx, 'camera'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined, color: _teal),
+            title: const Text('Photo depuis la galerie', style: TextStyle(fontFamily: 'Galey')),
+            onTap: () => Navigator.pop(ctx, 'gallery'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.picture_as_pdf_outlined, color: _teal),
+            title: const Text('Fichier / PDF', style: TextStyle(fontFamily: 'Galey')),
+            onTap: () => Navigator.pop(ctx, 'file'),
+          ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    File file;
+    if (source == 'file') {
+      final res = await FilePicker.pickFiles(
+          type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp']);
+      final path = res?.files.single.path;
+      if (path == null) return;
+      file = File(path);
+    } else {
+      final picked = await ImagePicker().pickImage(
+        source: source == 'camera' ? ImageSource.camera : ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 2400,
+      );
+      if (picked == null) return;
+      file = File(picked.path);
+    }
+    if (!mounted) return;
+
+    final ext = file.path.split('.').last.toLowerCase();
+    final mimeType = ext == 'pdf'
+        ? 'application/pdf'
+        : ext == 'png'
+            ? 'image/png'
+            : ext == 'webp'
+                ? 'image/webp'
+                : 'image/jpeg';
+
+    setState(() => _scanningDocument = true);
+    try {
+      final bytes = await file.readAsBytes();
+      final result = await FirebaseFunctions.instanceFor(region: 'europe-west1')
+          .httpsCallable('parseCarnetDocument')
+          .call({'fileBase64': base64Encode(bytes), 'mimeType': mimeType});
+      final data = Map<String, dynamic>.from(result.data as Map);
+      final champs = Map<String, dynamic>.from(data['champs'] as Map? ?? {});
+      final alerte = data['alerte'] as String?;
+      String? domaine = data['domaine'] as String?;
+      if (domaine == null || !_kAiDomaineLabels.containsKey(domaine)) domaine = 'visite';
+
+      if (!mounted) return;
+      final confirmed = await _confirmAiDomaine(domaine, alerte);
+      if (confirmed == null || !mounted) return;
+      _routeAiExtraction(confirmed, champs);
+    } on FirebaseFunctionsException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.message ?? 'Analyse impossible.'), backgroundColor: Colors.red));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) setState(() => _scanningDocument = false);
+    }
+  }
+
+  Future<String?> _confirmAiDomaine(String domaine, String? alerte) {
+    String selected = domaine;
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, ss) => AlertDialog(
+        title: const Text('Document analysé', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Vérifiez et complétez avant d\'enregistrer.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey)),
+          if (alerte != null && alerte.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text('⚠️ $alerte', style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.orange)),
+          ],
+          const SizedBox(height: 14),
+          DropdownButtonFormField<String>(
+            initialValue: selected,
+            isExpanded: true,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.black87),
+            decoration: InputDecoration(
+              labelText: 'Type d\'entrée',
+              labelStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              isDense: true,
+            ),
+            items: _kAiDomaineLabels.entries
+                .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value, style: const TextStyle(fontFamily: 'Galey'))))
+                .toList(),
+            onChanged: (v) => ss(() => selected = v ?? selected),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, selected),
+            style: ElevatedButton.styleFrom(backgroundColor: _teal, foregroundColor: Colors.white),
+            child: const Text('Continuer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          ),
+        ],
+      )),
+    );
+  }
+
+  void _routeAiExtraction(String domaine, Map<String, dynamic> champs) {
+    switch (domaine) {
+      case 'vaccination': _showVaccinationSheet(prefill: champs); break;
+      case 'traitement': _showTraitementSheet(prefill: champs); break;
+      case 'vermifuge': _showVermifugeSheet(prefill: champs, prefillDates: true); break;
+      case 'antiparasitaire': _showAntiparasitaireSheet(prefill: champs, prefillDates: true); break;
+      case 'chirurgie': _showChirurgieSheet(prefill: champs); break;
+      case 'allergie': _showAllergieSheet(prefill: champs); break;
+      case 'visite': default: _showVisiteSheet(prefill: champs); break;
+    }
+  }
+
   // ── Health form sheets ────────────────────────────────────────────────────────
 
-  void _showVaccinationSheet() {
-    final vaccin = TextEditingController(), lot = TextEditingController(),
-        veto = TextEditingController();
-    DateTime? date, dateRappel, dateValidite;
-    String? categorie;
+  void _showVaccinationSheet({Map<String, dynamic>? prefill}) {
+    final vaccin = TextEditingController(text: prefill?['vaccin'] ?? ''),
+        lot = TextEditingController(text: prefill?['lot'] ?? ''),
+        veto = TextEditingController(text: prefill?['veterinaire'] ?? '');
+    DateTime? date = DateTime.tryParse(prefill?['date'] ?? ''),
+        dateRappel = DateTime.tryParse(prefill?['date_rappel'] ?? ''),
+        dateValidite = DateTime.tryParse(prefill?['date_validite_debut'] ?? '');
+    String? categorie = prefill?['categorie'] as String?;
 
     (int ans, int jours)? defautsPourCategorie() {
       if (categorie == null) return null;
@@ -2225,12 +2394,14 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     });
   }
 
-  void _showTraitementSheet() {
-    final nom = TextEditingController(), type = TextEditingController(),
-        descriptionMaladie = TextEditingController(),
-        posologie = TextEditingController(),
-        notes = TextEditingController();
-    DateTime? date, dateFin;
+  void _showTraitementSheet({Map<String, dynamic>? prefill}) {
+    final nom = TextEditingController(text: prefill?['nom'] ?? ''),
+        type = TextEditingController(text: prefill?['type'] ?? ''),
+        descriptionMaladie = TextEditingController(text: prefill?['description_maladie'] ?? ''),
+        posologie = TextEditingController(text: prefill?['posologie'] ?? ''),
+        notes = TextEditingController(text: prefill?['notes'] ?? '');
+    DateTime? date = DateTime.tryParse(prefill?['date'] ?? ''),
+        dateFin = DateTime.tryParse(prefill?['date_fin'] ?? '');
 
     // ── Rappels récurrents (ex: piqûre tous les 3 jours pendant 3 semaines),
     // même fonctionnalité que côté éleveur.
@@ -2297,10 +2468,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     });
   }
 
-  void _showVisiteSheet() {
-    final motif = TextEditingController(), veto = TextEditingController(),
-        diag = TextEditingController(), notes = TextEditingController();
-    DateTime? date;
+  void _showVisiteSheet({Map<String, dynamic>? prefill}) {
+    final motif = TextEditingController(text: prefill?['motif'] ?? ''),
+        veto = TextEditingController(text: prefill?['veterinaire'] ?? ''),
+        diag = TextEditingController(text: prefill?['diagnostic'] ?? ''),
+        notes = TextEditingController(text: prefill?['notes'] ?? '');
+    DateTime? date = DateTime.tryParse(prefill?['date'] ?? '');
     final isFirstVisit = _visites.isEmpty;
     _openSheet('Ajouter une visite', (ss) => [
       _SFld(ctrl: motif, label: 'Motif', hint: 'Ex: Contrôle annuel, Blessure...'),
@@ -2333,13 +2506,14 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     return (m.group(1)!, m.group(2)!.toLowerCase());
   }
 
-  void _showVermifugeSheet({Map<String, dynamic>? prefill}) {
+  void _showVermifugeSheet({Map<String, dynamic>? prefill, bool prefillDates = false}) {
     final produit = TextEditingController(text: prefill?['produit'] ?? '');
     final dosage = TextEditingController(text: prefill?['dosage'] ?? '');
-    final notes = TextEditingController();
+    final notes = TextEditingController(text: prefill?['notes'] ?? '');
     final parsedFreq = _parseFrequence(prefill?['frequence'] as String?);
     final frequenceValeur = TextEditingController(text: parsedFreq?.$1 ?? '');
-    DateTime? date, dateRappel;
+    DateTime? date = prefillDates ? DateTime.tryParse(prefill?['date'] ?? '') : null;
+    DateTime? dateRappel = prefillDates ? DateTime.tryParse(prefill?['date_rappel'] ?? '') : null;
     String frequenceUnite = parsedFreq?.$2 ?? 'mois';
 
     void recomputeRappel(StateSetter ss) {
@@ -2385,13 +2559,14 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     });
   }
 
-  void _showAntiparasitaireSheet({Map<String, dynamic>? prefill}) {
+  void _showAntiparasitaireSheet({Map<String, dynamic>? prefill, bool prefillDates = false}) {
     final produit = TextEditingController(text: prefill?['produit'] ?? '');
     final type = TextEditingController(text: prefill?['type'] ?? '');
-    final notes = TextEditingController();
+    final notes = TextEditingController(text: prefill?['notes'] ?? '');
     final parsedFreq = _parseFrequence(prefill?['frequence'] as String?);
     final frequenceValeur = TextEditingController(text: parsedFreq?.$1 ?? '1');
-    DateTime? date, dateRappel;
+    DateTime? date = prefillDates ? DateTime.tryParse(prefill?['date'] ?? '') : null;
+    DateTime? dateRappel = prefillDates ? DateTime.tryParse(prefill?['date_rappel'] ?? '') : null;
     String frequenceUnite = parsedFreq?.$2 ?? 'mois';
 
     void recomputeRappel(StateSetter ss) {
@@ -2437,10 +2612,12 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     });
   }
 
-  void _showAllergieSheet() {
-    final desc = TextEditingController(), type = TextEditingController(),
-        severite = TextEditingController(), notes = TextEditingController();
-    DateTime? date;
+  void _showAllergieSheet({Map<String, dynamic>? prefill}) {
+    final desc = TextEditingController(text: prefill?['description'] ?? ''),
+        type = TextEditingController(text: prefill?['type'] ?? ''),
+        severite = TextEditingController(text: prefill?['severite'] ?? ''),
+        notes = TextEditingController(text: prefill?['notes'] ?? '');
+    DateTime? date = DateTime.tryParse(prefill?['date'] ?? '');
     _openSheet('Ajouter une allergie', (ss) => [
       _SFld(ctrl: desc, label: 'Description', hint: 'Ex: Allergie au pollen...'),
       _SFld(ctrl: type, label: 'Type', hint: 'Ex: Alimentaire, Cutanée...'),
@@ -2462,12 +2639,15 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     });
   }
 
-  void _showChirurgieSheet() {
-    final intitule = TextEditingController(), clinique = TextEditingController(),
-        preop = TextEditingController(), postop = TextEditingController(),
-        notes = TextEditingController();
-    DateTime? date;
-    String type = 'chirurgie', statut = 'prevu';
+  void _showChirurgieSheet({Map<String, dynamic>? prefill}) {
+    final intitule = TextEditingController(text: prefill?['intitule'] ?? ''),
+        clinique = TextEditingController(text: prefill?['clinique'] ?? ''),
+        preop = TextEditingController(text: prefill?['protocole_preop'] ?? ''),
+        postop = TextEditingController(text: prefill?['protocole_postop'] ?? ''),
+        notes = TextEditingController(text: prefill?['notes'] ?? '');
+    DateTime? date = DateTime.tryParse(prefill?['date'] ?? '');
+    String type = (prefill?['type'] as String?) ?? 'chirurgie',
+        statut = (prefill?['statut'] as String?) ?? 'prevu';
     _openSheet('Chirurgie / Hospitalisation', (ss) => [
       _SDrop(label: 'Type', value: type, options: const ['chirurgie', 'hospitalisation'],
           onChanged: (v) => ss(() => type = v ?? 'chirurgie')),
@@ -2839,6 +3019,60 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
       sterilise: _sterilise,
       dateNaissance: _dateNaissance,
       nom: _nomCtrl.text,
+    );
+  }
+}
+
+// ── Carte d'import IA (photo/PDF) ─────────────────────────────────────────────
+
+class _AiScanCard extends StatelessWidget {
+  final VoidCallback onTap;
+  final bool busy;
+  const _AiScanCard({required this.onTap, required this.busy});
+
+  @override
+  Widget build(BuildContext context) {
+    const teal = Color(0xFF0C5C6C);
+    return InkWell(
+      onTap: busy ? null : onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            colors: [teal.withValues(alpha: 0.08), teal.withValues(alpha: 0.03)],
+            begin: Alignment.topLeft, end: Alignment.bottomRight,
+          ),
+          border: Border.all(color: teal.withValues(alpha: 0.25)),
+        ),
+        child: Row(children: [
+          Container(
+            width: 42, height: 42,
+            decoration: BoxDecoration(color: teal, borderRadius: BorderRadius.circular(12)),
+            alignment: Alignment.center,
+            child: busy
+                ? const SizedBox(width: 20, height: 20,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Icon(Icons.document_scanner_outlined, color: Colors.white, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(busy ? 'Analyse en cours...' : 'Remplir depuis une photo',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: teal)),
+              const SizedBox(height: 2),
+              Text(
+                busy
+                    ? 'Ça peut prendre quelques secondes.'
+                    : 'Ordonnance, compte-rendu, carnet vaccinal... on remplit pour vous.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700),
+              ),
+            ]),
+          ),
+          if (!busy) Icon(Icons.chevron_right, color: teal.withValues(alpha: 0.6)),
+        ]),
+      ),
     );
   }
 }
