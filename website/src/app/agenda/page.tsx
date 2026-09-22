@@ -470,20 +470,46 @@ export default function AgendaPage() {
 
   const uid = user?.uid ?? null;
 
+  // uid Firebase RÉEL du propriétaire du profil actif — pour AssignerModal
+  // (liste des employés) : un cogérant (elevage_cogerants) a un uid
+  // différent du gérant, `employes.uid_eleveur` reste celui du gérant.
+  const [effectiveUid, setEffectiveUid] = useState<string | null>(null);
+  useEffect(() => {
+    if (!activeProfileId) { setEffectiveUid(null); return; }
+    let cancelled = false;
+    supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle()
+      .then(({ data }) => { if (!cancelled) setEffectiveUid((data?.uid as string | undefined) ?? null); });
+    return () => { cancelled = true; };
+  }, [activeProfileId]);
+
   const load = useCallback(async () => {
     if (!uid) return;
     setLoading(true);
     const from = new Date(focusedMonth.year, focusedMonth.month - 1, 1).toISOString();
     const to   = new Date(focusedMonth.year, focusedMonth.month + 2, 0, 23, 59, 59).toISOString();
 
-    // Filtre pro_profile_id : profil secondaire → filtre exact ; profil principal → null ou vide
-    let q = supabase.from('agenda_events').select('*').eq('uid', uid)
-      .gte('date_debut', from).lte('date_debut', to).order('date_debut');
-    if (activeProfileId) {
-      q = q.eq('pro_profile_id', activeProfileId);
-    } else {
-      q = q.or('pro_profile_id.is.null,pro_profile_id.eq.');
+    // uid Firebase RÉEL du propriétaire du profil actif — jamais forcément
+    // `uid` (l'utilisateur connecté). Nécessaire pour les lignes legacy
+    // (avant l'ajout de profile_id) encore scopées par uid_eleveur/pro_uid :
+    // un cogérant (elevage_cogerants) a un uid différent du gérant, mais la
+    // ligne user_profiles du profil emprunté (activeProfileId) reste celle
+    // du gérant — sa colonne `uid` est la bonne clé. Miroir de
+    // agenda_page.dart::_effectiveUid.
+    async function resolveEffectiveUid(): Promise<string> {
+      if (!activeProfileId) return uid!;
+      const { data } = await supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+      return (data?.uid as string | undefined) ?? uid!;
     }
+
+    // Filtre pro_profile_id : profil secondaire → filtre exact SEUL (jamais
+    // combiné à 'uid' en plus — un cogérant a un uid Firebase différent du
+    // gérant, cf. commentaire resolveEffectiveUid plus bas) ; profil
+    // principal → uid + null/vide.
+    let q = supabase.from('agenda_events').select('*')
+      .gte('date_debut', from).lte('date_debut', to).order('date_debut');
+    q = activeProfileId
+      ? q.eq('pro_profile_id', activeProfileId)
+      : q.eq('uid', uid).or('pro_profile_id.is.null,pro_profile_id.eq.');
     const { data } = await q;
 
     // Charger aussi les RDV en attente de confirmation — statut réel
@@ -491,14 +517,20 @@ export default function AgendaPage() {
     // pas seulement pour un profil pro secondaire : le profil principal
     // (ex. éleveur) reçoit aussi des demandes, avec pro_profile_id vide.
     if (uid) {
-      let rdvQ = supabase.from('rdv')
-        .select('id, date_debut, motif, client_uid, client_profile_id, animal_id')
-        .eq('pro_uid', uid).eq('statut', 'demande');
-      rdvQ = activeProfileId
-        ? rdvQ.eq('pro_profile_id', activeProfileId)
-        : rdvQ.or('pro_profile_id.is.null,pro_profile_id.eq.');
-      const { data: rdvData } = await rdvQ.order('date_debut');
-      setPendingRdvs((rdvData ?? []) as typeof pendingRdvs);
+      if (activeProfileId) {
+        const ownerUid = await resolveEffectiveUid();
+        const { data: rdvData } = await supabase.from('rdv')
+          .select('id, date_debut, motif, client_uid, client_profile_id, animal_id')
+          .eq('pro_uid', ownerUid).eq('statut', 'demande')
+          .eq('pro_profile_id', activeProfileId).order('date_debut');
+        setPendingRdvs((rdvData ?? []) as typeof pendingRdvs);
+      } else {
+        const { data: rdvData } = await supabase.from('rdv')
+          .select('id, date_debut, motif, client_uid, client_profile_id, animal_id')
+          .eq('pro_uid', uid).eq('statut', 'demande')
+          .or('pro_profile_id.is.null,pro_profile_id.eq.').order('date_debut');
+        setPendingRdvs((rdvData ?? []) as typeof pendingRdvs);
+      }
     } else {
       setPendingRdvs([]);
     }
@@ -584,14 +616,15 @@ export default function AgendaPage() {
     let d1Res: { data: unknown[] | null } = { data: [] };
     if (!isParticulierView) {
       d1Res = activeProfileId
-        ? await supabase.from('taches_elevage').select(manuelCols).eq('uid_eleveur', uid)
+        ? await supabase.from('taches_elevage').select(manuelCols)
             .gte('date', taskFrom).lte('date', taskTo).eq('profile_id', activeProfileId)
         : { data: [] as unknown[] };
       if (!activeProfileId || (d1Res.data ?? []).length === 0) {
+        const ownerUid = await resolveEffectiveUid();
         d1Res = taskProfilSource === 'eleveur'
-          ? await supabase.from('taches_elevage').select(manuelCols).eq('uid_eleveur', uid)
+          ? await supabase.from('taches_elevage').select(manuelCols).eq('uid_eleveur', ownerUid)
               .gte('date', taskFrom).lte('date', taskTo).or('profil_source.is.null,profil_source.eq.eleveur')
-          : await supabase.from('taches_elevage').select(manuelCols).eq('uid_eleveur', uid)
+          : await supabase.from('taches_elevage').select(manuelCols).eq('uid_eleveur', ownerUid)
               .gte('date', taskFrom).lte('date', taskTo).eq('profil_source', taskProfilSource);
       }
     }
@@ -620,14 +653,15 @@ export default function AgendaPage() {
     let p1Res: { data: unknown[] | null } = { data: [] };
     if (!isParticulierView) {
       p1Res = activeProfileId
-        ? await supabase.from('plan_taches').select(protoCols).eq('uid_eleveur', uid)
+        ? await supabase.from('plan_taches').select(protoCols)
             .gte('date_prevue', taskFrom).lte('date_prevue', taskTo).eq('profile_id', activeProfileId)
         : { data: [] as unknown[] };
       if (!activeProfileId || (p1Res.data ?? []).length === 0) {
+        const ownerUid = await resolveEffectiveUid();
         p1Res = taskProfilSource === 'eleveur'
-          ? await supabase.from('plan_taches').select(protoCols).eq('uid_eleveur', uid)
+          ? await supabase.from('plan_taches').select(protoCols).eq('uid_eleveur', ownerUid)
               .gte('date_prevue', taskFrom).lte('date_prevue', taskTo).or('profil_source.is.null,profil_source.eq.eleveur')
-          : await supabase.from('plan_taches').select(protoCols).eq('uid_eleveur', uid)
+          : await supabase.from('plan_taches').select(protoCols).eq('uid_eleveur', ownerUid)
               .gte('date_prevue', taskFrom).lte('date_prevue', taskTo).eq('profil_source', taskProfilSource);
       }
     }
@@ -926,7 +960,7 @@ export default function AgendaPage() {
             onModifier={setModalModifier}
             onNavigateToAnimal={navigateToAnimal}
             onToggleTask={toggleTask}
-            uid={uid ?? ''}
+            uid={effectiveUid ?? uid ?? ''}
             onUpdated={load}
           />
         ) : view === 'week' ? (
@@ -948,14 +982,14 @@ export default function AgendaPage() {
             onModifier={setModalModifier}
             onNavigateToAnimal={navigateToAnimal}
             onToggleTask={toggleTask}
-            uid={uid ?? ''}
+            uid={effectiveUid ?? uid ?? ''}
             onUpdated={load}
             isGarde={userData?.profileType === 'garde'}
             proProfileId={activeProfileId}
           />
         ) : (
           <ListView groups={grouped} keys={groupedKeys} onDelete={deleteEvent}
-            onAnnuler={setModalAnnuler} onModifier={setModalModifier} onNavigateToAnimal={navigateToAnimal} viewerUid={uid ?? ''} />
+            onAnnuler={setModalAnnuler} onModifier={setModalModifier} onNavigateToAnimal={navigateToAnimal} viewerUid={effectiveUid ?? uid ?? ''} />
         )}
       </div>
 

@@ -160,6 +160,31 @@ class _AgendaPageState extends State<AgendaPage> {
   final _supa = Supabase.instance.client;
   static String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
+  String? _effectiveUidCache;
+  String? _effectiveUidForPid;
+
+  // uid Firebase RÉEL du propriétaire du profil actif — jamais forcément
+  // _uid (l'uid de la session connectée). Nécessaire pour les tables
+  // legacy (taches_elevage/plan_taches) encore scopées par uid_eleveur pour
+  // les lignes sans profile_id : un cogérant (elevage_cogerants) a un uid
+  // différent du gérant, mais le profil élevage emprunté (activeProfileId)
+  // reste la ligne user_profiles du gérant — sa colonne `uid` est donc
+  // toujours la bonne clé à utiliser pour retrouver SES tâches legacy.
+  Future<String> _effectiveUid() async {
+    final pid = User_Info.activeProfileId;
+    if (pid.isEmpty) return _uid;
+    if (_effectiveUidCache != null && _effectiveUidForPid == pid) return _effectiveUidCache!;
+    try {
+      final row = await _supa.from('user_profiles').select('uid').eq('id', pid).maybeSingle();
+      final resolved = (row?['uid'] as String?) ?? _uid;
+      _effectiveUidCache = resolved;
+      _effectiveUidForPid = pid;
+      return resolved;
+    } catch (_) {
+      return _uid;
+    }
+  }
+
   List<Map<String, dynamic>> _events   = [];
   List<Map<String, dynamic>> _tasks    = [];
   List<Map<String, dynamic>> _employes = [];
@@ -538,14 +563,20 @@ class _AgendaPageState extends State<AgendaPage> {
             .gte('date', from).lte('date', to)
             .eq('profile_id', pid);
         if ((d1 as List).isEmpty) {
+          // Repli sur les lignes legacy sans profile_id (avant l'ajout de
+          // cette colonne) — scopées par l'uid RÉEL du gérant (pas la
+          // session courante), sinon soit invisibles pour le cogérant, soit
+          // trop larges (matcheraient les tâches de n'importe quel élevage
+          // sans filtre du tout).
+          final ownerUid = await _effectiveUid();
           d1 = _taskProfilSource == 'eleveur'
               ? await _supa.from('taches_elevage')
                   .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
-                  .gte('date', from).lte('date', to)
+                  .eq('uid_eleveur', ownerUid).gte('date', from).lte('date', to)
                   .or('profil_source.is.null,profil_source.eq.eleveur')
               : await _supa.from('taches_elevage')
                   .select('id,titre,date,statut,assigne_a,uid_eleveur,heure,notes,animal_nom')
-                  .gte('date', from).lte('date', to)
+                  .eq('uid_eleveur', ownerUid).gte('date', from).lte('date', to)
                   .eq('profil_source', _taskProfilSource);
         }
       } else {
@@ -588,13 +619,17 @@ class _AgendaPageState extends State<AgendaPage> {
               .gte('date_prevue', from).lte('date_prevue', to)
               .eq('profile_id', pid);
           if ((p1 as List).isEmpty) {
+            // Repli legacy — même raison que pour taches_elevage ci-dessus.
+            final ownerUid = await _effectiveUid();
             p1 = _taskProfilSource == 'eleveur'
                 ? await _supa.from('plan_taches')
                     .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+                    .eq('uid_eleveur', ownerUid)
                     .gte('date_prevue', from).lte('date_prevue', to)
                     .or('profil_source.is.null,profil_source.eq.eleveur')
                 : await _supa.from('plan_taches')
                     .select('id,label,date_prevue,statut,assigned_to,uid_eleveur,type_acte,animal_nom,etape_id')
+                    .eq('uid_eleveur', ownerUid)
                     .gte('date_prevue', from).lte('date_prevue', to)
                     .eq('profil_source', _taskProfilSource);
           }

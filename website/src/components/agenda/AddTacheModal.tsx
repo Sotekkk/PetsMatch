@@ -12,11 +12,18 @@ export interface MembreOption { uid: string; nom: string; type: 'employe' | 'ben
  * PetsMatch est résolu depuis son propre profil (user_profiles), pas depuis
  * la fiche employé (qui ne contient prenom/nom que pour les employés
  * manuels, sans compte).
+ *
+ * `uid` = propriétaire de l'élevage (sert à retrouver la liste d'employés,
+ * `employes.uid_eleveur`) ; `myUid` (optionnel, sinon = `uid`) = identité
+ * réelle de la personne connectée, utilisée pour "Moi". Distincts pour un
+ * cogérant (elevage_cogerants) : son uid Firebase diffère de celui du
+ * gérant, "Moi" doit rester lui-même, pas le gérant qu'il emprunte.
  */
-export async function loadMembres(uid: string, profilSource: 'eleveur' | 'association' | 'pension'): Promise<MembreOption[]> {
+export async function loadMembres(uid: string, profilSource: 'eleveur' | 'association' | 'pension', myUid?: string): Promise<MembreOption[]> {
+  const moiUid = myUid ?? uid;
   const [{ data: moi }, { data: employesRows }] = await Promise.all([
     supabase.from('user_profiles').select('firstname, lastname, nom, profile_type')
-      .eq('uid', uid).eq('is_main', true).maybeSingle(),
+      .eq('uid', moiUid).eq('is_main', true).maybeSingle(),
     supabase.from('employes').select('uid_employe, employe_profile_id, type, prenom, nom')
       .eq('uid_eleveur', uid).eq('actif', true).eq('profil_source', profilSource),
   ]);
@@ -24,7 +31,7 @@ export async function loadMembres(uid: string, profilSource: 'eleveur' | 'associ
   const nomMoi = moi
     ? (moi.profile_type === 'eleveur' ? (moi.nom ?? 'Moi') : `${moi.firstname ?? ''} ${moi.lastname ?? ''}`.trim() || 'Moi')
     : 'Moi';
-  const membres: MembreOption[] = [{ uid, nom: nomMoi, type: 'moi' }];
+  const membres: MembreOption[] = [{ uid: moiUid, nom: nomMoi, type: 'moi' }];
 
   const rows = (employesRows ?? []) as { uid_employe: string | null; employe_profile_id: string | null; type: string; prenom?: string | null; nom?: string | null }[];
 

@@ -1026,14 +1026,28 @@ export default function AgendaElevagePage() {
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
 
+  // uid Firebase RÉEL du propriétaire du profil actif — jamais forcément
+  // user.uid (l'utilisateur connecté). Nécessaire pour tout ce qui reste
+  // scopé par uid_eleveur (employes, lignes taches_elevage/plan_taches sans
+  // profile_id, agenda_events) : un cogérant (elevage_cogerants) a un uid
+  // différent du gérant, mais la ligne user_profiles du profil emprunté
+  // (activeProfileId) reste celle du gérant — sa colonne `uid` est la bonne
+  // clé. Miroir de agenda_page.dart::_effectiveUid.
+  const resolveEffectiveUid = useCallback(async (): Promise<string> => {
+    if (!activeProfileId) return user!.uid;
+    const { data } = await supabase.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+    return (data?.uid as string | undefined) ?? user!.uid;
+  }, [activeProfileId, user]);
+
   // Charge les employés de l'éleveur
   const loadEmployes = useCallback(async () => {
     if (!user) return;
     try {
+      const ownerUid = await resolveEffectiveUid();
       const { data: emps } = await supabase
         .from('employes')
         .select('uid_employe')
-        .eq('uid_eleveur', user.uid)
+        .eq('uid_eleveur', ownerUid)
         .eq('actif', true);
       if (!emps?.length) return;
       const uids = emps.map((e: { uid_employe: string }) => e.uid_employe);
@@ -1047,15 +1061,16 @@ export default function AgendaElevagePage() {
         avatar: u.avatar_url ?? null,
       })));
     } catch {}
-  }, [user]);
+  }, [user, resolveEffectiveUid]);
 
   useEffect(() => { if (user) loadEmployes(); }, [user, loadEmployes]);
 
   // Animaux + membres assignables (Moi + employés/bénévoles) pour le formulaire de tâche.
   const loadAnimauxEtMembres = useCallback(async () => {
     if (!user) return;
-    setMembresAssign(await loadMembres(user.uid, profilSource));
-    let ownedQuery = supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere').eq('uid_eleveur', user.uid);
+    const ownerUid = await resolveEffectiveUid();
+    setMembresAssign(await loadMembres(ownerUid, profilSource, user.uid));
+    let ownedQuery = supabase.from('animaux').select('id, nom, espece, portee_id, nom_mere').eq('uid_eleveur', ownerUid);
     ownedQuery = profilSource === 'association' ? ownedQuery.eq('is_association', true) : ownedQuery;
     const ownedRes = await ownedQuery.order('nom');
     const owned = (ownedRes.data ?? []) as AnimalOption[];
@@ -1071,24 +1086,29 @@ export default function AgendaElevagePage() {
       }
     }
     setAnimaux([...owned, ...received]);
-  }, [user, profilSource, activeProfileId]);
+  }, [user, profilSource, activeProfileId, resolveEffectiveUid]);
 
   useEffect(() => { if (user) loadAnimauxEtMembres(); }, [user, loadAnimauxEtMembres]);
 
-  // Applique le filtre profil : profile_id strict si disponible, avec repli sur
-  // profil_source si aucune ligne ne matche (beaucoup de tâches auto-générées
-  // — rappels chaleurs/traitements... — n'ont jamais de profile_id renseigné).
+  // Applique le filtre profil : profile_id strict si disponible (jamais
+  // combiné à uid_eleveur — un cogérant a un uid Firebase différent du
+  // gérant), avec repli sur uid_eleveur=ownerUid + profil_source si aucune
+  // ligne ne matche (beaucoup de tâches auto-générées — rappels chaleurs/
+  // traitements... — n'ont jamais de profile_id renseigné).
   // Miroir de agenda_page.dart _loadTasks (d1 puis fallback).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const withProfileFilter = useCallback(async (buildQuery: () => any) => {
-    const fallback = () => profilSource === 'eleveur'
-      ? buildQuery().or('profil_source.is.null,profil_source.eq.eleveur')
-      : buildQuery().eq('profil_source', profilSource);
+    const fallback = async () => {
+      const ownerUid = await resolveEffectiveUid();
+      return profilSource === 'eleveur'
+        ? buildQuery().eq('uid_eleveur', ownerUid).or('profil_source.is.null,profil_source.eq.eleveur')
+        : buildQuery().eq('uid_eleveur', ownerUid).eq('profil_source', profilSource);
+    };
     if (!activeProfileId) return fallback();
     const strict = await buildQuery().eq('profile_id', activeProfileId);
     if ((strict.data ?? []).length > 0) return strict;
     return fallback();
-  }, [activeProfileId, profilSource]);
+  }, [activeProfileId, profilSource, resolveEffectiveUid]);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -1097,7 +1117,7 @@ export default function AgendaElevagePage() {
     const [r1, r2, tm, evRes] = await Promise.all([
       withProfileFilter(() => supabase.from('plan_taches')
         .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
-        .eq('uid_eleveur', user.uid).eq('date_prevue', selectedDate)),
+        .eq('date_prevue', selectedDate)),
       // Assignée à moi : scopée par assigned_profile_id quand un profil est
       // actif — sinon assigned_to=uid seul fait fuiter la tâche vers TOUS
       // les profils du compte (ex: tâche assignée sous le profil éleveur
@@ -1111,11 +1131,11 @@ export default function AgendaElevagePage() {
             .eq('assigned_to', user.uid).eq('date_prevue', selectedDate),
       withProfileFilter(() => supabase.from('taches_elevage')
         .select('id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,animal_id,animal_nom,assigne_a,assignes_a,fait_par,fait_par_profile_id,notes')
-        .eq('uid_eleveur', user.uid).eq('date', selectedDate)),
+        .eq('date', selectedDate)),
       // Rappels agenda_events du jour (chaleurs J-7/J-1, mise-bas, RDV...) —
       // absents jusqu'ici de cette page, qui n'affichait que des tâches.
       activeProfileId
-        ? supabase.from('agenda_events').select('id,titre,date_debut').eq('uid', user.uid).eq('pro_profile_id', activeProfileId)
+        ? supabase.from('agenda_events').select('id,titre,date_debut').eq('pro_profile_id', activeProfileId)
             .gte('date_debut', `${selectedDate}T00:00:00`).lte('date_debut', `${selectedDate}T23:59:59`)
         : supabase.from('agenda_events').select('id,titre,date_debut').eq('uid', user.uid)
             .or('pro_profile_id.is.null,pro_profile_id.eq.')
@@ -1132,7 +1152,7 @@ export default function AgendaElevagePage() {
       const [or1, or2, otm] = await Promise.all([
         withProfileFilter(() => supabase.from('plan_taches')
           .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
-          .eq('uid_eleveur', user.uid).neq('statut', 'fait').lt('date_prevue', selectedDate)),
+          .neq('statut', 'fait').lt('date_prevue', selectedDate)),
         activeProfileId
           ? supabase.from('plan_taches')
               .select('id,label,date_prevue,statut,type_acte,animal_nom,etape_id,assigned_to,valide_par,valide_par_profile_id,valide_at')
@@ -1142,7 +1162,7 @@ export default function AgendaElevagePage() {
               .eq('assigned_to', user.uid).neq('statut', 'fait').lt('date_prevue', selectedDate),
         withProfileFilter(() => supabase.from('taches_elevage')
           .select('id,titre,date,statut,heure,uid_eleveur,eleveur_profile_id,animal_id,animal_nom,assigne_a,assignes_a,fait_par,fait_par_profile_id,notes')
-          .eq('uid_eleveur', user.uid).neq('statut', 'fait').lt('date', selectedDate)),
+          .neq('statut', 'fait').lt('date', selectedDate)),
       ]);
       overdueR = [...(or1.data ?? []), ...(or2.data ?? [])] as Routine[];
       overdueT = (otm.data ?? []) as TacheManuelle[];
@@ -1173,17 +1193,17 @@ export default function AgendaElevagePage() {
     const from = `${focusedYear}-${mm}-01`;
     const to   = `${focusedYear}-${mm}-${String(daysInMonthFn(focusedYear, focusedMois)).padStart(2, '0')}`;
     const [r1, r2, tm, evRes] = await Promise.all([
-      withProfileFilter(() => supabase.from('plan_taches').select('date_prevue,type_acte').eq('uid_eleveur', user.uid)
+      withProfileFilter(() => supabase.from('plan_taches').select('date_prevue,type_acte')
         .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`)),
       activeProfileId
         ? supabase.from('plan_taches').select('date_prevue,type_acte').eq('assigned_profile_id', activeProfileId)
             .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`)
         : supabase.from('plan_taches').select('date_prevue,type_acte').eq('assigned_to', user.uid)
             .gte('date_prevue', `${from}T00:00:00`).lte('date_prevue', `${to}T23:59:59`),
-      withProfileFilter(() => supabase.from('taches_elevage').select('date').eq('uid_eleveur', user.uid)
+      withProfileFilter(() => supabase.from('taches_elevage').select('date')
         .gte('date', from).lte('date', to)),
       activeProfileId
-        ? supabase.from('agenda_events').select('date_debut').eq('uid', user.uid).eq('pro_profile_id', activeProfileId)
+        ? supabase.from('agenda_events').select('date_debut').eq('pro_profile_id', activeProfileId)
             .gte('date_debut', `${from}T00:00:00`).lte('date_debut', `${to}T23:59:59`)
         : supabase.from('agenda_events').select('date_debut').eq('uid', user.uid)
             .or('pro_profile_id.is.null,pro_profile_id.eq.')
