@@ -118,11 +118,25 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
     if (uid == null) return;
     final supa = Supabase.instance.client;
     try {
+      // uid réel du propriétaire du profil actif — jamais forcément uid : un
+      // cogérant (elevage_cogerants) a un uid différent du gérant, mais la
+      // ligne user_profiles du profil emprunté (activeProfileId) reste celle
+      // du gérant. Sans ça, les compteurs de la page d'accueil restent à 0
+      // pour un cogérant alors que les listes elles-mêmes (Mes Animaux, Mes
+      // Annonces) affichent bien les vraies données.
+      final activeProfileIdEarly = User_Info.activeProfileId;
+      String ownerUid = uid;
+      if (activeProfileIdEarly.isNotEmpty) {
+        final ownerRow = await supa.from('user_profiles')
+            .select('uid').eq('id', activeProfileIdEarly).maybeSingle();
+        ownerUid = (ownerRow?['uid'] as String?) ?? uid;
+      }
+
       // Scopée au profil actif — sinon une alerte créée depuis un autre
       // profil du même compte (particulier, éleveur…) apparaît partout.
       final activeProfileIdForAlertes = User_Info.activeProfileId;
       var alertesQuery = supa.from('alertes_perdus')
-          .select().eq('uid_proprietaire', uid).eq('statut', 'perdu');
+          .select().eq('uid_proprietaire', ownerUid).eq('statut', 'perdu');
       if (activeProfileIdForAlertes.isNotEmpty) {
         alertesQuery = alertesQuery.eq('profile_id', activeProfileIdForAlertes);
       }
@@ -135,26 +149,26 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
           alertesFuture,
           if (activeProfileId.isNotEmpty)
             supa.from('animaux_proprietes')
-                .select('animal_id').eq('uid_proprio', uid)
+                .select('animal_id').eq('uid_proprio', ownerUid)
                 .not('profile_id_proprio', 'is', null).limit(1)
           else
             Future.value(<dynamic>[]),
           activeProfileId.isNotEmpty
               ? supa.from('annonces').select('id')
-                  .eq('uid_eleveur', uid).eq('profile_id', activeProfileId)
+                  .eq('uid_eleveur', ownerUid).eq('profile_id', activeProfileId)
                   .inFilter('statut', ['disponible', 'reserve'])
               : supa.from('annonces').select('id')
-                  .eq('uid_eleveur', uid).neq('profil_source', 'association')
+                  .eq('uid_eleveur', ownerUid).neq('profil_source', 'association')
                   .inFilter('statut', ['disponible', 'reserve']),
           activeProfileId.isNotEmpty
               ? supa.from('annonces')
                   .select('id, titre, espece, race, photos, statut, vues, created_at')
-                  .eq('uid_eleveur', uid).eq('profile_id', activeProfileId)
+                  .eq('uid_eleveur', ownerUid).eq('profile_id', activeProfileId)
                   .inFilter('statut', ['disponible', 'reserve', 'pause'])
                   .order('created_at', ascending: false).limit(3)
               : supa.from('annonces')
                   .select('id, titre, espece, race, photos, statut, vues, created_at')
-                  .eq('uid_eleveur', uid).neq('profil_source', 'association')
+                  .eq('uid_eleveur', ownerUid).neq('profil_source', 'association')
                   .inFilter('statut', ['disponible', 'reserve', 'pause'])
                   .order('created_at', ascending: false).limit(3),
           PlanService.getPlanCode(uid),
@@ -171,13 +185,13 @@ class _EleveurHomePageState extends State<EleveurHomePage> with RouteAware {
         int animalCount;
         if (activeProfileId.isNotEmpty && profileMigrated) {
           final rows = await supa.from('animaux_proprietes')
-              .select('animal_id').eq('uid_proprio', uid)
+              .select('animal_id').eq('uid_proprio', ownerUid)
               .eq('profile_id_proprio', activeProfileId)
               .isFilter('date_fin', null);
           animalCount = (rows as List).length;
         } else {
           final rows = await supa.from('animaux_proprietes')
-              .select('animal_id').eq('uid_proprio', uid)
+              .select('animal_id').eq('uid_proprio', ownerUid)
               .isFilter('date_fin', null);
           animalCount = (rows as List).length;
         }
