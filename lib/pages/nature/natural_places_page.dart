@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -10,6 +11,12 @@ import 'package:PetsMatch/pages/nature/add_natural_place_page.dart';
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
 const _teal = Color(0xFF0C5C6C);
+const _darkC = Color(0xFF071C22);
+const _bgGrad = LinearGradient(
+  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+  colors: [Color(0xFF071C22), Color(0xFF0C3535), Color(0xFF0C3520)],
+  stops: [0.0, 0.5, 1.0],
+);
 
 const _catEmoji = {
   'foret':   '🌲',
@@ -252,145 +259,171 @@ class _NaturalPlacesPageState extends State<NaturalPlacesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final canPop = ModalRoute.of(context)?.isFirst == false;
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F0),
-      appBar: AppBar(
-        backgroundColor: _teal,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('Lieux Naturels',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        leading: Navigator.canPop(context)
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-                onPressed: () => Navigator.pop(context),
-              )
-            : null,
-        actions: [
-          IconButton(
-            icon: Icon(_mapView ? Icons.list_outlined : Icons.map_outlined),
-            tooltip: _mapView ? 'Vue liste' : 'Vue carte',
-            onPressed: () => setState(() => _mapView = !_mapView),
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(56),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-            child: _SearchBar(
-              controller: _searchCtrl,
-              onChanged: (v) => setState(() => _search = v),
-            ),
-          ),
-        ),
-      ),
-      body: Column(children: [
-        // ── Filtres catégorie ─────────────────────────────────────────────
-        Container(
-          color: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(children: [
-              _CatChip(value: 'tous', label: 'Tous', active: _catFilter == 'tous',
-                  onTap: () => setState(() => _catFilter = 'tous')),
-              ..._catLabel.entries.map((e) => _CatChip(
-                value: e.key,
-                label: '${_catEmoji[e.key]} ${e.value}',
-                active: _catFilter == e.key,
-                color: _catColor[e.key],
-                onTap: () => setState(() => _catFilter = e.key),
-              )),
-              _CatChip(
-                value: '_eau',
-                label: '⚠️ Alertes eau',
-                active: _alerteEauOnly,
-                color: const Color(0xFFF59E0B),
-                onTap: () => setState(() => _alerteEauOnly = !_alerteEauOnly),
-              ),
-            ]),
-          ),
-        ),
-
-        // ── Barre « autour de moi » (géoloc GPS + rayon modifiable) ───────
-        Container(
-          color: Colors.white,
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-          child: Row(children: [
-            GestureDetector(
-              onTap: _locatingNearMe ? null : _toggleNearMe,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                decoration: BoxDecoration(
-                  color: _nearMe ? _teal : Colors.transparent,
-                  border: Border.all(color: _nearMe ? _teal : Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  if (_locatingNearMe)
-                    const SizedBox(width: 13, height: 13,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
-                  else
-                    Icon(Icons.my_location, size: 14,
-                        color: _nearMe ? Colors.white : _teal),
-                  const SizedBox(width: 5),
-                  Text('Autour de moi', style: TextStyle(
-                      fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
-                      color: _nearMe ? Colors.white : Colors.black87)),
-                ]),
-              ),
-            ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: _openRayonSheet,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text('${_rayonKm.toInt()} km', style: const TextStyle(
-                      fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
-                      color: _teal)),
-                  const Icon(Icons.expand_more, size: 15, color: _teal),
-                ]),
-              ),
-            ),
-            const Spacer(),
-            if (_nearMe && _userPos != null)
-              Text('${_filtered.length} lieu(x)', style: const TextStyle(
-                  fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
-          ]),
-        ),
-
-        // ── Contenu ──────────────────────────────────────────────────────
-        Expanded(
-          child: _mapView
-              ? _NaturalMapView(
-                  places: _filtered,
-                  userPos: _userPos,
-                  nearMe: _nearMe,
-                  rayonKm: _rayonKm,
-                  onTapPlace: _openDetail,
-                )
-              : _buildListView(),
-        ),
-      ]),
+      backgroundColor: _darkC,
       floatingActionButton: User_Info.uid.isEmpty ? null : FloatingActionButton.extended(
         backgroundColor: _teal,
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add_location_alt_outlined),
         label: const Text('Proposer un lieu', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
         onPressed: () async {
-          final added = await Navigator.push<bool>(
-            context,
-            MaterialPageRoute(builder: (_) => const AddNaturalPlacePage()),
-          );
+          final added = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => const AddNaturalPlacePage()));
           if (added == true) _loadPlaces();
         },
       ),
+      body: Stack(children: [
+        Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
+        SafeArea(child: Column(children: [
+          // ── Header ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(children: [
+              if (canPop) ...[
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                        ),
+                        child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+              ],
+              const Expanded(
+                child: Text('Lieux Naturels',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 24, color: Colors.white)),
+              ),
+              GestureDetector(
+                onTap: () => setState(() => _mapView = !_mapView),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                      ),
+                      child: Icon(_mapView ? Icons.list_outlined : Icons.map_outlined, color: Colors.white, size: 20),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+          // ── Recherche ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+            child: _SearchBar(controller: _searchCtrl, onChanged: (v) => setState(() => _search = v)),
+          ),
+          // ── Filtres catégorie ──
+          SizedBox(
+            height: 44,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(children: [
+                _CatChip(value: 'tous', label: 'Tous', active: _catFilter == 'tous',
+                    onTap: () => setState(() => _catFilter = 'tous')),
+                ..._catLabel.entries.map((e) => _CatChip(
+                  value: e.key,
+                  label: '${_catEmoji[e.key]} ${e.value}',
+                  active: _catFilter == e.key,
+                  color: _catColor[e.key],
+                  onTap: () => setState(() => _catFilter = e.key),
+                )),
+                _CatChip(
+                  value: '_eau', label: '⚠️ Alertes eau',
+                  active: _alerteEauOnly, color: const Color(0xFFF59E0B),
+                  onTap: () => setState(() => _alerteEauOnly = !_alerteEauOnly),
+                ),
+              ]),
+            ),
+          ),
+          // ── Barre "Autour de moi" ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+            child: Row(children: [
+              GestureDetector(
+                onTap: _locatingNearMe ? null : _toggleNearMe,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(22),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(
+                        gradient: _nearMe ? const LinearGradient(colors: [_teal, Color(0xFF1E7A8C)]) : null,
+                        color: _nearMe ? null : Colors.white.withValues(alpha: 0.10),
+                        border: Border.all(color: _nearMe ? Colors.transparent : Colors.white.withValues(alpha: 0.20)),
+                        borderRadius: BorderRadius.circular(22),
+                        boxShadow: _nearMe ? [BoxShadow(color: _teal.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3))] : null,
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        if (_locatingNearMe)
+                          const SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        else
+                          const Icon(Icons.my_location, size: 14, color: Colors.white),
+                        const SizedBox(width: 5),
+                        const Text('Autour de moi', style: TextStyle(
+                            fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                            color: Colors.white)),
+                      ]),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _openRayonSheet,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(22),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.10),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Text('${_rayonKm.toInt()} km', style: const TextStyle(
+                            fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
+                        const Icon(Icons.expand_more, size: 15, color: Colors.white),
+                      ]),
+                    ),
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (_nearMe && _userPos != null)
+                Text('${_filtered.length} lieu(x)', style: TextStyle(
+                    fontFamily: 'Galey', fontSize: 11, color: Colors.white.withValues(alpha: 0.6))),
+            ]),
+          ),
+          // ── Contenu ──
+          Expanded(
+            child: _mapView
+                ? _NaturalMapView(places: _filtered, userPos: _userPos, nearMe: _nearMe, rayonKm: _rayonKm, onTapPlace: _openDetail)
+                : _buildListView(),
+          ),
+        ])),
+      ]),
     );
   }
 
@@ -966,23 +999,36 @@ class _SearchBar extends StatelessWidget {
   const _SearchBar({required this.controller, required this.onChanged});
 
   @override
-  Widget build(BuildContext context) => TextField(
-    controller: controller,
-    onChanged: onChanged,
-    style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1F2A2E)),
-    decoration: InputDecoration(
-      hintText: 'Rechercher un lieu...',
-      hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white54),
-      prefixIcon: const Icon(Icons.search, color: Colors.white70, size: 20),
-      suffixIcon: controller.text.isNotEmpty
-          ? IconButton(
-              icon: const Icon(Icons.close, color: Colors.white70, size: 18),
-              onPressed: () { controller.clear(); onChanged(''); })
-          : null,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide.none),
-      filled: true, fillColor: Colors.white.withValues(alpha: 0.18),
+  Widget build(BuildContext context) => ClipRRect(
+    borderRadius: BorderRadius.circular(16),
+    child: BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+        ),
+        child: TextField(
+          controller: controller,
+          onChanged: onChanged,
+          style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'Rechercher un lieu...',
+            hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white.withValues(alpha: 0.4)),
+            prefixIcon: Icon(Icons.search, color: Colors.white.withValues(alpha: 0.6), size: 20),
+            suffixIcon: controller.text.isNotEmpty
+                ? IconButton(
+                    icon: Icon(Icons.close, color: Colors.white.withValues(alpha: 0.6), size: 18),
+                    onPressed: () { controller.clear(); onChanged(''); })
+                : null,
+            contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+          ),
+        ),
+      ),
     ),
   );
 }
@@ -1002,18 +1048,26 @@ class _CatChip extends StatelessWidget {
     final c = color ?? _teal;
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color: active ? c : Colors.transparent,
-          border: Border.all(color: active ? c : Colors.grey.shade300),
-          borderRadius: BorderRadius.circular(20),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            margin: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            decoration: BoxDecoration(
+              gradient: active ? LinearGradient(colors: [c, c.withValues(alpha: 0.7)]) : null,
+              color: active ? null : Colors.white.withValues(alpha: 0.10),
+              border: Border.all(color: active ? Colors.transparent : Colors.white.withValues(alpha: 0.20)),
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: active ? [BoxShadow(color: c.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3))] : null,
+            ),
+            child: Text(label, style: const TextStyle(
+                fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                color: Colors.white)),
+          ),
         ),
-        child: Text(label, style: TextStyle(
-            fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
-            color: active ? Colors.white : Colors.black87)),
       ),
     );
   }

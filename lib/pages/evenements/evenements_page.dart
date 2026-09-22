@@ -1,9 +1,16 @@
+import 'dart:ui';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 const _green = Color(0xFF6E9E57);
+const _darkC = Color(0xFF071C22);
+const _bgGrad = LinearGradient(
+  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+  colors: [Color(0xFF071C22), Color(0xFF0C3535), Color(0xFF0C3520)],
+  stops: [0.0, 0.5, 1.0],
+);
 
 const _kTypes = [
   'Tous',
@@ -143,18 +150,7 @@ class _EvenementsPageState extends State<EvenementsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F8),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0C5C6C),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('Événements',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
+      backgroundColor: _darkC,
       floatingActionButton: _uid.isNotEmpty
           ? FloatingActionButton(
               backgroundColor: _green,
@@ -162,62 +158,100 @@ class _EvenementsPageState extends State<EvenementsPage> {
               child: const Icon(Icons.add, color: Colors.white),
             )
           : null,
-      body: Column(children: [
-        SizedBox(
-          height: 52,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            itemCount: _kTypes.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (_, i) {
-              final t = _kTypes[i];
-              final sel = _filterType == t;
-              return GestureDetector(
-                onTap: () => setState(() => _filterType = t),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: sel ? _green : Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: sel ? _green : Colors.grey.shade300),
+      body: Stack(children: [
+        Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
+        SafeArea(child: Column(children: [
+          // ── Header ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(children: [
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                      ),
+                      child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+                    ),
                   ),
-                  child: Text(t,
-                      style: TextStyle(
-                          fontFamily: 'Galey',
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: sel ? Colors.white : Colors.grey.shade700)),
                 ),
-              );
-            },
+              ),
+              const SizedBox(width: 14),
+              const Text('Événements',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 24, color: Colors.white)),
+            ]),
           ),
-        ),
-        Expanded(
-          child: _loading
-              ? const Center(child: CircularProgressIndicator(color: _green))
-              : _filtered.isEmpty
-                  ? _empty()
-                  : RefreshIndicator(
-                      onRefresh: _load,
-                      color: _green,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                        itemCount: _filtered.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (_, i) {
-                          final ev = _filtered[i];
-                          final id = ev['id'].toString();
-                          return _EvenementCard(
-                            evenement: ev,
-                            estInscrit: _mesInscriptions.contains(id),
-                            onToggle: _uid.isNotEmpty ? () => _toggleInscription(id) : null,
-                          );
-                        },
+          // ── Filtres type ──
+          SizedBox(
+            height: 48,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              itemCount: _kTypes.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, i) {
+                final t = _kTypes[i];
+                final sel = _filterType == t;
+                return GestureDetector(
+                  onTap: () => setState(() => _filterType = t),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(22),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          gradient: sel ? const LinearGradient(colors: [_green, Color(0xFF1E7A8C)]) : null,
+                          color: sel ? null : Colors.white.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(color: sel ? Colors.transparent : Colors.white.withValues(alpha: 0.20)),
+                          boxShadow: sel ? [BoxShadow(color: _green.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3))] : null,
+                        ),
+                        child: Text(t,
+                            style: const TextStyle(
+                                fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                                color: Colors.white)),
                       ),
                     ),
-        ),
+                  ),
+                );
+              },
+            ),
+          ),
+          // ── Liste ──
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: _green))
+                : _filtered.isEmpty
+                    ? _empty()
+                    : RefreshIndicator(
+                        onRefresh: _load,
+                        color: _green,
+                        child: ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                          itemCount: _filtered.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 10),
+                          itemBuilder: (_, i) {
+                            final ev = _filtered[i];
+                            final id = ev['id'].toString();
+                            return _EvenementCard(
+                              evenement: ev,
+                              estInscrit: _mesInscriptions.contains(id),
+                              onToggle: _uid.isNotEmpty ? () => _toggleInscription(id) : null,
+                            );
+                          },
+                        ),
+                      ),
+          ),
+        ])),
       ]),
     );
   }

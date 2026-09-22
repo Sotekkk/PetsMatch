@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -23,6 +24,12 @@ class LieuxPetFriendlyPage extends StatefulWidget {
 
 class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
   static const _teal = Color(0xFF0C5C6C);
+  static const _darkC = Color(0xFF071C22);
+  static const _bgGrad = LinearGradient(
+    begin: Alignment.topCenter, end: Alignment.bottomCenter,
+    colors: [Color(0xFF071C22), Color(0xFF0C3535), Color(0xFF0C3520)],
+    stops: [0.0, 0.5, 1.0],
+  );
   static const _pageSize = 12;
 
   final _supabase = Supabase.instance.client;
@@ -146,61 +153,94 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F8),
+      backgroundColor: _darkC,
       endDrawer: const AppNavDrawer(),
-      appBar: AppBar(
-        backgroundColor: _teal,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('Lieux Pet-Friendly',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        actions: [
-          IconButton(
-            icon: Icon(_mapView ? Icons.grid_view_rounded : Icons.map_outlined),
-            tooltip: _mapView ? 'Vue grille' : 'Vue carte',
-            onPressed: _toggleMapView,
+      body: Stack(children: [
+        Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
+        SafeArea(child: Builder(builder: (ctx) => Column(children: [
+          // ── Header ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 12, 8),
+            child: Row(children: [
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                      ),
+                      child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text('Lieux Pet-Friendly',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: Colors.white)),
+              ),
+              _glassIconBtn(Icons.map_outlined, _mapView ? Icons.grid_view_rounded : Icons.map_outlined, _toggleMapView),
+              const SizedBox(width: 8),
+              _glassIconBtn(Icons.view_day_outlined, Icons.view_day_outlined,
+                  () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LieuxFeedPage()))),
+              const SizedBox(width: 8),
+              PopupMenuButton<String>(
+                icon: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                      ),
+                      child: const Icon(Icons.sort_rounded, color: Colors.white, size: 20),
+                    ),
+                  ),
+                ),
+                onSelected: (v) { _sortBy = v; _load(reset: true); },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'recent', child: Text('Les plus récents')),
+                  PopupMenuItem(value: 'note', child: Text('Mieux notés')),
+                  PopupMenuItem(value: 'misEnAvant', child: Text('Mis en avant')),
+                ],
+              ),
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: () => Scaffold.of(ctx).openEndDrawer(),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                      ),
+                      child: const Icon(Icons.menu_rounded, color: Colors.white, size: 20),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
           ),
-          IconButton(
-            icon: const Icon(Icons.view_day_outlined),
-            tooltip: 'Vue feed',
-            onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const LieuxFeedPage())),
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.sort_rounded),
-            onSelected: (v) {
-              _sortBy = v;
-              _load(reset: true);
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'recent', child: Text('Les plus récents')),
-              PopupMenuItem(value: 'note', child: Text('Mieux notés')),
-              PopupMenuItem(value: 'misEnAvant', child: Text('Mis en avant')),
-            ],
-          ),
-          Builder(
-            builder: (ctx) => IconButton(
-              icon: const Icon(Icons.menu_rounded),
-              tooltip: 'Menu',
-              onPressed: () => Scaffold.of(ctx).openEndDrawer(),
-            ),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
+          // ── Filtres ──
           _Filters(
-            categorie: _categorie,
-            espece: _espece,
-            onCategorie: (v) {
-              _categorie = v;
-              _load(reset: true);
-            },
-            onEspece: (v) {
-              _espece = v;
-              _load(reset: true);
-            },
+            categorie: _categorie, espece: _espece,
+            onCategorie: (v) { _categorie = v; _load(reset: true); },
+            onEspece: (v) { _espece = v; _load(reset: true); },
           ),
+          // ── Contenu ──
           Expanded(
             child: _loading || (_mapView && _loadingAllForMap)
                 ? const Center(child: CircularProgressIndicator(color: _teal))
@@ -209,50 +249,58 @@ class _LieuxPetFriendlyPageState extends State<LieuxPetFriendlyPage> {
                     : _mapView
                         ? _LieuxMapView(
                             lieux: _lieux,
-                            onTapLieu: (id) => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => LieuDetailPage(id: id)),
-                            ).then((_) => _load(reset: true)),
+                            onTapLieu: (id) => Navigator.push(context,
+                                MaterialPageRoute(builder: (_) => LieuDetailPage(id: id)))
+                                .then((_) => _load(reset: true)),
                           )
                         : RefreshIndicator(
-                        color: _teal,
-                        onRefresh: () => _load(reset: true),
-                        child: GridView.builder(
-                          controller: _scroll,
-                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 12,
-                            childAspectRatio: 0.62,
+                            color: _teal,
+                            onRefresh: () => _load(reset: true),
+                            child: GridView.builder(
+                              controller: _scroll,
+                              padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 0.62,
+                              ),
+                              itemCount: _lieux.length + (_loadingMore ? 2 : 0),
+                              itemBuilder: (ctx, i) {
+                                if (i >= _lieux.length) return _SkeletonCard();
+                                final lieu = _lieux[i];
+                                final id = lieu['id'] as String;
+                                return _LieuCard(
+                                  lieu: lieu, photoUrl: _photoUrl(lieu),
+                                  isLiked: false, likeCount: 0,
+                                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => LieuDetailPage(id: id)))
+                                      .then((_) => _load(reset: true)),
+                                  onLike: () {},
+                                );
+                              },
+                            ),
                           ),
-                          itemCount: _lieux.length + (_loadingMore ? 2 : 0),
-                          itemBuilder: (ctx, i) {
-                            if (i >= _lieux.length) return _SkeletonCard();
-                            final lieu = _lieux[i];
-                            final id = lieu['id'] as String;
-                            return _LieuCard(
-                              lieu: lieu,
-                              photoUrl: _photoUrl(lieu),
-                              isLiked: false,
-                              likeCount: 0,
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (_) => LieuDetailPage(id: id)),
-                              ).then((_) => _load(reset: true)),
-                              onLike: () {},
-                            );
-                          },
-                        ),
-                      ),
           ),
-        ],
-      ),
+        ]))),
+      ]),
     );
   }
+
+  Widget _glassIconBtn(IconData icon1, IconData icon, VoidCallback onTap) => GestureDetector(
+    onTap: onTap,
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+          ),
+          child: Icon(icon, color: Colors.white, size: 20),
+        ),
+      ),
+    ),
+  );
 }
 
 // ─── Filtres chips ───────────────────────────────────────────────────────────
@@ -272,9 +320,8 @@ class _Filters extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -325,33 +372,41 @@ class _Chip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const teal = Color(0xFF0C5C6C);
+    const green = Color(0xFF1E7A8C);
     final active = selected == value;
     return GestureDetector(
       onTap: () => onTap(value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? teal : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: active ? teal : Colors.grey.shade300),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(icon,
-                  size: 14,
-                  color: active ? Colors.white : Colors.grey.shade600),
-              const SizedBox(width: 4),
-            ],
-            Text(label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-                  color: active ? Colors.white : Colors.grey.shade700,
-                )),
-          ],
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              gradient: active ? const LinearGradient(colors: [teal, green]) : null,
+              color: active ? null : Colors.white.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: active ? Colors.transparent : Colors.white.withValues(alpha: 0.20)),
+              boxShadow: active ? [BoxShadow(color: teal.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3))] : null,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 14, color: Colors.white),
+                  const SizedBox(width: 4),
+                ],
+                Text(label,
+                    style: TextStyle(
+                      fontFamily: 'Galey',
+                      fontSize: 12,
+                      fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                      color: Colors.white,
+                    )),
+              ],
+            ),
+          ),
         ),
       ),
     );

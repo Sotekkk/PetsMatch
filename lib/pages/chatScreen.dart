@@ -58,6 +58,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _msgLock = false;
   RealtimeChannel? _channel;
   String _themeId = 'default';
+  String? _customBgUrl;
+  static const _kCustomBgCost = 5; // crédits
   OverlayEntry? _reactionOverlay;
 
   // Partage d'animal / proposition de RDV n'ont de sens qu'avec un pro ou un
@@ -127,18 +129,126 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _loadTheme() async {
     try {
       final conv = await _supa.from('conversations')
-          .select('theme_id').eq('id', widget.conversationId).maybeSingle();
+          .select('theme_id, custom_bg_url').eq('id', widget.conversationId).maybeSingle();
       if (mounted && conv != null) {
-        setState(() => _themeId = (conv['theme_id'] as String?) ?? 'default');
+        setState(() {
+          _themeId = (conv['theme_id'] as String?) ?? 'default';
+          _customBgUrl = conv['custom_bg_url'] as String?;
+        });
       }
     } catch (_) {}
   }
 
   Future<void> _saveTheme(String id) async {
-    setState(() => _themeId = id);
+    setState(() {
+      _themeId = id;
+      _customBgUrl = null; // sélectionner un thème efface la photo perso
+    });
     try {
       await _supa.from('conversations')
-          .update({'theme_id': id}).eq('id', widget.conversationId);
+          .update({'theme_id': id, 'custom_bg_url': null}).eq('id', widget.conversationId);
+    } catch (_) {}
+  }
+
+  Future<void> _pickCustomBackground() async {
+    if (!mounted) return;
+
+    // ── 1. Vérifier le solde ──
+    final uid = _uid;
+    if (uid.isEmpty) return;
+    int solde = 0;
+    try {
+      final w = await _supa.from('credit_wallets').select('solde').eq('uid', uid).maybeSingle();
+      solde = (w?['solde'] as int?) ?? 0;
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    // ── 2. Dialogue confirmation ──
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Photo personnalisée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Choisissez une photo de votre galerie comme fond de cette conversation.',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+          const SizedBox(height: 12),
+          Row(children: [
+            const Icon(Icons.toll_outlined, size: 16, color: _teal),
+            const SizedBox(width: 6),
+            Text('Coût : $_kCustomBgCost crédits  •  Solde : $solde',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                    color: solde >= _kCustomBgCost ? Colors.grey.shade600 : Colors.red.shade700,
+                    fontWeight: FontWeight.w600)),
+          ]),
+          if (_customBgUrl != null) ...[
+            const SizedBox(height: 8),
+            Text('La photo actuelle sera remplacée gratuitement uniquement si vous en choisissez une nouvelle.',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+          ],
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          if (solde >= _kCustomBgCost)
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: _teal, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Choisir', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+            ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    // ── 3. Picker image ──
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+    if (picked == null || !mounted) return;
+
+    // ── 4. Upload ──
+    String? url;
+    try {
+      final path = 'chat_backgrounds/${widget.conversationId}_$uid.jpg';
+      url = await storage.uploadPhoto(File(picked.path), path);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur upload : $e'), backgroundColor: Colors.red));
+      return;
+    }
+
+    // ── 5. Débit crédits ──
+    try {
+      final spend = await _supa.rpc('credit_spend', params: {
+        'p_uid': uid,
+        'p_cost': _kCustomBgCost,
+        'p_motif': 'Fond de discussion personnalisé',
+        'p_ref_id': widget.conversationId,
+      });
+      if (!(spend is Map && spend['ok'] == true)) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Crédits insuffisants.', style: TextStyle(fontFamily: 'Galey')),
+            backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
+        return;
+      }
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Erreur lors du débit des crédits.'), backgroundColor: Colors.red));
+      return;
+    }
+
+    // ── 6. Sauvegarder URL ──
+    try {
+      await _supa.from('conversations')
+          .update({'custom_bg_url': url, 'theme_id': _themeId}).eq('id', widget.conversationId);
+      if (mounted) setState(() => _customBgUrl = url);
+    } catch (_) {}
+  }
+
+  Future<void> _removeCustomBackground() async {
+    try {
+      await _supa.from('conversations')
+          .update({'custom_bg_url': null}).eq('id', widget.conversationId);
+      if (mounted) setState(() => _customBgUrl = null);
     } catch (_) {}
   }
 
@@ -164,10 +274,62 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 3, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 0.85),
-            itemCount: kChatThemes.length,
+            itemCount: kChatThemes.length + 1,
             itemBuilder: (_, i) {
+              // ── Tuile "Photo perso" (dernière case) ──
+              if (i == kChatThemes.length) {
+                final hasPhoto = _customBgUrl != null;
+                return GestureDetector(
+                  onTap: () { Navigator.pop(context); _pickCustomBackground(); },
+                  onLongPress: hasPhoto ? () { Navigator.pop(context); _removeCustomBackground(); } : null,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: hasPhoto ? _teal : Colors.grey.shade300,
+                        width: hasPhoto ? 3 : 1,
+                      ),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 6, offset: const Offset(0, 2))],
+                      image: hasPhoto
+                          ? DecorationImage(image: NetworkImage(_customBgUrl!), fit: BoxFit.cover)
+                          : null,
+                      color: hasPhoto ? null : Colors.grey.shade100,
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(15),
+                      child: Stack(alignment: Alignment.center, children: [
+                        if (!hasPhoto)
+                          Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                            Icon(Icons.add_photo_alternate_outlined, size: 28, color: Colors.grey.shade500),
+                            const SizedBox(height: 6),
+                            Text('Photo perso', textAlign: TextAlign.center,
+                                style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey.shade600)),
+                            const SizedBox(height: 2),
+                            Text('$_kCustomBgCost crédits', textAlign: TextAlign.center,
+                                style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: _teal)),
+                          ])
+                        else ...[
+                          Container(color: Colors.black.withValues(alpha: 0.30)),
+                          Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                            const Icon(Icons.check_circle, size: 22, color: Colors.white),
+                            const SizedBox(height: 4),
+                            const Text('Photo perso', textAlign: TextAlign.center,
+                                style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                            const SizedBox(height: 2),
+                            Text('Appui long → retirer', textAlign: TextAlign.center,
+                                style: TextStyle(fontFamily: 'Galey', fontSize: 9, color: Colors.white.withValues(alpha: 0.8))),
+                          ]),
+                        ],
+                      ]),
+                    ),
+                  ),
+                );
+              }
+
+              // ── Tuiles thèmes prédéfinis ──
               final t = kChatThemes[i];
-              final selected = t.id == _themeId;
+              final selected = t.id == _themeId && _customBgUrl == null;
               return GestureDetector(
                 onTap: () { Navigator.pop(context); _saveTheme(t.id); },
                 child: AnimatedContainer(
@@ -1050,7 +1212,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             child: BackdropFilter(
               filter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
               child: Stack(children: [
-                Container(color: theme.bgGradient[0].withValues(alpha: 0.90)),
+                _customBgUrl != null
+                    ? Container(color: Colors.black.withValues(alpha: 0.55))
+                    : Container(color: theme.bgGradient[0].withValues(alpha: 0.90)),
                 Container(color: Colors.black.withValues(alpha: 0.20)),
               ]),
             ),
@@ -1099,12 +1263,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               ),
       ),
       body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter, end: Alignment.bottomCenter,
-            colors: theme.bgGradient,
-          ),
-        ),
+        decoration: _customBgUrl != null
+            ? BoxDecoration(
+                image: DecorationImage(
+                  image: NetworkImage(_customBgUrl!),
+                  fit: BoxFit.cover,
+                ),
+              )
+            : BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                  colors: theme.bgGradient,
+                ),
+              ),
         child: Column(children: [
         // Messages
         Expanded(

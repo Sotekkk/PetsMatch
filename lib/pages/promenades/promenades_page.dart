@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:PetsMatch/main.dart' show getApiKey, User_Info;
 import 'package:PetsMatch/pages/promenades/promenade_detail_page.dart';
@@ -11,6 +12,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 const _orange = Color(0xFFEF6C00);
+const _darkC = Color(0xFF071C22);
+const _bgGrad = LinearGradient(
+  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+  colors: [Color(0xFF071C22), Color(0xFF0C3535), Color(0xFF0C3520)],
+  stops: [0.0, 0.5, 1.0],
+);
 
 const _kNiveaux = ['facile', 'moyen', 'difficile'];
 const _kEspeces = ['Toutes', 'Chiens', 'Chevaux'];
@@ -202,18 +209,7 @@ class _PromenadesPageState extends State<PromenadePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F8),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF2E7D5E),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('Promenades & Randonnées',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
+      backgroundColor: _darkC,
       floatingActionButton: _uid.isNotEmpty
           ? FloatingActionButton(
               backgroundColor: _orange,
@@ -221,92 +217,142 @@ class _PromenadesPageState extends State<PromenadePage> {
               child: const Icon(Icons.add, color: Colors.white),
             )
           : null,
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _orange))
-          : Column(children: [
-              // ── Filtres ──
-              Container(
-                color: Colors.white,
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  // Filtre lieu
-                  TextField(
-                    controller: _filterLieuCtrl,
-                    onChanged: (_) => setState(() {}),
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
-                    decoration: InputDecoration(
-                      hintText: 'Filtrer par ville, département, région…',
-                      hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey, fontSize: 13),
-                      prefixIcon: const Icon(Icons.location_on_outlined, size: 18, color: Color(0xFF2E7D5E)),
-                      suffixIcon: _filterLieuCtrl.text.isNotEmpty
-                          ? IconButton(icon: const Icon(Icons.close, size: 16),
-                              onPressed: () => setState(() => _filterLieuCtrl.clear()))
-                          : null,
-                      filled: true, fillColor: const Color(0xFFF5F5F5),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      isDense: true,
+      body: Stack(children: [
+        Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
+        SafeArea(child: Column(children: [
+          // ── Header ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(children: [
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                      ),
+                      child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  // Filtre espèce
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(children: _kEspeces.map((e) {
-                      final sel = _filterEspece == e;
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: GestureDetector(
-                          onTap: () => setState(() => _filterEspece = e),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Text('Promenades & Randonnées',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 22, color: Colors.white)),
+            ]),
+          ),
+          // ── Filtres ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                    ),
+                    child: TextField(
+                      controller: _filterLieuCtrl,
+                      onChanged: (_) => setState(() {}),
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Filtrer par ville, département, région…',
+                        hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.4), fontSize: 13),
+                        prefixIcon: Icon(Icons.location_on_outlined, size: 18, color: Colors.white.withValues(alpha: 0.6)),
+                        suffixIcon: _filterLieuCtrl.text.isNotEmpty
+                            ? IconButton(icon: Icon(Icons.close, size: 16, color: Colors.white.withValues(alpha: 0.6)),
+                                onPressed: () => setState(() => _filterLieuCtrl.clear()))
+                            : null,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(children: _kEspeces.map((e) {
+                  final sel = _filterEspece == e;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: GestureDetector(
+                      onTap: () => setState(() => _filterEspece = e),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(22),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                             decoration: BoxDecoration(
-                              color: sel ? const Color(0xFF2E7D5E) : Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(20),
+                              gradient: sel ? const LinearGradient(colors: [Color(0xFF2E7D5E), Color(0xFF1E7A8C)]) : null,
+                              color: sel ? null : Colors.white.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(22),
+                              border: Border.all(color: sel ? Colors.transparent : Colors.white.withValues(alpha: 0.20)),
+                              boxShadow: sel ? [BoxShadow(color: const Color(0xFF2E7D5E).withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3))] : null,
                             ),
                             child: Text(_especeEmoji(e),
-                                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: sel ? Colors.white : Colors.grey.shade700)),
+                                style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                                    color: Colors.white)),
                           ),
                         ),
-                      );
-                    }).toList()),
-                  ),
-                ]),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: _filtered.isEmpty
-                    ? _empty()
-                    : RefreshIndicator(
-                        onRefresh: _load,
-                        color: _orange,
-                        child: ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                          itemCount: _filtered.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 10),
-                          itemBuilder: (_, i) {
-                            final p = _filtered[i];
-                            final id = p['id'].toString();
-                            final myStatut = _mesParticipations[id];
-                            return GestureDetector(
-                              onTap: () => Navigator.push(context,
-                                  MaterialPageRoute(builder: (_) => PromenadeDetailPage(promenadeId: id))),
-                              child: _PromenadesCard(
-                                promenade: p,
-                                estParticipant: myStatut != null,
-                                myStatut: myStatut,
-                                onToggle: _uid.isNotEmpty && myStatut == null
-                                    ? () => _toggleParticipation(id)
-                                    : null,
-                              ),
-                            );
-                          },
-                        ),
                       ),
+                    ),
+                  );
+                }).toList()),
               ),
             ]),
+          ),
+          // ── Liste ──
+          if (_loading)
+            const Expanded(child: Center(child: CircularProgressIndicator(color: _orange)))
+          else
+            Expanded(
+              child: _filtered.isEmpty
+                  ? _empty()
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      color: _orange,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                        itemCount: _filtered.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (_, i) {
+                          final p = _filtered[i];
+                          final id = p['id'].toString();
+                          final myStatut = _mesParticipations[id];
+                          return GestureDetector(
+                            onTap: () => Navigator.push(context,
+                                MaterialPageRoute(builder: (_) => PromenadeDetailPage(promenadeId: id))),
+                            child: _PromenadesCard(
+                              promenade: p,
+                              estParticipant: myStatut != null,
+                              myStatut: myStatut,
+                              onToggle: _uid.isNotEmpty && myStatut == null
+                                  ? () => _toggleParticipation(id)
+                                  : null,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+            ),
+        ])),
+      ]),
     );
   }
 

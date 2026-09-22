@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -10,6 +11,13 @@ import 'creation/creation_flow_page.dart';
 import 'mes_parcours_page.dart';
 import 'classement_page.dart';
 import 'mes_badges_page.dart';
+
+const _darkC = Color(0xFF071C22);
+const _bgGrad = LinearGradient(
+  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+  colors: [Color(0xFF071C22), Color(0xFF0C3535), Color(0xFF0C3520)],
+  stops: [0.0, 0.5, 1.0],
+);
 
 class BaladesLudiquesHubPage extends StatefulWidget {
   const BaladesLudiquesHubPage({super.key});
@@ -114,34 +122,9 @@ class _BaladesLudiquesHubPageState extends State<BaladesLudiquesHubPage> {
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
+    final canPop = ModalRoute.of(context)?.isFirst == false;
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F6),
-      appBar: AppBar(
-        backgroundColor: kBlTeal,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('Balades ludiques',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.emoji_events_outlined),
-            tooltip: 'Classement',
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ClassementPage())),
-          ),
-          if (uid != null)
-            IconButton(
-              icon: const Icon(Icons.workspace_premium_outlined),
-              tooltip: 'Mes badges',
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesBadgesPage())),
-            ),
-          if (uid != null)
-            IconButton(
-              icon: const Icon(Icons.list_alt_outlined),
-              tooltip: 'Mes parcours',
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesParcoursPage())),
-            ),
-        ],
-      ),
+      backgroundColor: _darkC,
       floatingActionButton: uid == null ? null : FloatingActionButton.extended(
         backgroundColor: kBlOrange,
         icon: const Icon(Icons.add),
@@ -151,56 +134,130 @@ class _BaladesLudiquesHubPageState extends State<BaladesLudiquesHubPage> {
           if (created == true) _load();
         },
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: kBlTeal))
-          : RefreshIndicator(
+      body: Stack(children: [
+        Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
+        SafeArea(child: Column(children: [
+          // ── Header ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(children: [
+              if (canPop) ...[
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                        ),
+                        child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+              ],
+              const Expanded(
+                child: Text('Balades ludiques',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 24, color: Colors.white)),
+              ),
+              _glassAction(Icons.emoji_events_outlined, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ClassementPage()))),
+              if (uid != null) ...[
+                const SizedBox(width: 8),
+                _glassAction(Icons.workspace_premium_outlined, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesBadgesPage()))),
+                const SizedBox(width: 8),
+                _glassAction(Icons.list_alt_outlined, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesParcoursPage()))),
+              ],
+            ]),
+          ),
+          if (_loading)
+            const Expanded(child: Center(child: CircularProgressIndicator(color: kBlTeal)))
+          else
+            Expanded(child: RefreshIndicator(
               onRefresh: _load,
               color: kBlTeal,
               child: Column(children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
                   child: Row(children: [
                     Expanded(
-                      child: TextField(
-                        onChanged: (v) => setState(() => _search = v),
-                        style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                        decoration: InputDecoration(
-                          hintText: 'Rechercher un parcours, une ville...',
-                          hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey),
-                          prefixIcon: const Icon(Icons.search, size: 20),
-                          filled: true, fillColor: Colors.white,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
-                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                            ),
+                            child: TextField(
+                              onChanged: (v) => setState(() => _search = v),
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white),
+                              decoration: InputDecoration(
+                                hintText: 'Rechercher un parcours, une ville...',
+                                hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white.withValues(alpha: 0.4)),
+                                prefixIcon: Icon(Icons.search, size: 20, color: Colors.white.withValues(alpha: 0.6)),
+                                contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     GestureDetector(
                       onTap: _openFiltres,
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: _activeFilterCount > 0 ? kBlTeal : Colors.white,
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        child: Stack(clipBehavior: Clip.none, children: [
-                          Icon(Icons.tune, size: 20, color: _activeFilterCount > 0 ? Colors.white : kBlDark),
-                          if (_activeFilterCount > 0)
-                            Positioned(
-                              top: -4, right: -4,
-                              child: CircleAvatar(radius: 8, backgroundColor: kBlOrange,
-                                  child: Text('$_activeFilterCount', style: const TextStyle(fontSize: 10, color: Colors.white))),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              gradient: _activeFilterCount > 0 ? const LinearGradient(colors: [kBlTeal, Color(0xFF1E7A8C)]) : null,
+                              color: _activeFilterCount > 0 ? null : Colors.white.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: _activeFilterCount > 0 ? Colors.transparent : Colors.white.withValues(alpha: 0.20)),
                             ),
-                        ]),
+                            child: Stack(clipBehavior: Clip.none, children: [
+                              const Icon(Icons.tune, size: 20, color: Colors.white),
+                              if (_activeFilterCount > 0)
+                                Positioned(
+                                  top: -4, right: -4,
+                                  child: CircleAvatar(radius: 8, backgroundColor: kBlOrange,
+                                      child: Text('$_activeFilterCount', style: const TextStyle(fontSize: 10, color: Colors.white))),
+                                ),
+                            ]),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     GestureDetector(
                       onTap: () => setState(() => _mapView = !_mapView),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
-                        child: Icon(_mapView ? Icons.view_list_outlined : Icons.map_outlined, size: 20, color: kBlDark),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
+                            ),
+                            child: Icon(_mapView ? Icons.view_list_outlined : Icons.map_outlined, size: 20, color: Colors.white),
+                          ),
+                        ),
                       ),
                     ),
                   ]),
@@ -249,9 +306,30 @@ class _BaladesLudiquesHubPageState extends State<BaladesLudiquesHubPage> {
                             ),
                 ),
               ]),
-            ),
+            )),
+        ])),
+      ]),
     );
   }
+
+  Widget _glassAction(IconData icon, VoidCallback onPressed) => GestureDetector(
+    onTap: onPressed,
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+          ),
+          child: Icon(icon, color: Colors.white, size: 20),
+        ),
+      ),
+    ),
+  );
 
   Future<void> _openDetail(String id) async {
     await Navigator.push(context, MaterialPageRoute(builder: (_) => BaladeLudiqueDetailPage(baladeId: id)));

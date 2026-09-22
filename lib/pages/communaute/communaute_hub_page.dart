@@ -1,19 +1,25 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/pages/promenades/promenades_page.dart';
 import 'package:PetsMatch/pages/communaute/forum_page.dart';
 import 'package:PetsMatch/pages/communaute/groupes_page.dart';
 import 'package:PetsMatch/pages/evenements/evenements_page.dart';
-import 'package:PetsMatch/pages/lieux/lieux_pet_friendly_page.dart';
-import 'package:PetsMatch/pages/nature/natural_places_page.dart';
-import 'package:PetsMatch/pages/petfriends/petfriends_page.dart';
+import 'package:PetsMatch/pages/explorer/explorer_page.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/balades_ludiques/balades_ludiques_hub_page.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const _teal = Color(0xFF0C5C6C);
-const _bg = Color(0xFFF8F8F8);
+const _teal  = Color(0xFF0C5C6C);
+const _green = Color(0xFF2E7D5E);
+const _darkC = Color(0xFF071C22);
+const _bgGrad = LinearGradient(
+  begin: Alignment.topCenter,
+  end: Alignment.bottomCenter,
+  colors: [Color(0xFF071C22), Color(0xFF0C3535), Color(0xFF0C3520)],
+  stops: [0.0, 0.5, 1.0],
+);
 
 class CommunauteHubPage extends StatelessWidget {
   const CommunauteHubPage({super.key});
@@ -23,195 +29,164 @@ class CommunauteHubPage extends StatelessWidget {
       icon: Icons.directions_walk_outlined,
       label: 'Balades',
       subtitle: 'Organisez des sorties avec d\'autres propriétaires',
-      color: Color(0xFF2E7D5E),
-      requiresAuth: false,
+      color: Color(0xFF2E9E72),
     ),
     _CommunauteSection(
       icon: Icons.explore_outlined,
       label: 'Balades ludiques',
       subtitle: 'Chasses au trésor et parcours à défis avec votre animal',
-      color: Color(0xFFC2410C),
-      requiresAuth: false,
+      color: Color(0xFFE07050),
     ),
     _CommunauteSection(
       icon: Icons.forum_outlined,
       label: 'Forums',
       subtitle: 'Échangez avec la communauté PetsMatch',
-      color: Color(0xFF0C5C6C),
-      requiresAuth: false,
+      color: Color(0xFF3A9EBC),
     ),
     _CommunauteSection(
       icon: Icons.groups_outlined,
       label: 'Groupes',
       subtitle: 'Rejoignez des groupes par race ou activité',
-      color: Color(0xFF6A1B9A),
-      requiresAuth: false,
+      color: Color(0xFF9B6AD4),
     ),
     _CommunauteSection(
       icon: Icons.event_outlined,
       label: 'Événements',
       subtitle: 'Expositions, concours & rencontres',
-      color: Color(0xFFE65100),
-      requiresAuth: false,
+      color: Color(0xFFE07840),
     ),
     _CommunauteSection(
-      icon: Icons.location_on_outlined,
-      label: 'Lieux Pet-Friendly',
-      subtitle: 'Restaurants, hôtels & parcs qui accueillent vos animaux',
-      color: Color(0xFFF57C00),
-      requiresAuth: false,
-    ),
-    _CommunauteSection(
-      icon: Icons.forest_outlined,
-      label: 'Lieux Naturels',
-      subtitle: 'Plages, lacs, parcs & forêts accessibles avec vos animaux',
-      color: Color(0xFF2E7D32),
-      requiresAuth: false,
-    ),
-    _CommunauteSection(
-      icon: Icons.people_outline,
-      label: 'PetFriends',
-      subtitle: 'Votre réseau de passionnés d\'animaux',
-      color: Color(0xFFAD1457),
-      requiresAuth: true,
+      icon: Icons.explore_outlined,
+      label: 'Explorer',
+      subtitle: 'Nature, lieux pet-friendly & activités avec vos animaux',
+      color: Color(0xFF2E9E72),
     ),
   ];
 
-  // PetFriends (groupes, flamme de discussion) est réservé aux profils
-  // particulier — un compte éleveur/association ne doit pas le voir dans
-  // le hub, même s'il y accède aussi via CommunauteHubPage.
-  List<_CommunauteSection> get _visibleSections => User_Info.activeType == 'particulier'
-      ? _sections
-      : _sections.where((s) => s.label != 'PetFriends').toList();
-
   @override
   Widget build(BuildContext context) {
-    final canPop = Navigator.canPop(context);
-    final sections = _visibleSections;
+    final canPop = ModalRoute.of(context)?.isFirst == false;
     return Scaffold(
-      backgroundColor: _bg,
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            pinned: true,
-            backgroundColor: _teal,
-            foregroundColor: Colors.white,
-            elevation: 0,
-            leading: canPop
-                ? IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-                    onPressed: () => Navigator.pop(context),
-                  )
-                : null,
-            title: const Text(
-              'Communauté',
-              style: TextStyle(
-                  fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Hero banner
-                Container(
-                  margin: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        _teal,
-                        const Color(0xFF1E7A8C),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+      backgroundColor: _darkC,
+      body: Stack(children: [
+        // Fond dégradé
+        Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
+
+        SafeArea(
+          child: CustomScrollView(
+            slivers: [
+              // ── Header ──────────────────────────────────────────────
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                  child: Row(children: [
+                    if (canPop) ...[
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                            child: Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.14),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                              ),
+                              child: const Icon(Icons.arrow_back_ios_new_rounded,
+                                  color: Colors.white, size: 18),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                    ],
+                    const Text('Communauté',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                            fontSize: 24, color: Colors.white)),
+                  ]),
+                ),
+              ),
+
+              // ── Hero banner ──────────────────────────────────────────
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF0C5C6C), Color(0xFF1E7A8C)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(18),
                     ),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Row(
-                    children: [
+                    child: Row(children: [
                       const Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Rejoignez la communauté',
-                              style: TextStyle(
-                                  fontFamily: 'Galey',
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 16,
-                                  color: Colors.white),
-                            ),
+                            Text('Rejoignez la communauté',
+                                style: TextStyle(fontFamily: 'Galey',
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16, color: Colors.white)),
                             SizedBox(height: 6),
-                            Text(
-                              'Partagez, échangez et créez des liens avec des passionnés comme vous.',
-                              style: TextStyle(
-                                  fontFamily: 'Galey',
-                                  fontSize: 13,
-                                  color: Colors.white70),
-                            ),
+                            Text('Partagez, échangez et créez des liens avec des passionnés comme vous.',
+                                style: TextStyle(fontFamily: 'Galey',
+                                    fontSize: 13, color: Colors.white70)),
                           ],
                         ),
                       ),
                       const SizedBox(width: 12),
                       Container(
-                        width: 56,
-                        height: 56,
+                        width: 56, height: 56,
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.15),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.pets,
-                            color: Colors.white, size: 30),
+                        child: const Icon(Icons.pets, color: Colors.white, size: 30),
                       ),
-                    ],
+                    ]),
                   ),
                 ),
+              ),
 
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 28, 16, 12),
-                  child: Text(
-                    'Explorer',
-                    style: TextStyle(
-                        fontFamily: 'Galey',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 17,
-                        color: Color(0xFF1E2025)),
+              // ── Sections ─────────────────────────────────────────────
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (ctx, i) {
+                      if (i.isOdd) return const SizedBox(height: 10);
+                      final section = _sections[i ~/ 2];
+                      return _SectionCard(
+                        section: section,
+                        onTap: () => _navigate(ctx, section),
+                      );
+                    },
+                    childCount: _sections.length * 2 - 1,
                   ),
                 ),
+              ),
 
-                ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: sections.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (ctx, i) => _SectionCard(
-                    section: sections[i],
-                    onTap: () => _navigate(ctx, sections[i]),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // ── SOS Maltraitance ──────────────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+              // ── SOS Maltraitance ──────────────────────────────────────
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 30),
                   child: _SosMaltraitanceCard(),
                 ),
-
-                const SizedBox(height: 30),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ]),
     );
   }
 
   static void _navigate(BuildContext context, _CommunauteSection section) {
-    final isLoggedIn =
-        FirebaseAuth.instance.currentUser != null;
+    final isLoggedIn = FirebaseAuth.instance.currentUser != null;
 
     if (section.requiresAuth && !isLoggedIn) {
       showModalBottomSheet(
@@ -226,32 +201,13 @@ class CommunauteHubPage extends StatelessWidget {
 
     Widget page;
     switch (section.label) {
-      case 'Balades':
-        page = const PromenadePage();
-        break;
-      case 'Balades ludiques':
-        page = const BaladesLudiquesHubPage();
-        break;
-      case 'Forums':
-        page = const ForumPage();
-        break;
-      case 'Groupes':
-        page = const GroupesPage();
-        break;
-      case 'Événements':
-        page = const EvenementsPage();
-        break;
-      case 'Lieux Pet-Friendly':
-        page = const LieuxPetFriendlyPage();
-        break;
-      case 'Lieux Naturels':
-        page = const NaturalPlacesPage();
-        break;
-      case 'PetFriends':
-        page = const PetFriendsPage();
-        break;
-      default:
-        return;
+      case 'Balades':           page = const PromenadePage(); break;
+      case 'Balades ludiques':  page = const BaladesLudiquesHubPage(); break;
+      case 'Forums':            page = const ForumPage(); break;
+      case 'Groupes':           page = const GroupesPage(); break;
+      case 'Événements':        page = const EvenementsPage(); break;
+      case 'Explorer':           page = const ExplorerPage(); break;
+      default: return;
     }
 
     Navigator.push(context, MaterialPageRoute(builder: (_) => page));
@@ -272,7 +228,7 @@ class _CommunauteSection {
     required this.label,
     required this.subtitle,
     required this.color,
-    required this.requiresAuth,
+    this.requiresAuth = false,
   });
 }
 
@@ -287,75 +243,44 @@ class _SectionCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 8,
-                offset: const Offset(0, 2)),
-          ],
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 8, offset: const Offset(0, 2))],
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: section.color.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(section.icon, color: section.color, size: 24),
+        child: Row(children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: section.color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(13),
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(section.label,
-                          style: const TextStyle(
-                              fontFamily: 'Galey',
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
-                              color: Color(0xFF1E2025))),
-                      if (section.requiresAuth) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(Icons.lock_outline,
-                              size: 11, color: Colors.grey),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 3),
-                  Text(section.subtitle,
-                      style: TextStyle(
-                          fontFamily: 'Galey',
-                          fontSize: 12,
-                          color: Colors.grey.shade500)),
-                ],
-              ),
+            child: Icon(section.icon, color: section.color, size: 24),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(section.label,
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 14, color: Colors.black87)),
+                const SizedBox(height: 3),
+                Text(section.subtitle,
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+              ],
             ),
-            Icon(Icons.arrow_forward_ios_rounded,
-                size: 14, color: Colors.grey.shade400),
-          ],
-        ),
+          ),
+          Icon(Icons.arrow_forward_ios_rounded, size: 13, color: Colors.grey.shade400),
+        ]),
       ),
     );
   }
 }
 
-// ── Login prompt (bottom sheet) ───────────────────────────────────────────────
+// ── Login prompt ──────────────────────────────────────────────────────────────
 
 class _LoginPromptSheet extends StatelessWidget {
   const _LoginPromptSheet();
@@ -368,50 +293,32 @@ class _LoginPromptSheet extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2)),
-            ),
+            Container(width: 36, height: 4,
+                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
             const SizedBox(height: 20),
             const Icon(Icons.lock_outline, size: 40, color: _teal),
             const SizedBox(height: 14),
             const Text('Connexion requise',
-                style: TextStyle(
-                    fontFamily: 'Galey',
-                    fontWeight: FontWeight.w700,
-                    fontSize: 18,
-                    color: Color(0xFF1E2025))),
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    fontSize: 18, color: Color(0xFF1E2025))),
             const SizedBox(height: 8),
-            Text(
-              'Connectez-vous pour accéder à cette fonctionnalité.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  fontFamily: 'Galey',
-                  fontSize: 14,
-                  color: Colors.grey.shade600),
-            ),
+            Text('Connectez-vous pour accéder à cette fonctionnalité.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade600)),
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
               child: FilledButton(
                 style: FilledButton.styleFrom(
                     backgroundColor: _teal,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     padding: const EdgeInsets.symmetric(vertical: 14)),
                 onPressed: () {
                   Navigator.pop(context);
-                  Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => WelcomePage()));
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => WelcomePage()));
                 },
                 child: const Text('Se connecter',
-                    style: TextStyle(
-                        fontFamily: 'Galey',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15)),
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
               ),
             ),
           ],
@@ -421,103 +328,90 @@ class _LoginPromptSheet extends StatelessWidget {
   }
 }
 
-// ── SOS Maltraitance card ─────────────────────────────────────────────────────
+// ── SOS Maltraitance ──────────────────────────────────────────────────────────
 
 class _SosMaltraitanceCard extends StatelessWidget {
   const _SosMaltraitanceCard();
+
+  static const _red = Color(0xFFC62828);
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFFCE4EC),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFC62828).withValues(alpha: 0.30)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 8, offset: const Offset(0, 2))],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFC62828).withValues(alpha: 0.10),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Bandeau dégradé rouge
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [Color(0xFFC62828), Color(0xFFE53935)],
             ),
-            child: const Row(children: [
-              Icon(Icons.warning_amber_rounded, color: Color(0xFFC62828), size: 18),
-              SizedBox(width: 8),
-              Text('Signalement maltraitance animale',
-                  style: TextStyle(
-                      fontFamily: 'Galey',
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      color: Color(0xFFC62828))),
-            ]),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
-            child: Row(children: [
-              const Icon(Icons.phone_outlined, size: 16, color: Color(0xFFC62828)),
-              const SizedBox(width: 8),
-              const Text('3677',
-                  style: TextStyle(
-                      fontFamily: 'Galey',
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                      color: Color(0xFFC62828))),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text('— SOS Maltraitance Animale',
-                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade700)),
-              ),
-              GestureDetector(
-                onTap: () async {
-                  try {
-                    await launchUrl(Uri(scheme: 'tel', path: '3677'),
-                        mode: LaunchMode.externalApplication);
-                  } catch (_) {}
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFC62828),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text('Appeler',
-                      style: TextStyle(
-                          fontFamily: 'Galey',
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white)),
-                ),
-              ),
-            ]),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 2, 14, 12),
-            child: GestureDetector(
+          child: const Row(children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18),
+            SizedBox(width: 8),
+            Text('Signalement maltraitance animale',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    fontSize: 13, color: Colors.white)),
+          ]),
+        ),
+        // Corps blanc
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+          child: Row(children: [
+            const Icon(Icons.phone_outlined, size: 16, color: _red),
+            const SizedBox(width: 8),
+            const Text('3677',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    fontSize: 15, color: _red)),
+            const SizedBox(width: 6),
+            Expanded(child: Text('— SOS Maltraitance Animale',
+                style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                    color: Colors.grey.shade500))),
+            GestureDetector(
               onTap: () async {
-                try {
-                  await launchUrl(
-                      Uri.parse('https://3677.fr/formulaire-de-signalement'),
-                      mode: LaunchMode.externalApplication);
-                } catch (_) {}
+                try { await launchUrl(Uri(scheme: 'tel', path: '3677'), mode: LaunchMode.externalApplication); } catch (_) {}
               },
-              child: const Row(children: [
-                Icon(Icons.open_in_new_rounded, size: 13, color: Color(0xFF0C5C6C)),
-                SizedBox(width: 6),
-                Text('Formulaire de signalement en ligne',
-                    style: TextStyle(
-                        fontFamily: 'Galey',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF0C5C6C),
-                        decoration: TextDecoration.underline)),
-              ]),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: _red, borderRadius: BorderRadius.circular(20)),
+                child: const Text('Appeler',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                        fontWeight: FontWeight.w700, color: Colors.white)),
+              ),
             ),
+          ]),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 2, 14, 12),
+          child: GestureDetector(
+            onTap: () async {
+              try {
+                await launchUrl(Uri.parse('https://3677.fr/formulaire-de-signalement'),
+                    mode: LaunchMode.externalApplication);
+              } catch (_) {}
+            },
+            child: Row(children: [
+              const Icon(Icons.open_in_new_rounded, size: 13, color: _teal),
+              const SizedBox(width: 6),
+              const Text('Formulaire de signalement en ligne',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                      fontWeight: FontWeight.w600, color: _teal,
+                      decoration: TextDecoration.underline,
+                      decorationColor: _teal)),
+            ]),
           ),
-        ],
-      ),
+        ),
+      ]),
     );
   }
 }

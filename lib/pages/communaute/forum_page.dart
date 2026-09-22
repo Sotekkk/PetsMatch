@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 import 'package:PetsMatch/main.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -16,6 +17,12 @@ import 'package:PetsMatch/widgets/inline_video.dart';
 import 'package:PetsMatch/widgets/mention_hashtag.dart';
 
 const _tealC = Color(0xFF00ACC1);
+const _darkC = Color(0xFF071C22);
+const _bgGrad = LinearGradient(
+  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+  colors: [Color(0xFF071C22), Color(0xFF0C3535), Color(0xFF0C3520)],
+  stops: [0.0, 0.5, 1.0],
+);
 const int _kMaxVideoBytes = 50 * 1024 * 1024; // 50 Mo, même limite que le journal pension
 
 // ── Photo / vidéo jointe à un sujet ou une réponse ─────────────────────────────
@@ -320,69 +327,75 @@ class ForumPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F8),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0C5C6C),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('Forum communauté',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
-        itemCount: _kCategories.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (_, i) {
-          final cat = _kCategories[i];
-          return GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => _ForumCategorieePage(cat: cat)),
-            ),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.06),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2))
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                child: Row(children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: cat.color.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(12),
+      backgroundColor: _darkC,
+      body: Stack(children: [
+        Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
+        SafeArea(child: Column(children: [
+          // ── Header ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(children: [
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                      ),
+                      child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
                     ),
-                    child: Icon(cat.icon, color: cat.color, size: 22),
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Text(cat.label,
-                        style: const TextStyle(
-                            fontFamily: 'Galey',
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16,
-                            color: Color(0xFF1E2025))),
-                  ),
-                  Icon(Icons.arrow_forward_ios_rounded,
-                      size: 14, color: Colors.grey.shade400),
-                ]),
+                ),
               ),
+              const SizedBox(width: 14),
+              const Text('Forum communauté',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 22, color: Colors.white)),
+            ]),
+          ),
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+              itemCount: _kCategories.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (_, i) {
+                final cat = _kCategories[i];
+                return GestureDetector(
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _ForumCategorieePage(cat: cat))),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8, offset: const Offset(0, 2))],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      child: Row(children: [
+                        Container(
+                          width: 44, height: 44,
+                          decoration: BoxDecoration(color: cat.color.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(12)),
+                          child: Icon(cat.icon, color: cat.color, size: 22),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(cat.label,
+                              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1E2025))),
+                        ),
+                        Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey.shade400),
+                      ]),
+                    ),
+                  ),
+                );
+              },
             ),
-          );
-        },
-      ),
+          ),
+        ])),
+      ]),
     );
   }
 }
@@ -452,17 +465,7 @@ class _ForumCategorieePageState extends State<_ForumCategorieePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F8),
-      appBar: AppBar(
-        backgroundColor: widget.cat.color,
-        title: Text(widget.cat.label,
-            style: const TextStyle(
-                fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white)),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
+      backgroundColor: _darkC,
       floatingActionButton: _uid.isNotEmpty
           ? FloatingActionButton(
               backgroundColor: widget.cat.color,
@@ -470,28 +473,66 @@ class _ForumCategorieePageState extends State<_ForumCategorieePage> {
               child: const Icon(Icons.edit_outlined, color: Colors.white),
             )
           : null,
-      body: _loading
-          ? Center(child: CircularProgressIndicator(color: widget.cat.color))
-          : _sujets.isEmpty
-              ? _empty()
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  color: widget.cat.color,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-                    itemCount: _sujets.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (_, i) => _SujetTile(
-                      sujet: _sujets[i],
-                      author: _authors[_authorKey(_sujets[i])],
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => _ForumSujetPage(sujet: _sujets[i])),
+      body: Stack(children: [
+        Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
+        SafeArea(child: Column(children: [
+          // ── Header ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(children: [
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
                       ),
+                      child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
                     ),
                   ),
                 ),
+              ),
+              const SizedBox(width: 14),
+              Container(
+                width: 32, height: 32,
+                decoration: BoxDecoration(color: widget.cat.color.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
+                child: Icon(widget.cat.icon, color: widget.cat.color, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(widget.cat.label,
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 22, color: Colors.white)),
+              ),
+            ]),
+          ),
+          Expanded(
+            child: _loading
+                ? Center(child: CircularProgressIndicator(color: widget.cat.color))
+                : _sujets.isEmpty
+                    ? _empty()
+                    : RefreshIndicator(
+                        onRefresh: _load,
+                        color: widget.cat.color,
+                        child: ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
+                          itemCount: _sujets.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 8),
+                          itemBuilder: (_, i) => _SujetTile(
+                            sujet: _sujets[i],
+                            author: _authors[_authorKey(_sujets[i])],
+                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _ForumSujetPage(sujet: _sujets[i]))),
+                          ),
+                        ),
+                      ),
+          ),
+        ])),
+      ]),
     );
   }
 
@@ -743,23 +784,41 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
     final contenu = widget.sujet['contenu']?.toString() ?? '';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F8),
-      appBar: AppBar(
-        backgroundColor: _tealC,
-        title: Text(titre,
-            style: const TextStyle(
-                fontFamily: 'Galey',
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-                fontSize: 15),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: Column(children: [
+      backgroundColor: _darkC,
+      body: Stack(children: [
+        Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
+        SafeArea(child: Column(children: [
+          // ── Header ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(children: [
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                      ),
+                      child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(titre,
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Colors.white),
+                    maxLines: 2, overflow: TextOverflow.ellipsis),
+              ),
+            ]),
+          ),
+          // ── Messages ──
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator(color: _tealC))
@@ -772,9 +831,9 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: _tealC.withValues(alpha: 0.08),
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: _tealC.withValues(alpha: 0.2)),
+                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 6, offset: const Offset(0, 2))],
                         ),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           _AuthorRow(
@@ -807,11 +866,9 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
         ),
         if (_uid.isNotEmpty)
           Container(
-            color: Colors.white,
+            color: const Color(0xFF0A2535),
             padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                top: 10,
+                left: 16, right: 16, top: 10,
                 bottom: MediaQuery.of(context).padding.bottom + 10),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               if (_replyPhoto != null || _replyVideo != null)
@@ -859,23 +916,15 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
               Expanded(
                 child: TextFormField(
                   controller: _reponseCtrl,
+                  style: const TextStyle(fontFamily: 'Galey', color: Colors.white),
                   decoration: InputDecoration(
                     hintText: 'Votre réponse… (@ pour mentionner)',
-                    hintStyle:
-                        const TextStyle(fontFamily: 'Galey', color: Colors.grey),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: Colors.grey.shade300)),
-                    enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(color: Colors.grey.shade300)),
-                    focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: const BorderSide(color: _tealC, width: 1.5)),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    filled: true,
-                    fillColor: const Color(0xFFF8F8F8),
+                    hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.45)),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2))),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2))),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: const BorderSide(color: _tealC, width: 1.5)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    filled: true, fillColor: Colors.white.withValues(alpha: 0.08),
                   ),
                   maxLines: null,
                 ),
@@ -905,6 +954,7 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
                 ),
             ]),
           ),
+        ])),
       ]),
     );
   }

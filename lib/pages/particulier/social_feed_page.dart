@@ -18,10 +18,12 @@ import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:PetsMatch/pages/petfriends/petfriends_page.dart';
 import 'package:PetsMatch/pages/petfriends/public_profile_page.dart' show PublicProfilePage;
+import 'package:PetsMatch/pages/chatScreen.dart' show ChatScreen;
+import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/widgets/mention_hashtag.dart';
 import 'package:PetsMatch/pages/particulier/stories/story_ring.dart';
+import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ⚠️  MULTI-PROFIL — NOTE POUR NABIL (et tout dev sur Pets Social)
@@ -272,26 +274,26 @@ Future<String?> _socialProfileId(String uid) async {
   }
 }
 
-/// Profils PetFriends **acceptés** de `profileId` (relation mutuelle —
-/// symétrique par construction, on lit les deux sens de la table
-/// `petfriends`). Sert à afficher le badge « Ami » et à autoriser la
-/// lecture des posts `visibilite = 'amis'`.
+/// Profils "amis" de `profileId` = follows **mutuels** (A suit B ET B suit A).
+/// Sert à afficher le badge « Ami » et à autoriser la lecture des posts
+/// `visibilite = 'amis'`.
 Future<Set<String>> _friendProfileIds(String profileId) async {
   if (profileId.isEmpty) return {};
   try {
     final supa = Supabase.instance.client;
     final results = await Future.wait([
-      supa.from('petfriends').select('recepteur_profile_id')
-          .eq('demandeur_profile_id', profileId).eq('statut', 'accepte'),
-      supa.from('petfriends').select('demandeur_profile_id')
-          .eq('recepteur_profile_id', profileId).eq('statut', 'accepte'),
+      supa.from('follows').select('following_profile_id').eq('follower_profile_id', profileId),
+      supa.from('follows').select('follower_profile_id').eq('following_profile_id', profileId),
     ]);
-    return {
+    final iFollow = <String>{
       for (final r in results[0] as List)
-        if ((r['recepteur_profile_id'] as String?)?.isNotEmpty == true) r['recepteur_profile_id'] as String,
-      for (final r in results[1] as List)
-        if ((r['demandeur_profile_id'] as String?)?.isNotEmpty == true) r['demandeur_profile_id'] as String,
+        if ((r['following_profile_id'] as String?)?.isNotEmpty == true) r['following_profile_id'] as String,
     };
+    final followMe = <String>{
+      for (final r in results[1] as List)
+        if ((r['follower_profile_id'] as String?)?.isNotEmpty == true) r['follower_profile_id'] as String,
+    };
+    return iFollow.intersection(followMe);
   } catch (_) {
     return {};
   }
@@ -1121,7 +1123,45 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
         SafeArea(
           child: Column(children: [
             _buildHeader(),
-            StoryRing(myUid: uid, myProfileId: _myProfileId),
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: StoryRing(myUid: uid, myProfileId: _myProfileId)),
+              Padding(
+                padding: const EdgeInsets.only(right: 16, top: 8),
+                child: GestureDetector(
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const CommunauteHubPage())),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                      child: Container(
+                        width: 82,
+                        height: 68,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                        ),
+                        child: const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.groups_rounded, color: Colors.white, size: 26),
+                            SizedBox(height: 5),
+                            Text('Communauté',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    fontFamily: 'Galey',
+                                    fontSize: 10,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
             _buildPillTabs(),
             Expanded(
               child: IndexedStack(
@@ -1174,7 +1214,7 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
     // Éleveur/pro/association : accessible depuis le tiroir (Navigator.push),
     // il faut un retour explicite — sinon ni bouton ni barre de nav du bas.
     // Particulier : c'est un onglet de sa nav principale (rien à empiler).
-    final canPop = Navigator.canPop(context);
+    final canPop = ModalRoute.of(context)?.isFirst == false;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 16, 10),
       child: Row(children: [
@@ -5368,6 +5408,7 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
       }
     }
 
+
     if (mounted) {
       setState(() {
         _profile = results[0] as Map<String, dynamic>?;
@@ -5445,12 +5486,6 @@ class _SocialProfilePageState extends State<SocialProfilePage> {
                     flexibleSpace: null,
                     actions: [
                       if (_isMyProfile) ...[
-                        IconButton(
-                          icon: const Icon(Icons.people_alt_outlined, color: Colors.white),
-                          tooltip: 'Mes PetFriends',
-                          onPressed: () => Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => const PetFriendsPage())),
-                        ),
                         IconButton(
                           icon: const Icon(Icons.auto_awesome, color: Colors.white),
                           tooltip: 'Boutique cosmétiques',
@@ -7049,4 +7084,173 @@ class _SocialShareBtn extends StatelessWidget {
         textAlign: TextAlign.center),
     ]),
   );
+}
+
+// ─── Liste des amis (follows mutuels) ────────────────────────────────────────
+
+class _FriendsListPage extends StatefulWidget {
+  final String myUid;
+  final String? targetProfileId;
+  final bool isMyProfile;
+  const _FriendsListPage({required this.myUid, this.targetProfileId, required this.isMyProfile});
+  @override
+  State<_FriendsListPage> createState() => _FriendsListPageState();
+}
+
+class _FriendsListPageState extends State<_FriendsListPage> {
+  final _supa = Supabase.instance.client;
+  List<_FriendEntry> _friends = [];
+  bool _loading = true;
+  final _unfollowing = <String>{};
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    final pid = widget.targetProfileId;
+    if (pid == null) { if (mounted) setState(() => _loading = false); return; }
+    try {
+      final results = await Future.wait([
+        _supa.from('follows').select('following_profile_id, following_uid').eq('follower_profile_id', pid),
+        _supa.from('follows').select('follower_profile_id, follower_uid').eq('following_profile_id', pid),
+      ]);
+
+      // Profils que je suis (profile_id → uid)
+      final Map<String, String> iFollowByPid = {};
+      for (final r in results[0] as List) {
+        final fpid = r['following_profile_id'] as String?;
+        final fuid = r['following_uid'] as String?;
+        if (fpid?.isNotEmpty == true && fuid?.isNotEmpty == true) iFollowByPid[fpid!] = fuid!;
+      }
+      // Profils qui me suivent
+      final followMePids = <String>{
+        for (final r in results[1] as List)
+          if ((r['follower_profile_id'] as String?)?.isNotEmpty == true) r['follower_profile_id'] as String,
+      };
+
+      final mutualPids = iFollowByPid.keys.toSet().intersection(followMePids).toList();
+      if (mutualPids.isEmpty) { if (mounted) setState(() => _loading = false); return; }
+
+      final profiles = await _supa.from('user_profiles')
+          .select('$kSocialAuthorCols, uid').inFilter('id', mutualPids);
+
+      final entries = (profiles as List).map((p) => _FriendEntry(
+        uid: p['uid'] as String,
+        profileId: p['id'] as String,
+        name: socialProfileName(p as Map<String, dynamic>),
+        photo: socialProfilePhoto(p),
+        typeLabel: socialProfileTypeLabel(p['profile_type']?.toString()) ?? '',
+      )).toList();
+
+      if (mounted) setState(() { _friends = entries; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _message(_FriendEntry f) async {
+    try {
+      final convId = await MessagingHelper.openOrCreateConversation(otherUid: f.uid);
+      if (!mounted) return;
+      Navigator.push(context, MaterialPageRoute(
+          builder: (_) => ChatScreen(conversationId: convId, eleveurId: f.uid)));
+    } catch (_) {}
+  }
+
+  Future<void> _unfollow(_FriendEntry f) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Se désabonner ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: Text('Vous ne serez plus amis avec ${f.name}.', style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Se désabonner'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _unfollowing.add(f.uid));
+    await _removeFollow(widget.myUid, f.uid, followingProfileId: f.profileId);
+    if (mounted) setState(() { _friends.removeWhere((e) => e.uid == f.uid); _unfollowing.remove(f.uid); });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _darkC,
+      body: Stack(children: [
+        Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
+        SafeArea(child: Column(children: [
+          Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(children: [
+              GestureDetector(onTap: () => Navigator.pop(context),
+                  child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20)),
+              const SizedBox(width: 16),
+              const Text('Amis', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: Colors.white)),
+            ])),
+          const Divider(color: Colors.white12, height: 1),
+          Expanded(child: _loading
+              ? const Center(child: CircularProgressIndicator(color: _tealC))
+              : _friends.isEmpty
+                  ? const Center(child: Text('Aucun ami pour l\'instant\nSuis quelqu\'un et attends qu\'il te suive en retour 🐾',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontFamily: 'Galey', color: Colors.white60, fontSize: 15)))
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1, indent: 70),
+                      itemCount: _friends.length,
+                      itemBuilder: (_, i) {
+                        final f = _friends[i];
+                        final isMe = f.uid == widget.myUid;
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          leading: GestureDetector(
+                            onTap: () => Navigator.push(context, MaterialPageRoute(
+                                builder: (_) => SocialProfilePage(targetUid: f.uid, myUid: widget.myUid,
+                                    targetProfileId: f.profileId))),
+                            child: _avatarWidget(f.photo, 22)),
+                          title: Text(f.name, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14, color: Colors.white)),
+                          subtitle: f.typeLabel.isNotEmpty ? Text(f.typeLabel, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _tealC)) : null,
+                          trailing: isMe ? null : Row(mainAxisSize: MainAxisSize.min, children: [
+                            GestureDetector(
+                              onTap: () => _message(f),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(colors: [_tealC, _green]),
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                                child: const Text('Message', style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+                              ),
+                            ),
+                            if (widget.isMyProfile) ...[
+                              const SizedBox(width: 8),
+                              GestureDetector(
+                                onTap: _unfollowing.contains(f.uid) ? null : () => _unfollow(f),
+                                child: const Icon(Icons.person_remove_outlined, color: Colors.white38, size: 20),
+                              ),
+                            ],
+                          ]),
+                        );
+                      },
+                    )),
+        ])),
+      ]),
+    );
+  }
+}
+
+class _FriendEntry {
+  final String uid;
+  final String profileId;
+  final String name;
+  final String? photo;
+  final String typeLabel;
+  const _FriendEntry({required this.uid, required this.profileId,
+      required this.name, this.photo, required this.typeLabel});
 }

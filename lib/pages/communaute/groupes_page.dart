@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,6 +6,12 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'groupe_detail_page.dart';
 
 const _tealC = Color(0xFF00ACC1);
+const _darkC = Color(0xFF071C22);
+const _bgGrad = LinearGradient(
+  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+  colors: [Color(0xFF071C22), Color(0xFF0C3535), Color(0xFF0C3520)],
+  stops: [0.0, 0.5, 1.0],
+);
 
 const _kGroupeTypes = ['race', 'region', 'loisir', 'autre'];
 const _kGroupeTypesLabels = {
@@ -197,32 +204,43 @@ class _GroupesPageState extends State<GroupesPage>
       _groupes.where((g) => _mesGroupes.contains(g['id'].toString())).toList());
 
   Widget _buildSearchBar() {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Column(children: [
-        TextField(
-          controller: _searchCtrl,
-          onChanged: (v) => setState(() => _search = v),
-          decoration: InputDecoration(
-            hintText: 'Rechercher un groupe (nom, thème…)',
-            hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey, fontSize: 14),
-            prefixIcon: const Icon(Icons.search, color: _tealC, size: 20),
-            suffixIcon: _search.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    onPressed: () {
-                      _searchCtrl.clear();
-                      setState(() => _search = '');
-                    },
-                  )
-                : null,
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            filled: true,
-            fillColor: const Color(0xFFF4F4F4),
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+              ),
+              child: TextField(
+                controller: _searchCtrl,
+                onChanged: (v) => setState(() => _search = v),
+                style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Rechercher un groupe (nom, thème…)',
+                  hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.4), fontSize: 14),
+                  prefixIcon: Icon(Icons.search, color: Colors.white.withValues(alpha: 0.6), size: 20),
+                  suffixIcon: _search.isNotEmpty
+                      ? IconButton(
+                          icon: Icon(Icons.close, size: 18, color: Colors.white.withValues(alpha: 0.6)),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            setState(() => _search = '');
+                          },
+                        )
+                      : null,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                ),
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 10),
@@ -243,18 +261,26 @@ class _GroupesPageState extends State<GroupesPage>
       padding: const EdgeInsets.only(right: 8),
       child: GestureDetector(
         onTap: () => setState(() => _typeFilter = active ? '' : value),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-          decoration: BoxDecoration(
-            color: active ? _tealC : const Color(0xFFF0F0F0),
-            borderRadius: BorderRadius.circular(20),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(22),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              decoration: BoxDecoration(
+                gradient: active ? const LinearGradient(colors: [_tealC, Color(0xFF1E7A8C)]) : null,
+                color: active ? null : Colors.white.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: active ? Colors.transparent : Colors.white.withValues(alpha: 0.20)),
+                boxShadow: active ? [BoxShadow(color: _tealC.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3))] : null,
+              ),
+              child: Text(label,
+                  style: const TextStyle(
+                      fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600,
+                      color: Colors.white)),
+            ),
           ),
-          child: Text(label,
-              style: TextStyle(
-                  fontFamily: 'Galey',
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: active ? Colors.white : const Color(0xFF6F767B))),
         ),
       ),
     );
@@ -263,27 +289,7 @@ class _GroupesPageState extends State<GroupesPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F8),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0C5C6C),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('Groupes',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        bottom: TabBar(
-          controller: _tabCtrl,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white60,
-          labelStyle: const TextStyle(
-              fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13),
-          tabs: const [Tab(text: 'Tous'), Tab(text: 'Mes groupes')],
-        ),
-      ),
+      backgroundColor: _darkC,
       floatingActionButton: _uid.isNotEmpty
           ? FloatingActionButton(
               backgroundColor: _tealC,
@@ -291,22 +297,62 @@ class _GroupesPageState extends State<GroupesPage>
               child: const Icon(Icons.add, color: Colors.white),
             )
           : null,
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _tealC))
-          : Column(children: [
-              _buildSearchBar(),
-              const Divider(height: 1),
-              Expanded(
-                child: TabBarView(
-                  controller: _tabCtrl,
-                  children: [
-                    _buildList(_tousGroupes),
-                    _buildList(_mesGroupesList,
-                        emptyMsg: 'Vous n\'avez rejoint aucun groupe'),
-                  ],
+      body: Stack(children: [
+        Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
+        SafeArea(child: Column(children: [
+          // ── Header ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Row(children: [
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                      ),
+                      child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+                    ),
+                  ),
                 ),
               ),
+              const SizedBox(width: 14),
+              const Text('Groupes',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 24, color: Colors.white)),
             ]),
+          ),
+          // ── TabBar ──
+          TabBar(
+            controller: _tabCtrl,
+            indicatorColor: _tealC,
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white60,
+            dividerColor: Colors.white.withValues(alpha: 0.1),
+            labelStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13),
+            tabs: const [Tab(text: 'Tous'), Tab(text: 'Mes groupes')],
+          ),
+          // ── Recherche + filtres ──
+          _buildSearchBar(),
+          // ── Contenu ──
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: _tealC))
+                : TabBarView(
+                    controller: _tabCtrl,
+                    children: [
+                      _buildList(_tousGroupes),
+                      _buildList(_mesGroupesList, emptyMsg: 'Vous n\'avez rejoint aucun groupe'),
+                    ],
+                  ),
+          ),
+        ])),
+      ]),
     );
   }
 

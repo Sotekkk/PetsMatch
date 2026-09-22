@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:flutter/material.dart';
@@ -16,11 +17,12 @@ class MessagePage extends StatefulWidget {
 
 // ── Catégories ───────────────────────────────────────────────────────────────
 
-const _catKeys = <String?>[
-  null, 'animaux-perdus', 'annonces', 'contact-elevage', 'service-professionnel', 'communaute', '__archived__',
-];
-const _catLabels = ['Tous', 'Perdus', 'Annonces', 'Élevages', 'Services', 'Communauté', 'Archivés'];
-const _catEmojis = ['💬', '🐾', '📢', '🏡', '🔧', '🌿', '📦'];
+const _catKeys = <String?>[null, '__petfriends__', '__pro__', '__archived__'];
+const _catLabels = ['Tous', 'PetFriends', 'Professionnel', 'Archivés'];
+const _catEmojis = ['💬', '🐾', '💼', '📦'];
+
+const _petfriendsCategories = {null, 'animaux-perdus', 'communaute'};
+const _proCategories = {'annonces', 'contact-elevage', 'service-professionnel'};
 
 const _catBadgeColor = {
   'animaux-perdus':        Color(0xFFFED7AA),
@@ -44,8 +46,14 @@ const _catBadgeLabel = {
   'service-professionnel': '🔧 Service',
 };
 
-const _teal  = Color(0xFF0C5C6C);
-const _green = Color(0xFF6E9E57);
+const _teal   = Color(0xFF0C5C6C);
+const _green  = Color(0xFF6E9E57);
+const _darkBg = Color(0xFF071C22);
+const _bgGrad = LinearGradient(
+  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+  colors: [Color(0xFF071C22), Color(0xFF0C3535), Color(0xFF0C3520)],
+  stops: [0.0, 0.5, 1.0],
+);
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
@@ -409,44 +417,62 @@ class _MessagePageState extends State<MessagePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F8),
-      appBar: AppBar(
-        backgroundColor: _teal, elevation: 0, automaticallyImplyLeading: false,
-        title: const Text('Messages',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 20, color: Colors.white)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_square, color: Colors.white),
-            tooltip: 'Nouveau message',
-            onPressed: _openNewMessageSheet,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Recherche
+      backgroundColor: _darkBg,
+      body: Stack(children: [
+        // Fond dégradé
+        Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
+
+        SafeArea(child: Column(children: [
+          // ── Header ───────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-            child: TextField(
-              controller: _searchCtrl,
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Icons.search, color: _teal, size: 20),
-                hintText: 'Rechercher une conversation…',
-                hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade400),
-                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
-                filled: true, fillColor: Colors.white,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: Colors.grey.shade200)),
-                focusedBorder: const OutlineInputBorder(
-                    borderRadius: BorderRadius.all(Radius.circular(14)),
-                    borderSide: BorderSide(color: _teal, width: 1.5)),
+            padding: const EdgeInsets.fromLTRB(20, 16, 16, 12),
+            child: Row(children: [
+              const Expanded(
+                child: Text('Messages',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 24, color: Colors.white)),
+              ),
+              if (_catIndex == 1) ...[
+                _glassBtn(Icons.group_add_rounded, _createGroupe),
+                const SizedBox(width: 8),
+              ],
+              _glassBtn(Icons.edit_rounded, _openNewMessageSheet),
+            ]),
+          ),
+
+          // ── Recherche glass ──────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                  ),
+                  child: TextField(
+                    controller: _searchCtrl,
+                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white),
+                    decoration: InputDecoration(
+                      prefixIcon: Icon(Icons.search, color: Colors.white.withValues(alpha: 0.6), size: 20),
+                      hintText: 'Rechercher une conversation…',
+                      hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                          color: Colors.white.withValues(alpha: 0.4)),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
 
-          // Filtres catégories
+          // ── Filtres pills ─────────────────────────────────────────
           SizedBox(
             height: 36,
             child: ListView.separated(
@@ -456,34 +482,238 @@ class _MessagePageState extends State<MessagePage> {
               separatorBuilder: (_, __) => const SizedBox(width: 8),
               itemBuilder: (_, i) {
                 final active = _catIndex == i;
-                final isArchive = _catKeys[i] == '__archived__';
                 return GestureDetector(
                   onTap: () => setState(() => _catIndex = i),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: active ? (isArchive ? Colors.blueGrey : _teal) : Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: active ? (isArchive ? Colors.blueGrey : _teal) : Colors.grey.shade200),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(22),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          gradient: active
+                              ? const LinearGradient(colors: [_teal, _green])
+                              : null,
+                          color: active ? null : Colors.white.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(
+                              color: active ? Colors.transparent : Colors.white.withValues(alpha: 0.20)),
+                          boxShadow: active
+                              ? [BoxShadow(color: _teal.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3))]
+                              : null,
+                        ),
+                        child: Text(_catLabels[i],
+                          style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                              color: active ? Colors.white : Colors.white.withValues(alpha: 0.65))),
+                      ),
                     ),
-                    child: Text('${_catEmojis[i]}  ${_catLabels[i]}',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
-                          color: active ? Colors.white : const Color(0xFF6B7280))),
                   ),
                 );
               },
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
 
-          // Liste
+          // ── Liste ────────────────────────────────────────────────
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator(color: _green))
                 : _buildList(),
           ),
-        ],
+        ])),
+      ]),
+    );
+  }
+
+  Widget _glassBtn(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+            ),
+            child: Icon(icon, color: Colors.white, size: 20),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _createGroupe() async {
+    final uid = _uid;
+    if (uid.isEmpty) return;
+
+    // Amis = follows mutuels (par uid, suffisant pour la création de groupe)
+    final results = await Future.wait([
+      _supa.from('follows').select('following_uid').eq('follower_uid', uid),
+      _supa.from('follows').select('follower_uid').eq('following_uid', uid),
+    ]);
+    final iFollow  = {for (final r in results[0] as List) r['following_uid'] as String};
+    final followMe = {for (final r in results[1] as List) r['follower_uid']  as String};
+    final friendUids = iFollow.intersection(followMe).toList();
+
+    List<Map<String, dynamic>> allUsers = [];
+    if (friendUids.isNotEmpty) {
+      final rows = await _supa.from('user_profiles')
+          .select('uid, firstname, lastname, nom, avatar_url, profile_type')
+          .inFilter('uid', friendUids).eq('is_main', true);
+      allUsers = (rows as List).cast<Map<String, dynamic>>();
+    }
+
+    if (!mounted) return;
+
+    final nomCtrl = TextEditingController();
+    final searchCtrl = TextEditingController();
+    final selectedUids = <String>{};
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModal) {
+          final q = searchCtrl.text.trim().toLowerCase();
+          final candidates = q.isEmpty
+              ? allUsers
+              : allUsers.where((u) {
+                  final n = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.toLowerCase();
+                  return n.contains(q);
+                }).toList();
+          return DraggableScrollableSheet(
+            initialChildSize: 0.75, maxChildSize: 0.95, minChildSize: 0.5, expand: false,
+            builder: (_, sc) => Padding(
+              padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Center(child: Container(width: 40, height: 4,
+                    decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+                const SizedBox(height: 16),
+                const Text('Nouveau groupe',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: nomCtrl,
+                  style: const TextStyle(fontFamily: 'Galey'),
+                  decoration: InputDecoration(
+                    labelText: 'Nom du groupe',
+                    labelStyle: const TextStyle(fontFamily: 'Galey'),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text('Ajouter des amis (${selectedUids.length})',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: searchCtrl,
+                  onChanged: (_) => setModal(() {}),
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Rechercher parmi vos amis…',
+                    hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey),
+                    prefixIcon: const Icon(Icons.search, size: 18, color: _teal),
+                    isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (allUsers.isEmpty)
+                  Expanded(child: Center(child: Text('Vous n\'avez pas encore d\'amis.\nSuivez quelqu\'un et attendez qu\'il vous suive en retour.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontFamily: 'Galey', color: Colors.grey.shade600, fontSize: 14))))
+                else
+                  Expanded(
+                    child: candidates.isEmpty
+                        ? const Center(child: Text('Aucun résultat', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)))
+                        : ListView.builder(
+                            controller: sc,
+                            itemCount: candidates.length,
+                            itemBuilder: (_, i) {
+                              final u = candidates[i];
+                              final uUid = u['uid'].toString();
+                              final sel = selectedUids.contains(uUid);
+                              final photo = (u['avatar_url'] as String?) ?? '';
+                              final name = '${u['firstname'] ?? ''} ${u['lastname'] ?? ''}'.trim();
+                              return CheckboxListTile(
+                                value: sel, activeColor: _teal,
+                                onChanged: (_) => setModal(() {
+                                  if (sel) selectedUids.remove(uUid); else selectedUids.add(uUid);
+                                }),
+                                title: Text(name.isEmpty ? 'Utilisateur' : name,
+                                    style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
+                                secondary: CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: const Color(0xFFD4E6CD),
+                                  backgroundImage: photo.isNotEmpty ? CachedNetworkImageProvider(photo) : null,
+                                  child: photo.isEmpty ? const Icon(Icons.person, color: Colors.white, size: 18) : null,
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                        backgroundColor: _teal,
+                        padding: const EdgeInsets.symmetric(vertical: 14)),
+                    onPressed: selectedUids.isEmpty ? null : () async {
+                      final nom = nomCtrl.text.trim();
+                      if (nom.isEmpty) return;
+                      final members = [uid, ...selectedUids];
+                      final myData = await _supa.from('user_profiles')
+                          .select('firstname, lastname').eq('uid', uid).eq('is_main', true).maybeSingle();
+                      final myName = '${myData?['firstname'] ?? ''} ${myData?['lastname'] ?? ''}'.trim();
+                      final unread = {for (final u in members) u: 0};
+                      final Map<String, dynamic> participantsInfo = {
+                        uid: {'name': myName.isEmpty ? 'Moi' : myName},
+                      };
+                      if (selectedUids.isNotEmpty) {
+                        final others = await _supa.from('user_profiles')
+                            .select('uid, firstname, lastname, avatar_url')
+                            .inFilter('uid', selectedUids.toList()).eq('is_main', true);
+                        for (final o in others as List) {
+                          final oName = '${o['firstname'] ?? ''} ${o['lastname'] ?? ''}'.trim();
+                          participantsInfo[o['uid'].toString()] = {
+                            'name': oName.isEmpty ? 'Utilisateur' : oName,
+                            if ((o['avatar_url'] as String?)?.isNotEmpty == true) 'photo': o['avatar_url'],
+                          };
+                        }
+                      }
+                      await _supa.from('conversations').insert({
+                        'type': 'groupe',
+                        'nom': nom,
+                        'participants': members,
+                        'participant_ids': members.join(','),
+                        'created_by': uid,
+                        'participants_info': participantsInfo,
+                        'last_message': '',
+                        'unread_count': unread,
+                        'updated_at': DateTime.now().toIso8601String(),
+                      });
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      _loadConversations();
+                    },
+                    child: const Text('Créer le groupe',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                  ),
+                ),
+              ]),
+            ),
+          );
+        },
       ),
     );
   }
@@ -496,26 +726,27 @@ class _MessagePageState extends State<MessagePage> {
       // Supprimé
       if ((data['deleted_for'] as Map?)?[uid] == true) return false;
 
-      // Type groupes PetFriends : exclure de la liste messagerie pro
       final type = data['type']?.toString() ?? 'direct';
-      if (type == 'groupe') return false;
+      final isGroupe = type == 'groupe';
 
-      // Filtre profil (V2)
-      final convProPid      = data['pro_profile_id']?.toString()      ?? '';
-      final convConsumerPid = data['consumer_profile_id']?.toString() ?? '';
-      final activePid       = User_Info.activeProfileId;
-      if (activePid.isNotEmpty) {
-        // Profil secondaire actif : uniquement ses conversations taguées.
-        // Les conversations sans tag appartiennent au profil principal —
-        // ne jamais les laisser fuiter ici (cf. commentaire _loadConversations).
-        final isMePro      = convProPid == activePid;
-        final isMeConsumer = convConsumerPid == activePid;
-        if (!isMePro && !isMeConsumer) return false;
-      } else {
-        final myProfileIds = User_Info.availableProfiles
-            .map((p) => p['id']?.toString() ?? '').toList();
-        if (convProPid.isNotEmpty && myProfileIds.contains(convProPid)) return false;
-        if (convConsumerPid.isNotEmpty && myProfileIds.contains(convConsumerPid)) return false;
+      // Groupes : seulement dans l'onglet PetFriends
+      if (isGroupe && activeCat != '__petfriends__') return false;
+
+      // Filtre profil (V2) — groupes PetFriends passent directement (pas de pro/consumer pid)
+      if (!isGroupe) {
+        final convProPid      = data['pro_profile_id']?.toString()      ?? '';
+        final convConsumerPid = data['consumer_profile_id']?.toString() ?? '';
+        final activePid       = User_Info.activeProfileId;
+        if (activePid.isNotEmpty) {
+          final isMePro      = convProPid == activePid;
+          final isMeConsumer = convConsumerPid == activePid;
+          if (!isMePro && !isMeConsumer) return false;
+        } else {
+          final myProfileIds = User_Info.availableProfiles
+              .map((p) => p['id']?.toString() ?? '').toList();
+          if (convProPid.isNotEmpty && myProfileIds.contains(convProPid)) return false;
+          if (convConsumerPid.isNotEmpty && myProfileIds.contains(convConsumerPid)) return false;
+        }
       }
 
       // Bloqués
@@ -528,7 +759,14 @@ class _MessagePageState extends State<MessagePage> {
       if (isArchived) return false;
 
       // Catégorie
-      if (activeCat != null && data['categorie'] != activeCat) return false;
+      final convCat = data['categorie']?.toString();
+      if (activeCat == '__petfriends__') {
+        if (!_petfriendsCategories.contains(convCat)) return false;
+      } else if (activeCat == '__pro__') {
+        if (!_proCategories.contains(convCat)) return false;
+      } else if (activeCat != null) {
+        if (convCat != activeCat) return false;
+      }
 
       return true;
     }).toList();
@@ -574,6 +812,79 @@ class _MessagePageState extends State<MessagePage> {
         final participants = (data['participants'] as List? ?? [])
             .where((p) => p.toString() != uid).toList();
         if (participants.isEmpty) return const SizedBox.shrink();
+        // ── Groupes ────────────────────────────────────────────────────
+        final type = data['type']?.toString() ?? 'direct';
+        if (type == 'groupe') {
+          final groupName = data['nom']?.toString() ?? 'Groupe';
+          final memberCount = (data['participants'] as List? ?? []).length;
+          if (_searchText.isNotEmpty && !groupName.toLowerCase().contains(_searchText)) {
+            return const SizedBox.shrink();
+          }
+          return GestureDetector(
+            onLongPress: () => _showOptions(context, id, uid, data),
+            onTap: () {
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => ChatScreen(conversationId: id, eleveurId: uid, groupName: groupName),
+              )).then((_) async {
+                final unread2 = Map<String, dynamic>.from(unreadMap);
+                unread2[uid] = 0;
+                await _supa.from('conversations').update({'unread_count': unread2}).eq('id', id);
+              });
+            },
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: isPinned ? const Color(0xFFF0F9F5) : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: isPinned ? Border.all(color: _green.withValues(alpha: 0.35)) : null,
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 8, offset: const Offset(0, 2))],
+              ),
+              child: Row(children: [
+                Stack(children: [
+                  CircleAvatar(
+                    radius: 26,
+                    backgroundColor: const Color(0xFF0C5C6C),
+                    child: const Icon(Icons.group_rounded, color: Colors.white, size: 26),
+                  ),
+                  if (shown > 0)
+                    Positioned(right: 0, top: 0,
+                      child: Container(width: 14, height: 14,
+                        decoration: const BoxDecoration(color: _green, shape: BoxShape.circle))),
+                ]),
+                const SizedBox(width: 12),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    if (isPinned) ...[const Icon(Icons.push_pin, size: 12, color: _green), const SizedBox(width: 3)],
+                    Expanded(child: Text(groupName, maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontFamily: 'Galey',
+                          fontWeight: shown > 0 ? FontWeight.w700 : FontWeight.w600,
+                          fontSize: 14, color: Colors.black87))),
+                    if (updatedAt != null) Text(_fmtIso(updatedAt),
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                          color: shown > 0 ? _teal : Colors.grey.shade500,
+                          fontWeight: shown > 0 ? FontWeight.w700 : FontWeight.normal)),
+                  ]),
+                  const SizedBox(height: 3),
+                  Row(children: [
+                    Expanded(child: Text(lastMsg.isEmpty ? '$memberCount membres' : lastMsg,
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12,
+                          color: shown > 0 ? Colors.black87 : Colors.grey.shade500,
+                          fontWeight: shown > 0 ? FontWeight.w600 : FontWeight.normal))),
+                    if (shown > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(color: _teal, borderRadius: BorderRadius.circular(10)),
+                        child: Text(shown > 9 ? '9+' : '$shown',
+                          style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                      ),
+                  ]),
+                ])),
+              ]),
+            ),
+          );
+        }
+
         final otherId = participants[0].toString();
 
         final pInfoMap = data['participants_info'] as Map?;
@@ -609,10 +920,10 @@ class _MessagePageState extends State<MessagePage> {
               child: Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: isPinned ? const Color(0xFFF0F9FF) : Colors.white,
+                  color: isPinned ? const Color(0xFFF0F9F5) : Colors.white,
                   borderRadius: BorderRadius.circular(16),
-                  border: isPinned ? Border.all(color: _teal.withValues(alpha: 0.2)) : null,
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
+                  border: isPinned ? Border.all(color: _green.withValues(alpha: 0.35)) : null,
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 8, offset: const Offset(0, 2))],
                 ),
                 child: Row(children: [
                   Stack(children: [
@@ -625,13 +936,13 @@ class _MessagePageState extends State<MessagePage> {
                     if (shown > 0)
                       Positioned(right: 0, top: 0,
                         child: Container(width: 14, height: 14,
-                          decoration: const BoxDecoration(color: _teal, shape: BoxShape.circle))),
+                          decoration: const BoxDecoration(color: _green, shape: BoxShape.circle))),
                   ]),
                   const SizedBox(width: 12),
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Row(children: [
                       if (isPinned) ...[
-                        const Icon(Icons.push_pin, size: 12, color: _teal),
+                        const Icon(Icons.push_pin, size: 12, color: _green),
                         const SizedBox(width: 3),
                       ],
                       Expanded(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
@@ -887,7 +1198,7 @@ class _EmptyState extends StatelessWidget {
         Text(emoji, style: const TextStyle(fontSize: 48)),
         const SizedBox(height: 12),
         Text(label, textAlign: TextAlign.center,
-            style: const TextStyle(fontFamily: 'Galey', fontSize: 15, color: Color(0xFF9CA3AF))),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.white38)),
       ],
     ),
   );
