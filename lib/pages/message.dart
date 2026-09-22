@@ -117,7 +117,10 @@ class _MessagePageState extends State<MessagePage> {
     if (result == null || !mounted) return;
     final otherUid = result['uid'] as String;
     try {
-      final conversationId = await MessagingHelper.openOrCreateConversation(otherUid: otherUid);
+      final conversationId = await MessagingHelper.openOrCreateConversation(
+        otherUid: otherUid,
+        myProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
+      );
       if (!mounted) return;
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => ChatScreen(conversationId: conversationId, eleveurId: otherUid),
@@ -142,13 +145,17 @@ class _MessagePageState extends State<MessagePage> {
           .order('updated_at', ascending: false);
 
       final all = List<Map<String, dynamic>>.from(rows as List);
+      // pid vide = profil principal (particulier) actif : voit tout, y compris
+      // les conversations sans tag de profil. Un profil secondaire (véto, etc.)
+      // ne doit voir QUE ses conversations taguées — les conversations sans tag
+      // proviennent du profil principal (contact direct, flux qui ne taguent pas
+      // encore le profil) et ne doivent jamais apparaître ailleurs, sinon elles
+      // fuitent dans toutes les boîtes de réception du compte (bug constaté :
+      // messages du profil particulier visibles dans la messagerie du véto).
       final filtered = pid.isEmpty ? all : all.where((c) {
         final cPro = (c['pro_profile_id'] as String?) ?? '';
         final cCon = (c['consumer_profile_id'] as String?) ?? '';
-        if (cPro == pid || cCon == pid) return true;
-        // Conversations sans profil : toujours visibles (conversations directes particulier-particulier)
-        if (cPro.isEmpty && cCon.isEmpty) return true;
-        return false;
+        return cPro == pid || cCon == pid;
       }).toList();
 
       if (mounted) setState(() {
@@ -498,10 +505,12 @@ class _MessagePageState extends State<MessagePage> {
       final convConsumerPid = data['consumer_profile_id']?.toString() ?? '';
       final activePid       = User_Info.activeProfileId;
       if (activePid.isNotEmpty) {
+        // Profil secondaire actif : uniquement ses conversations taguées.
+        // Les conversations sans tag appartiennent au profil principal —
+        // ne jamais les laisser fuiter ici (cf. commentaire _loadConversations).
         final isMePro      = convProPid == activePid;
         final isMeConsumer = convConsumerPid == activePid;
-        final isUntagged   = convProPid.isEmpty && convConsumerPid.isEmpty;
-        if (!isMePro && !isMeConsumer && !isUntagged) return false;
+        if (!isMePro && !isMeConsumer) return false;
       } else {
         final myProfileIds = User_Info.availableProfiles
             .map((p) => p['id']?.toString() ?? '').toList();

@@ -300,8 +300,15 @@ function MessagesPageInner() {
     setStartingConv(true);
     try {
       const sorted = [user.uid, otherUid].sort().join('_');
-      const { data: existing } = await supabase.from('conversations')
-          .select('id').eq('participant_ids', sorted).eq('type', 'direct').maybeSingle();
+      let existingQuery = supabase.from('conversations')
+          .select('id').eq('participant_ids', sorted).eq('type', 'direct');
+      // Même profil actif que côté appli (MessagingHelper.openOrCreateConversation) :
+      // un profil secondaire (véto…) ne doit pas réutiliser/hériter une
+      // conversation taguée à un autre de ses profils.
+      if (activeProfileId) {
+        existingQuery = existingQuery.or(`pro_profile_id.eq.${activeProfileId},consumer_profile_id.eq.${activeProfileId}`);
+      }
+      const { data: existing } = await existingQuery.maybeSingle();
       let conversationId = existing?.id as string | undefined;
       if (!conversationId) {
         const { data: created } = await supabase.from('conversations').insert({
@@ -311,6 +318,7 @@ function MessagesPageInner() {
           last_message: '',
           unread_count: { [user.uid]: 0, [otherUid]: 0 },
           updated_at: new Date().toISOString(),
+          ...(activeProfileId ? { pro_profile_id: activeProfileId } : {}),
         }).select('id').single();
         conversationId = created?.id as string;
       }
@@ -514,12 +522,14 @@ function MessagesPageInner() {
       if (others.some(p => blockedUsers.includes(p))) return false;
 
       if (activeProfileId) {
+        // Profil secondaire actif (véto, pension…) : uniquement ses
+        // conversations taguées. Les conversations sans tag appartiennent au
+        // profil principal (particulier) — ne jamais les laisser fuiter ici,
+        // sinon elles apparaissent dans toutes les messageries du compte
+        // (bug constaté : messages du profil particulier visibles côté véto).
         const isMePro      = conv.pro_profile_id === activeProfileId;
         const isMeConsumer = conv.consumer_profile_id === activeProfileId;
-        // Conversations sans profil : visibles uniquement pour le profil éleveur principal
-        const isEleveurProfile = activeProfileType !== 'particulier' && activeProfileType !== 'association';
-        const isUntagged   = !conv.pro_profile_id && !conv.consumer_profile_id && isEleveurProfile;
-        if (!isMePro && !isMeConsumer && !isUntagged) return false;
+        if (!isMePro && !isMeConsumer) return false;
       } else {
         const proIsMyProfile      = conv.pro_profile_id && userProfileIds.includes(conv.pro_profile_id);
         const consumerIsMyProfile = conv.consumer_profile_id && userProfileIds.includes(conv.consumer_profile_id);

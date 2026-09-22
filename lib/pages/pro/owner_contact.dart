@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/pages/petfriends/petfriend_chat_page.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
+import 'package:PetsMatch/main.dart' show User_Info;
 
 const _teal = Color(0xFF0C5C6C);
 const _dark = Color(0xFF1F2A2E);
@@ -247,6 +248,7 @@ class _OwnerContactButtonState extends State<OwnerContactButton> {
                       try {
                         final convId = await MessagingHelper.openOrCreateConversation(
                           otherUid: widget.ownerUid!, categorie: 'contact-elevage',
+                          myProfileId: User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null,
                         );
                         if (ctx.mounted) Navigator.pop(ctx);
                         if (context.mounted) {
