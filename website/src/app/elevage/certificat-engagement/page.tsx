@@ -3,15 +3,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { createClient } from '@supabase/supabase-js';
+import { supabase as supabaseAdmin } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 interface Certificat {
   id: string;

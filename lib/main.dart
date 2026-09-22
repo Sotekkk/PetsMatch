@@ -641,10 +641,22 @@ Future<void> main() async {
   Stripe.publishableKey = 'pk_test_51Pagp22MpEB6OUl5WhTICWegB3ibkSKDcVlmUDMFDdm7SWnfLmI8XM1aIKXWeslNjK7CSzJwe2yu64CW1bl0s3s100iwTo71nt';
   await Stripe.instance.applySettings();
 
-  // Supabase
+  // Supabase — le token Firebase est transmis à chaque requête (Third-Party
+  // Auth Firebase configuré côté Supabase) pour que auth.uid() reflète le
+  // vrai uid connecté et permette des policies RLS restrictives, plutôt que
+  // le contournement USING(true) utilisé jusqu'ici faute d'identité côté DB.
   await Supabase.initialize(
     url: 'https://zyvpngcvzrkdytypjlyq.supabase.co',
     anonKey: 'sb_publishable_a48hAJ3vGsQsgWVUbkReYQ_J71heKGK',
+    accessToken: () async {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return null;
+      try {
+        return await user.getIdToken();
+      } catch (_) {
+        return null;
+      }
+    },
   );
 
   registerAllOnboardingFlows();
