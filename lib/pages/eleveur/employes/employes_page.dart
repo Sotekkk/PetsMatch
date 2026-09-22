@@ -92,6 +92,20 @@ Future<String?> _resolveProfileIdByType(SupabaseClient supa, String uid, String 
   return data?['id'] as String?;
 }
 
+/// uid Firebase RÉEL du propriétaire du profil actif — jamais forcément
+/// l'uid de session brut : un cogérant (elevage_cogerants) a un uid
+/// différent du gérant, mais la ligne user_profiles du profil emprunté
+/// (activeProfileId) reste celle du gérant. Sans cette résolution, "Mes
+/// Employés" (liste + tâches) reste vide pour un cogérant, puisque
+/// _resolveOwnerProfileId chercherait un profil éleveur sous son propre uid
+/// au lieu de celui du gérant.
+Future<String> _resolveOwnerUid(SupabaseClient supa, String uid) async {
+  final activeProfileId = User_Info.activeProfileId;
+  if (activeProfileId.isEmpty) return uid;
+  final row = await supa.from('user_profiles').select('uid').eq('id', activeProfileId).maybeSingle();
+  return (row?['uid'] as String?) ?? uid;
+}
+
 // ─── Page principale ──────────────────────────────────────────────────────────
 
 class EmployesPage extends StatefulWidget {
@@ -183,6 +197,7 @@ class _EmployesTab extends StatefulWidget {
 class _EmployesTabState extends State<_EmployesTab> {
   final _supa = Supabase.instance.client;
   final _uid  = FirebaseAuth.instance.currentUser!.uid;
+  String? _ownerUid;
   bool _loading = true;
   List<Map<String, dynamic>> _employes = [];
   String _nomElevage = '';
@@ -201,10 +216,12 @@ class _EmployesTabState extends State<_EmployesTab> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
+      final ownerUid = await _resolveOwnerUid(_supa, _uid);
+      _ownerUid = ownerUid;
       final profile = await _supa
           .from('user_profiles')
           .select('nom, firstname, lastname')
-          .eq('uid', _uid)
+          .eq('uid', ownerUid)
           .eq('is_main', true)
           .maybeSingle();
       _nomElevage = (profile?['nom'] as String?)?.trim().isNotEmpty == true
@@ -214,7 +231,7 @@ class _EmployesTabState extends State<_EmployesTab> {
       // Résoudre le profile_id de l'employeur à partir du contexte de la page
       // (widget.profileType / widget.isAssociation), pas de
       // User_Info.activeProfileId qui peut être périmé — voir _resolveOwnerProfileId.
-      final eleveurProfileId = await _resolveOwnerProfileId(_supa, _uid, widget.isAssociation, profileType: widget.profileType);
+      final eleveurProfileId = await _resolveOwnerProfileId(_supa, ownerUid, widget.isAssociation, profileType: widget.profileType);
       final type = _profileType;
 
       dynamic rows;
@@ -223,7 +240,7 @@ class _EmployesTabState extends State<_EmployesTab> {
         q = type == 'eleveur' ? q.or('profil_source.is.null,profil_source.eq.eleveur') : q.eq('profil_source', type);
         rows = await q.order('created_at');
       } else {
-        var q = _supa.from('employes').select().eq('uid_eleveur', _uid).eq('actif', true);
+        var q = _supa.from('employes').select().eq('uid_eleveur', ownerUid).eq('actif', true);
         q = type == 'eleveur' ? q.or('profil_source.is.null,profil_source.eq.eleveur') : q.eq('profil_source', type);
         rows = await q.order('created_at');
       }
@@ -297,7 +314,7 @@ class _EmployesTabState extends State<_EmployesTab> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _AddEmployeSheet(uid: _uid, nomElevage: _nomElevage, teal: widget.teal, dark: widget.dark,
+      builder: (_) => _AddEmployeSheet(uid: _ownerUid ?? _uid, nomElevage: _nomElevage, teal: widget.teal, dark: widget.dark,
           isAssociation: widget.isAssociation, profileType: widget.profileType),
     );
     _load();
@@ -309,7 +326,7 @@ class _EmployesTabState extends State<_EmployesTab> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => AddEmployeManuelSheet(
-        uid: _uid, teal: widget.teal,
+        uid: _ownerUid ?? _uid, teal: widget.teal,
         profilSource: _profileType,
       ),
     );
@@ -1299,6 +1316,7 @@ class _TachesTab extends StatefulWidget {
 class _TachesTabState extends State<_TachesTab> {
   final _supa = Supabase.instance.client;
   final _uid  = FirebaseAuth.instance.currentUser!.uid;
+  String? _ownerUid;
   bool _loading = true;
   List<Map<String, dynamic>> _taches      = [];
   List<Map<String, dynamic>> _planTaches  = [];
@@ -1363,10 +1381,12 @@ class _TachesTabState extends State<_TachesTab> {
     if (!mounted) return;
     setState(() => _loading = true);
     try {
+      final ownerUid = await _resolveOwnerUid(_supa, _uid);
+      _ownerUid = ownerUid;
       // Résoudre le profile_id de l'employeur à partir du contexte de la page
       // (widget.profileType / widget.isAssociation), pas de
       // User_Info.activeProfileId qui peut être périmé — voir _resolveOwnerProfileId.
-      final eleveurProfileId = await _resolveOwnerProfileId(_supa, _uid, widget.isAssociation, profileType: widget.profileType);
+      final eleveurProfileId = await _resolveOwnerProfileId(_supa, ownerUid, widget.isAssociation, profileType: widget.profileType);
       final type = _profileType;
       debugPrint('DEBUG_TACHES uid=$_uid profileType=$type '
           'filterEmployeUid=${widget.filterEmployeUid} filterEmployeProfileId=${widget.filterEmployeProfileId} '
@@ -1375,7 +1395,7 @@ class _TachesTabState extends State<_TachesTab> {
       dynamic tachesQ = _supa.from('taches_elevage').select();
       tachesQ = eleveurProfileId != null
           ? tachesQ.eq('eleveur_profile_id', eleveurProfileId)
-          : tachesQ.eq('uid_eleveur', _uid);
+          : tachesQ.eq('uid_eleveur', ownerUid);
       tachesQ = type == 'eleveur'
           ? tachesQ.or('profil_source.is.null,profil_source.eq.eleveur')
           : tachesQ.eq('profil_source', type);
@@ -1390,7 +1410,7 @@ class _TachesTabState extends State<_TachesTab> {
       dynamic empsQ = _supa.from('employes').select().eq('actif', true);
       empsQ = eleveurProfileId != null
           ? empsQ.eq('eleveur_profile_id', eleveurProfileId)
-          : empsQ.eq('uid_eleveur', _uid);
+          : empsQ.eq('uid_eleveur', ownerUid);
       empsQ = type == 'eleveur'
           ? empsQ.or('profil_source.is.null,profil_source.eq.eleveur')
           : empsQ.eq('profil_source', type);
@@ -1399,7 +1419,7 @@ class _TachesTabState extends State<_TachesTab> {
       final animauxRaw = await _supa
           .from('animaux')
           .select('id, nom')
-          .eq('uid_eleveur', _uid)
+          .eq('uid_eleveur', ownerUid)
           .not('statut', 'in', '(sorti,decede)')
           .order('nom');
 
@@ -1696,7 +1716,7 @@ class _TachesTabState extends State<_TachesTab> {
             isScrollControlled: true,
             backgroundColor: Colors.transparent,
             builder: (_) => _CreateTacheSheet(
-              uid: _uid, employes: _employes, animaux: _animaux,
+              uid: _ownerUid ?? _uid, employes: _employes, animaux: _animaux,
               teal: widget.teal, dark: widget.dark,
             ),
           );
