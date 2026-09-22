@@ -296,10 +296,11 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
       final me = FirebaseAuth.instance.currentUser?.uid;
       final uid = data['uidEleveur'] as String?;
       if (me != null && me != uid) {
-        final currentVues = (row['vues'] as int?) ?? 0;
-        Supabase.instance.client.from('annonces')
-            .update({'vues': currentVues + 1})
-            .eq('id', widget.annonceId).catchError((_) {});
+        // RPC dédiée (SECURITY DEFINER) : un UPDATE direct est bloqué par RLS
+        // pour quiconque n'est pas le propriétaire/cogérant de l'annonce.
+        Supabase.instance.client
+            .rpc('increment_annonce_vues', params: {'p_annonce_id': widget.annonceId})
+            .catchError((_) {});
       }
       final profilSource = row['profil_source']?.toString();
       final profileId    = row['profile_id']?.toString();
