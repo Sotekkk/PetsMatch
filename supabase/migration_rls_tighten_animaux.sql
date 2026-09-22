@@ -1,10 +1,22 @@
 -- ══════════════════════════════════════════════════════════════════════════
--- RLS réelle — vague 5/N : animaux, animaux_proprietes
+-- RLS réelle — vague 5/N (CORRIGÉ) : animaux, animaux_proprietes
 -- ══════════════════════════════════════════════════════════════════════════
 -- La table la plus délicate jusqu'ici : un animal peut être vu/modifié par
 -- BEAUCOUP de rôles différents selon le type de profil (particulier,
 -- éleveur, association...). (auth.jwt() ->> 'sub') reflète le vrai uid
 -- Firebase connecté (Third-Party Auth actif côté Supabase).
+--
+-- ⚠️ CORRECTIF sur la 1ʳᵉ tentative : la policy animaux_proprietes se
+-- référençait elle-même (vérifier "suis-je le propriétaire PRINCIPAL de cet
+-- animal ?" en reconsultant animaux_proprietes depuis sa propre policy).
+-- Postgres détecte ça et lève "infinite recursion detected in policy for
+-- relation animaux_proprietes" sur CHAQUE requête — ce qui avait fait
+-- disparaître "Mes Animaux" ET, par ricochet, le compteur d'annonces de la
+-- page d'accueil (les deux compteurs sont chargés dans le même Future.wait
+-- côté app, qui échoue entièrement si une seule requête plante). Corrigé en
+-- sortant cette vérification dans une fonction SECURITY DEFINER : la
+-- fonction s'exécute avec les privilèges de son propriétaire (contourne RLS
+-- pour SA PROPRE requête interne), donc plus de boucle.
 --
 -- Rôles couverts pour `animaux` :
 --   - Lecture publique si reproducteur_public = true (vitrine reproducteurs).
@@ -33,8 +45,8 @@
 --
 -- ⚠️ À TESTER SOIGNEUSEMENT après exécution (c'est la table la plus utilisée
 -- de l'appli) :
---   1. "Mes Animaux" s'affiche normalement pour un compte particulier ET
---      pour un compte éleveur (présents, cédés, décédés).
+--   1. "Mes Animaux" ET la page d'accueil (compteurs animaux + annonces)
+--      s'affichent normalement pour un compte particulier ET éleveur.
 --   2. Un cogérant actif voit et peut modifier les animaux de l'élevage
 --      qu'il co-gère (fiche animal, carnet de santé...).
 --   3. Un employé actif voit les animaux de son employeur.
@@ -48,6 +60,31 @@
 --   7. Créer un nouvel animal, céder un animal, fonctionnent toujours.
 -- Si un de ces cas échoue, exécuter la section ROLLBACK tout en bas.
 -- ══════════════════════════════════════════════════════════════════════════
+
+-- ── Fonction utilitaire (évite la self-référence RLS) ───────────────────
+CREATE OR REPLACE FUNCTION public.is_principal_owner_or_cogerant(p_animal_id TEXT, p_uid TEXT)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM animaux_proprietes p2
+    WHERE p2.animal_id = p_animal_id
+      AND p2.role_proprio = 'principal' AND p2.date_fin IS NULL
+      AND (
+        p2.uid_proprio = p_uid
+        OR EXISTS (
+          SELECT 1 FROM elevage_cogerants c2
+          WHERE c2.uid_gerant = p2.uid_proprio
+            AND c2.uid_cogerant = p_uid
+            AND c2.statut = 'actif' AND c2.date_fin IS NULL
+        )
+      )
+  );
+$$;
+GRANT EXECUTE ON FUNCTION public.is_principal_owner_or_cogerant(TEXT, TEXT) TO anon, authenticated;
 
 -- ── animaux_proprietes (prérequis : la logique animaux en dépend) ────────
 ALTER TABLE animaux_proprietes ENABLE ROW LEVEL SECURITY;
@@ -69,20 +106,7 @@ CREATE POLICY "ap_owner_or_cogerant_or_principal_select" ON animaux_proprietes
         AND c.uid_cogerant = (auth.jwt() ->> 'sub')
         AND c.statut = 'actif' AND c.date_fin IS NULL
     )
-    OR EXISTS (
-      SELECT 1 FROM animaux_proprietes p2
-      WHERE p2.animal_id = animaux_proprietes.animal_id
-        AND p2.role_proprio = 'principal' AND p2.date_fin IS NULL
-        AND (
-          p2.uid_proprio = (auth.jwt() ->> 'sub')
-          OR EXISTS (
-            SELECT 1 FROM elevage_cogerants c2
-            WHERE c2.uid_gerant = p2.uid_proprio
-              AND c2.uid_cogerant = (auth.jwt() ->> 'sub')
-              AND c2.statut = 'actif' AND c2.date_fin IS NULL
-          )
-        )
-    )
+    OR public.is_principal_owner_or_cogerant(animaux_proprietes.animal_id, (auth.jwt() ->> 'sub'))
   );
 
 CREATE POLICY "ap_owner_or_cogerant_or_principal_insert" ON animaux_proprietes
@@ -94,20 +118,7 @@ CREATE POLICY "ap_owner_or_cogerant_or_principal_insert" ON animaux_proprietes
         AND c.uid_cogerant = (auth.jwt() ->> 'sub')
         AND c.statut = 'actif' AND c.date_fin IS NULL
     )
-    OR EXISTS (
-      SELECT 1 FROM animaux_proprietes p2
-      WHERE p2.animal_id = animaux_proprietes.animal_id
-        AND p2.role_proprio = 'principal' AND p2.date_fin IS NULL
-        AND (
-          p2.uid_proprio = (auth.jwt() ->> 'sub')
-          OR EXISTS (
-            SELECT 1 FROM elevage_cogerants c2
-            WHERE c2.uid_gerant = p2.uid_proprio
-              AND c2.uid_cogerant = (auth.jwt() ->> 'sub')
-              AND c2.statut = 'actif' AND c2.date_fin IS NULL
-          )
-        )
-    )
+    OR public.is_principal_owner_or_cogerant(animaux_proprietes.animal_id, (auth.jwt() ->> 'sub'))
   );
 
 CREATE POLICY "ap_owner_or_cogerant_or_principal_update" ON animaux_proprietes
@@ -119,20 +130,7 @@ CREATE POLICY "ap_owner_or_cogerant_or_principal_update" ON animaux_proprietes
         AND c.uid_cogerant = (auth.jwt() ->> 'sub')
         AND c.statut = 'actif' AND c.date_fin IS NULL
     )
-    OR EXISTS (
-      SELECT 1 FROM animaux_proprietes p2
-      WHERE p2.animal_id = animaux_proprietes.animal_id
-        AND p2.role_proprio = 'principal' AND p2.date_fin IS NULL
-        AND (
-          p2.uid_proprio = (auth.jwt() ->> 'sub')
-          OR EXISTS (
-            SELECT 1 FROM elevage_cogerants c2
-            WHERE c2.uid_gerant = p2.uid_proprio
-              AND c2.uid_cogerant = (auth.jwt() ->> 'sub')
-              AND c2.statut = 'actif' AND c2.date_fin IS NULL
-          )
-        )
-    )
+    OR public.is_principal_owner_or_cogerant(animaux_proprietes.animal_id, (auth.jwt() ->> 'sub'))
   );
 
 CREATE POLICY "ap_owner_or_cogerant_or_principal_delete" ON animaux_proprietes
@@ -144,20 +142,7 @@ CREATE POLICY "ap_owner_or_cogerant_or_principal_delete" ON animaux_proprietes
         AND c.uid_cogerant = (auth.jwt() ->> 'sub')
         AND c.statut = 'actif' AND c.date_fin IS NULL
     )
-    OR EXISTS (
-      SELECT 1 FROM animaux_proprietes p2
-      WHERE p2.animal_id = animaux_proprietes.animal_id
-        AND p2.role_proprio = 'principal' AND p2.date_fin IS NULL
-        AND (
-          p2.uid_proprio = (auth.jwt() ->> 'sub')
-          OR EXISTS (
-            SELECT 1 FROM elevage_cogerants c2
-            WHERE c2.uid_gerant = p2.uid_proprio
-              AND c2.uid_cogerant = (auth.jwt() ->> 'sub')
-              AND c2.statut = 'actif' AND c2.date_fin IS NULL
-          )
-        )
-    )
+    OR public.is_principal_owner_or_cogerant(animaux_proprietes.animal_id, (auth.jwt() ->> 'sub'))
   );
 
 -- ── animaux ────────────────────────────────────────────────────────────
@@ -279,3 +264,5 @@ ORDER BY tablename, cmd;
 -- DROP POLICY IF EXISTS "animaux_related_update" ON animaux;
 -- DROP POLICY IF EXISTS "animaux_owner_or_cogerant_delete" ON animaux;
 -- CREATE POLICY "firebase_allow_all" ON animaux FOR ALL USING (true) WITH CHECK (true);
+--
+-- DROP FUNCTION IF EXISTS public.is_principal_owner_or_cogerant(TEXT, TEXT);
