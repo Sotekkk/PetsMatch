@@ -61,6 +61,8 @@ import 'package:PetsMatch/pages/pro/photographe_contrats_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_prestations_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_employes_page.dart';
+import 'package:PetsMatch/pages/pro/pension_employes_page.dart';
+import 'package:PetsMatch/pages/pro/garde_employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_planning_employes_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_dashboard_page.dart';
 import 'package:PetsMatch/pages/pro/toilettage_contrats_page.dart';
@@ -507,7 +509,7 @@ class _EleveurNavState extends State<EleveurNav> {
                           Navigator.push(context, MaterialPageRoute(
                             builder: (_) => _pensionPlanCode == 'free'
                                 ? const PensionAbonnementPage()
-                                : const EmployesPage(profileType: 'pension'),
+                                : const PensionEmployesPage(),
                           ));
                         },
                       ),
@@ -1158,13 +1160,10 @@ class _EleveurNavState extends State<EleveurNav> {
                         _DrawerSubItem(
                           label: 'Mes Employés',
                           icon: Icons.groups_outlined,
-                          locked: _gardePlanCode == 'free',
                           onTap: () {
                             Navigator.pop(context);
                             Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => _gardePlanCode == 'free'
-                                  ? const GardeAbonnementPage()
-                                  : const EmployesPage(profileType: 'garde'),
+                              builder: (_) => const GardeEmployesPage(),
                             ));
                           },
                         ),
