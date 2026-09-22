@@ -49,6 +49,11 @@ function age(dateNaissance: string | null): string {
   return `${Math.floor(months / 12)} ans`;
 }
 
+interface ChipResult {
+  id: number; nom: string; espece: string; race: string; photo_url: string | null;
+  uid_eleveur: string | null; uid_proprietaire: string | null;
+}
+
 export default function MesPatientsPage() {
   const { user, userData } = useAuth();
   const router = useRouter();
@@ -57,6 +62,88 @@ export default function MesPatientsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [catPro, setCatPro] = useState('');
+
+  // ── Recherche par numéro de puce (ajouter un patient directement) ────────
+  const [showChipModal, setShowChipModal] = useState(false);
+  const [chipInput, setChipInput] = useState('');
+  const [chipSearching, setChipSearching] = useState(false);
+  const [chipSearched, setChipSearched] = useState(false);
+  const [chipResult, setChipResult] = useState<ChipResult | null>(null);
+  const [chipRequestStatus, setChipRequestStatus] = useState<string | null>(null);
+  const [chipRequesting, setChipRequesting] = useState(false);
+
+  async function searchByChip() {
+    const normalized = chipInput.replace(/[\s-]/g, '');
+    if (!normalized) return;
+    setChipSearching(true);
+    setChipSearched(true);
+    setChipResult(null);
+    setChipRequestStatus(null);
+    try {
+      const { data } = await supabase.from('animaux')
+        .select('id, nom, espece, race, photo_url, identification, uid_eleveur, uid_proprietaire')
+        .eq('identification', normalized)
+        .limit(1)
+        .maybeSingle();
+      if (data) {
+        setChipResult(data as unknown as ChipResult);
+        if (activeProfileId) {
+          const { data: existing } = await supabase.from('animal_access')
+            .select('statut').eq('pro_profile_id', activeProfileId).eq('animal_id', data.id)
+            .neq('statut', 'revoked').limit(1).maybeSingle();
+          setChipRequestStatus((existing?.statut as string | undefined) ?? null);
+        }
+      }
+    } finally {
+      setChipSearching(false);
+    }
+  }
+
+  async function requestAccessByChip() {
+    if (!chipResult || !activeProfileId || !user) return;
+    const ownerUid = chipResult.uid_eleveur ?? chipResult.uid_proprietaire;
+    if (!ownerUid) return;
+    setChipRequesting(true);
+    try {
+      const { data: ownerProfile } = await supabase.from('user_profiles')
+        .select('id').eq('uid', ownerUid).eq('is_main', true).maybeSingle();
+      if (!ownerProfile) throw new Error('Profil propriétaire introuvable');
+      await supabase.from('animal_access').upsert({
+        pro_profile_id: activeProfileId,
+        granted_by_profile_id: ownerProfile.id,
+        animal_id: chipResult.id,
+        permissions: ['read_basic', 'read_health', 'write_health'],
+        statut: 'pending',
+      }, { onConflict: 'animal_id,pro_profile_id' });
+
+      const { data: myProfile } = await supabase.from('user_profiles')
+        .select('firstname, lastname, nom').eq('uid', user.uid).eq('is_main', true).maybeSingle();
+      const clinic = (myProfile?.nom ?? '').trim();
+      const isClinic = clinic.length > 0;
+      const displayName = isClinic ? clinic : `${myProfile?.firstname ?? ''} ${myProfile?.lastname ?? ''}`.trim();
+      const vetDisplay = isClinic ? displayName : (displayName ? `Dr. ${displayName}` : 'Un professionnel');
+
+      await supabase.from('notifications').insert({
+        uid: ownerUid,
+        type: 'vet_access_demande',
+        title: `Demande d'accès — ${vetDisplay}`,
+        body: `${vetDisplay} demande l'accès au carnet de santé de ${chipResult.nom}.`,
+        profile_id: ownerProfile.id,
+        data: { animal_id: chipResult.id, vet_id: user.uid, vet_nom: displayName, is_clinic: isClinic, animal_nom: chipResult.nom },
+        read: false,
+      });
+      setChipRequestStatus('pending');
+    } catch (e) {
+      alert(`Erreur : ${(e as Error).message}`);
+    } finally {
+      setChipRequesting(false);
+    }
+  }
+
+  function closeChipModal() {
+    setShowChipModal(false);
+    setChipInput(''); setChipSearched(false); setChipResult(null); setChipRequestStatus(null);
+  }
 
   useEffect(() => {
     if (activeProfileId) {
@@ -171,13 +258,22 @@ export default function MesPatientsPage() {
 
       <div className="max-w-3xl mx-auto px-4 py-6">
         {/* Recherche */}
-        <div className="mb-4">
+        <div className="mb-4 flex gap-2">
           <input
             value={search} onChange={e => setSearch(e.target.value)}
             placeholder={catPro === 'garde' ? 'Rechercher un animal…' : catPro === 'education' ? 'Rechercher un élève…' : 'Rechercher un patient…'}
-            className="w-full bg-white border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#0C5C6C] shadow-sm"
+            className="flex-1 bg-white border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-[#0C5C6C] shadow-sm"
             style={{ fontFamily: 'Galey, sans-serif' }}
           />
+          <button
+            onClick={() => setShowChipModal(true)}
+            title="Ajouter un patient par numéro de puce"
+            className="flex-shrink-0 bg-white border border-gray-200 rounded-2xl px-4 py-3 text-sm font-semibold text-[#0C5C6C] shadow-sm hover:bg-[#0C5C6C]/5 transition-colors flex items-center gap-1.5"
+            style={{ fontFamily: 'Galey, sans-serif' }}
+          >
+            <span aria-hidden>#️⃣</span>
+            <span className="hidden sm:inline">Puce</span>
+          </button>
         </div>
 
         {loading ? (
@@ -247,6 +343,74 @@ export default function MesPatientsPage() {
           </div>
         )}
       </div>
+
+      {/* Modale recherche par numéro de puce */}
+      {showChipModal && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 sm:p-4"
+          onClick={closeChipModal}>
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 max-h-[90vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-[#1F2A2E] text-base mb-1" style={{ fontFamily: 'Galey, sans-serif' }}>
+              Ajouter un patient par puce
+            </h3>
+            <p className="text-xs text-gray-500 mb-4">
+              Entrez le numéro de puce (identification) de l&apos;animal pour retrouver sa fiche et demander l&apos;accès à son propriétaire.
+            </p>
+            <div className="flex gap-2">
+              <input
+                autoFocus
+                value={chipInput}
+                onChange={e => setChipInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') searchByChip(); }}
+                placeholder="Ex : 250269802005832"
+                className="flex-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C]"
+                style={{ fontFamily: 'Galey, sans-serif' }}
+              />
+              <button
+                onClick={searchByChip}
+                disabled={chipSearching || !chipInput.trim()}
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#0C5C6C] text-white disabled:opacity-50"
+                style={{ fontFamily: 'Galey, sans-serif' }}
+              >
+                {chipSearching ? '…' : 'Rechercher'}
+              </button>
+            </div>
+
+            {chipSearched && !chipSearching && (
+              chipResult ? (
+                <div className="mt-4 border border-gray-200 rounded-xl p-3 flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl overflow-hidden bg-[#E3F2FD] flex-shrink-0 flex items-center justify-center">
+                    {chipResult.photo_url
+                      ? <Image src={chipResult.photo_url} alt="" width={48} height={48} className="object-cover w-full h-full" />
+                      : <span className="text-xl">{ESPECE_EMOJI[chipResult.espece?.toLowerCase()] ?? '🐾'}</span>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm text-[#1F2A2E]">{chipResult.nom}</p>
+                    <p className="text-xs text-gray-500">{chipResult.race || chipResult.espece}</p>
+                  </div>
+                  {chipRequestStatus === 'pending' ? (
+                    <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2.5 py-1.5 rounded-full">Demande envoyée</span>
+                  ) : chipRequestStatus === 'active' || chipRequestStatus === 'active_write' ? (
+                    <span className="text-xs font-bold text-green-600 bg-green-50 px-2.5 py-1.5 rounded-full">Accès accordé</span>
+                  ) : (
+                    <button
+                      onClick={requestAccessByChip}
+                      disabled={chipRequesting}
+                      className="text-xs font-bold text-white bg-[#6E9E57] px-3 py-1.5 rounded-full disabled:opacity-50"
+                    >
+                      {chipRequesting ? '…' : 'Demander l\'accès'}
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-gray-500 text-center py-3">Aucun animal trouvé avec ce numéro de puce.</p>
+              )
+            )}
+
+            <button onClick={closeChipModal} className="mt-4 w-full text-xs text-gray-500 py-2">Fermer</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

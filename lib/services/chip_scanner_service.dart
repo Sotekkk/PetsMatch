@@ -676,9 +676,10 @@ class _VetResultSheetState extends State<_VetResultSheet> {
       return;
     }
     try {
-      final vetProfile = await Supabase.instance.client.from('user_profiles')
-          .select('id').eq('uid', vetUid).eq('is_main', true).maybeSingle();
-      final vetProfileId = vetProfile?['id'] as String?;
+      // Le profil ACTIF (véto/santé...), pas le profil is_main (particulier)
+      // — sinon la demande d'accès se crée sous le mauvais profile_id et
+      // n'apparaît jamais dans "Mes Patients" (filtré par activeProfileId).
+      final vetProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
       String? status;
       if (vetProfileId != null) {
         final row = await Supabase.instance.client
@@ -709,9 +710,8 @@ class _VetResultSheetState extends State<_VetResultSheet> {
 
     setState(() => _saving = true);
     try {
-      final vetProfile = await Supabase.instance.client.from('user_profiles')
-          .select('id').eq('uid', vetUid).eq('is_main', true).maybeSingle();
-      final vetProfileId = vetProfile?['id'] as String?;
+      // Idem _loadGrant : le profil ACTIF, pas is_main.
+      final vetProfileId = User_Info.activeProfileId.isNotEmpty ? User_Info.activeProfileId : null;
       final ownerProfile = await Supabase.instance.client.from('user_profiles')
           .select('id').eq('uid', ownerId).eq('is_main', true).maybeSingle();
       final ownerProfileId = ownerProfile?['id'] as String?;
