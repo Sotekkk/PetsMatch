@@ -264,6 +264,25 @@ Future<Object> registerElevage(String email, String password) async {
       debugPrint("Supabase sync DETAIL: ${e.toString()}");
     }
 
+    // Le numéro d'ordre vétérinaire saisi à l'inscription n'est packé que
+    // dans `certifications` (JSONB sur `users`) — le trigger d'auto-création
+    // du profil principal (create_main_profile_on_signup) ne copie pas cette
+    // colonne, donc `user_profiles.numero_ordre` (colonne dédiée, déjà en
+    // base) resterait vide. On le reporte ici explicitement.
+    if (User_Info.catPro == 'veterinaire') {
+      final ordre = User_Info.certifications.firstWhere(
+        (c) => c['nom'] == 'Numéro d\'ordre vétérinaire',
+        orElse: () => const {},
+      )['numero'] as String?;
+      if (ordre != null && ordre.isNotEmpty) {
+        try {
+          await Supabase.instance.client.from('user_profiles')
+              .update({'numero_ordre': ordre})
+              .eq('uid', uid).eq('is_main', true);
+        } catch (_) {}
+      }
+    }
+
     return uid; // Succès de l'enregistrement
   } catch (e) {
     print("Erreur lors de la création de l'utilisateur: $e");

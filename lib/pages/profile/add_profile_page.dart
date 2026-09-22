@@ -183,6 +183,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
   final _descCtrl       = TextEditingController();
   final _siretCtrl      = TextEditingController();
   final _siteCtrl       = TextEditingController();
+  final _numOrdreCtrl   = TextEditingController();
 
   // Adresse (remplis par Maps ou manuellement)
   final _addressSearchCtrl = TextEditingController();
@@ -248,7 +249,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
     _places.dispose();
     for (final c in [_labelCtrl, _nomCtrl, _phoneCtrl, _descCtrl, _siretCtrl, _siteCtrl,
         _addressSearchCtrl, _rueCtrl, _villeCtrl, _cpCtrl, _paysCtrl,
-        _numElevageCtrl, _acacedCtrl]) {
+        _numElevageCtrl, _acacedCtrl, _numOrdreCtrl]) {
       c.dispose();
     }
     super.dispose();
@@ -341,6 +342,7 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
   bool get _isAssociationType => widget.typeInfo.type == 'association';
   bool get _isParticulierType => widget.typeInfo.type == 'particulier';
   bool get _isRestauration => widget.typeInfo.type == 'restauration';
+  bool get _isVet => widget.typeInfo.type == 'veterinaire';
   bool get _hasSiret => const {
     'veterinaire', 'sante', 'education', 'pension', 'toilettage',
     'photographe', 'marechal_ferrant', 'restauration', 'taxi_animalier',
@@ -411,6 +413,12 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
       data['especes_acceptees']  = _especesAcceptees.toList();
       if (type == 'education' || type == 'garde') {
         data['acaced_numero'] = _acacedCtrl.text.trim();
+      }
+      if (_isVet) {
+        // Numéro d'inscription à l'Ordre des vétérinaires — distinct du SIRET
+        // (identifiant d'entreprise). Colonne dédiée sur user_profiles, déjà
+        // en base mais jusqu'ici jamais écrite par aucun formulaire.
+        data['numero_ordre'] = _numOrdreCtrl.text.trim();
       }
     }
     if (_isRestauration) {
@@ -521,6 +529,11 @@ class _ProfileFormStepState extends State<_ProfileFormStep> {
               const SizedBox(height: 16),
               _section('SIRET'),
               _field(_siretCtrl, '14 chiffres'),
+            ],
+            if (_isVet) ...[
+              const SizedBox(height: 16),
+              _section('Numéro d\'ordre vétérinaire *'),
+              _field(_numOrdreCtrl, 'Ex : 12345', required: true),
             ],
             if (widget.typeInfo.type == 'education' || widget.typeInfo.type == 'garde') ...[
               const SizedBox(height: 16),

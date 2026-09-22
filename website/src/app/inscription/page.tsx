@@ -368,6 +368,17 @@ export default function InscriptionPage() {
     }
 
     await supabase.from('users').upsert(base, { onConflict: 'uid' });
+
+    // Le numéro d'ordre vétérinaire n'est packé que dans `certifications`
+    // (JSONB sur `users`) — le trigger d'auto-création du profil principal
+    // (create_main_profile_on_signup) ne copie pas cette colonne, donc
+    // `user_profiles.numero_ordre` (colonne dédiée, déjà en base) resterait
+    // vide. On le reporte ici explicitement — même correctif que côté appli.
+    if (isVet && ordreVet.trim()) {
+      await supabase.from('user_profiles')
+        .update({ numero_ordre: ordreVet.trim() })
+        .eq('uid', uid).eq('is_main', true);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {

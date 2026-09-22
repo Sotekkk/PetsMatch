@@ -143,6 +143,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
   const [phone, setPhone] = useState('');
   const [description, setDescription] = useState('');
   const [siret, setSiret] = useState('');
+  const [numeroOrdre, setNumeroOrdre] = useState('');
   const [siteWeb, setSiteWeb] = useState('');
   const [subProfession, setSubProfession] = useState('');
   const [rayon, setRayon] = useState(20);
@@ -178,6 +179,7 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
   const isProType   = PRO_TYPES.has(typeInfo.type);
   const isEleveur   = typeInfo.type === 'eleveur';
   const isEducation = typeInfo.type === 'education';
+  const isVet = typeInfo.type === 'veterinaire';
   const isParticulier = typeInfo.type === 'particulier';
   const hasSiret    = HAS_SIRET.has(typeInfo.type);
   const hasRayon    = HAS_RAYON.has(typeInfo.type);
@@ -326,6 +328,12 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
         data.siret             = siret.trim();
         data.rayon_intervention = rayon;
         data.especes_acceptees = Array.from(especesSet);
+        if (isVet) {
+          // Numéro d'inscription à l'Ordre des vétérinaires — distinct du
+          // SIRET. Colonne dédiée déjà en base (user_profiles.numero_ordre),
+          // jusqu'ici jamais écrite par aucun formulaire.
+          data.numero_ordre = numeroOrdre.trim();
+        }
         if (isEducation) {
           data.acaced_numero        = acaced.trim();
           data.acaced_date_obtention = acacedDateObtention;
@@ -560,6 +568,12 @@ function ProfileForm({ typeInfo, uid, userFirstname, userLastname, onBack, onSav
                 <Field label="SIRET">
                   <input value={siret} onChange={e => setSiret(e.target.value)}
                     className="w-full input-field" placeholder="14 chiffres" maxLength={14} />
+                </Field>
+              )}
+              {isVet && (
+                <Field label="Numéro d'ordre vétérinaire" required>
+                  <input value={numeroOrdre} onChange={e => setNumeroOrdre(e.target.value)}
+                    className="w-full input-field" placeholder="Ex : 12345" />
                 </Field>
               )}
               {isEducation && (
