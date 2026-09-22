@@ -1126,44 +1126,7 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
                       style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
                     ),
                     const SizedBox(height: 12),
-                    ..._dureesMotifs.entries.map((e) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Row(children: [
-                        Expanded(child: Text(
-                          _motifLabels[e.key] ?? e.key,
-                          style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
-                              fontWeight: FontWeight.w600, color: Color(0xFF1E2025)),
-                        )),
-                        const SizedBox(width: 12),
-                        SizedBox(
-                          width: 80,
-                          child: TextFormField(
-                            initialValue: e.value.toString(),
-                            keyboardType: TextInputType.number,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-                            decoration: InputDecoration(
-                              suffixText: 'min',
-                              suffixStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
-                              filled: true, fillColor: Colors.white,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
-                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                                  borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
-                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                                  borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
-                            ),
-                            onChanged: (val) {
-                              final v = int.tryParse(val);
-                              if (v != null && v > 0) {
-                                setState(() => _dureesMotifs = {..._dureesMotifs, e.key: v});
-                              }
-                            },
-                          ),
-                        ),
-                      ]),
-                    )),
+                    ..._buildDureeRows(),
                   ],
 
                   // ── Tarifs pension ────────────────────────────────────────
@@ -2280,6 +2243,56 @@ class _ProProfileEditPageState extends State<ProProfileEditPage> {
         );
       }).toList(),
     );
+  }
+
+  // Construit les lignes à partir du catalogue de motifs du métier (pas de
+  // la map sauvegardée) : un profil fraîchement créé a durees_motifs = {}
+  // (défaut colonne) — itérer sur la map sauvegardée affichait alors le
+  // titre de section sans aucun champ. Le site (profil/page.tsx) fait déjà
+  // ainsi (catalogue statique + valeur sauvegardée en fallback par champ).
+  List<Widget> _buildDureeRows() {
+    final catalog = _defaultDureesByCatPro[_catPro] ?? const {'consultation': 30, 'autre': 30};
+    return catalog.keys.map((key) {
+      final value = _dureesMotifs[key] ?? catalog[key]!;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(children: [
+          Expanded(child: Text(
+            _motifLabels[key] ?? key,
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14,
+                fontWeight: FontWeight.w600, color: Color(0xFF1E2025)),
+          )),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 80,
+            child: TextFormField(
+              initialValue: value.toString(),
+              keyboardType: TextInputType.number,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
+              decoration: InputDecoration(
+                suffixText: 'min',
+                suffixStyle: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500),
+                filled: true, fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFDDDDDD))),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFF6E9E57), width: 1.5)),
+              ),
+              onChanged: (val) {
+                final v = int.tryParse(val);
+                if (v != null && v > 0) {
+                  setState(() => _dureesMotifs = {..._dureesMotifs, key: v});
+                }
+              },
+            ),
+          ),
+        ]),
+      );
+    }).toList();
   }
 
   Widget _sectionTitle(String title) {
