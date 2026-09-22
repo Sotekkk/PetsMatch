@@ -37,8 +37,8 @@ export default function CookieBanner() {
       <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-4">
         <div className="flex-1 text-sm text-white/80 leading-relaxed">
           <p>
-            Nous utilisons des cookies pour améliorer votre expérience et mesurer l&apos;audience du site
-            (Google Analytics, Firebase). Les cookies fonctionnels sont nécessaires au fonctionnement du service.{' '}
+            Nous utilisons uniquement des cookies strictement nécessaires au fonctionnement du service
+            (aucune mesure d&apos;audience à ce jour).{' '}
             <Link href="/confidentialite" className="underline text-white/60 hover:text-white transition-colors">
               En savoir plus
             </Link>

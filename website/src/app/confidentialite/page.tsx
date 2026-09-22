@@ -38,7 +38,6 @@ export default function ConfidentialitePage() {
               ['Données animaux', 'Gestion carnet santé, annonces', 'Contrat', 'Durée du compte + 5 ans'],
               ['Token FCM (push)', 'Notifications push', 'Consentement', 'Jusqu\'à retrait'],
               ['Adresse IP', 'Sécurité, logs', 'Intérêt légitime', '12 mois'],
-              ['Cookies analytics', 'Mesure d\'audience', 'Consentement', '13 mois'],
             ].map(([d, f, b, dur]) => (
               <tr key={d} className="even:bg-gray-50">
                 <td className="p-2 border border-gray-200">{d}</td>
@@ -53,9 +52,9 @@ export default function ConfidentialitePage() {
 
       <Section title="3. Sous-traitants">
         <ul className="list-disc list-inside space-y-1">
-          <li><strong>Google Firebase</strong> (authentification, push notifications, analytics) — États-Unis — <a href="https://firebase.google.com/support/privacy" className="text-[#0C5C6C] underline" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a></li>
+          <li><strong>Google Firebase</strong> (authentification, notifications push, stockage de fichiers) — États-Unis — <a href="https://firebase.google.com/support/privacy" className="text-[#0C5C6C] underline" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a></li>
           <li><strong>Supabase</strong> (base de données) — Singapour / UE — <a href="https://supabase.com/privacy" className="text-[#0C5C6C] underline" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a></li>
-          <li><strong>Vercel</strong> (hébergement web) — États-Unis — <a href="https://vercel.com/legal/privacy-policy" className="text-[#0C5C6C] underline" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a></li>
+          <li><strong>Netlify</strong> (hébergement web) — États-Unis — <a href="https://www.netlify.com/privacy/" className="text-[#0C5C6C] underline" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a></li>
           <li><strong>Stripe</strong> (paiements) — États-Unis — <a href="https://stripe.com/fr/privacy" className="text-[#0C5C6C] underline" target="_blank" rel="noopener noreferrer">Politique de confidentialité</a></li>
         </ul>
         <p className="mt-2">
@@ -84,9 +83,9 @@ export default function ConfidentialitePage() {
 
       <Section title="5. Cookies">
         <p>
-          Le site PetsMatch utilise des cookies pour le bon fonctionnement du service et la mesure d&apos;audience.
-          Vous pouvez gérer vos préférences via le bandeau cookies affiché lors de votre première visite
-          ou à tout moment via le lien &quot;Gestion des cookies&quot; en bas de page.
+          Le site PetsMatch utilise uniquement des cookies strictement nécessaires au fonctionnement du
+          service (aucun cookie de mesure d&apos;audience ou publicitaire à ce jour). Vous pouvez consulter
+          le détail ci-dessous ; cette page sera mise à jour si un outil de mesure d&apos;audience est ajouté.
         </p>
         <table className="w-full text-xs border-collapse mt-3">
           <thead>
@@ -101,8 +100,6 @@ export default function ConfidentialitePage() {
             {[
               ['Session Firebase Auth', 'Fonctionnel', 'Session', 'Non'],
               ['pm_cookie_consent', 'Préférence', '13 mois', 'Non'],
-              ['_ga (Google Analytics)', 'Analytics', '13 mois', 'Oui'],
-              ['_fbp (Firebase)', 'Analytics', '90 jours', 'Oui'],
             ].map(([n, t, d, c]) => (
               <tr key={n} className="even:bg-gray-50">
                 <td className="p-2 border border-gray-200 font-mono">{n}</td>
@@ -117,10 +114,10 @@ export default function ConfidentialitePage() {
 
       <Section title="6. Sécurité">
         <p>
-          PetsMatch met en œuvre des mesures techniques et organisationnelles adaptées pour protéger vos données :
-          chiffrement HTTPS, authentification Firebase, Row Level Security Supabase, accès restreint aux données
-          par rôle. Aucun système n&apos;est infaillible ; en cas de violation de données, vous serez notifié
-          conformément à l&apos;art. 34 du RGPD.
+          PetsMatch met en œuvre des mesures techniques et organisationnelles pour protéger vos données :
+          chiffrement HTTPS, authentification Firebase, accès aux fonctionnalités restreint par rôle et par
+          profil au niveau de l&apos;application. Aucun système n&apos;est infaillible ; en cas de violation
+          de données, vous serez notifié conformément à l&apos;art. 34 du RGPD.
         </p>
       </Section>
 
