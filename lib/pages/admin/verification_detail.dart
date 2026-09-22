@@ -1,8 +1,10 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:mailer/mailer.dart';
-import 'package:mailer/smtp_server.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/services/plan_service.dart';
 
 class VerificationDetail extends StatefulWidget {
   final String uid;
@@ -23,16 +25,18 @@ class _VerificationDetailState extends State<VerificationDetail> {
     required String subject,
     required String body,
   }) async {
-    const username = 'petsmatch.contact@gmail.com';
-    const password = 'dppu ctgp buve bxjd';
-    final smtpServer = gmail(username, password);
-    final message = Message()
-      ..from = const Address(username, 'PetsMatch')
-      ..recipients.add(toEmail)
-      ..subject = subject
-      ..text = body;
+    final adminUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     try {
-      await send(message, smtpServer);
+      await http.post(
+        Uri.parse('${PlanService.kWebsiteUrl}/api/admin/notify-email'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'uid': adminUid,
+          'to': toEmail,
+          'subject': subject,
+          'body': body,
+        }),
+      );
     } catch (_) {}
   }
 

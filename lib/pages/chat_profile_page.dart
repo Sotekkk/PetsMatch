@@ -1,9 +1,10 @@
+import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:mailer/mailer.dart';
-import 'package:mailer/smtp_server.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/services/plan_service.dart';
 
 class ChatProfilePage extends StatefulWidget {
   final String uid;
@@ -61,14 +62,13 @@ class _ChatProfilePageState extends State<ChatProfilePage> {
 
   Future<void> _sendSignalementEmail({required String motif, String? details}) async {
     final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    const username = 'petsmatch.contact@gmail.com';
-    const password = 'dppu ctgp buve bxjd';
-    final smtpServer = gmail(username, password);
-    final message = Message()
-      ..from = const Address(username, 'PetsMatch - Signalement')
-      ..recipients.add(username)
-      ..subject = '🔔 Signalement utilisateur : ${widget.uid}'
-      ..text = '''
+    await http.post(
+      Uri.parse('${PlanService.kWebsiteUrl}/api/app/report-email'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'uid': myUid,
+        'subject': '🔔 Signalement utilisateur : ${widget.uid}',
+        'body': '''
 Un utilisateur a été signalé via l'application PetsMatch.
 
 🔹 UID signalé : ${widget.uid}
@@ -79,8 +79,9 @@ Un utilisateur a été signalé via l'application PetsMatch.
 Veuillez traiter ce signalement sous 24h conformément aux CGU.
 
 - PetsMatch App
-''';
-    await send(message, smtpServer);
+''',
+      }),
+    );
   }
 
   Future<void> _blockUser() async {

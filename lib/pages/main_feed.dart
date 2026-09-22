@@ -13,8 +13,8 @@ import 'package:carousel_slider/carousel_slider.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:mailer/mailer.dart';
-import 'package:mailer/smtp_server.dart';
+import 'package:http/http.dart' as http;
+import 'package:PetsMatch/services/plan_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart' as geocoding;
@@ -859,22 +859,19 @@ class _PostWidgetState extends State<PostWidget> {
     }
   }
 
-  Future<SendReport> _sendSignalementEmail({
+  Future<void> _sendSignalementEmail({
     required String uidSignaleur,
     required String uidSignale,
     required String motif,
     String? details,
   }) async {
-    String username = 'petsmatch.contact@gmail.com';
-    String password = 'dppu ctgp buve bxjd'; // mot de passe d'application Gmail
-
-    final smtpServer = gmail(username, password);
-
-    final message = Message()
-      ..from = Address(username, 'PetsMatch - Signalement')
-      ..recipients.add('petsmatch.contact@gmail.com')
-      ..subject = '🔔 Signalement utilisateur : $uidSignale'
-      ..text = '''
+    await http.post(
+      Uri.parse('${PlanService.kWebsiteUrl}/api/app/report-email'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'uid': uidSignaleur,
+        'subject': '🔔 Signalement utilisateur : $uidSignale',
+        'body': '''
 Un utilisateur a été signalé via l'application PetsMatch.
 
 🔹 UID de l'utilisateur signalé : $uidSignale
@@ -885,19 +882,9 @@ Un utilisateur a été signalé via l'application PetsMatch.
 Veuillez traiter ce signalement sous 24h conformément aux CGU.
 
 - PetsMatch App
-    ''';
-
-    try {
-      final sendReport = await send(message, smtpServer);
-      print('Signalement envoyé : ${sendReport.toString()}');
-      return sendReport;
-    } on MailerException catch (e) {
-      print('Erreur envoi signalement : $e');
-      for (var p in e.problems) {
-        print('Problème: ${p.code}: ${p.msg}');
-      }
-      rethrow; // Rethrow the exception to ensure the function doesn't complete normally
-    }
+    ''',
+      }),
+    );
   }
 
   @override

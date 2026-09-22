@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import nodemailer from 'nodemailer';
-
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: { user: 'petsmatch.contact@gmail.com', pass: 'dppu ctgp buve bxjd' },
-});
+import { mailTransporter, MAIL_FROM } from '@/lib/mailer';
 
 export async function POST(req: NextRequest) {
   const { email, nom_destinataire, animal_nom, pro_nom, claim_url } =
@@ -58,8 +53,8 @@ export async function POST(req: NextRequest) {
 </html>`;
 
   try {
-    await transporter.sendMail({
-      from: '"PetsMatch" <petsmatch.contact@gmail.com>',
+    await mailTransporter.sendMail({
+      from: MAIL_FROM,
       to: email,
       subject: `🐾 La fiche de ${animal_nom} vous attend · PetsMatch`,
       html,

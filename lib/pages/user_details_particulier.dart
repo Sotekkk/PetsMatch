@@ -1,9 +1,10 @@
+import 'dart:convert';
 import 'package:PetsMatch/utils.dart';
 import 'package:flutter/material.dart';
-import 'package:mailer/mailer.dart';
-import 'package:mailer/smtp_server.dart';
+import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:PetsMatch/services/plan_service.dart';
 
 class UserParticulierFeedDetails extends StatelessWidget {
   final String profilePictureUrl;
@@ -24,16 +25,14 @@ class UserParticulierFeedDetails extends StatelessWidget {
     required String motif,
     String? details,
   }) async {
-    String username = 'petsmatch.contact@gmail.com';
-    String password = 'dppu ctgp buve bxjd';
-
-    final smtpServer = gmail(username, password);
-
-    final message = Message()
-      ..from = Address(username, 'PetsMatch - Signalement')
-      ..recipients.add('petsmatch.contact@gmail.com')
-      ..subject = '🔔 Signalement utilisateur : $uidSignale'
-      ..text = '''
+    try {
+      await http.post(
+        Uri.parse('${PlanService.kWebsiteUrl}/api/app/report-email'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'uid': uidSignaleur,
+          'subject': '🔔 Signalement utilisateur : $uidSignale',
+          'body': '''
 Un utilisateur a été signalé via l'application PetsMatch.
 
 🔹 UID de l'utilisateur signalé : $uidSignale
@@ -44,13 +43,10 @@ Un utilisateur a été signalé via l'application PetsMatch.
 Veuillez traiter ce signalement sous 24h conformément aux CGU.
 
 - PetsMatch App
-    ''';
-
-    try {
-      await send(message, smtpServer);
-      print('✅ Signalement envoyé.');
-    } on MailerException catch (e) {
-      print('❌ Erreur d’envoi : $e');
+    ''',
+        }),
+      );
+    } catch (e) {
       rethrow;
     }
   }

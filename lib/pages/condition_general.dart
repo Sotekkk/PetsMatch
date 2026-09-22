@@ -8,8 +8,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
-import 'package:mailer/mailer.dart';
-import 'package:mailer/smtp_server.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:PetsMatch/services/plan_service.dart';
 
 class ConditionGeneral extends StatefulWidget {
   const ConditionGeneral({super.key});
@@ -538,13 +539,6 @@ class MentionsLegales extends StatefulWidget {
 }
 
 void _sendRegistrationEmail(Object uid) async {
-  String username =
-      'petsmatch.contact@gmail.com'; // Remplacez par votre adresse email
-  String password =
-      'dppu ctgp buve bxjd'; // Remplacez par votre mot de passe d'application (ou le mot de passe de l'email, si applicable)
-
-  final smtpServer = gmail(username, password);
-
   String documents = User_Info.documentElevage.map((doc) {
     return '''
       Catégorie: ${doc['category']}
@@ -554,13 +548,9 @@ void _sendRegistrationEmail(Object uid) async {
     ''';
   }).join('\n');
 
-  final message = Message()
-    ..from = Address(username, 'Application PetsMatch')
-    ..recipients.add('petsmatch.contact@gmail.com')
-    ..subject = 'Nouvelle Inscription Professionnel'
-    ..text = '''
+  final body = '''
       Détails de l'inscription:
-      UID: ${uid}
+      UID: $uid
       Nom: ${User_Info.firstname} ${User_Info.lastname}
       Email: ${User_Info.email}
       Date de naissance: ${User_Info.dateofbirth}
@@ -584,13 +574,16 @@ void _sendRegistrationEmail(Object uid) async {
     ''';
 
   try {
-    final sendReport = await send(message, smtpServer);
-    print('Message envoyé: ' + sendReport.toString());
-  } on MailerException catch (e) {
-    print('Message non envoyé. $e');
-    for (var p in e.problems) {
-      print('Problème: ${p.code}: ${p.msg}');
-    }
+    await http.post(
+      Uri.parse('${PlanService.kWebsiteUrl}/api/app/report-email'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'uid': uid.toString(),
+        'subject': 'Nouvelle Inscription Professionnel',
+        'body': body,
+      }),
+    );
+  } catch (_) {
   }
 }
 

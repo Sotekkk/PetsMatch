@@ -1,10 +1,10 @@
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:mailer/mailer.dart';
-import 'package:mailer/smtp_server.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+import 'package:PetsMatch/services/plan_service.dart';
 
 class RenewalService {
-  static const _username = 'petsmatch.contact@gmail.com';
-  static const _password = 'dppu ctgp buve bxjd';
 
   static Future<void> checkAndSendReminders() async {
     final now = DateTime.now();
@@ -75,14 +75,18 @@ class RenewalService {
     required String subject,
     required String body,
   }) async {
-    final smtpServer = gmail(_username, _password);
-    final message = Message()
-      ..from = const Address(_username, 'PetsMatch')
-      ..recipients.add(toEmail)
-      ..subject = subject
-      ..text = body;
+    final adminUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     try {
-      await send(message, smtpServer);
+      await http.post(
+        Uri.parse('${PlanService.kWebsiteUrl}/api/admin/notify-email'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'uid': adminUid,
+          'to': toEmail,
+          'subject': subject,
+          'body': body,
+        }),
+      );
     } catch (_) {}
   }
 
