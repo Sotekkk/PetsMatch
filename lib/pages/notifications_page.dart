@@ -521,10 +521,16 @@ class _NotificationsPageState extends State<NotificationsPage> {
       }
       return;
     }
-    // Inscription d'un client à un cours collectif — reçu par l'éducateur
+    // Inscription d'un client à un cours collectif — reçu par l'éducateur.
+    // Ouvre directement la fiche du cours (là où confirmer/refuser se fait)
+    // plutôt que la liste générale — sans ça il fallait retrouver le bon
+    // cours à la main avant de pouvoir valider la demande.
     if (type == 'cours_collectif_inscription') {
+      final coursId = data is Map ? data['coursId'] as String? : null;
       await Navigator.push(context, MaterialPageRoute(
-        builder: (_) => const EducationPlanningPage(),
+        builder: (_) => coursId != null && coursId.isNotEmpty
+            ? CoursCollectifDetailPage(coursId: coursId)
+            : const EducationPlanningPage(),
       ));
       return;
     }

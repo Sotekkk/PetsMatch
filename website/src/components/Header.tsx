@@ -885,7 +885,7 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     case 'avis_demande':
       return d.url ?? (d.pro_uid ? `/services/pro/${d.pro_uid}?avis=1${d.pro_profile_id ? `&profileId=${d.pro_profile_id}` : ''}` : null);
     case 'cours_collectif_inscription':
-      return '/education/planning';
+      return d.coursId ? `/education/planning?coursId=${d.coursId}` : '/education/planning';
     case 'devis_recu':
       // Nouveau : le devis est un contrat signable (d.url = /signer-contrat/<token>)
       return d.url ?? (d.token ? `/devis/${d.token}` : devisPath);
