@@ -130,10 +130,16 @@ function nextHeatDate(
   return new Date(effectiveLast.getTime() + interval * 86400000);
 }
 
-function NextHeatBanner({ nextHeat, espece }: { nextHeat: Date; espece: string }) {
+function NextHeatBanner({ nextHeat, espece, race, raceInterval, animalOverride }: {
+  nextHeat: Date; espece: string; race?: string | null; raceInterval?: number | null; animalOverride?: number | null;
+}) {
   const now = new Date();
   const diff = Math.round((nextHeat.getTime() - now.getTime()) / 86400000);
-  const info = CHALEURS_INFO[espece] ?? '';
+  const info = animalOverride
+    ? `Intervalle personnalisé (cet animal) : ${animalOverride} j`
+    : raceInterval
+      ? `Protocole ${race ?? ''} : ${raceInterval} j`
+      : (CHALEURS_INFO[espece] ?? '');
 
   let bg: string, text: string, border: string, icon: string, label: string;
   if (diff < 0) {
@@ -1758,7 +1764,7 @@ function SuiviReproTab({ isMale, espece, race, uidEleveur, animalId, userId, ani
               </div>
             </div>
           )}
-          {(() => { const next = nextHeatDate(chaleurs, espece, intervalleCustom, raceInterval, lastMiseBas); return next ? <NextHeatBanner nextHeat={next} espece={espece} /> : null; })()}
+          {(() => { const next = nextHeatDate(chaleurs, espece, intervalleCustom, raceInterval, lastMiseBas); return next ? <NextHeatBanner nextHeat={next} espece={espece} race={race} raceInterval={raceInterval} animalOverride={intervalleCustom} /> : null; })()}
           {reproAdd === 'chaleurs' && (
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <AddHealthForm saving={savingRepro} onCancel={() => setReproAdd(null)}
