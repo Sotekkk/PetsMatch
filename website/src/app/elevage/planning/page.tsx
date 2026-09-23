@@ -919,9 +919,17 @@ function ProtocolesView({ templates, canWrite = true, ownerProfileId, myProfileI
     <div>
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-bold text-gray-800">Mes protocoles</h2>
-        {canWrite && (
-          <button onClick={onNew} className="px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">+ Nouvelle</button>
-        )}
+        <div className="flex gap-2">
+          {!isEmployeeMode && (
+            <a href="/elevage/protocole-chaleur"
+              className="px-4 py-2 border border-[#6E9E57] text-[#6E9E57] rounded-xl text-sm font-semibold hover:bg-[#6E9E57]/10">
+              🌸 Protocole chaleur
+            </a>
+          )}
+          {canWrite && (
+            <button onClick={onNew} className="px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700">+ Nouvelle</button>
+          )}
+        </div>
       </div>
       {templates.length === 0 ? (
         <div className="text-center py-16">
