@@ -2194,7 +2194,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         controller: _tabs,
         children: widget.vetMode
             ? [
-                _IdentiteTab(this),
+                AbsorbPointer(absorbing: widget.readOnly, child: _IdentiteTab(this)),
                 _CarnetSanteTab(
                   animalId: widget.animalId, vetMode: true, espece: _espece,
                   canWrite: _canWriteHealth,
@@ -2227,13 +2227,16 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               ]
             : widget.educationMode
                 ? [
-                    _IdentiteTab(this),
-                    _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
+                    AbsorbPointer(absorbing: widget.readOnly, child: _IdentiteTab(this)),
+                    // Un éducateur n'est pas un pro de santé — lecture seule du
+                    // carnet, jamais d'écriture (vaccins, etc.), contrairement
+                    // au défaut `canWrite = true` de _CarnetSanteTab.
+                    _CarnetSanteTab(animalId: widget.animalId, espece: _espece, canWrite: false),
                     _EducationTab(animalId: widget.animalId, ownerUid: _ownerUid, animalNom: _nomCtrl.text),
                   ]
                 : widget.isAssociation
                 ? [
-                    _IdentiteTab(this),
+                    AbsorbPointer(absorbing: widget.readOnly, child: _IdentiteTab(this)),
                     _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
                     _AlimentationTab(this),
                     _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
@@ -2241,19 +2244,19 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                   ]
                 : (_statut == 'sorti' && !_isNewOwner
                     ? [
-                        _IdentiteTab(this),
+                        AbsorbPointer(absorbing: widget.readOnly, child: _IdentiteTab(this)),
                         _DocumentsTab(animalId: widget.animalId ?? ''),
                       ]
                     : (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab
                         ? [
-                            _IdentiteTab(this),
+                            AbsorbPointer(absorbing: widget.readOnly, child: _IdentiteTab(this)),
                             _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
                             _AlimentationTab(this),
                             _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
                             _DocumentsTab(animalId: widget.animalId ?? ''),
                           ]
                         : [
-                            _IdentiteTab(this),
+                            AbsorbPointer(absorbing: widget.readOnly, child: _IdentiteTab(this)),
                             _DocumentsTab(animalId: widget.animalId ?? ''),
                             _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly("write_repro"), sterilise: _sterilise, dateNaissance: _dateNaissance),
                             _CarnetSanteTab(animalId: widget.animalId, espece: _espece),

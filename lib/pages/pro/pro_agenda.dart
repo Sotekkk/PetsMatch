@@ -384,7 +384,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     try {
       final nowIso = DateTime.now().toUtc().toIso8601String();
       var q = Supabase.instance.client.from('cours_collectifs')
-          .select('id, titre, date_heure, duree_minutes, pro_profile_id')
+          .select('id, titre, date_heure, duree_minutes, pro_profile_id, lieu, lieu_lat, lieu_lng')
           .eq('pro_uid', uid).neq('statut', 'annule').gte('date_heure', nowIso);
       final pid = User_Info.activeProfileId;
       if (pid.isNotEmpty) q = q.eq('pro_profile_id', pid);
@@ -422,6 +422,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         ? '${dh.day.toString().padLeft(2, '0')}/${dh.month.toString().padLeft(2, '0')} à ${dh.hour.toString().padLeft(2, '0')}h${dh.minute.toString().padLeft(2, '0')}'
         : '';
     final count = (isDemande ? c['_demandes'] : c['_inscrits']) as int;
+    final lieu = c['lieu']?.toString() ?? '';
     const violet = Color(0xFF7B5EA7);
     return GestureDetector(
       onTap: () async {
@@ -438,24 +439,54 @@ class _ProAgendaPageState extends State<ProAgendaPage>
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: violet.withOpacity(0.2)),
         ),
-        child: Row(children: [
-          const Icon(Icons.groups_outlined, color: violet, size: 20),
-          const SizedBox(width: 10),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(c['titre']?.toString() ?? 'Cours collectif',
-                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
-            Text(dateStr, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
-          ])),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(color: violet, borderRadius: BorderRadius.circular(20)),
-            child: Text(
-              isDemande ? '$count en attente' : '$count inscrit${count > 1 ? "s" : ""}',
-              style: const TextStyle(color: Colors.white, fontSize: 11, fontFamily: 'Galey', fontWeight: FontWeight.w600),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Icon(Icons.groups_outlined, color: violet, size: 20),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(c['titre']?.toString() ?? 'Cours collectif',
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+              Text(dateStr, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+            ])),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(color: violet, borderRadius: BorderRadius.circular(20)),
+              child: Text(
+                isDemande ? '$count en attente' : '$count inscrit${count > 1 ? "s" : ""}',
+                style: const TextStyle(color: Colors.white, fontSize: 11, fontFamily: 'Galey', fontWeight: FontWeight.w600),
+              ),
             ),
-          ),
-          const SizedBox(width: 6),
-          const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+            const SizedBox(width: 6),
+            const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+          ]),
+          // Lieu + itinéraire — même traitement que _RdvCard pour un RDV à
+          // domicile (Google Maps, qui propose Waze comme appli tierce sur
+          // le sélecteur natif Android/iOS).
+          if (lieu.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Row(children: [
+              const Icon(Icons.place_outlined, size: 14, color: violet),
+              const SizedBox(width: 6),
+              Expanded(child: Text(lieu, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: violet))),
+              GestureDetector(
+                onTap: () {
+                  final lat = c['lieu_lat'], lng = c['lieu_lng'];
+                  final q = (lat != null && lng != null) ? '$lat,$lng' : Uri.encodeComponent(lieu);
+                  launchUrl(Uri.parse('https://www.google.com/maps/search/?api=1&query=$q'),
+                      mode: LaunchMode.externalApplication);
+                },
+                child: const Padding(
+                  padding: EdgeInsets.only(left: 6),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.directions_outlined, size: 14, color: violet),
+                    SizedBox(width: 3),
+                    Text('Itinéraire', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                        fontWeight: FontWeight.w700, color: violet)),
+                  ]),
+                ),
+              ),
+            ]),
+          ],
         ]),
       ),
     );
