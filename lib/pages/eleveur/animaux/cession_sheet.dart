@@ -217,13 +217,16 @@ class _CessionSheetState extends State<CessionSheet> {
 
   static const _cpFields = 'uid, id, is_main, firstname, lastname, nom, profile_type, avatar_url, phone_number, adresse, rue, ville, code_postal, numero_elevage, email_contact';
 
-  /// Résout le `user_profiles.id` de l'acquéreur selon la qualité choisie :
   /// particulier → profil particulier, éleveur → profil éleveur, refuge →
-  /// association. Repli sur `is_main` puis n'importe quel profil.
+  /// association. 'autre' n'a pas de profil dédié, on retombe sur particulier.
+  static String _profileTypeForQualite(String qualite) => qualite == 'eleveur'
+      ? 'eleveur'
+      : qualite == 'refuge' ? 'association' : 'particulier';
+
+  /// Résout le `user_profiles.id` de l'acquéreur selon la qualité choisie.
+  /// Repli sur `is_main` puis n'importe quel profil.
   Future<String?> _resolveAcqProfileId(String uid, String qualite) async {
-    final wanted = qualite == 'eleveur'
-        ? 'eleveur'
-        : qualite == 'refuge' ? 'association' : 'particulier';
+    final wanted = _profileTypeForQualite(qualite);
     try {
       final byType = await _supa.from('user_profiles')
           .select('id').eq('uid', uid).eq('profile_type', wanted).maybeSingle();
@@ -298,49 +301,102 @@ class _CessionSheetState extends State<CessionSheet> {
     }
   }
 
-  Future<void> _selectUser(Map<String, dynamic> r) async {
-    final isElv = r['is_elevage'] == true;
-    final uid = r['uid'] as String?;
-
-    // Cession à un particulier → prendre les coordonnées du **profil
-    // particulier** (pas le profil pro/pension qui est souvent `is_main`).
-    Map<String, dynamic> contact = r;
-    if (!isElv && uid != null) {
-      try {
-        final part = await _supa.from('user_profiles')
-            .select('id, firstname, lastname, adresse, rue, ville, code_postal, phone_number, email_contact')
-            .eq('uid', uid).eq('profile_type', 'particulier').maybeSingle();
-        if (part != null) {
-          contact = {...r, ...Map<String, dynamic>.from(part), 'adress': part['adresse'], 'email': part['email_contact']};
-        }
-      } catch (_) {}
+  /// uid de connexion → email du compte (table `users`), utilisé en repli
+  /// quand `email_contact` (champ optionnel du profil) n'a jamais été
+  /// rempli — très fréquent, à ne pas confondre avec un email manquant.
+  Future<String?> _loginEmailForUid(String uid) async {
+    try {
+      final u = await _supa.from('users').select('email').eq('uid', uid).maybeSingle();
+      return u?['email'] as String?;
+    } catch (_) {
+      return null;
     }
+  }
 
-    final adresse = isElv
-        ? (r['adress_elevage'] as String? ?? [r['rue'], r['ville'], r['code_postal']].where((e) => e != null).join(', '))
-        : ((contact['adresse'] ?? contact['adress']) as String? ??
-            [contact['rue'], contact['code_postal'], contact['ville']].where((e) => e != null && '$e'.isNotEmpty).join(', '));
-    final tel = isElv
-        ? '${r['code_iso_elevage'] ?? '+33'} ${r['numero_elevage'] ?? ''}'.trim()
-        : '${contact['code_iso'] ?? '+33'} ${contact['phone_number'] ?? ''}'.trim();
+  /// Récupère les coordonnées de contact de [uid] pour le profil du type
+  /// voulu (particulier / association / éleveur, cf. [_qualite]) — pas
+  /// forcément le profil `is_main` trouvé par la recherche, qui peut être
+  /// tout autre (pro, pension...) selon le compte de l'utilisateur trouvé.
+  /// Repli sur `is_main` puis n'importe quel profil si le type voulu
+  /// n'existe pas pour cet uid.
+  Future<Map<String, dynamic>?> _fetchContactProfile(String uid, String profileType) async {
+    try {
+      final byType = await _supa.from('user_profiles').select(_cpFields)
+          .eq('uid', uid).eq('profile_type', profileType).maybeSingle();
+      if (byType != null) return byType;
+      final main = await _supa.from('user_profiles').select(_cpFields)
+          .eq('uid', uid).eq('is_main', true).maybeSingle();
+      if (main != null) return main;
+      return await _supa.from('user_profiles').select(_cpFields)
+          .eq('uid', uid).limit(1).maybeSingle();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Remplit prénom/nom/email/tél/adresse pour [uid] selon la qualité
+  /// actuellement choisie (particulier/association/éleveur) — appelé à la
+  /// sélection d'un utilisateur ET quand la qualité change ensuite, pour
+  /// que les coordonnées reflètent toujours le bon profil.
+  Future<void> _applyContactForQualite(String uid, {String? nomFallback}) async {
+    final wantedType = _profileTypeForQualite(_qualite);
+    final isElv = wantedType == 'eleveur';
+    final results = await Future.wait([
+      _fetchContactProfile(uid, wantedType),
+      _loginEmailForUid(uid),
+    ]);
+    final prof = results[0] as Map<String, dynamic>?;
+    final loginEmail = results[1] as String?;
     if (!mounted) return;
+
+    final emailContact = prof?['email_contact'] as String?;
+    final adresse = (prof?['adresse'] as String?) ??
+        [prof?['rue'], prof?['code_postal'], prof?['ville']]
+            .where((e) => e != null && '$e'.isNotEmpty).join(', ');
+    final tel = isElv
+        ? '+33 ${prof?['numero_elevage'] ?? ''}'.trim()
+        : '+33 ${prof?['phone_number'] ?? ''}'.trim();
+    final nomElevageOuTrouve = (prof?['nom'] as String?) ?? nomFallback ?? '';
+
     setState(() {
-      _foundUser = contact;
+      _foundUser = {
+        'uid': uid,
+        'nom': nomElevageOuTrouve.isEmpty ? (nomFallback ?? 'Utilisateur PetsMatch') : nomElevageOuTrouve,
+        'rue': prof?['rue'], 'ville': prof?['ville'], 'code_postal': prof?['code_postal'],
+      };
       if (isElv) {
         _prenomCtrl.text = '';
-        _nomCtrl.text    = r['nom'] as String;
+        _nomCtrl.text    = nomElevageOuTrouve;
       } else {
-        _prenomCtrl.text = (contact['firstname'] as String? ?? '').trim();
-        _nomCtrl.text    = (contact['lastname'] as String? ?? '').trim();
+        _prenomCtrl.text = (prof?['firstname'] as String? ?? '').trim();
+        _nomCtrl.text    = (prof?['lastname'] as String? ?? '').trim();
         if (_prenomCtrl.text.isEmpty && _nomCtrl.text.isEmpty) {
-          _nomCtrl.text = r['nom'] as String? ?? '';
+          _nomCtrl.text = nomElevageOuTrouve;
         }
       }
-      _emailCtrl.text  = (contact['email'] ?? contact['email_contact'] ?? '') as String;
+      // email_contact (facultatif, souvent vide) prioritaire, sinon email
+      // du compte (toujours présent, c'est celui de connexion).
+      _emailCtrl.text  = (emailContact != null && emailContact.isNotEmpty) ? emailContact : (loginEmail ?? '');
       _telCtrl.text    = tel.replaceFirst(RegExp(r'^\+33\s*$'), '');
       _adresseCtrl.text = adresse;
       _searchResults   = [];
     });
+  }
+
+  Future<void> _selectUser(Map<String, dynamic> r) async {
+    final uid = r['uid'] as String?;
+    if (uid == null) return;
+    await _applyContactForQualite(uid, nomFallback: r['nom'] as String?);
+  }
+
+  /// Appelé quand la qualité (particulier/association/éleveur) change en
+  /// étape 1, alors qu'un utilisateur PetsMatch a déjà été sélectionné en
+  /// étape 0 — sans ça les coordonnées restaient celles du profil trouvé
+  /// initialement, même après un changement de qualité.
+  void _onQualiteChanged(String qualite) {
+    setState(() => _qualite = qualite);
+    final uid = _foundUser?['uid'] as String?;
+    if (uid != null) _applyContactForQualite(uid, nomFallback: _foundUser?['nom'] as String?);
   }
 
   Future<void> _uploadDoc(String type) async {
@@ -1132,7 +1188,7 @@ class _CessionSheetState extends State<CessionSheet> {
                     const DropdownMenuItem(value: 'autre',   child: Text('Autre')),
                   ],
                 ],
-                onChanged: (v) => setState(() => _qualite = v!),
+                onChanged: (v) => _onQualiteChanged(v!),
                 decoration: _inputDec('Qualité'),
               ))),
               const SizedBox(width: 8),

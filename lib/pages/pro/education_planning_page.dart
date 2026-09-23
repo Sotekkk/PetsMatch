@@ -645,6 +645,14 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
             .eq('uid', clientUid).eq('couleur', couleurClient);
       } catch (_) {}
       if (inscrit) {
+        // `pro_profile_id` sur une ligne agenda_events sert en réalité à
+        // scoper l'événement au profil actif de son PROPRE uid (peu importe
+        // que ce soit un pro ou un particulier) — cf. pro_agenda.dart où la
+        // ligne côté client y stocke `client_profile_id`, pas le profil du
+        // pro. Y mettre `proProfileId` ici cassait le scoping particulier
+        // (0 résultat) et, quand pro == client (test sur son propre compte),
+        // faisait apparaître la ligne côté pro en double.
+        final clientProfileId = participant['client_profile_id']?.toString();
         try {
           await _supa.from('agenda_events').insert({
             'uid':            clientUid,
@@ -654,7 +662,7 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
             'duree_minutes':  duree,
             if (participant['animal_id'] != null) 'animal_id': participant['animal_id'],
             'couleur':        couleurClient,
-            'pro_profile_id': proProfileId,
+            if (clientProfileId != null && clientProfileId.isNotEmpty) 'pro_profile_id': clientProfileId,
           });
         } catch (_) {}
       }
@@ -722,6 +730,7 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
       if (attente.isEmpty) return;
       final row = attente.first;
       await _supa.from('cours_collectifs_participants').update({'statut': 'inscrit'}).eq('id', row['id']);
+      await _syncAgendaForParticipant(Map<String, dynamic>.from(row), inscrit: true);
       final titre = _cours?['titre']?.toString() ?? 'un cours';
       final d = DateTime.tryParse(_cours?['date_heure']?.toString() ?? '')?.toLocal();
       final dateStr = d != null ? DateFormat('dd/MM à HH:mm').format(d) : '';

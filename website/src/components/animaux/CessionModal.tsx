@@ -221,49 +221,85 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
     }, 800);
   }
 
-  async function fillFromUser(data: Record<string, unknown>) {
-    // Cession à un particulier → coordonnées du profil particulier
-    // (pas le profil pro/pension souvent `is_main`).
-    if (data.is_elevage !== true && data.uid) {
-      const { data: part } = await supabase.from('user_profiles')
-        .select('firstname, lastname, adresse, rue, ville, code_postal, phone_number, email_contact')
-        .eq('uid', data.uid as string).eq('profile_type', 'particulier').maybeSingle();
-      if (part) {
-        data = {
-          ...data,
-          firstname: part.firstname ?? data.firstname,
-          lastname: part.lastname ?? data.lastname,
-          adress: (part.adresse ?? [part.rue, part.code_postal, part.ville].filter(Boolean).join(', ')) || data.adress,
-          rue: part.rue, ville: part.ville, code_postal: part.code_postal,
-          phone_number: part.phone_number ?? data.phone_number,
-          email: (part.email_contact as string) || data.email,
-        };
-      }
-    }
+  function profileTypeForQualite(q: string): string {
+    return q === 'eleveur' ? 'eleveur' : q === 'refuge' ? 'association' : 'particulier';
+  }
+
+  /** uid de connexion → email du compte (table `users`), en repli quand
+   * `email_contact` (champ optionnel du profil) n'a jamais été rempli —
+   * très fréquent, à ne pas confondre avec un email manquant. */
+  async function loginEmailForUid(uidVal: string): Promise<string | undefined> {
+    const { data } = await supabase.from('users').select('email').eq('uid', uidVal).maybeSingle();
+    return data?.email as string | undefined;
+  }
+
+  const CONTACT_FIELDS = 'uid, firstname, lastname, nom, profile_type, avatar_url, phone_number, adresse, rue, ville, code_postal, numero_elevage, siret, email_contact';
+
+  /** Profil de [uidVal] du type voulu (particulier/association/éleveur) —
+   * pas forcément le profil `is_main` trouvé par la recherche, qui peut
+   * être tout autre (pro, pension...) selon le compte trouvé. Repli sur
+   * `is_main` puis n'importe quel profil si le type voulu n'existe pas. */
+  async function fetchContactProfile(uidVal: string, profileType: string): Promise<Record<string, unknown> | null> {
+    const { data: byType } = await supabase.from('user_profiles').select(CONTACT_FIELDS)
+      .eq('uid', uidVal).eq('profile_type', profileType).maybeSingle();
+    if (byType) return byType;
+    const { data: main } = await supabase.from('user_profiles').select(CONTACT_FIELDS)
+      .eq('uid', uidVal).eq('is_main', true).maybeSingle();
+    if (main) return main;
+    const { data: any } = await supabase.from('user_profiles').select(CONTACT_FIELDS)
+      .eq('uid', uidVal).limit(1).maybeSingle();
+    return any ?? null;
+  }
+
+  /** Remplit prénom/nom/email/tél/adresse pour [uidVal] selon la qualité
+   * actuellement choisie (particulier/association/éleveur) — appelé à la
+   * sélection d'un utilisateur ET quand la qualité change ensuite, pour
+   * que les coordonnées reflètent toujours le bon profil. */
+  async function applyContactForQualite(uidVal: string, nomFallback?: string) {
+    const wantedType = profileTypeForQualite(qualite);
+    const isElv = wantedType === 'eleveur';
+    const [prof, loginEmail] = await Promise.all([
+      fetchContactProfile(uidVal, wantedType),
+      loginEmailForUid(uidVal),
+    ]);
+    const nomProfil = (prof?.nom as string) || nomFallback || '';
+    const data: Record<string, unknown> = {
+      uid: uidVal, is_elevage: isElv,
+      name_elevage: isElv ? nomProfil : undefined,
+      siret: prof?.siret, firstname: prof?.firstname, lastname: prof?.lastname,
+      rue: prof?.rue, ville: prof?.ville, code_postal: prof?.code_postal,
+      numero_elevage: prof?.numero_elevage,
+    };
     setSelectedUserData(data);
-    const isElv = data.is_elevage === true;
-    const n = isElv
-      ? ((data.name_elevage as string) || `${data.firstname ?? ''} ${data.lastname ?? ''}`.trim())
-      : `${data.firstname ?? ''} ${data.lastname ?? ''}`.trim();
-    const phone = isElv
-      ? `${data.code_iso_elevage ?? data.code_iso ?? '+33'} ${data.numero_elevage ?? ''}`.trim()
-      : `${data.code_iso ?? '+33'} ${data.phone_number ?? ''}`.trim();
-    const addr = isElv
-      ? ((data.adress_elevage as string) || [data.rue_elevage, data.code_postal_elevage, data.ville_elevage, data.pays_elevage].filter(Boolean).join(', '))
-      : ((data.adress as string) || [data.rue, data.code_postal, data.ville, data.pays].filter(Boolean).join(', '));
+    const fn = (prof?.firstname as string ?? '').trim();
+    const ln = (prof?.lastname as string ?? '').trim();
+    const displayNom = isElv ? (nomProfil || 'Utilisateur PetsMatch') : (`${fn} ${ln}`.trim() || nomProfil || 'Utilisateur PetsMatch');
+    setSearchResult(prev => ({ uid: uidVal, nom: displayNom, photo: prev?.photo }));
     if (isElv) {
       setPrenom('');
-      setNom(n || 'Utilisateur PetsMatch');
+      setNom(nomProfil || 'Utilisateur PetsMatch');
     } else {
-      const fn = (data.firstname as string ?? '').trim();
-      const ln = (data.lastname as string ?? '').trim();
       setPrenom(fn);
-      setNom(ln || n || 'Utilisateur PetsMatch');
+      setNom(ln || nomProfil || 'Utilisateur PetsMatch');
     }
-    setEmail((data.email as string) ?? '');
-    setTel(phone.replace(/^\+33\s*$/, ''));
+    // email_contact (facultatif, souvent vide) prioritaire, sinon email du
+    // compte (toujours présent, c'est celui de connexion).
+    const emailContact = prof?.email_contact as string | undefined;
+    setEmail((emailContact && emailContact.trim()) ? emailContact : (loginEmail ?? ''));
+    const tel = isElv
+      ? `+33 ${prof?.numero_elevage ?? ''}`.trim()
+      : `+33 ${prof?.phone_number ?? ''}`.trim();
+    setTel(tel.replace(/^\+33\s*$/, ''));
+    const addr = (prof?.adresse as string) || [prof?.rue, prof?.code_postal, prof?.ville].filter(Boolean).join(', ');
     setAdresse(addr || '');
-    if (isElv) setQualite('eleveur');
+  }
+
+  /** Appelé quand la qualité change en étape détails alors qu'un
+   * utilisateur PetsMatch a déjà été sélectionné en étape acquéreur — sans
+   * ça les coordonnées restaient celles du profil trouvé initialement. */
+  function onQualiteChange(q: string) {
+    setQualite(q);
+    if (searchResult?.uid) applyContactForQualite(searchResult.uid, searchResult.nom);
   }
 
   function mapProfile(cp: Record<string, unknown>, email?: string): Record<string, unknown> {
@@ -309,7 +345,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
       const d = rows[0];
       const n = (d.is_elevage ? (d.name_elevage as string) : '') || `${d.firstname ?? ''} ${d.lastname ?? ''}`.trim();
       setSearchResult({ uid: d.uid as string, nom: n || 'Utilisateur PetsMatch', photo: d.profile_picture_url as string });
-      fillFromUser(d);
+      applyContactForQualite(d.uid as string, n || undefined);
     } else if (rows.length > 1) {
       setSearchResults(rows.map(d => {
         const n = (d.is_elevage ? (d.name_elevage as string) : '') || `${d.firstname ?? ''} ${d.lastname ?? ''}`.trim();
@@ -323,7 +359,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
   function selectFromList(item: { uid: string; nom: string; photo?: string; _raw?: Record<string, unknown> }) {
     setSearchResult({ uid: item.uid, nom: item.nom, photo: item.photo });
     setSearchResults([]);
-    if (item._raw) fillFromUser(item._raw);
+    applyContactForQualite(item.uid, item.nom);
   }
 
   async function fetchAdressSuggestions(val: string) {
@@ -737,7 +773,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
                 <label className="block text-xs font-semibold text-gray-500 mb-1">Qualité de l'acquéreur</label>
                 <div className="flex flex-wrap gap-2">
                   {(isReCession ? QUALITES_RECESSION : QUALITES_FULL).map(q => (
-                    <button key={q.value} onClick={() => setQualite(q.value)}
+                    <button key={q.value} onClick={() => onQualiteChange(q.value)}
                       className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${qualite === q.value ? 'bg-[#0C5C6C] text-white border-[#0C5C6C]' : 'bg-white text-gray-600 border-gray-200'}`}>
                       {q.label}
                     </button>
