@@ -1604,18 +1604,26 @@ class _MsgBadgeState extends State<MsgBadge> with WidgetsBindingObserver {
     try {
       final rows = await _supa
           .from('conversations')
-          .select('unread_count, pro_profile_id, consumer_profile_id')
+          .select('unread_count, pro_profile_id, consumer_profile_id, deleted_for, archived_for, muted_for')
           .filter('participants', 'cs', '["$_uid"]')
           .eq('type', 'direct');
       // Même filtrage que la liste de messagerie (message.dart _buildList) —
       // sinon la bulle compte des conversations d'un AUTRE profil (compte
-      // multi-profils), invisibles dans la liste du profil actif : bulle
-      // affichée mais aucun message non lu visible.
+      // multi-profils), supprimées, archivées ou mises en sourdine — toutes
+      // invisibles dans la vue par défaut : bulle affichée mais aucun
+      // message non lu visible.
       final activePid = User_Info.activeProfileId;
       final myProfileIds = User_Info.availableProfiles
           .map((p) => p['id']?.toString() ?? '').toList();
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
       int total = 0;
       for (final row in rows as List) {
+        final deletedFor = row['deleted_for'];
+        if (deletedFor is Map && deletedFor[_uid] == true) continue;
+        final archivedFor = row['archived_for'];
+        if (archivedFor is Map && archivedFor[_uid] == true) continue;
+        final mutedFor = row['muted_for'];
+        if (mutedFor is Map && (mutedFor[_uid] as int? ?? 0) > nowMs) continue;
         final convProPid = row['pro_profile_id']?.toString() ?? '';
         final convConsumerPid = row['consumer_profile_id']?.toString() ?? '';
         if (activePid.isNotEmpty) {

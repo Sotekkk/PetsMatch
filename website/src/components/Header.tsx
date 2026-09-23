@@ -1226,10 +1226,34 @@ export default function Header() {
     async function fetchUnread() {
       const { data } = await supabase
         .from('conversations')
-        .select('unread_count')
+        .select('unread_count, deleted_for, muted_for, pro_profile_id, consumer_profile_id')
         .filter('participants', 'cs', `["${user!.uid}"]`);
       if (!data) return;
-      const total = (data as { unread_count: Record<string, number> | null }[])
+      const now = Date.now();
+      const myProfileIds = profiles.map(p => p.id);
+      const total = (data as {
+        unread_count: Record<string, number> | null;
+        deleted_for: Record<string, boolean> | null;
+        muted_for: Record<string, number> | null;
+        pro_profile_id: string | null;
+        consumer_profile_id: string | null;
+      }[])
+        // Mêmes exclusions que la liste de messagerie (messages/page.tsx) :
+        // sans ça, une conversation supprimée/mise en sourdine ou d'un autre
+        // profil continue de gonfler le badge alors qu'elle est invisible.
+        .filter(c => !c.deleted_for?.[user!.uid])
+        .filter(c => !((c.muted_for?.[user!.uid] ?? 0) > now))
+        .filter(c => {
+          // Même logique que messages/page.tsx : un profil secondaire (véto,
+          // pension…) ne voit que ses conversations taguées ; le profil
+          // principal voit tout SAUF celles taguées à un autre de ses profils.
+          if (activeProfileId) {
+            return c.pro_profile_id === activeProfileId || c.consumer_profile_id === activeProfileId;
+          }
+          const proIsMyProfile = c.pro_profile_id && myProfileIds.includes(c.pro_profile_id);
+          const consumerIsMyProfile = c.consumer_profile_id && myProfileIds.includes(c.consumer_profile_id);
+          return !proIsMyProfile && !consumerIsMyProfile;
+        })
         .reduce((s, c) => s + (c.unread_count?.[user!.uid] ?? 0), 0);
       setUnreadMessages(total);
     }
@@ -1242,7 +1266,7 @@ export default function Header() {
       .subscribe();
 
     return () => { channel?.unsubscribe(); };
-  }, [user]);
+  }, [user, activeProfileId, profiles]);
 
   // ── Notifications ─────────────────────────────────────────────────────────
   useEffect(() => {
