@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useEffect, useState, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEducationAccess } from '@/hooks/useEducationAccess';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
@@ -48,9 +48,10 @@ function sameDay(a: Date, b: Date) {
 const DAY_FMT = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 const HOUR_FMT = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
-export default function EducationPlanningPage() {
+function EducationPlanningPageInner() {
   const { user, userData, isEducation, loading: authLoading } = useEducationAccess();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const activeProfileId = useActiveProfile();
   const [rdvs, setRdvs] = useState<Rdv[]>([]);
   const [cours, setCours] = useState<Cours[]>([]);
@@ -65,6 +66,19 @@ export default function EducationPlanningPage() {
     if (!user) { router.push('/connexion'); return; }
     if (userData && !isEducation) { router.push('/'); return; }
   }, [user, userData, isEducation, authLoading, router]);
+
+  // Ouverture directe depuis une notification d'inscription (?coursId=…) —
+  // le cours peut être hors de la fenêtre glissante de 7 jours affichée par
+  // défaut, d'où une recherche dédiée plutôt qu'un filtre sur `cours`.
+  useEffect(() => {
+    const coursId = searchParams.get('coursId');
+    if (!coursId || !user) return;
+    supabase.from('cours_collectifs')
+      .select('id, titre, date_heure, duree_minutes, capacite_max, lieu, notes, statut, serie_id')
+      .eq('id', coursId).maybeSingle()
+      .then(({ data }) => { if (data) setDetailFor(data as Cours); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, user]);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -188,6 +202,14 @@ export default function EducationPlanningPage() {
         <CoursDetailModal cours={detailFor} onClose={() => setDetailFor(null)} onChanged={load} />
       )}
     </div>
+  );
+}
+
+export default function EducationPlanningPage() {
+  return (
+    <Suspense fallback={null}>
+      <EducationPlanningPageInner />
+    </Suspense>
   );
 }
 

@@ -25,6 +25,7 @@ import 'package:PetsMatch/pages/pro/visite_rapport_sheet.dart';
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/creneaux_week_grid.dart';
+import 'package:PetsMatch/pages/pro/education_planning_page.dart';
 
 /// Déduit la catégorie d'agenda (agenda_page.dart _kTypeColor) à partir du
 /// motif texte saisi par le client à la réservation (ex. "Promenade 1h",
@@ -63,6 +64,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
   bool _loading = true;
   List<Map<String, dynamic>> _rdvs = [];
   List<Map<String, dynamic>> _aujourdhui = [];
+  // Cours collectifs (éducateur) — distincts des `rdv`, jamais montrés dans
+  // « Demandes »/« À venir » sinon (table séparée) alors qu'ils suivent le
+  // même cycle demande → confirmation. Affichés en mini-cartes au-dessus de
+  // la liste RDV plutôt que fusionnés dans _RdvCard (schéma trop différent :
+  // plusieurs participants par cours).
+  List<Map<String, dynamic>> _coursDemandes = [];
+  List<Map<String, dynamic>> _coursAvenir = [];
 
   // AG08 — créneaux
   late DateTime _weekStart;
@@ -110,6 +118,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     _loadDureesMotifs();
     _loadAujourdhui();
     _loadEmployes();
+    _loadCoursCollectifs();
     User_Info.profileNotifier.addListener(_onProfileChange);
   }
 
@@ -361,6 +370,107 @@ class _ProAgendaPageState extends State<ProAgendaPage>
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Cours collectifs de l'éducateur avec au moins une demande en attente
+  /// ou un participant inscrit à venir — table séparée de `rdv`, jamais
+  /// visible sinon dans « Demandes »/« À venir » malgré le même besoin de
+  /// validation par le pro (cf. remontée bêta : rien ne signalait la
+  /// demande d'inscription à un cours collectif dans cet agenda).
+  Future<void> _loadCoursCollectifs() async {
+    if (User_Info.catPro != 'education') return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final nowIso = DateTime.now().toUtc().toIso8601String();
+      var q = Supabase.instance.client.from('cours_collectifs')
+          .select('id, titre, date_heure, duree_minutes, pro_profile_id')
+          .eq('pro_uid', uid).neq('statut', 'annule').gte('date_heure', nowIso);
+      final pid = User_Info.activeProfileId;
+      if (pid.isNotEmpty) q = q.eq('pro_profile_id', pid);
+      final cours = await q.order('date_heure', ascending: true);
+      final coursList = List<Map<String, dynamic>>.from(cours as List);
+      if (coursList.isEmpty) {
+        if (mounted) setState(() { _coursDemandes = []; _coursAvenir = []; });
+        return;
+      }
+      final coursIds = coursList.map((c) => c['id'].toString()).toList();
+      final parts = await Supabase.instance.client.from('cours_collectifs_participants')
+          .select('cours_id, statut').inFilter('cours_id', coursIds).neq('statut', 'annule');
+      final demandeCount = <String, int>{};
+      final inscritCount = <String, int>{};
+      for (final p in (parts as List)) {
+        final cid = p['cours_id'].toString();
+        if (p['statut'] == 'demande') demandeCount[cid] = (demandeCount[cid] ?? 0) + 1;
+        if (p['statut'] == 'inscrit') inscritCount[cid] = (inscritCount[cid] ?? 0) + 1;
+      }
+      final demandes = <Map<String, dynamic>>[];
+      final avenir = <Map<String, dynamic>>[];
+      for (final c in coursList) {
+        final cid = c['id'].toString();
+        final withCounts = {...c, '_demandes': demandeCount[cid] ?? 0, '_inscrits': inscritCount[cid] ?? 0};
+        if ((demandeCount[cid] ?? 0) > 0) demandes.add(withCounts);
+        if ((inscritCount[cid] ?? 0) > 0) avenir.add(withCounts);
+      }
+      if (mounted) setState(() { _coursDemandes = demandes; _coursAvenir = avenir; });
+    } catch (_) {}
+  }
+
+  Widget _coursCollectifCard(Map<String, dynamic> c, {required bool isDemande}) {
+    final dh = DateTime.tryParse(c['date_heure']?.toString() ?? '')?.toLocal();
+    final dateStr = dh != null
+        ? '${dh.day.toString().padLeft(2, '0')}/${dh.month.toString().padLeft(2, '0')} à ${dh.hour.toString().padLeft(2, '0')}h${dh.minute.toString().padLeft(2, '0')}'
+        : '';
+    final count = (isDemande ? c['_demandes'] : c['_inscrits']) as int;
+    const violet = Color(0xFF7B5EA7);
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => CoursCollectifDetailPage(coursId: c['id'].toString()),
+        ));
+        if (mounted) _loadCoursCollectifs();
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: violet.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: violet.withOpacity(0.2)),
+        ),
+        child: Row(children: [
+          const Icon(Icons.groups_outlined, color: violet, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(c['titre']?.toString() ?? 'Cours collectif',
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13)),
+            Text(dateStr, style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600)),
+          ])),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(color: violet, borderRadius: BorderRadius.circular(20)),
+            child: Text(
+              isDemande ? '$count en attente' : '$count inscrit${count > 1 ? "s" : ""}',
+              style: const TextStyle(color: Colors.white, fontSize: 11, fontFamily: 'Galey', fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(width: 6),
+          const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildTabWithCours(List<Map<String, dynamic>> cours, List<Map<String, dynamic>> rdvs,
+      {bool showActions = false, bool showCancel = false, bool showDelete = false}) {
+    if (cours.isEmpty) return _buildList(rdvs, showActions: showActions, showCancel: showCancel, showDelete: showDelete);
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        child: Column(children: cours.map((c) => _coursCollectifCard(c, isDemande: showActions)).toList()),
+      ),
+      Expanded(child: _buildList(rdvs, showActions: showActions, showCancel: showCancel, showDelete: showDelete)),
+    ]);
   }
 
   List<Map<String, dynamic>> get _demandes => _rdvs.where((r) =>
@@ -2553,13 +2663,13 @@ class _ProAgendaPageState extends State<ProAgendaPage>
               if (_aujourdhui.isNotEmpty) _buildAujourdhuiCard(),
               Expanded(
                 child: RefreshIndicator(
-                  onRefresh: () async { await Future.wait([_loadRdvs(), _loadAujourdhui()]); },
+                  onRefresh: () async { await Future.wait([_loadRdvs(), _loadAujourdhui(), _loadCoursCollectifs()]); },
                   color: _teal,
                   child: TabBarView(
                     controller: _tabCtrl,
                     children: [
-                      _buildList(_demandes, showActions: true),
-                      _buildList(_avenir, showCancel: true),
+                      _buildTabWithCours(_coursDemandes, _demandes, showActions: true),
+                      _buildTabWithCours(_coursAvenir, _avenir, showCancel: true),
                       _buildList(_historique, showDelete: true),
                       _buildCreneauxTab(),
                     ],
