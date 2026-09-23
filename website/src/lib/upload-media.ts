@@ -72,10 +72,11 @@ export async function uploadDocument(
 
 /**
  * Transform a Supabase Storage URL for thumbnail display.
- * Returns the original URL unchanged if not a Supabase Storage URL.
+ * NB : l'add-on de transformation d'image Supabase (/storage/v1/render/image/)
+ * n'est pas activé sur ce projet (403 FeatureNotEnabled) — on renvoie donc
+ * l'URL d'origine telle quelle plutôt qu'une image cassée. Le redimensionnement
+ * visuel reste géré côté CSS (object-fit) sur chaque usage.
  */
-export function thumbUrl(url: string, width = 600, quality = 75, resize: 'cover' | 'contain' | 'fill' = 'cover'): string {
-  if (!url.includes('/storage/v1/object/public/')) return url;
-  return url.replace('/storage/v1/object/', '/storage/v1/render/image/')
-    + `?width=${width}&quality=${quality}&resize=${resize}`;
+export function thumbUrl(url: string, _width = 600, _quality = 75, _resize: 'cover' | 'contain' | 'fill' = 'cover'): string {
+  return url;
 }

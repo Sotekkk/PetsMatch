@@ -329,8 +329,9 @@ function CreerAnnoncePageInner() {
   const sCls = 'border border-gray-100 rounded-xl p-4 space-y-3';
 
   function thumbUrl(url: string) {
-    if (!url.includes('/storage/v1/object/public/')) return url;
-    return url.replace('/storage/v1/object/', '/storage/v1/render/image/') + '?width=80&quality=70&resize=contain';
+    // Add-on de transformation d'image Supabase non activé sur ce projet
+    // (403 FeatureNotEnabled) — image d'origine, redimensionnée en CSS.
+    return url;
   }
 
   // ── My animals loaders
