@@ -69,15 +69,20 @@ GRANT EXECUTE ON FUNCTION public.is_admin_uid(TEXT) TO anon, authenticated;
 
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "users_select_all" ON users;
-DROP POLICY IF EXISTS "users_insert_own" ON users;
-DROP POLICY IF EXISTS "users_update_own_or_admin" ON users;
-DROP POLICY IF EXISTS "users_delete_own" ON users;
--- Noms possibles de policies par défaut Supabase / anciennes tentatives.
-DROP POLICY IF EXISTS "Enable read access for all users" ON users;
-DROP POLICY IF EXISTS "Enable insert for authenticated users only" ON users;
-DROP POLICY IF EXISTS "Enable update for users based on uid" ON users;
-DROP POLICY IF EXISTS "users_allow_all" ON users;
+-- Supprime TOUTE policy existante sur `users`, quel que soit son nom —
+-- un DROP POLICY IF EXISTS par nom deviné (comme dans les vagues
+-- précédentes) a laissé passer ici une policy permissive au nom inconnu :
+-- Postgres combine les policies d'une même commande en OR, donc une seule
+-- policy `USING(true)` oubliée suffit à rendre la nouvelle policy
+-- restrictive inutile. Repli générique et sûr pour cette table.
+DO $$
+DECLARE pol RECORD;
+BEGIN
+  FOR pol IN SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND tablename = 'users'
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.users', pol.policyname);
+  END LOOP;
+END $$;
 
 CREATE POLICY "users_select_all" ON users
   FOR SELECT USING (true);
