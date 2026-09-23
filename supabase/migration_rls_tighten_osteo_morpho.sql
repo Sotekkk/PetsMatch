@@ -100,6 +100,12 @@ DECLARE
 BEGIN
   FOREACH t IN ARRAY ARRAY['points_osteo','seances_osteo']
   LOOP
+    -- Certaines de ces tables peuvent ne pas exister si leur migration de
+    -- création n'a jamais été exécutée — on les ignore plutôt que d'échouer.
+    IF to_regclass('public.' || t) IS NULL THEN
+      CONTINUE;
+    END IF;
+
     FOR pol IN EXECUTE format('SELECT policyname FROM pg_policies WHERE schemaname = ''public'' AND tablename = %L', t)
     LOOP
       EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', pol.policyname, t);
@@ -144,36 +150,48 @@ END $$;
 DO $$
 DECLARE pol RECORD;
 BEGIN
+  IF to_regclass('public.suivis_morpho') IS NULL THEN
+    RETURN;
+  END IF;
+
   FOR pol IN SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND tablename = 'suivis_morpho'
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS %I ON public.suivis_morpho', pol.policyname);
   END LOOP;
+
+  EXECUTE $p$
+    CREATE POLICY "suivis_morpho_select" ON suivis_morpho
+      FOR SELECT USING (public.can_access_animal_morpho(animal_id, (auth.jwt() ->> 'sub'), false))
+  $p$;
+
+  EXECUTE $p$
+    CREATE POLICY "suivis_morpho_insert" ON suivis_morpho
+      FOR INSERT WITH CHECK (
+        public.can_access_animal_morpho(animal_id, (auth.jwt() ->> 'sub'), true)
+        AND uid_auteur = (auth.jwt() ->> 'sub')
+      )
+  $p$;
+
+  EXECUTE $p$
+    CREATE POLICY "suivis_morpho_update" ON suivis_morpho
+      FOR UPDATE USING (
+        public.is_animal_owner_or_cogerant(animal_id, (auth.jwt() ->> 'sub'))
+        OR uid_auteur = (auth.jwt() ->> 'sub')
+      )
+      WITH CHECK (
+        public.is_animal_owner_or_cogerant(animal_id, (auth.jwt() ->> 'sub'))
+        OR uid_auteur = (auth.jwt() ->> 'sub')
+      )
+  $p$;
+
+  EXECUTE $p$
+    CREATE POLICY "suivis_morpho_delete" ON suivis_morpho
+      FOR DELETE USING (
+        public.is_animal_owner_or_cogerant(animal_id, (auth.jwt() ->> 'sub'))
+        OR uid_auteur = (auth.jwt() ->> 'sub')
+      )
+  $p$;
 END $$;
-
-CREATE POLICY "suivis_morpho_select" ON suivis_morpho
-  FOR SELECT USING (public.can_access_animal_morpho(animal_id, (auth.jwt() ->> 'sub'), false));
-
-CREATE POLICY "suivis_morpho_insert" ON suivis_morpho
-  FOR INSERT WITH CHECK (
-    public.can_access_animal_morpho(animal_id, (auth.jwt() ->> 'sub'), true)
-    AND uid_auteur = (auth.jwt() ->> 'sub')
-  );
-
-CREATE POLICY "suivis_morpho_update" ON suivis_morpho
-  FOR UPDATE USING (
-    public.is_animal_owner_or_cogerant(animal_id, (auth.jwt() ->> 'sub'))
-    OR uid_auteur = (auth.jwt() ->> 'sub')
-  )
-  WITH CHECK (
-    public.is_animal_owner_or_cogerant(animal_id, (auth.jwt() ->> 'sub'))
-    OR uid_auteur = (auth.jwt() ->> 'sub')
-  );
-
-CREATE POLICY "suivis_morpho_delete" ON suivis_morpho
-  FOR DELETE USING (
-    public.is_animal_owner_or_cogerant(animal_id, (auth.jwt() ->> 'sub'))
-    OR uid_auteur = (auth.jwt() ->> 'sub')
-  );
 
 -- ── Sous-tables suivis_morpho_* (rattachées via suivi_id) ─────────────────
 DO $$
@@ -183,6 +201,13 @@ DECLARE
 BEGIN
   FOREACH t IN ARRAY ARRAY['suivis_morpho_photos','suivis_morpho_videos','suivis_morpho_zones','suivis_morpho_observations','suivis_morpho_mouvements','suivis_morpho_points']
   LOOP
+    -- Certaines de ces sous-tables peuvent ne pas exister si leur migration
+    -- de création n'a jamais été exécutée — on les ignore plutôt que
+    -- d'échouer (constaté en pratique pour suivis_morpho_zones).
+    IF to_regclass('public.' || t) IS NULL THEN
+      CONTINUE;
+    END IF;
+
     FOR pol IN EXECUTE format('SELECT policyname FROM pg_policies WHERE schemaname = ''public'' AND tablename = %L', t)
     LOOP
       EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', pol.policyname, t);
