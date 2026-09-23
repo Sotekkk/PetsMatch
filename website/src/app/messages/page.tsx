@@ -509,7 +509,27 @@ function MessagesPageInner() {
   }
 
   const myName = userData?.nameElevage ?? userData?.firstname ?? '';
-  const totalUnread = conversations.reduce((s, c) => s + (c.unread_count?.[user.uid] ?? 0), 0);
+  // Base "visible" (hors catégorie/recherche) : mêmes exclusions que
+  // filteredConvs ci-dessous — sans ça, les compteurs (titre + onglets de
+  // catégorie) comptent des conversations supprimées/bloquées/d'un autre
+  // profil qui n'apparaissent jamais dans la liste réellement affichée.
+  const baseVisibleConvs = conversations.filter(conv => {
+    if (conv.deleted_for?.[user.uid]) return false;
+    const others = conv.participants.filter(p => p !== user.uid);
+    if (others.some(p => blockedUsers.includes(p))) return false;
+    if (activeProfileId) {
+      const isMePro      = conv.pro_profile_id === activeProfileId;
+      const isMeConsumer = conv.consumer_profile_id === activeProfileId;
+      if (!isMePro && !isMeConsumer) return false;
+    } else {
+      const proIsMyProfile      = conv.pro_profile_id && userProfileIds.includes(conv.pro_profile_id);
+      const consumerIsMyProfile = conv.consumer_profile_id && userProfileIds.includes(conv.consumer_profile_id);
+      if (proIsMyProfile || consumerIsMyProfile) return false;
+    }
+    if (conv.archived_for?.[user.uid] === true) return false;
+    return true;
+  });
+  const totalUnread = baseVisibleConvs.reduce((s, c) => s + (c.unread_count?.[user.uid] ?? 0), 0);
   const selectedConv = conversations.find(c => c.id === selectedId);
   const otherUid = selectedConv?.participants.find(p => p !== user.uid);
   const otherInfo = otherUid ? (userInfoCacheRef.current[otherUid] ?? { name: '…' }) : null;
@@ -597,8 +617,8 @@ function MessagesPageInner() {
             {CAT_CONFIG.map(cat => {
               const isActive = activeCategory === cat.key;
               const catUnread = cat.key === null
-                ? conversations.reduce((s, c) => s + (c.unread_count?.[user.uid] ?? 0), 0)
-                : conversations
+                ? totalUnread
+                : baseVisibleConvs
                     .filter(c => (c.categorie ?? null) === cat.key)
                     .reduce((s, c) => s + (c.unread_count?.[user.uid] ?? 0), 0);
               return (
