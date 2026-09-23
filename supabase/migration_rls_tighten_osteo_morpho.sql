@@ -106,6 +106,8 @@ BEGIN
       CONTINUE;
     END IF;
 
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
+
     FOR pol IN EXECUTE format('SELECT policyname FROM pg_policies WHERE schemaname = ''public'' AND tablename = %L', t)
     LOOP
       EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', pol.policyname, t);
@@ -153,6 +155,8 @@ BEGIN
   IF to_regclass('public.suivis_morpho') IS NULL THEN
     RETURN;
   END IF;
+
+  ALTER TABLE suivis_morpho ENABLE ROW LEVEL SECURITY;
 
   FOR pol IN SELECT policyname FROM pg_policies WHERE schemaname = 'public' AND tablename = 'suivis_morpho'
   LOOP
@@ -207,6 +211,8 @@ BEGIN
     IF to_regclass('public.' || t) IS NULL THEN
       CONTINUE;
     END IF;
+
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
 
     FOR pol IN EXECUTE format('SELECT policyname FROM pg_policies WHERE schemaname = ''public'' AND tablename = %L', t)
     LOOP
