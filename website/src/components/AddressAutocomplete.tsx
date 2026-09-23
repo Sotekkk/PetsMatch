@@ -13,13 +13,17 @@ interface Props {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  /** Appelé quand l'utilisateur choisit une suggestion — utile quand le
+   * parent a besoin des coordonnées GPS (ex. lieu d'un cours), pas
+   * seulement du libellé formaté. */
+  onSelectCoords?: (coords: { lat: number; lng: number }) => void;
 }
 
 /**
  * Autocomplete d'adresse française via api-adresse.data.gouv.fr (gratuit, sans clé).
  * Affiche une mini-carte OpenStreetMap après sélection.
  */
-export default function AddressAutocomplete({ value, onChange, placeholder, className }: Props) {
+export default function AddressAutocomplete({ value, onChange, placeholder, className, onSelectCoords }: Props) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
@@ -65,6 +69,7 @@ export default function AddressAutocomplete({ value, onChange, placeholder, clas
     setCoords({ lat: s.lat, lon: s.lon });
     setSuggestions([]);
     setOpen(false);
+    onSelectCoords?.({ lat: s.lat, lng: s.lon });
   };
 
   const mapSrc = coords

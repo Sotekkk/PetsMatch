@@ -634,6 +634,9 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
     final duree = (cours['duree_minutes'] as num?)?.toInt() ?? 60;
     final proUid = cours['pro_uid']?.toString();
     final proProfileId = cours['pro_profile_id']?.toString();
+    final lieu = cours['lieu']?.toString();
+    final lieuLat = cours['lieu_lat'];
+    final lieuLng = cours['lieu_lng'];
     final clientUid = participant['client_uid']?.toString();
     final participantId = participant['id']?.toString();
 
@@ -663,6 +666,9 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
             if (participant['animal_id'] != null) 'animal_id': participant['animal_id'],
             'couleur':        couleurClient,
             if (clientProfileId != null && clientProfileId.isNotEmpty) 'pro_profile_id': clientProfileId,
+            if (lieu != null && lieu.isNotEmpty) 'lieu': lieu,
+            if (lieuLat != null) 'lieu_lat': lieuLat,
+            if (lieuLng != null) 'lieu_lng': lieuLng,
           });
         } catch (_) {}
       }
@@ -688,6 +694,9 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
               'duree_minutes':  duree,
               'couleur':        couleurPro,
               'pro_profile_id': proProfileId,
+              if (lieu != null && lieu.isNotEmpty) 'lieu': lieu,
+              if (lieuLat != null) 'lieu_lat': lieuLat,
+              if (lieuLng != null) 'lieu_lng': lieuLng,
             });
           } catch (_) {}
         }

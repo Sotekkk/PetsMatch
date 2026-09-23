@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { geocodeAddress } from '@/lib/geocoding';
+import AddressAutocomplete from '@/components/AddressAutocomplete';
 
 const PURPLE = '#7B5EA7';
 
@@ -54,6 +55,8 @@ export default function EducationPrestationsPage() {
   const [busy, setBusy] = useState(true);
   const [form, setForm] = useState<{ id?: string; nom: string; description: string; duree_minutes: string; prix: string; bilan_requis: boolean; domicile_ok: boolean; type: 'individuel' | 'collectif'; capacite_max: string; lieu_adresse: string; lieu_lat: number | null; lieu_lng: number | null } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [geocoding, setGeocoding] = useState(false);
+  const [geocodeError, setGeocodeError] = useState(false);
 
   const load = useCallback(async () => {
     if (!user?.uid) return;
@@ -155,11 +158,43 @@ export default function EducationPrestationsPage() {
             rows={2} placeholder="Description (optionnel)"
             className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none" />
           <div>
-            <input value={form.lieu_adresse}
-              onChange={e => setForm({ ...form, lieu_adresse: e.target.value, lieu_lat: null, lieu_lng: null })}
+            {/* Autocomplete + mini-carte (api-adresse.data.gouv.fr) — capture
+                directement les coordonnées GPS au choix d'une suggestion
+                (nécessaires côté client pour le lien « Itinéraire »). Bouton
+                Localiser en repli si l'adresse est tapée sans suggestion
+                choisie (copier-coller par ex.). */}
+            <AddressAutocomplete
+              value={form.lieu_adresse}
+              onChange={v => { setForm({ ...form, lieu_adresse: v, lieu_lat: null, lieu_lng: null }); setGeocodeError(false); }}
+              onSelectCoords={({ lat, lng }) => setForm(f => f ? { ...f, lieu_lat: lat, lieu_lng: lng } : f)}
               placeholder="Lieu du cours (adresse, optionnel)"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
+            />
             <p className="text-[11px] text-gray-400 mt-1">Ex. « Parc de la Tête d&apos;Or, Lyon ». Vide = à votre cabinet.</p>
+            <div className="flex items-center gap-2 mt-2">
+              {form.lieu_lat == null && (
+                <button type="button" disabled={geocoding || !form.lieu_adresse.trim()}
+                  onClick={async () => {
+                    const adresse = form.lieu_adresse.trim();
+                    if (!adresse) return;
+                    setGeocoding(true);
+                    const geo = await geocodeAddress(adresse);
+                    setGeocoding(false);
+                    setForm(f => f ? { ...f, lieu_lat: geo?.lat ?? null, lieu_lng: geo?.lng ?? null } : f);
+                    setGeocodeError(!geo);
+                  }}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg border disabled:opacity-50"
+                  style={{ borderColor: PURPLE, color: PURPLE }}>
+                  {geocoding ? '…' : '📍 Localiser'}
+                </button>
+              )}
+              {form.lieu_lat != null && form.lieu_lng != null && (
+                <span className="text-xs font-medium text-green-600">✓ Coordonnées GPS enregistrées</span>
+              )}
+              {geocodeError && form.lieu_lat == null && (
+                <span className="text-xs font-medium text-orange-600">Adresse introuvable — précisez la ville</span>
+              )}
+            </div>
           </div>
           <Toggle checked={form.bilan_requis} onChange={v => setForm({ ...form, bilan_requis: v })}
             label="Nécessite un bilan préalable"

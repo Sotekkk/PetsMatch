@@ -154,6 +154,11 @@ class _PrestationFormState extends State<_PrestationForm> {
   late final TextEditingController _capaciteCtrl;
   late final TextEditingController _lieuCtrl;
   double? _lieuLat, _lieuLng;
+  bool _lieuGeocoding = false;
+  // true tant que _lieuCtrl n'a pas changé depuis le dernier géocodage
+  // réussi (bouton "Localiser" ou soumission précédente) — sert à afficher
+  // la confirmation "coordonnées GPS enregistrées" de façon fiable.
+  bool _lieuGeocoded = false;
   late bool _bilanRequis;
   late bool _domicileOk;
   late String _type;
@@ -171,6 +176,8 @@ class _PrestationFormState extends State<_PrestationForm> {
     _lieuCtrl = TextEditingController(text: e?['lieu_adresse']?.toString() ?? '');
     _lieuLat = (e?['lieu_lat'] as num?)?.toDouble();
     _lieuLng = (e?['lieu_lng'] as num?)?.toDouble();
+    _lieuGeocoded = _lieuLat != null && _lieuLng != null;
+    _lieuCtrl.addListener(() { if (_lieuGeocoded) setState(() => _lieuGeocoded = false); });
     _bilanRequis = e?['bilan_requis'] == true;
     _domicileOk = e?['domicile_ok'] != false;
     _type = e?['type']?.toString() ?? 'individuel';
@@ -182,6 +189,30 @@ class _PrestationFormState extends State<_PrestationForm> {
       c.dispose();
     }
     super.dispose();
+  }
+
+  // Géocode explicitement l'adresse saisie (bouton « Localiser ») — donne
+  // une confirmation visible (✓ coordonnées GPS) au lieu du géocodage
+  // silencieux à la soumission, qui ne montrait jamais si ça avait marché.
+  // Même pattern que _geocoderDomicile (education_reservation_page.dart).
+  Future<void> _geocoderLieu() async {
+    final adresse = _lieuCtrl.text.trim();
+    if (adresse.isEmpty) return;
+    setState(() => _lieuGeocoding = true);
+    final geo = await GeocodingHelper.geocode(adresse);
+    if (!mounted) return;
+    setState(() {
+      _lieuLat = geo?.lat;
+      _lieuLng = geo?.lng;
+      _lieuGeocoding = false;
+      _lieuGeocoded = geo != null;
+    });
+    if (geo == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Adresse introuvable — vérifiez l\'orthographe ou précisez la ville.', style: TextStyle(fontFamily: 'Galey')),
+        backgroundColor: Colors.orange, behavior: SnackBarBehavior.floating,
+      ));
+    }
   }
 
   Future<void> _submit() async {
@@ -315,6 +346,25 @@ class _PrestationFormState extends State<_PrestationForm> {
                 helperMaxLines: 2,
                 border: OutlineInputBorder(),
               )),
+          const SizedBox(height: 6),
+          // Géocodage explicite + confirmation visible — sans ça, impossible
+          // de savoir si l'adresse tapée a bien donné des coordonnées GPS
+          // (nécessaires côté client pour le lien « Itinéraire »).
+          Row(children: [
+            TextButton.icon(
+              onPressed: (_lieuGeocoding || _lieuCtrl.text.trim().isEmpty) ? null : _geocoderLieu,
+              icon: _lieuGeocoding
+                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: _purple))
+                  : const Icon(Icons.my_location, size: 16, color: _purple),
+              label: const Text('Localiser', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: _purple)),
+            ),
+            if (_lieuGeocoded) ...[
+              const SizedBox(width: 4),
+              const Icon(Icons.check_circle, size: 14, color: Colors.green),
+              const SizedBox(width: 4),
+              const Text('Coordonnées GPS enregistrées', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.green)),
+            ],
+          ]),
           const SizedBox(height: 10),
           _toggleCard(
             value: _bilanRequis,

@@ -43,6 +43,9 @@ interface AgendaEvent {
   rdv_id?: string | null;
   rdv?: RdvInfo | null;
   duree_minutes?: number | null;
+  lieu?: string | null;
+  lieu_lat?: number | null;
+  lieu_lng?: number | null;
 }
 
 interface Task {
@@ -1676,9 +1679,12 @@ function EventCard({ event: e, onDelete, onAnnuler, onModifier, onNavigateToAnim
   const plus24h = isRdv && (annulLimiteH <= 0
     || new Date(e.date_debut).getTime() - Date.now() > annulLimiteH * 3600 * 1000);
   const animalId = e.animal_id ?? e.rdv?.animal_id;
-  const lieu = e.rdv?.lieu;
-  const lieuLat = e.rdv?.lieu_lat;
-  const lieuLng = e.rdv?.lieu_lng;
+  // Repli sur les colonnes brutes de agenda_events (e.lieu/lieu_lat/lieu_lng)
+  // pour un événement sans `rdv` associé — cours collectif notamment, cf.
+  // _syncAgendaForParticipant (app) qui y écrit désormais le lieu du cours.
+  const lieu = e.rdv?.lieu ?? e.lieu;
+  const lieuLat = e.rdv?.lieu_lat ?? e.lieu_lat;
+  const lieuLng = e.rdv?.lieu_lng ?? e.lieu_lng;
   const itineraireHref = lieuLat != null && lieuLng != null
     ? `https://www.google.com/maps/dir/?api=1&destination=${lieuLat},${lieuLng}`
     : lieu

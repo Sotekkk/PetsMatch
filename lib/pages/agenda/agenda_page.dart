@@ -2308,8 +2308,34 @@ class _EventTile extends StatelessWidget {
         title: Text(event['titre'] ?? '',
             style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
                 fontSize: 14, color: Color(0xFF1E2025))),
-        subtitle: Text(_eventSubtitle(time, type, event['duree_minutes']),
-            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Text(_eventSubtitle(time, type, event['duree_minutes']),
+              style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+          // Lieu + itinéraire — surtout utile pour un cours collectif
+          // (agenda_events.lieu/lieu_lat/lieu_lng, cf. _syncAgendaForParticipant
+          // dans education_planning_page.dart), jusqu'ici invisible dès qu'on
+          // quittait la liste "Demandes/À venir" du pro.
+          if ((event['lieu']?.toString() ?? '').isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: GestureDetector(
+                onTap: () {
+                  final lat = event['lieu_lat'], lng = event['lieu_lng'];
+                  final q = (lat != null && lng != null) ? '$lat,$lng' : Uri.encodeComponent(event['lieu'].toString());
+                  launchUrl(Uri.parse('https://www.google.com/maps/search/?api=1&query=$q'),
+                      mode: LaunchMode.externalApplication);
+                },
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.place_outlined, size: 12, color: _kTeal),
+                  const SizedBox(width: 3),
+                  Flexible(child: Text(event['lieu'].toString(), overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _kTeal))),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.directions_outlined, size: 12, color: _kTeal),
+                ]),
+              ),
+            ),
+        ]),
         trailing: trailing,
         onTap: _isRdv && _hasRdvLink
             ? () => showModalBottomSheet(
