@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/widgets/animal_picker_sheet.dart';
 import 'package:PetsMatch/utils/geocoding_helper.dart';
@@ -559,11 +560,16 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
           _recapLine('Durée', '$_duration min'),
           if ((prestation['prix'] as num?) != null)
             _recapLine('Prix', '${(prestation['prix'] as num).toStringAsFixed(0)} €'),
-          _recapLine('Lieu', (_isCollectif || !_domicile)
-              ? ((prestation['lieu_adresse']?.toString().trim().isNotEmpty ?? false)
-                  ? prestation['lieu_adresse'].toString()
-                  : 'Chez le professionnel')
-              : 'À domicile — ${_adresseDomicileCtrl.text.trim()}'),
+          _lieuRecapLine(
+            label: (_isCollectif || !_domicile)
+                ? ((prestation['lieu_adresse']?.toString().trim().isNotEmpty ?? false)
+                    ? prestation['lieu_adresse'].toString()
+                    : 'Chez le professionnel')
+                : 'À domicile — ${_adresseDomicileCtrl.text.trim()}',
+            adresse: (_isCollectif || !_domicile) ? prestation['lieu_adresse']?.toString() : _adresseDomicileCtrl.text.trim(),
+            lat: (_isCollectif || !_domicile) ? (prestation['lieu_lat'] as num?)?.toDouble() : _domicileLat,
+            lng: (_isCollectif || !_domicile) ? (prestation['lieu_lng'] as num?)?.toDouble() : _domicileLng,
+          ),
           if (_isCollectif)
             _recapLine('Places', '${slot['inscrits']}/${slot['capacite']}'
                 '${slot['complet'] == true ? ' — liste d\'attente' : ''}'),
@@ -722,6 +728,34 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
     ]),
   );
 
+  /// Comme _recapLine mais avec un lien « Itinéraire » (Google Maps) quand
+  /// une adresse ou des coordonnées sont disponibles — le client doit
+  /// pouvoir s'y rendre, pas seulement lire le nom du lieu.
+  Widget _lieuRecapLine({required String label, String? adresse, double? lat, double? lng}) {
+    final hasNav = (lat != null && lng != null) || (adresse?.trim().isNotEmpty ?? false);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(width: 70, child: Text('Lieu', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500))),
+        Expanded(child: Text(label, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600))),
+        if (hasNav)
+          GestureDetector(
+            onTap: () {
+              final q = (lat != null && lng != null) ? '$lat,$lng' : Uri.encodeComponent(adresse!.trim());
+              launchUrl(Uri.parse('https://www.google.com/maps/search/?api=1&query=$q'),
+                  mode: LaunchMode.externalApplication);
+            },
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.directions_outlined, size: 14, color: widget.categoryColor),
+              const SizedBox(width: 3),
+              Text('Itinéraire', style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                  fontWeight: FontWeight.w700, color: widget.categoryColor)),
+            ]),
+          ),
+      ]),
+    );
+  }
+
   Future<void> _submit(DateTime dateHeure) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
@@ -850,6 +884,15 @@ class _EducationReservationPageState extends State<EducationReservationPage> {
                         '${(p['prix'] as num?) != null ? ' · ${(p['prix'] as num).toStringAsFixed(0)} €' : ''}'
                         '${p['type'] == 'collectif' ? ' · en groupe (max ${(p['capacite_max'] as num?)?.toInt() ?? 6})' : ''}',
                         style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
+                    if (p['type'] == 'collectif' && (p['lieu_adresse']?.toString().trim().isNotEmpty ?? false)) ...[
+                      const SizedBox(height: 4),
+                      Row(children: [
+                        Icon(Icons.place_outlined, size: 13, color: color),
+                        const SizedBox(width: 4),
+                        Expanded(child: Text(p['lieu_adresse'].toString(),
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: color))),
+                      ]),
+                    ],
                   ])),
                   Icon(Icons.chevron_right, color: color),
                 ]),

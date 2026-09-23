@@ -586,6 +586,11 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
                       {p.duree_minutes} min{p.prix ? ` · ${p.prix.toFixed(0)} €` : ''}
                       {p.type === 'collectif' ? ` · en groupe (max ${p.capacite_max ?? 6})` : ''}
                     </p>
+                    {p.type === 'collectif' && p.lieu_adresse && (
+                      <p className="text-xs mt-0.5" style={{ fontFamily: 'Galey, sans-serif', color: catColor }}>
+                        📍 {p.lieu_adresse}
+                      </p>
+                    )}
                   </div>
                   <span style={{ color: catColor }}>›</span>
                 </button>
@@ -655,6 +660,20 @@ export default function EducationReservationModal({ proUid, proProfileId, proNam
                   ? `👥 Séance de groupe${selectedPrestation.capacite_max ? ` — max ${selectedPrestation.capacite_max}` : ''}`
                   : domicile ? `🏠 À domicile — ${adresseDomicile}` : '📍 Chez le professionnel'}
                 {isCollectif && selectedPrestation.lieu_adresse ? ` · ${selectedPrestation.lieu_adresse}` : ''}
+                {(() => {
+                  const adresse = isCollectif || !domicile ? selectedPrestation.lieu_adresse : adresseDomicile;
+                  const lat = isCollectif || !domicile ? selectedPrestation.lieu_lat : domicileLatLng?.lat;
+                  const lng = isCollectif || !domicile ? selectedPrestation.lieu_lng : domicileLatLng?.lng;
+                  if (!adresse && !(lat != null && lng != null)) return null;
+                  const q = lat != null && lng != null ? `${lat},${lng}` : encodeURIComponent(adresse ?? '');
+                  return (
+                    <>
+                      {' · '}
+                      <a target="_blank" rel="noopener" href={`https://www.google.com/maps/search/?api=1&query=${q}`}
+                        className="underline" style={{ color: catColor }}>Itinéraire</a>
+                    </>
+                  );
+                })()}
               </p>
 
               {isFirstTime ? (
