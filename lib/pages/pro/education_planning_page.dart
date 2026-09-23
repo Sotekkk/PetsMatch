@@ -602,6 +602,7 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
     final participant = _participants.firstWhere((p) => p['id'] == participantId, orElse: () => {});
     final ancien = participant['statut'];
     await _supa.from('cours_collectifs_participants').update({'statut': statut}).eq('id', participantId);
+    await _syncAgendaForParticipant(participant, inscrit: statut == 'inscrit');
     // Une place occupée (confirmée OU en attente de confirmation) se libère
     // en cas d'annulation → on promeut la liste d'attente.
     if (statut == 'annule' && (ancien == 'inscrit' || ancien == 'demande')) await _promouvoirListeAttente();
@@ -612,8 +613,83 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
   Future<void> _confirmerDemande(String participantId) async {
     final participant = _participants.firstWhere((p) => p['id'] == participantId, orElse: () => {});
     await _supa.from('cours_collectifs_participants').update({'statut': 'inscrit'}).eq('id', participantId);
+    await _syncAgendaForParticipant(participant, inscrit: true);
     await _notifierDecisionDemande(participant, confirme: true);
     _load();
+  }
+
+  /// Synchronise agenda_events pour un participant de cours collectif — côté
+  /// client (son propre événement, une ligne par participant) ET côté pro
+  /// (un seul événement partagé pour toute la session, dédupliqué). Le RDV
+  /// classique fait déjà ça à la confirmation (pro_agenda.dart) ; les cours
+  /// collectifs n'avaient jamais ce câblage, d'où l'absence totale dans
+  /// l'agenda malgré une inscription confirmée.
+  Future<void> _syncAgendaForParticipant(Map<String, dynamic> participant, {required bool inscrit}) async {
+    final cours = _cours;
+    if (cours == null) return;
+    final coursId = widget.coursId;
+    final dateHeure = cours['date_heure']?.toString();
+    if (dateHeure == null) return;
+    final titre = cours['titre']?.toString() ?? 'Cours collectif';
+    final duree = (cours['duree_minutes'] as num?)?.toInt() ?? 60;
+    final proUid = cours['pro_uid']?.toString();
+    final proProfileId = cours['pro_profile_id']?.toString();
+    final clientUid = participant['client_uid']?.toString();
+    final participantId = participant['id']?.toString();
+
+    // Côté client
+    if (clientUid != null && clientUid.isNotEmpty && participantId != null) {
+      final couleurClient = 'cours:$coursId:$participantId';
+      try {
+        await _supa.from('agenda_events').delete()
+            .eq('uid', clientUid).eq('couleur', couleurClient);
+      } catch (_) {}
+      if (inscrit) {
+        try {
+          await _supa.from('agenda_events').insert({
+            'uid':            clientUid,
+            'titre':          titre,
+            'type':           'cours_collectif',
+            'date_debut':     dateHeure,
+            'duree_minutes':  duree,
+            if (participant['animal_id'] != null) 'animal_id': participant['animal_id'],
+            'couleur':        couleurClient,
+            'pro_profile_id': proProfileId,
+          });
+        } catch (_) {}
+      }
+    }
+
+    // Côté pro — un seul événement partagé pour toute la session, présent
+    // tant qu'au moins un participant est inscrit.
+    if (proUid != null && proUid.isNotEmpty) {
+      final couleurPro = 'cours:$coursId';
+      final remaining = await _supa.from('cours_collectifs_participants')
+          .select('id').eq('cours_id', coursId).eq('statut', 'inscrit');
+      final aUnInscrit = (remaining as List).isNotEmpty;
+      if (aUnInscrit) {
+        final existing = await _supa.from('agenda_events').select('id')
+            .eq('uid', proUid).eq('couleur', couleurPro).limit(1);
+        if ((existing as List).isEmpty) {
+          try {
+            await _supa.from('agenda_events').insert({
+              'uid':            proUid,
+              'titre':          titre,
+              'type':           'cours_collectif',
+              'date_debut':     dateHeure,
+              'duree_minutes':  duree,
+              'couleur':        couleurPro,
+              'pro_profile_id': proProfileId,
+            });
+          } catch (_) {}
+        }
+      } else {
+        try {
+          await _supa.from('agenda_events').delete()
+              .eq('uid', proUid).eq('couleur', couleurPro);
+        } catch (_) {}
+      }
+    }
   }
 
   Future<void> _notifierDecisionDemande(Map<String, dynamic> participant, {required bool confirme}) async {
@@ -675,6 +751,18 @@ class _CoursCollectifDetailPageState extends State<CoursCollectifDetailPage> {
     );
     if (confirm != true) return;
     await _supa.from('cours_collectifs').update({'statut': 'annule'}).eq('id', widget.coursId);
+    // Nettoie les agenda_events (pro + chaque participant) liés à la session.
+    try {
+      await _supa.from('agenda_events').delete()
+          .eq('couleur', 'cours:${widget.coursId}');
+      for (final p in _participants) {
+        final pid = p['id']?.toString();
+        if (pid != null) {
+          await _supa.from('agenda_events').delete()
+              .eq('couleur', 'cours:${widget.coursId}:$pid');
+        }
+      }
+    } catch (_) {}
     if (mounted) Navigator.pop(context);
   }
 

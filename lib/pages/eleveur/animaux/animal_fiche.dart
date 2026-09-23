@@ -170,6 +170,10 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   List<Map<String, dynamic>> _vetAcces = [];
   // Owner uid (utilisé dans le mode vétérinaire)
   String? _ownerUid;
+  // Cogérant actif de _ownerUid : a les mêmes droits que le gérant
+  // principal (dont céder/décéder), même quand la fiche est ouverte avec
+  // eleveurUidOverride (résolution multi-profil, cf. mes_animaux.dart).
+  bool _isCogerantActif = false;
 
   // ── Champs identité
   final _nomCtrl    = TextEditingController();
@@ -1024,9 +1028,30 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     return null;
   }
 
+  Future<void> _checkCogerantActif() async {
+    // mes_animaux.dart passe TOUJOURS eleveurUidOverride = uid de l'élevage
+    // actif (même quand ce n'est pas une cogérance), donc eleveurUidOverride
+    // != null ne veut pas dire "viewer non autorisé" — seul un vrai
+    // décalage entre le uid Firebase courant et _ownerUid, sans lien de
+    // cogérance actif, signale un viewer tiers (employé, etc.).
+    final me = FirebaseAuth.instance.currentUser?.uid;
+    if (me == null || _ownerUid == null || me == _ownerUid) return;
+    try {
+      final row = await _supa.from('elevage_cogerants')
+          .select('id')
+          .eq('uid_gerant', _ownerUid!)
+          .eq('uid_cogerant', me)
+          .eq('statut', 'actif')
+          .isFilter('date_fin', null)
+          .maybeSingle();
+      if (mounted && row != null) setState(() => _isCogerantActif = true);
+    } catch (_) {}
+  }
+
   Future<void> _fillFromData(Map<String, dynamic>? d) async {
     if (d == null) return;
     _ownerUid = (d['uid_eleveur'] ?? d['uid_proprietaire'])?.toString();
+    unawaited(_checkCogerantActif());
     _espece = d['espece'] ?? _espece;
     _especeAutreCtrl.text = (d['espece_autre'] as String?) ?? '';
     _descriptionCtrl.text = d['description'] ?? '';
@@ -1954,7 +1979,17 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         onTap: () => showVetShareSheet(context, widget.animalId!),
       ));
     }
-    if (!widget.vetMode && widget.eleveurUidOverride == null) {
+    // mes_animaux.dart passe TOUJOURS eleveurUidOverride (= _ownerUid de
+    // l'élevage actif), y compris quand le viewer EST le gérant lui-même
+    // (pas seulement en cogérance) — un `eleveurUidOverride == null` strict
+    // masquait donc Céder/Décéder/Réserver pour tout le monde. On autorise
+    // désormais le vrai gérant (son uid Firebase == _ownerUid) et un
+    // cogérant actif ; seul un viewer tiers (employé...) reste exclu.
+    final me = FirebaseAuth.instance.currentUser?.uid;
+    final isOwnerOrCogerant = widget.eleveurUidOverride == null
+        || me == _ownerUid
+        || _isCogerantActif;
+    if (!widget.vetMode && isOwnerOrCogerant) {
       // Auparavant `_statut == 'present'` : un animal dont le statut n'était
       // pas exactement « present » en base (vide/legacy) faisait disparaître
       // ce bouton alors que Céder/Décéder, eux, restaient visibles
