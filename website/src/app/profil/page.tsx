@@ -2649,47 +2649,40 @@ export default function ProfilPage() {
     }
   }
 
-  // Tables où l'utilisateur est le seul propriétaire clair de la ligne, sans
-  // valeur de conservation légale/comptable ni impact sur un tiers — sûres à
-  // exporter et à supprimer intégralement (RGPD art. 15/17/20).
-  // [table, colonnes possibles du propriétaire (OR)].
+  // Tables où l'utilisateur est le seul propriétaire clair de la ligne, SANS
+  // lien à un animal_id, sans valeur de conservation légale/comptable ni
+  // impact sur un tiers — sûres à exporter et à supprimer intégralement
+  // (RGPD art. 15/17/20). [table, colonnes possibles du propriétaire (OR)].
   // NE PAS y ajouter : factures/devis/contrats/cessions/documents_animaux/
   // certificats_engagement/registre_* (conservation légale comptable ou
-  // registre d'élevage) ni les tables de carnet de santé/actes vétérinaires
-  // (continuité médicale de l'animal, potentiellement transféré à un
-  // nouveau propriétaire) — voir handleDeleteAccount pour le détail.
+  // registre d'élevage), ni une table liée à un animal_id (l'animal et son
+  // historique sont conservés — voir ANIMAL_LINKED_OWNER_COLS plus bas —
+  // pour permettre un pedigree/suivi ultérieur même si le propriétaire
+  // supprime son compte), ni les tables de carnet de santé/actes
+  // vétérinaires — voir handleDeleteAccount pour le détail.
   const PERSONAL_DATA_TABLES: [string, string[]][] = [
-    ['animaux', ['uid_eleveur', 'uid_proprietaire']],
     ['alertes_perdus', ['uid_proprietaire']],
     ['animaux_trouves', ['user_uid']],
     ['activity_log', ['uid']],
     ['admin_alerts', ['uid']],
     ['agenda_events', ['uid']],
     ['agenda_retards', ['pro_uid']],
-    ['alimentations', ['uid_eleveur']],
     ['annonces_objets', ['uid']],
     ['badges_obtenus', ['user_uid']],
     ['balades_ludiques', ['createur_uid']],
     ['balades_ludiques_avis', ['user_uid']],
     ['balades_ludiques_favoris', ['user_uid']],
-    ['bebes_portee', ['uid_eleveur']],
     ['bloquages', ['uid']],
     ['bloquer', ['blocker_id']],
-    ['cles_clients', ['pro_uid', 'owner_uid']],
-    ['comptes_rendus', ['pro_uid', 'owner_uid']],
     ['conversation_reports', ['reported_by_uid']],
     ['cours_collectifs', ['pro_uid']],
     ['cours_collectifs_participants', ['client_uid']],
     ['cours_collectifs_series', ['pro_uid']],
-    ['education_objectifs', ['pro_uid', 'owner_uid']],
-    ['education_progression', ['pro_uid', 'owner_uid']],
     ['elevage_cogerants', ['uid_gerant', 'uid_cogerant']],
     ['enclos_chenil', ['uid_eleveur']],
     ['evenements', ['createur_uid']],
     ['evenements_inscrits', ['user_uid']],
-    ['exercices_attribues', ['pro_uid', 'owner_uid']],
     ['exercices_bibliotheque', ['pro_uid']],
-    ['fiches_toilettage', ['client_uid', 'pro_uid']],
     ['follows', ['follower_uid', 'following_uid']],
     ['forfaits_education', ['pro_uid']],
     ['forfaits_garde', ['pro_uid']],
@@ -2722,7 +2715,6 @@ export default function ProfilPage() {
     ['promenades_messages', ['user_uid']],
     ['promenades_participants', ['user_uid']],
     ['protocoles_chaleur_race', ['uid_eleveur']],
-    ['rdv', ['client_uid', 'pro_uid']],
     ['stories', ['uid']],
     ['story_likes', ['uid']],
     ['tarifs_clients_garde', ['pro_uid', 'owner_uid']],
@@ -2739,6 +2731,35 @@ export default function ProfilPage() {
     ['animal_acces_pro', ['pro_uid', 'owner_uid']],
   ];
 
+  // Tables liées à un animal_id : l'animal et son historique (soins,
+  // pedigree, prestations) sont CONSERVÉS même si son propriétaire supprime
+  // son compte — seule l'identité du/des humain(s) référencé(s) est retirée
+  // (colonne mise à NULL, ligne conservée). Permet de continuer à exploiter
+  // ces données plus tard (pedigree, transfert à un nouveau propriétaire).
+  const ANIMAL_LINKED_OWNER_COLS: [string, string[]][] = [
+    ['animaux', ['uid_eleveur', 'uid_proprietaire', 'uid_acquereur', 'owner_uid']],
+    ['animaux_proprietes', ['uid_proprio']],
+    ['alimentations', ['uid_eleveur']],
+    ['bebes_portee', ['uid_eleveur']],
+    ['comptes_rendus', ['pro_uid', 'owner_uid']],
+    ['education_objectifs', ['pro_uid', 'owner_uid']],
+    ['education_progression', ['pro_uid', 'owner_uid']],
+    ['exercices_attribues', ['pro_uid', 'owner_uid']],
+    ['fiches_toilettage', ['client_uid', 'pro_uid']],
+    ['cles_clients', ['pro_uid', 'owner_uid']],
+    ['rdv', ['client_uid', 'pro_uid']],
+    ['ordonnances', ['pro_uid', 'owner_uid']],
+    ['radios', ['vet_id']],
+    ['points_osteo', ['pro_uid']],
+    ['seances_osteo', ['pro_uid']],
+    ['tests_genetiques', ['uid']],
+  ];
+  // Le carnet de santé (vaccinations, traitements, visites, vermifuges,
+  // antiparasitaires, allergies, chirurgies, poids, vet_consultations) n'a
+  // aucune colonne d'identité propre — résolu via animaux.uid_eleveur,
+  // exporté avec l'animal lui-même (à ajouter séparément si un export
+  // détaillé du carnet est souhaité).
+
   function orFilter(cols: string[], uid: string) {
     return cols.map(c => `${c}.eq.${uid}`).join(',');
   }
@@ -2750,6 +2771,13 @@ export default function ProfilPage() {
       const uid = user.uid;
       const results = await Promise.all(
         PERSONAL_DATA_TABLES.map(([table, cols]) =>
+          Promise.resolve(supabase.from(table).select('*').or(orFilter(cols, uid)))
+            .then(r => [table, r.data ?? []] as const)
+            .catch(() => [table, []] as const)
+        )
+      );
+      const animalLinkedResults = await Promise.all(
+        ANIMAL_LINKED_OWNER_COLS.map(([table, cols]) =>
           Promise.resolve(supabase.from(table).select('*').or(orFilter(cols, uid)))
             .then(r => [table, r.data ?? []] as const)
             .catch(() => [table, []] as const)
@@ -2784,6 +2812,7 @@ export default function ProfilPage() {
         cessions: cessionsRes.data ?? [],
       };
       for (const [table, rows] of results) exportData[table] = rows;
+      for (const [table, rows] of animalLinkedResults) exportData[table] = rows;
 
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -2833,32 +2862,68 @@ export default function ProfilPage() {
         supabase.from('vet_access_grants').delete().or(orFilter(['vet_id', 'owner_id'], uid)),
         supabase.from('pension_acces').delete().or(orFilter(['pro_uid', 'owner_uid'], uid)),
         supabase.from('abonnements').delete().eq('uid', uid),
-        supabase.from('animaux_proprietes').delete().eq('uid_proprio', uid),
         supabase.from('signalements').delete().eq('reporter_uid', uid),
       ]);
-      // ⚠️ Volontairement NON supprimées ici (conservation légale ou
-      // impact sur un tiers — anonymiser plutôt que supprimer, à
-      // trancher séparément, cf. audit RGPD) :
-      //   - factures/devis/contrats/documents_animaux/certificats_engagement/
-      //     cessions/reservations_animaux (conservation comptable/légale —
-      //     factures : 10 ans, obligation Code de commerce)
+
+      // Animal et tout ce qui lui est lié (soins, pedigree, prestations) :
+      // CONSERVÉS, seule l'identité du propriétaire/pro est retirée de
+      // chaque colonne qui le référence (ligne gardée pour un usage futur —
+      // pedigree, transfert à un nouveau propriétaire). Idem pour `devis`/
+      // `reservations_animaux` (coordonnées du client anonymisées, ligne
+      // gardée — documents précontractuels, pas encore une facture actée).
+      // Passe obligatoirement par une route API (service_role) : mettre à
+      // NULL la colonne d'identité viole le WITH CHECK implicite de ces
+      // policies d'UPDATE (voir commentaire dans la route), et devis/
+      // reservations_animaux ne sont de toute façon pas accessibles en
+      // écriture au client lui-même.
+      try {
+        await fetch('/api/account/anonymize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uid }),
+        });
+      } catch { /* best-effort */ }
+      // ⚠️ Volontairement NI supprimées NI anonymisées ici — l'obligation
+      // légale porte ici sur l'INTÉGRITÉ du document, pas seulement sa
+      // conservation : y toucher après coup l'invaliderait pour de vrai,
+      // ce n'est pas qu'une question de durée de rétention :
+      //   - factures : une facture française doit obligatoirement porter
+      //     l'identité complète de l'émetteur ET du client (mentions
+      //     obligatoires, Code de commerce/CGI) — l'anonymiser la rendrait
+      //     juridiquement invalide, y compris pour la comptabilité DE
+      //     L'AUTRE partie (l'éleveur en a besoin 10 ans, que le client
+      //     ait supprimé son compte ou non). RGPD art. 17.3.b (obligation
+      //     légale) couvre explicitement cette exception au droit à
+      //     l'effacement — aucune action n'est correcte ici, y compris
+      //     l'anonymisation.
       //   - registre_mouvements/registre_sanitaire (registre d'élevage,
-      //     obligation légale de traçabilité)
-      //   - contract_audit (journal d'audit RGPD lui-même, immuable)
-      //   - carnet de santé (vaccinations, traitements, visites, allergies,
-      //     vermifuges, antiparasitaires, chirurgies, radios, ordonnances,
-      //     points_osteo, seances_osteo, vet_consultations, tests_genetiques)
-      //     et credit_wallets/credit_transactions/forfaits_souscrits/
-      //     achats_ponctuels — continuité de l'animal / valeur financière
-      //     vis-à-vis d'un tiers, à anonymiser plutôt que supprimer
-      //   - messages/conversations (détruire les messages envoyés casserait
-      //     les conversations des autres participants — anonymiser
-      //     l'expéditeur plutôt que supprimer, comme WhatsApp/Signal)
+      //     Code rural) : même logique — la traçabilité de qui a reçu
+      //     l'animal est justement L'OBJET de ce registre.
+      //   - cessions/certificats_engagement/documents_animaux (contrats de
+      //     vente actés, certificat d'engagement légalement obligatoire à
+      //     la vente d'un animal) : preuve juridique d'une transaction
+      //     réelle, dont l'identité des parties est un élément constitutif
+      //     — même raisonnement que la facture.
+      //   - contract_audit (journal d'audit RGPD lui-même, immuable par
+      //     construction).
+      // Carnet de santé (vaccinations, traitements, visites, vermifuges,
+      // antiparasitaires, allergies, chirurgies, poids, vet_consultations) :
+      // conservé avec l'animal, sans action à faire — ces tables n'ont
+      // aucune colonne d'identité propre (résolues via animaux.uid_eleveur,
+      // déjà anonymisé ci-dessus). ordonnances/radios/points_osteo/
+      // seances_osteo/tests_genetiques (qui EN ONT une) sont couvertes par
+      // ANIMAL_LINKED_OWNER_COLS plus haut.
+      // Décision produit restant à prendre séparément (pas une question de
+      // conservation légale, mais d'impact sur un tiers vivant) :
+      //   - credit_wallets/credit_transactions/forfaits_souscrits/
+      //     achats_ponctuels — référence à un paiement Stripe réel
+      //   - messages/conversations — détruire les messages envoyés
+      //     casserait les conversations des autres participants ; à
+      //     traiter comme WhatsApp/Signal (afficher "Compte supprimé" à
+      //     l'affichage plutôt qu'en base)
       //   - animal_friendly_lieux/natural_places/avis_pro/
       //     petfriendly_reviews (contenu communautaire consulté par
-      //     d'autres — détacher l'attribution plutôt que supprimer)
-      //   - groupes (créateur d'un groupe encore actif — ne pas détruire
-      //     le contenu des autres membres)
+      //     d'autres) ; groupes (créateur d'un groupe encore actif)
       // Supprimer le profil user (CASCADE supprime annonces, animaux, etc.)
       await supabase.from('user_profiles').delete().eq('uid', uid);
       await supabase.from('users').delete().eq('uid', uid);
