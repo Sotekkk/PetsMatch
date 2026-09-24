@@ -291,16 +291,26 @@ class _AvisProFormState extends State<_AvisProForm> {
         'commentaire': _commentCtrl.text.trim().isEmpty ? null : _commentCtrl.text.trim(),
       });
       widget.onSubmit();
+    } on PostgrestException catch (e) {
+      // Code Postgres réel (pas un match texte fragile sur le message brut,
+      // qui a fini par fuiter tel quel à l'écran) : 23505 = doublon
+      // (contrainte unique), 42501 = refus RLS (aucune interaction
+      // enregistrée avec ce pro).
+      setState(() => _saving = false);
+      if (mounted) {
+        final msg = e.code == '23505'
+            ? 'Vous avez déjà laissé un avis.'
+            : e.code == '42501'
+                ? 'Vous ne pouvez pas laisser d\'avis : aucune interaction avec ce professionnel n\'est enregistrée (rendez-vous ou prestation).'
+                : 'Erreur : ${e.message}';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(msg, style: const TextStyle(fontFamily: 'Galey'))));
+      }
     } catch (e) {
       setState(() => _saving = false);
       if (mounted) {
-        final msg = e.toString().contains('unique')
-            ? 'Vous avez déjà laissé un avis.'
-            : (e.toString().contains('row-level security') || e.toString().contains('42501'))
-                ? 'Vous ne pouvez pas laisser d\'avis : aucune interaction avec ce professionnel n\'est enregistrée (rendez-vous ou prestation).'
-                : 'Erreur : $e';
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(msg, style: const TextStyle(fontFamily: 'Galey'))));
+            content: Text('Erreur : $e', style: const TextStyle(fontFamily: 'Galey'))));
       }
     }
   }

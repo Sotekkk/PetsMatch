@@ -1177,7 +1177,7 @@ class _ServiceDetailPageState extends State<ServiceDetailPage>
 
           // Avis — système générique avis_pro (tous les pros de service).
           if (const {
-            'taxi_animalier', 'education', 'sante', 'garde',
+            'taxi_animalier', 'education', 'sante', 'garde', 'pension',
             'toilettage', 'photographe', 'marechal_ferrant', 'veterinaire',
           }.contains(_proData?['cat_pro'])) ...[
             const SizedBox(height: 12),

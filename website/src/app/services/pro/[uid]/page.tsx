@@ -1359,7 +1359,7 @@ function ProDetailContent() {
                 </div>
               </div>
             )}
-            {['taxi_animalier', 'education', 'sante', 'garde', 'toilettage', 'photographe', 'marechal_ferrant', 'veterinaire'].includes(pro.cat_pro) && (
+            {['taxi_animalier', 'education', 'sante', 'garde', 'pension', 'toilettage', 'photographe', 'marechal_ferrant', 'veterinaire'].includes(pro.cat_pro) && (
               <AvisPro proUid={pro.uid} proProfileId={pro.profileTableId} clientUid={user?.uid ?? null} autoOpen={searchParams.get('avis') === '1'} />
             )}
           </>
