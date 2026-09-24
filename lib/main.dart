@@ -266,6 +266,12 @@ class User_Info {
   static String villeElevage = "";
   static String codePostalElevage = "";
   static String paysElevage = "France";
+  // Coordonnées GPS de l'adresse de l'élevage/société — capturées à
+  // l'inscription (info_elevage.dart) depuis Google Places, écrites dans
+  // users.lat/users.lng (mêmes colonnes que pro_profile_edit.dart en
+  // édition post-inscription).
+  static double? latElevage;
+  static double? lngElevage;
   static String departementElevage = "";
   static String regionElevage = "";
   static String nameElevage = "";

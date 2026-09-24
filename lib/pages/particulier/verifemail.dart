@@ -215,6 +215,8 @@ Future<Object> registerElevage(String email, String password) async {
         'is_validate':           !User_Info.isElevage && !User_Info.isPro && !User_Info.isAssociation,
         'name_elevage':          User_Info.nameElevage,
         'adress_elevage':        User_Info.adressElevage,
+        if (User_Info.latElevage != null) 'lat': User_Info.latElevage,
+        if (User_Info.lngElevage != null) 'lng': User_Info.lngElevage,
         'rue_elevage':           User_Info.rueElevage,
         'ville_elevage':         User_Info.villeElevage,
         'code_postal_elevage':   User_Info.codePostalElevage,

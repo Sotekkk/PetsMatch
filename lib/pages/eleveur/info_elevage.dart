@@ -48,6 +48,12 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
   final _cpCtrl    = TextEditingController();
   final _villeCtrl = TextEditingController();
   final _paysCtrl  = TextEditingController(text: 'France');
+  // Coordonnées GPS de l'adresse sélectionnée — jamais capturées jusqu'ici
+  // à l'inscription (seul pro_profile_edit.dart, en édition post-inscription,
+  // le faisait), donc absentes pour tout compte pro tant qu'il n'était pas
+  // retourné modifier son profil.
+  double? _lat;
+  double? _lng;
 
   // Races chargées depuis les assets
   List<String> _dogBreeds = [];
@@ -144,19 +150,33 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
     final det = await _places.getDetailsByPlaceId(p.placeId!);
     if (!mounted || !det.isOkay) return;
     String streetNum = '', route = '', cp = '', ville = '', pays = '';
+    // Lieu-dit (hameau) : beaucoup d'adresses rurales n'ont ni street_number
+    // ni route chez Google — le nom du lieu-dit apparaît alors comme
+    // sublocality/neighborhood/administrative_area_level_3. Sans ce repli,
+    // "Rue" restait vide malgré une adresse valide.
+    String lieuDit = '';
     for (final comp in det.result!.addressComponents) {
       if (comp.types.contains('street_number')) streetNum = comp.longName;
       if (comp.types.contains('route'))         route = comp.longName;
       if (comp.types.contains('postal_code'))   cp = comp.longName;
       if (comp.types.contains('locality'))      ville = comp.longName;
       if (comp.types.contains('country'))       pays = comp.longName;
+      if (lieuDit.isEmpty &&
+          (comp.types.contains('sublocality') ||
+           comp.types.contains('neighborhood') ||
+           comp.types.contains('administrative_area_level_3'))) {
+        lieuDit = comp.longName;
+      }
     }
+    final rue = [streetNum, route].where((s) => s.isNotEmpty).join(' ');
+    final loc = det.result!.geometry?.location;
     setState(() {
-      _rueCtrl.text    = [streetNum, route].where((s) => s.isNotEmpty).join(' ');
+      _rueCtrl.text    = rue.isNotEmpty ? rue : lieuDit;
       _cpCtrl.text     = cp;
       _villeCtrl.text  = ville;
       _paysCtrl.text   = pays.isNotEmpty ? pays : 'France';
       _adresseSearchCtrl.text = det.result!.formattedAddress ?? '';
+      if (loc != null) { _lat = loc.lat; _lng = loc.lng; }
       _suggestions = [];
       _showSuggestions = false;
     });
@@ -265,6 +285,8 @@ class _RegisterElevageInformationState extends State<RegisterElevageInformation>
       User_Info.villeElevage       = ville;
       User_Info.paysElevage        = _paysCtrl.text.trim();
       User_Info.adressElevage      = [rue, _cpCtrl.text.trim(), ville].where((s) => s.isNotEmpty).join(', ');
+      User_Info.latElevage         = _lat;
+      User_Info.lngElevage         = _lng;
 
       // Espèces et races
       User_Info.especesElevees = List.from(_selectedEspeces);
