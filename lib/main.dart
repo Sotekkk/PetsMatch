@@ -7,6 +7,7 @@ import 'package:PetsMatch/pages/beta_gate.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/pages/connect_page.dart';
 import 'package:PetsMatch/pages/eleveur/verification_page.dart';
+import 'package:PetsMatch/pages/particulier/verifemail.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_bootstrap.dart';
@@ -946,8 +947,19 @@ class _AuthWrapperState extends State<AuthWrapper> {
             // Blocage admin (bouton « Suspendre »), tous types de compte
             // confondus — y compris particulier, cf. demande explicite.
             final isSuspended = User_Info.statutPro == 'suspendu';
+            // E-mail non vérifié : jusqu'ici seul le tout premier parcours
+            // d'inscription (condition_general.dart) imposait la
+            // vérification — quitter l'appli avant de cliquer le lien (ou
+            // tuer l'appli) donnait un accès complet à un compte jamais
+            // vérifié à la réouverture suivante. Vérifié ici à CHAQUE
+            // ouverture, pas seulement à l'inscription. `emailVerified` est
+            // déjà à true pour les comptes Google (vérifié par le
+            // fournisseur), donc aucun cas particulier à gérer pour eux.
+            final needsEmailVerification = !user.emailVerified;
 
-            if (User_Info.isAdmin || (!isSuspended && !isRejected)) {
+            if (needsEmailVerification) {
+              return VerifyEmailPage(email: user.email ?? '');
+            } else if (User_Info.isAdmin || (!isSuspended && !isRejected)) {
               // L'UI est prête : rejoue un éventuel lien de partage en attente.
               WidgetsBinding.instance.addPostFrameCallback(
                   (_) => DeepLinkService.instance.flushPending());

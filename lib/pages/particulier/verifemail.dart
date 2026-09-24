@@ -13,7 +13,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 class VerifyEmailPage extends StatefulWidget {
   final String email;
 
-  VerifyEmailPage({required this.email});
+  const VerifyEmailPage({super.key, required this.email});
 
   @override
   _VerifyEmailPageState createState() => _VerifyEmailPageState();
@@ -294,6 +294,14 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> with WidgetsBindingOb
   bool _isResendEnabled = true;
   late Timer _timer;
   Timer? _pollTimer;
+  // Adresse affichée — distincte de widget.email une fois corrigée (une
+  // testeuse bêta s'était trompée d'adresse à l'inscription et devait tout
+  // recommencer faute de pouvoir la corriger ici).
+  late String _currentEmail = widget.email;
+  bool _editingEmail = false;
+  bool _savingEmail = false;
+  String? _emailError;
+  final _newEmailCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -381,7 +389,62 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> with WidgetsBindingOb
     WidgetsBinding.instance.removeObserver(this);
     _timer.cancel();
     _pollTimer?.cancel();
+    _newEmailCtrl.dispose();
     super.dispose();
+  }
+
+  /// Corrige une adresse mal saisie à l'inscription sans repartir de zéro.
+  /// `verifyBeforeUpdateEmail` envoie le lien de vérification à la NOUVELLE
+  /// adresse et ne met à jour `user.email` qu'une fois ce lien cliqué — le
+  /// compte reste donc bloqué sur cet écran (par emailVerified) jusque-là,
+  /// cohérent avec le reste du parcours.
+  Future<void> _changeEmail() async {
+    final newEmail = _newEmailCtrl.text.trim();
+    if (newEmail.isEmpty || !newEmail.contains('@')) {
+      setState(() => _emailError = 'Adresse e-mail invalide.');
+      return;
+    }
+    if (newEmail == _currentEmail) {
+      setState(() => _editingEmail = false);
+      return;
+    }
+    setState(() { _savingEmail = true; _emailError = null; });
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception('Session expirée, reconnectez-vous.');
+      await user.verifyBeforeUpdateEmail(newEmail);
+      User_Info.email = newEmail;
+      if (!mounted) return;
+      setState(() {
+        _currentEmail = newEmail;
+        _editingEmail = false;
+        _savingEmail = false;
+        _isResendEnabled = false;
+      });
+      Future.delayed(const Duration(minutes: 1), () {
+        if (mounted) setState(() => _isResendEnabled = true);
+      });
+    } on FirebaseAuthException catch (e) {
+      String msg;
+      switch (e.code) {
+        case 'email-already-in-use':
+          msg = 'Cette adresse est déjà utilisée par un autre compte.';
+          break;
+        case 'invalid-email':
+          msg = "Cette adresse n'est pas valide.";
+          break;
+        case 'requires-recent-login':
+          msg = 'Reconnectez-vous puis réessayez.';
+          break;
+        default:
+          msg = 'Erreur : ${e.message ?? e.code}';
+      }
+      if (!mounted) return;
+      setState(() { _emailError = msg; _savingEmail = false; });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _emailError = 'Erreur : $e'; _savingEmail = false; });
+    }
   }
 
   @override
@@ -423,12 +486,60 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> with WidgetsBindingOb
               Text(
                 _isVerified
                     ? 'Redirection en cours…'
-                    : "Un e-mail de vérification a été envoyé à ${widget.email}. Cliquez sur le lien qu'il contient — cette page se met à jour automatiquement.",
+                    : "Un e-mail de vérification a été envoyé à $_currentEmail. Cliquez sur le lien qu'il contient — cette page se met à jour automatiquement.",
                 textAlign: TextAlign.center,
                 style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.grey.shade600, height: 1.4),
               ),
-              const SizedBox(height: 28),
-              if (!_isVerified) ...[
+              if (!_isVerified && !_editingEmail) ...[
+                const SizedBox(height: 6),
+                TextButton(
+                  onPressed: () {
+                    _newEmailCtrl.text = _currentEmail;
+                    setState(() { _editingEmail = true; _emailError = null; });
+                  },
+                  child: const Text("Ce n'est pas la bonne adresse ? Corriger",
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13, decoration: TextDecoration.underline)),
+                ),
+              ],
+              if (!_isVerified && _editingEmail) ...[
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _newEmailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    labelText: 'Nouvelle adresse e-mail',
+                    errorText: _emailError,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _savingEmail ? null : () => setState(() => _editingEmail = false),
+                      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                      child: const Text('Annuler'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _savingEmail ? null : _changeEmail,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _teal, foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: _savingEmail
+                          ? const SizedBox(width: 18, height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Text('Valider'),
+                    ),
+                  ),
+                ]),
+              ],
+              const SizedBox(height: 22),
+              if (!_isVerified && !_editingEmail) ...[
                 const SizedBox(
                   width: 22, height: 22,
                   child: CircularProgressIndicator(strokeWidth: 2.5, color: _teal),
