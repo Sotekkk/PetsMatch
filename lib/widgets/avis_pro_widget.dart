@@ -294,10 +294,13 @@ class _AvisProFormState extends State<_AvisProForm> {
     } catch (e) {
       setState(() => _saving = false);
       if (mounted) {
+        final msg = e.toString().contains('unique')
+            ? 'Vous avez déjà laissé un avis.'
+            : (e.toString().contains('row-level security') || e.toString().contains('42501'))
+                ? 'Vous ne pouvez pas laisser d\'avis : aucune interaction avec ce professionnel n\'est enregistrée (rendez-vous ou prestation).'
+                : 'Erreur : $e';
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(e.toString().contains('unique')
-                ? 'Vous avez déjà laissé un avis'
-                : 'Erreur : $e', style: const TextStyle(fontFamily: 'Galey'))));
+            content: Text(msg, style: const TextStyle(fontFamily: 'Galey'))));
       }
     }
   }

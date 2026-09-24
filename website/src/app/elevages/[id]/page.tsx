@@ -9,6 +9,7 @@ import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
+import AvisPro from '@/components/AvisPro';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -136,6 +137,7 @@ export default function EleveurProfilePage() {
   const [notFound, setNotFound] = useState(false);
   const [contacting, setContacting] = useState(false);
   const [reproCount, setReproCount] = useState(0);
+  const [eleveurProfileId, setEleveurProfileId] = useState<string | null>(null);
 
   // Profil ÉLEVEUR = source de vérité pour description / réseaux / tél /
   // vitrine reproducteurs (jamais un autre profil du même compte, jamais
@@ -148,6 +150,7 @@ export default function EleveurProfilePage() {
         .select('id, montre_reproducteurs, desc_entreprise, description, instagram, facebook, site_web, phone_number, numero_elevage')
         .eq('uid', euid).eq('profile_type', 'eleveur').maybeSingle();
       if (!prof) return;
+      setEleveurProfileId((prof.id as string) ?? null);
       const desc = (prof.desc_entreprise || prof.description || '').trim();
       const tel = (prof.numero_elevage || prof.phone_number || '').trim();
       setEleveur(prev => prev && ({
@@ -454,6 +457,13 @@ export default function EleveurProfilePage() {
             className="flex items-center justify-center gap-2 w-full mb-4 py-3 rounded-2xl border border-[#0C5C6C] text-[#0C5C6C] font-semibold text-sm hover:bg-[#0C5C6C]/5 transition-colors">
             🐾 Voir les reproducteurs ({reproCount})
           </Link>
+        )}
+
+        {/* Avis — jamais affiché jusqu'ici sur la fiche éleveur */}
+        {eleveurProfileId && (
+          <div className="mb-4">
+            <AvisPro proUid={eleveur.uid} proProfileId={eleveurProfileId} clientUid={user?.uid ?? null} />
+          </div>
         )}
 
         {/* Annonces disponibles */}

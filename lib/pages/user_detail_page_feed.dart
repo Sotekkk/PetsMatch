@@ -3,6 +3,7 @@ import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:PetsMatch/pages/eleveur/post/annonce_detail_page.dart';
 import 'package:PetsMatch/pages/eleveur/reproducteurs_publics_page.dart';
 import 'package:PetsMatch/pages/main_feed.dart';
+import 'package:PetsMatch/widgets/avis_pro_widget.dart';
 import 'package:PetsMatch/utils/french_geo.dart';
 import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -35,6 +36,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
   String _siteWeb = '';
   String _telephone = '';
   String _statutPro = '';
+  String? _eleveurProfileId;
 
   @override
   void initState() {
@@ -88,6 +90,7 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
           _siteWeb = web;
           _telephone = tel;
           _statutPro = (prof?['statut_pro'] ?? '').toString();
+          _eleveurProfileId = prof?['id'] as String?;
         });
       }
       if (prof == null) return;
@@ -624,6 +627,18 @@ class _UserDetailPageFeedState extends State<UserDetailPageFeed> {
                         ),
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
+                // ── Avis (éleveurs — jamais affiché jusqu'ici sur ce profil,
+                // contrairement aux pros de service) ───────────────────────
+                if (user.isElevage && _eleveurProfileId != null) ...[
+                  Container(
+                    color: Colors.white,
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: AvisProSection(proUid: user.uid, proProfileId: _eleveurProfileId),
                   ),
                   const SizedBox(height: 8),
                 ],
