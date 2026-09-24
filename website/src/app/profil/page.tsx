@@ -2760,6 +2760,21 @@ export default function ProfilPage() {
   // exporté avec l'animal lui-même (à ajouter séparément si un export
   // détaillé du carnet est souhaité).
 
+  // Contenu communautaire (avis, contributions) et crédits/paiements
+  // ponctuels — conservés (pas supprimés) mais exportables normalement.
+  const COMMUNITY_AND_CREDIT_TABLES: [string, string[]][] = [
+    ['avis_pro', ['client_uid']],
+    ['petfriendly_reviews', ['user_uid']],
+    ['animal_friendly_lieux', ['ajout_par_uid']],
+    ['natural_places', ['submitted_by_uid']],
+    ['natural_place_photo_suggestions', ['submitted_by_uid']],
+    ['natural_place_amenity_suggestions', ['submitted_by_uid']],
+    ['credit_wallets', ['uid']],
+    ['credit_transactions', ['uid']],
+    ['achats_ponctuels', ['uid']],
+    ['forfaits_souscrits', ['client_uid']],
+  ];
+
   function orFilter(cols: string[], uid: string) {
     return cols.map(c => `${c}.eq.${uid}`).join(',');
   }
@@ -2777,7 +2792,7 @@ export default function ProfilPage() {
         )
       );
       const animalLinkedResults = await Promise.all(
-        ANIMAL_LINKED_OWNER_COLS.map(([table, cols]) =>
+        [...ANIMAL_LINKED_OWNER_COLS, ...COMMUNITY_AND_CREDIT_TABLES].map(([table, cols]) =>
           Promise.resolve(supabase.from(table).select('*').or(orFilter(cols, uid)))
             .then(r => [table, r.data ?? []] as const)
             .catch(() => [table, []] as const)
@@ -2913,17 +2928,16 @@ export default function ProfilPage() {
       // déjà anonymisé ci-dessus). ordonnances/radios/points_osteo/
       // seances_osteo/tests_genetiques (qui EN ONT une) sont couvertes par
       // ANIMAL_LINKED_OWNER_COLS plus haut.
-      // Décision produit restant à prendre séparément (pas une question de
-      // conservation légale, mais d'impact sur un tiers vivant) :
-      //   - credit_wallets/credit_transactions/forfaits_souscrits/
-      //     achats_ponctuels — référence à un paiement Stripe réel
-      //   - messages/conversations — détruire les messages envoyés
-      //     casserait les conversations des autres participants ; à
-      //     traiter comme WhatsApp/Signal (afficher "Compte supprimé" à
-      //     l'affichage plutôt qu'en base)
-      //   - animal_friendly_lieux/natural_places/avis_pro/
-      //     petfriendly_reviews (contenu communautaire consulté par
-      //     d'autres) ; groupes (créateur d'un groupe encore actif)
+      // Crédits/paiements ponctuels (référence Stripe conservée, lien au
+      // compte retiré), messages/conversations (nom affiché remplacé par
+      // "Compte supprimé", contenu des messages inchangé — comme WhatsApp/
+      // Signal) et contenu communautaire (avis, lieux proposés/contribués —
+      // ligne conservée, attribution retirée) : gérés côté serveur par la
+      // même route (COMMUNITY_CONTENT_COLS/CREDIT_COLS/RPC
+      // anonymize_conversations_participant), appelée juste au-dessus.
+      // Non traité (choix délibéré, décision produit à prendre séparément
+      // si besoin) : groupes (créateur d'un groupe encore actif — ne pas
+      // toucher pour ne pas perturber les autres membres).
       // Supprimer le profil user (CASCADE supprime annonces, animaux, etc.)
       await supabase.from('user_profiles').delete().eq('uid', uid);
       await supabase.from('users').delete().eq('uid', uid);

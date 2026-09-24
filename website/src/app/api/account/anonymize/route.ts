@@ -43,18 +43,48 @@ const ANIMAL_LINKED_OWNER_COLS: [string, string[]][] = [
   // `animaux` ci-dessus — rien à anonymiser dessus séparément.
 ];
 
+// Contenu communautaire consulté par d'autres (avis, lieux proposés/
+// contribués) : la ligne reste visible et utile aux autres, seule
+// l'attribution à un compte précis est retirée.
+const COMMUNITY_CONTENT_COLS: [string, string[]][] = [
+  ['avis_pro', ['client_uid']],
+  ['petfriendly_reviews', ['user_uid']],
+  ['animal_friendly_lieux', ['ajout_par_uid']],
+  ['natural_places', ['submitted_by_uid']],
+  ['natural_place_photo_suggestions', ['submitted_by_uid']],
+  ['natural_place_amenity_suggestions', ['submitted_by_uid']],
+];
+
+// Crédits / paiements ponctuels : référence à une vraie transaction
+// Stripe — montants, dates et références de paiement conservés tels
+// quels, seul le lien vers le compte est retiré.
+const CREDIT_COLS: [string, string[]][] = [
+  ['credit_wallets', ['uid']],
+  ['credit_transactions', ['uid']],
+  ['achats_ponctuels', ['uid']],
+  ['forfaits_souscrits', ['client_uid']],
+];
+
 export async function POST(req: NextRequest) {
   try {
     const { uid } = await req.json() as { uid?: string };
     if (!uid) return NextResponse.json({ error: 'uid requis' }, { status: 400 });
 
-    await Promise.all(
-      ANIMAL_LINKED_OWNER_COLS.flatMap(([table, cols]) =>
-        cols.map(col =>
-          Promise.resolve(supabase.from(table).update({ [col]: null }).eq(col, uid)).then(() => null).catch(() => null)
+    const nullOutColumns = (tables: [string, string[]][]) =>
+      Promise.all(
+        tables.flatMap(([table, cols]) =>
+          cols.map(col =>
+            Promise.resolve(supabase.from(table).update({ [col]: null }).eq(col, uid)).then(() => null).catch(() => null)
+          )
         )
-      )
-    );
+      );
+
+    await Promise.all([
+      nullOutColumns(ANIMAL_LINKED_OWNER_COLS),
+      nullOutColumns(COMMUNITY_CONTENT_COLS),
+      nullOutColumns(CREDIT_COLS),
+      Promise.resolve(supabase.rpc('anonymize_conversations_participant', { p_uid: uid })).then(() => null).catch(() => null),
+    ]);
 
     await Promise.all([
       supabase.from('devis').update({
