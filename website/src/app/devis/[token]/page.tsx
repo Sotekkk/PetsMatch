@@ -73,26 +73,14 @@ export default function DevisPublicPage({ params }: { params: Promise<{ token: s
     if (!devis) return;
     setAction(statut === 'accepte' ? 'accepting' : 'refusing');
     try {
-      const { error } = await supabase.from('devis')
-        .update({ statut, date_reponse: new Date().toISOString(), updated_at: new Date().toISOString() })
-        .eq('id', devis.id).eq('statut', 'envoye');
-      if (error) { setErrorMsg(error.message); setAction('error'); return; }
-      await supabase.from('notifications').insert({
-        uid: devis.pro_uid,
-        type: statut === 'accepte' ? 'devis_accepte' : 'devis_refuse',
-        title: statut === 'accepte' ? 'Devis accepté' : 'Devis refusé',
-        body: `${devis.prenom_client ?? ''} ${devis.nom_client} a ${statut === 'accepte' ? 'accepté' : 'refusé'} le devis de ${Number(devis.total_ttc).toFixed(2)} €.`,
-        ...(devis.pro_profile_id ? { profile_id: devis.pro_profile_id } : {}),
-        data: { devis_id: devis.id },
-        read: false,
+      const res = await fetch('/api/devis/respond', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, statut }),
       });
-      if (devis.animal_id) {
-        const docStatut = statut === 'accepte' ? 'signe' : 'refuse';
-        const { data: existing } = await supabase.from('documents_animaux').select('id')
-          .eq('animal_id', devis.animal_id).eq('type', 'devis').contains('metadata', { devis_id: devis.id }).maybeSingle();
-        if (existing) await supabase.from('documents_animaux').update({ statut: docStatut }).eq('id', existing.id);
-      }
-      setDevis(prev => prev ? { ...prev, statut, date_reponse: new Date().toISOString() } : prev);
+      const json = await res.json();
+      if (!res.ok) { setErrorMsg(json.error ?? 'Erreur'); setAction('error'); return; }
+      setDevis(prev => prev ? { ...prev, statut, date_reponse: json.date_reponse } : prev);
       setAction('idle');
     } catch {
       setAction('error');

@@ -120,28 +120,13 @@ export default function SignerCessionPage({ params }: { params: Promise<{ token:
     setSigning(true);
     try {
       const sig = pad.toDataURL('image/png');
-      const { error: e } = await supabase.from('cessions').update({
-        signature_acquereur:    sig,
-        statut:                 'signe_acquereur',
-        signed_acquereur_at:    new Date().toISOString(),
-      }).eq('id', cession.id);
-      if (e) throw e;
-
-      // Notifier l'éleveur
-      const { data: eleveurUser } = await supabase.from('users').select('uid').eq('email', cession.eleveur.email ?? '').maybeSingle();
-      if (eleveurUser?.uid) {
-        const { data: eleveurProfile } = await supabase.from('user_profiles')
-          .select('id').eq('uid', eleveurUser.uid).eq('profile_type', 'eleveur').maybeSingle();
-        await supabase.from('notifications').insert({
-          uid:   eleveurUser.uid,
-          type:  'cession_signee_acquereur',
-          title: `✍️ ${cession.nom_acquereur} a signé — ${cession.animal.nom ?? 'Animal'}`,
-          body:  `L'acquéreur a signé le contrat de cession. Vous pouvez maintenant confirmer le transfert.`,
-          ...(eleveurProfile?.id ? { profile_id: eleveurProfile.id } : {}),
-          data:  { animalId: cession.animal_id, token: cession.token },
-          read:  false,
-        });
-      }
+      const res = await fetch('/api/cessions/sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: cession.token, signature: sig }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? 'Erreur');
       setSigned(true);
     } catch (err) {
       alert(`Erreur lors de la signature : ${err}`);
