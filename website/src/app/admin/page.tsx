@@ -1157,42 +1157,85 @@ export default function AdminPage() {
         <span className="ml-auto text-sm opacity-70">{user.email}</span>
       </header>
 
-      {/* Tabs */}
-      <div className="bg-white border-b border-gray-200 px-6 flex gap-1 flex-shrink-0">
-        {([
-          { key: 'dashboard',     label: 'Dashboard',     icon: '📊' },
-          { key: 'signalements',  label: 'Signalements',  icon: '🚨', badge: stats?.signalementsEnAttente },
-          { key: 'dossiers',      label: 'Dossiers',      icon: '📂', badge: stats?.profilsEnAttente },
-          { key: 'utilisateurs',  label: 'Utilisateurs',  icon: '👥' },
-          { key: 'animaux',       label: 'Animaux',       icon: '🐾' },
-          { key: 'annonces',      label: 'Annonces',      icon: '📋', badge: annoncesEnAttente.length || undefined },
-          { key: 'consommation',  label: 'Consommation',  icon: '📈' },
-          { key: 'lieux_naturels',label: 'Lieux naturels',icon: '🌲', badge: (naturalPlacesEnAttente.length + amenitySuggestions.length + photoSuggestions.length) || undefined },
-          { key: 'tarification',  label: 'Tarification',  icon: '💰' },
-          { key: 'signalements_conv', label: 'Conv. signalées', icon: '💬' },
-          { key: 'story_music',   label: 'Musique Stories',icon: '🎵' },
-          { key: 'avis_contestes',label: 'Avis contestés', icon: '🚩', badge: avisContestesEnAttente || undefined },
-        ] as { key: AdminTab; label: string; icon: string; badge?: number }[]).map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`relative px-5 py-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
-              tab === t.key
-                ? 'border-[#0C5C6C] text-[#0C5C6C]'
-                : 'border-transparent text-gray-500 hover:text-[#0C5C6C]'
-            }`}
-            style={{ fontFamily: 'Galey, sans-serif' }}
-          >
-            <span>{t.icon}</span>
-            <span>{t.label}</span>
-            {!!t.badge && (
-              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                {t.badge}
-              </span>
+      {/* Menu — groupé en catégories (trop d'onglets à plat pour s'y retrouver) */}
+      {(() => {
+        const TAB_META: Record<AdminTab, { label: string; icon: string; badge?: number }> = {
+          dashboard:          { label: 'Dashboard',        icon: '📊' },
+          signalements:       { label: 'Signalements',     icon: '🚨', badge: stats?.signalementsEnAttente },
+          signalements_conv:  { label: 'Conv. signalées',  icon: '💬' },
+          avis_contestes:     { label: 'Avis contestés',   icon: '🚩', badge: avisContestesEnAttente || undefined },
+          dossiers:           { label: 'Dossiers',         icon: '📂', badge: stats?.profilsEnAttente },
+          utilisateurs:       { label: 'Utilisateurs',     icon: '👥' },
+          animaux:            { label: 'Animaux',          icon: '🐾' },
+          annonces:           { label: 'Annonces',         icon: '📋', badge: annoncesEnAttente.length || undefined },
+          lieux_naturels:     { label: 'Lieux naturels',   icon: '🌲', badge: (naturalPlacesEnAttente.length + amenitySuggestions.length + photoSuggestions.length) || undefined },
+          consommation:       { label: 'Consommation',     icon: '📈' },
+          tarification:       { label: 'Tarification',     icon: '💰' },
+          story_music:        { label: 'Musique Stories',  icon: '🎵' },
+        };
+        const GROUPS: { key: string; label: string; icon: string; tabs: AdminTab[] }[] = [
+          { key: 'dashboard',    label: 'Dashboard',      icon: '📊', tabs: ['dashboard'] },
+          { key: 'moderation',   label: 'Modération',     icon: '🚨', tabs: ['signalements', 'signalements_conv', 'avis_contestes'] },
+          { key: 'comptes',      label: 'Comptes',        icon: '👥', tabs: ['dossiers', 'utilisateurs'] },
+          { key: 'contenu',      label: 'Contenu',        icon: '🐾', tabs: ['animaux', 'annonces', 'lieux_naturels'] },
+          { key: 'config',       label: 'Configuration',  icon: '⚙️', tabs: ['consommation', 'tarification', 'story_music'] },
+        ];
+        const activeGroup = GROUPS.find(g => g.tabs.includes(tab)) ?? GROUPS[0];
+        const groupBadge = (g: typeof GROUPS[number]) => g.tabs.reduce((s, k) => s + (TAB_META[k].badge ?? 0), 0);
+        return (
+          <div className="bg-white border-b border-gray-200 flex-shrink-0">
+            {/* Groupes */}
+            <div className="px-6 flex gap-1 border-b border-gray-100">
+              {GROUPS.map(g => (
+                <button
+                  key={g.key}
+                  onClick={() => setTab(g.tabs[0])}
+                  className={`relative px-5 py-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+                    activeGroup.key === g.key
+                      ? 'border-[#0C5C6C] text-[#0C5C6C]'
+                      : 'border-transparent text-gray-500 hover:text-[#0C5C6C]'
+                  }`}
+                  style={{ fontFamily: 'Galey, sans-serif' }}
+                >
+                  <span>{g.icon}</span>
+                  <span>{g.label}</span>
+                  {groupBadge(g) > 0 && (
+                    <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                      {groupBadge(g)}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+            {/* Sous-onglets du groupe actif */}
+            {activeGroup.tabs.length > 1 && (
+              <div className="px-6 flex gap-1">
+                {activeGroup.tabs.map(k => {
+                  const t = TAB_META[k];
+                  return (
+                    <button
+                      key={k}
+                      onClick={() => setTab(k)}
+                      className={`relative px-4 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 my-1.5 ${
+                        tab === k ? 'bg-[#0C5C6C10] text-[#0C5C6C]' : 'text-gray-500 hover:bg-gray-50'
+                      }`}
+                      style={{ fontFamily: 'Galey, sans-serif' }}
+                    >
+                      <span>{t.icon}</span>
+                      <span>{t.label}</span>
+                      {!!t.badge && (
+                        <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                          {t.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             )}
-          </button>
-        ))}
-      </div>
+          </div>
+        );
+      })()}
 
       {/* Contenu */}
       <main className="flex-1 overflow-auto p-6">
