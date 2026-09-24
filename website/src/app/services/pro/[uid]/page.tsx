@@ -1865,6 +1865,7 @@ function ProDetailContent() {
 // ─── Avis (système générique avis_pro) ───────────────────────────────────────
 function AvisPro({ proUid, proProfileId, clientUid, autoOpen = false }: { proUid: string; proProfileId?: string; clientUid: string | null; autoOpen?: boolean }) {
   const [avis, setAvis] = useState<{ id: string; note: number; commentaire: string | null; created_at: string; client_uid: string }[]>([]);
+  const [reviewers, setReviewers] = useState<Record<string, { name: string; photo: string | null }>>({});
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const sectionRef = useRef<HTMLDivElement>(null);
@@ -1883,10 +1884,34 @@ function AvisPro({ proUid, proProfileId, clientUid, autoOpen = false }: { proUid
     let q = supabase.from('avis_pro').select('id, note, commentaire, created_at, client_uid').eq('pro_uid', proUid);
     if (proProfileId) q = q.eq('pro_profile_id', proProfileId);
     const { data } = await q.order('created_at', { ascending: false });
-    setAvis((data ?? []) as typeof avis);
+    const list = (data ?? []) as typeof avis;
+    setAvis(list);
     setLoading(false);
+
+    // Résout le nom + photo de chaque auteur d'avis (profil principal).
+    const uids = Array.from(new Set(list.map(a => a.client_uid)));
+    if (uids.length > 0) {
+      const { data: profs } = await supabase.from('user_profiles')
+        .select('uid, firstname, lastname, nom, avatar_url, profile_type')
+        .in('uid', uids).eq('is_main', true);
+      const map: Record<string, { name: string; photo: string | null }> = {};
+      for (const p of profs ?? []) {
+        const isElevage = p.profile_type === 'eleveur';
+        const name = (isElevage && p.nom) ? p.nom : `${p.firstname ?? ''} ${p.lastname ?? ''}`.trim();
+        map[p.uid] = { name: name || 'Utilisateur PetsMatch', photo: p.avatar_url ?? null };
+      }
+      setReviewers(map);
+    }
+
     if (clientUid && clientUid !== proUid) {
-      const { data: ok } = await supabase.rpc('can_review_pro', { p_pro_uid: proUid, p_client_uid: clientUid });
+      const { data: myProf } = await supabase.from('user_profiles')
+        .select('id').eq('uid', clientUid).eq('profile_type', 'particulier').maybeSingle();
+      // Éligibilité résolue par PROFIL (particulier), pas seulement par
+      // compte — un RDV pris avec un autre profil du même compte ne doit
+      // pas rendre le profil particulier éligible.
+      const { data: ok } = await supabase.rpc('can_review_pro', {
+        p_pro_uid: proUid, p_client_uid: clientUid, p_client_profile_id: myProf?.id ?? null,
+      });
       setEligible(!!ok);
     }
   }, [proUid, proProfileId, clientUid]);
@@ -1960,18 +1985,32 @@ function AvisPro({ proUid, proProfileId, clientUid, autoOpen = false }: { proUid
         <p className="text-sm text-gray-400">Aucun avis pour l&apos;instant.</p>
       ) : (
         <div className="space-y-2">
-          {avis.map(a => (
+          {avis.map(a => {
+            const rev = reviewers[a.client_uid];
+            return (
             <div key={a.id} className="border border-gray-100 rounded-xl p-2.5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {rev?.photo ? (
+                  <img src={rev.photo} alt={rev.name} className="w-7 h-7 rounded-full object-cover shrink-0" />
+                ) : (
+                  <div className="w-7 h-7 rounded-full bg-[#E8F4F6] text-[#0C5C6C] text-xs font-bold flex items-center justify-center shrink-0">
+                    {(rev?.name ?? '?').charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <span className="text-sm font-semibold text-[#1E2025] truncate flex-1">{rev?.name ?? 'Utilisateur PetsMatch'}</span>
+                <span className="text-[11px] text-gray-400 shrink-0">{new Date(a.created_at).toLocaleDateString('fr-FR')}</span>
+              </div>
+              <div className="mt-1">
                 <span className="text-[#FFA000] text-sm">{'★'.repeat(a.note)}<span className="text-gray-200">{'★'.repeat(5 - a.note)}</span></span>
-                <span className="text-[11px] text-gray-400">{new Date(a.created_at).toLocaleDateString('fr-FR')}</span>
               </div>
               {a.commentaire && <p className="text-sm text-gray-700 mt-1">{a.commentaire}</p>}
               {isPro && (
                 <button onClick={() => contester(a.id)} className="text-[11px] text-gray-400 hover:text-gray-600 mt-1">🚩 Signaler</button>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

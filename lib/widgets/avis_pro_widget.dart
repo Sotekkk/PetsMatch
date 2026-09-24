@@ -29,6 +29,9 @@ class _AvisProSectionState extends State<AvisProSection> {
   // RLS (can_review_pro), ce check ne sert qu'à ne pas afficher un
   // formulaire qui échouerait de toute façon.
   bool _eligible = false;
+  // Identité affichée sur chaque avis (nom + photo, comme Google) — résolue
+  // par client_uid, profil principal.
+  Map<String, Map<String, dynamic>> _reviewers = {};
 
   @override
   void initState() {
@@ -46,15 +49,46 @@ class _AvisProSectionState extends State<AvisProSection> {
       final rows = await q.order('created_at', ascending: false);
       final list = List<Map<String, dynamic>>.from(rows as List);
       final uid = FirebaseAuth.instance.currentUser?.uid;
+
+      // Résout le nom + photo de chaque auteur d'avis (profil principal).
+      Map<String, Map<String, dynamic>> reviewers = {};
+      final clientUids = list.map((a) => a['client_uid']?.toString()).whereType<String>().toSet().toList();
+      if (clientUids.isNotEmpty) {
+        try {
+          final profs = await _supa.from('user_profiles')
+              .select('uid, firstname, lastname, nom, avatar_url, profile_type')
+              .inFilter('uid', clientUids).eq('is_main', true);
+          for (final p in profs as List) {
+            final isElevage = p['profile_type'] == 'eleveur';
+            final name = isElevage && (p['nom'] as String?)?.isNotEmpty == true
+                ? p['nom'] as String
+                : '${p['firstname'] ?? ''} ${p['lastname'] ?? ''}'.trim();
+            reviewers[p['uid'].toString()] = {
+              'name': name.isEmpty ? 'Utilisateur PetsMatch' : name,
+              'photo': p['avatar_url'] as String?,
+            };
+          }
+        } catch (_) {}
+      }
+
+      // Éligibilité résolue par PROFIL (particulier), pas seulement par
+      // compte — un RDV pris avec un autre profil du même compte (éleveur,
+      // pro…) ne doit pas rendre le profil particulier éligible.
       bool eligible = false;
       if (uid != null && uid != widget.proUid) {
         try {
-          eligible = await _supa.rpc('can_review_pro',
-              params: {'p_pro_uid': widget.proUid, 'p_client_uid': uid}) as bool? ?? false;
+          final myProfile = await _supa.from('user_profiles')
+              .select('id').eq('uid', uid).eq('profile_type', 'particulier').maybeSingle();
+          eligible = await _supa.rpc('can_review_pro', params: {
+            'p_pro_uid': widget.proUid,
+            'p_client_uid': uid,
+            if (myProfile?['id'] != null) 'p_client_profile_id': myProfile!['id'],
+          }) as bool? ?? false;
         } catch (_) {}
       }
       if (mounted) setState(() {
         _avis = list;
+        _reviewers = reviewers;
         _dejaNote = uid != null && list.any((a) => a['client_uid'] == uid);
         _eligible = eligible;
         _loading = false;
@@ -149,6 +183,7 @@ class _AvisProSectionState extends State<AvisProSection> {
       else
         ..._avis.map((a) => _AvisTile(
               avis: a,
+              reviewer: _reviewers[a['client_uid']?.toString()],
               isPro: FirebaseAuth.instance.currentUser?.uid == widget.proUid,
               onContester: () => _contester(a['id'].toString()),
             )),
@@ -157,27 +192,45 @@ class _AvisProSectionState extends State<AvisProSection> {
 }
 
 class _AvisTile extends StatelessWidget {
+  static const _teal = Color(0xFF0C5C6C);
   final Map<String, dynamic> avis;
+  final Map<String, dynamic>? reviewer;
   final bool isPro;
   final VoidCallback onContester;
-  const _AvisTile({required this.avis, this.isPro = false, required this.onContester});
+  const _AvisTile({required this.avis, this.reviewer, this.isPro = false, required this.onContester});
 
   @override
   Widget build(BuildContext context) {
     final note = (avis['note'] as num?)?.toInt() ?? 0;
     final dh = DateTime.tryParse(avis['created_at']?.toString() ?? '');
     final dateStr = dh != null ? DateFormat('d MMM yyyy', 'fr_FR').format(dh) : '';
+    final name = reviewer?['name'] as String? ?? 'Utilisateur PetsMatch';
+    final photo = reviewer?['photo'] as String?;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade100)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Row(children: List.generate(5, (i) =>
-              Icon(i < note ? Icons.star_rounded : Icons.star_border_rounded, size: 16, color: const Color(0xFFFFA000)))),
-          const Spacer(),
+          CircleAvatar(
+            radius: 14,
+            backgroundColor: const Color(0xFFE8F4F6),
+            backgroundImage: (photo != null && photo.isNotEmpty) ? NetworkImage(photo) : null,
+            child: (photo == null || photo.isEmpty)
+                ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: _teal))
+                : null,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(name, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13)),
+          ),
           Text(dateStr, style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade400)),
         ]),
+        const SizedBox(height: 6),
+        Row(children: List.generate(5, (i) =>
+            Icon(i < note ? Icons.star_rounded : Icons.star_border_rounded, size: 16, color: const Color(0xFFFFA000)))),
         if ((avis['commentaire'] as String?)?.isNotEmpty == true) ...[
           const SizedBox(height: 6),
           Text(avis['commentaire'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
