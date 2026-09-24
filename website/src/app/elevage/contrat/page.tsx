@@ -35,7 +35,7 @@ interface AuditEntry {
   created_at: string;
 }
 
-interface Animal { id: string; nom: string; espece: string; race: string; identification: string; date_naissance: string; sexe: string; couleur?: string; pedigree_numero?: string; pedigree_lof?: string; nom_pere?: string; puce_pere?: string; nom_mere?: string; puce_mere?: string; }
+interface Animal { id: string; nom: string; espece: string; race: string; identification: string; date_naissance: string; sexe: string; couleur?: string; couleur_yeux?: string; pedigree_numero?: string; pedigree_lof?: string; nom_pere?: string; puce_pere?: string; nom_mere?: string; puce_mere?: string; }
 interface UserProfile { firstname: string; lastname: string; name_elevage: string; is_elevage: boolean; adress_elevage: string; adress: string; rue: string; ville: string; ville_elevage: string; code_postal: string; siret: string; email: string; numero_elevage: string; code_iso_elevage: string; phone_number: string; code_iso: string; }
 
 const TYPE_META: Record<string, { label: string; icon: string; color: string }> = {
@@ -124,6 +124,7 @@ export default function ContratsPage() {
   const [animalNom, setAnimalNom]         = useState('');
   const [animalRace, setAnimalRace]       = useState('');
   const [animalCouleur, setAnimalCouleur] = useState('');
+  const [animalCouleurYeux, setAnimalCouleurYeux] = useState('');
   const [animalSexe, setAnimalSexe]       = useState('');
   const [animalDN, setAnimalDN]           = useState('');
   const [tvaAssujetti, setTvaAssujetti] = useState(false);
@@ -165,7 +166,7 @@ export default function ContratsPage() {
       if (found) {
         setAnimalId(found.id); setSelectedAnimal(found);
         setAnimalNom(found.nom ?? ''); setAnimalRace(found.race ?? '');
-        setAnimalCouleur(found.couleur ?? ''); setAnimalSexe((found.sexe ?? '').toLowerCase());
+        setAnimalCouleur(found.couleur ?? ''); setAnimalCouleurYeux(found.couleur_yeux ?? ''); setAnimalSexe((found.sexe ?? '').toLowerCase());
         setAnimalDN(found.date_naissance ? found.date_naissance.split('T')[0] : '');
       }
       // Remplir les champs acquéreur
@@ -232,7 +233,7 @@ export default function ContratsPage() {
       // saillie) — sinon les devis/contrats émis en tant qu'éducateur, garde,
       // etc. sur ce même compte se mélangent ici (même bug que côté appli).
       supabase.from('documents_animaux').select('*').eq('uid_eleveur', ownerUid).in('type', ['contrat_vente', 'contrat_reservation', 'certificat_cession', 'contrat_saillie']).order('created_at', { ascending: false }),
-      supabase.from('animaux').select('id, nom, espece, race, identification, date_naissance, sexe, couleur, pedigree_numero, pedigree_lof, nom_pere, puce_pere, nom_mere, puce_mere').eq('uid_eleveur', ownerUid).or('is_association.is.null,is_association.eq.false').not('statut', 'in', '(sorti,decede)').order('nom'),
+      supabase.from('animaux').select('id, nom, espece, race, identification, date_naissance, sexe, couleur, couleur_yeux, pedigree_numero, pedigree_lof, nom_pere, puce_pere, nom_mere, puce_mere').eq('uid_eleveur', ownerUid).or('is_association.is.null,is_association.eq.false').not('statut', 'in', '(sorti,decede)').order('nom'),
       supabase.from('user_profiles').select('firstname,lastname,nom,profile_type,adresse,rue,ville,ville_pro,code_postal,siret,numero_elevage,phone_number,email_contact').eq('uid', ownerUid).eq('is_main', true).maybeSingle(),
       supabase.from('users').select('email').eq('uid', ownerUid).maybeSingle(),
     ]);
@@ -311,6 +312,7 @@ export default function ContratsPage() {
     setAnimalNom(a?.nom ?? '');
     setAnimalRace(a?.race ?? '');
     setAnimalCouleur(a?.couleur ?? '');
+    setAnimalCouleurYeux(a?.couleur_yeux ?? '');
     setAnimalSexe((a?.sexe ?? '').toLowerCase());
     setAnimalDN(a?.date_naissance ? a.date_naissance.split('T')[0] : '');
   }
@@ -330,7 +332,7 @@ export default function ContratsPage() {
     setDateDoc(new Date().toISOString().split('T')[0]); setNotes('');
     setAvecSteril(true);
     setTvaAssujetti(false); setTvaTaux('20');
-    setAnimalNom(''); setAnimalRace(''); setAnimalCouleur(''); setAnimalSexe(''); setAnimalDN('');
+    setAnimalNom(''); setAnimalRace(''); setAnimalCouleur(''); setAnimalCouleurYeux(''); setAnimalSexe(''); setAnimalDN('');
     setUserSearch(''); setUserResults([]);
     setCertMode('skip'); setCertFile(null);
   }
@@ -343,6 +345,7 @@ export default function ContratsPage() {
       nom: animalNom || selectedAnimal?.nom || '',
       race: animalRace || selectedAnimal?.race || '',
       couleur: animalCouleur || selectedAnimal?.couleur || '',
+      couleur_yeux: animalCouleurYeux || selectedAnimal?.couleur_yeux || '',
       sexe: animalSexe || selectedAnimal?.sexe || '',
       date_naissance: animalDN || selectedAnimal?.date_naissance || '',
       ville_naissance: villeElevage,
@@ -514,6 +517,7 @@ export default function ContratsPage() {
         animal_nom:          animalNom || null,
         animal_race:         animalRace || null,
         animal_couleur:      animalCouleur || null,
+        animal_couleur_yeux: animalCouleurYeux || null,
         animal_sexe:         animalSexe || null,
         animal_date_naissance: animalDN || null,
       },
@@ -795,6 +799,7 @@ export default function ContratsPage() {
                   <div><label className="text-[10px] text-gray-500 block">Nom</label><input value={animalNom} onChange={e => setAnimalNom(e.target.value)} className={iCls} /></div>
                   <div><label className="text-[10px] text-gray-500 block">Race</label><input value={animalRace} onChange={e => setAnimalRace(e.target.value)} className={iCls} /></div>
                   <div><label className="text-[10px] text-gray-500 block">Couleur / robe</label><input value={animalCouleur} onChange={e => setAnimalCouleur(e.target.value)} className={iCls} /></div>
+                  <div><label className="text-[10px] text-gray-500 block">Couleur des yeux</label><input value={animalCouleurYeux} onChange={e => setAnimalCouleurYeux(e.target.value)} className={iCls} /></div>
                   <div>
                     <label className="text-[10px] text-gray-500 block">Sexe</label>
                     <select value={animalSexe} onChange={e => setAnimalSexe(e.target.value)} className={iCls}>

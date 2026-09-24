@@ -180,6 +180,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
   final _nomPedigreeCtrl = TextEditingController();
   final _raceCtrl   = TextEditingController();
   final _couleurCtrl = TextEditingController();
+  final _couleurYeuxCtrl = TextEditingController();
   final _identCtrl  = TextEditingController();
   // Identification équidé (cheval)
   final _sireCtrl        = TextEditingController();
@@ -1059,6 +1060,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _nomPedigreeCtrl.text = d['nom_pedigree'] ?? '';
     _raceCtrl.text  = d['race'] ?? '';
     _couleurCtrl.text = d['couleur'] ?? '';
+    _couleurYeuxCtrl.text = d['couleur_yeux'] ?? '';
     _identCtrl.text = d['identification'] ?? '';
     _sireCtrl.text       = d['num_sire'] ?? '';
     _carteImmatCtrl.text = d['carte_immatriculation'] ?? '';
@@ -1169,7 +1171,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
     _puceMereDebounce?.cancel();
     _pucePereCtrl.removeListener(_onPucePereChanged);
     _puceMereCtrl.removeListener(_onPuceMereChanged);
-    for (final c in [_nomCtrl, _nomPedigreeCtrl, _raceCtrl, _couleurCtrl, _identCtrl,
+    for (final c in [_nomCtrl, _nomPedigreeCtrl, _raceCtrl, _couleurCtrl, _couleurYeuxCtrl, _identCtrl,
       _sireCtrl, _carteImmatCtrl, _livretCtrl,
       _tailleCtrl, _poidsCtrl, _notesCtrl, _nomPereCtrl, _pucePereCtrl, _racePereCtrl,
       _nomMereCtrl, _puceMereCtrl, _passeportCtrl, _clubRegistreCtrl, _pedigreeNumeroCtrl, _descriptionCtrl,
@@ -1212,6 +1214,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         'nom_pedigree':        _nomPedigreeCtrl.text.trim(),
         'race':                _raceCtrl.text.trim(),
         'couleur':             _couleurCtrl.text.trim(),
+        'couleur_yeux':        _couleurYeuxCtrl.text.trim(),
         'identification':      _identCtrl.text.trim(),
         'num_sire':              _espece == 'cheval' ? _sireCtrl.text.trim() : null,
         'carte_immatriculation': _espece == 'cheval' ? _carteImmatCtrl.text.trim() : null,
@@ -2362,6 +2365,7 @@ class _IdentiteTab extends StatelessWidget {
                   _field('Nom de pedigree / affixe', s._nomPedigreeCtrl),
                   _hasBreeds ? _raceAutocomplete(context) : _field('Race', s._raceCtrl),
                   _field('Couleur / Robe', s._couleurCtrl),
+                  _field('Couleur des yeux', s._couleurYeuxCtrl),
                   if (s._espece == 'cheval') ...[
                     _field('N° de transpondeur (puce)', s._identCtrl),
                   ] else ...[
@@ -2763,6 +2767,7 @@ class _IdentiteTab extends StatelessWidget {
                         race:           s._raceCtrl.text,
                         sexe:           s._sexe,
                         couleur:        s._couleurCtrl.text,
+                        couleurYeux:    s._couleurYeuxCtrl.text,
                         photoUrl:       s._photoUrl,
                         identification: s._identCtrl.text,
                         contactUrgence: s._contactsUrgence.isNotEmpty
@@ -2811,6 +2816,7 @@ class _IdentiteTab extends StatelessWidget {
             race:           s._raceCtrl.text,
             sexe:           s._sexe,
             couleur:        s._couleurCtrl.text,
+            couleurYeux:    s._couleurYeuxCtrl.text,
             photoUrl:       s._photoUrl,
             identification: s._identCtrl.text,
             contactUrgence: s._contactsUrgence.isNotEmpty

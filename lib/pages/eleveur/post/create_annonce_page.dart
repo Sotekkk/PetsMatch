@@ -83,6 +83,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   final _merePuceCtrl   = TextEditingController();
   final _mereRaceCtrl   = TextEditingController();
   final _mereCouleurCtrl = TextEditingController();
+  final _mereCouleurYeuxCtrl = TextEditingController();
   final _mereDescCtrl   = TextEditingController();
   String _mereRegistre = '';
 
@@ -94,6 +95,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   final _perePuceCtrl   = TextEditingController();
   final _pereRaceCtrl   = TextEditingController();
   final _pereCouleurCtrl = TextEditingController();
+  final _pereCouleurYeuxCtrl = TextEditingController();
   final _pereDescCtrl   = TextEditingController();
   String _pereRegistre = '';
 
@@ -124,6 +126,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
   String?   _retraiteAnimalNom; // nom affiché dans le bouton picker retraite
   String    _sexe = 'male';
   final _couleurCtrl = TextEditingController();
+  final _couleurYeuxCtrl = TextEditingController();
   DateTime? _dateNaissanceAnimal;
   bool _sterilise = false;
   final _sailliePrixCtrl = TextEditingController();
@@ -207,6 +210,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     _merePuceCtrl.text    = d['mere_puce']         ?? d['merePuce']        ?? '';
     _mereRaceCtrl.text    = d['mere_race']         ?? d['mereRace']        ?? '';
     _mereCouleurCtrl.text = d['mere_couleur']      ?? d['mereCouleur']     ?? '';
+    _mereCouleurYeuxCtrl.text = d['mere_couleur_yeux'] ?? '';
     _mereDescCtrl.text    = d['mere_description']  ?? d['mereDescription'] ?? '';
     _mereRegistre = d['mere_registre'] ?? d['mereRegistre'] ?? '';
     _pereAnimalId  = d['pere_animal_id'] ?? d['pereAnimalId'];
@@ -215,6 +219,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     _perePuceCtrl.text    = d['pere_puce']         ?? d['perePuce']        ?? '';
     _pereRaceCtrl.text    = d['pere_race']         ?? d['pereRace']        ?? '';
     _pereCouleurCtrl.text = d['pere_couleur']      ?? d['pereCouleur']     ?? '';
+    _pereCouleurYeuxCtrl.text = d['pere_couleur_yeux'] ?? '';
     _pereDescCtrl.text    = d['pere_description']  ?? d['pereDescription'] ?? '';
     _pereRegistre = d['pere_registre'] ?? d['pereRegistre'] ?? '';
     _registreType = d['registre_type'] ?? d['registreType'] ?? '';
@@ -231,6 +236,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     _etalonAnimalId   = d['etalon_animal_id'] ?? d['etalonAnimalId'];
     _sexe = d['sexe'] ?? 'male';
     _couleurCtrl.text     = d['couleur'] ?? '';
+    _couleurYeuxCtrl.text = d['couleur_yeux'] ?? '';
     _sailliePrixCtrl.text = (d['saillie_prix'] ?? d['sailliePrix'])?.toString() ?? '';
     _saillieCondCtrl.text = d['saillie_conditions'] ?? d['saillieConditions'] ?? '';
     _saillieGenetiqueCtrl.text = d['saillie_genetique'] ?? d['saillieGenetique'] ?? '';
@@ -258,9 +264,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     for (final c in [
       _especeAutreCtrl,
       _raceCtrl, _titreCtrl, _descCtrl, _prixCtrl,
-      _mereNomCtrl, _merePuceCtrl, _mereRaceCtrl, _mereCouleurCtrl, _mereDescCtrl,
-      _pereNomCtrl, _perePuceCtrl, _pereRaceCtrl, _pereCouleurCtrl, _pereDescCtrl,
-      _numRegistreCtrl, _clubPedigreeCtrl, _studbookCtrl, _couleurCtrl,
+      _mereNomCtrl, _merePuceCtrl, _mereRaceCtrl, _mereCouleurCtrl, _mereCouleurYeuxCtrl, _mereDescCtrl,
+      _pereNomCtrl, _perePuceCtrl, _pereRaceCtrl, _pereCouleurCtrl, _pereCouleurYeuxCtrl, _pereDescCtrl,
+      _numRegistreCtrl, _clubPedigreeCtrl, _studbookCtrl, _couleurCtrl, _couleurYeuxCtrl,
       _sailliePrixCtrl, _saillieCondCtrl, _saillieGenetiqueCtrl, _prixMinPorteeCtrl, _prixMaxPorteeCtrl,
       _numIdentCtrl, _numSIRECtrl, _numPasseportCtrl,
       _palmaresCtrl, _isoCtrl, _idrCtrl, _iccCtrl,
@@ -394,6 +400,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       _merePuceCtrl.text    = r['identification'] ?? '';
       _mereRaceCtrl.text    = r['race']           ?? '';
       _mereCouleurCtrl.text = r['couleur']        ?? '';
+      _mereCouleurYeuxCtrl.text = r['couleurYeux'] ?? '';
       _mereDescCtrl.text    = r['description']    ?? '';
       _merePhotoUrl    = r['photoUrl'];
       _merePhotoFile   = null;
@@ -411,6 +418,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       _perePuceCtrl.text    = r['identification'] ?? '';
       _pereRaceCtrl.text    = r['race']           ?? '';
       _pereCouleurCtrl.text = r['couleur']        ?? '';
+      _pereCouleurYeuxCtrl.text = r['couleurYeux'] ?? '';
       _pereDescCtrl.text    = r['description']    ?? '';
       _perePhotoUrl    = r['photoUrl'];
       _perePhotoFile   = null;
@@ -426,6 +434,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       _etalonAnimalId = r['id'];
       _sexe = 'male';
       _couleurCtrl.text = r['couleur'] ?? '';
+      _couleurYeuxCtrl.text = r['couleurYeux'] ?? '';
       _numIdentCtrl.text = r['identification'] ?? '';
       if (r['photoUrl'] != null) { _photosUrls = [r['photoUrl']]; _photosFiles = []; }
       final dn = r['dateNaissance'] as Timestamp?;
@@ -460,6 +469,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       _retraiteAnimalNom    = r['nom'] as String?;
       _sexe                 = (r['sexe'] as String?)?.isNotEmpty == true ? r['sexe'] : 'male';
       _couleurCtrl.text     = r['couleur']  ?? '';
+      _couleurYeuxCtrl.text = r['couleurYeux'] ?? '';
       _numIdentCtrl.text    = r['identification'] ?? '';
       // Auto-remplir espèce et race depuis l'animal
       if ((r['espece'] as String?)?.isNotEmpty == true) _espece = r['espece'];
@@ -726,6 +736,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         'mere_identification':  _merePuceCtrl.text.trim(),
         'mere_race':            _mereRaceCtrl.text.trim(),
         'mere_couleur':         _mereCouleurCtrl.text.trim(),
+        'mere_couleur_yeux':    _mereCouleurYeuxCtrl.text.trim(),
         'mere_description':     _mereDescCtrl.text.trim(),
         'mere_registre':        _mereRegistre,
         'pere_animal_id':       _pereAnimalId,
@@ -735,6 +746,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         'pere_identification':  _perePuceCtrl.text.trim(),
         'pere_race':            _pereRaceCtrl.text.trim(),
         'pere_couleur':         _pereCouleurCtrl.text.trim(),
+        'pere_couleur_yeux':    _pereCouleurYeuxCtrl.text.trim(),
         'pere_description':     _pereDescCtrl.text.trim(),
         'pere_registre':        _pereRegistre,
         'registre_type':        _registreType,
@@ -759,6 +771,7 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
         'etalon_animal_id':     _etalonAnimalId,
         'sexe':    _type != 'portee' ? _sexe : null,
         'couleur': _couleurCtrl.text.trim(),
+        'couleur_yeux': _couleurYeuxCtrl.text.trim(),
         'date_naissance_animal': _type != 'portee' && _dateNaissanceAnimal != null
             ? _dateNaissanceAnimal!.toIso8601String().substring(0, 10) : null,
         'sterilise': _type != 'portee' ? _sterilise : null,
@@ -1536,6 +1549,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       _label('Couleur / Robe'),
       _textField(_couleurCtrl, 'Ex: Tricolore, Roux, Noir et blanc...'),
       const SizedBox(height: 10),
+      _label('Couleur des yeux'),
+      _textField(_couleurYeuxCtrl, 'Ex: marron, bleu...'),
+      const SizedBox(height: 10),
       _label('Date de naissance'),
       _datePicker('Sélectionner une date', _dateNaissanceAnimal,
           (d) => setState(() => _dateNaissanceAnimal = d), enabled: !_isEditLocked),
@@ -1712,6 +1728,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
     _label('Couleur / Robe'),
     _textField(_mereCouleurCtrl, 'Ex: Fauve, Tricolore…'),
     const SizedBox(height: 10),
+    _label('Couleur des yeux'),
+    _textField(_mereCouleurYeuxCtrl, 'Ex: marron, bleu...'),
+    const SizedBox(height: 10),
     _label('Description'),
     _textField(_mereDescCtrl, 'Caractère, morphologie…', maxLines: 3),
     const SizedBox(height: 10),
@@ -1764,6 +1783,9 @@ class _CreateAnnoncePageState extends State<CreateAnnoncePage> {
       const SizedBox(height: 10),
       _label('Couleur / Robe'),
       _textField(_pereCouleurCtrl, 'Ex: Fauve, Tricolore…'),
+      const SizedBox(height: 10),
+      _label('Couleur des yeux'),
+      _textField(_pereCouleurYeuxCtrl, 'Ex: marron, bleu...'),
       const SizedBox(height: 10),
       _label('Description'),
       _textField(_pereDescCtrl, 'Caractère, morphologie…', maxLines: 3),
@@ -2126,6 +2148,7 @@ class _AnimalPickerSheet extends StatelessWidget {
                             'nom':            d['nom'] ?? '',
                             'photoUrl':       photoUrl,
                             'couleur':        d['couleur'] ?? '',
+                            'couleurYeux':    d['couleur_yeux'] ?? '',
                             'sexe':           d['sexe'] ?? '',
                             'espece':         d['espece'] ?? '',  // pour auto-fill espèce
                             'race':           d['race'] ?? '',
@@ -2162,6 +2185,7 @@ class _AddAnimalPage extends StatefulWidget {
 class _AddAnimalPageState extends State<_AddAnimalPage> {
   final _nomCtrl     = TextEditingController();
   final _couleurCtrl = TextEditingController();
+  final _couleurYeuxCtrl = TextEditingController();
   final _prixCtrl    = TextEditingController();
   final _descCtrl    = TextEditingController();
   String _sexe   = 'male';
@@ -2180,6 +2204,7 @@ class _AddAnimalPageState extends State<_AddAnimalPage> {
     if (r != null && mounted) setState(() {
       _nomCtrl.text     = r['nom']         ?? '';
       _couleurCtrl.text = r['couleur']     ?? '';
+      _couleurYeuxCtrl.text = r['couleurYeux'] ?? '';
       _descCtrl.text    = r['description'] ?? '';
       _sexe = (r['sexe'] ?? _sexe) as String;
       // intentionally not importing photos
@@ -2193,6 +2218,7 @@ class _AddAnimalPageState extends State<_AddAnimalPage> {
     if (d != null) {
       _nomCtrl.text     = d['nom'] ?? '';
       _couleurCtrl.text = d['couleur'] ?? '';
+      _couleurYeuxCtrl.text = d['couleur_yeux'] ?? '';
       _prixCtrl.text    = _toNum(d['prix'])?.toInt().toString() ?? '';
       _descCtrl.text    = d['description'] ?? '';
       _sexe   = d['sexe'] ?? 'male';
@@ -2206,7 +2232,7 @@ class _AddAnimalPageState extends State<_AddAnimalPage> {
 
   @override
   void dispose() {
-    _nomCtrl.dispose(); _couleurCtrl.dispose();
+    _nomCtrl.dispose(); _couleurCtrl.dispose(); _couleurYeuxCtrl.dispose();
     _prixCtrl.dispose(); _descCtrl.dispose();
     super.dispose();
   }
@@ -2219,6 +2245,7 @@ class _AddAnimalPageState extends State<_AddAnimalPage> {
 
   Map<String, dynamic> _buildResult() => {
     'nom': _nomCtrl.text.trim(), 'sexe': _sexe, 'couleur': _couleurCtrl.text.trim(),
+    'couleur_yeux': _couleurYeuxCtrl.text.trim(),
     'prix': double.tryParse(_prixCtrl.text.trim()),
     'description': _descCtrl.text.trim(),
     'statut': _statut,
@@ -2302,6 +2329,8 @@ class _AddAnimalPageState extends State<_AddAnimalPage> {
           ]),
           const SizedBox(height: 16),
           _label('Couleur / Robe'), _field(_couleurCtrl, 'Ex: Tricolore, Roux, Noir...'),
+          const SizedBox(height: 16),
+          _label('Couleur des yeux'), _field(_couleurYeuxCtrl, 'Ex: marron, bleu...'),
           const SizedBox(height: 16),
           _label('Prix (€)'), _field(_prixCtrl, 'Ex: 1200', keyboardType: TextInputType.number),
           const SizedBox(height: 16),

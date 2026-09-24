@@ -62,6 +62,7 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
   final _descCtrl     = TextEditingController();
   final _raceCtrl     = TextEditingController();
   final _couleurCtrl  = TextEditingController();
+  final _couleurYeuxCtrl = TextEditingController();
   final _prixCtrl     = TextEditingController();
   final _sireCtrl     = TextEditingController();
   final _palmaresCtrl = TextEditingController();
@@ -119,6 +120,7 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
     _descCtrl.text  = d['description'] ?? '';
     _raceCtrl.text  = d['race'] ?? '';
     _couleurCtrl.text = d['couleur'] ?? '';
+    _couleurYeuxCtrl.text = d['couleur_yeux'] ?? '';
     _typeVente = d['type_vente'] ?? 'vente';
     _prixUnite = d['prix_unite'] ?? 'total';
     _sexe = d['sexe'] ?? 'hongre';
@@ -160,7 +162,7 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
       }
       final owned = await Supabase.instance.client
           .from('animaux')
-          .select('id, nom, espece, race, sexe, sterilise, couleur, date_naissance, photo_url, num_sire')
+          .select('id, nom, espece, race, sexe, sterilise, couleur, couleur_yeux, date_naissance, photo_url, num_sire')
           .or('uid_eleveur.eq.$uid,uid_acquereur.eq.$uid');
       final rows = <Map<String, dynamic>>[];
       for (final a in (owned as List)) {
@@ -169,7 +171,7 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
       if (ids.isNotEmpty) {
         final linked = await Supabase.instance.client
             .from('animaux')
-            .select('id, nom, espece, race, sexe, sterilise, couleur, date_naissance, photo_url, num_sire')
+            .select('id, nom, espece, race, sexe, sterilise, couleur, couleur_yeux, date_naissance, photo_url, num_sire')
             .inFilter('id', ids.toList());
         for (final a in (linked as List)) {
           if ((a['espece']?.toString() ?? '') == 'cheval' &&
@@ -197,6 +199,7 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
       _linkedAnimalNom = a['nom']?.toString();
       if (_raceCtrl.text.isEmpty) _raceCtrl.text = a['race']?.toString() ?? '';
       if (_couleurCtrl.text.isEmpty) _couleurCtrl.text = a['couleur']?.toString() ?? '';
+      if (_couleurYeuxCtrl.text.isEmpty) _couleurYeuxCtrl.text = a['couleur_yeux']?.toString() ?? '';
       if (_sireCtrl.text.isEmpty) _sireCtrl.text = a['num_sire']?.toString() ?? '';
       // La fiche animal générique ne connaît que 'male'/'femelle' (pas de
       // notion équine hongre/entier/jument) — on traduit à partir de ça +
@@ -358,6 +361,7 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
         'paiement_statut':     dejaPayee ? 'paye' : 'attente',
         'sexe':                _sexe,
         'couleur':             _couleurCtrl.text.trim(),
+        'couleur_yeux':        _couleurYeuxCtrl.text.trim(),
         'date_naissance_animal': _dateNaissance?.toIso8601String().substring(0, 10),
         'num_sire':            _sireCtrl.text.trim(),
         'niveau_recommande':   _niveau.isEmpty ? null : _niveau,
@@ -570,7 +574,7 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
   @override
   void dispose() {
     for (final c in [
-      _titreCtrl, _descCtrl, _raceCtrl, _couleurCtrl, _prixCtrl, _sireCtrl,
+      _titreCtrl, _descCtrl, _raceCtrl, _couleurCtrl, _couleurYeuxCtrl, _prixCtrl, _sireCtrl,
       _palmaresCtrl, _isoCtrl, _idrCtrl, _iccCtrl,
     ]) c.dispose();
     super.dispose();
@@ -688,6 +692,8 @@ class _CreateAnnonceChevalPageState extends State<CreateAnnonceChevalPage> {
           ))),
           const SizedBox(width: 12),
           Expanded(child: _section('Robe', child: _tf(_couleurCtrl, 'Bai, alezan…'))),
+          const SizedBox(width: 10),
+          Expanded(child: _section('Couleur des yeux', child: _tf(_couleurYeuxCtrl, 'Marron, bleu…'))),
         ]),
 
         const SizedBox(height: 12),

@@ -286,6 +286,7 @@ Future<pw.Document> _contratVenteDoc({
       _line('Né le', dn.isEmpty ? null : '$dn${villeNaissance.trim().isNotEmpty ? ' à ${villeNaissance.trim()}' : ''}'),
       _line('Sexe', isMasculin ? 'Mâle' : 'Femelle'),
       _line('Couleur / robe', animal['couleur'] as String?),
+      _line('Couleur des yeux', animal['couleur_yeux'] as String?),
       _line(
         (t['pedigree'] ?? '').isEmpty
             ? 'Numéro d\'identification (obligatoire)'

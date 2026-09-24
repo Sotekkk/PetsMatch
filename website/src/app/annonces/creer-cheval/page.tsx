@@ -26,7 +26,7 @@ function genId(): string {
 
 interface MyHorse {
   id: string; nom: string | null; race: string | null; sexe: string | null; sterilise: boolean | null;
-  couleur: string | null; date_naissance: string | null; num_sire: string | null; photo_url: string | null;
+  couleur: string | null; couleur_yeux: string | null; date_naissance: string | null; num_sire: string | null; photo_url: string | null;
 }
 
 function CreerAnnonceChevalInner() {
@@ -42,6 +42,7 @@ function CreerAnnonceChevalInner() {
   const [breeds, setBreeds] = useState<string[]>([]);
   const [sexe, setSexe] = useState<'jument' | 'hongre' | 'entier'>('hongre');
   const [robe, setRobe] = useState('');
+  const [couleurYeux, setCouleurYeux] = useState('');
   const [dateNaissance, setDateNaissance] = useState('');
   const [prix, setPrix] = useState('');
   const [prixNegociable, setPrixNegociable] = useState(false);
@@ -82,7 +83,7 @@ function CreerAnnonceChevalInner() {
   const loadMyHorses = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase.from('animaux')
-      .select('id, nom, race, sexe, sterilise, couleur, date_naissance, num_sire, photo_url, espece')
+      .select('id, nom, race, sexe, sterilise, couleur, couleur_yeux, date_naissance, num_sire, photo_url, espece')
       .or(`uid_eleveur.eq.${user.uid},uid_acquereur.eq.${user.uid}`);
     setMyHorses(((data ?? []) as Record<string, unknown>[])
       .filter(a => a.espece === 'cheval')
@@ -101,6 +102,7 @@ function CreerAnnonceChevalInner() {
       setRace(data.race ?? '');
       setSexe((['jument', 'hongre', 'entier'].includes(data.sexe) ? data.sexe : 'hongre'));
       setRobe(data.couleur ?? '');
+      setCouleurYeux(data.couleur_yeux ?? '');
       setDateNaissance(data.date_naissance_animal ? String(data.date_naissance_animal).slice(0, 10) : '');
       setPrix(data.prix != null ? String(data.prix) : '');
       setPrixNegociable(!!data.prix_negociable);
@@ -132,6 +134,7 @@ function CreerAnnonceChevalInner() {
     setLinkedId(h.id); setLinkedNom(h.nom); setShowPicker(false);
     if (!race && h.race) setRace(h.race);
     if (!robe && h.couleur) setRobe(h.couleur);
+    if (!couleurYeux && h.couleur_yeux) setCouleurYeux(h.couleur_yeux);
     if (!numSIRE && h.num_sire) setNumSIRE(h.num_sire);
     // La fiche animal générique ne connaît que 'male'/'femelle' (pas de
     // notion équine hongre/entier/jument) — on traduit à partir de ça + du
@@ -250,6 +253,7 @@ function CreerAnnonceChevalInner() {
         paiement_statut: dejaPayee ? 'paye' : 'attente',
         sexe,
         couleur: robe.trim() || null,
+        couleur_yeux: couleurYeux.trim() || null,
         date_naissance_animal: dateNaissance || null,
         num_sire: numSIRE.trim(),
         niveau_recommande: niveau || null,
@@ -401,6 +405,10 @@ function CreerAnnonceChevalInner() {
             <div className="flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">Robe</label>
               <input value={robe} onChange={e => setRobe(e.target.value)} placeholder="Bai, alezan…" className={iCls} />
+            </div>
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Couleur des yeux</label>
+              <input value={couleurYeux} onChange={e => setCouleurYeux(e.target.value)} placeholder="Marron, bleu…" className={iCls} />
             </div>
             <div className="flex-1">
               <label className="block text-sm font-medium text-gray-700 mb-1">Date de naissance</label>

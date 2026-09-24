@@ -184,6 +184,7 @@ class _AnimalAccesPageState extends State<AnimalAccesPage> {
     final dob     = a['date_naissance']?.toString() ?? '';
     final puce    = a['puce']?.toString() ?? '';
     final couleur = a['couleur']?.toString() ?? '';
+    final couleurYeux = a['couleur_yeux']?.toString() ?? '';
     final photo   = a['photo_url']?.toString() ?? '';
 
     DateTime? dobDate = dob.isNotEmpty ? DateTime.tryParse(dob) : null;
@@ -240,8 +241,9 @@ class _AnimalAccesPageState extends State<AnimalAccesPage> {
             if (dob.isNotEmpty && dobDate != null)
               _infoRow(Icons.cake_outlined, 'Naissance', '${dobDate.day}/${dobDate.month}/${dobDate.year}'),
             if (couleur.isNotEmpty) _infoRow(Icons.color_lens_outlined, 'Couleur / robe', couleur),
+            if (couleurYeux.isNotEmpty) _infoRow(Icons.remove_red_eye_outlined, 'Couleur des yeux', couleurYeux),
             if (puce.isNotEmpty) _infoRow(Icons.memory_outlined, 'Puce / tatouage', puce),
-            if (sexe.isEmpty && dob.isEmpty && couleur.isEmpty && puce.isEmpty)
+            if (sexe.isEmpty && dob.isEmpty && couleur.isEmpty && couleurYeux.isEmpty && puce.isEmpty)
               Text('Aucune information disponible',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey.shade500)),
           ],

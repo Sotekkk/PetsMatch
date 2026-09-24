@@ -21,6 +21,7 @@ export interface Repro {
   photo_url: string | null;
   date_naissance: string | null;
   couleur: string | null;
+  couleur_yeux: string | null;
   pedigree_lof: string | null;
   pedigree_numero: string | null;
   club_registre: string | null;

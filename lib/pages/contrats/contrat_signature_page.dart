@@ -309,6 +309,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       if (m('animal_nom').isNotEmpty) 'nom': m('animal_nom'),
       if (m('animal_race').isNotEmpty) 'race': m('animal_race'),
       if (m('animal_couleur').isNotEmpty) 'couleur': m('animal_couleur'),
+      if (m('animal_couleur_yeux').isNotEmpty) 'couleur_yeux': m('animal_couleur_yeux'),
       if (m('animal_sexe').isNotEmpty) 'sexe': m('animal_sexe'),
       if (m('animal_date_naissance').isNotEmpty) 'date_naissance': m('animal_date_naissance'),
       if (m('animal_identification').isNotEmpty) 'identification': m('animal_identification'),
@@ -1745,6 +1746,7 @@ class _ContratInfosFormState extends State<_ContratInfosForm> {
       'animal_nom': TextEditingController(text: v('animal_nom', '${widget.animal['nom'] ?? ''}')),
       'animal_race': TextEditingController(text: v('animal_race', '${widget.animal['race'] ?? ''}')),
       'animal_couleur': TextEditingController(text: v('animal_couleur', '${widget.animal['couleur'] ?? ''}')),
+      'animal_couleur_yeux': TextEditingController(text: v('animal_couleur_yeux', '${widget.animal['couleur_yeux'] ?? ''}')),
       'animal_identification': TextEditingController(text: v('animal_identification', '${widget.animal['identification'] ?? ''}')),
       'animal_pedigree': TextEditingController(text: v('animal_pedigree',
           '${widget.animal['pedigree_lof'] ?? widget.animal['pedigree_numero'] ?? ''}')),
@@ -1883,6 +1885,7 @@ class _ContratInfosFormState extends State<_ContratInfosForm> {
           _field('animal_nom', 'Nom de l\'animal'),
           _field('animal_race', 'Race'),
           _field('animal_couleur', 'Couleur / robe'),
+          _field('animal_couleur_yeux', 'Couleur des yeux'),
           _field('animal_identification', 'N° d\'identification (puce / transpondeur) *'),
           _field('animal_pedigree', 'N° de pedigree (LOF / LOOF / autre club) — si applicable'),
           Padding(

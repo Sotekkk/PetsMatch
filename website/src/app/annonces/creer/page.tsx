@@ -50,6 +50,7 @@ interface AnimalPortee {
   nom: string;
   sexe: 'male' | 'femelle';
   couleur: string;
+  couleur_yeux: string;
   prix: string;
   statut: 'disponible' | 'reserve' | 'vendu';
   description: string;
@@ -64,6 +65,7 @@ interface MyAnimal {
   espece?: string | null;
   race: string | null;
   couleur: string | null;
+  couleur_yeux: string | null;
   description: string | null;
   identification: string | null;
   photo_url: string | null;
@@ -106,6 +108,7 @@ function CreerAnnoncePageInner() {
   // ── Compagnon
   const [sexeAnimal, setSexeAnimal] = useState<'male' | 'femelle'>('male');
   const [couleurAnimal, setCouleurAnimal] = useState('');
+  const [couleurYeuxAnimal, setCouleurYeuxAnimal] = useState('');
   const [sterilise, setSterilise] = useState(false);
   const [prix, setPrix] = useState('');
 
@@ -175,6 +178,7 @@ function CreerAnnoncePageInner() {
   const [merePuce, setMerePuce] = useState('');
   const [mereRace, setMereRace] = useState('');
   const [mereCouleur, setMereCouleur] = useState('');
+  const [mereCouleurYeux, setMereCouleurYeux] = useState('');
   const [mereDescription, setMereDescription] = useState('');
   const [mereRegistre, setMereRegistre] = useState('');
   const [merePhotoBlob, setMerePhotoBlob] = useState<Blob | null>(null);
@@ -190,6 +194,7 @@ function CreerAnnoncePageInner() {
   const [perePuce, setPerePuce] = useState('');
   const [pereRace, setPereRace] = useState('');
   const [pereCouleur, setPereCouleur] = useState('');
+  const [pereCouleurYeux, setPereCouleurYeux] = useState('');
   const [pereDescription, setPereDescription] = useState('');
   const [pereRegistre, setPereRegistre] = useState('');
   const [perePhotoBlob, setPerePhotoBlob] = useState<Blob | null>(null);
@@ -217,7 +222,7 @@ function CreerAnnoncePageInner() {
     (async () => {
       const { data: members } = await supabase
         .from('animaux')
-        .select('id, nom, sexe, espece, race, couleur, identification, date_naissance, photo_url, nom_pere, puce_pere, nom_mere, puce_mere, race_mere, pedigree_lof')
+        .select('id, nom, sexe, espece, race, couleur, couleur_yeux, identification, date_naissance, photo_url, nom_pere, puce_pere, nom_mere, puce_mere, race_mere, pedigree_lof')
         .eq('portee_id', porteeId)
         .eq('uid_eleveur', user.uid);
       if (!members || members.length === 0) return;
@@ -238,6 +243,7 @@ function CreerAnnoncePageInner() {
         nom: (m.nom as string) ?? '',
         sexe: ((m.sexe as string) ?? 'male') as 'male' | 'femelle',
         couleur: (m.couleur as string) ?? '',
+        couleur_yeux: (m.couleur_yeux as string) ?? '',
         prix: '',
         statut: 'disponible' as const,
         description: '',
@@ -262,7 +268,7 @@ function CreerAnnoncePageInner() {
 
       if (nomPere || pucePere) {
         const { data: pereRows } = await supabase.from('animaux')
-          .select('id, nom, sexe, race, couleur, identification, photo_url, pedigree_lof')
+          .select('id, nom, sexe, race, couleur, couleur_yeux, identification, photo_url, pedigree_lof')
           .eq('uid_eleveur', user.uid)
           .eq('espece', especeDb)
           .limit(100);
@@ -274,6 +280,7 @@ function CreerAnnoncePageInner() {
           setPerePuce((pere.identification as string) ?? pucePere);
           setPereRace((pere.race as string) ?? '');
           setPereCouleur((pere.couleur as string) ?? '');
+          setPereCouleurYeux((pere.couleur_yeux as string) ?? '');
           setPereRegistre((pere.pedigree_lof as string) ?? '');
           if (pere.photo_url) setPerePhotoPreview(pere.photo_url as string);
         } else {
@@ -284,7 +291,7 @@ function CreerAnnoncePageInner() {
 
       if (nomMere || puceMere) {
         const { data: mereRows } = await supabase.from('animaux')
-          .select('id, nom, sexe, race, couleur, identification, photo_url, pedigree_lof')
+          .select('id, nom, sexe, race, couleur, couleur_yeux, identification, photo_url, pedigree_lof')
           .eq('uid_eleveur', user.uid)
           .eq('espece', especeDb)
           .limit(100);
@@ -296,6 +303,7 @@ function CreerAnnoncePageInner() {
           setMerePuce((mere.identification as string) ?? puceMere);
           setMereRace((mere.race as string) ?? (first.race_mere as string ?? ''));
           setMereCouleur((mere.couleur as string) ?? '');
+          setMereCouleurYeux((mere.couleur_yeux as string) ?? '');
           setMereRegistre((mere.pedigree_lof as string) ?? '');
           if (mere.photo_url) setMerePhotoPreview(mere.photo_url as string);
         } else {
@@ -338,7 +346,7 @@ function CreerAnnoncePageInner() {
   async function loadFemelles() {
     setLoadingFemelles(true);
     const { data } = await supabase.from('animaux')
-      .select('id, nom, sexe, race, couleur, description, identification, photo_url')
+      .select('id, nom, sexe, race, couleur, couleur_yeux, description, identification, photo_url')
       .eq('uid_eleveur', user!.uid)
       .eq('espece', ESPECE_DB[espece] ?? espece.toLowerCase())
       .eq('sexe', 'femelle').order('nom');
@@ -349,7 +357,7 @@ function CreerAnnoncePageInner() {
   async function loadMales() {
     setLoadingMales(true);
     const { data } = await supabase.from('animaux')
-      .select('id, nom, sexe, espece, race, couleur, description, identification, photo_url, pedigree_lof, club_registre')
+      .select('id, nom, sexe, espece, race, couleur, couleur_yeux, description, identification, photo_url, pedigree_lof, club_registre')
       .eq('uid_eleveur', user!.uid)
       .eq('espece', ESPECE_DB[espece] ?? espece.toLowerCase())
       .eq('sexe', 'male').order('nom');
@@ -360,7 +368,7 @@ function CreerAnnoncePageInner() {
   async function loadAllAnimals() {
     setLoadingRetraite(true);
     const { data } = await supabase.from('animaux')
-      .select('id, nom, sexe, espece, race, couleur, description, identification, photo_url, pedigree_lof, club_registre')
+      .select('id, nom, sexe, espece, race, couleur, couleur_yeux, description, identification, photo_url, pedigree_lof, club_registre')
       .eq('uid_eleveur', user!.uid).order('nom');
     setMyAnimalsAll((data ?? []) as MyAnimal[]);
     setLoadingRetraite(false);
@@ -369,7 +377,7 @@ function CreerAnnoncePageInner() {
   async function loadAllMales() {
     setLoadingAllMales(true);
     const { data } = await supabase.from('animaux')
-      .select('id, nom, sexe, espece, race, couleur, description, identification, photo_url, pedigree_lof, club_registre')
+      .select('id, nom, sexe, espece, race, couleur, couleur_yeux, description, identification, photo_url, pedigree_lof, club_registre')
       .eq('uid_eleveur', user!.uid).eq('sexe', 'male').order('nom');
     setMyAllMales((data ?? []) as MyAnimal[]);
     setLoadingAllMales(false);
@@ -379,7 +387,7 @@ function CreerAnnoncePageInner() {
     // Remplit la section père (= étalon)
     setPereAnimalId(a.id); setPereNom(a.nom ?? ''); setPerePuce(a.identification ?? '');
     setNumIdentification(a.identification ?? '');
-    setPereRace(a.race ?? ''); setPereCouleur(a.couleur ?? ''); setPereDescription(a.description ?? '');
+    setPereRace(a.race ?? ''); setPereCouleur(a.couleur ?? ''); setPereCouleurYeux(a.couleur_yeux ?? ''); setPereDescription(a.description ?? '');
     setPerePhotoPreview(a.photo_url ?? null); setPerePhotoBlob(null);
     if (a.pedigree_lof) setPereRegistre(a.pedigree_lof);
     if (a.club_registre) setClubPedigree(a.club_registre);
@@ -396,7 +404,7 @@ function CreerAnnoncePageInner() {
   async function loadBabyPickerAnimals() {
     setLoadingBabyPicker(true);
     const { data } = await supabase.from('animaux')
-      .select('id, nom, sexe, race, couleur, description, identification, photo_url')
+      .select('id, nom, sexe, race, couleur, couleur_yeux, description, identification, photo_url')
       .eq('uid_eleveur', user!.uid)
       .eq('espece', ESPECE_DB[espece] ?? espece.toLowerCase())
       .order('nom');
@@ -407,19 +415,19 @@ function CreerAnnoncePageInner() {
   // ── Parent selectors
   function selectMere(a: MyAnimal) {
     setMereAnimalId(a.id); setMereNom(a.nom ?? ''); setMerePuce(a.identification ?? '');
-    setMereRace(a.race ?? ''); setMereCouleur(a.couleur ?? ''); setMereDescription(a.description ?? '');
+    setMereRace(a.race ?? ''); setMereCouleur(a.couleur ?? ''); setMereCouleurYeux(a.couleur_yeux ?? ''); setMereDescription(a.description ?? '');
     setMerePhotoPreview(a.photo_url ?? null);
     setMerePhotoBlob(null); setShowMerePicker(false);
   }
   function clearMere() {
     setMereAnimalId(null); setMereNom(''); setMerePuce(''); setMereRace('');
-    setMereCouleur(''); setMereDescription(''); setMereRegistre('');
+    setMereCouleur(''); setMereCouleurYeux(''); setMereDescription(''); setMereRegistre('');
     setMerePhotoPreview(null); setMerePhotoBlob(null);
   }
 
   function selectPere(a: MyAnimal) {
     setPereAnimalId(a.id); setPereNom(a.nom ?? ''); setPerePuce(a.identification ?? '');
-    setPereRace(a.race ?? ''); setPereCouleur(a.couleur ?? ''); setPereDescription(a.description ?? '');
+    setPereRace(a.race ?? ''); setPereCouleur(a.couleur ?? ''); setPereCouleurYeux(a.couleur_yeux ?? ''); setPereDescription(a.description ?? '');
     setPerePhotoPreview(a.photo_url ?? null);
     // Pré-remplir pedigree étalon/père
     if (a.pedigree_lof) setPereRegistre(a.pedigree_lof);
@@ -431,7 +439,7 @@ function CreerAnnoncePageInner() {
     setRetraiteAnimalId(a.id);
     setRetraiteAnimalNom(a.nom);
     setSexeAnimal((a.sexe === 'femelle' ? 'femelle' : 'male') as 'male' | 'femelle');
-    setCouleurAnimal(a.couleur ?? '');
+    setCouleurAnimal(a.couleur ?? ''); setCouleurYeuxAnimal(a.couleur_yeux ?? '');
     setRace(a.race ?? '');
     setNumIdentification(a.identification ?? '');
     if (a.description) setDescription(a.description);
@@ -448,7 +456,7 @@ function CreerAnnoncePageInner() {
   }
   function clearPere() {
     setPereAnimalId(null); setPereNom(''); setPerePuce(''); setPereRace('');
-    setPereCouleur(''); setPereDescription(''); setPereRegistre('');
+    setPereCouleur(''); setPereCouleurYeux(''); setPereDescription(''); setPereRegistre('');
     setPerePhotoPreview(null); setPerePhotoBlob(null);
   }
 
@@ -476,7 +484,7 @@ function CreerAnnoncePageInner() {
 
   // ── Baby modal
   function openAddBaby() {
-    setEditingBaby({ id: crypto.randomUUID(), nom: '', sexe: 'male', couleur: '', prix: '', statut: 'disponible', description: '' });
+    setEditingBaby({ id: crypto.randomUUID(), nom: '', sexe: 'male', couleur: '', couleur_yeux: '', prix: '', statut: 'disponible', description: '' });
     setShowBabyPicker(false);
   }
   function openEditBaby(baby: AnimalPortee) {
@@ -503,6 +511,7 @@ function CreerAnnoncePageInner() {
       ...prev,
       nom: a.nom ?? '',
       couleur: a.couleur ?? '',
+      couleur_yeux: a.couleur_yeux ?? '',
       description: a.description ?? '',
       sexe: (a.sexe === 'femelle' ? 'femelle' : 'male') as 'male' | 'femelle',
     } : null);
@@ -793,8 +802,8 @@ function CreerAnnoncePageInner() {
           video_monte_url: videoMonteUrl,
           video_libre_url: videoLibreUrl,
         }),
-        ...(type === 'compagnon' && { prix: prix ? Number(prix) : null, sexe: sexeAnimal, couleur: couleurAnimal || null, sterilise }),
-        ...(type === 'retraite' && { prix: prix ? Number(prix) : null, sexe: sexeAnimal, couleur: couleurAnimal || null, etalon_animal_id: retraiteAnimalId }),
+        ...(type === 'compagnon' && { prix: prix ? Number(prix) : null, sexe: sexeAnimal, couleur: couleurAnimal || null, couleur_yeux: couleurYeuxAnimal || null, sterilise }),
+        ...(type === 'retraite' && { prix: prix ? Number(prix) : null, sexe: sexeAnimal, couleur: couleurAnimal || null, couleur_yeux: couleurYeuxAnimal || null, etalon_animal_id: retraiteAnimalId }),
         ...(type === 'portee' && {
           date_naissance: dateNaissance || null,
           nombre_bebes: nombreBebes,
@@ -814,12 +823,12 @@ function CreerAnnoncePageInner() {
         ...(type !== 'saillie' && {
           mere_animal_id: mereAnimalId, mere_photo_url: merePhotoUrl,
           mere_nom: mereNom || null, mere_puce: merePuce || null, mere_identification: merePuce || null,
-          mere_race: mereRace || null, mere_couleur: mereCouleur || null,
+          mere_race: mereRace || null, mere_couleur: mereCouleur || null, mere_couleur_yeux: mereCouleurYeux || null,
           mere_description: mereDescription || null, mere_registre: mereRegistre || null,
         }),
         pere_animal_id: pereAnimalId, pere_photo_url: perePhotoUrl,
         pere_nom: pereNom || null, pere_puce: perePuce || null, pere_identification: perePuce || null,
-        pere_race: pereRace || null, pere_couleur: pereCouleur || null,
+        pere_race: pereRace || null, pere_couleur: pereCouleur || null, pere_couleur_yeux: pereCouleurYeux || null,
         pere_description: pereDescription || null, pere_registre: pereRegistre || null,
         // Champs légaux
         num_identification: (espece === 'Chien' || espece === 'Chat') && type !== 'portee' ? numIdentification || null : null,
@@ -924,7 +933,7 @@ function CreerAnnoncePageInner() {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-gray-800 truncate">{baby.nom || `Bébé ${index + 1}`}</p>
-          <p className="text-xs text-gray-400">{baby.sexe === 'male' ? '♂ Mâle' : '♀ Femelle'}{baby.couleur ? ` · ${baby.couleur}` : ''}</p>
+          <p className="text-xs text-gray-400">{baby.sexe === 'male' ? '♂ Mâle' : '♀ Femelle'}{baby.couleur ? ` · ${baby.couleur}` : ''}{baby.couleur_yeux ? ` · 👁 ${baby.couleur_yeux}` : ''}</p>
         </div>
         <span className={`text-xs font-semibold px-2 py-1 rounded-lg ${statusColor}`}>{statusLabel}</span>
         <button type="button" onClick={() => openEditBaby(baby)}
@@ -1144,6 +1153,10 @@ function CreerAnnoncePageInner() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Couleur / Robe <span className="text-gray-400 font-normal">(optionnel)</span></label>
                 <input value={couleurAnimal} onChange={e => setCouleurAnimal(e.target.value)} placeholder="Ex: Fauve, Tricolore…" className={iCls} />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Couleur des yeux <span className="text-gray-400 font-normal">(optionnel)</span></label>
+                <input value={couleurYeuxAnimal} onChange={e => setCouleurYeuxAnimal(e.target.value)} placeholder="Ex: marron, bleu…" className={iCls} />
+              </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-700">Stérilisé(e)</span>
                 <button type="button" onClick={() => setSterilise(!sterilise)}
@@ -1362,8 +1375,12 @@ function CreerAnnoncePageInner() {
                 <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Couleur / Robe</label>
                   <input value={mereCouleur} onChange={e => setMereCouleur(e.target.value)} placeholder="Ex: Fauve…" className={iSmCls} /></div>
               </div>
-              <div><label className="block text-xs font-medium text-gray-600 mb-1">Registre</label>
-                <input value={mereRegistre} onChange={e => setMereRegistre(e.target.value)} placeholder="LOF, LOOF, Non inscrite…" className={iSmCls} /></div>
+              <div className="flex gap-2">
+                <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Couleur des yeux</label>
+                  <input value={mereCouleurYeux} onChange={e => setMereCouleurYeux(e.target.value)} placeholder="Ex: marron…" className={iSmCls} /></div>
+                <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Registre</label>
+                  <input value={mereRegistre} onChange={e => setMereRegistre(e.target.value)} placeholder="LOF, LOOF, Non inscrite…" className={iSmCls} /></div>
+              </div>
               <div><label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
                 <textarea value={mereDescription} onChange={e => setMereDescription(e.target.value)} rows={2}
                   placeholder="Caractère, morphologie…" className={`${iSmCls} resize-none`} /></div>
@@ -1404,8 +1421,12 @@ function CreerAnnoncePageInner() {
               <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Couleur / Robe</label>
                 <input value={pereCouleur} onChange={e => setPereCouleur(e.target.value)} placeholder="Ex: Fauve…" className={iSmCls} /></div>
             </div>
-            <div><label className="block text-xs font-medium text-gray-600 mb-1">Registre</label>
-              <input value={pereRegistre} onChange={e => setPereRegistre(e.target.value)} placeholder="LOF, LOOF, Non inscrit…" className={iSmCls} /></div>
+            <div className="flex gap-2">
+              <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Couleur des yeux</label>
+                <input value={pereCouleurYeux} onChange={e => setPereCouleurYeux(e.target.value)} placeholder="Ex: marron…" className={iSmCls} /></div>
+              <div className="flex-1"><label className="block text-xs font-medium text-gray-600 mb-1">Registre</label>
+                <input value={pereRegistre} onChange={e => setPereRegistre(e.target.value)} placeholder="LOF, LOOF, Non inscrit…" className={iSmCls} /></div>
+            </div>
             <div><label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
               <textarea value={pereDescription} onChange={e => setPereDescription(e.target.value)} rows={2}
                 placeholder="Caractère, morphologie…" className={`${iSmCls} resize-none`} /></div>
@@ -1544,6 +1565,12 @@ function CreerAnnoncePageInner() {
                   <input value={editingBaby.couleur}
                     onChange={e => setEditingBaby(p => p ? { ...p, couleur: e.target.value } : null)}
                     placeholder="Ex: Tricolore…" className={iCls} /></div>
+                <div className="flex-1"><label className="block text-sm font-medium text-gray-700 mb-1">Couleur des yeux</label>
+                  <input value={editingBaby.couleur_yeux}
+                    onChange={e => setEditingBaby(p => p ? { ...p, couleur_yeux: e.target.value } : null)}
+                    placeholder="Ex: marron…" className={iCls} /></div>
+              </div>
+              <div className="flex gap-3">
                 <div className="flex-1"><label className="block text-sm font-medium text-gray-700 mb-1">Prix (€)</label>
                   <input type="number" min="0" value={editingBaby.prix}
                     onChange={e => setEditingBaby(p => p ? { ...p, prix: e.target.value } : null)}

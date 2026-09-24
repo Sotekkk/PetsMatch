@@ -32,7 +32,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const { data: femelle } = await supabase.from('animaux')
-      .select('id, nom, race, couleur, identification, date_naissance, pedigree_numero, pedigree_lof')
+      .select('id, nom, race, couleur, couleur_yeux, identification, date_naissance, pedigree_numero, pedigree_lof')
       .eq('id', femelleId)
       .maybeSingle();
     if (!femelle) return NextResponse.json({ error: 'Femelle introuvable' }, { status: 404 });
@@ -47,6 +47,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       femelle_nom: femelle.nom ?? '',
       femelle_race: femelle.race ?? '',
       femelle_couleur: femelle.couleur ?? '',
+      femelle_couleur_yeux: femelle.couleur_yeux ?? '',
       femelle_identification: femelle.identification ?? '',
       femelle_pedigree: femelle.pedigree_numero ?? femelle.pedigree_lof ?? '',
       femelle_naissance: femelle.date_naissance ?? '',

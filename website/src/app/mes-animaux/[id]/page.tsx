@@ -26,7 +26,7 @@ import { typesVaccinPour, categorieOptions, suggestFromCategorie } from '@/lib/v
 
 interface Animal {
   id: string; nom?: string; nom_pedigree?: string; espece?: string; espece_autre?: string; race?: string; sexe?: string;
-  date_naissance?: string; couleur?: string; identification?: string;
+  date_naissance?: string; couleur?: string; couleur_yeux?: string; identification?: string;
   num_sire?: string; carte_immatriculation?: string; livret_signaletique?: string;
   sterilise?: boolean; description?: string; notes?: string; photo_url?: string;
   statut?: string; passeport_europeen?: string; type_poil?: string; taille?: string; poids?: string;
@@ -2792,7 +2792,7 @@ function AnimalFichePageInner() {
         nom: animal.nom?.trim(), nom_pedigree: animal.nom_pedigree?.trim() || undefined, espece: animal.espece,
         espece_autre: animal.espece === 'autre' ? (animal.espece_autre || undefined) : undefined,
         race: animal.race, sexe: animal.sexe,
-        date_naissance: animal.date_naissance || undefined, couleur: animal.couleur,
+        date_naissance: animal.date_naissance || undefined, couleur: animal.couleur, couleur_yeux: animal.couleur_yeux,
         identification: animal.identification, sterilise: animal.sterilise,
         num_sire: animal.espece === 'cheval' ? (animal.num_sire || undefined) : undefined,
         carte_immatriculation: animal.espece === 'cheval' ? (animal.carte_immatriculation || undefined) : undefined,
@@ -3307,6 +3307,7 @@ function AnimalFichePageInner() {
       ['Sexe', animal.sexe ?? ''],
       ['Date de naissance', animal.date_naissance ?? ''],
       ['Couleur', animal.couleur ?? ''],
+      ['Couleur des yeux', animal.couleur_yeux ?? ''],
       ['Identification', animal.identification ?? ''],
       ['Stérilisé(e)', animal.sterilise ? 'Oui' : 'Non'],
       ['Passeport', animal.passeport_europeen ?? ''],
@@ -3799,6 +3800,7 @@ function AnimalFichePageInner() {
                 </div>
                 <Field label="Date de naissance" value={animal.date_naissance??''} onChange={v=>set('date_naissance',v)} type="date" />
                 <Field label="Couleur / Robe" value={animal.couleur??''} onChange={v=>set('couleur',v)} />
+                <Field label="Couleur des yeux" value={animal.couleur_yeux??''} onChange={v=>set('couleur_yeux',v)} />
                 {animal.espece === 'cheval' ? (
                   <>
                     <Field label="N° de transpondeur (puce)" value={animal.identification??''} onChange={v=>set('identification',v)} />
@@ -3845,6 +3847,7 @@ function AnimalFichePageInner() {
                   { label:'Sexe', value:animal.sexe==='male'?'♂ Mâle':animal.sexe==='femelle'?'♀ Femelle':'Inconnu' },
                   { label:'Naissance', value: animal.date_naissance ? `${fmtDate(animal.date_naissance)} (${age(animal.date_naissance)})` : undefined },
                   { label:'Couleur', value:animal.couleur },
+                  { label:'Couleur des yeux', value:animal.couleur_yeux },
                   { label: animal.espece === 'cheval' ? 'Transpondeur' : 'Identification', value:animal.identification },
                   { label:'N° SIRE', value:animal.num_sire, show: animal.espece === 'cheval' },
                   { label:'Carte immat.', value:animal.carte_immatriculation, show: animal.espece === 'cheval' },

@@ -48,7 +48,7 @@ class _VetTokenViewState extends State<VetTokenView> {
       }
 
       final animalData = await supa.from('animaux')
-          .select('id, nom, espece, race, sexe, date_naissance, identification, couleur, photo_url, sterilise, description, poids, taille')
+          .select('id, nom, espece, race, sexe, date_naissance, identification, couleur, couleur_yeux, photo_url, sterilise, description, poids, taille')
           .eq('id', row['animal_id']?.toString() ?? '')
           .maybeSingle();
 
@@ -188,6 +188,8 @@ class _VetTokenViewState extends State<VetTokenView> {
               _infoChip('⚖️', '${a['poids']} kg'),
             if (a['couleur'] != null && (a['couleur'].toString()).isNotEmpty)
               _infoChip('🎨', a['couleur'].toString()),
+            if (a['couleur_yeux'] != null && (a['couleur_yeux'].toString()).isNotEmpty)
+              _infoChip('👁️', a['couleur_yeux'].toString()),
           ]),
           if (a['description'] != null && (a['description'] as String).isNotEmpty) ...[
             const SizedBox(height: 10),

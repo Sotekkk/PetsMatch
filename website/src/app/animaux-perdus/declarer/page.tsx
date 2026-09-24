@@ -20,6 +20,7 @@ interface UserAnimal {
   race?: string;
   sexe?: string;
   couleur?: string;
+  couleur_yeux?: string;
   photo_url?: string;
   identification?: string;
   description?: string;
@@ -61,6 +62,7 @@ function DeclarerPerduPageInner() {
   const [race, setRace] = useState('');
   const [sexe, setSexe] = useState('');
   const [couleur, setCouleur] = useState('');
+  const [couleurYeux, setCouleurYeux] = useState('');
   const [datePerte, setDatePerte] = useState(new Date().toISOString().slice(0, 10));
   const [dateDerniereLoc, setDateDerniereLoc] = useState(new Date().toISOString().slice(0, 10));
   const [rue, setRue] = useState('');
@@ -132,7 +134,7 @@ function DeclarerPerduPageInner() {
     if (!user) return;
     supabase
       .from('animaux')
-      .select('id, nom, espece, race, sexe, couleur, photo_url, identification, description, contacts_urgence')
+      .select('id, nom, espece, race, sexe, couleur, couleur_yeux, photo_url, identification, description, contacts_urgence')
       .eq('uid_proprietaire', user.uid)
       .order('nom')
       .then(({ data }) => setUserAnimaux((data as UserAnimal[]) ?? []));
@@ -218,6 +220,7 @@ function DeclarerPerduPageInner() {
     setRace(a.race ?? '');
     setSexe(a.sexe ?? '');
     setCouleur(a.couleur ?? '');
+    setCouleurYeux(a.couleur_yeux ?? '');
     // Description de la fiche animal reprise par défaut — modifiable
     // ensuite, ex: pour préciser les circonstances de la disparition.
     setDescription(a.description ?? '');
@@ -286,6 +289,7 @@ function DeclarerPerduPageInner() {
         race: race.trim() || null,
         sexe: sexe || null,
         couleur: couleur.trim() || null,
+        couleur_yeux: couleurYeux.trim() || null,
         photo_url: photoUrl,
         description: description.trim() || null,
         recompense: recompense.trim() || null,
@@ -433,6 +437,14 @@ function DeclarerPerduPageInner() {
           <input value={couleur} onChange={e => setCouleur(e.target.value)}
             className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white"
             placeholder="Ex : robe fauve, tache blanche sur le front…" />
+        </div>
+
+        {/* Couleur des yeux */}
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-1">Couleur des yeux</label>
+          <input value={couleurYeux} onChange={e => setCouleurYeux(e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-400 bg-white"
+            placeholder="Ex : marron, bleu, vairon…" />
         </div>
 
         {/* Dates */}

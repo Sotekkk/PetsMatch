@@ -18,6 +18,7 @@ export interface AnimalContrat {
   identification?: string;
   date_naissance?: string;
   couleur?: string;
+  couleur_yeux?: string;
   pedigree_numero?: string;
   pedigree_lof?: string;
   nom_pere?: string;
@@ -402,6 +403,7 @@ export function generateContratSaillieHTML(
       nom?: string;
       race?: string;
       couleur?: string;
+      couleur_yeux?: string;
       identification?: string;
       pedigree?: string;
       naissance?: string;
@@ -442,7 +444,7 @@ export function generateContratSaillieHTML(
 <strong>Entre, d'une part :</strong><br>
 <strong>${eleveur.nom}</strong>${eleveur.adresse ? `<br>${eleveur.adresse}` : ''}${eleveur.tel ? ` — Tél : ${eleveur.tel}` : ''}${eleveur.email ? `<br>Email : ${eleveur.email}` : ''}${eleveur.siret ? `<br>SIRET : ${eleveur.siret}` : ''}<br>
 <br>
-Nom ${t.male} : <strong>${animalMale.nom || ''}</strong>&nbsp; Race : <span class="e" contenteditable="true" data-ph="Race">${animalMale.race || ''}</span>&nbsp; Couleur : <span class="e" contenteditable="true" data-ph="Couleur">${animalMale.couleur || ''}</span><br>
+Nom ${t.male} : <strong>${animalMale.nom || ''}</strong>&nbsp; Race : <span class="e" contenteditable="true" data-ph="Race">${animalMale.race || ''}</span>&nbsp; Couleur : <span class="e" contenteditable="true" data-ph="Couleur">${animalMale.couleur || ''}</span>&nbsp; Couleur des yeux : <span class="e" contenteditable="true" data-ph="Couleur des yeux">${animalMale.couleur_yeux || ''}</span><br>
 ${t.labelPedigree} : <span class="e wide" contenteditable="true" data-ph="N° pedigree">${animalMale.pedigree_numero || animalMale.pedigree_lof || ''}</span><br>
 N° d'identification : <span class="e wide" contenteditable="true" data-ph="N° puce / tatouage">${animalMale.identification || ''}</span><br>
 Date de naissance : <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA">${animalMale.date_naissance ? new Date(animalMale.date_naissance).toLocaleDateString('fr-FR') : ''}</span><br>
@@ -463,7 +465,8 @@ Email : <span class="e wide" contenteditable="true" data-ph="Email">${data.email
 <br>
 Nom ${t.femelle} : <span class="e wide" contenteditable="true" data-ph="Nom de la femelle">${fd.nom || ''}</span>&nbsp;
 Race : <span class="e" contenteditable="true" data-ph="Race">${fd.race || ''}</span>&nbsp;
-Couleur : <span class="e" contenteditable="true" data-ph="Couleur">${fd.couleur || ''}</span><br>
+Couleur : <span class="e" contenteditable="true" data-ph="Couleur">${fd.couleur || ''}</span>&nbsp;
+Couleur des yeux : <span class="e" contenteditable="true" data-ph="Couleur des yeux">${fd.couleur_yeux || ''}</span><br>
 ${t.labelPedigree} : <span class="e wide" contenteditable="true" data-ph="N° pedigree">${fd.pedigree || ''}</span><br>
 N° d'identification : <span class="e wide" contenteditable="true" data-ph="N° puce / tatouage">${fd.identification || ''}</span><br>
 Date de naissance : <span class="e" contenteditable="true" data-ph="JJ/MM/AAAA">${fd.naissance ? new Date(fd.naissance).toLocaleDateString('fr-FR') : ''}</span><br>
@@ -716,6 +719,7 @@ ${line('De race', animal.race)}
 ${line('Né le', dn ? `${dn}${villeNais ? ` à ${villeNais}` : ''}` : '')}
 ${line('Sexe', isMasculin ? 'Mâle' : 'Femelle')}
 ${line('Couleur / robe', animal.couleur)}
+${line('Couleur des yeux', animal.couleur_yeux)}
 ${line(t.pedigree ? 'Identification (transpondeur / puce) n°' : "Numéro d'identification (obligatoire)", animal.identification)}
 ${t.pedigree ? line(t.pedigree, pedigreeVal) : ''}
 ${line('Nom du père', nomPere)}
@@ -1025,6 +1029,7 @@ export function generateContratReservationHTML(
   const nomMereR    = animal.nom_mere ?? data.nomMere ?? '';
   const puceMereR   = animal.puce_mere ? ` (puce ${animal.puce_mere})` : '';
   const couleurR    = animal.couleur ?? '';
+  const couleurYeuxR = animal.couleur_yeux ?? '';
   const pedigreeNumR = animal.pedigree_numero ?? '';
 
   return `<!DOCTYPE html>
@@ -1075,6 +1080,7 @@ Le Futur Acheteur réserve auprès du Vendeur, pour en devenir le futur proprié
 Nom : <span class="e wide" contenteditable="true" data-ph="Nom de l'animal">${animal.nom ?? ''}</span><br>
 Né le : <span class="e wide" contenteditable="true" data-ph="Date de naissance">${dn}</span><br>
 Couleur / Robe : <span class="e wide" contenteditable="true" data-ph="Couleur">${couleurR}</span><br>
+Couleur des yeux : <span class="e wide" contenteditable="true" data-ph="Couleur des yeux">${couleurYeuxR}</span><br>
 ${pedigreeNumR && t.pedigree ? `${t.pedigree} <span class="e wide" contenteditable="true">${pedigreeNumR}</span><br>` : ''}
 Père : <span class="e full" contenteditable="true" data-ph="Nom du père">${nomPereR}${pucePereR}</span>
 Mère : <span class="e full" contenteditable="true" data-ph="Nom de la mère">${nomMereR}${puceMereR}</span>

@@ -26,6 +26,7 @@ class AlertePerduFormPage extends StatefulWidget {
   final String? race;
   final String? sexe;
   final String? couleur;
+  final String? couleurYeux;
   final String? photoUrl;
   final String? identification;
   final String? contactUrgence;
@@ -39,6 +40,7 @@ class AlertePerduFormPage extends StatefulWidget {
     this.race,
     this.sexe,
     this.couleur,
+    this.couleurYeux,
     this.photoUrl,
     this.identification,
     this.contactUrgence,
@@ -57,6 +59,7 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
   final _identCtrl         = TextEditingController();
   final _raceCtrl          = TextEditingController();
   final _couleurCtrl       = TextEditingController();
+  final _couleurYeuxCtrl   = TextEditingController();
   final _addressSearchCtrl = TextEditingController();
   final _rueCtrl           = TextEditingController();
   final _cpCtrl            = TextEditingController();
@@ -132,6 +135,7 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
       _identCtrl.text   = widget.identification ?? '';
       _raceCtrl.text    = widget.race ?? '';
       _couleurCtrl.text = widget.couleur ?? '';
+      _couleurYeuxCtrl.text = widget.couleurYeux ?? '';
       _espece           = widget.espece ?? 'chien';
       _sexe             = widget.sexe;
       _datePerte        = DateTime.now();
@@ -257,6 +261,7 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
       _raceCtrl.text    = (d['race'] as String?) ?? '';
       _sexe             = d['sexe'] as String?;
       _couleurCtrl.text = (d['couleur'] as String?) ?? '';
+      _couleurYeuxCtrl.text = (d['couleur_yeux'] as String?) ?? '';
       // Description de la fiche animal reprise par défaut — modifiable
       // ensuite, ex: pour préciser les circonstances de la disparition.
       _descCtrl.text    = (d['description'] as String?) ?? '';
@@ -288,6 +293,7 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
         _identCtrl.text   = (d['identification'] ?? '') as String;
         _raceCtrl.text    = (d['race'] ?? '') as String;
         _couleurCtrl.text = (d['couleur'] ?? '') as String;
+        _couleurYeuxCtrl.text = (d['couleur_yeux'] ?? '') as String;
         _espece           = newEspece;
         _sexe             = d['sexe'] as String?;
         _existingPhotoUrl = d['photo_url'] as String?;
@@ -334,7 +340,7 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
   Future<void> _loadAnimalData() async {
     try {
       final rows = await _supa.from('animaux')
-          .select('nom, espece, race, sexe, couleur, photo_url, identification, description, contacts_urgence')
+          .select('nom, espece, race, sexe, couleur, couleur_yeux, photo_url, identification, description, contacts_urgence')
           .eq('id', widget.animalId!)
           .limit(1);
       if ((rows as List).isEmpty || !mounted) return;
@@ -345,6 +351,7 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
         if (_identCtrl.text.isEmpty)   _identCtrl.text   = (d['identification'] ?? '') as String;
         if (_raceCtrl.text.isEmpty)    _raceCtrl.text    = (d['race'] ?? '') as String;
         if (_couleurCtrl.text.isEmpty) _couleurCtrl.text = (d['couleur'] ?? '') as String;
+        if (_couleurYeuxCtrl.text.isEmpty) _couleurYeuxCtrl.text = (d['couleur_yeux'] ?? '') as String;
         // Description de la fiche animal reprise par défaut — modifiable
         // ensuite, ex: pour préciser les circonstances de la disparition.
         if (_descCtrl.text.isEmpty)    _descCtrl.text    = (d['description'] ?? '') as String;
@@ -376,7 +383,7 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
     _searchDebounce?.cancel();
     _raceFocusNode.dispose();
     _places.dispose();
-    for (final c in [_nomCtrl, _identCtrl, _raceCtrl, _couleurCtrl,
+    for (final c in [_nomCtrl, _identCtrl, _raceCtrl, _couleurCtrl, _couleurYeuxCtrl,
                      _addressSearchCtrl, _rueCtrl, _cpCtrl, _villeCtrl,
                      _paysCtrl, _regionCtrl, _descCtrl, _recompenseCtrl,
                      _contactEmailCtrl, _contactTelCtrl]) {
@@ -576,6 +583,7 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
         'race':                    _raceCtrl.text.trim().isEmpty ? null : _raceCtrl.text.trim(),
         'sexe':                    _sexe,
         'couleur':                 _couleurCtrl.text.trim().isEmpty ? null : _couleurCtrl.text.trim(),
+        'couleur_yeux':            _couleurYeuxCtrl.text.trim().isEmpty ? null : _couleurYeuxCtrl.text.trim(),
         'photo_url':               photoUrl,
         'description':             _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
         'recompense':              _recompenseCtrl.text.trim().isEmpty ? null : _recompenseCtrl.text.trim(),
@@ -775,6 +783,11 @@ class _AlertePerduFormPageState extends State<AlertePerduFormPage> {
           const _FLabel('Couleur / signes particuliers'),
           const SizedBox(height: 6),
           _FField(controller: _couleurCtrl, hint: 'Ex : robe fauve, tache blanche…'),
+          const SizedBox(height: 18),
+
+          const _FLabel('Couleur des yeux'),
+          const SizedBox(height: 6),
+          _FField(controller: _couleurYeuxCtrl, hint: 'Ex : marron, bleu, vairon…'),
           const SizedBox(height: 18),
 
           // ── Date de disparition ────────────────────────────────────────────

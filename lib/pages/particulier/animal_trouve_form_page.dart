@@ -36,6 +36,7 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
   Timer? _searchDebounce;
 
   final _couleurCtrl        = TextEditingController();
+  final _couleurYeuxCtrl    = TextEditingController();
   final _puceCtrl           = TextEditingController();
   final _etatSanteCtrl      = TextEditingController();
   final _comportementCtrl   = TextEditingController();
@@ -107,6 +108,7 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
       _lng    = (e['lng'] as num?)?.toDouble();
       _raceCtrl.text         = e['race'] ?? '';
       _couleurCtrl.text      = e['couleur'] ?? '';
+      _couleurYeuxCtrl.text  = e['couleur_yeux'] ?? '';
       _puceCtrl.text         = e['numero_puce'] ?? '';
       _etatSanteCtrl.text    = e['etat_sante'] ?? '';
       _comportementCtrl.text = e['comportement'] ?? '';
@@ -137,7 +139,7 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
     _searchDebounce?.cancel();
     _raceFocusNode.dispose();
     _places.dispose();
-    for (final c in [_couleurCtrl, _puceCtrl, _etatSanteCtrl, _comportementCtrl,
+    for (final c in [_couleurCtrl, _couleurYeuxCtrl, _puceCtrl, _etatSanteCtrl, _comportementCtrl,
                      _descCtrl, _addressSearchCtrl, _rueCtrl, _villeCtrl, _cpCtrl,
                      _paysCtrl, _regionCtrl, _deptCtrl, _raceCtrl, _contactEmailCtrl, _contactTelCtrl]) {
       c.dispose();
@@ -351,6 +353,7 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
         'race':                     _raceCtrl.text.trim().isEmpty ? null : _raceCtrl.text.trim(),
         'sexe':                     _sexe,
         'couleur':                  _couleurCtrl.text.trim().isEmpty ? null : _couleurCtrl.text.trim(),
+        'couleur_yeux':             _couleurYeuxCtrl.text.trim().isEmpty ? null : _couleurYeuxCtrl.text.trim(),
         'taille':                   _taille,
         'numero_puce':              _puceCtrl.text.trim().isEmpty ? null : _puceCtrl.text.trim(),
         'date_trouve':              DateFormat('yyyy-MM-dd').format(_dateTrouve),
@@ -507,6 +510,8 @@ class _AnimalTrouveFormPageState extends State<AnimalTrouveFormPage> {
           const _FLabel('Couleur / signes particuliers'),
           const SizedBox(height: 6),
           _FField(controller: _couleurCtrl, hint: 'Ex : robe fauve, collier rouge…'),
+          const SizedBox(height: 18),
+          _FField(controller: _couleurYeuxCtrl, hint: 'Couleur des yeux (ex : marron, bleu, vairon…)'),
           const SizedBox(height: 18),
 
           // ── N° de puce ────────────────────────────────────────────────────────

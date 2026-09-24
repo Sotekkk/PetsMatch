@@ -14,7 +14,7 @@ import { resultatChipClass, testChipLabel, type TestGenetique } from '@/lib/gene
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface Bebe {
-  nom?: string; sexe?: string; couleur?: string; prix?: number;
+  nom?: string; sexe?: string; couleur?: string; couleur_yeux?: string; prix?: number;
   statut?: string; photos?: string[]; description?: string; pedigree?: boolean;
 }
 
@@ -43,6 +43,7 @@ interface Annonce {
   ville_eleveur?: string;
   sexe?: string;
   couleur?: string;
+  couleur_yeux?: string;
   nom_eleveur?: string;
   uid_eleveur?: string;
   description?: string;
@@ -55,9 +56,9 @@ interface Annonce {
   etalon_animal_id?: string;
   pere_animal_id?: string;
   mere_nom?: string; mere_puce?: string; mere_race?: string;
-  mere_photo_url?: string; mere_couleur?: string; mere_description?: string; mere_registre?: string;
+  mere_photo_url?: string; mere_couleur?: string; mere_couleur_yeux?: string; mere_description?: string; mere_registre?: string;
   pere_nom?: string; pere_puce?: string; pere_race?: string;
-  pere_photo_url?: string; pere_couleur?: string; pere_description?: string; pere_registre?: string;
+  pere_photo_url?: string; pere_couleur?: string; pere_couleur_yeux?: string; pere_description?: string; pere_registre?: string;
   nb_attendu?: number; nb_nes?: number;
   statut?: string;
   sterilise?: boolean;
@@ -399,6 +400,7 @@ function BebeCard({ bebe: b, index, annonceId, uidEleveur, currentUser, onOpenLi
         <p className="font-['Galey'] font-bold text-sm text-[#1E2025] truncate">{b.nom || `Bébé ${index + 1}`}</p>
         {b.sexe && <p className="text-xs text-gray-500">{b.sexe === 'male' ? '♂ Mâle' : '♀ Femelle'}</p>}
         {b.couleur && <p className="text-xs text-gray-400 truncate">🎨 {b.couleur}</p>}
+        {b.couleur_yeux && <p className="text-xs text-gray-400 truncate">👁 {b.couleur_yeux}</p>}
         {b.prix != null && <p className="font-['Galey'] font-bold text-sm text-[#0C5C6C]">{b.prix} €</p>}
         {b.description && <p className="text-xs text-gray-400 mt-1 leading-relaxed line-clamp-3">{b.description}</p>}
         {photos.length > 1 && (
@@ -874,6 +876,7 @@ function AnnonceDetailPageInner() {
               />
             )}
             {annonce.couleur && <Chip icon="🎨" label={annonce.couleur} color="#64748B" />}
+            {annonce.couleur_yeux && <Chip icon="👁" label={annonce.couleur_yeux} color="#64748B" />}
             {annonce.sterilise && <Chip icon="✂️" label="Stérilisé(e)" color="#F59E0B" />}
 
             {/* ── DATE DE NAISSANCE ── */}
@@ -1067,6 +1070,7 @@ function AnnonceDetailPageInner() {
                     {annonce.pere_nom && <p className="font-['Galey'] font-semibold text-sm text-[#1E2025]">{annonce.pere_nom}</p>}
                     {annonce.pere_race && <p className="text-xs text-gray-500">{annonce.pere_race}</p>}
                     {annonce.pere_couleur && <p className="text-xs text-gray-500">🎨 {annonce.pere_couleur}</p>}
+                    {annonce.pere_couleur_yeux && <p className="text-xs text-gray-500">👁 {annonce.pere_couleur_yeux}</p>}
                     {annonce.pere_puce && (
                       <p className="text-xs text-gray-400 font-mono break-all">🔖 {annonce.pere_puce}</p>
                     )}
@@ -1094,6 +1098,7 @@ function AnnonceDetailPageInner() {
                     {annonce.mere_nom && <p className="font-['Galey'] font-semibold text-sm text-[#1E2025]">{annonce.mere_nom}</p>}
                     {annonce.mere_race && <p className="text-xs text-gray-500">{annonce.mere_race}</p>}
                     {annonce.mere_couleur && <p className="text-xs text-gray-500">🎨 {annonce.mere_couleur}</p>}
+                    {annonce.mere_couleur_yeux && <p className="text-xs text-gray-500">👁 {annonce.mere_couleur_yeux}</p>}
                     {annonce.mere_puce && (
                       <p className="text-xs text-gray-400 font-mono break-all">🔖 {annonce.mere_puce}</p>
                     )}

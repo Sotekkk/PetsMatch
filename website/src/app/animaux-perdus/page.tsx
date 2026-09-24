@@ -30,6 +30,7 @@ interface Alerte {
   race?: string;
   sexe?: string;
   couleur?: string;
+  couleur_yeux?: string;
   identification?: string;
   photo_url?: string;
   description?: string;
@@ -52,6 +53,7 @@ interface Trouve {
   sexe?: string;
   taille?: string;
   couleur?: string;
+  couleur_yeux?: string;
   numero_puce?: string;
   etat_sante?: string;
   comportement?: string;
@@ -684,6 +686,7 @@ function AlerteDetailModal({
             {a.race && <InfoRow icon="🐾" label="Race" value={a.race} />}
             {a.sexe && <InfoRow icon={a.sexe === 'male' ? '♂' : a.sexe === 'femelle' ? '♀' : '?'} label="Sexe" value={SEXE_LABEL[a.sexe] ?? a.sexe} />}
             {a.couleur && <InfoRow icon="🎨" label="Couleur" value={a.couleur} />}
+            {a.couleur_yeux && <InfoRow icon="👁" label="Couleur des yeux" value={a.couleur_yeux} />}
             {a.identification && <InfoRow icon="💾" label="Identification" value={a.identification} />}
           </div>
 
@@ -880,6 +883,7 @@ function TrouveDetailModal({
             {a.sexe && <InfoRow icon={a.sexe === 'male' ? '♂' : a.sexe === 'femelle' ? '♀' : '?'} label="Sexe" value={a.sexe} />}
             {a.taille && <InfoRow icon="📏" label="Taille" value={a.taille} />}
             {a.couleur && <InfoRow icon="🎨" label="Couleur" value={a.couleur} />}
+            {a.couleur_yeux && <InfoRow icon="👁" label="Couleur des yeux" value={a.couleur_yeux} />}
             {a.numero_puce && <InfoRow icon="💾" label="Puce" value={a.numero_puce} />}
           </div>
 

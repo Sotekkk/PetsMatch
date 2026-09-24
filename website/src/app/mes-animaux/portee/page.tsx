@@ -28,6 +28,7 @@ interface AnimalRow {
   sexe: 'male' | 'femelle';
   identification: string;
   couleur: string;
+  couleur_yeux: string;
   type_poil: string;
   taille: string;
   poids: string;
@@ -55,7 +56,7 @@ const ESPECES = [
 ];
 
 function newRow(): AnimalRow {
-  return { nom: '', sexe: 'male', identification: '', couleur: '', type_poil: '', taille: '', poids: '', sterilise: false, passeport_europeen: '', notes: '', photo_url: '' };
+  return { nom: '', sexe: 'male', identification: '', couleur: '', couleur_yeux: '', type_poil: '', taille: '', poids: '', sterilise: false, passeport_europeen: '', notes: '', photo_url: '' };
 }
 
 function tUrl(url: string) {
@@ -230,6 +231,7 @@ export default function PorteePage() {
         nom:                 a.nom?.trim()                   || null,
         identification:      a.identification?.trim()        || null,
         couleur:             a.couleur?.trim()               || null,
+        couleur_yeux:        a.couleur_yeux?.trim()          || null,
         type_poil:           a.type_poil?.trim()             || null,
         taille:              a.taille?.trim()                || null,
         poids:               a.poids?.trim()                 || null,
@@ -569,15 +571,21 @@ export default function PorteePage() {
                       onChange={e => updateRow(i, 'couleur', e.target.value)}
                       placeholder="Ex: Fauve, Tricolore…" />
                   </div>
-                  {espece !== 'oiseau' && (
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Passeport européen</label>
-                      <input className={iSmCls} value={row.passeport_europeen}
-                        onChange={e => updateRow(i, 'passeport_europeen', e.target.value)}
-                        placeholder="N° passeport" />
-                    </div>
-                  )}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Couleur des yeux</label>
+                    <input className={iSmCls} value={row.couleur_yeux}
+                      onChange={e => updateRow(i, 'couleur_yeux', e.target.value)}
+                      placeholder="Ex: marron, bleu…" />
+                  </div>
                 </div>
+                {espece !== 'oiseau' && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Passeport européen</label>
+                    <input className={iSmCls} value={row.passeport_europeen}
+                      onChange={e => updateRow(i, 'passeport_europeen', e.target.value)}
+                      placeholder="N° passeport" />
+                  </div>
+                )}
                 {/* Type de poil (chien/chat) */}
                 {['chien', 'chat'].includes(espece) && (
                   <div>

@@ -101,7 +101,7 @@ class ChipScannerService {
       // 1. Match exact sur le champ normalisé
       final exact = await _supa
           .from('animaux')
-          .select('id, nom, espece, race, sexe, date_naissance, photo_url, identification, uid_eleveur, uid_proprietaire, couleur')
+          .select('id, nom, espece, race, sexe, date_naissance, photo_url, identification, uid_eleveur, uid_proprietaire, couleur, couleur_yeux')
           .eq('identification', normalized)
           .limit(1)
           .maybeSingle();
@@ -111,7 +111,7 @@ class ChipScannerService {
         // 2. Fallback : ilike avec wildcards + normalisation client
         final rows = await _supa
             .from('animaux')
-            .select('id, nom, espece, race, sexe, date_naissance, photo_url, identification, uid_eleveur, uid_proprietaire, couleur')
+            .select('id, nom, espece, race, sexe, date_naissance, photo_url, identification, uid_eleveur, uid_proprietaire, couleur, couleur_yeux')
             .ilike('identification', '%$normalized%')
             .limit(20);
         for (final row in rows as List) {
@@ -178,7 +178,7 @@ class ChipScannerService {
       if (animal == null) {
         final rows = await _supa
             .from('alertes_perdus')
-            .select('id,nom_animal,espece,race,sexe,couleur,identification,uid_proprietaire,date_perte,derniere_localisation')
+            .select('id,nom_animal,espece,race,sexe,couleur,couleur_yeux,identification,uid_proprietaire,date_perte,derniere_localisation')
             .limit(200);
         for (final row in rows as List) {
           final id = ((row as Map)['identification'] ?? '').toString()
@@ -194,7 +194,7 @@ class ChipScannerService {
       if (animal == null) {
         final rows = await _supa
             .from('animaux_trouves')
-            .select('id,espece,race,sexe,couleur,numero_puce,date_trouve,localisation_ville,statut')
+            .select('id,espece,race,sexe,couleur,couleur_yeux,numero_puce,date_trouve,localisation_ville,statut')
             .limit(200);
         for (final row in rows as List) {
           final puce = ((row as Map)['numero_puce'] ?? '').toString()
@@ -211,7 +211,7 @@ class ChipScannerService {
       // fiche du propriétaire actuel, jamais la fiche complète (données
       // santé/repro privées d'un tiers).
       if (animal == null && alerte == null && trouve == null) {
-        const cols = 'id,nom,espece,race,sexe,couleur,date_naissance,photo_url,'
+        const cols = 'id,nom,espece,race,sexe,couleur,couleur_yeux,date_naissance,photo_url,'
             'identification,uid_eleveur,uid_proprietaire';
         final exact = await _supa
             .from('animaux')
@@ -1060,6 +1060,7 @@ class _OwnerAnimalResultSheet extends StatelessWidget {
     final espece = animal['espece']?.toString() ?? '';
     final race = animal['race']?.toString() ?? '';
     final couleur = animal['couleur']?.toString() ?? '';
+    final couleurYeux = animal['couleur_yeux']?.toString() ?? '';
     final puce = animal['identification']?.toString() ?? '';
     final subtitle = [espece, race].where((s) => s.isNotEmpty).join(' · ');
     final ownerPhoto = ownerProfile?['avatar_url']?.toString() ?? '';
@@ -1108,8 +1109,8 @@ class _OwnerAnimalResultSheet extends StatelessWidget {
                 Text(nom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1F2A2E))),
                 if (subtitle.isNotEmpty)
                   Text(subtitle, style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _teal, fontWeight: FontWeight.w600)),
-                if (_age.isNotEmpty || couleur.isNotEmpty)
-                  Text([_age, couleur].where((s) => s.isNotEmpty).join(' · '),
+                if (_age.isNotEmpty || couleur.isNotEmpty || couleurYeux.isNotEmpty)
+                  Text([_age, couleur, couleurYeux].where((s) => s.isNotEmpty).join(' · '),
                       style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade500)),
               ])),
             ]),

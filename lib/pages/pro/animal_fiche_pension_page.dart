@@ -462,6 +462,7 @@ class _IdentiteTab extends StatelessWidget {
         _Row('Stérilisé(e)', d['sterilise'] == true ? 'Oui' : 'Non'),
         _Row('Naissance',   dob != null ? '${_fmt(dob)}${age.isNotEmpty ? '  ·  $age' : ''}' : null),
         _Row('Couleur / robe', d['couleur']?.toString()),
+        _Row('Couleur des yeux', d['couleur_yeux']?.toString()),
         _Row('Type de poil', d['type_poil']?.toString()),
         _Row('Poids',       d['poids'] != null ? '${d['poids']} kg' : null),
         _Row('Taille',      d['taille'] != null ? '${d['taille']} cm' : null),

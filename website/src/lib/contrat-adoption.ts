@@ -17,6 +17,7 @@ export interface AnimalAdoption {
   identification?: string;
   date_naissance?: string;
   couleur?: string;
+  couleur_yeux?: string;
   vaccine?: boolean;
   sterilise?: boolean;
   traite?: boolean;
@@ -107,6 +108,7 @@ export function generateContratAdoptionHTML(
     ['Date de naissance', fmtDate(animal.date_naissance)],
     ['Identification / Puce', animal.identification || 'Non fourni'],
     ['Couleur / Robe', animal.couleur || '—'],
+    ['Couleur des yeux', animal.couleur_yeux || '—'],
     ['Vacciné', animal.vaccine ? 'Oui' : 'Non précisé'],
     ['Stérilisé', animal.sterilise ? 'Oui' : 'Non'],
     ['Traité antiparasitaire', animal.traite ? 'Oui' : 'Non précisé'],

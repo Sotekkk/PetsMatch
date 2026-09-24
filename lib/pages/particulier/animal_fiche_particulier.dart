@@ -73,6 +73,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
   final _nomCtrl      = TextEditingController();
   final _raceCtrl     = TextEditingController();
   final _couleurCtrl  = TextEditingController();
+  final _couleurYeuxCtrl = TextEditingController();
   final _identCtrl    = TextEditingController();
   final _sireCtrl       = TextEditingController();
   final _carteImmatCtrl = TextEditingController();
@@ -168,6 +169,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     _especeAutreCtrl.dispose();
     _raceCtrl.dispose();
     _couleurCtrl.dispose();
+    _couleurYeuxCtrl.dispose();
     _identCtrl.dispose();
     _sireCtrl.dispose();
     _carteImmatCtrl.dispose();
@@ -469,6 +471,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
     _nomCtrl.text      = d['nom'] ?? '';
     _raceCtrl.text     = d['race'] ?? '';
     _couleurCtrl.text  = d['couleur'] ?? '';
+    _couleurYeuxCtrl.text = d['couleur_yeux'] ?? '';
     _identCtrl.text    = d['identification'] ?? '';
     _sireCtrl.text       = d['num_sire'] ?? '';
     _carteImmatCtrl.text = d['carte_immatriculation'] ?? '';
@@ -598,6 +601,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         'sexe': _sexe,
         'sterilise': _sterilise,
         'couleur': _couleurCtrl.text.trim().isEmpty ? null : _couleurCtrl.text.trim(),
+        'couleur_yeux': _couleurYeuxCtrl.text.trim().isEmpty ? null : _couleurYeuxCtrl.text.trim(),
         'identification': _identCtrl.text.trim().isEmpty ? null : _identCtrl.text.trim(),
         'passeport_europeen': _passeportCtrl.text.trim().isEmpty ? null : _passeportCtrl.text.trim(),
         'num_sire': _espece == 'cheval' && _sireCtrl.text.trim().isNotEmpty ? _sireCtrl.text.trim() : null,
@@ -1096,6 +1100,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
         _infoRow('Sexe',
             _sexe == 'male' ? 'Mâle' : _sexe == 'femelle' ? 'Femelle' : 'Inconnu'),
         _infoRow('Couleur / robe', _couleurCtrl.text, empty: _couleurCtrl.text.trim().isEmpty),
+        _infoRow('Couleur des yeux', _couleurYeuxCtrl.text, empty: _couleurYeuxCtrl.text.trim().isEmpty),
         if (_espece == 'cheval') ...[
           _infoRow('N° de transpondeur (puce)', _identCtrl.text, empty: _identCtrl.text.trim().isEmpty),
           _infoRow('N° SIRE', _sireCtrl.text, empty: _sireCtrl.text.trim().isEmpty),
@@ -1239,6 +1244,7 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
                     race: _raceCtrl.text,
                     sexe: _sexe,
                     couleur: _couleurCtrl.text,
+                    couleurYeux: _couleurYeuxCtrl.text,
                     photoUrl: _photoUrl,
                   ),
                 ));
@@ -1499,6 +1505,11 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
           _FLabel('Couleur / robe'),
           const SizedBox(height: 6),
           _FField(controller: _couleurCtrl, hint: 'Ex: Roux, Noir et blanc...'),
+          const SizedBox(height: 18),
+
+          _FLabel('Couleur des yeux'),
+          const SizedBox(height: 6),
+          _FField(controller: _couleurYeuxCtrl, hint: 'Ex: marron, bleu, vairon...'),
           const SizedBox(height: 18),
 
           if (_espece == 'cheval') ...[

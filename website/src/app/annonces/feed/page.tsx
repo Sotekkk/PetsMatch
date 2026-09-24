@@ -18,6 +18,7 @@ interface RawBebe {
   nom?: string;
   sexe?: string;
   couleur?: string;
+  couleur_yeux?: string;
   prix?: number;
   statut?: string;
   photos?: string[];

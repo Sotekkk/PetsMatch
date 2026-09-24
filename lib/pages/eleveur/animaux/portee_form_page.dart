@@ -19,6 +19,7 @@ class _AnimalRow {
   final TextEditingController nom      = TextEditingController();
   final TextEditingController ident    = TextEditingController();
   final TextEditingController couleur  = TextEditingController();
+  final TextEditingController couleurYeux = TextEditingController();
   final TextEditingController taille   = TextEditingController();
   final TextEditingController poids    = TextEditingController();
   final TextEditingController passeport = TextEditingController();
@@ -29,7 +30,7 @@ class _AnimalRow {
   File?  photoFile;
 
   void dispose() {
-    nom.dispose(); ident.dispose(); couleur.dispose();
+    nom.dispose(); ident.dispose(); couleur.dispose(); couleurYeux.dispose();
     taille.dispose(); poids.dispose(); passeport.dispose(); notes.dispose();
   }
 }
@@ -345,6 +346,7 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
         'nom':                 e.value.nom.text.trim(),
         'identification':      e.value.ident.text.trim(),
         'couleur':             e.value.couleur.text.trim(),
+        'couleur_yeux':        e.value.couleurYeux.text.trim(),
         'type_poil':           e.value.typePoil.isEmpty ? null : e.value.typePoil,
         'taille':              e.value.taille.text.trim().isEmpty ? null : e.value.taille.text.trim(),
         'poids':               e.value.poids.text.trim().isEmpty ? null : e.value.poids.text.trim(),
@@ -710,14 +712,20 @@ class _PorteeFormPageState extends State<PorteeFormPage> {
             _label('Couleur / Robe'),
             _textField(row.couleur, 'Ex: Fauve, Tricolore…'),
           ])),
-          if (_espece != 'oiseau') ...[
-            const SizedBox(width: 10),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _label('Couleur des yeux'),
+            _textField(row.couleurYeux, 'Ex: marron, bleu…'),
+          ])),
+        ]),
+        const SizedBox(height: 10),
+        if (_espece != 'oiseau')
+          Row(children: [
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               _label('Passeport européen'),
               _textField(row.passeport, 'N° passeport'),
             ])),
-          ],
-        ]),
+          ]),
         // Type de poil (chien/chat)
         if (_espece == 'chien' || _espece == 'chat') ...[
           const SizedBox(height: 10),

@@ -18,7 +18,7 @@ import OwnerContactButton from '@/components/pro/OwnerContactButton';
 
 interface Animal {
   id: number | string; nom: string; espece: string; race: string | null;
-  sexe: string | null; couleur: string | null; date_naissance: string | null;
+  sexe: string | null; couleur: string | null; couleur_yeux: string | null; date_naissance: string | null;
   identification: string | null; passeport_numero: string | null;
   photo_url: string | null; sterilise: boolean | null;
   poids: number | null; taille: number | null; notes: string | null;
@@ -1108,6 +1108,7 @@ function PatientDetailPageInner() {
                 { label: 'Race',          value: animal.race },
                 { label: 'Sexe',          value: animal.sexe },
                 { label: 'Couleur/Robe',  value: animal.couleur },
+                { label: 'Couleur des yeux',  value: animal.couleur_yeux },
                 { label: 'Date de naissance', value: fmtDate(animal.date_naissance) },
                 { label: 'Âge',           value: calcAge(animal.date_naissance) },
                 { label: 'Poids',         value: animal.poids ? `${animal.poids} kg` : null },

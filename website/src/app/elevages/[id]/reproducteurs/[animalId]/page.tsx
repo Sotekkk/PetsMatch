@@ -43,7 +43,7 @@ export default function ReproDetailPage() {
 
       const { data: a } = await supabase.from('animaux')
         .select('id, nom, nom_pedigree, espece, race, sexe, photo_url, date_naissance, '
-          + 'couleur, pedigree_lof, pedigree_numero, club_registre, description, is_retraite, '
+          + 'couleur, couleur_yeux, pedigree_lof, pedigree_numero, club_registre, description, is_retraite, '
           + 'nb_petits_produits, historique_fertilite, profil_adn_etabli')
         .eq('id', animalId).eq('profile_id', prof.id).eq('uid_eleveur', euid)
         .eq('reproducteur_public', true).maybeSingle();
@@ -131,6 +131,7 @@ export default function ReproDetailPage() {
               {line('Sexe', sexe)}
               {line('Naissance', naissance)}
               {line('Couleur / robe', repro.couleur)}
+              {line('Couleur des yeux', repro.couleur_yeux)}
               {line('N° LOF / pedigree', [repro.pedigree_lof, repro.pedigree_numero].filter(Boolean).join(' · '))}
               {line('Club / registre', repro.club_registre)}
             </div>

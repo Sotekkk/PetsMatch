@@ -27,6 +27,7 @@ type FemelleRow = {
   nom?: string;
   race?: string;
   couleur?: string;
+  couleur_yeux?: string;
   identification?: string;
   date_naissance?: string;
   pedigree_numero?: string;
@@ -106,7 +107,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     async function load() {
       const { data } = await supabase
         .from('documents_animaux')
-        .select('*, animaux(nom,espece,race,sexe,identification,date_naissance,couleur,pedigree_numero,pedigree_lof,nom_pere,puce_pere,nom_mere,puce_mere)')
+        .select('*, animaux(nom,espece,race,sexe,identification,date_naissance,couleur,couleur_yeux,pedigree_numero,pedigree_lof,nom_pere,puce_pere,nom_mere,puce_mere)')
         .eq('token', token)
         .maybeSingle();
 
@@ -152,6 +153,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         identification: meta.animal_identification || data.animaux?.identification || '',
         date_naissance: meta.animal_date_naissance || data.animaux?.date_naissance || '',
         couleur: meta.animal_couleur || data.animaux?.couleur || '',
+        couleur_yeux: meta.animal_couleur_yeux || data.animaux?.couleur_yeux || '',
         pedigree_numero: data.animaux?.pedigree_numero ?? '',
         pedigree_lof: meta.animal_pedigree || data.animaux?.pedigree_lof || '',
         nom_pere: meta.animal_nom_pere || data.animaux?.nom_pere || '',
@@ -572,7 +574,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     setLoadingFemelles(true);
     supabase
       .from('animaux')
-      .select('id, nom, race, couleur, identification, date_naissance, pedigree_numero, pedigree_lof')
+      .select('id, nom, race, couleur, couleur_yeux, identification, date_naissance, pedigree_numero, pedigree_lof')
       .eq('uid_eleveur', user.uid)
       .eq('espece', doc.animaux?.espece ?? '')
       .then(({ data }) => {
@@ -688,6 +690,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
       femelle_nom:            femelle.nom ?? '',
       femelle_race:           femelle.race ?? '',
       femelle_couleur:        femelle.couleur ?? '',
+      femelle_couleur_yeux:   femelle.couleur_yeux ?? '',
       femelle_identification: femelle.identification ?? '',
       femelle_pedigree:       femelle.pedigree_numero ?? femelle.pedigree_lof ?? '',
       femelle_naissance:      femelle.date_naissance ?? '',
@@ -705,6 +708,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         nom:            femelle.nom,
         race:           femelle.race,
         couleur:        femelle.couleur,
+        couleur_yeux:   femelle.couleur_yeux,
         identification: femelle.identification,
         pedigree:       femelle.pedigree_numero ?? femelle.pedigree_lof,
         naissance:      femelle.date_naissance,

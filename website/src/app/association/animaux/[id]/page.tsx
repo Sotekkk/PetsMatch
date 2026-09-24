@@ -17,7 +17,7 @@ interface Animal {
   photo_url?: string; poids?: string; description?: string;
   vaccins?: boolean; vaccines?: boolean; vermifuge?: boolean;
   identification?: string | boolean; sterilise?: boolean;
-  couleur?: string; type_poil?: string;
+  couleur?: string; couleur_yeux?: string; type_poil?: string;
 }
 interface HealthRecord { id: string; [key: string]: unknown; }
 

@@ -451,6 +451,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         'nom':       (m['nom']     as String?) ?? '',
         'sexe':      (m['sexe']    as String?) ?? 'male',
         'couleur':   (m['couleur'] as String?) ?? '',
+        'couleur_yeux': (m['couleur_yeux'] as String?) ?? '',
         'photos':    photo.isNotEmpty ? [photo] : <String>[],
         'statut':    'disponible',
         'isLinked':  true,
@@ -473,6 +474,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         'pere_race':       (pereData['race']           as String?) ?? '',
         'pere_photo_url':  (pereData['photo_url']      as String?) ?? '',
         'pere_couleur':    (pereData['couleur']        as String?) ?? '',
+        'pere_couleur_yeux': (pereData['couleur_yeux'] as String?) ?? '',
         'pere_registre':   (pereData['pedigree_lof']   as String?) ?? '',
       } else if (nomPere.isNotEmpty) ...{
         'pere_nom':  nomPere,
@@ -486,6 +488,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
         'mere_race':       (mereData['race']           as String?) ?? (first['race_mere'] as String? ?? ''),
         'mere_photo_url':  (mereData['photo_url']      as String?) ?? '',
         'mere_couleur':    (mereData['couleur']        as String?) ?? '',
+        'mere_couleur_yeux': (mereData['couleur_yeux'] as String?) ?? '',
         'mere_registre':   (mereData['pedigree_lof']   as String?) ?? '',
       } else if (nomMere.isNotEmpty) ...{
         'mere_nom':  nomMere,

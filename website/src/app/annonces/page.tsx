@@ -12,6 +12,7 @@ interface RawBebe {
   nom?: string;
   sexe?: string;
   couleur?: string;
+  couleur_yeux?: string;
   prix?: number;
   statut?: string;
   photos?: string[];
@@ -562,6 +563,7 @@ function BabyPhotoCard({
           {b.nom ?? `Bébé ${bebeIndex + 1}`} {b.sexe === 'femelle' ? '♀' : '♂'}
         </p>
         {b.couleur && <p className="text-[10px] text-gray-400 truncate">{b.couleur}</p>}
+        {b.couleur_yeux && <p className="text-[10px] text-gray-400 truncate">👁 {b.couleur_yeux}</p>}
         <div className="flex items-center justify-between mt-1">
           {b.prix != null ? <p className="text-xs font-bold text-[#0C5C6C]">{b.prix} €</p> : <span />}
           {likeCount > 0 && <p className="text-[10px] text-gray-400">❤️ {likeCount}</p>}

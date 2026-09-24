@@ -18,6 +18,7 @@ interface Animal {
   sterilise?: boolean;
   date_naissance?: string;
   couleur?: string;
+  couleur_yeux?: string;
   type_poil?: string;
   poids?: number;
   taille?: number;
@@ -324,6 +325,7 @@ function IdentiteTab({ animal }: { animal: Animal | null }) {
         <Row label="Stérilisé(e)" value={a.sterilise ? 'Oui' : 'Non'} />
         <Row label="Naissance" value={a.date_naissance ? `${fmtDate(a.date_naissance)}${ageStr ? `  ·  ${ageStr}` : ''}` : undefined} />
         <Row label="Couleur / robe" value={a.couleur} />
+        <Row label="Couleur des yeux" value={a.couleur_yeux} />
         <Row label="Type de poil" value={a.type_poil} />
         <Row label="Poids" value={a.poids ? `${a.poids} kg` : undefined} />
         <Row label="Taille" value={a.taille ? `${a.taille} cm` : undefined} last />

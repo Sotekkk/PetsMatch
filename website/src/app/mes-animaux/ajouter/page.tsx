@@ -42,6 +42,7 @@ export default function AjouterAnimalPage() {
   const [dateNaissance, setDateNaissance] = useState('');
   const [identification, setIdentification] = useState('');
   const [couleur,       setCouleur]       = useState('');
+  const [couleurYeux,   setCouleurYeux]   = useState('');
   const [typePoil,      setTypePoil]      = useState('');
   const [taille,        setTaille]        = useState('');
   const [poids,         setPoids]         = useState('');
@@ -99,6 +100,7 @@ export default function AjouterAnimalPage() {
         race:               race.trim()          || null,
         identification:     identification.trim() || null,
         couleur:            couleur.trim()        || null,
+        couleur_yeux:       couleurYeux.trim()     || null,
         type_poil:          typePoil             || null,
         taille:             taille               || null,
         poids:              poids                || null,
@@ -298,15 +300,22 @@ export default function AjouterAnimalPage() {
               onChange={e => setCouleur(e.target.value)}
               placeholder="Ex: Fauve, Tricolore…" />
           </div>
-          {espece !== 'oiseau' && (
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Passeport européen</label>
-              <input className={iCls} value={passeport}
-                onChange={e => setPasseport(e.target.value)}
-                placeholder="N° passeport" />
-            </div>
-          )}
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Couleur des yeux</label>
+            <input className={iCls} value={couleurYeux}
+              onChange={e => setCouleurYeux(e.target.value)}
+              placeholder="Ex: marron, bleu…" />
+          </div>
         </div>
+
+        {espece !== 'oiseau' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Passeport européen</label>
+            <input className={iCls} value={passeport}
+              onChange={e => setPasseport(e.target.value)}
+              placeholder="N° passeport" />
+          </div>
+        )}
 
         {/* ── Type de poil (chien/chat) ── */}
         {['chien', 'chat'].includes(espece) && (

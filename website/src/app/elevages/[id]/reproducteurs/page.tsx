@@ -38,7 +38,7 @@ export default function ReproducteursPage() {
       // 3. Reproducteurs publics
       const { data: rows } = await supabase.from('animaux')
         .select('id, nom, nom_pedigree, espece, race, sexe, photo_url, date_naissance, '
-          + 'couleur, pedigree_lof, pedigree_numero, club_registre, description, is_retraite')
+          + 'couleur, couleur_yeux, pedigree_lof, pedigree_numero, club_registre, description, is_retraite')
         .eq('profile_id', prof.id).eq('uid_eleveur', euid).eq('reproducteur_public', true)
         .order('espece').order('race').order('nom');
       setRepros((rows ?? []) as unknown as Repro[]);

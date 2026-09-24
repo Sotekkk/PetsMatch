@@ -35,6 +35,7 @@ export default function DeclarerTrouvePage() {
   const [sexe, setSexe]           = useState('');
   const [taille, setTaille]       = useState('');
   const [couleur, setCouleur]     = useState('');
+  const [couleurYeux, setCouleurYeux] = useState('');
   const [numeroPuce, setNumeroPuce] = useState('');
   const [dateTrouve, setDateTrouve] = useState(new Date().toISOString().slice(0, 10));
   const [etatSante, setEtatSante] = useState('');
@@ -243,6 +244,7 @@ export default function DeclarerTrouvePage() {
         sexe:                       sexe || null,
         taille:                     taille || null,
         couleur:                    couleur.trim() || null,
+        couleur_yeux:               couleurYeux.trim() || null,
         numero_puce:                numeroPuce.trim() || null,
         date_trouve:                dateTrouve,
         etat_sante:                 etatSante.trim() || null,
@@ -416,6 +418,15 @@ export default function DeclarerTrouvePage() {
             <label className="block font-semibold text-sm mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Couleur / signes particuliers</label>
             <input value={couleur} onChange={e => setCouleur(e.target.value)}
               placeholder="Ex : robe fauve, collier rouge…"
+              className="w-full bg-white rounded-xl px-4 py-3.5 text-sm border-0 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30"
+              style={{ fontFamily: 'Galey, sans-serif' }} />
+          </div>
+
+          {/* Couleur des yeux */}
+          <div>
+            <label className="block font-semibold text-sm mb-2" style={{ fontFamily: 'Galey, sans-serif' }}>Couleur des yeux</label>
+            <input value={couleurYeux} onChange={e => setCouleurYeux(e.target.value)}
+              placeholder="Ex : marron, bleu, vairon…"
               className="w-full bg-white rounded-xl px-4 py-3.5 text-sm border-0 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#0C5C6C]/30"
               style={{ fontFamily: 'Galey, sans-serif' }} />
           </div>

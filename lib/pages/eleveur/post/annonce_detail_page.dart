@@ -152,6 +152,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     'merePuce':            row['mere_identification'] ?? row['mere_puce'] ?? '',
     'mereRace':            row['mere_race'] ?? '',
     'mereCouleur':         row['mere_couleur'] ?? '',
+    'mereCouleurYeux':     row['mere_couleur_yeux'] ?? '',
     'mereDescription':     row['mere_description'] ?? '',
     'mereRegistre':        row['mere_registre'] ?? '',
     'pereAnimalId':        row['pere_animal_id'],
@@ -160,6 +161,7 @@ class _AnnonceDetailPageState extends State<AnnonceDetailPage> {
     'perePuce':            row['pere_identification'] ?? row['pere_puce'] ?? '',
     'pereRace':            row['pere_race'] ?? '',
     'pereCouleur':         row['pere_couleur'] ?? '',
+    'pereCouleurYeux':     row['pere_couleur_yeux'] ?? '',
     'pereDescription':     row['pere_description'] ?? '',
     'pereRegistre':        row['pere_registre'] ?? '',
     'registreType':      row['registre_type'] ?? '',
@@ -1247,6 +1249,7 @@ class _BabyDetailSheetState extends State<_BabyDetailSheet> {
         ? animal['nom'] as String : 'Bébé';
     final sexe   = animal['sexe'] == 'male' ? '♂ Mâle' : '♀ Femelle';
     final couleur = (animal['couleur'] as String?) ?? '';
+    final couleurYeux = (animal['couleur_yeux'] as String?) ?? '';
     final desc    = (animal['description'] as String?) ?? '';
     final prixRawSheet = animal['prix'];
     final prix    = prixRawSheet is num ? prixRawSheet.toDouble()
@@ -1336,6 +1339,7 @@ class _BabyDetailSheetState extends State<_BabyDetailSheet> {
               _InfoChip(animal['sexe'] == 'male' ? Icons.male : Icons.female,
                   sexe, animal['sexe'] == 'male' ? _teal : const Color(0xFFEC4899)),
               if (couleur.isNotEmpty) _InfoChip(Icons.palette_outlined, couleur),
+              if (couleurYeux.isNotEmpty) _InfoChip(Icons.remove_red_eye_outlined, couleurYeux),
               if (prix != null) _InfoChip(Icons.euro_outlined,
                   '${prix.toInt()} €', const Color(0xFF6366F1)),
             ]),
@@ -1367,6 +1371,7 @@ class _AnimalCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final sexe       = (data['sexe'] as String?) ?? '';
     final couleur    = (data['couleur'] as String?) ?? '';
+    final couleurYeux = (data['couleur_yeux'] as String?) ?? '';
     final dateNaiss  = data['dateNaissanceAnimal'] as Timestamp?;
     final sterilise  = data['sterilise'] as bool? ?? false;
     final ageEstime  = data['age_estime'] as bool? ?? false;
@@ -1389,6 +1394,7 @@ class _AnimalCard extends StatelessWidget {
           sexe == 'male' ? 'Mâle' : 'Femelle',
           sexe == 'male' ? _teal : const Color(0xFFEC4899)),
         if (couleur.isNotEmpty) _InfoChip(Icons.palette_outlined, couleur),
+        if (couleurYeux.isNotEmpty) _InfoChip(Icons.remove_red_eye_outlined, couleurYeux),
         if (ageStr.isNotEmpty) _InfoChip(Icons.cake_outlined, ageStr),
         if (dateNaiss != null)
           _InfoChip(Icons.calendar_today_outlined, ageEstime
@@ -1565,6 +1571,7 @@ class _ParentsCard extends StatelessWidget {
     final merePuce     = (data['merePuce'] as String?) ?? '';
     final mereRace     = (data['mereRace'] as String?) ?? '';
     final mereCouleur  = (data['mereCouleur'] as String?) ?? '';
+    final mereCouleurYeux = (data['mereCouleurYeux'] as String?) ?? '';
     final mereDesc     = (data['mereDescription'] as String?) ?? '';
     final mereRegistre = (data['mereRegistre'] as String?) ?? '';
     final merePhoto    = data['merePhotoUrl'] as String?;
@@ -1572,6 +1579,7 @@ class _ParentsCard extends StatelessWidget {
     final perePuce     = (data['perePuce'] as String?) ?? '';
     final pereRace     = (data['pereRace'] as String?) ?? '';
     final pereCouleur  = (data['pereCouleur'] as String?) ?? '';
+    final pereCouleurYeux = (data['pereCouleurYeux'] as String?) ?? '';
     final pereDesc     = (data['pereDescription'] as String?) ?? '';
     final pereRegistre = (data['pereRegistre'] as String?) ?? '';
     final perePhoto    = data['perePhotoUrl'] as String?;
@@ -1586,14 +1594,14 @@ class _ParentsCard extends StatelessWidget {
           sexe: 'femelle', label: 'Mère',
           color: const Color(0xFFEC4899),
           nom: mereNom, puce: merePuce, race: mereRace,
-          couleur: mereCouleur, description: mereDesc,
+          couleur: mereCouleur, couleurYeux: mereCouleurYeux, description: mereDesc,
           registre: mereRegistre, photoUrl: merePhoto)),
         const SizedBox(width: 12),
         Expanded(child: _ParentColumn(
           sexe: 'male', label: 'Père',
           color: _teal,
           nom: pereNom, puce: perePuce, race: pereRace,
-          couleur: pereCouleur, description: pereDesc,
+          couleur: pereCouleur, couleurYeux: pereCouleurYeux, description: pereDesc,
           registre: pereRegistre, photoUrl: perePhoto)),
       ]),
     ]);
@@ -1601,13 +1609,13 @@ class _ParentsCard extends StatelessWidget {
 }
 
 class _ParentColumn extends StatelessWidget {
-  final String sexe, label, nom, puce, race, couleur, description, registre;
+  final String sexe, label, nom, puce, race, couleur, couleurYeux, description, registre;
   final Color color;
   final String? photoUrl;
   const _ParentColumn({
     required this.sexe, required this.label, required this.color,
     required this.nom, required this.puce,
-    required this.race, required this.couleur, required this.description,
+    required this.race, required this.couleur, this.couleurYeux = '', required this.description,
     required this.registre, this.photoUrl,
   });
 
@@ -1624,7 +1632,7 @@ class _ParentColumn extends StatelessWidget {
         builder: (_) => _ParentDetailSheet(
           sexe: sexe, label: label, color: color,
           nom: nom, puce: puce, race: race,
-          couleur: couleur, description: description,
+          couleur: couleur, couleurYeux: couleurYeux, description: description,
           registre: registre, photoUrl: photoUrl,
         ),
       ) : null,
@@ -1699,13 +1707,13 @@ class _ParentColumn extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ParentDetailSheet extends StatelessWidget {
-  final String sexe, label, nom, puce, race, couleur, description, registre;
+  final String sexe, label, nom, puce, race, couleur, couleurYeux, description, registre;
   final Color color;
   final String? photoUrl;
   const _ParentDetailSheet({
     required this.sexe, required this.label, required this.color,
     required this.nom, required this.puce,
-    required this.race, required this.couleur, required this.description,
+    required this.race, required this.couleur, this.couleurYeux = '', required this.description,
     required this.registre, this.photoUrl,
   });
 
@@ -1769,6 +1777,8 @@ class _ParentDetailSheet extends StatelessWidget {
                 _InfoChip(Icons.pets_outlined, race),
               if (couleur.isNotEmpty)
                 _InfoChip(Icons.palette_outlined, couleur),
+              if (couleurYeux.isNotEmpty)
+                _InfoChip(Icons.remove_red_eye_outlined, couleurYeux),
             ]),
             if (puce.isNotEmpty) ...[
               const SizedBox(height: 10),

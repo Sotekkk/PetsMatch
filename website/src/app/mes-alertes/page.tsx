@@ -17,6 +17,7 @@ interface Alerte {
   race?: string;
   sexe?: string;
   couleur?: string;
+  couleur_yeux?: string;
   photo_url?: string;
   derniere_localisation?: string;
   statut?: string;
@@ -171,6 +172,7 @@ export default function MesAlertesPage() {
                     {a.race ? ` · ${a.race}` : ''}
                     {a.sexe ? ` · ${a.sexe}` : ''}
                     {a.couleur ? ` · ${a.couleur}` : ''}
+                    {a.couleur_yeux ? ` · 👁 ${a.couleur_yeux}` : ''}
                   </p>
                   {a.derniere_localisation && (
                     <p className="text-xs text-orange-600 mt-0.5">📍 {a.derniere_localisation}</p>
@@ -346,6 +348,7 @@ function AlerteForm({ uid, profileId, alerte, onClose, onSaved }: {
   const [race, setRace] = useState(alerte?.race ?? '');
   const [sexe, setSexe] = useState(alerte?.sexe ?? '');
   const [couleur, setCouleur] = useState(alerte?.couleur ?? '');
+  const [couleurYeux, setCouleurYeux] = useState(alerte?.couleur_yeux ?? '');
   const [datePerte, setDatePerte] = useState(alerte?.date_perte?.slice(0, 10) ?? new Date().toISOString().slice(0, 10));
   const [localisation, setLocalisation] = useState(alerte?.derniere_localisation ?? '');
   const [description, setDescription] = useState(alerte?.description ?? '');
@@ -366,6 +369,7 @@ function AlerteForm({ uid, profileId, alerte, onClose, onSaved }: {
         race: race.trim() || null,
         sexe: sexe || null,
         couleur: couleur.trim() || null,
+        couleur_yeux: couleurYeux.trim() || null,
         date_perte: datePerte || null,
         derniere_localisation: localisation.trim() || null,
         description: description.trim() || null,
@@ -429,6 +433,7 @@ function AlerteForm({ uid, profileId, alerte, onClose, onSaved }: {
               <div className="flex-1">
                 <label className={labelCls}>Couleur / Signes</label>
                 <input value={couleur} onChange={e => setCouleur(e.target.value)} placeholder="Roux, tâche blanche…" className={inputCls} />
+                <input value={couleurYeux} onChange={e => setCouleurYeux(e.target.value)} placeholder="Couleur des yeux (marron, bleu…)" className={inputCls} />
               </div>
             </div>
 

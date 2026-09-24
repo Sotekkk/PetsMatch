@@ -131,7 +131,7 @@ function PublicProfilePageInner() {
       if (isFriend) {
         try {
           const { data: anim } = await supabase.from('animaux')
-            .select('id, nom, espece, race, date_naissance, photo_url, couleur')
+            .select('id, nom, espece, race, date_naissance, photo_url, couleur, couleur_yeux')
             .eq('uid_proprietaire', targetUid)
             .not('statut', 'in', '("sorti","decede")');
           animData = (anim ?? []) as Animal[];

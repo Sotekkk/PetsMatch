@@ -16,6 +16,7 @@ interface Animal {
   description?: string;
   notes?: string;
   couleur?: string;
+  couleur_yeux?: string;
   poids?: number;
   taille?: number;
 }
@@ -64,7 +65,7 @@ export default function PartageAnimalPage() {
 
       const { data: animal, error: aErr } = await supabase
         .from('animaux')
-        .select('id, nom, espece, race, sexe, date_naissance, identification, photo_url, description, notes, couleur, poids, taille')
+        .select('id, nom, espece, race, sexe, date_naissance, identification, photo_url, description, notes, couleur, couleur_yeux, poids, taille')
         .eq('id', row.animal_id)
         .single();
 
@@ -153,6 +154,7 @@ export default function PartageAnimalPage() {
               {animal.sexe && <_InfoChip label="Sexe" value={_capitalize(animal.sexe)} />}
               {age && <_InfoChip label="Âge" value={age} />}
               {animal.couleur && <_InfoChip label="Couleur" value={animal.couleur} />}
+              {animal.couleur_yeux && <_InfoChip label="Couleur des yeux" value={animal.couleur_yeux} />}
               {animal.poids && <_InfoChip label="Poids" value={`${animal.poids} kg`} />}
               {animal.taille && <_InfoChip label="Taille" value={`${animal.taille} cm`} />}
             </div>

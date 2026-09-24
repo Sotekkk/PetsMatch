@@ -59,7 +59,7 @@ class _ReproducteursPublicsPageState extends State<ReproducteursPublicsPage> {
       final rows = await _supa
           .from('animaux')
           .select('id, nom, nom_pedigree, espece, espece_autre, race, sexe, '
-              'photo_url, date_naissance, couleur, pedigree_lof, pedigree_numero, '
+              'photo_url, date_naissance, couleur, couleur_yeux, pedigree_lof, pedigree_numero, '
               'club_registre, description, is_retraite, '
               'nb_petits_produits, historique_fertilite, profil_adn_etabli')
           .eq('profile_id', profileId)
@@ -329,6 +329,7 @@ class _ReproFichePublique extends StatelessWidget {
     final espece = (data['espece'] as String?) ?? '';
     final race = (data['race'] as String?)?.trim() ?? '';
     final couleur = (data['couleur'] as String?)?.trim() ?? '';
+    final couleurYeux = (data['couleur_yeux'] as String?)?.trim() ?? '';
     final desc = (data['description'] as String?)?.trim() ?? '';
     final dn = data['date_naissance'] == null
         ? null
@@ -383,6 +384,7 @@ class _ReproFichePublique extends StatelessWidget {
           _line('Race', race),
           if (dn != null) _line('Naissance', '${DateFormat('dd/MM/yyyy').format(dn)}${age.isNotEmpty ? '  ·  $age' : ''}'),
           _line('Couleur / robe', couleur),
+          _line('Couleur des yeux', couleurYeux),
           _line('N° LOF / pedigree', [lof, pedNum].where((e) => e.isNotEmpty).join(' · ')),
           _line('Club / registre', club),
           if (desc.isNotEmpty) ...[

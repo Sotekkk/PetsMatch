@@ -27,6 +27,7 @@ interface RawBabe {
   nom?: string;
   sexe?: string;
   couleur?: string;
+  couleur_yeux?: string;
   prix?: number;
   statut?: string;
   photos?: string[];
@@ -49,6 +50,7 @@ interface AnnonceData {
   prix_min_portee?: number;
   prix_max_portee?: number;
   couleur?: string;
+  couleur_yeux?: string;
   vaccines?: boolean;
   vermifuge?: boolean;
   identification?: boolean;
@@ -71,6 +73,7 @@ interface BabyEdit {
   nom?: string;
   sexe?: string;
   couleur: string;
+  couleur_yeux: string;
   prix: string;
   statut: string;
   existingPhotos: string[];
@@ -108,6 +111,7 @@ export default function ModifierAnnoncePage() {
   const [prixMin, setPrixMin] = useState('');
   const [prixMax, setPrixMax] = useState('');
   const [couleur, setCouleur] = useState('');
+  const [couleurYeux, setCouleurYeux] = useState('');
   const [vaccines, setVaccines] = useState(false);
   const [vermifuge, setVermifuge] = useState(false);
   const [identification, setIdentification] = useState(false);
@@ -150,6 +154,7 @@ export default function ModifierAnnoncePage() {
         setPrixMin(a.prix_min_portee != null ? String(a.prix_min_portee) : '');
         setPrixMax(a.prix_max_portee != null ? String(a.prix_max_portee) : '');
         setCouleur(a.couleur ?? '');
+        setCouleurYeux(a.couleur_yeux ?? '');
         setVaccines(a.vaccines ?? false);
         setVermifuge(a.vermifuge ?? false);
         setIdentification(a.identification ?? false);
@@ -172,6 +177,7 @@ export default function ModifierAnnoncePage() {
             nom: b.nom,
             sexe: b.sexe,
             couleur: b.couleur ?? '',
+            couleur_yeux: b.couleur_yeux ?? '',
             prix: b.prix != null ? String(b.prix) : '',
             statut: b.statut ?? 'disponible',
             existingPhotos: (b.photos ?? []).filter(Boolean),
@@ -307,6 +313,7 @@ export default function ModifierAnnoncePage() {
             nom: b.nom,
             sexe: b.sexe,
             couleur: b.couleur || undefined,
+            couleur_yeux: b.couleur_yeux || undefined,
             prix: b.prix ? Number(b.prix) : undefined,
             statut: b.statut,
             photos: [...b.existingPhotos, ...uploadedBaby],
@@ -322,6 +329,7 @@ export default function ModifierAnnoncePage() {
         description: description || null,
         photos: allPhotos,
         couleur: !isPortee ? (couleur || null) : undefined,
+        couleur_yeux: !isPortee ? (couleurYeux || null) : undefined,
         vaccines, vermifuge,
         identification, bilan_sante: bilanSante,
         semaines: !isSaillie ? semaines : undefined,
@@ -492,6 +500,13 @@ export default function ModifierAnnoncePage() {
           </div>
         )}
 
+        {!isPortee && (
+          <div>
+            <label className="text-xs text-gray-400 block mb-1">Couleur des yeux</label>
+            <input className={iCls} value={couleurYeux} onChange={e => setCouleurYeux(e.target.value)} />
+          </div>
+        )}
+
         {/* Santé */}
         <div className="border border-gray-100 rounded-xl p-4 space-y-3">
           <p className="text-xs font-semibold text-gray-500">Santé & conformité</p>
@@ -633,12 +648,18 @@ export default function ModifierAnnoncePage() {
                   </div>
 
                   {/* Couleur, prix, statut */}
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-4 gap-2">
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">Couleur</label>
                       <input className={iCls + ' text-xs'} value={b.couleur}
                         onChange={e => setBabies(prev => prev.map((x, i) => i === babyIdx ? { ...x, couleur: e.target.value } : x))}
                         placeholder="Ex: fauve" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-400 block mb-1">Couleur des yeux</label>
+                      <input className={iCls + ' text-xs'} value={b.couleur_yeux}
+                        onChange={e => setBabies(prev => prev.map((x, i) => i === babyIdx ? { ...x, couleur_yeux: e.target.value } : x))}
+                        placeholder="Ex: marron" />
                     </div>
                     <div>
                       <label className="text-xs text-gray-400 block mb-1">Prix (€)</label>

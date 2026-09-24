@@ -2191,6 +2191,7 @@ class _TrouveDetailSheetState extends State<_TrouveDetailSheet> {
     final sexe = (a['sexe'] as String?) ?? '';
     final taille = (a['taille'] as String?) ?? '';
     final couleur = (a['couleur'] as String?) ?? '';
+    final couleurYeux = (a['couleur_yeux'] as String?) ?? '';
     final puce = (a['numero_puce'] as String?) ?? '';
     final etat = (a['etat_sante'] as String?) ?? '';
     final comportement = (a['comportement'] as String?) ?? '';
@@ -2328,6 +2329,7 @@ class _TrouveDetailSheetState extends State<_TrouveDetailSheet> {
               if (sexe.isNotEmpty) _InfoChip(sexe),
               if (taille.isNotEmpty) _InfoChip(taille),
               if (couleur.isNotEmpty) _InfoChip('Couleur : $couleur'),
+              if (couleurYeux.isNotEmpty) _InfoChip('Yeux : $couleurYeux'),
               if (puce.isNotEmpty) _InfoChip('Puce : $puce'),
             ]),
             if (date.isNotEmpty) ...[
