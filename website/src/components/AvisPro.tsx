@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useActiveProfile } from '@/hooks/useActiveProfile';
 
 // Système d'avis générique (`avis_pro`) — réutilisé sur les fiches pro de
 // service (véto, garde, pension, toilettage…) ET sur la fiche publique
@@ -9,7 +10,18 @@ import { supabase } from '@/lib/supabase';
 // réelle avec ce pro précis (RDV confirmé/terminé, compte-rendu, ou pour
 // un éleveur une cession confirmée) — vérifié côté RLS (can_review_pro),
 // ce check ne sert qu'à ne pas afficher un formulaire qui échouerait.
+
+// Profil actif de l'auteur de l'avis (n'importe quel type — particulier,
+// éleveur, pro…) — l'avis doit être lié au MÊME profil que l'interaction
+// réellement enregistrée, pas systématiquement au profil particulier.
+async function resolveReviewerProfileId(uid: string, activeId: string): Promise<string | null> {
+  if (activeId) return activeId;
+  const { data } = await supabase.from('user_profiles').select('id').eq('uid', uid).eq('is_main', true).maybeSingle();
+  return data?.id ?? null;
+}
+
 export default function AvisPro({ proUid, proProfileId, clientUid, autoOpen = false }: { proUid: string; proProfileId?: string; clientUid: string | null; autoOpen?: boolean }) {
+  const activeProfileId = useActiveProfile();
   const [avis, setAvis] = useState<{ id: string; note: number; commentaire: string | null; created_at: string; client_uid: string }[]>([]);
   const [reviewers, setReviewers] = useState<Record<string, { name: string; photo: string | null }>>({});
   const [loading, setLoading] = useState(true);
@@ -47,19 +59,18 @@ export default function AvisPro({ proUid, proProfileId, clientUid, autoOpen = fa
     }
 
     if (clientUid && clientUid !== proUid) {
-      const { data: myProf } = await supabase.from('user_profiles')
-        .select('id').eq('uid', clientUid).eq('profile_type', 'particulier').maybeSingle();
+      const myProfileId = await resolveReviewerProfileId(clientUid, activeProfileId);
       // Éligibilité résolue par PROFIL précis dans les deux sens (celui qui
       // laisse l'avis ET celui qui le reçoit), pas seulement par compte —
       // un RDV/une cession pris avec un AUTRE profil du même compte ne
       // doit pas rendre ce profil-ci éligible.
       const { data: ok } = await supabase.rpc('can_review_pro', {
-        p_pro_uid: proUid, p_client_uid: clientUid, p_client_profile_id: myProf?.id ?? null,
+        p_pro_uid: proUid, p_client_uid: clientUid, p_client_profile_id: myProfileId,
         p_pro_profile_id: proProfileId ?? null,
       });
       setEligible(!!ok);
     }
-  }, [proUid, proProfileId, clientUid]);
+  }, [proUid, proProfileId, clientUid, activeProfileId]);
   useEffect(() => { reload(); }, [reload]);
 
   const dejaNote = clientUid != null && avis.some(a => a.client_uid === clientUid);
@@ -92,10 +103,10 @@ export default function AvisPro({ proUid, proProfileId, clientUid, autoOpen = fa
     setSaving(true);
     setError(null);
     try {
-      const { data: prof } = await supabase.from('user_profiles').select('id').eq('uid', clientUid).eq('profile_type', 'particulier').maybeSingle();
+      const myProfileId = await resolveReviewerProfileId(clientUid, activeProfileId);
       const { error: err } = await supabase.from('avis_pro').insert({
         pro_uid: proUid, ...(proProfileId ? { pro_profile_id: proProfileId } : {}),
-        client_uid: clientUid, ...(prof?.id ? { client_profile_id: prof.id } : {}),
+        client_uid: clientUid, ...(myProfileId ? { client_profile_id: myProfileId } : {}),
         note, commentaire: comment.trim() || null,
       });
       if (err) {

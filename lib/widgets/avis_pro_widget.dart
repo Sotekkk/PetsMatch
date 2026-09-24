@@ -2,6 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:PetsMatch/main.dart';
+
+// Profil actif de l'auteur de l'avis (n'importe quel type : particulier,
+// éleveur, pro…) — l'avis doit être lié au MÊME profil que l'interaction
+// (rdv / compte-rendu) réellement enregistrée, pas systématiquement au
+// profil particulier du compte.
+Future<String?> _activeReviewerProfileId(String uid) async {
+  if (User_Info.activeProfileId.isNotEmpty) return User_Info.activeProfileId;
+  try {
+    final row = await Supabase.instance.client
+        .from('user_profiles').select('id')
+        .eq('uid', uid).eq('is_main', true).maybeSingle();
+    return row?['id'] as String?;
+  } catch (_) {
+    return null;
+  }
+}
 
 // ── Système d'avis générique pour les profils pro (`avis_pro`), scopé
 // pro_profile_id dès la création. Conçu pour taxi_animalier, réutilisable
@@ -71,18 +88,17 @@ class _AvisProSectionState extends State<AvisProSection> {
         } catch (_) {}
       }
 
-      // Éligibilité résolue par PROFIL (particulier), pas seulement par
-      // compte — un RDV pris avec un autre profil du même compte (éleveur,
-      // pro…) ne doit pas rendre le profil particulier éligible.
+      // Éligibilité résolue par PROFIL ACTIF, pas seulement par compte — un
+      // RDV pris avec un autre profil du même compte (éleveur, pro…) ne doit
+      // rendre éligible QUE ce même profil, pas les autres profils du compte.
       bool eligible = false;
       if (uid != null && uid != widget.proUid) {
         try {
-          final myProfile = await _supa.from('user_profiles')
-              .select('id').eq('uid', uid).eq('profile_type', 'particulier').maybeSingle();
+          final myProfileId = await _activeReviewerProfileId(uid);
           eligible = await _supa.rpc('can_review_pro', params: {
             'p_pro_uid': widget.proUid,
             'p_client_uid': uid,
-            if (myProfile?['id'] != null) 'p_client_profile_id': myProfile!['id'],
+            if (myProfileId != null) 'p_client_profile_id': myProfileId,
             if (widget.proProfileId != null && widget.proProfileId!.isNotEmpty)
               'p_pro_profile_id': widget.proProfileId,
           }) as bool? ?? false;
@@ -279,9 +295,7 @@ class _AvisProFormState extends State<_AvisProForm> {
     }
     setState(() => _saving = true);
     try {
-      final profileRow = await Supabase.instance.client
-          .from('user_profiles').select('id').eq('uid', widget.clientUid).eq('profile_type', 'particulier').maybeSingle();
-      final clientProfileId = profileRow?['id'] as String?;
+      final clientProfileId = await _activeReviewerProfileId(widget.clientUid);
       await Supabase.instance.client.from('avis_pro').insert({
         'pro_uid': widget.proUid,
         if (widget.proProfileId != null && widget.proProfileId!.isNotEmpty) 'pro_profile_id': widget.proProfileId,
