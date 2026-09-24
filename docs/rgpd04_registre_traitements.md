@@ -7,13 +7,14 @@
 
 | Champ | Valeur |
 |---|---|
-| **Dénomination** | PetsMatch (SAS — statuts en cours de refonte, 4 actionnaires) |
-| **Siège social** | *(à compléter après refonte des statuts)* |
-| **SIRET** | *(à compléter — ancienne entité : RCS 931 344 816)* |
-| **Représentant légal** | *(à compléter — Directeur/Président à désigner dans les nouveaux statuts)* |
+| **Dénomination** | PETSMATCH — SAS (Société par Actions Simplifiée) au capital de 1 000 € |
+| **Siège social** | 15 La Ville Marchand, 22210 Plumieux, France |
+| **RCS / SIREN** | RCS Saint-Brieuc — SIREN 931 344 816 |
+| **Représentant légal** | Madame Natacha Loisel, Présidente (depuis le 09/09/2026 — décisions de l'associé unique du 09/09/2026, ex-SASU devenue SAS pluripersonnelle) |
+| **Autres mandataires sociaux** | Monsieur Nabil Ksouri, Directeur Général · Madame Angélique Bégrand, Directrice Générale Déléguée (Chief Product Officer) |
 | **Contact RGPD** | contact@petsmatch.fr |
 | **DPO (Délégué Protection Données)** | Non désigné *(obligatoire si traitement à grande échelle de données sensibles — à évaluer)* |
-| **Dernière mise à jour** | Juin 2026 — **BROUILLON** |
+| **Dernière mise à jour** | Septembre 2026 |
 
 > **Note :** Ce registre doit être tenu à jour et présenté à la CNIL sur demande. Il est confidentiel (usage interne uniquement).
 
@@ -215,18 +216,18 @@
 
 ---
 
-## À compléter après refonte des statuts
+## À compléter
 
-- [ ] **Dénomination exacte et forme juridique** de la nouvelle structure (SAS à 4 actionnaires)
-- [ ] **SIRET** de la nouvelle entité
-- [ ] **Adresse du siège social**
-- [ ] **Représentant légal / Président** désigné dans les statuts
+- [x] **Dénomination exacte et forme juridique** — PETSMATCH, SAS pluripersonnelle (3 associés) depuis le 09/09/2026
+- [x] **SIREN** de l'entité — 931 344 816 (RCS Saint-Brieuc)
+- [x] **Adresse du siège social** — 15 La Ville Marchand, 22210 Plumieux
+- [x] **Représentant légal / Présidente** — Natacha Loisel
 - [ ] **Désignation d'un DPO** (optionnel pour une PME, obligatoire si traitement à grande échelle)
 - [ ] **Numéro d'enregistrement CNIL** (si applicable)
-- [ ] Mettre à jour les pages `/mentions-legales`, `/cgu`, `/confidentialite` du site web avec les infos définitives
+- [x] Pages `/mentions-legales`, `/cgu`, `/confidentialite` du site web vérifiées — déjà à jour (aucune référence à l'ancienne gouvernance)
 - [ ] Signature et date de validation du registre par le représentant légal
 
 ---
 
 *Document confidentiel — usage interne — ne pas diffuser publiquement*
-*Tenu à jour conformément à l'article 30 du RGPD — version juin 2026*
+*Tenu à jour conformément à l'article 30 du RGPD — version septembre 2026*
