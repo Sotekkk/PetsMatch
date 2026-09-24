@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,9 +14,15 @@ import 'package:PetsMatch/utils/messaging_helper.dart';
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 import 'package:PetsMatch/widgets/mention_hashtag.dart';
 
-const _tealC = Color(0xFF00ACC1);
-const _darkC = Color(0xFF1E2025);
+const _tealC = Color(0xFF7ED69D);
+const _darkC = Color(0xFF071C22);
 const _greyC = Color(0xFF6F767B);
+const _bgGrad = LinearGradient(
+  begin: Alignment.topCenter,
+  end: Alignment.bottomCenter,
+  colors: [Color(0xFF071C22), Color(0xFF0C3535), Color(0xFF0C3520)],
+  stops: [0.0, 0.5, 1.0],
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers profil utilisateur
@@ -389,16 +396,17 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheet) => Container(
           decoration: const BoxDecoration(
-              color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+              color: Color(0xFF0E2A30), borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
           padding: EdgeInsets.only(
               left: 20, right: 20, top: 16, bottom: MediaQuery.of(ctx).viewInsets.bottom + 24),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             Center(
                 child: Container(width: 40, height: 4,
-                    decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+                    decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 16),
             const Text('Signaler cette publication',
-                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    fontSize: 16, color: Colors.white)),
             const SizedBox(height: 12),
             ...{
               'vente_interdite': 'Vente / petite annonce (interdit)',
@@ -414,12 +422,14 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
                       Icon(
                         motif == e.key ? Icons.radio_button_checked : Icons.radio_button_off,
                         size: 20,
-                        color: motif == e.key ? _tealC : Colors.grey,
+                        color: motif == e.key ? _tealC : Colors.white60,
                       ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(e.value,
-                            style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                            style: TextStyle(
+                                fontFamily: 'Galey', fontSize: 13,
+                                color: Colors.white.withValues(alpha: 0.9))),
                       ),
                     ]),
                   ),
@@ -428,10 +438,22 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
             TextField(
               controller: detailCtrl,
               maxLines: 2,
+              style: const TextStyle(fontFamily: 'Galey', color: Colors.white),
               decoration: InputDecoration(
                 hintText: 'Précisions (facultatif)',
-                hintStyle: const TextStyle(fontFamily: 'Galey', color: _greyC, fontSize: 13),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                hintStyle: TextStyle(fontFamily: 'Galey',
+                    color: Colors.white.withValues(alpha: 0.4), fontSize: 13),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18))),
+                enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18))),
+                focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: _tealC, width: 1.5)),
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.08),
                 contentPadding: const EdgeInsets.all(12),
               ),
             ),
@@ -539,233 +561,282 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
     final regles = (_groupe['regles'] as List?)?.cast<dynamic>() ?? [];
 
     final bannerUrl = _groupe['photo_cover_url']?.toString();
-    final avatarUrl = _groupe['avatar_url']?.toString();
+    final bottomPad = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F8),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _tealC))
-          : CustomScrollView(
-              slivers: [
-                // Header avec bannière + avatar
-                SliverAppBar(
-                  expandedHeight: bannerUrl != null ? 200 : 140,
-                  pinned: true,
-                  backgroundColor: _tealC,
-                  foregroundColor: Colors.white,
-                  leading: IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  actions: [
-                    if (_canModerate)
-                      IconButton(
-                        icon: const Icon(Icons.settings_outlined),
-                        onPressed: _openAdmin,
-                      ),
-                  ],
-                  flexibleSpace: FlexibleSpaceBar(
-                    title: Text(nom,
-                        style: const TextStyle(
-                            fontFamily: 'Galey',
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16,
-                            color: Colors.white,
-                            shadows: [Shadow(color: Colors.black38, blurRadius: 4)])),
-                    background: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // Bannière
-                        if (bannerUrl != null)
-                          Image.network(bannerUrl, fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(color: _tealC))
-                        else
-                          Container(color: _tealC,
-                              child: Center(child: Icon(Icons.group_rounded,
-                                  size: 60, color: Colors.white.withValues(alpha: 0.2)))),
-                        // Dégradé bas pour lisibilité du titre
-                        Positioned(bottom: 0, left: 0, right: 0,
-                            child: Container(height: 60,
-                                decoration: const BoxDecoration(
-                                    gradient: LinearGradient(begin: Alignment.bottomCenter,
-                                        end: Alignment.topCenter,
-                                        colors: [Colors.black54, Colors.transparent])))),
-                        // Avatar du groupe
-                        if (avatarUrl != null)
-                          Positioned(
-                            bottom: 12, left: 16,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 3),
-                              ),
-                              child: CircleAvatar(
-                                radius: 30,
-                                backgroundImage: NetworkImage(avatarUrl),
-                                backgroundColor: _tealC,
+      backgroundColor: _darkC,
+      body: Stack(
+        children: [
+          Container(
+            decoration: const BoxDecoration(gradient: _bgGrad),
+            child: _loading
+                ? const Center(child: CircularProgressIndicator(color: _tealC))
+                : CustomScrollView(
+                    slivers: [
+                      // Header
+                      SliverAppBar(
+                        expandedHeight: 220,
+                        pinned: true,
+                        backgroundColor: _darkC,
+                        automaticallyImplyLeading: false,
+                        leading: GestureDetector(
+                          onTap: () => Navigator.pop(context),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                              child: Container(
+                                margin: const EdgeInsets.all(8),
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                                ),
+                                child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
                               ),
                             ),
                           ),
-                      ],
-                    ),
-                  ),
-                ),
+                        ),
+                        actions: [
+                          if (_canModerate)
+                            GestureDetector(
+                              onTap: _openAdmin,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(14),
+                                child: BackdropFilter(
+                                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                                  child: Container(
+                                    margin: const EdgeInsets.all(8),
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.14),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                                    ),
+                                    child: const Icon(Icons.settings_outlined, color: Colors.white, size: 18),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                        flexibleSpace: FlexibleSpaceBar(
+                          background: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              if (bannerUrl != null)
+                                Image.network(bannerUrl, fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) =>
+                                        Container(decoration: const BoxDecoration(gradient: _bgGrad)))
+                              else
+                                Container(
+                                  decoration: const BoxDecoration(gradient: _bgGrad),
+                                  child: Center(
+                                    child: Icon(Icons.group_rounded,
+                                        size: 60, color: Colors.white.withValues(alpha: 0.2)),
+                                  ),
+                                ),
+                              Positioned(
+                                bottom: 0, left: 0, right: 0,
+                                child: Container(
+                                  height: 100,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.bottomCenter,
+                                      end: Alignment.topCenter,
+                                      colors: [_darkC, Colors.transparent],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                bottom: 16, left: 16,
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Text(nom,
+                                      style: const TextStyle(
+                                          fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                                          fontSize: 20, color: Colors.white,
+                                          shadows: [Shadow(color: Colors.black38, blurRadius: 6)])),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.2),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text('$_membresCount membre${_membresCount > 1 ? 's' : ''}',
+                                        style: const TextStyle(
+                                            fontFamily: 'Galey', fontSize: 12, color: Colors.white)),
+                                  ),
+                                ]),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
 
-                SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Info + stats
-                      Container(
-                        color: Colors.white,
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                      SliverToBoxAdapter(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(children: [
-                              _badge(typeLabel),
-                              if (_isPrive) ...[
-                                const SizedBox(width: 8),
-                                _badge('🔒 Privé', color: const Color(0xFFF3E5F5), textColor: const Color(0xFF8E24AA)),
-                              ],
-                              const Spacer(),
-                              Text('$_membresCount membre${_membresCount > 1 ? 's' : ''}',
-                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _greyC)),
-                            ]),
-                            if (desc.isNotEmpty) ...[
-                              const SizedBox(height: 10),
-                              Text(desc,
-                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: _darkC)),
-                            ],
-                            // Amis dans le groupe
-                            if (_friendsInGroup.isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              Row(children: [
-                                const Icon(Icons.people_outline, size: 16, color: _tealC),
-                                const SizedBox(width: 6),
-                                Text(
-                                  _friendsInGroup.length == 1
-                                      ? '1 ami est dans ce groupe'
-                                      : '${_friendsInGroup.length} amis sont dans ce groupe',
-                                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _tealC, fontWeight: FontWeight.w600),
-                                ),
+                            // Info
+                            Container(
+                              margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.07),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(children: [
+                                    _badge(typeLabel),
+                                    if (_isPrive) ...[
+                                      const SizedBox(width: 8),
+                                      _badge('🔒 Privé',
+                                          color: Colors.purple.withValues(alpha: 0.2),
+                                          textColor: const Color(0xFFCE93D8)),
+                                    ],
+                                  ]),
+                                  if (desc.isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    Text(desc,
+                                        style: TextStyle(
+                                            fontFamily: 'Galey', fontSize: 14,
+                                            color: Colors.white.withValues(alpha: 0.85))),
+                                  ],
+                                  if (_friendsInGroup.isNotEmpty) ...[
+                                    const SizedBox(height: 12),
+                                    Row(children: [
+                                      const Icon(Icons.people_outline, size: 16, color: _tealC),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        _friendsInGroup.length == 1
+                                            ? '1 ami est dans ce groupe'
+                                            : '${_friendsInGroup.length} amis sont dans ce groupe',
+                                        style: const TextStyle(
+                                            fontFamily: 'Galey', fontSize: 13,
+                                            color: _tealC, fontWeight: FontWeight.w600),
+                                      ),
+                                    ]),
+                                  ],
+                                ],
+                              ),
+                            ),
+
+                            // Règles
+                            _buildRegles(regles),
+
+                            // Membres
+                            _buildMembresSection(),
+
+                            const SizedBox(height: 8),
+
+                            // En-tête posts
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                              child: Row(children: [
+                                const Text('Publications',
+                                    style: TextStyle(
+                                        fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                                        fontSize: 15, color: Colors.white)),
+                                const Spacer(),
+                                if (_isMember)
+                                  GestureDetector(
+                                    onTap: _openCreatePost,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                      decoration: BoxDecoration(
+                                          color: _tealC, borderRadius: BorderRadius.circular(20)),
+                                      child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                                        Icon(Icons.add, size: 16, color: Color(0xFF071C22)),
+                                        SizedBox(width: 4),
+                                        Text('Publier',
+                                            style: TextStyle(
+                                                fontFamily: 'Galey', fontSize: 13,
+                                                fontWeight: FontWeight.w700, color: Color(0xFF071C22))),
+                                      ]),
+                                    ),
+                                  ),
                               ]),
-                            ],
-                            const SizedBox(height: 14),
-                            // Bouton rejoindre / quitter
-                            if (_uid.isNotEmpty) _buildJoinButton(),
+                            ),
                           ],
                         ),
                       ),
 
-                      // Règle « pas de vente » ajoutée d'office + règles du groupe
-                      _buildRegles(regles),
-
-                      // Membres / équipe du groupe
-                      _buildMembresSection(),
-
-                      // Séparateur
-                      const SizedBox(height: 8),
-
-                      // En-tête posts
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                        child: Row(children: [
-                          const Text('Publications',
-                              style: TextStyle(
-                                  fontFamily: 'Galey',
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 15,
-                                  color: _darkC)),
-                          const Spacer(),
-                          if (_isMember)
-                            GestureDetector(
-                              onTap: _openCreatePost,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                    color: _tealC, borderRadius: BorderRadius.circular(20)),
-                                child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                                  Icon(Icons.add, size: 16, color: Colors.white),
-                                  SizedBox(width: 4),
-                                  Text('Publier',
-                                      style: TextStyle(
-                                          fontFamily: 'Galey',
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.white)),
+                      // Posts
+                      _posts.isEmpty
+                          ? SliverToBoxAdapter(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 40),
+                                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                                  Icon(Icons.article_outlined, size: 56,
+                                      color: Colors.white.withValues(alpha: 0.2)),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    _isMember
+                                        ? 'Soyez le premier à publier !'
+                                        : 'Rejoignez le groupe pour voir les publications',
+                                    style: TextStyle(
+                                        fontFamily: 'Galey', fontSize: 14,
+                                        color: Colors.white.withValues(alpha: 0.4)),
+                                  ),
                                 ]),
                               ),
+                            )
+                          : SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (_, i) => Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                                  child: _PostCard(
+                                    post: _posts[i],
+                                    isLiked: _myLikes.contains(_posts[i]['id']?.toString()),
+                                    isAdmin: _canModerate,
+                                    canReport: _uid.isNotEmpty &&
+                                        _posts[i]['auteur_uid']?.toString() != _uid,
+                                    myUid: _uid,
+                                    userProfiles: _userProfiles,
+                                    onLike: () => _toggleLike(_posts[i]['id'].toString()),
+                                    onComment: () => _openComments(_posts[i]),
+                                    onPin: () => _togglePin(
+                                        _posts[i]['id'].toString(), _posts[i]['epingle'] == true),
+                                    onDelete: () => _deletePost(_posts[i]['id'].toString()),
+                                    onReport: () => _signalerPost(_posts[i]),
+                                    onShowLikes: () => _showLikes(_posts[i]['id'].toString()),
+                                  ),
+                                ),
+                                childCount: _posts.length,
+                              ),
                             ),
-                        ]),
-                      ),
+
+                      const SliverToBoxAdapter(child: SizedBox(height: 100)),
                     ],
                   ),
-                ),
-
-                // Posts
-                _posts.isEmpty
-                    ? SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 40),
-                          child: Column(mainAxisSize: MainAxisSize.min, children: [
-                            const Icon(Icons.article_outlined, size: 56, color: Color(0xFFCCCCCC)),
-                            const SizedBox(height: 12),
-                            Text(
-                              _isMember
-                                  ? 'Soyez le premier à publier !'
-                                  : 'Rejoignez le groupe pour voir les publications',
-                              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFFAAAAAA)),
-                            ),
-                          ]),
-                        ),
-                      )
-                    : SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (_, i) => Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                            child: _PostCard(
-                              post: _posts[i],
-                              isLiked: _myLikes.contains(_posts[i]['id']?.toString()),
-                              isAdmin: _canModerate,
-                              canReport: _uid.isNotEmpty &&
-                                  _posts[i]['auteur_uid']?.toString() != _uid,
-                              myUid: _uid,
-                              userProfiles: _userProfiles,
-                              onLike: () => _toggleLike(_posts[i]['id'].toString()),
-                              onComment: () => _openComments(_posts[i]),
-                              onPin: () => _togglePin(
-                                  _posts[i]['id'].toString(), _posts[i]['epingle'] == true),
-                              onDelete: () => _deletePost(_posts[i]['id'].toString()),
-                              onReport: () => _signalerPost(_posts[i]),
-                              onShowLikes: () => _showLikes(_posts[i]['id'].toString()),
-                            ),
-                          ),
-                          childCount: _posts.length,
-                        ),
-                      ),
-
-                const SliverToBoxAdapter(child: SizedBox(height: 60)),
-              ],
-            ),
+          ),
+          if (!_loading && _uid.isNotEmpty)
+            _buildFloatingJoinButton(bottomPad),
+        ],
+      ),
     );
   }
 
-  Widget _buildJoinButton() {
+  Widget _buildFloatingJoinButton(double bottomPad) {
     String label;
-    Color bg;
-    Color fg;
+    Color bgColor;
+    Color fgColor;
     VoidCallback? onTap;
 
     if (_canModerate) {
       label = _isAdmin ? 'Admin ★' : 'Modérateur ★';
-      bg = _tealC;
-      fg = Colors.white;
+      bgColor = _tealC;
+      fgColor = _darkC;
       onTap = _openAdmin;
     } else if (_isMember) {
-      label = 'Membre ✓';
-      bg = _tealC;
-      fg = Colors.white;
+      label = 'Quitter le groupe';
+      bgColor = Colors.white.withValues(alpha: 0.12);
+      fgColor = Colors.white;
       onTap = () async {
         final confirm = await showDialog<bool>(
           context: context,
@@ -783,8 +854,8 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
       };
     } else if (_isPending) {
       label = 'Demande en attente…';
-      bg = const Color(0xFFFFF3E0);
-      fg = const Color(0xFFEF6C00);
+      bgColor = Colors.white.withValues(alpha: 0.12);
+      fgColor = const Color(0xFFFFB74D);
       onTap = () async {
         final cancel = await showDialog<bool>(
           context: context,
@@ -801,24 +872,38 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
         if (cancel == true) _joinOrLeave();
       };
     } else {
-      label = _isPrive ? 'Demander à rejoindre' : 'Rejoindre';
-      bg = Colors.transparent;
-      fg = _tealC;
+      label = _isPrive ? 'Demander à rejoindre' : 'Rejoindre le groupe';
+      bgColor = _tealC;
+      fgColor = _darkC;
       onTap = _joinOrLeave;
     }
 
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton(
-        onPressed: onTap,
-        style: OutlinedButton.styleFrom(
-          backgroundColor: bg,
-          foregroundColor: fg,
-          side: BorderSide(color: _tealC.withValues(alpha: bg == Colors.transparent ? 1 : 0)),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    return Positioned(
+      bottom: 0, left: 0, right: 0,
+      child: Container(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, bottomPad + 16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [_darkC.withValues(alpha: 0), _darkC],
+          ),
         ),
-        child: Text(label, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: fg)),
+        child: SizedBox(
+          height: 52,
+          child: ElevatedButton(
+            onPressed: onTap,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: bgColor,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+            ),
+            child: Text(label,
+                style: TextStyle(
+                    fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    fontSize: 15, color: fgColor)),
+          ),
+        ),
       ),
     );
   }
@@ -827,20 +912,22 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)]),
+          color: Colors.white.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.12))),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           tilePadding: const EdgeInsets.symmetric(horizontal: 16),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          iconColor: Colors.white60,
+          collapsedIconColor: Colors.white60,
           title: const Row(children: [
             Icon(Icons.rule_outlined, size: 18, color: _tealC),
             SizedBox(width: 8),
             Text('Règles du groupe',
                 style: TextStyle(
-                    fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _darkC)),
+                    fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white)),
           ]),
           children: [
             // Règle imposée par PetsMatch (non modifiable)
@@ -848,17 +935,17 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
               margin: const EdgeInsets.only(bottom: 10),
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFFFDECEC),
+                color: const Color(0xFFFDECEC).withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFF5B5B5)),
+                border: Border.all(color: const Color(0xFFF5B5B5).withValues(alpha: 0.3)),
               ),
               child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Icon(Icons.gavel_rounded, size: 16, color: Color(0xFFD32F2F)),
+                const Icon(Icons.gavel_rounded, size: 16, color: Color(0xFFEF9A9A)),
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(kRegleNoVente,
                       style: TextStyle(
-                          fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFFB71C1C),
+                          fontFamily: 'Galey', fontSize: 12.5, color: Color(0xFFEF9A9A),
                           fontWeight: FontWeight.w600, height: 1.3)),
                 ),
               ]),
@@ -872,13 +959,16 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
                       decoration: BoxDecoration(color: _tealC, shape: BoxShape.circle),
                       child: Center(
                         child: Text('${e.key + 1}',
-                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                            style: const TextStyle(
+                                color: Color(0xFF071C22), fontSize: 11, fontWeight: FontWeight.w700)),
                       ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(e.value.toString(),
-                          style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _darkC)),
+                          style: TextStyle(
+                              fontFamily: 'Galey', fontSize: 13,
+                              color: Colors.white.withValues(alpha: 0.85))),
                     ),
                   ]),
                 )),
@@ -930,15 +1020,17 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)]),
+          color: Colors.white.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.12))),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           initiallyExpanded: restreint,
           tilePadding: const EdgeInsets.symmetric(horizontal: 16),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          iconColor: Colors.white60,
+          collapsedIconColor: Colors.white60,
           title: Row(children: [
             const Icon(Icons.groups_2_outlined, size: 18, color: _tealC),
             const SizedBox(width: 8),
@@ -947,16 +1039,16 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
                   ? 'Équipe du groupe'
                   : 'Membres ($_membresCount)',
               style: const TextStyle(
-                  fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _darkC),
+                  fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Colors.white),
             ),
           ]),
           children: [
             if (restreint)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
                   'Groupe privé — rejoignez-le pour voir tous les membres.',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _greyC),
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white60),
                 ),
               ),
             ...visibles.map((m) {
@@ -976,7 +1068,7 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
                   child: Row(children: [
                     CircleAvatar(
                       radius: 18,
-                      backgroundColor: _tealC.withValues(alpha: 0.15),
+                      backgroundColor: _tealC.withValues(alpha: 0.2),
                       backgroundImage: photo != null ? NetworkImage(photo) : null,
                       child: photo == null
                           ? const Icon(Icons.person_outline, size: 18, color: _tealC)
@@ -986,20 +1078,22 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
                     Expanded(
                       child: Text(name,
                           style: const TextStyle(
-                              fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600, color: _darkC),
+                              fontFamily: 'Galey', fontSize: 13, fontWeight: FontWeight.w600,
+                              color: Colors.white),
                           overflow: TextOverflow.ellipsis),
                     ),
                     if (isFriend) ...[
                       const Icon(Icons.favorite, size: 13, color: Color(0xFFAD1457)),
                       const SizedBox(width: 6),
                     ],
-                    if (role == 'admin') _roleBadge('Admin', const Color(0xFF00838F)),
-                    if (role == 'moderateur') _roleBadge('Modérateur', const Color(0xFF8E24AA)),
+                    if (role == 'admin') _roleBadge('Admin', _tealC),
+                    if (role == 'moderateur') _roleBadge('Modérateur', const Color(0xFFCE93D8)),
                     if (!isMe) ...[
                       const SizedBox(width: 8),
                       GestureDetector(
                         onTap: () => _openMessageWithMember(uid),
-                        child: const Icon(Icons.chat_bubble_outline_rounded, size: 18, color: _tealC),
+                        child: Icon(Icons.chat_bubble_outline_rounded,
+                            size: 18, color: Colors.white.withValues(alpha: 0.6)),
                       ),
                     ],
                   ]),
@@ -1025,8 +1119,9 @@ class _GroupeDetailPageState extends State<GroupeDetailPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-          color: color ?? const Color(0xFFE0F7FA),
-          borderRadius: BorderRadius.circular(20)),
+          color: color ?? _tealC.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: (textColor ?? _tealC).withValues(alpha: 0.35))),
       child: Text(label,
           style: TextStyle(
               fontFamily: 'Galey',
@@ -1123,10 +1218,12 @@ class _PostCardState extends State<_PostCard> {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: epingle ? Border.all(color: _tealC.withValues(alpha: 0.4)) : null,
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 6, offset: const Offset(0, 2))],
+        color: Colors.white.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+            color: epingle
+                ? _tealC.withValues(alpha: 0.5)
+                : Colors.white.withValues(alpha: 0.12)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         // Header
@@ -1140,7 +1237,7 @@ class _PostCardState extends State<_PostCard> {
                 CircleAvatar(
                   radius: 18,
                   backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null,
-                  backgroundColor: _tealC.withValues(alpha: 0.15),
+                  backgroundColor: _tealC.withValues(alpha: 0.2),
                   child: photoUrl == null
                       ? const Icon(Icons.person_outline, size: 20, color: _tealC)
                       : null,
@@ -1148,21 +1245,25 @@ class _PostCardState extends State<_PostCard> {
                 const SizedBox(width: 10),
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(displayName,
-                      style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: _darkC)),
+                      style: const TextStyle(
+                          fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                          fontSize: 13, color: Colors.white)),
                   Text(_fmtDate(date),
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _greyC)),
+                      style: TextStyle(
+                          fontFamily: 'Galey', fontSize: 11,
+                          color: Colors.white.withValues(alpha: 0.5))),
                 ]),
               ]),
             ),
             const Spacer(),
             if (epingle)
-              const Padding(
-                padding: EdgeInsets.only(right: 6),
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
                 child: Icon(Icons.push_pin, size: 16, color: _tealC),
               ),
             if (canDelete || canPin || widget.canReport)
               PopupMenuButton<String>(
-                icon: const Icon(Icons.more_horiz, color: _greyC, size: 20),
+                icon: Icon(Icons.more_horiz, color: Colors.white.withValues(alpha: 0.6), size: 20),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 onSelected: (val) {
                   if (val == 'copy') {
@@ -1214,7 +1315,9 @@ class _PostCardState extends State<_PostCard> {
             child: MentionHashtagText(
               text: contenu,
               enableHashtags: false,
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: _darkC),
+              style: TextStyle(
+                  fontFamily: 'Galey', fontSize: 14,
+                  color: Colors.white.withValues(alpha: 0.85)),
               onMentionTap: (pid) => openMentionedProfile(context, widget.myUid, pid),
             ),
           ),
@@ -1237,14 +1340,14 @@ class _PostCardState extends State<_PostCard> {
           const SizedBox(height: 2),
         ],
         // Actions
-        const Divider(height: 1, thickness: 0.5),
+        Divider(height: 1, thickness: 0.5, color: Colors.white.withValues(alpha: 0.08)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           child: Row(children: [
             _actionBtn(
               icon: widget.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
               label: 'J\'aime',
-              color: widget.isLiked ? Colors.red : _greyC,
+              color: widget.isLiked ? Colors.red : Colors.white.withValues(alpha: 0.6),
               onTap: widget.onLike,
               badge: likeCount > 0
                   ? GestureDetector(
@@ -1253,7 +1356,7 @@ class _PostCardState extends State<_PostCard> {
                           style: TextStyle(
                               fontFamily: 'Galey',
                               fontSize: 12,
-                              color: widget.isLiked ? Colors.red : _greyC,
+                              color: widget.isLiked ? Colors.red : Colors.white.withValues(alpha: 0.6),
                               fontWeight: FontWeight.w600)),
                     )
                   : null,
@@ -1262,7 +1365,7 @@ class _PostCardState extends State<_PostCard> {
             _actionBtn(
               icon: Icons.chat_bubble_outline_rounded,
               label: commentCount > 0 ? '$commentCount' : 'Commenter',
-              color: _greyC,
+              color: Colors.white.withValues(alpha: 0.6),
               onTap: widget.onComment,
             ),
           ]),
@@ -1536,19 +1639,19 @@ class _CommentsSheetState extends State<_CommentsSheet> {
       child: Container(
       height: sheetH,
       decoration: const BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+          color: Color(0xFF0E2A30), borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       child: Column(children: [
         const SizedBox(height: 10),
-        Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+        Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
         const SizedBox(height: 12),
         const Text('Commentaires',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-        const Divider(height: 20),
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Colors.white)),
+        Divider(height: 20, color: Colors.white.withValues(alpha: 0.1)),
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator(color: _tealC))
               : _comments.isEmpty
-                  ? const Center(child: Text('Aucun commentaire', style: TextStyle(fontFamily: 'Galey', color: _greyC)))
+                  ? Center(child: Text('Aucun commentaire', style: TextStyle(fontFamily: 'Galey', color: Colors.white60)))
                   : ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       itemCount: _comments.length,
@@ -1582,7 +1685,7 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                 CircleAvatar(
                                   radius: 16,
                                   backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null,
-                                  backgroundColor: _tealC.withValues(alpha: 0.15),
+                                  backgroundColor: _tealC.withValues(alpha: 0.2),
                                   child: photoUrl == null
                                       ? const Icon(Icons.person_outline, size: 16, color: _tealC)
                                       : null,
@@ -1597,8 +1700,9 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                       Padding(
                                         padding: const EdgeInsets.only(bottom: 2, left: 2),
                                         child: Text(name,
-                                            style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
-                                                color: _greyC, fontWeight: FontWeight.w600)),
+                                            style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                                                color: Colors.white.withValues(alpha: 0.6),
+                                                fontWeight: FontWeight.w600)),
                                       ),
                                     // Bulle texte
                                     if (contenu.isNotEmpty)
@@ -1606,7 +1710,9 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                         constraints: BoxConstraints(maxWidth: maxW),
                                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                         decoration: BoxDecoration(
-                                          color: isMe ? const Color(0xFFE0F7FA) : const Color(0xFFF0F0F0),
+                                          color: isMe
+                                              ? _tealC.withValues(alpha: 0.25)
+                                              : Colors.white.withValues(alpha: 0.1),
                                           borderRadius: imageUrl != null
                                               ? const BorderRadius.all(Radius.circular(16))
                                               : bubbleRadius,
@@ -1615,12 +1721,16 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                                           MentionHashtagText(
                                             text: contenu,
                                             enableHashtags: false,
-                                            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _darkC),
+                                            style: TextStyle(
+                                                fontFamily: 'Galey', fontSize: 13,
+                                                color: Colors.white.withValues(alpha: 0.9)),
                                             onMentionTap: (pid) => openMentionedProfile(context, _uid, pid),
                                           ),
                                           const SizedBox(height: 2),
                                           Text(_fmtDate(c['created_at'] ?? ''),
-                                              style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: _greyC)),
+                                              style: TextStyle(
+                                                  fontFamily: 'Galey', fontSize: 10,
+                                                  color: Colors.white.withValues(alpha: 0.4))),
                                         ]),
                                       ),
                                     // Photo du commentaire
@@ -1677,7 +1787,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 right: 12,
                 top: 10,
                 bottom: bottomInset > 0 ? 12 : mq.padding.bottom + 10),
-            decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFEEEEEE)))),
+            decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1)))),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               // Prévisualisation image
               if (_imageFile != null)
@@ -1713,21 +1824,22 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                 Expanded(
                   child: TextField(
                     controller: _ctrl,
+                    style: const TextStyle(fontFamily: 'Galey', color: Colors.white),
                     decoration: InputDecoration(
                       hintText: 'Votre commentaire…',
-                      hintStyle: const TextStyle(fontFamily: 'Galey', color: _greyC),
+                      hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.4)),
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide(color: Colors.grey.shade300)),
+                          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18))),
                       enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide(color: Colors.grey.shade300)),
+                          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18))),
                       focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
                           borderSide: const BorderSide(color: _tealC, width: 1.5)),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       filled: true,
-                      fillColor: const Color(0xFFF8F8F8),
+                      fillColor: Colors.white.withValues(alpha: 0.08),
                     ),
                     maxLines: null,
                   ),
@@ -1742,8 +1854,8 @@ class _CommentsSheetState extends State<_CommentsSheet> {
                     child: _sending
                         ? const Padding(
                             padding: EdgeInsets.all(12),
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                            child: CircularProgressIndicator(color: Color(0xFF071C22), strokeWidth: 2))
+                        : const Icon(Icons.send_rounded, color: Color(0xFF071C22), size: 20),
                   ),
                 ),
               ]),
@@ -1871,19 +1983,21 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+          color: Color(0xFF0E2A30), borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       padding: EdgeInsets.only(
           left: 20, right: 20, top: 12, bottom: MediaQuery.of(context).viewInsets.bottom + 28),
       child: SingleChildScrollView(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 16),
           Row(children: [
             const Expanded(
                 child: Text('Nouvelle publication',
-                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18))),
+                    style: TextStyle(
+                        fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                        fontSize: 18, color: Colors.white))),
             IconButton(
-                icon: const Icon(Icons.close, size: 22, color: _greyC),
+                icon: Icon(Icons.close, size: 22, color: Colors.white.withValues(alpha: 0.6)),
                 onPressed: () => Navigator.pop(context),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints()),
@@ -1893,15 +2007,22 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
             controller: _ctrl,
             autofocus: _imageFile == null,
             maxLines: 5,
+            style: const TextStyle(fontFamily: 'Galey', color: Colors.white),
             decoration: InputDecoration(
               hintText: 'Partagez quelque chose avec le groupe… (@ pour mentionner)',
-              hintStyle: const TextStyle(fontFamily: 'Galey', color: _greyC),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _tealC, width: 1.5)),
+              hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.4)),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18))),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18))),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: _tealC, width: 1.5)),
               contentPadding: const EdgeInsets.all(14),
               filled: true,
-              fillColor: const Color(0xFFF8F8F8),
+              fillColor: Colors.white.withValues(alpha: 0.08),
             ),
           ),
           if (_mentionSuggestions != null)
@@ -1943,13 +2064,15 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                 decoration: BoxDecoration(
-                    color: const Color(0xFFF8F8F8),
+                    color: Colors.white.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.grey.shade300)),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.18))),
                 child: const Row(mainAxisSize: MainAxisSize.min, children: [
                   Icon(Icons.photo_outlined, size: 20, color: _tealC),
                   SizedBox(width: 6),
-                  Text('Photo', style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: _tealC, fontWeight: FontWeight.w600)),
+                  Text('Photo',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                          color: _tealC, fontWeight: FontWeight.w600)),
                 ]),
               ),
             ),
@@ -1958,10 +2081,15 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
               child: FilledButton(
                 onPressed: _saving ? null : _publish,
                 style: FilledButton.styleFrom(
-                    backgroundColor: _tealC, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)),
+                    backgroundColor: _tealC,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)),
                 child: _saving
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                    : const Text('Publier', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                    ? const SizedBox(width: 18, height: 18,
+                        child: CircularProgressIndicator(color: Color(0xFF071C22), strokeWidth: 2))
+                    : const Text('Publier',
+                        style: TextStyle(
+                            fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                            fontSize: 15, color: Color(0xFF071C22))),
               ),
             ),
           ]),
@@ -2031,22 +2159,23 @@ class _LikesSheetState extends State<_LikesSheet> {
     return Container(
       height: MediaQuery.of(context).size.height * 0.5,
       decoration: const BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+          color: Color(0xFF0E2A30), borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       child: Column(children: [
         const SizedBox(height: 10),
         Container(width: 40, height: 4,
-            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+            decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
         const SizedBox(height: 12),
         const Text('❤️ Personnes qui aiment',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-        const Divider(height: 20),
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                fontSize: 16, color: Colors.white)),
+        Divider(height: 20, color: Colors.white.withValues(alpha: 0.1)),
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator(color: _tealC))
               : _likers.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Text('Personne n\'a encore aimé',
-                          style: TextStyle(fontFamily: 'Galey', color: _greyC)))
+                          style: TextStyle(fontFamily: 'Galey', color: Colors.white60)))
                   : ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       itemCount: _likers.length,
@@ -2060,7 +2189,7 @@ class _LikesSheetState extends State<_LikesSheet> {
                             CircleAvatar(
                               radius: 22,
                               backgroundImage: photoUrl != null ? NetworkImage(photoUrl) : null,
-                              backgroundColor: _tealC.withValues(alpha: 0.15),
+                              backgroundColor: _tealC.withValues(alpha: 0.2),
                               child: photoUrl == null
                                   ? const Icon(Icons.person_outline, color: _tealC, size: 22)
                                   : null,
@@ -2069,7 +2198,7 @@ class _LikesSheetState extends State<_LikesSheet> {
                             Text(name,
                                 style: const TextStyle(
                                     fontFamily: 'Galey', fontWeight: FontWeight.w600,
-                                    fontSize: 14, color: _darkC)),
+                                    fontSize: 14, color: Colors.white)),
                           ]),
                         );
                       },
@@ -2312,18 +2441,19 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
     return Container(
       height: MediaQuery.of(context).size.height * 0.85,
       decoration: const BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+          color: Color(0xFF0E2A30), borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       child: Column(children: [
         const SizedBox(height: 10),
-        Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+        Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
         const SizedBox(height: 12),
         const Text('Gestion du groupe',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 17)),
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                fontSize: 17, color: Colors.white)),
         const SizedBox(height: 8),
         TabBar(
           controller: _tabCtrl,
-          labelColor: _tealC,
-          unselectedLabelColor: _greyC,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white60,
           indicatorColor: _tealC,
           isScrollable: true,
           tabAlignment: TabAlignment.start,
@@ -2336,7 +2466,7 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
             if (widget.isFullAdmin) const Tab(text: 'Photos'),
           ],
         ),
-        const Divider(height: 1),
+        Divider(height: 1, color: Colors.white.withValues(alpha: 0.1)),
         Expanded(
           child: TabBarView(
             controller: _tabCtrl,
@@ -2358,9 +2488,9 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
       return const Center(child: CircularProgressIndicator(color: _tealC));
     }
     if (_signalements.isEmpty) {
-      return const Center(
+      return Center(
         child: Text('Aucun signalement en attente',
-            style: TextStyle(fontFamily: 'Galey', color: _greyC)),
+            style: TextStyle(fontFamily: 'Galey', color: Colors.white60)),
       );
     }
     const raisonLabels = {
@@ -2382,21 +2512,25 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
         return Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: const Color(0xFFFFF8F5),
+            color: Colors.white.withValues(alpha: 0.07),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFFFE0D0)),
+            border: Border.all(color: const Color(0xFFEF9A9A).withValues(alpha: 0.3)),
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(raisonLabels[s['raison']?.toString()] ?? s['raison'].toString(),
-                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFFC62828))),
+                style: const TextStyle(
+                    fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    fontSize: 13, color: Color(0xFFEF9A9A))),
             if ((s['description']?.toString() ?? '').isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(s['description'].toString(),
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _darkC)),
+                  style: TextStyle(
+                      fontFamily: 'Galey', fontSize: 12.5,
+                      color: Colors.white.withValues(alpha: 0.85))),
             ],
             const SizedBox(height: 4),
             Text('Signalé par ${_profileName(reporter)}',
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _greyC)),
+                style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.white60)),
             const SizedBox(height: 10),
             Row(children: [
               Expanded(
@@ -2441,7 +2575,7 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
     if (list.isEmpty) {
       return Center(child: Text(
         pendingOnly ? 'Aucune demande en attente' : 'Aucun membre',
-        style: const TextStyle(fontFamily: 'Galey', color: _greyC),
+        style: TextStyle(fontFamily: 'Galey', color: Colors.white60),
       ));
     }
     return ListView.builder(
@@ -2457,7 +2591,7 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
         return ListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
           leading: CircleAvatar(
-            backgroundColor: _tealC.withValues(alpha: 0.15),
+            backgroundColor: _tealC.withValues(alpha: 0.2),
             backgroundImage: photo != null ? NetworkImage(photo) : null,
             child: photo == null
                 ? const Icon(Icons.person_outline, color: _tealC, size: 20)
@@ -2465,19 +2599,21 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
           ),
           title: Text(
             _profileName(prof),
-            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 13),
+            style: const TextStyle(
+                fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                fontSize: 13, color: Colors.white),
             overflow: TextOverflow.ellipsis,
           ),
           subtitle: Row(mainAxisSize: MainAxisSize.min, children: [
             if (role == 'admin')
-              _miniBadge('Admin', const Color(0xFF00838F)),
+              _miniBadge('Admin', _tealC),
             if (role == 'moderateur')
-              _miniBadge('Modérateur', const Color(0xFF8E24AA)),
+              _miniBadge('Modérateur', const Color(0xFFCE93D8)),
             if (statut == 'banned')
               _miniBadge('Banni', Colors.red),
           ]),
           trailing: PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, size: 18, color: _greyC),
+            icon: Icon(Icons.more_vert, size: 18, color: Colors.white.withValues(alpha: 0.6)),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             onSelected: (val) => _updateMembre(uid, val),
             itemBuilder: (_) {
@@ -2517,7 +2653,8 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
     return Column(children: [
       Expanded(
         child: _regles.isEmpty
-            ? const Center(child: Text('Aucune règle définie', style: TextStyle(fontFamily: 'Galey', color: _greyC)))
+            ? Center(child: Text('Aucune règle définie',
+                style: TextStyle(fontFamily: 'Galey', color: Colors.white60)))
             : ReorderableListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 itemCount: _regles.length,
@@ -2534,10 +2671,14 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
                     height: 28,
                     decoration: const BoxDecoration(color: _tealC, shape: BoxShape.circle),
                     child: Center(
-                      child: Text('${i + 1}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                      child: Text('${i + 1}',
+                          style: const TextStyle(
+                              color: Color(0xFF071C22), fontSize: 12, fontWeight: FontWeight.w700)),
                     ),
                   ),
-                  title: Text(_regles[i], style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+                  title: Text(_regles[i],
+                      style: const TextStyle(
+                          fontFamily: 'Galey', fontSize: 13, color: Colors.white)),
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
                     onPressed: () => setState(() => _regles.removeAt(i)),
@@ -2549,21 +2690,29 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
       Container(
         padding: EdgeInsets.only(
             left: 16, right: 16, top: 8, bottom: MediaQuery.of(context).padding.bottom + 8),
-        decoration: const BoxDecoration(border: Border(top: BorderSide(color: Color(0xFFEEEEEE)))),
+        decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1)))),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Row(children: [
             Expanded(
               child: TextField(
                 controller: _regleCtrl,
+                style: const TextStyle(fontFamily: 'Galey', color: Colors.white),
                 decoration: InputDecoration(
                   hintText: 'Ajouter une règle…',
-                  hintStyle: const TextStyle(fontFamily: 'Galey', color: _greyC),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _tealC, width: 1.5)),
+                  hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.4)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18))),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18))),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: _tealC, width: 1.5)),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   filled: true,
-                  fillColor: const Color(0xFFF8F8F8),
+                  fillColor: Colors.white.withValues(alpha: 0.08),
                 ),
               ),
             ),
@@ -2586,8 +2735,13 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
             width: double.infinity,
             child: FilledButton(
               onPressed: _saveRegles,
-              style: FilledButton.styleFrom(backgroundColor: _tealC, padding: const EdgeInsets.symmetric(vertical: 12)),
-              child: const Text('Sauvegarder les règles', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+              style: FilledButton.styleFrom(
+                  backgroundColor: _tealC,
+                  padding: const EdgeInsets.symmetric(vertical: 12)),
+              child: const Text('Sauvegarder les règles',
+                  style: TextStyle(
+                      fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      color: Color(0xFF071C22))),
             ),
           ),
         ]),
@@ -2603,13 +2757,15 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         // Photo de profil du groupe
-        const Text('Photo de profil', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _darkC)),
+        const Text('Photo de profil',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                fontSize: 14, color: Colors.white)),
         const SizedBox(height: 12),
         Row(children: [
           // Avatar actuel ou sélectionné
           CircleAvatar(
             radius: 40,
-            backgroundColor: _tealC.withValues(alpha: 0.15),
+            backgroundColor: _tealC.withValues(alpha: 0.2),
             backgroundImage: _avatarFile != null
                 ? FileImage(_avatarFile!) as ImageProvider
                 : (currentAvatar != null ? NetworkImage(currentAvatar) : null),
@@ -2620,13 +2776,14 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
           const SizedBox(width: 16),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Photo carrée, visible sur la carte du groupe',
-                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _greyC)),
+              Text('Photo carrée, visible sur la carte du groupe',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white60)),
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: _uploadingAvatar ? null : () => _pickAndUpload(isAvatar: true),
                 icon: _uploadingAvatar
-                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: _tealC))
+                    ? const SizedBox(width: 14, height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: _tealC))
                     : const Icon(Icons.photo_camera_outlined, size: 18, color: _tealC),
                 label: Text(_uploadingAvatar ? 'Upload…' : 'Changer la photo',
                     style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: _tealC)),
@@ -2640,7 +2797,9 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
         const SizedBox(height: 28),
 
         // Bannière
-        const Text('Bannière', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: _darkC)),
+        const Text('Bannière',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                fontSize: 14, color: Colors.white)),
         const SizedBox(height: 12),
         GestureDetector(
           onTap: _uploadingBanner ? null : () => _pickAndUpload(isAvatar: false),
@@ -2650,7 +2809,7 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
             decoration: BoxDecoration(
               color: _tealC.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _tealC.withValues(alpha: 0.3), width: 1.5),
+              border: Border.all(color: _tealC.withValues(alpha: 0.35), width: 1.5),
             ),
             clipBehavior: Clip.hardEdge,
             child: _uploadingBanner
@@ -2681,8 +2840,8 @@ class _AdminSheetState extends State<_AdminSheet> with TickerProviderStateMixin 
           ),
         ),
         const SizedBox(height: 8),
-        const Text('Image panoramique affichée en haut de la page du groupe',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _greyC)),
+        Text('Image panoramique affichée en haut de la page du groupe',
+            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white60)),
       ]),
     );
   }

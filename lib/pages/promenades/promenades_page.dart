@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:PetsMatch/main.dart' show getApiKey, User_Info;
 import 'package:PetsMatch/pages/promenades/promenade_detail_page.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:PetsMatch/services/promenade_notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -44,21 +45,30 @@ class _PromenadesPageState extends State<PromenadePage> {
   bool _loading = true;
 
   // Filtres
-  String _filterEspece = 'Toutes';
-  final _filterLieuCtrl = TextEditingController();
+  String _activeTab = 'upcoming';
+  final _searchCtrl = TextEditingController();
+  String? _filterEspece;
+  String? _filterNiveau;
 
   List<Map<String, dynamic>> get _filtered {
-    final lieu = _filterLieuCtrl.text.toLowerCase().trim();
+    final q = _searchCtrl.text.toLowerCase().trim();
     return _promenades.where((p) {
-      final espece = p['espece']?.toString() ?? 'Toutes';
-      if (_filterEspece != 'Toutes' && espece != 'Toutes' && espece != 'Toutes espèces' && espece != _filterEspece) return false;
-      if (lieu.isNotEmpty) {
+      if (q.isNotEmpty) {
         final adresse = (p['lieu_rdv'] ?? '').toString().toLowerCase();
-        if (!adresse.contains(lieu)) return false;
+        final titre = (p['titre'] ?? '').toString().toLowerCase();
+        if (!adresse.contains(q) && !titre.contains(q)) return false;
       }
+      if (_activeTab == 'mes') return _mesParticipations.containsKey(p['id'].toString());
+      if (_filterEspece != null) {
+        final espece = (p['espece'] ?? '').toString();
+        if (espece != _filterEspece && espece != 'Toutes' && espece != 'Toutes espèces') return false;
+      }
+      if (_filterNiveau != null && p['niveau']?.toString() != _filterNiveau) return false;
       return true;
     }).toList();
   }
+
+  bool get _hasActiveFilters => _filterEspece != null || _filterNiveau != null;
 
   @override
   void initState() {
@@ -208,21 +218,237 @@ class _PromenadesPageState extends State<PromenadePage> {
 
   @override
   Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).padding.bottom;
     return Scaffold(
       backgroundColor: _darkC,
-      floatingActionButton: _uid.isNotEmpty
-          ? FloatingActionButton(
-              backgroundColor: _orange,
-              onPressed: _openCreation,
-              child: const Icon(Icons.add, color: Colors.white),
-            )
-          : null,
-      body: Stack(children: [
-        Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
-        SafeArea(child: Column(children: [
-          // ── Header ──
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      body: Container(
+        decoration: const BoxDecoration(gradient: _bgGrad),
+        child: Stack(children: [
+          // ── Contenu scrollable ──
+          CustomScrollView(slivers: [
+            SliverToBoxAdapter(child: _heroSection()),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  _searchBar(),
+                  const SizedBox(height: 12),
+                  _filterTabs(),
+                  const SizedBox(height: 20),
+                  Row(children: [
+                    const Expanded(
+                      child: Text('Balades à proximité',
+                          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                              fontSize: 16, color: Colors.white)),
+                    ),
+                    GestureDetector(
+                      onTap: _openMapView,
+                      child: const Row(children: [
+                        Text('Voir la carte',
+                            style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                                color: Color(0xFF7ED69D), fontWeight: FontWeight.w600)),
+                        SizedBox(width: 4),
+                        Icon(Icons.location_on_rounded, color: Color(0xFF7ED69D), size: 16),
+                      ]),
+                    ),
+                  ]),
+                  const SizedBox(height: 12),
+                ]),
+              ),
+            ),
+            if (_loading)
+              const SliverFillRemaining(
+                  child: Center(child: CircularProgressIndicator(color: Color(0xFF7ED69D))))
+            else if (_filtered.isEmpty)
+              SliverFillRemaining(child: _empty())
+            else
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, bottom + 90),
+                sliver: SliverList.separated(
+                  itemCount: _filtered.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) {
+                    final p = _filtered[i];
+                    final id = p['id'].toString();
+                    final myStatut = _mesParticipations[id];
+                    return GestureDetector(
+                      onTap: () => Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => PromenadeDetailPage(promenadeId: id))),
+                      child: _PromenadesCard(
+                        promenade: p,
+                        estParticipant: myStatut != null,
+                        myStatut: myStatut,
+                        onToggle: _uid.isNotEmpty && myStatut == null
+                            ? () => _toggleParticipation(id)
+                            : null,
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ]),
+          // ── Bouton bas fixe ──
+          if (_uid.isNotEmpty)
+            Positioned(
+              bottom: 0, left: 0, right: 0,
+              child: Container(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, bottom + 16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                    colors: [_darkC.withValues(alpha: 0), _darkC],
+                  ),
+                ),
+                child: SizedBox(
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    onPressed: _openCreation,
+                    icon: const Icon(Icons.add, size: 18, color: Color(0xFF071C22)),
+                    label: const Text('Créer une balade',
+                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                            fontSize: 15, color: Color(0xFF071C22))),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7ED69D),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ]),
+      ),
+    );
+  }
+
+  void _openMapView() {
+    final withCoords = _promenades
+        .where((p) => p['lat'] != null && p['lng'] != null)
+        .toList();
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => _PromenadMapPage(promenades: withCoords)),
+    );
+  }
+
+  void _showFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        String? tmpEspece = _filterEspece;
+        String? tmpNiveau = _filterNiveau;
+        return StatefulBuilder(builder: (ctx, setLocal) {
+          const especes = ['Chien', 'Chat', 'Lapin', 'Oiseau', 'Rongeur'];
+          const niveaux = ['facile', 'moyen', 'difficile'];
+          return Container(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+            decoration: const BoxDecoration(
+              color: Color(0xFF0E2A30),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Text('Filtres', style: TextStyle(fontFamily: 'Galey', fontSize: 18,
+                    fontWeight: FontWeight.w800, color: Colors.white)),
+                const Spacer(),
+                if (tmpEspece != null || tmpNiveau != null)
+                  GestureDetector(
+                    onTap: () { setLocal(() { tmpEspece = null; tmpNiveau = null; }); },
+                    child: const Text('Réinitialiser',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Color(0xFF7ED69D))),
+                  ),
+              ]),
+              const SizedBox(height: 20),
+              const Text('Espèce', style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                  fontWeight: FontWeight.w700, color: Colors.white70)),
+              const SizedBox(height: 10),
+              Wrap(spacing: 8, runSpacing: 8, children: especes.map((e) {
+                final active = tmpEspece == e;
+                return GestureDetector(
+                  onTap: () => setLocal(() => tmpEspece = active ? null : e),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: active ? const Color(0xFF7ED69D).withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.07),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: active ? const Color(0xFF7ED69D) : Colors.white.withValues(alpha: 0.15)),
+                    ),
+                    child: Text(e, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                        color: active ? const Color(0xFF7ED69D) : Colors.white70,
+                        fontWeight: active ? FontWeight.w700 : FontWeight.normal)),
+                  ),
+                );
+              }).toList()),
+              const SizedBox(height: 20),
+              const Text('Niveau', style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                  fontWeight: FontWeight.w700, color: Colors.white70)),
+              const SizedBox(height: 10),
+              Wrap(spacing: 8, children: niveaux.map((n) {
+                final active = tmpNiveau == n;
+                final label = n[0].toUpperCase() + n.substring(1);
+                return GestureDetector(
+                  onTap: () => setLocal(() => tmpNiveau = active ? null : n),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: active ? const Color(0xFF7ED69D).withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.07),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: active ? const Color(0xFF7ED69D) : Colors.white.withValues(alpha: 0.15)),
+                    ),
+                    child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 13,
+                        color: active ? const Color(0xFF7ED69D) : Colors.white70,
+                        fontWeight: active ? FontWeight.w700 : FontWeight.normal)),
+                  ),
+                );
+              }).toList()),
+              const SizedBox(height: 28),
+              SizedBox(
+                width: double.infinity, height: 50,
+                child: ElevatedButton(
+                  onPressed: () {
+                    setState(() { _filterEspece = tmpEspece; _filterNiveau = tmpNiveau; });
+                    Navigator.pop(ctx);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF7ED69D), elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: const Text('Appliquer', style: TextStyle(fontFamily: 'Galey',
+                      fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF071C22))),
+                ),
+              ),
+            ]),
+          );
+        });
+      },
+    );
+  }
+
+  Widget _heroSection() {
+    return Stack(children: [
+      SizedBox(
+        height: 210,
+        width: double.infinity,
+        child: Image.asset('assets/deco/communautybackground.jpg', fit: BoxFit.cover),
+      ),
+      Positioned(
+        bottom: 0, left: 0, right: 0, height: 90,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter, end: Alignment.bottomCenter,
+              colors: [Colors.transparent, _darkC],
+            ),
+          ),
+        ),
+      ),
+      Positioned(
+        top: 0, left: 0, right: 0,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: Row(children: [
               GestureDetector(
                 onTap: () => Navigator.pop(context),
@@ -243,117 +469,107 @@ class _PromenadesPageState extends State<PromenadePage> {
                 ),
               ),
               const SizedBox(width: 14),
-              const Text('Promenades & Randonnées',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 22, color: Colors.white)),
-            ]),
-          ),
-          // ── Filtres ──
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-                    ),
-                    child: TextField(
-                      controller: _filterLieuCtrl,
-                      onChanged: (_) => setState(() {}),
-                      style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white),
-                      decoration: InputDecoration(
-                        hintText: 'Filtrer par ville, département, région…',
-                        hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.4), fontSize: 13),
-                        prefixIcon: Icon(Icons.location_on_outlined, size: 18, color: Colors.white.withValues(alpha: 0.6)),
-                        suffixIcon: _filterLieuCtrl.text.isNotEmpty
-                            ? IconButton(icon: Icon(Icons.close, size: 16, color: Colors.white.withValues(alpha: 0.6)),
-                                onPressed: () => setState(() => _filterLieuCtrl.clear()))
-                            : null,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
+              const Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Balades & Rencontres',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800,
+                          fontSize: 22, color: Colors.white)),
+                  Text('Sortez, rencontrez et partagez des moments uniques !',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white70)),
+                ]),
+              ),
+              GestureDetector(
+                onTap: _showFilterSheet,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: _hasActiveFilters
+                            ? const Color(0xFF7ED69D).withValues(alpha: 0.35)
+                            : Colors.white.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _hasActiveFilters
+                              ? const Color(0xFF7ED69D).withValues(alpha: 0.6)
+                              : Colors.white.withValues(alpha: 0.25),
+                        ),
                       ),
+                      child: Icon(Icons.tune_rounded,
+                          color: _hasActiveFilters ? const Color(0xFF7ED69D) : Colors.white,
+                          size: 18),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(children: _kEspeces.map((e) {
-                  final sel = _filterEspece == e;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: GestureDetector(
-                      onTap: () => setState(() => _filterEspece = e),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(22),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              gradient: sel ? const LinearGradient(colors: [Color(0xFF2E7D5E), Color(0xFF1E7A8C)]) : null,
-                              color: sel ? null : Colors.white.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(22),
-                              border: Border.all(color: sel ? Colors.transparent : Colors.white.withValues(alpha: 0.20)),
-                              boxShadow: sel ? [BoxShadow(color: const Color(0xFF2E7D5E).withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3))] : null,
-                            ),
-                            child: Text(_especeEmoji(e),
-                                style: const TextStyle(fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
-                                    color: Colors.white)),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList()),
-              ),
             ]),
           ),
-          // ── Liste ──
-          if (_loading)
-            const Expanded(child: Center(child: CircularProgressIndicator(color: _orange)))
-          else
-            Expanded(
-              child: _filtered.isEmpty
-                  ? _empty()
-                  : RefreshIndicator(
-                      onRefresh: _load,
-                      color: _orange,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                        itemCount: _filtered.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (_, i) {
-                          final p = _filtered[i];
-                          final id = p['id'].toString();
-                          final myStatut = _mesParticipations[id];
-                          return GestureDetector(
-                            onTap: () => Navigator.push(context,
-                                MaterialPageRoute(builder: (_) => PromenadeDetailPage(promenadeId: id))),
-                            child: _PromenadesCard(
-                              promenade: p,
-                              estParticipant: myStatut != null,
-                              myStatut: myStatut,
-                              onToggle: _uid.isNotEmpty && myStatut == null
-                                  ? () => _toggleParticipation(id)
-                                  : null,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _searchBar() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+          ),
+          child: TextField(
+            controller: _searchCtrl,
+            onChanged: (_) => setState(() {}),
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Rechercher une balade, une ville…',
+              hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.4), fontSize: 13),
+              prefixIcon: Icon(Icons.search, size: 18, color: Colors.white.withValues(alpha: 0.6)),
+              suffixIcon: _searchCtrl.text.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(Icons.close, size: 16, color: Colors.white.withValues(alpha: 0.6)),
+                      onPressed: () => setState(() => _searchCtrl.clear()))
+                  : null,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
             ),
-        ])),
-      ]),
+          ),
+        ),
+      ),
     );
+  }
+
+  Widget _filterTabs() {
+    const tabs = [('upcoming', 'Autour de moi'), ('avenir', 'À venir'), ('mes', 'Mes balades')];
+    return Row(children: tabs.map((tab) {
+      final active = _activeTab == tab.$1;
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: GestureDetector(
+          onTap: () => setState(() => _activeTab = tab.$1),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: active ? const Color(0xFF7ED69D) : Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20),
+              border: active ? null : Border.all(color: Colors.white.withValues(alpha: 0.20)),
+            ),
+            child: Text(tab.$2,
+                style: TextStyle(
+                    fontFamily: 'Galey', fontSize: 12, fontWeight: FontWeight.w600,
+                    color: active ? const Color(0xFF071C22) : Colors.white)),
+          ),
+        ),
+      );
+    }).toList());
   }
 
   Widget _empty() => const Center(
@@ -373,6 +589,70 @@ class _PromenadesPageState extends State<PromenadePage> {
       );
 }
 
+// ─── Map View ─────────────────────────────────────────────────────────────────
+
+class _PromenadMapPage extends StatelessWidget {
+  final List<Map<String, dynamic>> promenades;
+  const _PromenadMapPage({required this.promenades});
+
+  @override
+  Widget build(BuildContext context) {
+    final markers = <Marker>{};
+    for (final p in promenades) {
+      final lat = (p['lat'] as num?)?.toDouble();
+      final lng = (p['lng'] as num?)?.toDouble();
+      if (lat == null || lng == null) continue;
+      markers.add(Marker(
+        markerId: MarkerId(p['id'].toString()),
+        position: LatLng(lat, lng),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        infoWindow: InfoWindow(
+          title: p['titre']?.toString() ?? 'Promenade',
+          snippet: p['lieu_rdv']?.toString(),
+          onTap: () {
+            Navigator.pop(context);
+            Navigator.push(context, MaterialPageRoute(
+              builder: (_) => PromenadeDetailPage(promenadeId: p['id'].toString())));
+          },
+        ),
+      ));
+    }
+
+    LatLng center = const LatLng(46.603354, 1.888334);
+    double zoom = 5.5;
+    if (promenades.isNotEmpty) {
+      final first = promenades.first;
+      final lat = (first['lat'] as num?)?.toDouble();
+      final lng = (first['lng'] as num?)?.toDouble();
+      if (lat != null && lng != null) {
+        center = LatLng(lat, lng);
+        zoom = 10;
+      }
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF071C22),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF071C22),
+        foregroundColor: Colors.white,
+        title: const Text('Balades sur la carte',
+            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        elevation: 0,
+      ),
+      body: promenades.isEmpty
+          ? const Center(
+              child: Text('Aucune balade avec position GPS',
+                  style: TextStyle(fontFamily: 'Galey', color: Colors.white70)))
+          : GoogleMap(
+              initialCameraPosition: CameraPosition(target: center, zoom: zoom),
+              markers: markers,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: true,
+            ),
+    );
+  }
+}
+
 // ─── Card ─────────────────────────────────────────────────────────────────────
 
 class _PromenadesCard extends StatelessWidget {
@@ -383,21 +663,6 @@ class _PromenadesCard extends StatelessWidget {
 
   const _PromenadesCard(
       {required this.promenade, required this.estParticipant, this.myStatut, this.onToggle});
-
-  static Color _niveauColor(String n) => switch (n) {
-        'facile' => const Color(0xFF6E9E57),
-        'moyen' => const Color(0xFFEF6C00),
-        'difficile' => Colors.red,
-        _ => Colors.grey,
-      };
-
-  static String _fmtDate(String iso) {
-    try {
-      return DateFormat('dd/MM/yyyy · HH:mm').format(DateTime.parse(iso).toLocal());
-    } catch (_) {
-      return iso;
-    }
-  }
 
   static Future<void> _openNavigation(double lat, double lng) async {
     final latStr = lat.toStringAsFixed(6);
@@ -411,240 +676,140 @@ class _PromenadesCard extends StatelessWidget {
     }
   }
 
+  static String _fmtDateRelative(String iso) {
+    try {
+      final date = DateTime.parse(iso).toLocal();
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final dateDay = DateTime(date.year, date.month, date.day);
+      final diff = dateDay.difference(today).inDays;
+      final prefix = diff == 0 ? "Aujourd'hui" : diff == 1 ? 'Demain'
+          : DateFormat('EEE d MMM', 'fr_FR').format(date);
+      return '$prefix • ${DateFormat('HH:mm').format(date)}';
+    } catch (_) { return iso; }
+  }
+
   @override
   Widget build(BuildContext context) {
     final titre = promenade['titre']?.toString() ?? 'Promenade';
     final lieu = promenade['lieu_rdv']?.toString() ?? '';
     final dateHeure = promenade['date_heure']?.toString() ?? '';
-    final niveau = promenade['niveau']?.toString() ?? 'facile';
-    final duree = (promenade['duree_minutes'] as num?)?.toInt();
-    final distance = (promenade['distance_km'] as num?)?.toDouble();
-    final desc = promenade['description']?.toString() ?? '';
+    final espece = promenade['espece']?.toString() ?? '';
+    final participantsMax = (promenade['participants_max'] as num?)?.toInt();
     final lat = (promenade['lat'] as num?)?.toDouble();
     final lng = (promenade['lng'] as num?)?.toDouble();
-    final participantsMax = (promenade['participants_max'] as num?)?.toInt();
-    final espece = promenade['espece']?.toString() ?? '';
-    final toutesRaces = promenade['toutes_races'] as bool? ?? true;
-    final races = promenade['races']?.toString() ?? '';
+    final photoUrl = promenade['photo_url']?.toString();
 
     final partsData = promenade['promenades_participants'];
     final nbParticipants = (partsData is List && partsData.isNotEmpty)
-        ? (partsData.first['count'] as num?)?.toInt() ?? 0
-        : 0;
-
-    final isFull = !estParticipant &&
-        participantsMax != null &&
-        nbParticipants >= participantsMax;
+        ? (partsData.first['count'] as num?)?.toInt() ?? 0 : 0;
+    final isFull = !estParticipant && participantsMax != null && nbParticipants >= participantsMax;
 
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 8,
-              offset: const Offset(0, 2))
-        ],
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 2))],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(
-              child: Text(titre,
-                  style: const TextStyle(
-                      fontFamily: 'Galey',
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                      color: Color(0xFF1E2025))),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                  color: _niveauColor(niveau).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20)),
-              child: Text(niveau,
-                  style: TextStyle(
-                      fontFamily: 'Galey',
-                      fontSize: 11,
-                      color: _niveauColor(niveau),
-                      fontWeight: FontWeight.w700)),
-            ),
-          ]),
-          if (espece.isNotEmpty && espece != 'Toutes' && espece != 'Toutes espèces') ...[
-            const SizedBox(height: 6),
-            Row(children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                    color: const Color(0xFF2E7D5E).withValues(alpha: 0.09),
-                    borderRadius: BorderRadius.circular(12)),
-                child: Text(_especeEmoji(espece),
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11,
-                        color: Color(0xFF2E7D5E), fontWeight: FontWeight.w600)),
-              ),
-              if (!toutesRaces && races.isNotEmpty) ...[
-                const SizedBox(width: 6),
-                Expanded(child: Text('• $races',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey),
-                    overflow: TextOverflow.ellipsis)),
-              ],
-            ]),
-          ],
-          if (dateHeure.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Row(children: [
-              const Icon(Icons.schedule_outlined, size: 13, color: Colors.grey),
-              const SizedBox(width: 5),
-              Text(_fmtDate(dateHeure),
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
-            ]),
-          ],
-          if (lieu.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Row(children: [
-              const Icon(Icons.location_on_outlined, size: 13, color: Colors.grey),
-              const SizedBox(width: 5),
-              Expanded(
-                child: Text(lieu,
-                    style: const TextStyle(
-                        fontFamily: 'Galey', fontSize: 12, color: Colors.grey),
-                    overflow: TextOverflow.ellipsis),
-              ),
-              if (lat != null && lng != null)
-                GestureDetector(
-                  onTap: () => _openNavigation(lat, lng),
-                  child: Container(
-                    margin: const EdgeInsets.only(left: 6),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF2E7D5E).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        // ── Thumbnail ──
+        ClipRRect(
+          borderRadius: const BorderRadius.only(topLeft: Radius.circular(16), bottomLeft: Radius.circular(16)),
+          child: SizedBox(
+            width: 88,
+            child: photoUrl != null
+                ? Image.network(photoUrl, fit: BoxFit.cover)
+                : Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft, end: Alignment.bottomRight,
+                        colors: [Color(0xFF2E7D5E), Color(0xFF7ED69D)],
+                      ),
                     ),
-                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.navigation_outlined, size: 11, color: Color(0xFF2E7D5E)),
-                      SizedBox(width: 3),
-                      Text('Y aller',
-                          style: TextStyle(
-                              fontFamily: 'Galey',
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF2E7D5E))),
-                    ]),
+                    child: const Center(child: Icon(Icons.directions_walk_rounded, color: Colors.white, size: 34)),
                   ),
-                ),
-            ]),
-          ],
-          if (duree != null || distance != null || nbParticipants > 0) ...[
-            const SizedBox(height: 4),
-            Row(children: [
-              if (duree != null) ...[
-                const Icon(Icons.timer_outlined, size: 13, color: Colors.grey),
-                const SizedBox(width: 4),
-                Text('${duree}min',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
-              ],
-              if (duree != null && distance != null) const SizedBox(width: 12),
-              if (distance != null) ...[
-                const Icon(Icons.straighten, size: 13, color: Colors.grey),
-                const SizedBox(width: 4),
-                Text('${distance.toStringAsFixed(1)} km',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
-              ],
-              if ((duree != null || distance != null) && nbParticipants > 0)
-                const SizedBox(width: 12),
-              if (nbParticipants > 0 || participantsMax != null) ...[
-                Icon(Icons.group_outlined,
-                    size: 13, color: isFull ? Colors.red.shade400 : Colors.grey),
+          ),
+        ),
+        // ── Contenu ──
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if (dateHeure.isNotEmpty)
+                Text(_fmtDateRelative(dateHeure),
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+              const SizedBox(height: 3),
+              Text(titre,
+                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 14, color: Color(0xFF1E2025)),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 5),
+              if (lieu.isNotEmpty)
+                Row(children: [
+                  Icon(Icons.location_on_outlined, size: 12, color: Colors.grey.shade400),
+                  const SizedBox(width: 4),
+                  Expanded(child: Text(lieu,
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500),
+                      maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  if (lat != null && lng != null)
+                    GestureDetector(
+                      onTap: () => _openNavigation(lat, lng),
+                      child: const Icon(Icons.navigation_outlined, size: 14, color: Color(0xFF2E7D5E)),
+                    ),
+                ]),
+              const SizedBox(height: 3),
+              Row(children: [
+                Icon(Icons.group_outlined, size: 12, color: isFull ? Colors.red.shade300 : Colors.grey.shade400),
                 const SizedBox(width: 4),
                 Text(
-                  participantsMax != null
-                      ? '$nbParticipants / $participantsMax'
-                      : '$nbParticipants',
-                  style: TextStyle(
-                      fontFamily: 'Galey',
-                      fontSize: 12,
-                      color: isFull ? Colors.red.shade400 : Colors.grey,
+                  participantsMax != null ? '$nbParticipants/$participantsMax participants' : '$nbParticipants participants',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 11,
+                      color: isFull ? Colors.red.shade300 : Colors.grey.shade500,
                       fontWeight: isFull ? FontWeight.w700 : FontWeight.normal),
                 ),
-                if (isFull) ...[
+              ]),
+              if (espece.isNotEmpty && espece != 'Toutes' && espece != 'Toutes espèces') ...[
+                const SizedBox(height: 3),
+                Row(children: [
+                  Icon(Icons.pets, size: 12, color: Colors.grey.shade400),
                   const SizedBox(width: 4),
-                  Text('· Complet',
-                      style: TextStyle(
-                          fontFamily: 'Galey',
-                          fontSize: 12,
-                          color: Colors.red.shade400,
-                          fontWeight: FontWeight.w700)),
-                ],
+                  Text('$espece bienvenus',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
+                ]),
+              ],
+              if (myStatut != null || isFull) ...[
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isFull ? Colors.grey.shade100
+                          : myStatut == 'accepte' ? const Color(0xFF7ED69D).withValues(alpha: 0.15)
+                          : Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      isFull ? 'Complet'
+                          : myStatut == 'accepte' ? '✓ Inscrit'
+                          : '⏳ En attente',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, fontWeight: FontWeight.w700,
+                          color: isFull ? Colors.grey
+                              : myStatut == 'accepte' ? const Color(0xFF2E7D5E)
+                              : Colors.amber.shade800),
+                    ),
+                  ),
+                ),
               ],
             ]),
-          ],
-          if (desc.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(desc,
-                style: const TextStyle(
-                    fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis),
-          ],
-          if (estParticipant || onToggle != null || isFull) ...[
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: myStatut == 'en_attente'
-                  ? Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.shade50,
-                        border: Border.all(color: Colors.amber.shade300),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text('⏳ En attente',
-                          style: TextStyle(
-                              fontFamily: 'Galey',
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.amber.shade800)),
-                    )
-                  : isFull
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade200,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text('Complet',
-                              style: TextStyle(
-                                  fontFamily: 'Galey',
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.grey)),
-                        )
-                      : GestureDetector(
-                          onTap: onToggle,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 150),
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: myStatut == 'accepte' ? _orange : Colors.transparent,
-                              border: Border.all(color: _orange),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              myStatut == 'accepte' ? 'Inscrit ✓' : 'Rejoindre',
-                              style: TextStyle(
-                                  fontFamily: 'Galey',
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: myStatut == 'accepte' ? Colors.white : _orange),
-                            ),
-                          ),
-                        ),
-            ),
-          ],
-        ]),
-      ),
+          ),
+        ),
+        // ── Chevron ──
+        Padding(
+          padding: const EdgeInsets.only(right: 10),
+          child: Center(child: Icon(Icons.chevron_right_rounded, color: Colors.grey.shade300, size: 22)),
+        ),
+      ]),
     );
   }
 }

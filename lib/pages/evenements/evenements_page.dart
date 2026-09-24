@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-const _green = Color(0xFF6E9E57);
+const _green = Color(0xFF7ED69D);
 const _darkC = Color(0xFF071C22);
 const _bgGrad = LinearGradient(
   begin: Alignment.topCenter, end: Alignment.bottomCenter,
@@ -151,19 +151,12 @@ class _EvenementsPageState extends State<EvenementsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _darkC,
-      floatingActionButton: _uid.isNotEmpty
-          ? FloatingActionButton(
-              backgroundColor: _green,
-              onPressed: _openCreation,
-              child: const Icon(Icons.add, color: Colors.white),
-            )
-          : null,
       body: Stack(children: [
         Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
         SafeArea(child: Column(children: [
           // ── Header ──
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: Row(children: [
               GestureDetector(
                 onTap: () => Navigator.pop(context),
@@ -184,8 +177,14 @@ class _EvenementsPageState extends State<EvenementsPage> {
                 ),
               ),
               const SizedBox(width: 14),
-              const Text('Événements',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 24, color: Colors.white)),
+              const Expanded(
+                child: Text('Événements',
+                    style: TextStyle(
+                        fontFamily: 'Galey',
+                        fontWeight: FontWeight.w800,
+                        fontSize: 22,
+                        color: Colors.white)),
+              ),
             ]),
           ),
           // ── Filtres type ──
@@ -209,7 +208,7 @@ class _EvenementsPageState extends State<EvenementsPage> {
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                         decoration: BoxDecoration(
-                          gradient: sel ? const LinearGradient(colors: [_green, Color(0xFF1E7A8C)]) : null,
+                          gradient: sel ? const LinearGradient(colors: [Color(0xFF7ED69D), Color(0xFF2E7D5E)]) : null,
                           color: sel ? null : Colors.white.withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(22),
                           border: Border.all(color: sel ? Colors.transparent : Colors.white.withValues(alpha: 0.20)),
@@ -252,13 +251,53 @@ class _EvenementsPageState extends State<EvenementsPage> {
                       ),
           ),
         ])),
+        if (_uid.isNotEmpty)
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: EdgeInsets.fromLTRB(
+                  16, 16, 16, MediaQuery.of(context).padding.bottom + 16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    const Color(0xFF071C22).withValues(alpha: 0),
+                    const Color(0xFF071C22),
+                  ],
+                ),
+              ),
+              child: SizedBox(
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: _openCreation,
+                  icon: const Icon(Icons.add,
+                      size: 18, color: Color(0xFF071C22)),
+                  label: const Text('Créer un événement',
+                      style: TextStyle(
+                          fontFamily: 'Galey',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          color: Color(0xFF071C22))),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF7ED69D),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30)),
+                  ),
+                ),
+              ),
+            ),
+          ),
       ]),
     );
   }
 
   Widget _empty() => Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.event_outlined, size: 72, color: Color(0xFFCCCCCC)),
+          const Icon(Icons.event_outlined, size: 72, color: Colors.grey),
           const SizedBox(height: 16),
           Text(
             _filterType != 'Tous'
@@ -268,12 +307,12 @@ class _EvenementsPageState extends State<EvenementsPage> {
                 fontFamily: 'Galey',
                 fontWeight: FontWeight.w700,
                 fontSize: 16,
-                color: Color(0xFFAAAAAA)),
+                color: Colors.white70),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
           const Text('Soyez le premier à en créer un !',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey)),
+              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white70)),
         ]),
       );
 }
@@ -305,112 +344,168 @@ class _EvenementCard extends StatelessWidget {
     final lieu = evenement['lieu']?.toString() ?? '';
     final ville = evenement['ville']?.toString() ?? '';
     final prix = (evenement['prix'] as num?) ?? 0;
-    final desc = evenement['description']?.toString() ?? '';
     final localisation = [lieu, ville].where((s) => s.isNotEmpty).join(', ');
 
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
               color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 8,
+              blurRadius: 10,
               offset: const Offset(0, 2))
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(
-              child: Text(titre,
-                  style: const TextStyle(
-                      fontFamily: 'Galey',
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                      color: Color(0xFF1E2025))),
-            ),
-            if (type.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                    color: const Color(0xFFE8F5E9),
-                    borderRadius: BorderRadius.circular(20)),
-                child: Text(type,
-                    style: const TextStyle(
-                        fontFamily: 'Galey',
-                        fontSize: 11,
-                        color: _green,
-                        fontWeight: FontWeight.w600)),
-              ),
-          ]),
-          if (dateDebut.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Row(children: [
-              const Icon(Icons.calendar_today_outlined, size: 13, color: Colors.grey),
-              const SizedBox(width: 5),
-              Text(_fmtDate(dateDebut),
-                  style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
-            ]),
-          ],
-          if (localisation.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Row(children: [
-              const Icon(Icons.location_on_outlined, size: 13, color: Colors.grey),
-              const SizedBox(width: 5),
-              Expanded(
-                child: Text(localisation,
-                    style: const TextStyle(
-                        fontFamily: 'Galey', fontSize: 12, color: Colors.grey),
-                    overflow: TextOverflow.ellipsis),
-              ),
-            ]),
-          ],
-          if (desc.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(desc,
-                style: const TextStyle(
-                    fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis),
-          ],
-          const SizedBox(height: 10),
-          Row(children: [
-            Text(
-              prix == 0 ? 'Gratuit' : '${prix.toStringAsFixed(0)} €',
-              style: TextStyle(
-                  fontFamily: 'Galey',
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                  color: prix == 0 ? _green : const Color(0xFF1E2025)),
-            ),
-            const Spacer(),
-            if (onToggle != null)
-              GestureDetector(
-                onTap: onToggle,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: estInscrit ? _green : Colors.transparent,
-                    border: Border.all(color: _green),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    estInscrit ? 'Inscrit ✓' : 'Je participe',
-                    style: TextStyle(
-                        fontFamily: 'Galey',
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: estInscrit ? Colors.white : _green),
-                  ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Bannière
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            child: Container(
+              height: 110,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF0C3535), Color(0xFF2E7D5E)],
                 ),
               ),
-          ]),
-        ]),
+              child: Center(
+                child: Icon(
+                  _typeIcon(type),
+                  size: 42,
+                  color: Colors.white54,
+                ),
+              ),
+            ),
+          ),
+          // Contenu
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  if (type.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                            colors: [Color(0xFF7ED69D), Color(0xFF2E7D5E)]),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(type,
+                          style: const TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 11,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  const Spacer(),
+                  if (dateDebut.isNotEmpty)
+                    Row(children: [
+                      const Icon(Icons.calendar_today_outlined,
+                          size: 12, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Text(_fmtDate(dateDebut),
+                          style: const TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 11,
+                              color: Colors.grey)),
+                    ]),
+                ]),
+                const SizedBox(height: 6),
+                Text(titre,
+                    style: const TextStyle(
+                        fontFamily: 'Galey',
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: Color(0xFF1E2025))),
+                if (localisation.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(children: [
+                    const Icon(Icons.location_on_outlined,
+                        size: 13, color: Colors.grey),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(localisation,
+                          style: const TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 12,
+                              color: Colors.grey),
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                  ]),
+                ],
+                const SizedBox(height: 8),
+                Row(children: [
+                  Text(
+                    prix == 0 ? 'Gratuit' : '${prix.toStringAsFixed(0)} €',
+                    style: TextStyle(
+                        fontFamily: 'Galey',
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: prix == 0
+                            ? const Color(0xFF7ED69D)
+                            : const Color(0xFF1E2025)),
+                  ),
+                  const Spacer(),
+                  if (onToggle != null)
+                    GestureDetector(
+                      onTap: onToggle,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: estInscrit
+                              ? const Color(0xFF7ED69D)
+                              : Colors.transparent,
+                          border:
+                              Border.all(color: const Color(0xFF7ED69D)),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          estInscrit ? 'Inscrit ✓' : 'Je participe',
+                          style: TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: estInscrit
+                                  ? Colors.white
+                                  : const Color(0xFF7ED69D)),
+                        ),
+                      ),
+                    ),
+                ]),
+              ],
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  static IconData _typeIcon(String type) {
+    switch (type) {
+      case 'Exposition / Concours':
+        return Icons.emoji_events_outlined;
+      case 'Salon / Foire':
+        return Icons.storefront_outlined;
+      case 'Formation / Atelier':
+        return Icons.school_outlined;
+      case 'Balade collective':
+        return Icons.directions_walk_outlined;
+      case 'Rassemblement de race':
+        return Icons.pets_outlined;
+      case 'Vente de portée':
+        return Icons.favorite_outline;
+      default:
+        return Icons.event_outlined;
+    }
   }
 }
 
@@ -489,7 +584,7 @@ class _CreateEvenementSheetState extends State<_CreateEvenementSheet> {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-          color: Colors.white,
+          color: Color(0xFF0E2A30),
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       padding: EdgeInsets.only(
           left: 20,
@@ -508,7 +603,7 @@ class _CreateEvenementSheetState extends State<_CreateEvenementSheet> {
                         width: 40,
                         height: 4,
                         decoration: BoxDecoration(
-                            color: Colors.grey.shade300,
+                            color: Colors.white.withValues(alpha: 0.30),
                             borderRadius: BorderRadius.circular(2)))),
                 const SizedBox(height: 16),
                 Row(children: [
@@ -517,9 +612,10 @@ class _CreateEvenementSheetState extends State<_CreateEvenementSheet> {
                           style: TextStyle(
                               fontFamily: 'Galey',
                               fontWeight: FontWeight.w700,
-                              fontSize: 18))),
+                              fontSize: 18,
+                              color: Colors.white))),
                   IconButton(
-                      icon: const Icon(Icons.close, size: 22, color: Colors.grey),
+                      icon: const Icon(Icons.close, size: 22, color: Colors.white),
                       onPressed: () => Navigator.pop(context),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints()),
@@ -529,6 +625,7 @@ class _CreateEvenementSheetState extends State<_CreateEvenementSheet> {
                 _lbl('Titre *'),
                 TextFormField(
                   decoration: _dec('Ex : Concours d\'agility Lyon'),
+                  style: const TextStyle(color: Colors.white, fontFamily: 'Galey'),
                   validator: (v) => (v?.trim().isEmpty ?? true) ? 'Obligatoire' : null,
                   onSaved: (v) => _titre = v?.trim() ?? '',
                 ),
@@ -541,13 +638,21 @@ class _CreateEvenementSheetState extends State<_CreateEvenementSheet> {
                     value: _type,
                     isExpanded: true,
                     underline: const SizedBox(),
+                    dropdownColor: const Color(0xFF0E2A30),
+                    iconEnabledColor: Colors.white,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontFamily: 'Galey',
+                        fontSize: 14),
                     items: _kTypes
                         .skip(1)
                         .map((t) => DropdownMenuItem(
                             value: t,
                             child: Text(t,
                                 style: const TextStyle(
-                                    fontFamily: 'Galey', fontSize: 14))))
+                                    fontFamily: 'Galey',
+                                    fontSize: 14,
+                                    color: Colors.white))))
                         .toList(),
                     onChanged: (v) => setState(() => _type = v ?? 'Autre'),
                   ),
@@ -560,18 +665,21 @@ class _CreateEvenementSheetState extends State<_CreateEvenementSheet> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8F8F8),
+                      color: Colors.white.withValues(alpha: 0.10),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.grey.shade300),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.20)),
                     ),
                     child: Row(children: [
-                      const Icon(Icons.calendar_today_outlined, size: 16, color: _green),
+                      const Icon(Icons.calendar_today_outlined,
+                          size: 16, color: Color(0xFF7ED69D)),
                       const SizedBox(width: 10),
                       Text(DateFormat('dd/MM/yyyy · HH:mm').format(_dateDebut),
                           style: const TextStyle(
                               fontFamily: 'Galey',
                               fontSize: 14,
-                              fontWeight: FontWeight.w600)),
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white)),
                     ]),
                   ),
                 ),
@@ -580,12 +688,20 @@ class _CreateEvenementSheetState extends State<_CreateEvenementSheet> {
                 Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     _lbl('Lieu'),
-                    TextFormField(decoration: _dec('Salle, parc…'), onSaved: (v) => _lieu = v?.trim() ?? ''),
+                    TextFormField(
+                        decoration: _dec('Salle, parc…'),
+                        style: const TextStyle(
+                            color: Colors.white, fontFamily: 'Galey'),
+                        onSaved: (v) => _lieu = v?.trim() ?? ''),
                   ])),
                   const SizedBox(width: 10),
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     _lbl('Ville'),
-                    TextFormField(decoration: _dec('Ex : Lyon'), onSaved: (v) => _ville = v?.trim() ?? ''),
+                    TextFormField(
+                        decoration: _dec('Ex : Lyon'),
+                        style: const TextStyle(
+                            color: Colors.white, fontFamily: 'Galey'),
+                        onSaved: (v) => _ville = v?.trim() ?? ''),
                   ])),
                 ]),
                 const SizedBox(height: 12),
@@ -593,6 +709,7 @@ class _CreateEvenementSheetState extends State<_CreateEvenementSheet> {
                 _lbl('Prix (0 = Gratuit)'),
                 TextFormField(
                   decoration: _dec('0'),
+                  style: const TextStyle(color: Colors.white, fontFamily: 'Galey'),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   onSaved: (v) => _prix = double.tryParse(v?.trim() ?? '') ?? 0,
                 ),
@@ -601,6 +718,7 @@ class _CreateEvenementSheetState extends State<_CreateEvenementSheet> {
                 _lbl('Description'),
                 TextFormField(
                   decoration: _dec('Programme, infos pratiques…'),
+                  style: const TextStyle(color: Colors.white, fontFamily: 'Galey'),
                   maxLines: 3,
                   onSaved: (v) => _description = v?.trim() ?? '',
                 ),
@@ -623,7 +741,8 @@ class _CreateEvenementSheetState extends State<_CreateEvenementSheet> {
                             style: TextStyle(
                                 fontFamily: 'Galey',
                                 fontWeight: FontWeight.w700,
-                                fontSize: 16)),
+                                fontSize: 16,
+                                color: Color(0xFF071C22))),
                   ),
                 ),
               ]),
@@ -639,23 +758,28 @@ class _CreateEvenementSheetState extends State<_CreateEvenementSheet> {
                 fontFamily: 'Galey',
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
-                color: Color(0xFF6F767B))),
+                color: Colors.white)),
       );
 
   InputDecoration _dec(String hint) => InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+        hintStyle: TextStyle(
+            fontFamily: 'Galey',
+            color: Colors.white.withValues(alpha: 0.5)),
         border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Colors.grey.shade300)),
+            borderSide:
+                BorderSide(color: Colors.white.withValues(alpha: 0.20))),
         enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Colors.grey.shade300)),
+            borderSide:
+                BorderSide(color: Colors.white.withValues(alpha: 0.20))),
         focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _green, width: 1.5)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            borderSide: const BorderSide(color: Color(0xFF7ED69D), width: 1.5)),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         filled: true,
-        fillColor: const Color(0xFFF8F8F8),
+        fillColor: Colors.white.withValues(alpha: 0.10),
       );
 }

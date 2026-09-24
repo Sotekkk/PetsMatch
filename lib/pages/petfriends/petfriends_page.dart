@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -21,8 +23,8 @@ class _PetFriendsPageState extends State<PetFriendsPage>
   final _supa = Supabase.instance.client;
   final _myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-  static const _green  = Color(0xFF2E7D5E);
-  static const _orange = Color(0xFFEF6C00);
+  static const _accent = Color(0xFF7ED69D);
+  static const _darkC  = Color(0xFF071C22);
 
   late final TabController _tabs;
 
@@ -272,8 +274,9 @@ class _PetFriendsPageState extends State<PetFriendsPage>
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      backgroundColor: const Color(0xFF0E2A30),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setModal) {
           final query = memberSearchCtrl.text.trim().toLowerCase();
@@ -281,129 +284,206 @@ class _PetFriendsPageState extends State<PetFriendsPage>
               ? _allUsers
               : _allUsers.where((u) => socialProfileName(u).toLowerCase().contains(query)).toList();
           return DraggableScrollableSheet(
-          initialChildSize: 0.75, maxChildSize: 0.95, minChildSize: 0.5, expand: false,
-          builder: (_, sc) => Padding(
-            padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Center(child: Container(width: 40, height: 4,
-                  decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
-              const SizedBox(height: 16),
-              const Text('Nouveau groupe',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 18)),
-              const SizedBox(height: 14),
-              TextField(
-                controller: nomCtrl,
-                style: const TextStyle(fontFamily: 'Galey'),
-                decoration: InputDecoration(
-                  labelText: 'Nom du groupe',
-                  labelStyle: const TextStyle(fontFamily: 'Galey'),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            initialChildSize: 0.75, maxChildSize: 0.95, minChildSize: 0.5, expand: false,
+            builder: (_, sc) => Padding(
+              padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.20),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Text('Ajouter des membres (${selectedUids.length})',
-                  style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),
-              const SizedBox(height: 8),
-              TextField(
-                controller: memberSearchCtrl,
-                onChanged: (_) => setModal(() {}),
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 13),
-                decoration: InputDecoration(
-                  hintText: 'Rechercher n\'importe qui (pas seulement vos PetFriends)…',
-                  hintStyle: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey),
-                  prefixIcon: const Icon(Icons.search, size: 18, color: _green),
-                  isDense: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                const SizedBox(height: 16),
+                const Text(
+                  'Nouveau groupe',
+                  style: TextStyle(
+                    fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                    fontSize: 18, color: Colors.white,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: candidates.isEmpty
-                    ? const Center(child: Text('Aucun résultat',
-                        style: TextStyle(fontFamily: 'Galey', color: Colors.grey)))
-                    : ListView.builder(
-                        controller: sc,
-                        itemCount: candidates.length,
-                        itemBuilder: (_, i) {
-                          final u = candidates[i];
-                          final uid = u['uid'].toString();
-                          final sel = selectedUids.contains(uid);
-                          final isFriend = friendUids.contains(uid);
-                          final photo = socialProfilePhoto(u) ?? '';
-                          return CheckboxListTile(
-                            value: sel, activeColor: _green,
-                            onChanged: (_) => setModal(() {
-                              if (sel) selectedUids.remove(uid); else selectedUids.add(uid);
-                            }),
-                            title: Text(socialProfileName(u), style: const TextStyle(fontFamily: 'Galey', fontSize: 14)),
-                            subtitle: Text(
-                              [if (isFriend) '🐾 PetFriend', if ((u['ville']?.toString() ?? '').isNotEmpty) u['ville'].toString()].join(' · '),
-                              style: const TextStyle(fontFamily: 'Galey', fontSize: 12)),
-                            secondary: CircleAvatar(
-                              radius: 20,
-                              backgroundColor: const Color(0xFFE8F5E9),
-                              backgroundImage: photo.isNotEmpty ? CachedNetworkImageProvider(photo) : null,
-                              child: photo.isEmpty ? const Icon(Icons.person_outline, size: 20, color: _green) : null,
-                            ),
-                          );
-                        },
+                const SizedBox(height: 14),
+                TextField(
+                  controller: nomCtrl,
+                  style: const TextStyle(fontFamily: 'Galey', color: Colors.white),
+                  decoration: InputDecoration(
+                    labelText: 'Nom du groupe',
+                    labelStyle: const TextStyle(fontFamily: 'Galey', color: Colors.white60),
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.20)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.20)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: _accent),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Ajouter des membres (${selectedUids.length})',
+                  style: const TextStyle(
+                    fontFamily: 'Galey', fontWeight: FontWeight.w600,
+                    fontSize: 14, color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: memberSearchCtrl,
+                  onChanged: (_) => setModal(() {}),
+                  style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Rechercher n\'importe qui (pas seulement vos PetFriends)…',
+                    hintStyle: const TextStyle(
+                      fontFamily: 'Galey', fontSize: 12,
+                      color: Colors.white38,
+                    ),
+                    prefixIcon: const Icon(Icons.search, size: 18, color: Colors.white60),
+                    isDense: true,
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.10),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.20)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.20)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: _accent),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: candidates.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'Aucun résultat',
+                            style: TextStyle(fontFamily: 'Galey', color: Colors.white70),
+                          ),
+                        )
+                      : ListView.builder(
+                          controller: sc,
+                          itemCount: candidates.length,
+                          itemBuilder: (_, i) {
+                            final u = candidates[i];
+                            final uid = u['uid'].toString();
+                            final sel = selectedUids.contains(uid);
+                            final isFriend = friendUids.contains(uid);
+                            final photo = socialProfilePhoto(u) ?? '';
+                            return CheckboxListTile(
+                              value: sel,
+                              activeColor: _accent,
+                              checkColor: _darkC,
+                              onChanged: (_) => setModal(() {
+                                if (sel) selectedUids.remove(uid); else selectedUids.add(uid);
+                              }),
+                              title: Text(
+                                socialProfileName(u),
+                                style: const TextStyle(
+                                  fontFamily: 'Galey', fontSize: 14, color: Colors.white,
+                                ),
+                              ),
+                              subtitle: Text(
+                                [
+                                  if (isFriend) '🐾 PetFriend',
+                                  if ((u['ville']?.toString() ?? '').isNotEmpty) u['ville'].toString(),
+                                ].join(' · '),
+                                style: const TextStyle(
+                                  fontFamily: 'Galey', fontSize: 12, color: Colors.white60,
+                                ),
+                              ),
+                              secondary: CircleAvatar(
+                                radius: 20,
+                                backgroundColor: Colors.white.withValues(alpha: 0.20),
+                                backgroundImage: photo.isNotEmpty
+                                    ? CachedNetworkImageProvider(photo)
+                                    : null,
+                                child: photo.isEmpty
+                                    ? const Icon(Icons.person_outline, size: 20, color: Colors.white70)
+                                    : null,
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _accent,
+                      foregroundColor: _darkC,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
                       ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  style: FilledButton.styleFrom(backgroundColor: _green,
-                      padding: const EdgeInsets.symmetric(vertical: 14)),
-                  onPressed: () async {
-                    final nom = nomCtrl.text.trim();
-                    if (nom.isEmpty) return;
-                    final members = [_myUid, ...selectedUids];
-                    final myData = await _supa.from('user_profiles')
-                        .select('firstname, lastname').eq('uid', _myUid).eq('is_main', true).maybeSingle();
-                    final myName = '${myData?['firstname'] ?? ''} ${myData?['lastname'] ?? ''}'.trim();
-                    final unread = {for (final u in members) u: 0};
-                    final Map<String, dynamic> participantsInfo = {
-                      _myUid: {'name': myName.isEmpty ? 'Utilisateur' : myName},
-                    };
-                    // Charger les noms des autres membres
-                    if (selectedUids.isNotEmpty) {
-                      final others = await _supa.from('user_profiles')
-                          .select('uid, firstname, lastname, profile_picture_url:avatar_url')
-                          .inFilter('uid', selectedUids.toList()).eq('is_main', true);
-                      for (final o in (others as List)) {
-                        final oName = '${o['firstname'] ?? ''} ${o['lastname'] ?? ''}'.trim();
-                        participantsInfo[o['uid'].toString()] = {
-                          'name': oName.isEmpty ? 'Utilisateur' : oName,
-                          if ((o['profile_picture_url'] as String?)?.isNotEmpty == true)
-                            'photo': o['profile_picture_url'],
-                        };
+                    ),
+                    onPressed: () async {
+                      final nom = nomCtrl.text.trim();
+                      if (nom.isEmpty) return;
+                      final members = [_myUid, ...selectedUids];
+                      final myData = await _supa.from('user_profiles')
+                          .select('firstname, lastname').eq('uid', _myUid).eq('is_main', true).maybeSingle();
+                      final myName = '${myData?['firstname'] ?? ''} ${myData?['lastname'] ?? ''}'.trim();
+                      final unread = {for (final u in members) u: 0};
+                      final Map<String, dynamic> participantsInfo = {
+                        _myUid: {'name': myName.isEmpty ? 'Utilisateur' : myName},
+                      };
+                      // Charger les noms des autres membres
+                      if (selectedUids.isNotEmpty) {
+                        final others = await _supa.from('user_profiles')
+                            .select('uid, firstname, lastname, profile_picture_url:avatar_url')
+                            .inFilter('uid', selectedUids.toList()).eq('is_main', true);
+                        for (final o in (others as List)) {
+                          final oName = '${o['firstname'] ?? ''} ${o['lastname'] ?? ''}'.trim();
+                          participantsInfo[o['uid'].toString()] = {
+                            'name': oName.isEmpty ? 'Utilisateur' : oName,
+                            if ((o['profile_picture_url'] as String?)?.isNotEmpty == true)
+                              'photo': o['profile_picture_url'],
+                          };
+                        }
                       }
-                    }
-                    // Insérer dans Supabase (id auto-généré par DEFAULT)
-                    await _supa.from('conversations').insert({
-                      'type': 'groupe',
-                      'nom': nom,
-                      'participants': members,
-                      'participant_ids': members.join(','),
-                      'created_by': _myUid,
-                      'participants_info': participantsInfo,
-                      'last_message': '',
-                      'unread_count': unread,
-                      'updated_at': DateTime.now().toIso8601String(),
-                    });
-                    if (ctx.mounted) Navigator.pop(ctx);
-                    _loadGroupes();
-                  },
-                  child: const Text('Créer le groupe',
-                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15)),
+                      // Insérer dans Supabase (id auto-généré par DEFAULT)
+                      await _supa.from('conversations').insert({
+                        'type': 'groupe',
+                        'nom': nom,
+                        'participants': members,
+                        'participant_ids': members.join(','),
+                        'created_by': _myUid,
+                        'participants_info': participantsInfo,
+                        'last_message': '',
+                        'unread_count': unread,
+                        'updated_at': DateTime.now().toIso8601String(),
+                      });
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      _loadGroupes();
+                    },
+                    child: const Text(
+                      'Créer le groupe',
+                      style: TextStyle(
+                        fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ]),
-          ),
-        );
+              ]),
+            ),
+          );
         },
       ),
     );
@@ -427,114 +507,258 @@ class _PetFriendsPageState extends State<PetFriendsPage>
   Widget build(BuildContext context) {
     final pendingCount = _received.length;
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F8F8),
-      appBar: AppBar(
-        backgroundColor: _green,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.pop(context),
+      backgroundColor: _darkC,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF071C22), Color(0xFF0C3535), Color(0xFF0C3520)],
+            stops: [0.0, 0.5, 1.0],
+          ),
         ),
-        title: const Text('Mes PetFriends',
-            style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
-        bottom: TabBar(
-          controller: _tabs,
-          indicatorColor: _orange,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          tabs: [
-            Tab(text: 'Amis (${_friends.length})'),
-            Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [
-              const Text('Demandes'),
-              if (pendingCount > 0) ...[
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: const BoxDecoration(color: _orange, shape: BoxShape.circle),
-                  child: Text('$pendingCount',
-                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+        child: Stack(
+          children: [
+            SafeArea(
+              child: Column(
+                children: [
+                  // Header frosted glass
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () => Navigator.pop(context),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                              child: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.25),
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.arrow_back_ios_new_rounded,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        const Expanded(
+                          child: Text(
+                            'PetFriend',
+                            style: TextStyle(
+                              fontFamily: 'Galey',
+                              fontWeight: FontWeight.w800,
+                              fontSize: 22,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // TabBar
+                  TabBar(
+                    controller: _tabs,
+                    indicatorColor: _accent,
+                    labelColor: Colors.white,
+                    unselectedLabelColor: Colors.white60,
+                    dividerColor: Colors.white.withValues(alpha: 0.1),
+                    labelStyle: const TextStyle(
+                      fontFamily: 'Galey',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                    tabs: [
+                      Tab(text: 'Amis (${_friends.length})'),
+                      Tab(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('Demandes'),
+                            if (pendingCount > 0) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  color: _accent,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Text(
+                                  '$pendingCount',
+                                  style: const TextStyle(
+                                    color: _darkC,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const Tab(text: 'Conversations'),
+                    ],
+                  ),
+                  // Contenu
+                  Expanded(
+                    child: _loading
+                        ? const Center(
+                            child: CircularProgressIndicator(color: _accent),
+                          )
+                        : TabBarView(
+                            controller: _tabs,
+                            children: [
+                              _buildFriendsTab(),
+                              _buildRequestsTab(),
+                              _buildGroupesTab(),
+                            ],
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            // Bouton fixe bas — onglet Conversations
+            if (_tabs.index == 2)
+              Positioned(
+                bottom: 24,
+                right: 16,
+                child: GestureDetector(
+                  onTap: _createGroupe,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: _accent,
+                      borderRadius: BorderRadius.circular(28),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _accent.withValues(alpha: 0.35),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.group_add, color: _darkC, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'Nouveau groupe',
+                          style: TextStyle(
+                            fontFamily: 'Galey',
+                            fontWeight: FontWeight.w700,
+                            color: _darkC,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ],
-            ])),
-            const Tab(text: 'Conversations'),
+              ),
           ],
         ),
       ),
-      floatingActionButton: _tabs.index == 2
-          ? FloatingActionButton.extended(
-              backgroundColor: _green,
-              foregroundColor: Colors.white,
-              onPressed: _createGroupe,
-              icon: const Icon(Icons.group_add),
-              label: const Text('Nouveau groupe',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-            )
-          : null,
-      body: _loading
-          ? const Center(child: CircularProgressIndicator(color: _green))
-          : TabBarView(
-              controller: _tabs,
-              children: [_buildFriendsTab(), _buildRequestsTab(), _buildGroupesTab()],
-            ),
     );
   }
 
   Widget _buildGroupesTab() {
-    if (_loadingGroupes) return const Center(child: CircularProgressIndicator(color: _green));
+    if (_loadingGroupes) {
+      return const Center(child: CircularProgressIndicator(color: _accent));
+    }
     if (_groupes.isEmpty) {
-      return Center(child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.group_outlined, size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          const Text('Aucun groupe pour le moment',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.grey),
-              textAlign: TextAlign.center),
-          const SizedBox(height: 8),
-          const Text('Créez un groupe pour discuter avec vos PetFriends',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey),
-              textAlign: TextAlign.center),
-        ]),
-      ));
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.group_outlined, size: 64, color: Colors.white.withValues(alpha: 0.30)),
+            const SizedBox(height: 16),
+            const Text(
+              'Aucun groupe pour le moment',
+              style: TextStyle(
+                fontFamily: 'Galey', fontSize: 15, color: Colors.white70,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Créez un groupe pour discuter avec vos PetFriends',
+              style: TextStyle(
+                fontFamily: 'Galey', fontSize: 13, color: Colors.white54,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ]),
+        ),
+      );
     }
     return ListView.separated(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
       itemCount: _groupes.length,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (_, i) {
-        final conv  = _groupes[i];
-        final nom   = conv['nom']?.toString() ?? 'Groupe';
-        final last  = conv['last_message']?.toString() ?? '';
+        final conv    = _groupes[i];
+        final nom     = conv['nom']?.toString() ?? 'Groupe';
+        final last    = conv['last_message']?.toString() ?? '';
         final members = (conv['participants'] as List?)?.length ?? 0;
         final unreadMap = conv['unread_count'] as Map? ?? {};
-        final unread = (unreadMap[_myUid] as int?) ?? 0;
+        final unread  = (unreadMap[_myUid] as int?) ?? 0;
         return GestureDetector(
           onTap: () => _openGroupe(conv),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.white, borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 6, offset: const Offset(0, 2))],
+              color: Colors.white.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
             ),
             child: Row(children: [
-              const CircleAvatar(
-                radius: 24, backgroundColor: Color(0xFFE8F5E9),
-                child: Icon(Icons.group, color: _green, size: 24),
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: Colors.white.withValues(alpha: 0.20),
+                child: const Icon(Icons.group, color: Colors.white70, size: 24),
               ),
               const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(nom, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
-                Text('$members membres${last.isNotEmpty ? ' · $last' : ''}',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-              ])),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(
+                    nom,
+                    style: const TextStyle(
+                      fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                      fontSize: 14, color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    '$members membres${last.isNotEmpty ? ' · $last' : ''}',
+                    style: const TextStyle(
+                      fontFamily: 'Galey', fontSize: 12, color: Colors.white60,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ]),
+              ),
               if (unread > 0)
                 Container(
                   padding: const EdgeInsets.all(6),
-                  decoration: const BoxDecoration(color: _orange, shape: BoxShape.circle),
-                  child: Text('$unread',
-                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                  decoration: const BoxDecoration(color: _accent, shape: BoxShape.circle),
+                  child: Text(
+                    '$unread',
+                    style: const TextStyle(
+                      color: _darkC, fontSize: 10, fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
             ]),
           ),
@@ -547,44 +771,73 @@ class _PetFriendsPageState extends State<PetFriendsPage>
     return Column(children: [
       Padding(
         padding: const EdgeInsets.all(12),
-        child: TextField(
-          controller: _searchCtrl,
-          onChanged: _onSearchChanged,
-          style: const TextStyle(fontFamily: 'Galey', fontSize: 14),
-          decoration: InputDecoration(
-            hintText: 'Rechercher un utilisateur…',
-            hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
-            prefixIcon: const Icon(Icons.search, size: 20, color: _green),
-            suffixIcon: _searchCtrl.text.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.close, size: 18),
-                    onPressed: () { _searchCtrl.clear(); setState(() => _searchResults = []); })
-                : null,
-            filled: true, fillColor: Colors.white,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey.shade300)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey.shade300)),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: _onSearchChanged,
+              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Rechercher un utilisateur…',
+                hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.white38),
+                prefixIcon: const Icon(Icons.search, size: 20, color: Colors.white60),
+                suffixIcon: _searchCtrl.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close, size: 18, color: Colors.white60),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() => _searchResults = []);
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: _accent),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              ),
+            ),
           ),
         ),
       ),
-      Expanded(child: _searchCtrl.text.trim().length >= 2
-          ? _buildSearchResults()
-          : _buildFriendsList()),
+      Expanded(
+        child: _searchCtrl.text.trim().length >= 2
+            ? _buildSearchResults()
+            : _buildFriendsList(),
+      ),
     ]);
   }
 
   Widget _buildSearchResults() {
-    if (_loadingUsers) return const Center(child: CircularProgressIndicator(color: _green));
-    if (_searchResults.isEmpty) return const Center(
-        child: Text('Aucun résultat', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)));
+    if (_loadingUsers) {
+      return const Center(child: CircularProgressIndicator(color: _accent));
+    }
+    if (_searchResults.isEmpty) {
+      return const Center(
+        child: Text(
+          'Aucun résultat',
+          style: TextStyle(fontFamily: 'Galey', color: Colors.white70),
+        ),
+      );
+    }
     return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       itemCount: _searchResults.length,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (_, i) {
-        final u = _searchResults[i];
+        final u   = _searchResults[i];
         final uid = u['uid'].toString();
         final pid = u['id'].toString();
         return _friendCard(
@@ -604,44 +857,79 @@ class _PetFriendsPageState extends State<PetFriendsPage>
     if (statut == 'accepte') {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(color: _green.withAlpha(20), borderRadius: BorderRadius.circular(20)),
-        child: const Text('✓ PetFriend',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: _green, fontWeight: FontWeight.w600)),
+        decoration: BoxDecoration(
+          color: _accent.withValues(alpha: 0.20),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _accent),
+        ),
+        child: const Text(
+          '✓ PetFriend',
+          style: TextStyle(
+            fontFamily: 'Galey', fontSize: 12,
+            color: _accent, fontWeight: FontWeight.w600,
+          ),
+        ),
       );
     }
     if (statut == 'en_attente') {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.amber.shade300)),
-        child: Text('⏳ En attente',
-            style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.amber.shade800)),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
+        ),
+        child: const Text(
+          '⏳ En attente',
+          style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white70),
+        ),
       );
     }
-    return FilledButton(
-      onPressed: () => _sendRequest(uid, profileId),
-      style: FilledButton.styleFrom(backgroundColor: _green,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          minimumSize: const Size(0, 0), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-      child: const Text('+ Ajouter',
-          style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12)),
+    return GestureDetector(
+      onTap: () => _sendRequest(uid, profileId),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: _accent,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Text(
+          '+ Ajouter',
+          style: TextStyle(
+            fontFamily: 'Galey', fontWeight: FontWeight.w700,
+            fontSize: 12, color: _darkC,
+          ),
+        ),
+      ),
     );
   }
 
   Widget _buildFriendsList() {
     if (_friends.isEmpty) {
-      return Center(child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.people_outline, size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          const Text('Vous n\'avez pas encore de PetFriends',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.grey), textAlign: TextAlign.center),
-          const SizedBox(height: 8),
-          const Text('Recherchez des utilisateurs pour commencer',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey), textAlign: TextAlign.center),
-        ]),
-      ));
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.people_outline, size: 64, color: Colors.white.withValues(alpha: 0.30)),
+            const SizedBox(height: 16),
+            const Text(
+              'Vous n\'avez pas encore de PetFriends',
+              style: TextStyle(
+                fontFamily: 'Galey', fontSize: 15, color: Colors.white70,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Recherchez des utilisateurs pour commencer',
+              style: TextStyle(
+                fontFamily: 'Galey', fontSize: 13, color: Colors.white54,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ]),
+        ),
+      );
     }
     return ListView.separated(
       padding: const EdgeInsets.all(12),
@@ -650,9 +938,13 @@ class _PetFriendsPageState extends State<PetFriendsPage>
       itemBuilder: (_, i) {
         final f = _friends[i];
         return _friendCard(
-          uid: f.uid, nom: f.fullName, typeLabel: f.typeLabel, city: f.city, photoUrl: f.photoUrl,
+          uid: f.uid,
+          nom: f.fullName,
+          typeLabel: f.typeLabel,
+          city: f.city,
+          photoUrl: f.photoUrl,
           onTap: () => _openProfile(f.uid, f.profileId),
-          trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+          trailing: const Icon(Icons.chevron_right, color: Colors.white38),
         );
       },
     );
@@ -660,15 +952,20 @@ class _PetFriendsPageState extends State<PetFriendsPage>
 
   Widget _buildRequestsTab() {
     if (_received.isEmpty && _sent.isEmpty) {
-      return Center(child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.person_search_outlined, size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          const Text('Aucune demande en cours',
-              style: TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.grey)),
-        ]),
-      ));
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.person_search_outlined,
+                size: 64, color: Colors.white.withValues(alpha: 0.30)),
+            const SizedBox(height: 16),
+            const Text(
+              'Aucune demande en cours',
+              style: TextStyle(fontFamily: 'Galey', fontSize: 15, color: Colors.white70),
+            ),
+          ]),
+        ),
+      );
     }
     return ListView(
       padding: const EdgeInsets.all(12),
@@ -676,33 +973,61 @@ class _PetFriendsPageState extends State<PetFriendsPage>
         if (_received.isNotEmpty) ...[
           const Padding(
             padding: EdgeInsets.only(bottom: 8),
-            child: Text('Reçues', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+            child: Text(
+              'Reçues',
+              style: TextStyle(
+                fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                fontSize: 14, color: Colors.white,
+              ),
+            ),
           ),
           ...List.generate(_received.length, (i) {
             final r = _received[i];
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: _friendCard(
-                uid: r.uid, nom: r.fullName, typeLabel: r.typeLabel, city: r.city, photoUrl: r.photoUrl,
+                uid: r.uid,
+                nom: r.fullName,
+                typeLabel: r.typeLabel,
+                city: r.city,
+                photoUrl: r.photoUrl,
                 onTap: () => _openProfile(r.uid, r.profileId),
                 trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                  FilledButton(
-                    onPressed: () => _accept(r),
-                    style: FilledButton.styleFrom(backgroundColor: _green,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        minimumSize: const Size(0, 0), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                    child: const Text('Accepter',
-                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12)),
+                  GestureDetector(
+                    onTap: () => _accept(r),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _accent,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text(
+                        'Accepter',
+                        style: TextStyle(
+                          fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                          fontSize: 12, color: _darkC,
+                        ),
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 6),
-                  OutlinedButton(
-                    onPressed: () => _decline(r),
-                    style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.red, side: const BorderSide(color: Colors.red),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        minimumSize: const Size(0, 0), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                    child: const Text('Refuser',
-                        style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12)),
+                  GestureDetector(
+                    onTap: () => _decline(r),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.60)),
+                      ),
+                      child: const Text(
+                        'Refuser',
+                        style: TextStyle(
+                          fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                          fontSize: 12, color: Colors.redAccent,
+                        ),
+                      ),
+                    ),
                   ),
                 ]),
               ),
@@ -713,21 +1038,38 @@ class _PetFriendsPageState extends State<PetFriendsPage>
         if (_sent.isNotEmpty) ...[
           const Padding(
             padding: EdgeInsets.only(bottom: 8),
-            child: Text('Envoyées', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+            child: Text(
+              'Envoyées',
+              style: TextStyle(
+                fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                fontSize: 14, color: Colors.white,
+              ),
+            ),
           ),
           ...List.generate(_sent.length, (i) {
             final s = _sent[i];
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: _friendCard(
-                uid: s.uid, nom: s.fullName, typeLabel: s.typeLabel, city: s.city, photoUrl: s.photoUrl,
+                uid: s.uid,
+                nom: s.fullName,
+                typeLabel: s.typeLabel,
+                city: s.city,
+                photoUrl: s.photoUrl,
                 onTap: () => _openProfile(s.uid, s.profileId),
                 trailing: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.amber.shade300)),
-                  child: Text('⏳ En attente',
-                      style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.amber.shade800)),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
+                  ),
+                  child: const Text(
+                    '⏳ En attente',
+                    style: TextStyle(
+                      fontFamily: 'Galey', fontSize: 11, color: Colors.white70,
+                    ),
+                  ),
                 ),
               ),
             );
@@ -738,8 +1080,12 @@ class _PetFriendsPageState extends State<PetFriendsPage>
   }
 
   Widget _friendCard({
-    required String uid, required String nom, required String city,
-    required String photoUrl, required Widget trailing, required VoidCallback onTap,
+    required String uid,
+    required String nom,
+    required String city,
+    required String photoUrl,
+    required Widget trailing,
+    required VoidCallback onTap,
     String? typeLabel,
   }) {
     return GestureDetector(
@@ -747,24 +1093,60 @@ class _PetFriendsPageState extends State<PetFriendsPage>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white, borderRadius: BorderRadius.circular(14),
-          boxShadow: [BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 6, offset: const Offset(0, 2))],
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
         ),
         child: Row(children: [
           CircleAvatar(
-            radius: 24, backgroundColor: const Color(0xFFE8F5E9),
-            backgroundImage: photoUrl.isNotEmpty ? CachedNetworkImageProvider(photoUrl) : null,
-            child: photoUrl.isEmpty ? const Icon(Icons.person_outline, size: 24, color: _green) : null,
+            radius: 24,
+            backgroundColor: Colors.white.withValues(alpha: 0.20),
+            backgroundImage: photoUrl.isNotEmpty
+                ? CachedNetworkImageProvider(photoUrl)
+                : null,
+            child: photoUrl.isEmpty
+                ? const Icon(Icons.person_outline, size: 24, color: Colors.white70)
+                : null,
           ),
           const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(nom.isNotEmpty ? nom : '—',
-                style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
-            if (typeLabel != null)
-              Text(typeLabel, style: const TextStyle(fontFamily: 'Galey', fontSize: 11, color: _green)),
-            if (city.isNotEmpty)
-              Text(city, style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
-          ])),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(
+                nom.isNotEmpty ? nom : '—',
+                style: const TextStyle(
+                  fontFamily: 'Galey', fontWeight: FontWeight.w700,
+                  fontSize: 14, color: Colors.white,
+                ),
+              ),
+              if (typeLabel != null)
+                Container(
+                  margin: const EdgeInsets.only(top: 3),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
+                  ),
+                  child: Text(
+                    typeLabel,
+                    style: const TextStyle(
+                      fontFamily: 'Galey', fontSize: 11, color: Colors.white70,
+                    ),
+                  ),
+                ),
+              if (city.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    city,
+                    style: const TextStyle(
+                      fontFamily: 'Galey', fontSize: 12, color: Colors.white54,
+                    ),
+                  ),
+                ),
+            ]),
+          ),
+          const SizedBox(width: 8),
           trailing,
         ]),
       ),

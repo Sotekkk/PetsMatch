@@ -122,26 +122,166 @@ class _BaladesLudiquesHubPageState extends State<BaladesLudiquesHubPage> {
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    final canPop = ModalRoute.of(context)?.isFirst == false;
+    final bottom = MediaQuery.of(context).padding.bottom;
     return Scaffold(
       backgroundColor: _darkC,
-      floatingActionButton: uid == null ? null : FloatingActionButton.extended(
-        backgroundColor: kBlOrange,
-        icon: const Icon(Icons.add),
-        label: const Text('Créer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        onPressed: () async {
-          final created = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => const CreationFlowPage()));
-          if (created == true) _load();
-        },
+      body: Container(
+        decoration: const BoxDecoration(gradient: _bgGrad),
+        child: Stack(children: [
+          CustomScrollView(slivers: [
+            SliverToBoxAdapter(child: _heroSection(uid)),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  // Search + filtres
+                  Row(children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                            ),
+                            child: TextField(
+                              onChanged: (v) => setState(() => _search = v),
+                              style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white),
+                              decoration: InputDecoration(
+                                hintText: 'Rechercher un parcours, une ville…',
+                                hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.4), fontSize: 13),
+                                prefixIcon: Icon(Icons.search, size: 18, color: Colors.white.withValues(alpha: 0.6)),
+                                contentPadding: const EdgeInsets.symmetric(vertical: 13, horizontal: 16),
+                                border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _glassButton(
+                      icon: Icons.tune_rounded,
+                      active: _activeFilterCount > 0,
+                      badge: _activeFilterCount > 0 ? '$_activeFilterCount' : null,
+                      onTap: _openFiltres,
+                    ),
+                    const SizedBox(width: 8),
+                    _glassButton(
+                      icon: _mapView ? Icons.view_list_outlined : Icons.map_outlined,
+                      active: _mapView,
+                      onTap: () => setState(() => _mapView = !_mapView),
+                    ),
+                  ]),
+                  if (_evenementsOfficiels.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    GestureDetector(
+                      onTap: () => _openDetail(_evenementsOfficiels.first['id'] as String),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(colors: [kBlOrange, Color(0xFFEA580C)]),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Row(children: [
+                          const Text('🏆', style: TextStyle(fontSize: 20)),
+                          const SizedBox(width: 10),
+                          Expanded(child: Text(
+                            '${_evenementsOfficiels.length} chasse(s) au trésor officielle(s) en cours !',
+                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white, fontSize: 13),
+                          )),
+                          const Icon(Icons.chevron_right_rounded, color: Colors.white70, size: 18),
+                        ]),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  const Text('Parcours disponibles',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Colors.white)),
+                  const SizedBox(height: 12),
+                ]),
+              ),
+            ),
+            if (_loading)
+              const SliverFillRemaining(child: Center(child: CircularProgressIndicator(color: Color(0xFF7ED69D))))
+            else if (_mapView)
+              SliverFillRemaining(
+                child: BaladesLudiquesMapView(balades: _filtered, onTap: (b) => _openDetail(b['id'] as String)),
+              )
+            else if (_filtered.isEmpty)
+              const SliverFillRemaining(
+                child: Center(child: Text('Aucun parcours trouvé', style: TextStyle(fontFamily: 'Galey', color: Colors.white54))),
+              )
+            else
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, bottom + 90),
+                sliver: SliverList.separated(
+                  itemCount: _filtered.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) => _BaladeCard(
+                    balade: _filtered[i],
+                    onTap: () => _openDetail(_filtered[i]['id'] as String),
+                  ),
+                ),
+              ),
+          ]),
+          // Bouton bas fixe
+          if (uid != null)
+            Positioned(
+              bottom: 0, left: 0, right: 0,
+              child: Container(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, bottom + 16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                    colors: [_darkC.withValues(alpha: 0), _darkC]),
+                ),
+                child: SizedBox(
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      final created = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => const CreationFlowPage()));
+                      if (created == true) _load();
+                    },
+                    icon: const Icon(Icons.add, size: 18, color: Color(0xFF071C22)),
+                    label: const Text('Créer un parcours', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF071C22))),
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF7ED69D), elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30))),
+                  ),
+                ),
+              ),
+            ),
+        ]),
       ),
-      body: Stack(children: [
-        Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
-        SafeArea(child: Column(children: [
-          // ── Header ──
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+    );
+  }
+
+  Widget _heroSection(String? uid) {
+    final canPop = ModalRoute.of(context)?.isFirst == false;
+    return Stack(children: [
+      SizedBox(
+        height: 210, width: double.infinity,
+        child: Image.asset('assets/deco/communautybackground.jpg', fit: BoxFit.cover),
+      ),
+      Positioned(
+        bottom: 0, left: 0, right: 0, height: 90,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
+              colors: [Colors.transparent, _darkC]),
+          ),
+        ),
+      ),
+      Positioned(
+        top: 0, left: 0, right: 0,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: Row(children: [
-              if (canPop) ...[
+              if (canPop)
                 GestureDetector(
                   onTap: () => Navigator.pop(context),
                   child: ClipRRect(
@@ -160,11 +300,14 @@ class _BaladesLudiquesHubPageState extends State<BaladesLudiquesHubPage> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 14),
-              ],
+              if (canPop) const SizedBox(width: 14),
               const Expanded(
-                child: Text('Balades ludiques',
-                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 24, color: Colors.white)),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Balades ludiques',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 22, color: Colors.white)),
+                  Text('Parcours, défis & chasses au trésor avec vos animaux',
+                      style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.white70)),
+                ]),
               ),
               _glassAction(Icons.emoji_events_outlined, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ClassementPage()))),
               if (uid != null) ...[
@@ -175,141 +318,9 @@ class _BaladesLudiquesHubPageState extends State<BaladesLudiquesHubPage> {
               ],
             ]),
           ),
-          if (_loading)
-            const Expanded(child: Center(child: CircularProgressIndicator(color: kBlTeal)))
-          else
-            Expanded(child: RefreshIndicator(
-              onRefresh: _load,
-              color: kBlTeal,
-              child: Column(children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
-                  child: Row(children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-                            ),
-                            child: TextField(
-                              onChanged: (v) => setState(() => _search = v),
-                              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white),
-                              decoration: InputDecoration(
-                                hintText: 'Rechercher un parcours, une ville...',
-                                hintStyle: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white.withValues(alpha: 0.4)),
-                                prefixIcon: Icon(Icons.search, size: 20, color: Colors.white.withValues(alpha: 0.6)),
-                                contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-                                border: InputBorder.none,
-                                enabledBorder: InputBorder.none,
-                                focusedBorder: InputBorder.none,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: _openFiltres,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                          child: Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              gradient: _activeFilterCount > 0 ? const LinearGradient(colors: [kBlTeal, Color(0xFF1E7A8C)]) : null,
-                              color: _activeFilterCount > 0 ? null : Colors.white.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: _activeFilterCount > 0 ? Colors.transparent : Colors.white.withValues(alpha: 0.20)),
-                            ),
-                            child: Stack(clipBehavior: Clip.none, children: [
-                              const Icon(Icons.tune, size: 20, color: Colors.white),
-                              if (_activeFilterCount > 0)
-                                Positioned(
-                                  top: -4, right: -4,
-                                  child: CircleAvatar(radius: 8, backgroundColor: kBlOrange,
-                                      child: Text('$_activeFilterCount', style: const TextStyle(fontSize: 10, color: Colors.white))),
-                                ),
-                            ]),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: () => setState(() => _mapView = !_mapView),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                          child: Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: Colors.white.withValues(alpha: 0.20)),
-                            ),
-                            child: Icon(_mapView ? Icons.view_list_outlined : Icons.map_outlined, size: 20, color: Colors.white),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ]),
-                ),
-                if (_evenementsOfficiels.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(colors: [kBlOrange, Color(0xFFEA580C)]),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Row(children: [
-                        const Text('🏆', style: TextStyle(fontSize: 22)),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            '${_evenementsOfficiels.length} chasse(s) au trésor officielle(s) en cours !',
-                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: Colors.white, fontSize: 13),
-                          ),
-                        ),
-                      ]),
-                    ),
-                  ),
-                Expanded(
-                  child: _mapView
-                      ? BaladesLudiquesMapView(
-                          balades: _filtered,
-                          onTap: (b) => _openDetail(b['id'] as String),
-                        )
-                      : _filtered.isEmpty
-                          ? ListView(children: const [
-                              SizedBox(height: 80),
-                              Center(child: Text('Aucun parcours trouvé',
-                                  style: TextStyle(fontFamily: 'Galey', color: Colors.grey))),
-                            ])
-                          : ListView.builder(
-                              padding: const EdgeInsets.all(12),
-                              itemCount: _filtered.length,
-                              itemBuilder: (_, i) => _BaladeCard(
-                                balade: _filtered[i],
-                                onTap: () => _openDetail(_filtered[i]['id'] as String),
-                              ),
-                            ),
-                ),
-              ]),
-            )),
-        ])),
-      ]),
-    );
+        ),
+      ),
+    ]);
   }
 
   Widget _glassAction(IconData icon, VoidCallback onPressed) => GestureDetector(
@@ -325,11 +336,39 @@ class _BaladesLudiquesHubPageState extends State<BaladesLudiquesHubPage> {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
           ),
-          child: Icon(icon, color: Colors.white, size: 20),
+          child: Icon(icon, color: Colors.white, size: 18),
         ),
       ),
     ),
   );
+
+  Widget _glassButton({required IconData icon, required VoidCallback onTap, bool active = false, String? badge}) =>
+    GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: Container(
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: active ? const Color(0xFF7ED69D).withValues(alpha: 0.25) : Colors.white.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: active ? const Color(0xFF7ED69D).withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.20)),
+            ),
+            child: Stack(clipBehavior: Clip.none, children: [
+              Icon(icon, size: 20, color: active ? const Color(0xFF7ED69D) : Colors.white),
+              if (badge != null)
+                Positioned(
+                  top: -5, right: -5,
+                  child: CircleAvatar(radius: 8, backgroundColor: kBlOrange,
+                    child: Text(badge, style: const TextStyle(fontSize: 10, color: Colors.white))),
+                ),
+            ]),
+          ),
+        ),
+      ),
+    );
 
   Future<void> _openDetail(String id) async {
     await Navigator.push(context, MaterialPageRoute(builder: (_) => BaladeLudiqueDetailPage(baladeId: id)));
@@ -346,62 +385,92 @@ class _BaladeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isOfficiel = balade['type_evenement'] != 'communautaire';
     final cover = (balade['cover_url'] as String?) ?? '';
+    final difficulte = balade['difficulte']?.toString() ?? 'facile';
+    final ville = balade['ville']?.toString() ?? '';
+    final espece = balade['espece_cible']?.toString() ?? 'tous';
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 6, offset: const Offset(0, 2))],
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 2))],
         ),
-        child: Row(children: [
+        child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          // ── Thumbnail ──
           ClipRRect(
-            borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
+            borderRadius: const BorderRadius.only(topLeft: Radius.circular(16), bottomLeft: Radius.circular(16)),
             child: SizedBox(
-              width: 96, height: 96,
+              width: 88,
               child: cover.isNotEmpty
                   ? CachedNetworkImage(imageUrl: cover, fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => Container(color: const Color(0xFFEEF5EA), child: const Icon(Icons.map_outlined, color: kBlGreen)))
-                  : Container(color: const Color(0xFFEEF5EA), child: const Icon(Icons.map_outlined, color: kBlGreen)),
+                      errorWidget: (_, __, ___) => _placeholder())
+                  : _placeholder(),
             ),
           ),
+          // ── Contenu ──
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
-                  if (isOfficiel) const Padding(
-                    padding: EdgeInsets.only(right: 4),
-                    child: Text('🏆', style: TextStyle(fontSize: 12)),
-                  ),
-                  Expanded(
-                    child: Text(balade['titre']?.toString() ?? '',
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+                  if (isOfficiel) const Text('🏆 ', style: TextStyle(fontSize: 11)),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: blDifficulteColor(difficulte).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(blDifficulteLabel(difficulte),
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w700, color: blDifficulteColor(difficulte))),
                   ),
                 ]),
                 const SizedBox(height: 4),
-                Text('${blEspeceEmoji(balade['espece_cible']?.toString() ?? 'tous')}  ${balade['ville'] ?? ''}',
-                    style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
-                const SizedBox(height: 6),
-                Wrap(spacing: 6, runSpacing: 4, children: [
-                  _chip(blDifficulteLabel(balade['difficulte']?.toString() ?? 'facile'), blDifficulteColor(balade['difficulte']?.toString() ?? 'facile')),
-                  if (balade['duree_min'] != null) _chip(blDureeLabel(balade['duree_min'] as int?), Colors.grey.shade600),
-                  _chip(balade['gratuit'] == true ? 'Gratuit' : '${balade['prix'] ?? ''} €', kBlTeal),
-                  if (balade['note_moyenne'] != null) _chip('⭐ ${balade['note_moyenne']}', Colors.amber.shade700),
+                Text(balade['titre']?.toString() ?? '',
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1A1A1A))),
+                const SizedBox(height: 4),
+                if (ville.isNotEmpty)
+                  Row(children: [
+                    Icon(Icons.location_on_outlined, size: 12, color: Colors.grey.shade400),
+                    const SizedBox(width: 3),
+                    Text('${blEspeceEmoji(espece)}  $ville',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ]),
+                const SizedBox(height: 5),
+                Wrap(spacing: 5, runSpacing: 4, children: [
+                  if (balade['duree_min'] != null)
+                    _chip(blDureeLabel(balade['duree_min'] as int?), Colors.grey.shade500),
+                  _chip(balade['gratuit'] == true ? 'Gratuit' : '${balade['prix'] ?? ''} €', const Color(0xFF2E7D5E)),
+                  if (balade['note_moyenne'] != null)
+                    _chip('⭐ ${balade['note_moyenne']}', Colors.amber.shade700),
                 ]),
               ]),
             ),
+          ),
+          // ── Chevron ──
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: Center(child: Icon(Icons.chevron_right_rounded, color: Colors.grey.shade300, size: 22)),
           ),
         ]),
       ),
     );
   }
 
+  Widget _placeholder() => Container(
+    decoration: const BoxDecoration(
+      gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+        colors: [Color(0xFF2E7D5E), Color(0xFF7ED69D)]),
+    ),
+    child: const Center(child: Icon(Icons.route_rounded, color: Colors.white, size: 32)),
+  );
+
   Widget _chip(String label, Color color) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(20)),
-        child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600, color: color)),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+    decoration: BoxDecoration(color: color.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(10)),
+    child: Text(label, style: TextStyle(fontFamily: 'Galey', fontSize: 10, fontWeight: FontWeight.w600, color: color)),
+  );
 }

@@ -5,7 +5,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'groupe_detail_page.dart';
 
-const _tealC = Color(0xFF00ACC1);
 const _darkC = Color(0xFF071C22);
 const _bgGrad = LinearGradient(
   begin: Alignment.topCenter, end: Alignment.bottomCenter,
@@ -269,16 +268,23 @@ class _GroupesPageState extends State<GroupesPage>
               duration: const Duration(milliseconds: 200),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
               decoration: BoxDecoration(
-                gradient: active ? const LinearGradient(colors: [_tealC, Color(0xFF1E7A8C)]) : null,
-                color: active ? null : Colors.white.withValues(alpha: 0.10),
+                color: active
+                    ? const Color(0xFF7ED69D).withValues(alpha: 0.20)
+                    : Colors.white.withValues(alpha: 0.10),
                 borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: active ? Colors.transparent : Colors.white.withValues(alpha: 0.20)),
-                boxShadow: active ? [BoxShadow(color: _tealC.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3))] : null,
+                border: Border.all(
+                    color: active
+                        ? const Color(0xFF7ED69D)
+                        : Colors.white.withValues(alpha: 0.20)),
               ),
               child: Text(label,
-                  style: const TextStyle(
-                      fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600,
-                      color: Colors.white)),
+                  style: TextStyle(
+                      fontFamily: 'Galey',
+                      fontSize: 12.5,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                      color: active
+                          ? const Color(0xFF7ED69D)
+                          : Colors.white.withValues(alpha: 0.7))),
             ),
           ),
         ),
@@ -288,21 +294,15 @@ class _GroupesPageState extends State<GroupesPage>
 
   @override
   Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).padding.bottom;
     return Scaffold(
       backgroundColor: _darkC,
-      floatingActionButton: _uid.isNotEmpty
-          ? FloatingActionButton(
-              backgroundColor: _tealC,
-              onPressed: _openCreation,
-              child: const Icon(Icons.add, color: Colors.white),
-            )
-          : null,
       body: Stack(children: [
         Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
         SafeArea(child: Column(children: [
           // ── Header ──
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: Row(children: [
               GestureDetector(
                 onTap: () => Navigator.pop(context),
@@ -323,14 +323,16 @@ class _GroupesPageState extends State<GroupesPage>
                 ),
               ),
               const SizedBox(width: 14),
-              const Text('Groupes',
-                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 24, color: Colors.white)),
+              const Expanded(
+                child: Text('Groupes',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w800, fontSize: 22, color: Colors.white)),
+              ),
             ]),
           ),
           // ── TabBar ──
           TabBar(
             controller: _tabCtrl,
-            indicatorColor: _tealC,
+            indicatorColor: const Color(0xFF7ED69D),
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white60,
             dividerColor: Colors.white.withValues(alpha: 0.1),
@@ -342,7 +344,7 @@ class _GroupesPageState extends State<GroupesPage>
           // ── Contenu ──
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator(color: _tealC))
+                ? const Center(child: CircularProgressIndicator(color: Color(0xFF7ED69D)))
                 : TabBarView(
                     controller: _tabCtrl,
                     children: [
@@ -352,6 +354,39 @@ class _GroupesPageState extends State<GroupesPage>
                   ),
           ),
         ])),
+        // ── Bouton bas fixe ──
+        if (_uid.isNotEmpty)
+          Positioned(
+            bottom: 0, left: 0, right: 0,
+            child: Container(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, bottom + 16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [_darkC.withValues(alpha: 0), _darkC],
+                ),
+              ),
+              child: SizedBox(
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: _openCreation,
+                  icon: const Icon(Icons.add, size: 18, color: Color(0xFF071C22)),
+                  label: const Text('Créer un groupe',
+                      style: TextStyle(
+                          fontFamily: 'Galey',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          color: Color(0xFF071C22))),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7ED69D),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30))),
+                ),
+              ),
+            ),
+          ),
       ]),
     );
   }
@@ -361,7 +396,7 @@ class _GroupesPageState extends State<GroupesPage>
       final filtering = _search.trim().isNotEmpty || _typeFilter.isNotEmpty;
       return Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.group_outlined, size: 72, color: Color(0xFFCCCCCC)),
+          const Icon(Icons.group_outlined, size: 72, color: Colors.grey),
           const SizedBox(height: 16),
           Text(
             filtering
@@ -371,20 +406,20 @@ class _GroupesPageState extends State<GroupesPage>
                 fontFamily: 'Galey',
                 fontWeight: FontWeight.w700,
                 fontSize: 16,
-                color: Color(0xFFAAAAAA)),
+                color: Colors.white70),
             textAlign: TextAlign.center,
           ),
           if (!filtering) ...[
             const SizedBox(height: 8),
             const Text('Créez le premier !',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey)),
+                style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white70)),
           ],
         ]),
       );
     }
     return RefreshIndicator(
       onRefresh: _load,
-      color: _tealC,
+      color: const Color(0xFF7ED69D),
       child: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
         itemCount: items.length,
@@ -435,137 +470,144 @@ class _GroupeCard extends StatelessWidget {
     final type = groupe['type']?.toString() ?? 'autre';
     final prive = groupe['prive'] == true;
     final typeLabel = _kGroupeTypesLabels[type] ?? type;
-    final bannerUrl = groupe['photo_cover_url']?.toString();
     final avatarUrl = groupe['avatar_url']?.toString();
+    const accentC = Color(0xFF7ED69D);
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 8,
-              offset: const Offset(0, 2))
-        ],
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Bannière + photo de profil
-        SizedBox(
-          height: 96,
-          width: double.infinity,
-          child: Stack(clipBehavior: Clip.none, children: [
-            Positioned.fill(
-              child: (bannerUrl != null && bannerUrl.isNotEmpty)
-                  ? Image.network(bannerUrl, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(color: _tealC.withValues(alpha: 0.15)))
-                  : Container(color: _tealC.withValues(alpha: 0.12)),
-            ),
-            Positioned(
-              left: 14,
-              bottom: -22,
-              child: Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 3),
-                ),
-                child: CircleAvatar(
-                  radius: 24,
-                  backgroundColor: const Color(0xFFE0F7FA),
-                  backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
-                      ? NetworkImage(avatarUrl)
-                      : null,
-                  child: (avatarUrl == null || avatarUrl.isEmpty)
-                      ? const Icon(Icons.groups_rounded, color: _tealC, size: 24)
-                      : null,
-                ),
-              ),
-            ),
-          ]),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 10,
+                offset: const Offset(0, 2)),
+          ],
         ),
-        Padding(
-        padding: const EdgeInsets.fromLTRB(14, 28, 14, 14),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(
-              child: Row(children: [
-                Text(nom,
-                    style: const TextStyle(
-                        fontFamily: 'Galey',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                        color: Color(0xFF1E2025))),
-                if (prive) ...[
-                  const SizedBox(width: 6),
-                  const Icon(Icons.lock_outline, size: 14, color: Colors.grey),
-                ],
-              ]),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                  color: const Color(0xFFE0F7FA),
-                  borderRadius: BorderRadius.circular(20)),
-              child: Text(typeLabel,
-                  style: const TextStyle(
-                      fontFamily: 'Galey',
-                      fontSize: 11,
-                      color: _tealC,
-                      fontWeight: FontWeight.w600)),
-            ),
-          ]),
-          if (desc.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(desc,
-                style: const TextStyle(
-                    fontFamily: 'Galey', fontSize: 13, color: Color(0xFF6F767B)),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis),
-          ],
-          if (friendCount > 0) ...[
-            const SizedBox(height: 8),
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.people_outline, size: 14, color: _tealC),
-              const SizedBox(width: 4),
-              Text(
-                friendCount == 1 ? '1 ami dans ce groupe' : '$friendCount amis dans ce groupe',
-                style: const TextStyle(fontFamily: 'Galey', fontSize: 12, color: _tealC, fontWeight: FontWeight.w600),
-              ),
-            ]),
-          ],
-          if (onToggle != null) ...[
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: GestureDetector(
-                onTap: onToggle,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: estMembre ? _tealC : Colors.transparent,
-                    border: Border.all(color: _tealC),
-                    borderRadius: BorderRadius.circular(20),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          // ── Avatar ──
+          CircleAvatar(
+            radius: 28,
+            backgroundColor: const Color(0xFFE8F8EF),
+            backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+                ? NetworkImage(avatarUrl)
+                : null,
+            child: (avatarUrl == null || avatarUrl.isEmpty)
+                ? const Icon(Icons.groups_rounded, color: accentC, size: 28)
+                : null,
+          ),
+          const SizedBox(width: 12),
+          // ── Infos ──
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Expanded(
+                    child: Text(nom,
+                        style: const TextStyle(
+                            fontFamily: 'Galey',
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                            color: Color(0xFF1E2025)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
                   ),
-                  child: Text(
-                    estMembre ? 'Membre ✓' : 'Rejoindre',
-                    style: TextStyle(
-                        fontFamily: 'Galey',
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: estMembre ? Colors.white : _tealC),
+                  if (prive)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 4),
+                      child: Icon(Icons.lock_outline, size: 13, color: Colors.grey),
+                    ),
+                ]),
+                if (desc.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(desc,
+                      style: const TextStyle(
+                          fontFamily: 'Galey',
+                          fontSize: 12.5,
+                          color: Color(0xFF6F767B)),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
+                ],
+                const SizedBox(height: 6),
+                Wrap(spacing: 6, runSpacing: 4, children: [
+                  // Type badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFE8F8EF),
+                        borderRadius: BorderRadius.circular(20)),
+                    child: Text(typeLabel,
+                        style: const TextStyle(
+                            fontFamily: 'Galey',
+                            fontSize: 11,
+                            color: accentC,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                  // Amis badge
+                  if (friendCount > 0)
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.people_outline, size: 13, color: accentC),
+                      const SizedBox(width: 3),
+                      Text(
+                        friendCount == 1 ? '1 ami' : '$friendCount amis',
+                        style: const TextStyle(
+                            fontFamily: 'Galey',
+                            fontSize: 11,
+                            color: accentC,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ]),
+                  // Membership badge
+                  if (estMembre)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                          color: const Color(0xFFE8F8EF),
+                          borderRadius: BorderRadius.circular(20)),
+                      child: const Text('Membre ✓',
+                          style: TextStyle(
+                              fontFamily: 'Galey',
+                              fontSize: 11,
+                              color: accentC,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                ]),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // ── Droite : rejoindre + chevron ──
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (onToggle != null && !estMembre)
+                GestureDetector(
+                  onTap: onToggle,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    margin: const EdgeInsets.only(bottom: 6),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: accentC),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text('Rejoindre',
+                        style: TextStyle(
+                            fontFamily: 'Galey',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: accentC)),
                   ),
                 ),
-              ),
-            ),
-          ],
+              const Icon(Icons.chevron_right_rounded, color: Color(0xFFCCCCCC), size: 20),
+            ],
+          ),
         ]),
       ),
-      ]),
-    ),
     );
   }
 }
@@ -708,7 +750,7 @@ class _CreateGroupeSheetState extends State<_CreateGroupeSheet> {
                   Switch(
                     value: _prive,
                     onChanged: (v) => setState(() => _prive = v),
-                    activeThumbColor: _tealC,
+                    activeThumbColor: const Color(0xFF7ED69D),
                   ),
                   const SizedBox(width: 8),
                   Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -729,7 +771,7 @@ class _CreateGroupeSheetState extends State<_CreateGroupeSheet> {
                   child: FilledButton(
                     onPressed: _saving ? null : _save,
                     style: FilledButton.styleFrom(
-                        backgroundColor: _tealC,
+                        backgroundColor: const Color(0xFF7ED69D),
                         padding: const EdgeInsets.symmetric(vertical: 14)),
                     child: _saving
                         ? const SizedBox(
@@ -771,7 +813,7 @@ class _CreateGroupeSheetState extends State<_CreateGroupeSheet> {
             borderSide: BorderSide(color: Colors.grey.shade300)),
         focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _tealC, width: 1.5)),
+            borderSide: const BorderSide(color: Color(0xFF7ED69D), width: 1.5)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         filled: true,
         fillColor: const Color(0xFFF8F8F8),

@@ -16,7 +16,7 @@ import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 import 'package:PetsMatch/widgets/inline_video.dart';
 import 'package:PetsMatch/widgets/mention_hashtag.dart';
 
-const _tealC = Color(0xFF00ACC1);
+const _tealC = Color(0xFF7ED69D);
 const _darkC = Color(0xFF071C22);
 const _bgGrad = LinearGradient(
   begin: Alignment.topCenter, end: Alignment.bottomCenter,
@@ -205,7 +205,8 @@ class _AuthorRow extends StatelessWidget {
   final String fallbackUid;
   final double avatarSize;
   final TextStyle? nameStyle;
-  const _AuthorRow({required this.profile, required this.fallbackUid, this.avatarSize = 22, this.nameStyle});
+  final bool onLight;
+  const _AuthorRow({required this.profile, required this.fallbackUid, this.avatarSize = 22, this.nameStyle, this.onLight = false});
 
   @override
   Widget build(BuildContext context) {
@@ -227,18 +228,20 @@ class _AuthorRow extends StatelessWidget {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         CircleAvatar(
           radius: avatarSize / 2,
-          backgroundColor: const Color(0xFFE0F2F1),
+          backgroundColor: onLight ? Colors.grey.shade200 : Colors.white.withValues(alpha: 0.20),
           backgroundImage: (photo != null && photo.isNotEmpty) ? CachedNetworkImageProvider(photo) : null,
-          child: (photo == null || photo.isEmpty) ? Icon(Icons.person, size: avatarSize * 0.55, color: _tealC) : null,
+          child: (photo == null || photo.isEmpty) ? Icon(Icons.person, size: avatarSize * 0.55, color: onLight ? Colors.grey.shade500 : Colors.white70) : null,
         ),
         const SizedBox(width: 8),
         Flexible(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
             Text(name,
-                style: nameStyle ?? const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1E2025)),
+                style: nameStyle ?? TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 13,
+                    color: onLight ? const Color(0xFF1A1A1A) : Colors.white.withValues(alpha: 0.85)),
                 maxLines: 1, overflow: TextOverflow.ellipsis),
             if (badge != null)
-              Text(badge, style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey)),
+              Text(badge, style: TextStyle(fontFamily: 'Galey', fontSize: 10,
+                  color: onLight ? Colors.grey.shade500 : Colors.white.withValues(alpha: 0.50))),
           ]),
         ),
       ]),
@@ -368,27 +371,33 @@ class ForumPage extends StatelessWidget {
                 return GestureDetector(
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _ForumCategorieePage(cat: cat))),
                   child: Container(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
                     decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 8, offset: const Offset(0, 2))],
+                      color: Color.alphaBlend(cat.color.withValues(alpha: 0.10), const Color(0xFFF9FBF9)),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: cat.color.withValues(alpha: 0.30)),
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 12, offset: const Offset(0, 4))],
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      child: Row(children: [
-                        Container(
-                          width: 44, height: 44,
-                          decoration: BoxDecoration(color: cat.color.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(12)),
-                          child: Icon(cat.icon, color: cat.color, size: 22),
+                    child: Row(children: [
+                      Container(
+                        width: 52, height: 52,
+                        decoration: BoxDecoration(
+                          color: Color.alphaBlend(cat.color.withValues(alpha: 0.45), const Color(0xFFF9FBF9)),
+                          borderRadius: BorderRadius.circular(14),
                         ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Text(cat.label,
-                              style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1E2025))),
-                        ),
-                        Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey.shade400),
-                      ]),
-                    ),
+                        child: Stack(alignment: Alignment.center, children: [
+                          Icon(cat.icon, color: Colors.black.withValues(alpha: 0.28), size: 31),
+                          Icon(cat.icon, color: cat.color, size: 26),
+                        ]),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Text(cat.label,
+                            style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF1A1A1A))),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(Icons.arrow_forward_ios_rounded, size: 13, color: Colors.grey.shade400),
+                    ]),
                   ),
                 );
               },
@@ -466,13 +475,6 @@ class _ForumCategorieePageState extends State<_ForumCategorieePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _darkC,
-      floatingActionButton: _uid.isNotEmpty
-          ? FloatingActionButton(
-              backgroundColor: widget.cat.color,
-              onPressed: _openCreation,
-              child: const Icon(Icons.edit_outlined, color: Colors.white),
-            )
-          : null,
       body: Stack(children: [
         Positioned.fill(child: Container(decoration: const BoxDecoration(gradient: _bgGrad))),
         SafeArea(child: Column(children: [
@@ -532,6 +534,34 @@ class _ForumCategorieePageState extends State<_ForumCategorieePage> {
                       ),
           ),
         ])),
+        if (_uid.isNotEmpty)
+          Positioned(
+            bottom: 0, left: 0, right: 0,
+            child: Container(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).padding.bottom + 16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [_darkC.withValues(alpha: 0), _darkC],
+                ),
+              ),
+              child: SizedBox(
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: _openCreation,
+                  icon: const Icon(Icons.edit_outlined, size: 18, color: _darkC),
+                  label: const Text('Nouveau sujet',
+                      style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 15, color: _darkC)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _tealC,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                  ),
+                ),
+              ),
+            ),
+          ),
       ]),
     );
   }
@@ -584,16 +614,11 @@ class _SujetTile extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 6,
-                offset: const Offset(0, 1))
-          ],
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.07), blurRadius: 8, offset: const Offset(0, 2))],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           child: IntrinsicHeight(
             child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Container(width: 4, color: animalColor),
@@ -601,7 +626,7 @@ class _SujetTile extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    _AuthorRow(profile: author, fallbackUid: sujet['auteur_uid']?.toString() ?? '', avatarSize: 20),
+                    _AuthorRow(profile: author, fallbackUid: sujet['auteur_uid']?.toString() ?? '', avatarSize: 20, onLight: true),
                     const SizedBox(height: 8),
                     Row(children: [
                       if (epingle) ...[
@@ -609,10 +634,10 @@ class _SujetTile extends StatelessWidget {
                         const SizedBox(width: 4),
                       ],
                       if ((sujet['video_url']?.toString().isNotEmpty ?? false)) ...[
-                        Icon(Icons.videocam, size: 13, color: Colors.grey.shade500),
+                        Icon(Icons.videocam, size: 13, color: Colors.grey.shade400),
                         const SizedBox(width: 4),
                       ] else if ((sujet['photo_url']?.toString().isNotEmpty ?? false)) ...[
-                        Icon(Icons.image, size: 13, color: Colors.grey.shade500),
+                        Icon(Icons.image, size: 13, color: Colors.grey.shade400),
                         const SizedBox(width: 4),
                       ],
                       Expanded(
@@ -621,17 +646,17 @@ class _SujetTile extends StatelessWidget {
                                 fontFamily: 'Galey',
                                 fontWeight: FontWeight.w700,
                                 fontSize: 14,
-                                color: Color(0xFF1E2025))),
+                                color: Color(0xFF1A1A1A))),
                       ),
                       Text(_fmtDate(createdAt),
-                          style: const TextStyle(
-                              fontFamily: 'Galey', fontSize: 11, color: Colors.grey)),
+                          style: TextStyle(
+                              fontFamily: 'Galey', fontSize: 11, color: Colors.grey.shade500)),
                     ]),
                     if (contenu.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(stripMentionMarkup(contenu),
-                          style: const TextStyle(
-                              fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B)),
+                          style: TextStyle(
+                              fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis),
                     ],
@@ -831,9 +856,9 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 6, offset: const Offset(0, 2))],
+                          color: Colors.white.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
                         ),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           _AuthorRow(
@@ -845,10 +870,10 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
                           MentionHashtagText(
                             text: contenu,
                             enableHashtags: false,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontFamily: 'Galey',
                                 fontSize: 14,
-                                color: Color(0xFF1E2025)),
+                                color: Colors.white.withValues(alpha: 0.85)),
                             onMentionTap: (pid) => openMentionedProfile(context, _uid, pid),
                           ),
                           if ((widget.sujet['photo_url']?.toString().isNotEmpty ?? false) ||
@@ -866,7 +891,7 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
         ),
         if (_uid.isNotEmpty)
           Container(
-            color: const Color(0xFF0A2535),
+            color: _darkC,
             padding: EdgeInsets.only(
                 left: 16, right: 16, top: 10,
                 bottom: MediaQuery.of(context).padding.bottom + 10),
@@ -919,12 +944,12 @@ class _ForumSujetPageState extends State<_ForumSujetPage> {
                   style: const TextStyle(fontFamily: 'Galey', color: Colors.white),
                   decoration: InputDecoration(
                     hintText: 'Votre réponse… (@ pour mentionner)',
-                    hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.45)),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2))),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2))),
+                    hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.40)),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18))),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.18))),
                     focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: const BorderSide(color: _tealC, width: 1.5)),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    filled: true, fillColor: Colors.white.withValues(alpha: 0.08),
+                    filled: true, fillColor: Colors.white.withValues(alpha: 0.10),
                   ),
                   maxLines: null,
                 ),
@@ -989,26 +1014,21 @@ class _ReponseCard extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: isMe ? const Color(0xFFE0F7FA) : Colors.white,
+          color: Colors.white.withValues(alpha: 0.07),
           borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 4,
-                offset: const Offset(0, 1))
-          ],
+          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           if (!isMe) ...[
             _AuthorRow(profile: author, fallbackUid: auteur, avatarSize: 20,
-                nameStyle: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: Color(0xFF1E2025))),
+                nameStyle: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 12, color: Colors.white.withValues(alpha: 0.85))),
             const SizedBox(height: 6),
           ],
           if (contenu.isNotEmpty)
             MentionHashtagText(
               text: contenu,
               enableHashtags: false,
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 14, color: Color(0xFF1E2025)),
+              style: TextStyle(fontFamily: 'Galey', fontSize: 14, color: Colors.white.withValues(alpha: 0.85)),
               onMentionTap: (pid) => openMentionedProfile(context, FirebaseAuth.instance.currentUser?.uid ?? '', pid),
             ),
           if ((reponse['photo_url']?.toString().isNotEmpty ?? false) ||
@@ -1018,7 +1038,7 @@ class _ReponseCard extends StatelessWidget {
           ],
           const SizedBox(height: 4),
           Text(_fmtDate(date),
-              style: const TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.grey)),
+              style: TextStyle(fontFamily: 'Galey', fontSize: 10, color: Colors.white.withValues(alpha: 0.40))),
         ]),
       ),
     );
@@ -1112,7 +1132,7 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-          color: Colors.white,
+          color: Color(0xFF0E2A30),
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       padding: EdgeInsets.only(
           left: 20,
@@ -1131,7 +1151,7 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
                         width: 40,
                         height: 4,
                         decoration: BoxDecoration(
-                            color: Colors.grey.shade300,
+                            color: Colors.white.withValues(alpha: 0.20),
                             borderRadius: BorderRadius.circular(2)))),
                 const SizedBox(height: 16),
                 Row(children: [
@@ -1140,9 +1160,10 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
                           style: TextStyle(
                               fontFamily: 'Galey',
                               fontWeight: FontWeight.w700,
-                              fontSize: 18))),
+                              fontSize: 18,
+                              color: Colors.white))),
                   IconButton(
-                      icon: const Icon(Icons.close, size: 22, color: Colors.grey),
+                      icon: Icon(Icons.close, size: 22, color: Colors.white.withValues(alpha: 0.6)),
                       onPressed: () => Navigator.pop(context),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints()),
@@ -1162,17 +1183,17 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: sel ? color : Colors.white,
+                          color: sel ? color : Colors.white.withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                              color: sel ? color : Colors.grey.shade300),
+                              color: sel ? color : Colors.white.withValues(alpha: 0.20)),
                         ),
                         child: Text(t.$1,
                             style: TextStyle(
                                 fontFamily: 'Galey',
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: sel ? Colors.white : Colors.grey.shade700)),
+                                color: sel ? Colors.white : Colors.white.withValues(alpha: 0.70))),
                       ),
                     );
                   }).toList(),
@@ -1181,6 +1202,7 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
 
                 _lbl('Titre *'),
                 TextFormField(
+                  style: const TextStyle(fontFamily: 'Galey', color: Colors.white),
                   decoration: _dec('Titre de votre question ou discussion'),
                   validator: (v) => (v?.trim().isEmpty ?? true) ? 'Obligatoire' : null,
                   onSaved: (v) => _titre = v?.trim() ?? '',
@@ -1240,27 +1262,27 @@ class _CreerSujetSheetState extends State<_CreerSujetSheet> {
   Widget _lbl(String t) => Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: Text(t,
-            style: const TextStyle(
+            style: TextStyle(
                 fontFamily: 'Galey',
                 fontWeight: FontWeight.w600,
                 fontSize: 13,
-                color: Color(0xFF6F767B))),
+                color: Colors.white.withValues(alpha: 0.6))),
       );
 
   InputDecoration _dec(String hint) => InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(fontFamily: 'Galey', color: Colors.grey),
+        hintStyle: TextStyle(fontFamily: 'Galey', color: Colors.white.withValues(alpha: 0.50)),
         border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Colors.grey.shade300)),
+            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.20))),
         enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Colors.grey.shade300)),
+            borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.20))),
         focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
             borderSide: const BorderSide(color: _tealC, width: 1.5)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         filled: true,
-        fillColor: const Color(0xFFF8F8F8),
+        fillColor: Colors.white.withValues(alpha: 0.08),
       );
 }
