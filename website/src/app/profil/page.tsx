@@ -2649,28 +2649,142 @@ export default function ProfilPage() {
     }
   }
 
+  // Tables où l'utilisateur est le seul propriétaire clair de la ligne, sans
+  // valeur de conservation légale/comptable ni impact sur un tiers — sûres à
+  // exporter et à supprimer intégralement (RGPD art. 15/17/20).
+  // [table, colonnes possibles du propriétaire (OR)].
+  // NE PAS y ajouter : factures/devis/contrats/cessions/documents_animaux/
+  // certificats_engagement/registre_* (conservation légale comptable ou
+  // registre d'élevage) ni les tables de carnet de santé/actes vétérinaires
+  // (continuité médicale de l'animal, potentiellement transféré à un
+  // nouveau propriétaire) — voir handleDeleteAccount pour le détail.
+  const PERSONAL_DATA_TABLES: [string, string[]][] = [
+    ['animaux', ['uid_eleveur', 'uid_proprietaire']],
+    ['alertes_perdus', ['uid_proprietaire']],
+    ['animaux_trouves', ['user_uid']],
+    ['activity_log', ['uid']],
+    ['admin_alerts', ['uid']],
+    ['agenda_events', ['uid']],
+    ['agenda_retards', ['pro_uid']],
+    ['alimentations', ['uid_eleveur']],
+    ['annonces_objets', ['uid']],
+    ['badges_obtenus', ['user_uid']],
+    ['balades_ludiques', ['createur_uid']],
+    ['balades_ludiques_avis', ['user_uid']],
+    ['balades_ludiques_favoris', ['user_uid']],
+    ['bebes_portee', ['uid_eleveur']],
+    ['bloquages', ['uid']],
+    ['bloquer', ['blocker_id']],
+    ['cles_clients', ['pro_uid', 'owner_uid']],
+    ['comptes_rendus', ['pro_uid', 'owner_uid']],
+    ['conversation_reports', ['reported_by_uid']],
+    ['cours_collectifs', ['pro_uid']],
+    ['cours_collectifs_participants', ['client_uid']],
+    ['cours_collectifs_series', ['pro_uid']],
+    ['education_objectifs', ['pro_uid', 'owner_uid']],
+    ['education_progression', ['pro_uid', 'owner_uid']],
+    ['elevage_cogerants', ['uid_gerant', 'uid_cogerant']],
+    ['enclos_chenil', ['uid_eleveur']],
+    ['evenements', ['createur_uid']],
+    ['evenements_inscrits', ['user_uid']],
+    ['exercices_attribues', ['pro_uid', 'owner_uid']],
+    ['exercices_bibliotheque', ['pro_uid']],
+    ['fiches_toilettage', ['client_uid', 'pro_uid']],
+    ['follows', ['follower_uid', 'following_uid']],
+    ['forfaits_education', ['pro_uid']],
+    ['forfaits_garde', ['pro_uid']],
+    ['groupe_commentaire_likes', ['user_uid']],
+    ['groupe_post_likes', ['user_uid']],
+    ['groupes_membres', ['user_uid']],
+    ['inventaire_items', ['uid_eleveur']],
+    ['inventaire_mouvements', ['uid_eleveur']],
+    ['joueurs_xp', ['user_uid']],
+    ['message_reactions', ['uid']],
+    ['notifications', ['uid']],
+    ['partage_tokens', ['owner_id']],
+    ['petfriends', ['uid_demandeur', 'uid_recepteur']],
+    ['place_favoris', ['user_uid']],
+    ['place_likes', ['user_uid']],
+    ['plan_taches', ['uid_eleveur']],
+    ['plan_templates', ['uid_eleveur']],
+    ['plans_actifs', ['uid_eleveur']],
+    ['post_comments', ['uid']],
+    ['post_favorites', ['uid']],
+    ['post_likes', ['uid']],
+    ['post_reports', ['reporter_uid']],
+    ['postes_toilettage', ['pro_uid']],
+    ['posts_socialmedia', ['uid']],
+    ['prestations_education', ['pro_uid']],
+    ['prestations_photographe', ['pro_uid']],
+    ['prestations_toilettage', ['pro_uid']],
+    ['promenades', ['organisateur_uid']],
+    ['promenades_invitations', ['invite_uid', 'inviteur_uid']],
+    ['promenades_messages', ['user_uid']],
+    ['promenades_participants', ['user_uid']],
+    ['protocoles_chaleur_race', ['uid_eleveur']],
+    ['rdv', ['client_uid', 'pro_uid']],
+    ['stories', ['uid']],
+    ['story_likes', ['uid']],
+    ['tarifs_clients_garde', ['pro_uid', 'owner_uid']],
+    ['user_cosmetics', ['uid']],
+    ['zones_intervention', ['pro_uid']],
+    // Tables historiques (aucun usage dans le flux live) — incluses par
+    // sécurité, sans risque fonctionnel.
+    ['catfiche', ['uid_eleveur']],
+    ['dogfiche', ['uid_eleveur']],
+    ['posts', ['uid_eleveur']],
+    ['subscriptions', ['uid']],
+    ['transferts_propriete', ['uid_vendeur']],
+    ['virtual_gifts', ['sender_uid', 'receiver_uid']],
+    ['animal_acces_pro', ['pro_uid', 'owner_uid']],
+  ];
+
+  function orFilter(cols: string[], uid: string) {
+    return cols.map(c => `${c}.eq.${uid}`).join(',');
+  }
+
   async function handleExportData() {
     if (!user) return;
     setExporting(true);
     try {
       const uid = user.uid;
-      const [profileRes, animauxRes, annoncesRes, abosRes, alertesRes] = await Promise.all([
+      const results = await Promise.all(
+        PERSONAL_DATA_TABLES.map(([table, cols]) =>
+          Promise.resolve(supabase.from(table).select('*').or(orFilter(cols, uid)))
+            .then(r => [table, r.data ?? []] as const)
+            .catch(() => [table, []] as const)
+        )
+      );
+      const [profileRes, annoncesRes, abosRes] = await Promise.all([
         supabase.from('users').select('*').eq('uid', uid).maybeSingle(),
-        supabase.from('animaux').select('*').eq('uid_eleveur', uid),
         supabase.from('annonces').select('*').eq('uid_eleveur', uid),
         supabase.from('abonnements').select('plan_code,periodicite,statut,date_debut,date_fin').eq('uid', uid),
-        supabase.from('alertes_perdus').select('*').eq('uid_declarant', uid),
       ]);
-      const exportData = {
+      // Données à conservation légale (comptable, registre d'élevage) —
+      // exportées en lecture seule : la portabilité n'entre pas en
+      // conflit avec l'obligation de conservation, seule la SUPPRESSION
+      // en poserait une (cf. handleDeleteAccount).
+      const [facturesRes, devisRes, contratsRes, cessionsRes] = await Promise.all([
+        supabase.from('factures').select('*').eq('uid_eleveur', uid),
+        supabase.from('devis').select('*').eq('pro_uid', uid),
+        supabase.from('contrats').select('*').eq('uid_eleveur', uid),
+        supabase.from('cessions').select('*').or(orFilter(['uid_eleveur', 'uid_acquereur'], uid)),
+      ]);
+
+      const exportData: Record<string, unknown> = {
         exported_at: new Date().toISOString(),
         uid,
         email: user.email,
         profil: profileRes.data,
-        animaux: animauxRes.data ?? [],
         annonces: annoncesRes.data ?? [],
         abonnements: abosRes.data ?? [],
-        alertes_perdus: alertesRes.data ?? [],
+        factures: facturesRes.data ?? [],
+        devis: devisRes.data ?? [],
+        contrats: contratsRes.data ?? [],
+        cessions: cessionsRes.data ?? [],
       };
+      for (const [table, rows] of results) exportData[table] = rows;
+
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -2704,27 +2818,49 @@ export default function ProfilPage() {
       batch.delete(doc(db, 'users', uid));
       await batch.commit();
 
-      // Supprimer explicitement les tables sans ON DELETE CASCADE garanti
+      // Supprimer explicitement toutes les tables où l'utilisateur est seul
+      // propriétaire, sans conservation légale ni impact sur un tiers.
+      await Promise.all(
+        PERSONAL_DATA_TABLES.map(([table, cols]) =>
+          Promise.resolve(supabase.from(table).delete().or(orFilter(cols, uid))).then(() => null).catch(() => null)
+        )
+      );
       await Promise.all([
-        supabase.from('animaux').delete().eq('uid_proprietaire', uid),
-        supabase.from('alertes_perdus').delete().eq('uid_proprietaire', uid),
-        supabase.from('animaux_perdus').delete().eq('uid_declarant', uid),
-        supabase.from('animaux_trouves').delete().eq('uid_declarant', uid),
-        supabase.from('signalements_alertes').delete().eq('uid_signaleur', uid),
-        supabase.from('signalements').delete().eq('uid_signaleur', uid),
-        supabase.from('likes').delete().eq('user_uid', uid),
-        supabase.from('favoris').delete().eq('uid', uid),
         supabase.from('employes').delete().eq('uid_employe', uid),
         supabase.from('employes').delete().eq('uid_eleveur', uid),
         supabase.from('taches_elevage').delete().eq('uid_eleveur', uid),
-        supabase.from('certificats_engagement').delete().eq('uid', uid),
-        supabase.from('partage_animal').delete().eq('uid', uid),
-        supabase.from('vet_access_grants').delete().eq('uid', uid),
-        supabase.from('pension_acces').delete().eq('uid', uid),
+        supabase.from('partage_animal').delete().eq('uid_partageur', uid),
+        supabase.from('vet_access_grants').delete().or(orFilter(['vet_id', 'owner_id'], uid)),
+        supabase.from('pension_acces').delete().or(orFilter(['pro_uid', 'owner_uid'], uid)),
         supabase.from('abonnements').delete().eq('uid', uid),
-        supabase.from('user_profiles').delete().eq('uid', uid),
+        supabase.from('animaux_proprietes').delete().eq('uid_proprio', uid),
+        supabase.from('signalements').delete().eq('reporter_uid', uid),
       ]);
+      // ⚠️ Volontairement NON supprimées ici (conservation légale ou
+      // impact sur un tiers — anonymiser plutôt que supprimer, à
+      // trancher séparément, cf. audit RGPD) :
+      //   - factures/devis/contrats/documents_animaux/certificats_engagement/
+      //     cessions/reservations_animaux (conservation comptable/légale —
+      //     factures : 10 ans, obligation Code de commerce)
+      //   - registre_mouvements/registre_sanitaire (registre d'élevage,
+      //     obligation légale de traçabilité)
+      //   - contract_audit (journal d'audit RGPD lui-même, immuable)
+      //   - carnet de santé (vaccinations, traitements, visites, allergies,
+      //     vermifuges, antiparasitaires, chirurgies, radios, ordonnances,
+      //     points_osteo, seances_osteo, vet_consultations, tests_genetiques)
+      //     et credit_wallets/credit_transactions/forfaits_souscrits/
+      //     achats_ponctuels — continuité de l'animal / valeur financière
+      //     vis-à-vis d'un tiers, à anonymiser plutôt que supprimer
+      //   - messages/conversations (détruire les messages envoyés casserait
+      //     les conversations des autres participants — anonymiser
+      //     l'expéditeur plutôt que supprimer, comme WhatsApp/Signal)
+      //   - animal_friendly_lieux/natural_places/avis_pro/
+      //     petfriendly_reviews (contenu communautaire consulté par
+      //     d'autres — détacher l'attribution plutôt que supprimer)
+      //   - groupes (créateur d'un groupe encore actif — ne pas détruire
+      //     le contenu des autres membres)
       // Supprimer le profil user (CASCADE supprime annonces, animaux, etc.)
+      await supabase.from('user_profiles').delete().eq('uid', uid);
       await supabase.from('users').delete().eq('uid', uid);
       // Supprimer le compte Firebase Auth
       await deleteUser(user);
