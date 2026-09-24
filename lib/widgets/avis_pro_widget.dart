@@ -83,6 +83,8 @@ class _AvisProSectionState extends State<AvisProSection> {
             'p_pro_uid': widget.proUid,
             'p_client_uid': uid,
             if (myProfile?['id'] != null) 'p_client_profile_id': myProfile!['id'],
+            if (widget.proProfileId != null && widget.proProfileId!.isNotEmpty)
+              'p_pro_profile_id': widget.proProfileId,
           }) as bool? ?? false;
         } catch (_) {}
       }

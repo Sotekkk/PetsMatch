@@ -1911,6 +1911,7 @@ function AvisPro({ proUid, proProfileId, clientUid, autoOpen = false }: { proUid
       // pas rendre le profil particulier éligible.
       const { data: ok } = await supabase.rpc('can_review_pro', {
         p_pro_uid: proUid, p_client_uid: clientUid, p_client_profile_id: myProf?.id ?? null,
+        p_pro_profile_id: proProfileId ?? null,
       });
       setEligible(!!ok);
     }
