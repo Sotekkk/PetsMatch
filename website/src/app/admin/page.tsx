@@ -11,6 +11,7 @@ import AnimauxTab from './_components/AnimauxTab';
 import AnnoncesToutesTab from './_components/AnnoncesToutesTab';
 import ConsommationTab from './_components/ConsommationTab';
 import StoryMusicTab from './_components/StoryMusicTab';
+import AvisContestesTab from './_components/AvisContestesTab';
 import PlanEditor from './_components/PlanEditor';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -85,7 +86,7 @@ interface DossierEntry {
   isSecondary?: boolean; profileTableId?: string;
 }
 
-type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs' | 'animaux' | 'annonces' | 'consommation' | 'lieux_naturels' | 'tarification' | 'signalements_conv' | 'story_music';
+type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs' | 'animaux' | 'annonces' | 'consommation' | 'lieux_naturels' | 'tarification' | 'signalements_conv' | 'story_music' | 'avis_contestes';
 // 'tous' / 'en_attente' / 'admin' sont des filtres transverses ; toute autre
 // valeur est une catégorie dynamique (eleveur, association, particulier, ou
 // un métier pro), générée depuis les données — cf. entryCategory().
@@ -178,6 +179,7 @@ export default function AdminPage() {
   // Annonces en attente / suspectes / suspendues
   interface AnnonceAdmin { id: string; titre?: string; espece?: string; race?: string; nom_eleveur?: string; uid_eleveur?: string; created_at?: string; photos?: string[]; type_vente?: string; is_suspect?: boolean; suspect_reasons?: string[]; statut?: string; vues?: number; }
   const [annoncesEnAttente, setAnnoncesEnAttente] = useState<AnnonceAdmin[]>([]);
+  const [avisContestesEnAttente, setAvisContestesEnAttente] = useState(0);
   const [annoncesSuspectes, setAnnoncesSuspectes] = useState<AnnonceAdmin[]>([]);
   const [annoncesSuspendues, setAnnoncesSuspendues] = useState<AnnonceAdmin[]>([]);
   const [annoncesLoading, setAnnoncesLoading] = useState(false);
@@ -260,6 +262,10 @@ export default function AdminPage() {
 
     const { data: alertesData } = await supabase.from('signalements_alertes').select('*');
     setAlertes((alertesData ?? []) as SignalementAlerte[]);
+
+    const { count: avisContestesCount } = await supabase
+      .from('avis_pro_contests').select('id', { count: 'exact', head: true }).eq('statut', 'en_attente');
+    setAvisContestesEnAttente(avisContestesCount ?? 0);
   }, []);
 
   // ── Signalements ─────────────────────────────────────────────────────────────
@@ -1165,6 +1171,7 @@ export default function AdminPage() {
           { key: 'tarification',  label: 'Tarification',  icon: '💰' },
           { key: 'signalements_conv', label: 'Conv. signalées', icon: '💬' },
           { key: 'story_music',   label: 'Musique Stories',icon: '🎵' },
+          { key: 'avis_contestes',label: 'Avis contestés', icon: '🚩', badge: avisContestesEnAttente || undefined },
         ] as { key: AdminTab; label: string; icon: string; badge?: number }[]).map(t => (
           <button
             key={t.key}
@@ -1739,6 +1746,8 @@ export default function AdminPage() {
 
         {/* ─── Musique Stories ───────────────────────────────────────────── */}
         {tab === 'story_music' && <StoryMusicTab />}
+
+        {tab === 'avis_contestes' && user && <AvisContestesTab adminUid={user.uid} />}
 
         {/* ─── Annonces modération ───────────────────────────────────────── */}
         {tab === 'annonces' && (
