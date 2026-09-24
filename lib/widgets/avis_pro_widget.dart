@@ -24,6 +24,11 @@ class _AvisProSectionState extends State<AvisProSection> {
   bool _loading = true;
   List<Map<String, dynamic>> _avis = [];
   bool _dejaNote = false;
+  // Un avis n'est proposé qu'à un client ayant eu une interaction réelle
+  // avec ce pro (RDV confirmé/terminé ou compte-rendu) — vérifié aussi côté
+  // RLS (can_review_pro), ce check ne sert qu'à ne pas afficher un
+  // formulaire qui échouerait de toute façon.
+  bool _eligible = false;
 
   @override
   void initState() {
@@ -41,13 +46,58 @@ class _AvisProSectionState extends State<AvisProSection> {
       final rows = await q.order('created_at', ascending: false);
       final list = List<Map<String, dynamic>>.from(rows as List);
       final uid = FirebaseAuth.instance.currentUser?.uid;
+      bool eligible = false;
+      if (uid != null && uid != widget.proUid) {
+        try {
+          eligible = await _supa.rpc('can_review_pro',
+              params: {'p_pro_uid': widget.proUid, 'p_client_uid': uid}) as bool? ?? false;
+        } catch (_) {}
+      }
       if (mounted) setState(() {
         _avis = list;
         _dejaNote = uid != null && list.any((a) => a['client_uid'] == uid);
+        _eligible = eligible;
         _loading = false;
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _contester(String avisId) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid != widget.proUid) return;
+    final motifCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Signaler cet avis', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: TextField(
+          controller: motifCtrl,
+          maxLines: 3,
+          decoration: const InputDecoration(hintText: 'Motif du signalement…', border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Envoyer')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await _supa.from('avis_pro_contests').insert({
+        'avis_id': avisId,
+        'pro_uid': widget.proUid,
+        'motif': motifCtrl.text.trim().isEmpty ? 'Non précisé' : motifCtrl.text.trim(),
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Signalement envoyé — notre équipe va l\'examiner.', style: TextStyle(fontFamily: 'Galey'))));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e')));
+      }
     }
   }
 
@@ -87,7 +137,7 @@ class _AvisProSectionState extends State<AvisProSection> {
               style: const TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.grey)),
         ],
         const Spacer(),
-        if (!_dejaNote)
+        if (!_dejaNote && _eligible)
           TextButton(onPressed: _openForm, child: const Text('Laisser un avis', style: TextStyle(fontFamily: 'Galey', color: _teal))),
       ]),
       const SizedBox(height: 8),
@@ -97,14 +147,20 @@ class _AvisProSectionState extends State<AvisProSection> {
           child: Text('Aucun avis pour l\'instant.', style: TextStyle(fontFamily: 'Galey', color: Colors.grey)),
         )
       else
-        ..._avis.map((a) => _AvisTile(avis: a)),
+        ..._avis.map((a) => _AvisTile(
+              avis: a,
+              isPro: FirebaseAuth.instance.currentUser?.uid == widget.proUid,
+              onContester: () => _contester(a['id'].toString()),
+            )),
     ]);
   }
 }
 
 class _AvisTile extends StatelessWidget {
   final Map<String, dynamic> avis;
-  const _AvisTile({required this.avis});
+  final bool isPro;
+  final VoidCallback onContester;
+  const _AvisTile({required this.avis, this.isPro = false, required this.onContester});
 
   @override
   Widget build(BuildContext context) {
@@ -125,6 +181,18 @@ class _AvisTile extends StatelessWidget {
         if ((avis['commentaire'] as String?)?.isNotEmpty == true) ...[
           const SizedBox(height: 6),
           Text(avis['commentaire'].toString(), style: const TextStyle(fontFamily: 'Galey', fontSize: 13)),
+        ],
+        if (isPro) ...[
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: onContester,
+              icon: const Icon(Icons.flag_outlined, size: 14, color: Colors.grey),
+              label: const Text('Signaler', style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey)),
+              style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 0)),
+            ),
+          ),
         ],
       ]),
     );

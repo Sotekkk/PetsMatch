@@ -1872,6 +1872,12 @@ function AvisPro({ proUid, proProfileId, clientUid, autoOpen = false }: { proUid
   const [note, setNote] = useState(0);
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
+  // Un avis n'est proposé qu'à un client ayant eu une interaction réelle
+  // avec ce pro (RDV confirmé/terminé ou compte-rendu) — vérifié aussi côté
+  // RLS (can_review_pro), ce check ne sert qu'à ne pas afficher un
+  // formulaire qui échouerait de toute façon.
+  const [eligible, setEligible] = useState(false);
+  const isPro = clientUid != null && clientUid === proUid;
 
   const reload = useCallback(async () => {
     let q = supabase.from('avis_pro').select('id, note, commentaire, created_at, client_uid').eq('pro_uid', proUid);
@@ -1879,10 +1885,28 @@ function AvisPro({ proUid, proProfileId, clientUid, autoOpen = false }: { proUid
     const { data } = await q.order('created_at', { ascending: false });
     setAvis((data ?? []) as typeof avis);
     setLoading(false);
-  }, [proUid, proProfileId]);
+    if (clientUid && clientUid !== proUid) {
+      const { data: ok } = await supabase.rpc('can_review_pro', { p_pro_uid: proUid, p_client_uid: clientUid });
+      setEligible(!!ok);
+    }
+  }, [proUid, proProfileId, clientUid]);
   useEffect(() => { reload(); }, [reload]);
 
   const dejaNote = clientUid != null && avis.some(a => a.client_uid === clientUid);
+
+  async function contester(avisId: string) {
+    if (!isPro) return;
+    const motif = window.prompt('Motif du signalement :');
+    if (motif == null) return;
+    try {
+      await supabase.from('avis_pro_contests').insert({
+        avis_id: avisId, pro_uid: proUid, motif: motif.trim() || 'Non précisé',
+      });
+      window.alert("Signalement envoyé — notre équipe va l'examiner.");
+    } catch (e) {
+      window.alert(`Erreur : ${e}`);
+    }
+  }
 
   // Arrivée depuis la notif « Donnez votre avis » : ouvre le formulaire + scroll.
   useEffect(() => {
@@ -1915,7 +1939,7 @@ function AvisPro({ proUid, proProfileId, clientUid, autoOpen = false }: { proUid
         <p className="font-bold text-[#1E2025]" style={{ fontFamily: 'Galey, sans-serif' }}>
           Avis {avis.length > 0 && <span className="text-sm text-gray-500 font-normal">⭐ {moyenne.toFixed(1)} ({avis.length})</span>}
         </p>
-        {clientUid && !dejaNote && (
+        {clientUid && !dejaNote && eligible && (
           <button onClick={() => setShowForm(v => !v)} className="text-xs font-semibold text-[#0C5C6C]">Laisser un avis</button>
         )}
       </div>
@@ -1943,6 +1967,9 @@ function AvisPro({ proUid, proProfileId, clientUid, autoOpen = false }: { proUid
                 <span className="text-[11px] text-gray-400">{new Date(a.created_at).toLocaleDateString('fr-FR')}</span>
               </div>
               {a.commentaire && <p className="text-sm text-gray-700 mt-1">{a.commentaire}</p>}
+              {isPro && (
+                <button onClick={() => contester(a.id)} className="text-[11px] text-gray-400 hover:text-gray-600 mt-1">🚩 Signaler</button>
+              )}
             </div>
           ))}
         </div>
