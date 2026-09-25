@@ -59,6 +59,7 @@ const PERMS_LIST = [
   { key: 'write_inventaire', label: 'Inventaire',            desc: 'Gérer les stocks et alertes' },
   { key: 'write_notes',      label: 'Notes',                 desc: 'Ajouter des notes internes' },
   { key: 'read_planning_pension', label: 'Planning pension', desc: 'Voir le planning d\'occupation et les fiches des animaux en pension' },
+  { key: 'suivi_chaleurs',   label: 'Suivi des chaleurs',    desc: 'Recevoir les rappels de chaleurs des femelles confiées (indépendant des tâches d\'agenda)' },
 ] as const;
 
 // ── Constantes ────────────────────────────────────────────────────────────────
@@ -124,6 +125,7 @@ export default function EmployesPage() {
   const [isPension, setIsPension] = useState(false);
   const [assignProtoGroup, setAssignProtoGroup] = useState<ProtoGroupe | null>(null);
   const [chaleursModal, setChaleursModal] = useState<Employe | null>(null);
+  const [chaleursPermByEmploye, setChaleursPermByEmploye] = useState<Record<string, boolean>>({});
 
   useEffect(() => { if (!loading && !user) router.push('/connexion'); }, [user, loading, router]);
 
@@ -175,6 +177,24 @@ export default function EmployesPage() {
       }
       setEmployes(empsData);
 
+      // Permission « suivi_chaleurs » par employé — pilote l'affichage du
+      // bouton 🌸 sur chaque ligne.
+      const employeProfileIds = empsData.map(e => e.employeProfileId).filter((v): v is string => !!v);
+      if (employeProfileIds.length > 0) {
+        const eleveurProfileIds = [...new Set(empsData.map(e => e.eleveurProfileId).filter((v): v is string => !!v))];
+        const { data: permRows } = await supabase.from('employe_permissions')
+          .select('employe_profile_id')
+          .in('eleveur_profile_id', eleveurProfileIds)
+          .in('employe_profile_id', employeProfileIds)
+          .eq('permission', 'suivi_chaleurs');
+        const allowed = new Set((permRows ?? []).map(r => r.employe_profile_id as string));
+        setChaleursPermByEmploye(Object.fromEntries(
+          empsData.map(e => [e.id, e.employeProfileId ? allowed.has(e.employeProfileId) : false])
+        ));
+      } else {
+        setChaleursPermByEmploye({});
+      }
+
       // Tâches manuelles
       let tmQ = supabase.from('taches_elevage').select('id,titre,date,statut,assigne_a,notes,animal_nom').order('date');
       if (profileId) {
@@ -220,6 +240,13 @@ export default function EmployesPage() {
 
   const revoquer = useCallback(async (e: Employe) => {
     await supabase.from('employes').update({ actif: false }).eq('id', e.id);
+    // Coupe aussitôt les rappels de chaleurs confiés à cet employé — sinon
+    // il continue d'en recevoir malgré la révocation.
+    if (e.employeProfileId) {
+      await supabase.from('animaux')
+        .update({ chaleurs_responsable_uid: null, chaleurs_responsable_profile_id: null })
+        .eq('chaleurs_responsable_profile_id', e.employeProfileId);
+    }
     await supabase.from('notifications').insert({
       uid: e.uid_employe, type: 'employee_revoked',
       title: 'Accès retiré',
@@ -231,16 +258,21 @@ export default function EmployesPage() {
     load();
   }, [user, load]);
 
+  const [permsInitial, setPermsInitial] = useState<Set<string>>(new Set());
+
   const openPerms = useCallback(async (e: Employe) => {
     setPermsModal(e);
     setPermsLoading(true);
     setPermsData(new Set());
+    setPermsInitial(new Set());
     if (e.employeProfileId && e.eleveurProfileId) {
       const { data } = await supabase.from('employe_permissions')
         .select('permission')
         .eq('eleveur_profile_id', e.eleveurProfileId)
         .eq('employe_profile_id', e.employeProfileId);
-      setPermsData(new Set((data ?? []).map((r: { permission: string }) => r.permission)));
+      const loaded = new Set((data ?? []).map((r: { permission: string }) => r.permission));
+      setPermsData(loaded);
+      setPermsInitial(new Set(loaded));
     }
     setPermsLoading(false);
   }, []);
@@ -261,9 +293,17 @@ export default function EmployesPage() {
         }))
       );
     }
+    // Retrait du suivi chaleurs : coupe aussitôt les rappels déjà confiés à
+    // cet employé (sinon animaux.chaleurs_responsable_uid reste en place).
+    if (permsInitial.has('suivi_chaleurs') && !permsData.has('suivi_chaleurs')) {
+      await supabase.from('animaux')
+        .update({ chaleurs_responsable_uid: null, chaleurs_responsable_profile_id: null })
+        .eq('chaleurs_responsable_profile_id', permsModal.employeProfileId);
+    }
     setPermsSaving(false);
     setPermsModal(null);
-  }, [permsModal, permsData]);
+    load();
+  }, [permsModal, permsData, permsInitial, load]);
 
   // Assigne (ou retire) tout un groupe de tâches de protocole à un employé,
   // avec notification — miroir de _assignPlanTache de l'appli.
@@ -425,13 +465,15 @@ export default function EmployesPage() {
               </div>
               <span className="flex-1 font-semibold text-gray-800 text-sm">{e.nom}</span>
               <span className="text-xs text-teal-600 font-semibold hidden sm:inline">📅 Voir l&apos;agenda</span>
-              <button
-                onClick={(ev) => { ev.stopPropagation(); setChaleursModal(e); }}
-                title="Suivi des chaleurs"
-                className="p-2 rounded-xl hover:bg-pink-50 text-gray-400 hover:text-pink-500 transition-colors text-base leading-none"
-              >
-                🌸
-              </button>
+              {chaleursPermByEmploye[e.id] && (
+                <button
+                  onClick={(ev) => { ev.stopPropagation(); setChaleursModal(e); }}
+                  title="Suivi des chaleurs"
+                  className="p-2 rounded-xl hover:bg-pink-50 text-gray-400 hover:text-pink-500 transition-colors text-base leading-none"
+                >
+                  🌸
+                </button>
+              )}
               <button
                 onClick={(ev) => { ev.stopPropagation(); openPerms(e); }}
                 title="Gérer les accès"

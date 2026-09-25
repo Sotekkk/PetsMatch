@@ -201,6 +201,7 @@ class _EmployesTabState extends State<_EmployesTab> {
   bool _loading = true;
   List<Map<String, dynamic>> _employes = [];
   String _nomElevage = '';
+  Map<String, bool> _suiviChaleursByEmploye = {};
 
   /// Type de profil résolu pour ce tab : explicite (`education`, `pension`…)
   /// si fourni, sinon le binaire historique éleveur/association.
@@ -274,6 +275,32 @@ class _EmployesTabState extends State<_EmployesTab> {
         }
         result.add({...e, 'user': u});
       }
+
+      // Permission « suivi_chaleurs » par employé — pilote l'affichage du
+      // bouton « Suivi des chaleurs » sur chaque carte (voir _EmployeCard).
+      final chaleursProfileIds = <String>{};
+      if (eleveurProfileId != null) {
+        final employeProfileIds = result
+            .map((e) => e['employe_profile_id'] as String?)
+            .whereType<String>()
+            .toSet();
+        if (employeProfileIds.isNotEmpty) {
+          final permRows = await _supa.from('employe_permissions')
+              .select('employe_profile_id')
+              .eq('eleveur_profile_id', eleveurProfileId)
+              .eq('permission', 'suivi_chaleurs')
+              .inFilter('employe_profile_id', employeProfileIds.toList());
+          for (final r in permRows as List) {
+            final id = r['employe_profile_id'] as String?;
+            if (id != null) chaleursProfileIds.add(id);
+          }
+        }
+      }
+      _suiviChaleursByEmploye = {
+        for (final e in result)
+          e['id'].toString(): chaleursProfileIds.contains(e['employe_profile_id'] as String? ?? ''),
+      };
+
       if (mounted) setState(() { _employes = result; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -298,6 +325,15 @@ class _EmployesTabState extends State<_EmployesTab> {
     );
     if (ok != true) return;
     await _supa.from('employes').update({'actif': false}).eq('id', employeId);
+    // Coupe aussitôt les rappels de chaleurs confiés à cet employé — sinon
+    // il continue d'en recevoir malgré la révocation.
+    if ((employeProfileId ?? '').isNotEmpty) {
+      try {
+        await _supa.from('animaux')
+            .update({'chaleurs_responsable_uid': null, 'chaleurs_responsable_profile_id': null})
+            .eq('chaleurs_responsable_profile_id', employeProfileId!);
+      } catch (_) {}
+    }
     if (uidEmploye != null) {
       await _supa.from('notifications').insert({
         'uid':   uidEmploye,
@@ -422,6 +458,7 @@ class _EmployesTabState extends State<_EmployesTab> {
                       nom: nom, photoUrl: photoUrl,
                       teal: widget.teal, dark: widget.dark,
                       employeId: e['id'].toString(),
+                      showChaleursButton: _suiviChaleursByEmploye[e['id'].toString()] ?? false,
                       onRevoquer: () => _revoquer(e['id'].toString(), nom, (e['user'] as Map<String, dynamic>?)?['uid'] as String?, e['employe_profile_id'] as String?),
                       onPermissionsChanged: _load,
                       onTap: (employeUid == null && employeProfileId == null) ? null : () => Navigator.push(context, MaterialPageRoute(
@@ -442,12 +479,14 @@ class _EmployeCard extends StatelessWidget {
   const _EmployeCard({required this.nom, required this.photoUrl,
       required this.teal, required this.dark, required this.onRevoquer,
       required this.employeId, required this.onPermissionsChanged,
+      this.showChaleursButton = false,
       this.onTap});
   final String nom, employeId;
   final String? photoUrl;
   final Color teal, dark;
   final VoidCallback onRevoquer;
   final VoidCallback onPermissionsChanged;
+  final bool showChaleursButton;
   final VoidCallback? onTap;
 
   @override
@@ -474,18 +513,19 @@ class _EmployeCard extends StatelessWidget {
           child: Text(nom, style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600,
               fontSize: 14, color: dark)),
         ),
-        IconButton(
-          icon: Icon(Icons.favorite_border, color: teal, size: 19),
-          tooltip: 'Suivi des chaleurs',
-          onPressed: () => showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            backgroundColor: Colors.white,
-            shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-            builder: (_) => _ChaleursSuiviSheet(employeId: employeId, nom: nom, teal: teal),
+        if (showChaleursButton)
+          IconButton(
+            icon: Icon(Icons.favorite_border, color: teal, size: 19),
+            tooltip: 'Suivi des chaleurs',
+            onPressed: () => showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.white,
+              shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+              builder: (_) => _ChaleursSuiviSheet(employeId: employeId, nom: nom, teal: teal),
+            ),
           ),
-        ),
         IconButton(
           icon: Icon(Icons.tune_rounded, color: teal, size: 20),
           tooltip: 'Gérer les accès',
@@ -739,6 +779,7 @@ const _kPerms = [
   ('write_inventaire',Icons.inventory_2_outlined,  'Inventaire',              'Gérer les stocks et alertes'),
   ('write_notes',     Icons.notes_outlined,         'Notes',                   'Ajouter des notes internes'),
   ('read_planning_pension', Icons.calendar_view_week_outlined, 'Planning pension', 'Voir le planning d\'occupation et les fiches des animaux en pension'),
+  ('suivi_chaleurs',  Icons.favorite_outlined,     'Suivi des chaleurs',      'Recevoir les rappels de chaleurs des femelles confiées (indépendant des tâches d\'agenda)'),
 ];
 
 // Permissions pertinentes selon le métier — éviter de proposer « Suivi
@@ -751,6 +792,8 @@ bool _permApplies(String key, String catPro) {
     case 'read_planning_pension':
       return catPro == 'pension';
     case 'write_repro': // saillies/gestations/portées : cœur de métier éleveur uniquement
+      return catPro.isEmpty;
+    case 'suivi_chaleurs': // rappels de chaleurs : cœur de métier éleveur uniquement
       return catPro.isEmpty;
     case 'write_protocoles': // protocoles de soins : éleveur + véto/ostéo-kiné
       return catPro.isEmpty || catPro == 'sante' || catPro == 'veterinaire';
@@ -770,6 +813,7 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
   String? _eleveurProfileId;
   String? _employeProfileId;
   final Set<String> _perms = {};
+  final Set<String> _initialPerms = {};
 
   List<(String, IconData, String, String)> get _visiblePerms => _kPerms
       .where((p) => _permApplies(p.$1, User_Info.catPro))
@@ -802,6 +846,7 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
     for (final r in rows as List) {
       _perms.add(r['permission'] as String);
     }
+    _initialPerms.addAll(_perms);
     if (mounted) setState(() => _loading = false);
   }
 
@@ -819,6 +864,17 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
           for (final p in _perms)
             {'eleveur_profile_id': _eleveurProfileId, 'employe_profile_id': _employeProfileId, 'permission': p},
         ]);
+      }
+      // Retrait du suivi chaleurs : coupe aussitôt les rappels déjà confiés à
+      // cet employé (sinon la colonne animaux.chaleurs_responsable_uid reste
+      // en place et il continue de recevoir les notifs malgré la permission
+      // retirée).
+      if (_initialPerms.contains('suivi_chaleurs') && !_perms.contains('suivi_chaleurs')) {
+        try {
+          await _supa.from('animaux')
+              .update({'chaleurs_responsable_uid': null, 'chaleurs_responsable_profile_id': null})
+              .eq('chaleurs_responsable_profile_id', _employeProfileId!);
+        } catch (_) {}
       }
       if (mounted) Navigator.pop(context);
     } catch (_) {

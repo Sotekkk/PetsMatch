@@ -10,6 +10,7 @@ import 'package:PetsMatch/pages/eleveur/verification_page.dart';
 import 'package:PetsMatch/pages/particulier/verifemail.dart';
 import 'package:PetsMatch/pages/pro/pro_agenda.dart';
 import 'package:PetsMatch/pages/notifications_page.dart';
+import 'package:PetsMatch/pages/eleveur/animaux/animal_fiche.dart';
 import 'package:PetsMatch/pages/onboarding/onboarding_bootstrap.dart';
 import 'package:PetsMatch/pages/chatScreen.dart';
 import 'package:flutter/material.dart';
@@ -107,6 +108,34 @@ Future<void> _handleNotifNavigation(Map<String, dynamic> data) async {
       ));
       return;
     }
+  }
+
+  // Notif de chaleurs probables/à venir (éleveur ou employé à qui le suivi a
+  // été confié — voir chaleurs_responsable_uid) : ouvre directement la fiche
+  // de l'animal, onglet Repro → sous-onglet Chaleurs (toujours en première
+  // position pour une femelle), plutôt que la liste de notifs générique.
+  final animalId = data['animalId'] as String? ?? '';
+  if (type == 'chaleur' && animalId.isNotEmpty) {
+    String? eleveurUidOverride;
+    try {
+      final animal = await Supabase.instance.client
+          .from('animaux').select('uid_eleveur').eq('id', animalId).maybeSingle();
+      final ownerUid = animal?['uid_eleveur'] as String?;
+      final currentUid = FirebaseAuth.instance.currentUser?.uid;
+      if (ownerUid != null && currentUid != null && ownerUid != currentUid) {
+        eleveurUidOverride = ownerUid;
+      }
+    } catch (_) {}
+    ctx.push(MaterialPageRoute(
+      builder: (_) => AnimalFichePage(
+        animalId: animalId,
+        readOnly: true,
+        showReproTab: true,
+        initialTabIndex: 2, // 0=Identité, 1=Documents, 2=Repro (mode éleveur/showReproTab)
+        eleveurUidOverride: eleveurUidOverride,
+      ),
+    ));
+    return;
   }
 
   ctx.push(MaterialPageRoute(builder: (_) => const NotificationsPage()));

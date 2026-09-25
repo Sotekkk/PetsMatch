@@ -845,7 +845,34 @@ class _NotificationsPageState extends State<NotificationsPage> {
           initialBebeIndex: bebeIndex,
         ),
       ));
-    } else if (type == 'chaleur' || type == 'animal_evolution') {
+    } else if (type == 'chaleur') {
+      // Ouvre directement la fiche de l'animal, onglet Repro → sous-onglet
+      // Chaleurs (1re position pour une femelle), pas la liste générique —
+      // l'éleveur comme l'employé à qui le suivi a été confié tombent
+      // directement dessus.
+      final animalId = data is Map ? data['animalId'] as String? : null;
+      if (animalId != null) {
+        String? eleveurUidOverride;
+        try {
+          final animal = await Supabase.instance.client
+              .from('animaux').select('uid_eleveur').eq('id', animalId).maybeSingle();
+          final ownerUid = animal?['uid_eleveur'] as String?;
+          final currentUid = FirebaseAuth.instance.currentUser?.uid;
+          if (ownerUid != null && currentUid != null && ownerUid != currentUid) {
+            eleveurUidOverride = ownerUid;
+          }
+        } catch (_) {}
+        await Navigator.push(context, MaterialPageRoute(
+          builder: (_) => AnimalFichePage(
+            animalId: animalId,
+            readOnly: true,
+            showReproTab: true,
+            initialTabIndex: 2, // 0=Identité, 1=Documents, 2=Repro (mode éleveur/showReproTab)
+            eleveurUidOverride: eleveurUidOverride,
+          ),
+        ));
+      }
+    } else if (type == 'animal_evolution') {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => const MesAnimauxPage(),
       ));
