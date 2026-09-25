@@ -3,7 +3,6 @@ import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/choice_publication.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_post.dart';
 import 'package:PetsMatch/pages/eleveur/elevage_gestion_select_menu.dart';
-import 'package:PetsMatch/pages/eleveur/pets_menu.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:flutter/material.dart';
