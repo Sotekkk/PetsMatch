@@ -424,6 +424,13 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
   // ── Rôle courant ──────────────────────────────────────────────────────────
 
   bool get _isEleveur {
+    // Priorité au rôle d'acquéreur : un cogérant a les mêmes droits que le
+    // gérant sur TOUS les contrats de l'élevage, mais si CE contrat précis
+    // le désigne aussi comme acquéreur (ex. il achète lui-même un animal à
+    // l'élevage qu'il co-gère), on ne doit jamais lui montrer les actions
+    // réservées au vendeur (« Relancer l'acquéreur »…) sur sa propre
+    // transaction — il reste "l'acquéreur" pour ce document-là.
+    if (_isAcquereur) return false;
     if (widget.isCertificatEngagement) {
       return (_cert != null && _myUid == (_cert!['cedant_uid'] as String?)) || _isCogerantActif;
     }

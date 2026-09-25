@@ -148,7 +148,10 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
   // Faire un contrat/certificat est une option pour garder une trace écrite —
   // ça n'oblige pas à attendre la signature de l'acquéreur pour transférer
   // l'animal : par défaut on transfère tout de suite.
-  const [attendreSignature, setAttendreSignature] = useState(false);
+  // Par défaut, on attend la signature de l'acquéreur avant de transférer
+  // l'animal (jamais de transfert automatique/immédiat sans confirmation
+  // explicite) — avec ou sans contrat attaché.
+  const [attendreSignature, setAttendreSignature] = useState(true);
 
   // Écoute le contrat ou certificat signé depuis la popup
   useEffect(() => {
@@ -518,12 +521,10 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
       const acqProfileId = await resolveAcquereurProfileId(searchResult?.uid ?? null, qualite);
 
       // Avoir un contrat/certificat ne bloque pas le transfert : c'est un
-      // choix (attendreSignature) de l'éleveur, pas une obligation liée au
-      // fait d'avoir généré un document.
-      const hasDocuments = !!finalContratUrl || !!finalCertificatUrl
-        || !!selectedContrat || !!selectedCertificat
-        || existingContrats.length > 0 || existingCertificats.length > 0;
-      const finaliseNow = !isReCession && (!hasDocuments || !attendreSignature);
+      // choix (attendreSignature) de l'éleveur, indépendant du fait d'avoir
+      // généré un document — le lien de signature de la cession
+      // (signer-cession/[token]) fonctionne même sans contrat attaché.
+      const finaliseNow = !isReCession && !attendreSignature;
 
       const { error: animalUpdateError } = await supabase.from('animaux').update({
         statut:                 finaliseNow ? 'sorti' : 'en_attente_cession',
@@ -1049,8 +1050,7 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
                 </>
               )}
 
-              {(!!contratUrl || !!certificatUrl || !!selectedContrat || !!selectedCertificat
-                || existingContrats.length > 0 || existingCertificats.length > 0) && (
+              {!isReCession && (
                 <label className="flex items-start gap-2.5 pt-1 cursor-pointer">
                   <input type="checkbox" checked={attendreSignature}
                     onChange={e => setAttendreSignature(e.target.checked)}

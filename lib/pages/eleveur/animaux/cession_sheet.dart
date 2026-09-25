@@ -108,17 +108,12 @@ class _CessionSheetState extends State<CessionSheet> {
   Map<String, dynamic>? _selectedCertificat;
   bool _loadingDocs = true;
 
-  // Faire un contrat/certificat sur le site est une option pour garder une
-  // trace écrite — ça n'oblige pas à attendre la signature de l'acquéreur
-  // pour transférer l'animal : par défaut on transfère tout de suite, la
-  // signature peut se faire après, à tête reposée.
-  bool _attendreSignature = false;
-
-  bool get _hasAnyDocument =>
-      _contratUrl != null || _certificatUrl != null ||
-      _selectedContrat != null || _selectedCertificat != null ||
-      _existingContrats.any((d) => d['type'] != 'facture') ||
-      _existingCertificats.isNotEmpty;
+  // Par défaut, on attend la signature de l'acquéreur avant de transférer
+  // l'animal (jamais de transfert automatique/immédiat sans confirmation
+  // explicite) — que la cession soit accompagnée d'un contrat ou non, le
+  // lien de signature léger (signer-cession/[token]) fonctionne dans les
+  // deux cas. L'éleveur peut décocher pour transférer tout de suite.
+  bool _attendreSignature = true;
 
   // Profil éleveur (pour la facture)
   Map<String, dynamic>? _eleveurProfile;
@@ -723,13 +718,11 @@ class _CessionSheetState extends State<CessionSheet> {
       final certificatUrl  = _certificatUrl ?? _selectedCertificat?['url'] as String?;
 
       // Avoir un contrat/certificat ne bloque pas le transfert : c'est un
-      // choix (_attendreSignature) de l'éleveur, pas une obligation liée au
-      // fait d'avoir généré un document sur le site.
-      final hasDocuments = contratUrl != null || certificatUrl != null
-          || _selectedContrat != null || _selectedCertificat != null
-          || _existingContrats.any((d) => d['type'] != 'facture')
-          || _existingCertificats.isNotEmpty;
-      final finaliseNow = !widget.isReCession && (!hasDocuments || !_attendreSignature);
+      // choix (_attendreSignature) de l'éleveur, indépendant du fait d'avoir
+      // généré un document sur le site — le lien de signature de la cession
+      // (signer-cession/[token]) fonctionne même sans contrat attaché, donc
+      // « attendre la signature » doit rester possible dans tous les cas.
+      final finaliseNow = !widget.isReCession && !_attendreSignature;
       final dateCessionStr = _dateCession.toIso8601String().split('T').first;
 
       final cedantProfileId = User_Info.activeProfileId;
@@ -1429,7 +1422,7 @@ class _CessionSheetState extends State<CessionSheet> {
                 style: TextButton.styleFrom(foregroundColor: _teal, padding: EdgeInsets.zero),
               ),
             ],
-            if (_hasAnyDocument) ...[
+            if (!widget.isReCession) ...[
               const SizedBox(height: 16),
               const Divider(height: 1),
               const SizedBox(height: 12),

@@ -1339,6 +1339,15 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       // l'insert — la clôturer avant fait donc échouer l'insert
       // silencieusement. Ouvrir la ligne acquéreur D'ABORD, clôturer celle
       // du cédant ENSUITE.
+      // Le CÉDANT réel de la cession est toujours le propriétaire de la
+      // fiche (_ownerUid) — PAS forcément la session en cours : un cogérant
+      // actif peut cliquer ce bouton pour le compte de l'élevage, mais son
+      // propre uid n'est jamais titulaire de la ligne animaux_proprietes à
+      // clôturer, ni « uid_eleveur » du mouvement de sortie. Utiliser
+      // FirebaseAuth.currentUser ici faisait échouer silencieusement la
+      // clôture (0 ligne mise à jour) et mal-attribuait l'entrée du registre
+      // au cogérant au lieu du véritable élevage cédant.
+      final cedantUid = _ownerUid ?? FirebaseAuth.instance.currentUser?.uid;
       if (uidAcq != null) {
         try {
           await _supa.from('animaux_proprietes').upsert({
@@ -1351,13 +1360,12 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
           await _supa.from('animaux_proprietes')
               .update({'date_fin': dateCession})
               .eq('animal_id', widget.animalId!)
-              .eq('uid_proprio', FirebaseAuth.instance.currentUser?.uid ?? '')
+              .eq('uid_proprio', cedantUid ?? '')
               .isFilter('date_fin', null);
         } catch (_) {}
       }
       // Insérer mouvements dans registre_mouvements (historique de vie de l'animal)
-      final currentUid = FirebaseAuth.instance.currentUser?.uid;
-      if (uidAcq != null && currentUid != null) {
+      if (uidAcq != null && cedantUid != null) {
         final profilAcq = await _supa.from('users')
             .select('firstname, lastname, name_elevage, is_elevage, is_association')
             .eq('uid', uidAcq).maybeSingle();
@@ -1366,11 +1374,13 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             : '${profilAcq?['firstname'] ?? ''} ${profilAcq?['lastname'] ?? ''}'.trim();
         final isAcqEleveur = profilAcq?['is_elevage'] == true;
         final isAcqAsso    = profilAcq?['is_association'] == true;
+        final cedantProfileId = await _supa.from('user_profiles')
+            .select('id').eq('uid', cedantUid).eq('is_main', true).maybeSingle();
         // Sortie pour le cédant
         await _supa.from('registre_mouvements').insert({
           'animal_id':             widget.animalId,
-          'uid_eleveur':           currentUid,
-          if (User_Info.activeProfileId != null) 'eleveur_profile_id': User_Info.activeProfileId,
+          'uid_eleveur':           cedantUid,
+          if (cedantProfileId?['id'] != null) 'eleveur_profile_id': cedantProfileId!['id'],
           'type':                  'sortie',
           'date_mouvement':        dateCession,
           'motif':                 'cession',
