@@ -2,7 +2,6 @@ import 'package:PetsMatch/animation/delayed_animation.dart';
 import 'package:PetsMatch/main.dart';
 import 'package:PetsMatch/pages/eleveur/choice_publication.dart';
 import 'package:PetsMatch/pages/eleveur/post/create_post.dart';
-import 'package:PetsMatch/pages/eleveur/elevage_gestion_select_menu.dart';
 import 'package:PetsMatch/pages/services/services_page.dart';
 import 'package:PetsMatch/utils.dart';
 import 'package:flutter/material.dart';
@@ -210,10 +209,7 @@ class UserChoiceButtonSecond extends StatelessWidget {
       height: UTILS.calculHeight(183, UTILS.heightReference(context)),
       child: InkWell(
         onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => ElevageSelectGestionPage()),
-          );
+          Navigator.of(context).pop();
         },
         borderRadius: BorderRadius.circular(500),
         child: Padding(

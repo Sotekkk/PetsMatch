@@ -8,7 +8,6 @@ import 'package:PetsMatch/pages/eleveur/abonnement_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/mes_animaux.dart';
 import 'package:PetsMatch/pages/eleveur/admin/registre_sanitaire.dart';
 import 'package:PetsMatch/pages/eleveur/choice_publication.dart';
-import 'package:PetsMatch/pages/eleveur/elevage_gestion_select_menu.dart';
 import 'package:PetsMatch/pages/eleveur/employes/employes_page.dart';
 import 'package:PetsMatch/pages/eleveur/planning/plan_template_list_page.dart';
 import 'package:PetsMatch/pages/eleveur/postDetail.dart';
@@ -998,14 +997,6 @@ class _UserElevageFeedState extends State<UserElevageFeed>
             title: 'Publications',
             subtitle: 'Créer et gérer vos annonces',
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ChoicePublicationType())),
-          ),
-          const SizedBox(height: 10),
-          _ElevageActionCard(
-            icon: Icons.manage_accounts_outlined,
-            color: const Color(0xFFF3F4F6), iconColor: const Color(0xFF6B7280),
-            title: 'Gestion élevage',
-            subtitle: 'Vue d\'ensemble, portées, reproductions',
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ElevageSelectGestionPage())),
           ),
 
           const SizedBox(height: 20),
