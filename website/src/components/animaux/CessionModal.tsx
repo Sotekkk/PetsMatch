@@ -591,11 +591,16 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
       // Cession directe (aucun document) → transfert de propriété immédiat.
       // Met fin à TOUTE la copropriété (principal + secondaires) et supprime
       // les invitations en attente.
+      //
+      // IMPORTANT — ordre des opérations : la policy RLS d'INSERT sur
+      // animaux_proprietes n'autorise le cédant à créer la ligne de
+      // l'acquéreur que via is_principal_owner_or_cogerant(), qui exige que
+      // le cédant ait ENCORE une ligne active (date_fin IS NULL) au moment
+      // de l'insert — clôturer sa ligne avant fait donc échouer l'insert
+      // silencieusement. On ouvre donc la ligne acquéreur D'ABORD, puis on
+      // clôture les autres (le .neq évite de refermer celle qu'on vient
+      // d'ouvrir, qui correspond aussi au filtre statut='actif'+date_fin null).
       if (finaliseNow && acqUid) {
-        await supabase.from('animaux_proprietes').update({ date_fin: dateCession })
-          .eq('animal_id', animal.id).eq('statut', 'actif').is('date_fin', null);
-        await supabase.from('animaux_proprietes').delete()
-          .eq('animal_id', animal.id).eq('statut', 'invite');
         await supabase.from('animaux_proprietes').upsert({
           animal_id:          animal.id,
           uid_proprio:        acqUid,
@@ -603,6 +608,10 @@ export default function CessionModal({ animal, uid, profileId, eleveurInfo, onCl
           date_fin:           null,
           profile_id_proprio: acqProfileId,
         }, { onConflict: 'animal_id,uid_proprio' });
+        await supabase.from('animaux_proprietes').update({ date_fin: dateCession })
+          .eq('animal_id', animal.id).eq('statut', 'actif').is('date_fin', null).neq('uid_proprio', acqUid);
+        await supabase.from('animaux_proprietes').delete()
+          .eq('animal_id', animal.id).eq('statut', 'invite');
       }
 
       // Certificat de bonne santé vétérinaire → documents_animaux

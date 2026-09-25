@@ -813,17 +813,13 @@ class _CessionSheetState extends State<CessionSheet> {
         // Cession directe : transfert de propriété tout de suite.
         final acqUid = _foundUser!['uid'] as String;
         try {
-          // Cession définitive : met fin à TOUTE la copropriété (principal +
-          // secondaires) et supprime les invitations en attente.
-          await _supa.from('animaux_proprietes')
-              .update({'date_fin': dateCessionStr})
-              .eq('animal_id', widget.animal['id'])
-              .eq('statut', 'actif')
-              .isFilter('date_fin', null);
-          await _supa.from('animaux_proprietes')
-              .delete()
-              .eq('animal_id', widget.animal['id'])
-              .eq('statut', 'invite');
+          // IMPORTANT — ordre des opérations : la policy RLS d'INSERT sur
+          // animaux_proprietes n'autorise le cédant à créer la ligne de
+          // l'acquéreur que via is_principal_owner_or_cogerant(), qui exige
+          // que le cédant ait ENCORE une ligne active (date_fin IS NULL) au
+          // moment de l'insert. Clôturer sa ligne avant d'insérer celle de
+          // l'acquéreur fait donc échouer l'insert silencieusement — ouvrir
+          // la ligne acquéreur D'ABORD, clôturer celle du cédant ENSUITE.
           await _supa.from('animaux_proprietes').upsert({
             'animal_id':   widget.animal['id'],
             'uid_proprio': acqUid,
@@ -831,6 +827,20 @@ class _CessionSheetState extends State<CessionSheet> {
             'date_fin':    null,
             if (acqProfileId != null) 'profile_id_proprio': acqProfileId,
           }, onConflict: 'animal_id,uid_proprio');
+          // Cession définitive : met fin à TOUTE la copropriété (principal +
+          // secondaires) et supprime les invitations en attente — sauf la
+          // ligne qu'on vient d'ouvrir pour l'acquéreur (même filtre
+          // statut='actif'+date_fin IS NULL, sinon elle se refermerait aussitôt).
+          await _supa.from('animaux_proprietes')
+              .update({'date_fin': dateCessionStr})
+              .eq('animal_id', widget.animal['id'])
+              .eq('statut', 'actif')
+              .isFilter('date_fin', null)
+              .neq('uid_proprio', acqUid);
+          await _supa.from('animaux_proprietes')
+              .delete()
+              .eq('animal_id', widget.animal['id'])
+              .eq('statut', 'invite');
         } catch (_) {}
         // Registre légal — sortie pour le cédant (+ entrée pour l'acquéreur
         // s'il est éleveur/refuge), même logique que le site (CessionModal.tsx)

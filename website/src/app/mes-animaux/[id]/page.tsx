@@ -2598,20 +2598,29 @@ function AnimalFichePageInner() {
     // est définitive (confirmée par l'éleveur), pas avant : sinon l'animal
     // apparaîtrait comme "ancien" dans la liste dès la création de la
     // cession alors que l'éleveur pouvait encore la révoquer.
-    await supabase.from('animaux_proprietes')
-      .update({ date_fin: dateCession })
-      .eq('animal_id', id)
-      .eq('uid_proprio', cedantUid)
-      .is('date_fin', null);
+    //
+    // IMPORTANT — ordre des opérations : la policy RLS d'INSERT sur
+    // animaux_proprietes n'autorise le cédant à créer la ligne de
+    // l'acquéreur que via is_principal_owner_or_cogerant(), qui vérifie que
+    // le cédant a ENCORE une ligne active (date_fin IS NULL) au moment de
+    // l'insert. Clôturer sa ligne AVANT d'insérer celle de l'acquéreur fait
+    // donc échouer l'insert silencieusement (Supabase JS ne lève pas sur une
+    // erreur RLS) — l'acquéreur ne voyait alors jamais l'animal transféré.
     if (acqUidC) {
-      await supabase.from('animaux_proprietes').upsert({
+      const { error: insertErr } = await supabase.from('animaux_proprietes').upsert({
         animal_id:          id,
         uid_proprio:        acqUidC,
         date_debut:         dateCession,
         date_fin:           null,
         profile_id_proprio: acqProfileId,
       }, { onConflict: 'animal_id,uid_proprio' });
+      if (insertErr) console.error('confirmerCession: échec ouverture ligne acquéreur', insertErr);
     }
+    await supabase.from('animaux_proprietes')
+      .update({ date_fin: dateCession })
+      .eq('animal_id', id)
+      .eq('uid_proprio', cedantUid)
+      .is('date_fin', null);
 
     // Registre entrées / sorties : SORTIE pour le cédant (+ ENTRÉE pour
     // l'acquéreur éleveur / association).
