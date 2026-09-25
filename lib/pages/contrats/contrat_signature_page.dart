@@ -549,23 +549,31 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
       _doc!['metadata'] = meta;
       _doc!['statut'] = statut;
 
-      // Le transfert de l'animal n'a lieu QUE lorsque le vendeur/éleveur pose la
-      // dernière signature. Si c'est l'acquéreur qui signe en dernier, on
-      // notifie le vendeur pour qu'il confirme (bandeau « Confirmer la cession »).
-      final vendeurAFinalise = bothSigned && role == 'eleveur';
-      if (vendeurAFinalise) {
-        await finalizeContratSigne(doc: _doc!, animal: _animal);
+      // Une cession/vente n'est plus JAMAIS finalisée automatiquement à la
+      // signature, quel que soit l'ordre — l'éleveur doit confirmer
+      // explicitement (bandeau « Confirmer la cession », fiche animal).
+      // Les autres contrats (prestation, adoption...) restent finalisés dès
+      // que les deux parties ont signé.
+      final docType = _doc!['type'] as String? ?? '';
+      final isCessionType = docType == 'contrat_vente' || docType == 'certificat_cession';
+      final finalized = bothSigned && !isCessionType;
+      if (bothSigned) {
+        if (isCessionType) {
+          await markCessionSigneePendingConfirmation(doc: _doc!);
+        } else {
+          await finalizeContratSigne(doc: _doc!, animal: _animal);
+        }
       }
       await notifierContratSignature(
-        doc: _doc!, role: role, bothSigned: vendeurAFinalise);
+        doc: _doc!, role: role, bothSigned: bothSigned, finalized: finalized);
 
       await _buildPdf();
       if (mounted) {
         setState(() {});
         _snack(bothSigned
-            ? (vendeurAFinalise
-                ? '✅ Contrat signé — cession finalisée'
-                : '✅ Signé. Le vendeur va confirmer la cession.')
+            ? (isCessionType
+                ? '✅ Contrat signé — confirmez la cession pour finaliser le transfert.'
+                : '✅ Contrat signé par les deux parties.')
             : '✍️ Signature enregistrée');
       }
     } catch (e) {

@@ -1331,13 +1331,16 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
       // cédant et ouvre celle de l'acquéreur sur son profil principal
       // (is_main), pas forcément 'particulier' : cette étape manquait, ce qui
       // rendait l'animal invisible pour l'acquéreur (filtré par profile_id_proprio).
+      //
+      // IMPORTANT — ordre des opérations : la policy RLS d'INSERT sur
+      // animaux_proprietes n'autorise le cédant à créer la ligne de
+      // l'acquéreur que via is_principal_owner_or_cogerant(), qui exige que
+      // SA PROPRE ligne soit encore active (date_fin IS NULL) au moment de
+      // l'insert — la clôturer avant fait donc échouer l'insert
+      // silencieusement. Ouvrir la ligne acquéreur D'ABORD, clôturer celle
+      // du cédant ENSUITE.
       if (uidAcq != null) {
         try {
-          await _supa.from('animaux_proprietes')
-              .update({'date_fin': dateCession})
-              .eq('animal_id', widget.animalId!)
-              .eq('uid_proprio', FirebaseAuth.instance.currentUser?.uid ?? '')
-              .isFilter('date_fin', null);
           await _supa.from('animaux_proprietes').upsert({
             'animal_id':   widget.animalId,
             'uid_proprio': uidAcq,
@@ -1345,6 +1348,11 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
             'date_fin':    null,
             if (acqProfileId != null) 'profile_id_proprio': acqProfileId,
           }, onConflict: 'animal_id,uid_proprio');
+          await _supa.from('animaux_proprietes')
+              .update({'date_fin': dateCession})
+              .eq('animal_id', widget.animalId!)
+              .eq('uid_proprio', FirebaseAuth.instance.currentUser?.uid ?? '')
+              .isFilter('date_fin', null);
         } catch (_) {}
       }
       // Insérer mouvements dans registre_mouvements (historique de vie de l'animal)

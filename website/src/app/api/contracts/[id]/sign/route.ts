@@ -100,98 +100,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
     } catch { /* audit best-effort */ }
 
-    // Le transfert de l'animal n'a lieu QUE si le vendeur pose la dernière signature.
-    const vendeurAFinalise = bothSigned && role === 'eleveur';
-    if (vendeurAFinalise && (doc.type === 'contrat_vente' || doc.type === 'certificat_cession') && doc.animal_id) {
-      const metaDate = String((meta.date_cession as string | undefined) ?? '').trim();
-      let dateCession = metaDate || now.split('T')[0];
-      let cessionId: string | null = null;
+    // Une cession/vente n'est plus JAMAIS finalisée automatiquement à la
+    // signature, quel que soit l'ordre des signatures — bascule juste
+    // l'animal/la cession en attente de confirmation explicite de l'éleveur
+    // (bandeau « Confirmer la cession », mes-animaux/[id]/page.tsx
+    // confirmerCession() ; côté appli, _confirmerCession). C'est ce bouton,
+    // cliqué explicitement, qui déclenche le vrai transfert.
+    const isCessionType = doc.type === 'contrat_vente' || doc.type === 'certificat_cession';
+    if (bothSigned && isCessionType && doc.animal_id) {
       try {
-        const { data: cs } = await supabase.from('cessions')
-          .select('id, date_cession').eq('animal_id', doc.animal_id)
-          .order('created_at', { ascending: false }).limit(1).maybeSingle();
-        if (cs) {
-          cessionId = (cs.id as string) ?? null;
-          if (String(cs.date_cession ?? '').trim()) dateCession = String(cs.date_cession).trim();
-        }
+        await supabase.from('animaux').update({ statut: 'cession_en_cours' })
+          .eq('id', doc.animal_id).in('statut', ['present', 'en_attente_cession']);
       } catch { /* pas bloquant */ }
-
-      const { data: cededAnimal } = await supabase.from('animaux')
-        .update({ statut: 'sorti', date_sortie: dateCession }).eq('id', doc.animal_id)
-        .in('statut', ['en_attente_cession', 'cession_en_cours'])
-        .select('uid_eleveur, uid_acquereur').maybeSingle();
       try {
-        await supabase.from('cessions').update({ statut: 'confirme', confirmed_at: now })
-          .eq('animal_id', doc.animal_id).in('statut', ['en_attente_acquereur', 'signe_acquereur']);
+        await supabase.from('cessions').update({ statut: 'signe_acquereur' })
+          .eq('animal_id', doc.animal_id).in('statut', ['en_attente_acquereur']);
       } catch { /* pas bloquant */ }
-
-      try {
-        if (cededAnimal?.uid_eleveur && cededAnimal?.uid_acquereur) {
-          const { data: dejaSorti } = await supabase.from('registre_mouvements')
-            .select('id').eq('animal_id', doc.animal_id).eq('type', 'sortie').eq('motif', 'cession').limit(1);
-          if (!dejaSorti || dejaSorti.length === 0) {
-            const { data: acqU } = await supabase.from('users')
-              .select('firstname, lastname, name_elevage, is_elevage, is_association')
-              .eq('uid', cededAnimal.uid_acquereur).maybeSingle();
-            const acqNom = (acqU?.name_elevage as string || '').trim()
-              || `${acqU?.firstname ?? ''} ${acqU?.lastname ?? ''}`.trim();
-            const acqEleveur = acqU?.is_elevage === true;
-            const acqAsso = acqU?.is_association === true;
-            await supabase.from('registre_mouvements').insert({
-              animal_id: doc.animal_id, uid_eleveur: cededAnimal.uid_eleveur,
-              type: 'sortie', date_mouvement: dateCession, motif: 'cession',
-              destinataire_qualite: acqEleveur ? 'eleveur' : acqAsso ? 'association' : 'particulier',
-              destinataire_nom: acqNom,
-              ...(cessionId ? { cession_id: cessionId } : {}),
-            });
-            if (acqEleveur || acqAsso) {
-              const { data: acqProf } = await supabase.from('user_profiles')
-                .select('id').eq('uid', cededAnimal.uid_acquereur).eq('is_main', true).maybeSingle();
-              await supabase.from('registre_mouvements').insert({
-                animal_id: doc.animal_id, uid_eleveur: cededAnimal.uid_acquereur,
-                ...(acqProf?.id ? { eleveur_profile_id: acqProf.id } : {}),
-                type: 'entree', date_mouvement: dateCession, motif: 'cession',
-                provenance_qualite: 'eleveur',
-                ...(cessionId ? { cession_id: cessionId } : {}),
-              });
-            }
-          }
-        }
-      } catch { /* pas bloquant */ }
-
-      if (cededAnimal) {
-        if (cededAnimal.uid_eleveur) {
-          await supabase.from('animaux_proprietes')
-            .update({ date_fin: dateCession })
-            .eq('animal_id', doc.animal_id)
-            .eq('uid_proprio', cededAnimal.uid_eleveur)
-            .is('date_fin', null);
-        }
-        if (cededAnimal.uid_acquereur) {
-          const acqProfileId = await (async (): Promise<string | null> => {
-            const stored = meta.acquereur_profile_id as string | undefined;
-            if (stored) return stored;
-            const q = (meta.qualite as string | undefined) ?? 'particulier';
-            const wanted = q === 'eleveur' ? 'eleveur' : (q === 'refuge' || q === 'association') ? 'association' : 'particulier';
-            const { data: byType } = await supabase.from('user_profiles')
-              .select('id').eq('uid', cededAnimal.uid_acquereur).eq('profile_type', wanted).maybeSingle();
-            if (byType?.id) return byType.id as string;
-            const { data: main } = await supabase.from('user_profiles')
-              .select('id').eq('uid', cededAnimal.uid_acquereur).eq('is_main', true).maybeSingle();
-            return (main?.id as string | undefined) ?? null;
-          })();
-          await supabase.from('animaux_proprietes').upsert({
-            animal_id: doc.animal_id,
-            uid_proprio: cededAnimal.uid_acquereur,
-            date_debut: dateCession,
-            date_fin: null,
-            profile_id_proprio: acqProfileId,
-          }, { onConflict: 'animal_id,uid_proprio' });
-          if (acqProfileId) {
-            await supabase.from('animaux').update({ profile_id_acquereur: acqProfileId }).eq('id', doc.animal_id);
-          }
-        }
-      }
     }
 
     if (bothSigned && doc.type === 'contrat_adoption' && doc.animal_id) {
@@ -235,18 +159,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const acqNom   = (meta.acquereur_nom as string | undefined) || partieAcquereurDefaut;
     const titre    = doc.titre ?? 'le contrat';
 
-    if (vendeurAFinalise || (bothSigned && isAdoption)) {
+    // Une cession n'est jamais « finalized » automatiquement (voir plus
+    // haut) — le mail/notif « complet » ne part donc que pour les contrats
+    // non-cession (prestation, adoption...) ; pour une cession, les deux
+    // signatures présentes déclenchent toujours la notif « à confirmer »,
+    // peu importe qui a signé en dernier.
+    const finalized = bothSigned && !isCessionType;
+    if (finalized) {
       const complet = `${titre} est désormais signé par les deux parties.`;
       await notify({ uid: doc.uid_eleveur, type: 'contrat_signe_complet', title: '✅ Contrat signé !', body: complet, profileType: isAdoption ? 'association' : 'eleveur', data: { token: id } });
       if (acqEmail) await notify({ email: acqEmail, type: 'contrat_signe_complet', title: '✅ Contrat signé !', body: complet, data: { token: id } });
-    } else if (role === 'acquereur') {
-      const aConfirmer = bothSigned;
+    } else if (bothSigned) {
       await notify({
         uid: doc.uid_eleveur, type: 'contrat_signe_acquereur',
-        title: aConfirmer ? '✍️ Contrat signé — à confirmer' : '✍️ Signature reçue',
-        body: aConfirmer
-          ? `${acqNom} a signé ${titre}. Confirmez la cession pour transférer l'animal.`
-          : `${acqNom} a signé ${titre} — à vous de signer pour finaliser.`,
+        title: '✍️ Contrat signé — à confirmer',
+        body: `${acqNom} a signé ${titre}. Confirmez la cession pour transférer l'animal.`,
+        profileType: proProfileType,
+        data: { token: id, ...(doc.animal_id ? { animalId: doc.animal_id } : {}) },
+      });
+    } else if (role === 'acquereur') {
+      await notify({
+        uid: doc.uid_eleveur, type: 'contrat_signe_acquereur',
+        title: '✍️ Signature reçue',
+        body: `${acqNom} a signé ${titre} — à vous de signer pour finaliser.`,
         profileType: proProfileType,
         data: { token: id, ...(doc.animal_id ? { animalId: doc.animal_id } : {}) },
       });

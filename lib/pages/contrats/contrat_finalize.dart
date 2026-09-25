@@ -174,6 +174,34 @@ Future<void> finalizeContratSigne({
   }
 }
 
+/// Contrat de vente/cession signé par les deux parties : ne transfère
+/// JAMAIS l'animal automatiquement, quel que soit l'ordre des signatures —
+/// bascule juste l'animal/la cession dans l'état « en attente de
+/// confirmation » pour faire apparaître le bandeau « Confirmer / Révoquer »
+/// (fiche animal appli, _confirmerCession ; mes-animaux/[id]/page.tsx site,
+/// confirmerCession()). C'est ce bouton, cliqué explicitement par l'éleveur,
+/// qui déclenche le vrai transfert (finalizeContratSigne).
+Future<void> markCessionSigneePendingConfirmation({
+  required Map<String, dynamic> doc,
+}) async {
+  final supa = Supabase.instance.client;
+  final type = doc['type'] as String? ?? '';
+  final animalId = doc['animal_id'] as String?;
+  if (animalId == null || (type != 'contrat_vente' && type != 'certificat_cession')) return;
+  try {
+    await supa.from('animaux')
+        .update({'statut': 'cession_en_cours'})
+        .eq('id', animalId)
+        .inFilter('statut', ['present', 'en_attente_cession']);
+  } catch (_) {}
+  try {
+    await supa.from('cessions')
+        .update({'statut': 'signe_acquereur'})
+        .eq('animal_id', animalId)
+        .inFilter('statut', ['en_attente_acquereur']);
+  } catch (_) {}
+}
+
 /// Libellés des deux parties selon le type de contrat — un pet-sitter n'est
 /// pas « l'éleveur ». Même classification que `_signerRoles`
 /// (contrat_signature_page.dart) et `signer()` côté site.
@@ -197,16 +225,24 @@ Future<void> finalizeContratSigne({
 
 /// Notifie l'autre partie après une signature (partielle ou complète).
 /// [role] = 'eleveur' | 'acquereur' (celui qui vient de signer).
+/// [bothSigned] = les deux signatures sont présentes.
+/// [finalized] = le transfert/la finalisation a réellement eu lieu
+/// (finalizeContratSigne a tourné) — false pour une cession, toujours : elle
+/// n'est plus jamais finalisée automatiquement, peu importe qui signe en
+/// dernier, l'éleveur doit confirmer explicitement (bouton « Confirmer la
+/// cession »).
 Future<void> notifierContratSignature({
   required Map<String, dynamic> doc,
   required String role,
   required bool bothSigned,
+  bool finalized = true,
 }) async {
   final supa = Supabase.instance.client;
   final meta = (doc['metadata'] as Map?) ?? {};
   bool nb(dynamic v) => v != null && '$v'.trim().isNotEmpty;
-  // Les deux ont signé mais le vendeur n'a pas encore confirmé le transfert.
-  final aConfirmer = !bothSigned && role == 'acquereur'
+  // Les deux ont signé mais pas encore finalisé (transfert en attente de
+  // confirmation de l'éleveur) — peu importe qui a signé en dernier.
+  final aConfirmer = bothSigned && !finalized
       && nb(meta['signature_eleveur']) && nb(meta['signature_acquereur']);
   final type = doc['type'] as String? ?? '';
   final titre = (doc['titre'] as String?) ?? 'le contrat';
@@ -271,7 +307,7 @@ Future<void> notifierContratSignature({
     } catch (_) {}
   }
 
-  if (bothSigned) {
+  if (bothSigned && finalized) {
     const complet = 'est désormais signé par les deux parties.';
     await notif(eleveurUid, 'contrat_signe_complet', '✅ Contrat signé !', '$titre $complet');
     if (acqUid != eleveurUid) {
