@@ -805,7 +805,10 @@ function getNotifUrl(n: Notif, proType?: string): string | null {
     case 'alerte_perdu':
       return '/animaux-perdus';
     case 'chaleur':
-      return '/mes-animaux';
+      // Ouvre directement la fiche, onglet Repro → sous-onglet Chaleurs (1re
+      // position par défaut pour une femelle) — fonctionne aussi pour
+      // l'employé à qui le suivi a été confié (isEmployeOfOwner sur la page).
+      return d.animalId ? `/mes-animaux/${d.animalId}?tab=repro` : '/mes-animaux';
     case 'rappel_vaccin':
       return d.animalId ? `/mes-animaux/${d.animalId}` : '/mes-animaux';
     case 'sante':
