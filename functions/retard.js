@@ -1,11 +1,10 @@
 const functions = require("firebase-functions/v1");
 const {createClient} = require("@supabase/supabase-js");
 const {sendPush} = require("./push_helpers");
+const {SUPABASE_URL, SUPABASE_SERVICE_KEY} = require("./config");
 
 function getSupabase() {
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY ||
-        (functions.config().supabase || {}).service_key || "";
-    return createClient("https://zyvpngcvzrkdytypjlyq.supabase.co", key);
+    return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 }
 
 /**

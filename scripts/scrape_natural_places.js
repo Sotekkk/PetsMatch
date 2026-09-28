@@ -9,8 +9,14 @@ require('dotenv').config({ path: '.env' });
 const { createClient } = require('@supabase/supabase-js');
 const fetch = require('node-fetch');
 
-const SUPABASE_URL  = 'https://zyvpngcvzrkdytypjlyq.supabase.co';
-const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5dnBuZ2N2enJrZHl0eXBqbHlxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTM2NDY1NSwiZXhwIjoyMDk0OTQwNjU1fQ.1U96V3c7nHG3T08dboBcxTd05k8A_JQfnyrJTbJ0HgQ';
+// Clé secrète passée en variable d'environnement, jamais en dur :
+//   SUPABASE_URL=… SUPABASE_SERVICE_KEY=… node scripts/scrape_natural_places.js
+const SUPABASE_URL  = process.env.SUPABASE_URL;
+const SUPABASE_KEY  = process.env.SUPABASE_SERVICE_KEY;
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error('SUPABASE_URL et SUPABASE_SERVICE_KEY requis (variables d\'environnement).');
+  process.exit(1);
+}
 
 // Utilise kumi en priorité — moins chargé que overpass-api.de
 const ENDPOINTS = [

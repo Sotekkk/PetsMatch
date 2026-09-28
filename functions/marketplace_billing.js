@@ -2,15 +2,13 @@ const functions = require("firebase-functions/v1");
 const {createClient} = require("@supabase/supabase-js");
 const Stripe = require("stripe");
 
-const stripe = new Stripe(
-    "sk_test_51Pagp22MpEB6OUl5N3RDJvFx7l8dpxO1Az9RIWYEe8acl9eLtRz9xdfKd8W5GZKFuwJx1EX4sxHUP3CxLcPO0l0N00VDQZrUkb",
-);
+const {SUPABASE_URL, SUPABASE_SERVICE_KEY, STRIPE_SECRET_KEY} = require("./config");
+
+const stripe = new Stripe(STRIPE_SECRET_KEY);
 
 // Lazy init pour éviter l'erreur "supabaseKey is required" au chargement du module
 function getSupabase() {
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY ||
-        (functions.config().supabase || {}).service_key || "";
-    return createClient("https://zyvpngcvzrkdytypjlyq.supabase.co", key);
+    return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 }
 
 // Tarifs CPM/CPL par défaut (€)

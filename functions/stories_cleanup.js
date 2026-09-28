@@ -7,11 +7,7 @@ const https = require("https");
 // `expires_at` côté client, mais sans cette purge les fichiers resteraient
 // indéfiniment dans Storage.
 
-const SUPABASE_URL = "https://zyvpngcvzrkdytypjlyq.supabase.co";
-const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" +
-    ".eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5dnBuZ2N2enJrZHl0eXBqbHlxIiwi" +
-    "cm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTM2NDY1NSwiZXhwIjoyMDk0OT" +
-    "QwNjU1fQ.1U96V3c7nHG3T08dboBcxTd05k8A_JQfnyrJTbJ0HgQ";
+const {SUPABASE_URL, SUPABASE_SERVICE_KEY} = require("./config");
 
 function httpRequest(method, path, body) {
     return new Promise((resolve, reject) => {

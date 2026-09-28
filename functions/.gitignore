@@ -1,2 +1,5 @@
 node_modules/
 *.local
+# Config par projet (clés) — voir .env.example
+.env*
+!.env.example

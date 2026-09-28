@@ -5,12 +5,7 @@ const {sendPush} = require("./push_helpers");
 
 if (!admin.apps.length) admin.initializeApp();
 
-const SUPABASE_URL = process.env.SUPABASE_URL ||
-    (functions.config().supabase || {}).url ||
-    "https://zyvpngcvzrkdytypjlyq.supabase.co";
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY ||
-    (functions.config().supabase || {}).service_key ||
-    "";
+const {SUPABASE_URL, SUPABASE_SERVICE_KEY} = require("./config");
 
 async function supabaseGet(path) {
     return new Promise((resolve, reject) => {

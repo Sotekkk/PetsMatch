@@ -5,14 +5,9 @@ const {sendPush} = require("./push_helpers");
 
 if (!admin.apps.length) admin.initializeApp();
 
-// Même clé service_role que alertes.js / agenda.js (hardcodée par cohérence —
-// functions.config().supabase.service_key n'est PAS défini sur ce projet, donc
-// le repli "" faisait échouer TOUS les GET Supabase en 401 → aucun rappel).
-const SUPABASE_URL = "https://zyvpngcvzrkdytypjlyq.supabase.co";
-const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" +
-    ".eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5dnBuZ2N2enJrZHl0eXBqbHlxIiwi" +
-    "cm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTM2NDY1NSwiZXhwIjoyMDk0" +
-    "OTQwNjU1fQ.1U96V3c7nHG3T08dboBcxTd05k8A_JQfnyrJTbJ0HgQ";
+// Clé Supabase via config.js (functions/.env.<projectId>) — l'ancien repli
+// sur functions.config() était vide sur ce projet (401 → aucun rappel).
+const {SUPABASE_URL, SUPABASE_SERVICE_KEY} = require("./config");
 
 // Site pour l'email de rappel des clients sans compte PetsMatch.
 const SITE_URL = process.env.SITE_URL ||
