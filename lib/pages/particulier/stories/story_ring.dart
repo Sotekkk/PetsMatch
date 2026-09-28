@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show socialProfileName;
+import 'story_ad_service.dart';
 import 'story_create_page.dart';
 import 'story_service.dart';
 import 'story_upload_service.dart';
@@ -74,10 +75,13 @@ class StoryRingState extends State<StoryRing> {
   Future<void> _openViewer(StoryGroup group) async {
     final others = _groups.where((g) => g.authorProfileId != widget.myProfileId).toList();
     final ordered = [if (_mine != null) _mine!, ...others];
-    final idx = ordered.indexWhere((g) => g.authorProfileId == group.authorProfileId);
+    final ads = await StoryAdService.loadActiveAds();
+    final withAds = StoryAdService.interleave(ordered, ads);
+    final idx = withAds.indexWhere((g) => g.authorProfileId == group.authorProfileId);
+    if (!mounted) return;
     await Navigator.push(context, MaterialPageRoute(
       builder: (_) => StoryViewerPage(
-        groups: ordered, startGroupIndex: idx < 0 ? 0 : idx,
+        groups: withAds, startGroupIndex: idx < 0 ? 0 : idx,
         myUid: widget.myUid, myProfileId: widget.myProfileId,
       ),
     ));

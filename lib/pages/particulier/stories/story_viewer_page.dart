@@ -1,10 +1,12 @@
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show openMentionedProfile, socialProfileName;
 import 'package:PetsMatch/widgets/mention_hashtag.dart';
+import 'story_ad_service.dart';
 import 'story_service.dart';
 
 /// Lecteur plein écran des stories (façon Instagram) : barres de progression
@@ -76,15 +78,21 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
     if (_disposed) return;
 
     final currentItem = _item;
-    StoryService.markViewed(currentItem.id, viewerUid: widget.myUid, viewerProfileId: widget.myProfileId);
-    _liked = false;
-    _likesCount = 0;
-    StoryService.isLiked(currentItem.id, widget.myProfileId).then((v) {
-      if (mounted && identical(currentItem, _item)) setState(() => _liked = v);
-    });
-    StoryService.likesCount(currentItem.id).then((v) {
-      if (mounted && identical(currentItem, _item)) setState(() => _likesCount = v);
-    });
+    if (currentItem.isAd) {
+      if (currentItem.adId != null) StoryAdService.registerImpression(currentItem.adId!);
+      _liked = false;
+      _likesCount = 0;
+    } else {
+      StoryService.markViewed(currentItem.id, viewerUid: widget.myUid, viewerProfileId: widget.myProfileId);
+      _liked = false;
+      _likesCount = 0;
+      StoryService.isLiked(currentItem.id, widget.myProfileId).then((v) {
+        if (mounted && identical(currentItem, _item)) setState(() => _liked = v);
+      });
+      StoryService.likesCount(currentItem.id).then((v) {
+        if (mounted && identical(currentItem, _item)) setState(() => _likesCount = v);
+      });
+    }
 
     if (currentItem.mediaType == 'video') {
       final ctrl = VideoPlayerController.networkUrl(Uri.parse(currentItem.mediaUrl));
@@ -258,6 +266,18 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
     if (mounted) Navigator.pop(context);
   }
 
+  Future<void> _openAdLink() async {
+    final item = _item;
+    if (!item.isAd) return;
+    if (item.adId != null) StoryAdService.registerClick(item.adId!);
+    final url = item.lienUrl;
+    if (url == null || url.isEmpty) return;
+    final uri = Uri.tryParse(url);
+    if (uri != null) {
+      try { await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) {}
+    }
+  }
+
   Future<void> _toggleLike() async {
     final item = _item;
     final wasLiked = _liked;
@@ -373,8 +393,15 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
                           backgroundImage: photo?.isNotEmpty == true ? CachedNetworkImageProvider(photo!) : null,
                           child: photo?.isNotEmpty != true ? const Icon(Icons.person_outline, color: Colors.white70, size: 16) : null),
                       const SizedBox(width: 8),
-                      Expanded(child: Text(nom.isEmpty ? 'Membre' : nom,
-                          style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13))),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(nom.isEmpty ? 'Membre' : nom,
+                              style: const TextStyle(fontFamily: 'Galey', color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+                          if (item.isAd)
+                            const Text('Sponsorisé',
+                                style: TextStyle(fontFamily: 'Galey', color: Colors.white60, fontSize: 11)),
+                        ]),
+                      ),
                       if (item.music != null) ...[
                         const Icon(Icons.music_note, color: Colors.white70, size: 15),
                         const SizedBox(width: 4),
@@ -387,32 +414,53 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
                   const Spacer(),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    child: Row(children: [
-                      if (isMine) ...[
-                        GestureDetector(
-                          onTap: _showViewers,
-                          child: const Text('👁 Vu par…',
-                              style: TextStyle(fontFamily: 'Galey', color: Colors.white70, fontSize: 12, decoration: TextDecoration.underline)),
-                        ),
-                        const Spacer(),
-                        if (_likesCount > 0) ...[
-                          const Icon(Icons.favorite, color: Colors.redAccent, size: 16),
-                          const SizedBox(width: 4),
-                          Text('$_likesCount', style: const TextStyle(fontFamily: 'Galey', color: Colors.white70, fontSize: 12)),
-                        ],
-                      ] else ...[
-                        const Spacer(),
-                        GestureDetector(
-                          onTap: _toggleLike,
-                          child: AnimatedScale(
-                            scale: _liked ? 1.15 : 1,
-                            duration: const Duration(milliseconds: 150),
-                            child: Icon(_liked ? Icons.favorite : Icons.favorite_border,
-                                color: _liked ? Colors.redAccent : Colors.white, size: 28),
-                          ),
-                        ),
-                      ],
-                    ]),
+                    child: item.isAd
+                        ? Row(children: [
+                            const Spacer(),
+                            GestureDetector(
+                              onTap: _openAdLink,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
+                                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                  Text(item.ctaLabel ?? 'En savoir plus',
+                                      style: const TextStyle(fontFamily: 'Galey', color: Colors.black, fontWeight: FontWeight.w700, fontSize: 14)),
+                                  const SizedBox(width: 6),
+                                  const Icon(Icons.arrow_forward_rounded, color: Colors.black, size: 16),
+                                ]),
+                              ),
+                            ),
+                            const Spacer(),
+                          ])
+                        : Row(children: [
+                            if (isMine) ...[
+                              GestureDetector(
+                                onTap: _showViewers,
+                                child: const Text('👁 Vu par…',
+                                    style: TextStyle(fontFamily: 'Galey', color: Colors.white70, fontSize: 12, decoration: TextDecoration.underline)),
+                              ),
+                              const Spacer(),
+                              if (_likesCount > 0) ...[
+                                const Icon(Icons.favorite, color: Colors.redAccent, size: 16),
+                                const SizedBox(width: 4),
+                                Text('$_likesCount', style: const TextStyle(fontFamily: 'Galey', color: Colors.white70, fontSize: 12)),
+                              ],
+                            ] else ...[
+                              const Spacer(),
+                              GestureDetector(
+                                onTap: _toggleLike,
+                                child: AnimatedScale(
+                                  scale: _liked ? 1.15 : 1,
+                                  duration: const Duration(milliseconds: 150),
+                                  child: Icon(_liked ? Icons.favorite : Icons.favorite_border,
+                                      color: _liked ? Colors.redAccent : Colors.white, size: 28),
+                                ),
+                              ),
+                            ],
+                          ]),
                   ),
                 ]),
               ),

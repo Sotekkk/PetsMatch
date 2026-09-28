@@ -63,6 +63,14 @@ class StoryItem {
   final StoryMusicTrack? music;
   bool vue;
 
+  // Story publicitaire (régie interne, cf. story_ad_service.dart) — ces champs
+  // ne sont renseignés que pour un StoryItem synthétique créé par
+  // StoryAd.toStoryGroup(), jamais pour une story venant de la table `stories`.
+  final bool isAd;
+  final String? adId;
+  final String? ctaLabel;
+  final String? lienUrl;
+
   StoryItem({
     required this.id, required this.authorProfileId, required this.authorUid,
     required this.mediaUrl, required this.mediaType, this.fond, this.dureeSecondes, this.legende,
@@ -70,6 +78,7 @@ class StoryItem {
     this.legendeSurlignee = false,
     this.legendeX = 0.5, this.legendeY = 0.85,
     required this.createdAt, required this.expiresAt, this.music, this.vue = false,
+    this.isAd = false, this.adId, this.ctaLabel, this.lienUrl,
   });
 
   factory StoryItem.fromRow(Map<String, dynamic> r) {
