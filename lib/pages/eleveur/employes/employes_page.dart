@@ -782,13 +782,6 @@ const _kPerms = [
   ('suivi_chaleurs',  Icons.favorite_outlined,     'Suivi des chaleurs',      'Recevoir les rappels de chaleurs des femelles confiées (indépendant des tâches d\'agenda)'),
 ];
 
-// Permissions pertinentes selon le métier — éviter de proposer « Suivi
-// reproducteur » à un toiletteur ou « Carnet de santé » à un maréchal-ferrant.
-// catPro vide = éleveur (convention de l'appli). Liste posée sur un jugement
-// raisonnable par métier ; à corriger au cas par cas si un domaine précis
-// a besoin d'une permission qui en est exclue ici.
-bool _permApplies(String key, String catPro) {
-  switch (key) {
 // Catégories de notifications récurrentes que l'employé reçoit en plus de
 // l'éleveur, sans qu'une tâche lui soit affectée — lues par les Cloud
 // Functions (functions/push_helpers.js employesAbonnes).
@@ -801,6 +794,13 @@ const _kNotifPerms = [
   ('notif_inventaire',       Icons.inventory_2_outlined,      'Stock bas',         'Alertes quotidiennes des articles sous le seuil'),
 ];
 
+// Permissions pertinentes selon le métier — éviter de proposer « Suivi
+// reproducteur » à un toiletteur ou « Carnet de santé » à un maréchal-ferrant.
+// catPro vide = éleveur (convention de l'appli). Liste posée sur un jugement
+// raisonnable par métier ; à corriger au cas par cas si un domaine précis
+// a besoin d'une permission qui en est exclue ici.
+bool _permApplies(String key, String catPro) {
+  switch (key) {
     case 'read_planning_pension':
       return catPro == 'pension';
     case 'write_repro': // saillies/gestations/portées : cœur de métier éleveur uniquement
@@ -813,16 +813,15 @@ const _kNotifPerms = [
       return catPro.isEmpty || catPro == 'sante' || catPro == 'veterinaire' || catPro == 'pension';
     case 'write_inventaire': // gestion de stock : pas pertinent pour garde/éducation/photographe
       return catPro != 'garde' && catPro != 'education' && catPro != 'photographe';
+    case 'notif_inventaire':
+      return _permApplies('write_inventaire', catPro);
     case 'notif_chaleurs':
     case 'notif_mise_bas':
-    default: // write_animaux, write_planning, write_notes : pertinents partout
     case 'notif_vermifuges':
     case 'notif_vaccins':
     case 'notif_antiparasitaires':
+    default: // write_animaux, write_planning, write_notes : pertinents partout
       return _permApplies('write_sante', catPro);
-    case 'notif_inventaire':
-      return _permApplies('write_inventaire', catPro);
-      return true;
   }
 }
 
@@ -839,6 +838,10 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
       .where((p) => _permApplies(p.$1, User_Info.catPro))
       .toList();
 
+  List<(String, IconData, String, String)> get _visibleNotifPerms => _kNotifPerms
+      .where((p) => _permApplies(p.$1, User_Info.catPro))
+      .toList();
+
   @override
   void initState() {
     super.initState();
@@ -846,10 +849,6 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
   }
 
   Future<void> _loadPerms() async {
-  List<(String, IconData, String, String)> get _visibleNotifPerms => _kNotifPerms
-      .where((p) => _permApplies(p.$1, User_Info.catPro))
-      .toList();
-
     // Récupérer les IDs de profil depuis la ligne employes
     final row = await _supa.from('employes')
         .select('eleveur_profile_id, employe_profile_id')
