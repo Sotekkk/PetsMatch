@@ -31,8 +31,19 @@ class StoryMusicTrack {
   final String? artiste;
   final String urlAudio;
   final int? dureeSecondes;
+  final String licence; // 'CC0' | 'CC-BY' | 'libre_verifie'
+  final String? attribution; // texte à afficher, obligatoire si licence == 'CC-BY'
+  final String? categorie; // 'comedy' | 'electronic' | 'epic' | 'horror' | 'romance' | 'upbeat'…
 
-  StoryMusicTrack({required this.id, required this.titre, this.artiste, required this.urlAudio, this.dureeSecondes});
+  StoryMusicTrack({
+    required this.id, required this.titre, this.artiste, required this.urlAudio, this.dureeSecondes,
+    this.licence = 'CC0', this.attribution, this.categorie,
+  });
+
+  /// Texte d'attribution à afficher au visionnage — uniquement quand la
+  /// licence l'exige (CC-BY), pour rester conforme sans polluer l'UI pour
+  /// les morceaux CC0/libre_verifie qui n'en ont pas besoin.
+  String? get displayAttribution => licence == 'CC-BY' && (attribution?.isNotEmpty ?? false) ? attribution : null;
 
   factory StoryMusicTrack.fromRow(Map<String, dynamic> r) => StoryMusicTrack(
         id: r['id'].toString(),
@@ -40,8 +51,23 @@ class StoryMusicTrack {
         artiste: r['artiste']?.toString(),
         urlAudio: r['url_audio']?.toString() ?? '',
         dureeSecondes: r['duree_secondes'] as int?,
+        licence: r['licence']?.toString() ?? 'CC0',
+        attribution: r['attribution']?.toString(),
+        categorie: r['categorie']?.toString(),
       );
 }
+
+/// Couleur associée à chaque catégorie — pastille du picker musique.
+const kStoryMusicCategoryColors = <String, Color>{
+  'comedy': Color(0xFFFFB020),
+  'electronic': Color(0xFF6A4C93),
+  'epic': Color(0xFFB8860B),
+  'horror': Color(0xFF8B2635),
+  'romance': Color(0xFFE0779F),
+  'upbeat': Color(0xFF6E9E57),
+};
+
+Color storyMusicCategoryColor(String? categorie) => kStoryMusicCategoryColors[categorie] ?? const Color(0xFF6E9E57);
 
 class StoryItem {
   final String id;
@@ -61,6 +87,7 @@ class StoryItem {
   final DateTime createdAt;
   final DateTime expiresAt;
   final StoryMusicTrack? music;
+  final double musicStartSeconds; // passage choisi dans le morceau (façon TikTok/Insta)
   bool vue;
 
   // Story publicitaire (régie interne, cf. story_ad_service.dart) — ces champs
@@ -77,7 +104,7 @@ class StoryItem {
     this.legendeCouleur = '#FFFFFF', this.legendeTaille = 'm', this.legendeGras = false,
     this.legendeSurlignee = false,
     this.legendeX = 0.5, this.legendeY = 0.85,
-    required this.createdAt, required this.expiresAt, this.music, this.vue = false,
+    required this.createdAt, required this.expiresAt, this.music, this.musicStartSeconds = 0, this.vue = false,
     this.isAd = false, this.adId, this.ctaLabel, this.lienUrl,
   });
 
@@ -91,6 +118,7 @@ class StoryItem {
       mediaType: r['media_type']?.toString() ?? 'photo',
       fond: r['fond']?.toString(),
       dureeSecondes: r['duree_secondes'] as int?,
+      musicStartSeconds: (r['music_start_seconds'] as num?)?.toDouble() ?? 0,
       legende: r['legende']?.toString(),
       legendeCouleur: r['legende_couleur']?.toString() ?? '#FFFFFF',
       legendeTaille: r['legende_taille']?.toString() ?? 'm',
@@ -116,7 +144,8 @@ class StoryGroup {
 
 const _kStoryCols = 'id, uid, author_profile_id, media_url, media_type, fond, duree_secondes, legende, '
     'legende_couleur, legende_taille, legende_gras, legende_surlignee, legende_x, legende_y, '
-    'created_at, expires_at, story_music_tracks(id, titre, artiste, url_audio, duree_secondes)';
+    'created_at, expires_at, music_start_seconds, '
+    'story_music_tracks(id, titre, artiste, url_audio, duree_secondes, licence, attribution, categorie)';
 
 class StoryService {
   static final _supa = Supabase.instance.client;
@@ -174,7 +203,7 @@ class StoryService {
   }
 
   static Future<List<StoryMusicTrack>> loadMusicLibrary() async {
-    final rows = await _supa.from('story_music_tracks').select('id, titre, artiste, url_audio, duree_secondes')
+    final rows = await _supa.from('story_music_tracks').select('id, titre, artiste, url_audio, duree_secondes, licence, attribution, categorie')
         .eq('actif', true).order('titre');
     return (rows as List).map((r) => StoryMusicTrack.fromRow(Map<String, dynamic>.from(r))).toList();
   }
@@ -261,7 +290,7 @@ class StoryService {
   static Future<String> createStory({
     required String uid, required String authorProfileId,
     String? mediaUrl, required String mediaType, String? fond,
-    int? dureeSecondes, String? musicTrackId, String? legende,
+    int? dureeSecondes, String? musicTrackId, double musicStartSeconds = 0, String? legende,
     String legendeCouleur = '#FFFFFF', String legendeTaille = 'm', bool legendeGras = false,
     bool legendeSurlignee = false,
     double legendeX = 0.5, double legendeY = 0.85,
@@ -274,6 +303,7 @@ class StoryService {
       if (fond != null) 'fond': fond,
       if (dureeSecondes != null) 'duree_secondes': dureeSecondes,
       if (musicTrackId != null) 'music_track_id': musicTrackId,
+      if (musicTrackId != null) 'music_start_seconds': musicStartSeconds,
       if (legende != null && legende.isNotEmpty) ...{
         'legende': legende,
         'legende_couleur': legendeCouleur,

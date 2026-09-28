@@ -7,6 +7,7 @@ import 'package:PetsMatch/pages/admin/user_list.dart';
 import 'package:PetsMatch/pages/admin/verification_list.dart';
 import 'package:PetsMatch/pages/admin/lieux_admin_tab.dart';
 import 'package:PetsMatch/pages/admin/story_ads_admin_tab.dart';
+import 'package:PetsMatch/pages/admin/story_music_admin_tab.dart';
 import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/services/renewal_service.dart';
 import 'package:PetsMatch/utils.dart';
@@ -44,6 +45,7 @@ class _AdminPanelState extends State<AdminPanel> {
       const LieuxAdminTab(),
       const InfluenceurAdminTab(),
       const StoryAdsAdminTab(),
+      const StoryMusicAdminTab(),
     ];
     _loadPendingSig();
     _loadSuspectAnnonces();
@@ -199,6 +201,10 @@ class _AdminPanelState extends State<AdminPanel> {
           const BottomNavigationBarItem(
             icon: Icon(Icons.campaign),
             label: 'Pubs stories',
+          ),
+          const BottomNavigationBarItem(
+            icon: Icon(Icons.music_note),
+            label: 'Musiques',
           ),
         ],
       ),

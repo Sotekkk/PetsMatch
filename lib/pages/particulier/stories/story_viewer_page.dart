@@ -135,7 +135,8 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
         await _musicPlayer!.setAudioContext(AudioContext(
           android: const AudioContextAndroid(audioFocus: AndroidAudioFocus.none),
         ));
-        await _musicPlayer!.play(UrlSource(currentItem.music!.urlAudio));
+        await _musicPlayer!.play(UrlSource(currentItem.music!.urlAudio),
+            position: Duration(milliseconds: (currentItem.musicStartSeconds * 1000).round()));
       } catch (_) {}
     }
   }
@@ -411,6 +412,17 @@ class _StoryViewerPageState extends State<StoryViewerPage> with SingleTickerProv
                       IconButton(icon: const Icon(Icons.close, color: Colors.white, size: 22), onPressed: () => Navigator.pop(context)),
                     ]),
                   ),
+                  // Attribution obligatoire (licence CC-BY) — cf. StoryMusicTrack.displayAttribution.
+                  if (item.music?.displayAttribution != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(56, 2, 12, 0),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text('🎵 ${item.music!.displayAttribution}',
+                            style: const TextStyle(fontFamily: 'Galey', color: Colors.white54, fontSize: 10),
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
+                    ),
                   const Spacer(),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),

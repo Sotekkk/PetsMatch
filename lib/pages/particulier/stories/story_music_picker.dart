@@ -84,12 +84,13 @@ class _StoryMusicPickerSheetState extends State<StoryMusicPickerSheet> {
                         itemBuilder: (_, i) {
                           final t = _tracks[i];
                           final playing = _playingId == t.id;
+                          final color = storyMusicCategoryColor(t.categorie);
                           return ListTile(
                             leading: GestureDetector(
                               onTap: () => _togglePreview(t),
                               child: CircleAvatar(
-                                radius: 20, backgroundColor: const Color(0xFFE8F5E9),
-                                child: Icon(playing ? Icons.pause : Icons.play_arrow, color: _green),
+                                radius: 20, backgroundColor: color.withValues(alpha: 0.15),
+                                child: Icon(playing ? Icons.pause : Icons.play_arrow, color: color),
                               ),
                             ),
                             title: Text(t.titre, style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, fontSize: 14)),

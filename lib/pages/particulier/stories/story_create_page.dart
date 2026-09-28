@@ -7,6 +7,7 @@ import 'package:video_player/video_player.dart';
 
 import 'package:PetsMatch/widgets/mention_hashtag.dart';
 import 'story_music_picker.dart';
+import 'story_music_trim_sheet.dart';
 import 'story_service.dart';
 import 'story_upload_service.dart';
 
@@ -34,6 +35,7 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
   VideoPlayerController? _videoCtrl;
   int? _videoDureeSecondes;
   StoryMusicTrack? _music;
+  double _musicStart = 0; // passage choisi dans le morceau (façon TikTok/Insta)
   final _legendeCtrl = MentionTextEditingController();
   MentionController? _mentionCtrl;
   List<MentionSuggestion>? _mentionSuggestions;
@@ -81,11 +83,28 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
       await _previewPlayer!.setAudioContext(AudioContext(
         android: const AudioContextAndroid(audioFocus: AndroidAudioFocus.none),
       ));
-      await _previewPlayer!.play(UrlSource(track.urlAudio));
+      await _previewPlayer!.play(UrlSource(track.urlAudio), position: Duration(milliseconds: (_musicStart * 1000).round()));
       _previewPlayer!.onPlayerComplete.first.then((_) {
         if (mounted) setState(() => _musicPlaying = false);
+      }).catchError((_) {
+        // Le stream se ferme sans émettre quand stop() est appelé avant la
+        // fin naturelle du morceau (ex: on retire la musique en cours de
+        // pré-écoute) — `.first` lève alors "Bad state: No element", sans
+        // conséquence puisque _musicPlaying est déjà remis à false ailleurs.
       });
       if (mounted) setState(() => _musicPlaying = true);
+
+      // La pré-écoute s'arrête à la fin du passage réellement utilisé par la
+      // story (6s pour une photo/texte, durée de la vidéo sinon) — sans ça
+      // elle continuerait de jouer le morceau en entier, ce qui ne reflète
+      // pas ce que verront les spectateurs.
+      final neededSeconds = (_mediaType == 'video' ? (_videoDureeSecondes ?? 6) : 6).toDouble();
+      Future.delayed(Duration(milliseconds: (neededSeconds * 1000).round()), () async {
+        if (mounted && _musicPlaying) {
+          try { await _previewPlayer?.stop(); } catch (_) {}
+          if (mounted) setState(() => _musicPlaying = false);
+        }
+      });
     } catch (_) {}
   }
 
@@ -126,13 +145,28 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => const StoryMusicPickerSheet(),
     );
-    if (track != null && mounted) {
-      // La musique choisie prime sur le son natif de la vidéo, comme au
-      // visionnage — sinon la pré-écoute ne reflète pas ce que verront les
-      // spectateurs.
-      _videoCtrl?.setVolume(0.01);
-      setState(() { _music = track; _musicPlaying = false; });
+    if (track == null || !mounted) return;
+
+    // La story dure 6s (photo/texte) ou la durée de la vidéo — si le morceau
+    // est plus long, on laisse choisir quel passage utiliser, façon
+    // TikTok/Instagram. La durée de la story elle-même ne change jamais.
+    final neededSeconds = (_mediaType == 'video' ? (_videoDureeSecondes ?? 6) : 6).toDouble();
+    double start = 0;
+    if ((track.dureeSecondes ?? 0) > neededSeconds) {
+      final picked = await showModalBottomSheet<double>(
+        context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+        builder: (_) => StoryMusicTrimSheet(track: track, neededSeconds: neededSeconds),
+      );
+      if (picked == null) return; // annulé — on garde la musique précédente
+      start = picked;
     }
+    if (!mounted) return;
+
+    // La musique choisie prime sur le son natif de la vidéo, comme au
+    // visionnage — sinon la pré-écoute ne reflète pas ce que verront les
+    // spectateurs.
+    _videoCtrl?.setVolume(0.01);
+    setState(() { _music = track; _musicStart = start; _musicPlaying = false; });
   }
 
   bool get _hasContent => _mediaFile != null || _mediaType == 'texte';
@@ -152,6 +186,7 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
       mediaType: _mediaType,
       videoDureeSecondes: _mediaType == 'video' ? _videoDureeSecondes : null,
       music: _music,
+      musicStartSeconds: _musicStart,
       legende: legende,
       legendeCouleur: _hex(_legendeColor),
       legendeTaille: _legendeTaille,
@@ -328,7 +363,7 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
                       onTap: () {
                         try { _previewPlayer?.stop(); } catch (_) {}
                         _videoCtrl?.setVolume(1);
-                        setState(() { _music = null; _musicPlaying = false; });
+                        setState(() { _music = null; _musicStart = 0; _musicPlaying = false; });
                       },
                       child: const Icon(Icons.close, color: Colors.white70, size: 16),
                     ),

@@ -33,6 +33,7 @@ class StoryUploadService {
     required String mediaType, // 'photo' | 'video' | 'texte'
     int? videoDureeSecondes,
     StoryMusicTrack? music,
+    double musicStartSeconds = 0,
     String? legende,
     String legendeCouleur = '#FFFFFF',
     String legendeTaille = 'm',
@@ -106,6 +107,7 @@ class StoryUploadService {
         mediaType: mediaType,
         dureeSecondes: mediaType == 'video' ? videoDureeSecondes : null,
         musicTrackId: music?.id,
+        musicStartSeconds: musicStartSeconds,
         legende: legende,
         legendeCouleur: legendeCouleur,
         legendeTaille: legendeTaille,
