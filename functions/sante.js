@@ -1,7 +1,7 @@
 const functions = require("firebase-functions/v1");
 const https = require("https");
 
-const {SUPABASE_URL, SUPABASE_SERVICE_KEY} = require("./config");
+const {SUPABASE_URL, SUPABASE_AUTH_HEADERS} = require("./config");
 
 // ─── Tables avec date_rappel ──────────────────────────────────────────────────
 
@@ -29,8 +29,7 @@ function supabaseGet(path) {
             method: "GET",
             headers: {
                 "Content-Type": "application/json",
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
             },
         };
         const req = https.request(options, (res) => {
@@ -58,8 +57,7 @@ async function supabaseInsert(table, rows) {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Prefer": "return=minimal",
                 "Content-Length": Buffer.byteLength(bodyStr),
             },
@@ -85,8 +83,7 @@ async function supabasePatch(path, body) {
             method: "PATCH",
             headers: {
                 "Content-Type": "application/json",
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Prefer": "return=minimal",
                 "Content-Length": Buffer.byteLength(bodyStr),
             },
@@ -113,8 +110,7 @@ async function supabaseInsertReturning(table, rows) {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Prefer": "return=representation",
                 "Content-Length": Buffer.byteLength(bodyStr),
             },

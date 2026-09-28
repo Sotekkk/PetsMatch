@@ -14,4 +14,16 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
         "(functions/.env.<projectId>) — tous les appels Supabase vont échouer.");
 }
 
-module.exports = {SUPABASE_URL, SUPABASE_SERVICE_KEY, STRIPE_SECRET_KEY};
+// En-têtes d'authentification des appels REST Supabase. Une clé secrète
+// nouvelle génération (sb_secret_…) n'est PAS un JWT : elle ne doit partir
+// que dans `apikey` (la passerelle Supabase la convertit elle-même en jeton
+// service_role). L'ancienne clé service_role (JWT « eyJ… ») garde en plus
+// l'en-tête Authorization — le même code fonctionne donc avec les deux,
+// ce qui permet la rotation sans coupure (et un retour arrière immédiat).
+const SUPABASE_AUTH_HEADERS = {
+    "apikey": SUPABASE_SERVICE_KEY,
+    ...(SUPABASE_SERVICE_KEY.startsWith("eyJ") ?
+        {"Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`} : {}),
+};
+
+module.exports = {SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_AUTH_HEADERS, STRIPE_SECRET_KEY};

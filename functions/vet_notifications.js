@@ -5,7 +5,7 @@ const {sendPush} = require("./push_helpers");
 
 if (!admin.apps.length) admin.initializeApp();
 
-const {SUPABASE_URL, SUPABASE_SERVICE_KEY} = require("./config");
+const {SUPABASE_URL, SUPABASE_AUTH_HEADERS} = require("./config");
 
 async function supabaseGet(path) {
     return new Promise((resolve, reject) => {
@@ -14,8 +14,7 @@ async function supabaseGet(path) {
             path: `/rest/v1/${path}`,
             method: "GET",
             headers: {
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Accept": "application/json",
             },
         };
@@ -47,8 +46,7 @@ async function supabaseInsert(table, rows) {
             path: `/rest/v1/${table}`,
             method: "POST",
             headers: {
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Content-Type": "application/json",
                 "Content-Length": Buffer.byteLength(bodyStr),
                 "Prefer": "return=minimal",

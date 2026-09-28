@@ -1,7 +1,7 @@
 const functions = require("firebase-functions/v1");
 const https = require("https");
 
-const {SUPABASE_URL, SUPABASE_SERVICE_KEY} = require("./config");
+const {SUPABASE_URL, SUPABASE_AUTH_HEADERS} = require("./config");
 
 // ─── Supabase helpers ─────────────────────────────────────────────────────────
 
@@ -15,8 +15,7 @@ function supabaseRequest(method, path, body, extraHeaders = {}) {
             method,
             headers: {
                 "Content-Type": "application/json",
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Prefer": method === "GET" ? "" : "return=minimal",
                 ...extraHeaders,
             },

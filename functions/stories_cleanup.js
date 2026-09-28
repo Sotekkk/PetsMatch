@@ -7,7 +7,7 @@ const https = require("https");
 // `expires_at` côté client, mais sans cette purge les fichiers resteraient
 // indéfiniment dans Storage.
 
-const {SUPABASE_URL, SUPABASE_SERVICE_KEY} = require("./config");
+const {SUPABASE_URL, SUPABASE_AUTH_HEADERS} = require("./config");
 
 function httpRequest(method, path, body) {
     return new Promise((resolve, reject) => {
@@ -19,8 +19,7 @@ function httpRequest(method, path, body) {
             method,
             headers: {
                 "Content-Type": "application/json",
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Prefer": "return=representation",
             },
         };

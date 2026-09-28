@@ -1,7 +1,7 @@
 const functions = require("firebase-functions/v1");
 const https = require("https");
 
-const {SUPABASE_URL, SUPABASE_SERVICE_KEY} = require("./config");
+const {SUPABASE_URL, SUPABASE_AUTH_HEADERS} = require("./config");
 
 // ─── Supabase helpers ─────────────────────────────────────────────────────────
 
@@ -14,8 +14,7 @@ function supabaseRequest(method, path, body) {
             path: url.pathname + url.search,
             method,
             headers: {
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Accept": "application/json",
                 "Content-Type": "application/json",
                 "Prefer": "return=representation",
@@ -72,8 +71,7 @@ async function insertCorrespondance(alerteId, trouveId, score, scorePct) {
             path: path,
             method: "POST",
             headers: {
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Content-Type": "application/json",
                 "Content-Length": Buffer.byteLength(bodyStr),
                 "Prefer": "resolution=ignore-duplicates,return=minimal",
@@ -102,8 +100,7 @@ async function markNotified(alerteId, trouveId) {
             path: `/rest/v1/alertes_correspondances?${qs}`,
             method: "PATCH",
             headers: {
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Content-Type": "application/json",
                 "Content-Length": Buffer.byteLength(body),
                 "Prefer": "return=minimal",
@@ -130,8 +127,7 @@ async function insertNotification(uid, title, body, data, profileId) {
             path: "/rest/v1/notifications",
             method: "POST",
             headers: {
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Content-Type": "application/json",
                 "Content-Length": Buffer.byteLength(payload),
                 "Prefer": "return=minimal",

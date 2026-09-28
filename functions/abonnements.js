@@ -1,7 +1,7 @@
 const functions = require("firebase-functions/v1");
 const https = require("https");
 
-const {SUPABASE_URL, SUPABASE_SERVICE_KEY} = require("./config");
+const {SUPABASE_URL, SUPABASE_AUTH_HEADERS} = require("./config");
 
 // ─── Helpers Supabase (dupliqués par fichier — convention déjà suivie par
 // annonces.js/agenda.js/chaleurs.js/etc., pas de module partagé à extraire) ──
@@ -16,8 +16,7 @@ function supabaseReq(method, path, body) {
             method,
             headers: {
                 "Content-Type": "application/json",
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Prefer": "return=minimal",
             },
         };

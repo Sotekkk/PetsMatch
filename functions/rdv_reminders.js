@@ -7,7 +7,7 @@ if (!admin.apps.length) admin.initializeApp();
 
 // Clé Supabase via config.js (functions/.env.<projectId>) — l'ancien repli
 // sur functions.config() était vide sur ce projet (401 → aucun rappel).
-const {SUPABASE_URL, SUPABASE_SERVICE_KEY} = require("./config");
+const {SUPABASE_URL, SUPABASE_AUTH_HEADERS} = require("./config");
 
 // Site pour l'email de rappel des clients sans compte PetsMatch.
 const SITE_URL = process.env.SITE_URL ||
@@ -49,8 +49,7 @@ async function supabaseGet(path) {
             path: `/rest/v1/${path}`,
             method: "GET",
             headers: {
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Accept": "application/json",
             },
         };
@@ -85,8 +84,7 @@ async function supabasePatch(table, id, body) {
             headers: {
                 "Content-Type": "application/json",
                 "Content-Length": Buffer.byteLength(bodyStr),
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Prefer": "return=minimal",
             },
         };
@@ -111,8 +109,7 @@ async function supabaseInsert(table, rows) {
             headers: {
                 "Content-Type": "application/json",
                 "Content-Length": Buffer.byteLength(body),
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Prefer": "return=minimal",
             },
         };

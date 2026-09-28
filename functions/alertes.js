@@ -3,7 +3,7 @@ const admin = require("firebase-admin");
 const https = require("https");
 const {sendPush, resolveProfileId} = require("./push_helpers");
 
-const {SUPABASE_URL, SUPABASE_SERVICE_KEY} = require("./config");
+const {SUPABASE_URL, SUPABASE_AUTH_HEADERS} = require("./config");
 
 /**
  * Fetch rows from a Supabase table via REST API (GET).
@@ -19,8 +19,7 @@ async function supabaseFetch(table, params) {
             path: `/rest/v1/${table}${qs ? "?" + qs : ""}`,
             method: "GET",
             headers: {
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Accept": "application/json",
             },
         };
@@ -61,8 +60,7 @@ async function supabaseInsert(table, rows) {
             headers: {
                 "Content-Type": "application/json",
                 "Content-Length": Buffer.byteLength(body),
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 "Prefer": "return=minimal",
             },
         };

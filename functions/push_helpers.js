@@ -3,7 +3,7 @@ const https = require("https");
 
 // Même pattern supabaseSelect que chaleurs.js/agenda.js/sante.js (dupliqué
 // par fichier dans tout functions/ — on suit la convention existante).
-const {SUPABASE_URL, SUPABASE_SERVICE_KEY} = require("./config");
+const {SUPABASE_URL, SUPABASE_AUTH_HEADERS} = require("./config");
 
 function supabaseRequest(method, path, body) {
     return new Promise((resolve, reject) => {
@@ -15,8 +15,7 @@ function supabaseRequest(method, path, body) {
             method,
             headers: {
                 "Content-Type": "application/json",
-                "apikey": SUPABASE_SERVICE_KEY,
-                "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...SUPABASE_AUTH_HEADERS,
                 ...(method === "GET" ? {} : {"Prefer": "return=minimal"}),
             },
         };
