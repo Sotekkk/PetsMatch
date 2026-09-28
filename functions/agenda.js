@@ -123,7 +123,7 @@ async function getUserNom(uid) {
  * @param {object} data - Données supplémentaires FCM.
  * @return {Promise<boolean>}
  */
-const {sendPush, resolveProfileId} = require("./push_helpers");
+const {sendPush, resolveProfileId, employesAbonnes, notifyEmployes} = require("./push_helpers");
 
 /**
  * UID des co-propriétaires ACTIFS d'un animal (hors excludeUid).
@@ -395,6 +395,7 @@ exports.sendMiseBasReminders = functions
         // Utilise l'heure locale Paris pour le calcul de date
         const parisNow = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Paris"}));
         let sent = 0;
+        const empCache = new Map();
 
         const paliers = [
             {days: 30, field: "reminder_j30_sent", label: "dans 30 jours", emoji: "🗓️", createTask: false},
@@ -467,6 +468,16 @@ exports.sendMiseBasReminders = functions
                     console.error(`notifications insert error for gestation ${g.id}:`, e.message);
                 }
 
+                // Employés abonnés à la catégorie « Mises bas » (notif_mise_bas)
+                await notifyEmployes(await employesAbonnes({
+                    eleveurUid: animal.uid_eleveur, eleveurProfileId: profileId,
+                    permission: "notif_mise_bas", cache: empCache,
+                }), {
+                    type: "mise_bas", title, body,
+                    pushData: {animalId: String(g.animal_id)},
+                    notifData: {animalId: String(g.animal_id)},
+                });
+
                 // Tâche agenda à 8h le jour J-1 (veille de la mise-bas)
                 if (createTask) {
                     try {
@@ -507,6 +518,7 @@ exports.sendMiseBasReminders = functions
  */
 async function sendOverdueMiseBasReminders() {
     let sent = 0;
+    const empCache = new Map();
     const parisNow = new Date(new Date().toLocaleString("en-US", {timeZone: "Europe/Paris"}));
     const y = parisNow.getFullYear();
     const m = String(parisNow.getMonth() + 1).padStart(2, "0");
@@ -563,6 +575,15 @@ async function sendOverdueMiseBasReminders() {
         } catch (e) {
             console.error(`notifications insert error overdue (gestation ${g.id}):`, e.message);
         }
+
+        await notifyEmployes(await employesAbonnes({
+            eleveurUid: animal.uid_eleveur, eleveurProfileId: profileId,
+            permission: "notif_mise_bas", cache: empCache,
+        }), {
+            type: "mise_bas", title, body,
+            pushData: {animalId: String(g.animal_id), overdue: "true"},
+            notifData: {animalId: String(g.animal_id), overdue: true, gestationId: g.id},
+        });
 
         try {
             await supabaseInsert("notifs_sent", [{key: dedupKey, sent_at: new Date().toISOString()}]);

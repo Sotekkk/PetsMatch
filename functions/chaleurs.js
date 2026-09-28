@@ -59,7 +59,7 @@ async function supabaseInsert(table, rows) {
 
 // ─── FCM helper (partagé — préfixe le profil concerné + bascule au tap) ──────
 
-const {sendPush} = require("./push_helpers");
+const {sendPush, employesAbonnes, notifyEmployes} = require("./push_helpers");
 
 // ─── Domaine : chaleurs ───────────────────────────────────────────────────────
 
@@ -121,6 +121,7 @@ exports.sendChaleursNotifications = functions
         const todayStr = `${y}-${mo}-${d}`;
         let sent = 0;
         let inApp = 0;
+        const empCache = new Map();
 
         // 1. Fetch all female animals (not departed/deceased, not stérilisées —
         // une femelle stérilisée n'a plus de cycle de chaleurs à suivre)
@@ -330,6 +331,21 @@ exports.sendChaleursNotifications = functions
                     console.error(`notifications insert error (assignee) for animal ${animal.id}:`, e.message);
                 }
             }
+
+            // Employés abonnés à la catégorie « Chaleurs » (permission
+            // notif_chaleurs) : reçoivent les rappels de TOUTES les femelles,
+            // sans attribution animal par animal.
+            const abonnes = await employesAbonnes({
+                eleveurUid: animal.uid_eleveur,
+                eleveurProfileId: profileIdByAnimal[animal.id] || null,
+                permission: "notif_chaleurs", cache: empCache,
+            });
+            await notifyEmployes(abonnes, {
+                type: "chaleur", title, body,
+                pushData: {animalId: String(animal.id)},
+                notifData: {animalId: String(animal.id)},
+                exclude: assigneA ? [assigneA] : [],
+            });
 
             // Tâche agenda à 8h quand chaleurs aujourd'hui ou en retard
             if (diff <= 0) {

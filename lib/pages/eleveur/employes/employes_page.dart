@@ -789,6 +789,18 @@ const _kPerms = [
 // a besoin d'une permission qui en est exclue ici.
 bool _permApplies(String key, String catPro) {
   switch (key) {
+// Catégories de notifications récurrentes que l'employé reçoit en plus de
+// l'éleveur, sans qu'une tâche lui soit affectée — lues par les Cloud
+// Functions (functions/push_helpers.js employesAbonnes).
+const _kNotifPerms = [
+  ('notif_chaleurs',         Icons.favorite_border,           'Chaleurs',          'Rappels de chaleurs de toutes les femelles'),
+  ('notif_mise_bas',         Icons.child_friendly_outlined,   'Mises bas',         'Mises bas à venir et en retard'),
+  ('notif_vermifuges',       Icons.medication_outlined,       'Vermifuges',        'Rappels de vermifuge (J-7, J-1, jour J, retard)'),
+  ('notif_vaccins',          Icons.vaccines_outlined,         'Vaccins',           'Rappels de vaccin (J-7, J-1, jour J, retard)'),
+  ('notif_antiparasitaires', Icons.shield_outlined,           'Antiparasitaires',  'Rappels d\'antiparasitaire (J-7, J-1, jour J, retard)'),
+  ('notif_inventaire',       Icons.inventory_2_outlined,      'Stock bas',         'Alertes quotidiennes des articles sous le seuil'),
+];
+
     case 'read_planning_pension':
       return catPro == 'pension';
     case 'write_repro': // saillies/gestations/portées : cœur de métier éleveur uniquement
@@ -801,7 +813,15 @@ bool _permApplies(String key, String catPro) {
       return catPro.isEmpty || catPro == 'sante' || catPro == 'veterinaire' || catPro == 'pension';
     case 'write_inventaire': // gestion de stock : pas pertinent pour garde/éducation/photographe
       return catPro != 'garde' && catPro != 'education' && catPro != 'photographe';
+    case 'notif_chaleurs':
+    case 'notif_mise_bas':
     default: // write_animaux, write_planning, write_notes : pertinents partout
+    case 'notif_vermifuges':
+    case 'notif_vaccins':
+    case 'notif_antiparasitaires':
+      return _permApplies('write_sante', catPro);
+    case 'notif_inventaire':
+      return _permApplies('write_inventaire', catPro);
       return true;
   }
 }
@@ -826,6 +846,10 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
   }
 
   Future<void> _loadPerms() async {
+  List<(String, IconData, String, String)> get _visibleNotifPerms => _kNotifPerms
+      .where((p) => _permApplies(p.$1, User_Info.catPro))
+      .toList();
+
     // Récupérer les IDs de profil depuis la ligne employes
     final row = await _supa.from('employes')
         .select('eleveur_profile_id, employe_profile_id')
@@ -938,17 +962,44 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
               child: Text('Profils non trouvés. Mettez à jour la fiche employé.',
                   style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.red)))
         else ...[
-          for (int i = 0; i < _visiblePerms.length; i++) ...[
-            if (i > 0) const Divider(height: 1, indent: 56),
-            _PermSwitch(
-              icon: _visiblePerms[i].$2,
-              title: _visiblePerms[i].$3,
-              subtitle: _visiblePerms[i].$4,
-              value: _perms.contains(_visiblePerms[i].$1),
-              teal: widget.teal,
-              onChanged: (v) => setState(() => v ? _perms.add(_visiblePerms[i].$1) : _perms.remove(_visiblePerms[i].$1)),
-            ),
-          ],
+          Flexible(child: SingleChildScrollView(child: Column(children: [
+            for (int i = 0; i < _visiblePerms.length; i++) ...[
+              if (i > 0) const Divider(height: 1, indent: 56),
+              _PermSwitch(
+                icon: _visiblePerms[i].$2,
+                title: _visiblePerms[i].$3,
+                subtitle: _visiblePerms[i].$4,
+                value: _perms.contains(_visiblePerms[i].$1),
+                teal: widget.teal,
+                onChanged: (v) => setState(() => v ? _perms.add(_visiblePerms[i].$1) : _perms.remove(_visiblePerms[i].$1)),
+              ),
+            ],
+            if (_visibleNotifPerms.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Notifications reçues',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 14)),
+              ),
+              const SizedBox(height: 2),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Il reçoit ces rappels comme vous, sans avoir à lui affecter les tâches.',
+                    style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Color(0xFF6F767B))),
+              ),
+              for (int i = 0; i < _visibleNotifPerms.length; i++) ...[
+                if (i > 0) const Divider(height: 1, indent: 56),
+                _PermSwitch(
+                  icon: _visibleNotifPerms[i].$2,
+                  title: _visibleNotifPerms[i].$3,
+                  subtitle: _visibleNotifPerms[i].$4,
+                  value: _perms.contains(_visibleNotifPerms[i].$1),
+                  teal: widget.teal,
+                  onChanged: (v) => setState(() => v ? _perms.add(_visibleNotifPerms[i].$1) : _perms.remove(_visibleNotifPerms[i].$1)),
+                ),
+              ],
+            ],
+          ]))),
           const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,

@@ -223,7 +223,15 @@ async function notifyAndMirrorPension({
 // Android le système affichait sinon un doublon en plus de l'affichage
 // manuel app — voir push_helpers.js)
 
-const {sendPush} = require("./push_helpers");
+const {sendPush, employesAbonnes, notifyEmployes} = require("./push_helpers");
+
+// Catégorie de notifications employé par table de rappel santé
+// (Élevage → Employés → Accès → « Notifications reçues »).
+const NOTIF_PERM_BY_TABLE = {
+    vaccinations: "notif_vaccins",
+    vermifuges: "notif_vermifuges",
+    antiparasitaires: "notif_antiparasitaires",
+};
 
 // ─── Date helper (heure locale Paris pour éviter les décalages UTC) ───────────
 
@@ -254,6 +262,7 @@ exports.sendSanteReminders = functions
     .timeZone("Europe/Paris")
     .onRun(async () => {
         let sent = 0;
+        const empCache = new Map();
 
         for (const {table, label, emoji, nomField} of TABLES) {
             for (const {key: palierKey, days, phrase} of PALIERS) {
@@ -314,6 +323,20 @@ exports.sendSanteReminders = functions
                         }]);
                     } catch (e) {
                         console.error(`notifications insert error (${table} ${row.id}):`, e.message);
+                    }
+
+                    // Employés abonnés à la catégorie (notif_vaccins/…) — seulement
+                    // si l'éleveur est encore propriétaire courant (profileId
+                    // résolu) : un chiot cédé ne doit plus alerter son équipe.
+                    if (animal.uid_eleveur === uid && profileId) {
+                        await notifyEmployes(await employesAbonnes({
+                            eleveurUid: uid, eleveurProfileId: profileId,
+                            permission: NOTIF_PERM_BY_TABLE[table], cache: empCache,
+                        }), {
+                            type: "sante", title, body,
+                            pushData: {animalId: String(row.animal_id), table},
+                            notifData: {animalId: String(row.animal_id), table, palier: palierKey},
+                        });
                     }
 
                     // Tâche agenda à 8h le jour J uniquement
@@ -379,6 +402,7 @@ exports.sendSanteReminders = functions
  */
 async function sendOverdueSanteReminders() {
     let sent = 0;
+    const empCache = new Map();
     const todayStr = dateStr(0);
 
     for (const {table, label, nomField} of TABLES) {
@@ -493,6 +517,18 @@ async function sendOverdueSanteReminders() {
                 } catch (e) {
                     console.error(`notifications insert error overdue assignee (${table} ${row.id}):`, e.message);
                 }
+            }
+
+            if (animal.uid_eleveur === uid && profileId) {
+                await notifyEmployes(await employesAbonnes({
+                    eleveurUid: uid, eleveurProfileId: profileId,
+                    permission: NOTIF_PERM_BY_TABLE[table], cache: empCache,
+                }), {
+                    type: "sante", title, body,
+                    pushData: {animalId: String(row.animal_id), table, overdue: "true"},
+                    notifData: {animalId: String(row.animal_id), table, overdue: true, recordId: row.id},
+                    exclude: assigneA ? [assigneA] : [],
+                });
             }
 
             // Relance aussi toute pension ayant un accès actif à la fiche —
@@ -665,6 +701,7 @@ exports.sendInventaireReminders = functions
     .onRun(async () => {
         let sent = 0;
         const todayStr = dateStr(0);
+        const empCache = new Map();
 
         const items = await supabaseGet("inventaire_items?alerte_active=eq.true");
         if (!Array.isArray(items) || items.length === 0) return null;
@@ -700,6 +737,22 @@ exports.sendInventaireReminders = functions
             } catch (e) {
                 console.error(`notifications insert error (inventaire ${item.id}):`, e.message);
             }
+
+            // Employés abonnés à la catégorie « Stock bas » (notif_inventaire)
+            await notifyEmployes(await employesAbonnes({
+                eleveurUid: item.uid_eleveur, eleveurProfileId: item.eleveur_profile_id || null,
+                permission: "notif_inventaire", cache: empCache,
+            }), {
+                type: "inventaire_alerte", title, body,
+                pushData: {itemId: String(item.id), table: "inventaire_items"},
+                // L'employé doit ouvrir l'inventaire de l'éleveur, pas le sien
+                // (lu par notifications_page.dart, type inventaire_alerte).
+                notifData: {
+                    itemId: item.id,
+                    eleveurUid: item.uid_eleveur,
+                    ...(item.eleveur_profile_id ? {eleveurProfileId: item.eleveur_profile_id} : {}),
+                },
+            });
 
             try {
                 await supabaseInsert("notifs_sent", [{key: dedupKey, sent_at: new Date().toISOString()}]);

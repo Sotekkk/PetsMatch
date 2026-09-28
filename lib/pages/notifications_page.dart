@@ -611,10 +611,19 @@ class _NotificationsPageState extends State<NotificationsPage> {
     // Alerte de stock bas → inventaire, fiche de l'article ouverte
     if (type == 'inventaire_alerte') {
       final itemId = data is Map ? data['itemId']?.toString() : null;
-      final profId = notif['profile_id'] as String?;
+      // Notif reçue en tant qu'employé (catégorie « Stock bas ») : c'est
+      // l'inventaire de l'éleveur qu'il faut ouvrir, en lecture seule — la
+      // modification reste accessible via Mes Employeurs selon ses droits.
+      final eleveurUid = data is Map ? data['eleveurUid']?.toString() : null;
+      final isEmploye = eleveurUid != null && eleveurUid != FirebaseAuth.instance.currentUser?.uid;
+      final profId = isEmploye
+          ? (data['eleveurProfileId']?.toString())
+          : notif['profile_id'] as String?;
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => InventairePage(
           eleveurProfileIdOverride: profId,
+          eleveurUidOverride: isEmploye ? eleveurUid : null,
+          readOnly: isEmploye,
           focusItemId: itemId,
         ),
       ));

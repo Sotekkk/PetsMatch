@@ -9,8 +9,9 @@ const SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" +
     "cm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTM2NDY1NSwiZXhwIjoyMDk0OT" +
     "QwNjU1fQ.1U96V3c7nHG3T08dboBcxTd05k8A_JQfnyrJTbJ0HgQ";
 
-function supabaseRequest(method, path) {
+function supabaseRequest(method, path, body) {
     return new Promise((resolve, reject) => {
+        const bodyStr = body ? JSON.stringify(body) : null;
         const url = new URL(`${SUPABASE_URL}/rest/v1/${path}`);
         const options = {
             hostname: url.hostname,
@@ -20,8 +21,10 @@ function supabaseRequest(method, path) {
                 "Content-Type": "application/json",
                 "apikey": SUPABASE_SERVICE_KEY,
                 "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+                ...(method === "GET" ? {} : {"Prefer": "return=minimal"}),
             },
         };
+        if (bodyStr) options.headers["Content-Length"] = Buffer.byteLength(bodyStr);
         const req = https.request(options, (res) => {
             let data = "";
             res.on("data", (chunk) => data += chunk);
@@ -34,6 +37,7 @@ function supabaseRequest(method, path) {
             });
         });
         req.on("error", reject);
+        if (bodyStr) req.write(bodyStr);
         req.end();
     });
 }
@@ -143,13 +147,20 @@ async function sendPush(uid, title, body, data = {}, opts = {}) {
             if (label) finalTitle = `${label} · ${title}`;
         }
 
+        // FCM refuse toute valeur non-string dans `data` (ex. overdue: true
+        // passé par les rappels en retard → envoi rejeté en silence).
+        const dataStr = {};
+        for (const [k, v] of Object.entries(data)) {
+            if (v !== null && v !== undefined) dataStr[k] = String(v);
+        }
+
         let sent = false;
         for (const token of tokens) {
             try {
                 await admin.messaging().send({
                     token,
                     data: {
-                        ...data,
+                        ...dataStr,
                         type: data.type || "generic",
                         title: finalTitle,
                         body,
@@ -173,4 +184,76 @@ async function sendPush(uid, title, body, data = {}, opts = {}) {
     }
 }
 
-module.exports = {sendPush, profileLabel, resolveProfileId};
+// ─── Employés abonnés à une catégorie de notifications ───────────────────────
+
+/**
+ * Employés actifs d'un éleveur ayant coché la permission `notif_<catégorie>`
+ * (Élevage → Employés → Accès → « Notifications reçues »). Ils reçoivent les
+ * rappels récurrents de la catégorie sans qu'une tâche leur soit affectée.
+ * Scopé au profil éleveur quand il est connu (multi-profil), sinon à l'uid.
+ * @param {{eleveurUid?: string, eleveurProfileId?: string,
+ *   permission: string, cache?: Map}} p - `cache` (optionnel, un par run)
+ *   évite de refaire les mêmes requêtes pour chaque animal d'un même élevage.
+ * @return {Promise<Array<{uid: string, profileId: string}>>}
+ */
+async function employesAbonnes({eleveurUid, eleveurProfileId, permission, cache}) {
+    if (!eleveurUid && !eleveurProfileId) return [];
+    const key = `${permission}|${eleveurProfileId || ""}|${eleveurUid || ""}`;
+    if (cache && cache.has(key)) return cache.get(key);
+    let result = [];
+    try {
+        const filtre = eleveurProfileId ?
+            `eleveur_profile_id=eq.${encodeURIComponent(eleveurProfileId)}` :
+            `uid_eleveur=eq.${encodeURIComponent(eleveurUid)}`;
+        const employes = await supabaseSelect("employes",
+            `${filtre}&actif=eq.true&employe_profile_id=not.is.null&uid_employe=not.is.null`);
+        if (employes.length) {
+            const perms = await supabaseSelect("employe_permissions",
+                `permission=eq.${encodeURIComponent(permission)}` +
+                `&employe_profile_id=in.(${employes.map((e) => e.employe_profile_id).join(",")})`);
+            const ok = new Set(perms.map((p) => `${p.eleveur_profile_id}|${p.employe_profile_id}`));
+            const seen = new Set();
+            for (const e of employes) {
+                if (!ok.has(`${e.eleveur_profile_id}|${e.employe_profile_id}`)) continue;
+                if (e.uid_employe === eleveurUid || seen.has(e.uid_employe)) continue;
+                seen.add(e.uid_employe);
+                result.push({uid: e.uid_employe, profileId: e.employe_profile_id});
+            }
+        }
+    } catch (e) {
+        console.error(`employesAbonnes error (${permission}):`, e.message);
+        result = [];
+    }
+    if (cache) cache.set(key, result);
+    return result;
+}
+
+/**
+ * Envoie push + notif in-app à chaque employé abonné (voir employesAbonnes).
+ * @param {Array<{uid: string, profileId: string}>} employes - destinataires.
+ * @param {{type: string, title: string, body: string, pushData?: object,
+ *   notifData?: object, exclude?: Array<string>}} n - `exclude` : uids déjà
+ *   notifiés par ailleurs (ex. employé assigné à la tâche), pour éviter un doublon.
+ * @return {Promise<number>} nombre d'employés notifiés.
+ */
+async function notifyEmployes(employes, {type, title, body, pushData, notifData, exclude = []}) {
+    let n = 0;
+    for (const e of employes) {
+        if (exclude.includes(e.uid)) continue;
+        await sendPush(e.uid, title, body, {type, ...(pushData || {})}, {profileId: e.profileId});
+        try {
+            await supabaseRequest("POST", "notifications", [{
+                uid: e.uid, type, title, body,
+                data: notifData || {},
+                read: false,
+                profile_id: e.profileId,
+            }]);
+        } catch (err) {
+            console.error(`notifyEmployes insert error uid=${e.uid}:`, err.message);
+        }
+        n++;
+    }
+    return n;
+}
+
+module.exports = {sendPush, profileLabel, resolveProfileId, employesAbonnes, notifyEmployes};
