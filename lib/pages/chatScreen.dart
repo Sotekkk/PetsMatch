@@ -697,31 +697,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           conversationId: widget.conversationId, senderUid: uid, participants: members,
         );
 
-        // Notif push fire-and-forget pour chaque destinataire pas déjà dans la conv
-        final previewText = imageUrl != null ? '📷 Photo' : (lat != null ? '📍 Position' : (animalData != null ? '🐾 ${animalData['nom'] ?? 'Animal'}' : (text.length > 80 ? '${text.substring(0, 80)}…' : text)));
-        final recipients = members.where((p) => p != uid).toSet().toList();
-        if (recipients.isNotEmpty) {
-          final userRows = await _supa
-              .from('users')
-              .select('uid, active_conversation_id, fcm_token')
-              .inFilter('uid', recipients);
-          final seenTokens = <String>{};
-          for (final r in (userRows as List)) {
-            final p          = r['uid'] as String;
-            final activeConv = r['active_conversation_id'] as String?;
-            final fcmToken   = r['fcm_token'] as String?;
-            if (activeConv == widget.conversationId) continue;
-            if (fcmToken != null && !seenTokens.add(fcmToken)) continue; // même device
-            _supa.from('notifications').insert({
-              'uid':   p,
-              'type':  'message',
-              'title': myName.isEmpty ? 'Nouveau message' : myName,
-              'body':  previewText,
-              'data':  {'conversation_id': widget.conversationId},
-              'read':  false,
-            }).then((_) {}).catchError((_) {});
-          }
-        }
+        // Notif (cloche + push) : créée par le trigger SQL trg_notify_new_message
+        // (migration_message_notif_dedup.sql) — ne pas en insérer ici, sinon doublon.
       }
 
       _controller.clear();

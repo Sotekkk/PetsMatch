@@ -441,7 +441,9 @@ class _SuiviCessionsTabState extends State<SuiviCessionsTab> {
           'deleted_for':  {},
         }).eq('id', convId);
       }
-      await _supa.from('notifications').insert({
+      // Un simple message est déjà notifié par le trigger trg_notify_new_message ;
+      // seule la relance (type dédié) mérite sa propre notif.
+      if (notifType != 'message') await _supa.from('notifications').insert({
         'uid':   acqUid,
         'type':  notifType,
         'title': notifTitre,

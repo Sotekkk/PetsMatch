@@ -263,7 +263,9 @@ export default function SuiviCessionsTab({ animaux, uid, myUid, activeProfileId,
       const { consumer } = await convTags(a.uid_acquereur, a);
       const convId = await openOrCreateConv(a.uid_acquereur, a);
       await postToConv(convId, texte);
-      await supabase.from('notifications').insert({
+      // Un simple message est déjà notifié par le trigger trg_notify_new_message ;
+      // seule la relance (type dédié) mérite sa propre notif.
+      if (notifType !== 'message') await supabase.from('notifications').insert({
         uid: a.uid_acquereur,
         type: notifType,
         title: notifTitre,
