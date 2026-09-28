@@ -364,24 +364,27 @@ class _ProfilEleveurEditPageState extends State<ProfilEleveurEditPage> {
     required String departement,
     required String region,
     required String nomEleveur,
-  }) {
-    FirebaseFirestore.instance
-        .collection('annonces')
-        .where('uidEleveur', isEqualTo: uid)
-        .get()
-        .then((snap) {
-      final batch = FirebaseFirestore.instance.batch();
-      for (final doc in snap.docs) {
-        batch.update(doc.reference, {
-          'villeEleveur':       ville,
-          'paysEleveur':        pays,
-          'departementEleveur': departement,
-          'regionEleveur':      region,
-          if (nomEleveur.isNotEmpty) 'nomEleveur': nomEleveur,
-        });
-      }
-      batch.commit().catchError((_) {});
-    }).catchError((_) {});
+  }) async {
+    // Annonces dans Supabase (plus Firestore) — scopées au profil ÉLEVEUR
+    // du compte : un autre profil du même uid (association…) garde les siennes.
+    // Les annonces antérieures au multi-profil (profile_id nul) suivent aussi.
+    try {
+      final supa = Supabase.instance.client;
+      final prof = await supa.from('user_profiles')
+          .select('id').eq('uid', uid).eq('profile_type', 'eleveur').maybeSingle();
+      final profileId = prof?['id'] as String?;
+      var q = supa.from('annonces').update({
+        'ville_eleveur':       ville,
+        'pays_eleveur':        pays,
+        'departement_eleveur': departement,
+        'region_eleveur':      region,
+        if (nomEleveur.isNotEmpty) 'nom_eleveur': nomEleveur,
+      }).eq('uid_eleveur', uid);
+      q = profileId != null
+          ? q.or('profile_id.eq.$profileId,profile_id.is.null')
+          : q.isFilter('profile_id', null);
+      await q;
+    } catch (_) {}
   }
 
   // ── Save ──────────────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_webservice/places.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ─── Données géographiques ────────────────────────────────────────────────────
 
@@ -938,18 +939,17 @@ class _AvailableAnimauxState extends State<_AvailableAnimaux> {
   }
 
   Future<void> _load() async {
-    final snap = await FirebaseFirestore.instance
-        .collection('annonces')
-        .where('uidEleveur', isEqualTo: widget.uid)
-        .get();
+    // Annonces dans Supabase (la collection Firestore n'est plus alimentée).
+    List<Map<String, dynamic>> active = [];
+    try {
+      final rows = await Supabase.instance.client
+          .from('annonces')
+          .select('espece, race')
+          .eq('uid_eleveur', widget.uid)
+          .inFilter('statut', ['disponible', 'reserve']);
+      active = List<Map<String, dynamic>>.from(rows as List);
+    } catch (_) {}
     if (!mounted) return;
-    final active = snap.docs
-        .map((d) => d.data())
-        .where((d) {
-          final s = (d['statut'] as String?) ?? '';
-          return s == 'disponible' || s == 'reserve';
-        })
-        .toList();
     setState(() => _active = active);
   }
 
