@@ -1361,6 +1361,31 @@ class _SocialFeedPageState extends State<SocialFeedPage> {
   }
 }
 
+/// Ouvre le formulaire de création de post depuis N'IMPORTE QUEL écran (ex.
+/// récap de balade) — _CreatePostSheet est privée à ce fichier, ce point
+/// d'entrée public expose un pré-remplissage optionnel (texte, images).
+Future<bool?> openCreatePostSheet(
+  BuildContext context, {
+  required String myUid,
+  VoidCallback? onPosted,
+  String? initialText,
+  List<File>? initialImages,
+  Set<String>? initialTaggedAnimalIds,
+}) {
+  return showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _CreatePostSheet(
+      myUid: myUid,
+      onPosted: onPosted ?? () {},
+      initialText: initialText,
+      initialImages: initialImages,
+      initialTaggedAnimalIds: initialTaggedAnimalIds,
+    ),
+  );
+}
+
 // ─── Skeleton loading ────────────────────────────────────────────────────────
 
 class _SkeletonFeed extends StatefulWidget {
@@ -4227,7 +4252,17 @@ class _CommentsSheetState extends State<_CommentsSheet> {
 class _CreatePostSheet extends StatefulWidget {
   final String myUid;
   final VoidCallback onPosted;
-  const _CreatePostSheet({required this.myUid, required this.onPosted});
+  // Pré-remplissage (ex. carte-récap d'une balade) — reste modifiable.
+  final String? initialText;
+  final List<File>? initialImages;
+  final Set<String>? initialTaggedAnimalIds;
+  const _CreatePostSheet({
+    required this.myUid,
+    required this.onPosted,
+    this.initialText,
+    this.initialImages,
+    this.initialTaggedAnimalIds,
+  });
   @override
   State<_CreatePostSheet> createState() => _CreatePostSheetState();
 }
@@ -4258,6 +4293,9 @@ class _CreatePostSheetState extends State<_CreatePostSheet> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialText != null) { _ctrl.text = widget.initialText!; _charCount = widget.initialText!.length; }
+    if (widget.initialImages != null) _images.addAll(widget.initialImages!);
+    if (widget.initialTaggedAnimalIds != null) _taggedAnimalIds.addAll(widget.initialTaggedAnimalIds!);
     _ctrl.addListener(() { if (mounted) setState(() => _charCount = _ctrl.text.length); });
     _mentionCtrl = MentionController(
       textController: _ctrl,

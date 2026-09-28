@@ -13,6 +13,7 @@ import 'package:PetsMatch/pages/eleveur/post/annonces_public_page.dart';
 import 'package:PetsMatch/pages/particulier/user_feed.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
 import 'package:PetsMatch/pages/particulier/animal_fiche_particulier.dart';
+import 'package:PetsMatch/pages/particulier/balades/balade_live_page.dart';
 import 'package:PetsMatch/pages/eleveur/post/trouver_compagnon_page.dart';
 import 'package:PetsMatch/pages/communaute/communaute_hub_page.dart';
 import 'package:PetsMatch/pages/mes_alertes_page.dart';
@@ -364,8 +365,60 @@ class _ParticulierHomePageState extends State<ParticulierHomePage> {
     );
   }
 
+  Future<void> _demarrerBalade() async {
+    if (_animaux.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Ajoutez un animal avant de démarrer une balade.', style: TextStyle(fontFamily: 'Galey')),
+      ));
+      return;
+    }
+    Map<String, dynamic>? chosen = _animaux.length == 1 ? _animaux.first : null;
+    if (chosen == null) {
+      chosen = await showModalBottomSheet<Map<String, dynamic>>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (_) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Avec qui balade-t-on ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16)),
+              const SizedBox(height: 12),
+              for (final a in _animaux)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(backgroundColor: _teal.withValues(alpha: 0.12),
+                      backgroundImage: (a['photo_url'] as String?)?.isNotEmpty == true ? CachedNetworkImageProvider(a['photo_url']) : null,
+                      child: (a['photo_url'] as String?)?.isNotEmpty != true ? const Icon(Icons.pets, color: _teal) : null),
+                  title: Text(a['nom']?.toString() ?? 'Animal', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+                  onTap: () => Navigator.pop(context, a),
+                ),
+            ]),
+          ),
+        ),
+      );
+    }
+    if (chosen == null || !mounted) return;
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => BaladeLivePage(
+        animalId: chosen!['id'].toString(),
+        animalNom: chosen['nom']?.toString() ?? 'cet animal',
+        espece: chosen['espece']?.toString() ?? '',
+      ),
+    ));
+  }
+
   Widget _buildQuickAccess() {
     return Column(children: [
+      _QuickTileWide(
+        icon: Icons.directions_walk,
+        label: 'Démarrer une balade',
+        subtitle: 'Trace le parcours en direct, gagne de l\'XP et des flammes',
+        color: _teal,
+        onTap: _demarrerBalade,
+      ),
+      const SizedBox(height: 10),
       _QuickTileWide(
         icon: Icons.location_searching,
         label: 'Mes Alertes',

@@ -18,7 +18,18 @@ class StoryCreatePage extends StatefulWidget {
   final String myUid;
   final String authorProfileId;
   final VoidCallback? onPosted;
-  const StoryCreatePage({super.key, required this.myUid, required this.authorProfileId, this.onPosted});
+  // Pré-remplissage (ex. carte-récap d'une balade) : saute directement
+  // l'écran de choix photo/vidéo/texte, la légende reste modifiable.
+  final File? initialMediaFile;
+  final String? initialLegende;
+  const StoryCreatePage({
+    super.key,
+    required this.myUid,
+    required this.authorProfileId,
+    this.onPosted,
+    this.initialMediaFile,
+    this.initialLegende,
+  });
 
   @override
   State<StoryCreatePage> createState() => _StoryCreatePageState();
@@ -57,6 +68,13 @@ class _StoryCreatePageState extends State<StoryCreatePage> {
       excludeUid: widget.myUid,
       onSuggestionsChanged: (s) { if (mounted) setState(() => _mentionSuggestions = s); },
     );
+    if (widget.initialMediaFile != null) {
+      _mediaFile = widget.initialMediaFile;
+      _mediaType = 'photo';
+    }
+    if (widget.initialLegende != null && widget.initialLegende!.isNotEmpty) {
+      _legendeCtrl.text = widget.initialLegende!;
+    }
   }
 
   @override

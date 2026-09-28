@@ -126,7 +126,12 @@ class GamificationService {
     var streakCount = 0;
     var streakIncremented = false;
     if (pid != null) {
-      final result = await _applyStreak(pid);
+      final result = await _applyStreak(
+        profileId: pid,
+        countCol: 'streak_count',
+        lastDateCol: 'streak_last_activity_date',
+        graceUsedCol: 'streak_grace_used_this_week',
+      );
       streakCount = result.$1;
       streakIncremented = result.$2;
     }
@@ -154,21 +159,39 @@ class GamificationService {
     );
   }
 
-  /// Met à jour la flamme du profil et retourne (nouveau compteur, incrémenté ?).
-  /// Rupture de série = perte sèche, avec 1 jour de retard toléré par semaine.
-  Future<(int, bool)> _applyStreak(String profileId) async {
+  /// Série de partage de balade (2e flamme, distincte de la flamme d'activité
+  /// quotidienne) — déclenchée uniquement par un partage explicite (Story ou
+  /// Post) depuis le récap de balade, jamais par le post automatique de fin
+  /// de balade. Même mécanique de grâce/rupture que la flamme d'activité.
+  Future<(int, bool)> applyShareStreak(String profileId) => _applyStreak(
+        profileId: profileId,
+        countCol: 'share_streak_count',
+        lastDateCol: 'share_streak_last_activity_date',
+        graceUsedCol: 'share_streak_grace_used_this_week',
+      );
+
+  /// Met à jour une flamme du profil (colonnes génériques, réutilisable pour
+  /// la flamme d'activité comme pour la flamme de partage) et retourne
+  /// (nouveau compteur, incrémenté ?). Rupture de série = perte sèche, avec
+  /// 1 jour de retard toléré par semaine.
+  Future<(int, bool)> _applyStreak({
+    required String profileId,
+    required String countCol,
+    required String lastDateCol,
+    required String graceUsedCol,
+  }) async {
     final profRow = await _supa
         .from('user_profiles')
-        .select('streak_count, streak_last_activity_date, streak_grace_used_this_week')
+        .select('$countCol, $lastDateCol, $graceUsedCol')
         .eq('id', profileId)
         .maybeSingle();
 
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final currentStreak = (profRow?['streak_count'] as num?)?.toInt() ?? 0;
-    var graceUsed = profRow?['streak_grace_used_this_week'] as bool? ?? false;
+    final currentStreak = (profRow?[countCol] as num?)?.toInt() ?? 0;
+    var graceUsed = profRow?[graceUsedCol] as bool? ?? false;
     DateTime? lastDate;
-    final rawLast = profRow?['streak_last_activity_date'];
+    final rawLast = profRow?[lastDateCol];
     if (rawLast != null) lastDate = DateTime.tryParse(rawLast.toString());
 
     int newStreak;

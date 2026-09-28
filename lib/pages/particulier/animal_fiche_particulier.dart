@@ -24,7 +24,8 @@ import 'package:PetsMatch/pages/particulier/partage_animal_sheet.dart';
 import 'package:PetsMatch/pages/particulier/proprietaires_animal_sheet.dart';
 import 'package:PetsMatch/pages/particulier/create_annonce_cheval_page.dart';
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show AnimalTaggedPostsPage;
-import 'package:PetsMatch/pages/particulier/enregistrer_balade_page.dart';
+import 'package:PetsMatch/pages/particulier/balades/balade_live_page.dart';
+import 'package:PetsMatch/pages/particulier/balades/mes_balades_page.dart';
 import 'package:PetsMatch/services/gamification_service.dart';
 import 'package:PetsMatch/pages/pro/pension_journal_page.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_constants.dart';
@@ -210,37 +211,25 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
 
   Future<void> _ouvrirEnregistrerBalade() async {
     if (_animalId == null) return;
-    final result = await Navigator.push<BaladeResult>(context, MaterialPageRoute(
-      builder: (_) => EnregistrerBaladePage(
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => BaladeLivePage(
         animalId: _animalId!,
         animalNom: _nomCtrl.text.trim().isEmpty ? 'cet animal' : _nomCtrl.text.trim(),
         espece: _espece,
       ),
     ));
-    if (result == null || !mounted) return;
-    await _refreshFromSupabase();
     if (!mounted) return;
-    if (result.tierEvolved) {
-      await showDialog<void>(context: context, builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('✨ Évolution débloquée !', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
-        content: Text(
-          '${_nomCtrl.text.trim().isEmpty ? 'Votre animal' : _nomCtrl.text.trim()} passe au palier '
-          '${GamificationService.tierLabel(result.newTier)} ! (+${result.xpEarned} XP)',
-          style: const TextStyle(fontFamily: 'Galey'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context),
-              child: const Text('Super !', style: TextStyle(fontFamily: 'Galey', color: _teal, fontWeight: FontWeight.w700))),
-        ],
-      ));
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Balade enregistrée : +${result.xpEarned} XP', style: const TextStyle(fontFamily: 'Galey')),
-        backgroundColor: _teal,
-        behavior: SnackBarBehavior.floating,
-      ));
-    }
+    await _refreshFromSupabase();
+  }
+
+  void _ouvrirMesBalades() {
+    if (_animalId == null) return;
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => MesBaladesPage(
+        animalId: _animalId,
+        animalNom: _nomCtrl.text.trim().isEmpty ? null : _nomCtrl.text.trim(),
+      ),
+    ));
   }
 
   /// Carte de progression (flamme/XP Phase 1) : palier actuel + XP restant
@@ -291,21 +280,32 @@ class _AnimalFicheParticulierPageState extends State<AnimalFicheParticulierPage>
               style: const TextStyle(fontFamily: 'Galey', fontSize: 11.5, color: Colors.black54)),
         ],
         const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _ouvrirEnregistrerBalade,
-            icon: const Icon(Icons.directions_walk, size: 16),
-            label: const Text('Enregistrer une balade',
-                style: TextStyle(fontFamily: 'Galey', fontSize: 13)),
+        Row(children: [
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: _ouvrirEnregistrerBalade,
+              icon: const Icon(Icons.directions_walk, size: 16, color: Colors.white),
+              label: const Text('Démarrer une balade',
+                  style: TextStyle(fontFamily: 'Galey', fontSize: 13, color: Colors.white, fontWeight: FontWeight.w600)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _teal,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton(
+            onPressed: _ouvrirMesBalades,
             style: OutlinedButton.styleFrom(
               foregroundColor: _teal,
               side: const BorderSide(color: _teal),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             ),
+            child: const Icon(Icons.history, size: 18),
           ),
-        ),
+        ]),
       ]),
     );
   }

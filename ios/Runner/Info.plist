@@ -56,13 +56,14 @@
 		<key>NSDocumentsFolderUsageDescription</key>
 		<string>PetsMatch a besoin d’accéder au dossier Documents pour permettre à l’utilisateur d’importer ou de sauvegarder des fichiers liés à son profil ou ses animaux.</string>
 		<key>NSLocationWhenInUseUsageDescription</key>
-		<string>PetsMatch a besoin de votre position pour proposer des services adaptés lors des propositions de vétérinaire autour de vous.</string>
+		<string>PetsMatch a besoin de votre position pour proposer des services adaptés autour de vous et tracer vos balades.</string>
 		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-		<string>PetsMatch a besoin de votre position pour proposer des services adaptés lors des propositions de vétérinaire autour de vous.</string>
+		<string>PetsMatch a besoin de votre position en continu pour tracer le parcours de vos balades même écran verrouillé.</string>
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 		<true/>
 		<key>UIBackgroundModes</key>
 		<array>
+			<string>location</string>
 			<string>processing</string>
 			<string>fetch</string>
 			<string>remote-notification</string>
