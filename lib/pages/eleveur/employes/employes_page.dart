@@ -813,15 +813,17 @@ bool _permApplies(String key, String catPro) {
       return catPro.isEmpty || catPro == 'sante' || catPro == 'veterinaire' || catPro == 'pension';
     case 'write_inventaire': // gestion de stock : pas pertinent pour garde/éducation/photographe
       return catPro != 'garde' && catPro != 'education' && catPro != 'photographe';
-    case 'notif_inventaire':
-      return _permApplies('write_inventaire', catPro);
-    case 'notif_chaleurs':
+    case 'notif_chaleurs': // rappels chaleurs / mises bas : éleveur uniquement
     case 'notif_mise_bas':
-    case 'notif_vermifuges':
+      return catPro.isEmpty;
+    case 'notif_vermifuges': // rappels santé : mêmes métiers que le carnet de santé
     case 'notif_vaccins':
     case 'notif_antiparasitaires':
-    default: // write_animaux, write_planning, write_notes : pertinents partout
       return _permApplies('write_sante', catPro);
+    case 'notif_inventaire': // stock bas : mêmes métiers que l'inventaire
+      return _permApplies('write_inventaire', catPro);
+    default: // write_animaux, write_planning, write_notes : pertinents partout
+      return true;
   }
 }
 
