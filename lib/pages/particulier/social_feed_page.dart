@@ -3765,7 +3765,12 @@ class _CommentsSheetState extends State<_CommentsSheet> {
         commentId: inserted['id']?.toString(),
         type: 'social_comment',
         titleSuffix: 'a commenté votre post',
-        body: text.length > 60 ? '${text.substring(0, 60)}…' : text,
+        // « @Nom » lisible (jamais le balisage @[Nom](id)), coupé APRÈS
+        // conversion pour ne pas tronquer une mention en plein milieu.
+        body: () {
+          final plain = mentionsToPlainText(text);
+          return plain.length > 60 ? '${plain.substring(0, 60)}…' : plain;
+        }(),
       );
       // @mentions dans le commentaire — fire-and-forget
       unawaited(() async {
@@ -6080,7 +6085,7 @@ class _SocialNotificationsPageState extends State<SocialNotificationsPage> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     if (type == 'comment')
-                                      Text('"${() { final t = n['texte'] as String? ?? ''; return t.length > 50 ? '${t.substring(0, 50)}…' : t; }()}"',
+                                      Text('"${() { final t = mentionsToPlainText(n['texte'] as String? ?? ''); return t.length > 50 ? '${t.substring(0, 50)}…' : t; }()}"',
                                           style: const TextStyle(fontFamily: 'Galey', color: Colors.white54, fontSize: 12)),
                                     if (type == 'mention')
                                       Text(n['body'] as String? ?? '',

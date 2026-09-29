@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:PetsMatch/main.dart';
+import 'package:PetsMatch/widgets/mention_hashtag.dart' show mentionsToPlainText;
 import 'package:PetsMatch/pages/bottom_nav.dart';
 import 'package:PetsMatch/services/profile_service.dart';
 import 'package:PetsMatch/pages/particulier/animaux_perdus_page.dart';
@@ -1542,7 +1543,8 @@ class _NotificationsPageState extends State<NotificationsPage> {
                                               fontWeight: isRead ? FontWeight.w500 : FontWeight.w700,
                                               fontSize: 14)),
                                       const SizedBox(height: 2),
-                                      Text(n['body'] as String? ?? '',
+                                      // @[Nom](id) → @Nom (y compris notifs déjà reçues)
+                                      Text(mentionsToPlainText(n['body'] as String? ?? ''),
                                           style: TextStyle(
                                               fontFamily: 'Galey',
                                               fontSize: 13,

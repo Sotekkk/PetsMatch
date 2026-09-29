@@ -1668,7 +1668,8 @@ export default function Header() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold text-[#1F2A2E]">{n.title}</p>
-                            <p className="text-xs text-gray-500 line-clamp-2">{n.body}</p>
+                            {/* @[Nom](id) → @Nom (mentions Pets Social) */}
+                            <p className="text-xs text-gray-500 line-clamp-2">{n.body?.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1')}</p>
                             <div className="flex items-center gap-2 mt-1">
                               {notifProfileType && (
                                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isDifferentProfile ? 'bg-[#0C5C6C]/10 text-[#0C5C6C]' : 'bg-gray-100 text-gray-500'}`}>

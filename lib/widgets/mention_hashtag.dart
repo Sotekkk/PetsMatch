@@ -33,6 +33,12 @@ Future<List<Map<String, dynamic>>> searchMentionableProfiles(String query, {Stri
 final RegExp _mentionHashtagRegExp = RegExp(r'@\[([^\]]+)\]\(([^)]+)\)|#([\p{L}0-9_]+)', unicode: true);
 final RegExp _mentionOnlyRegExp = RegExp(r'@\[([^\]]+)\]\(([^)]+)\)');
 
+/// Texte lisible : chaque mention `@[Nom](profileId)` devient `@Nom` — pour
+/// tout affichage en texte brut (corps de notification, push, aperçu),
+/// là où MentionHashtagText n'est pas utilisé.
+String mentionsToPlainText(String text) =>
+    text.replaceAllMapped(_mentionOnlyRegExp, (m) => '@${m.group(1)}');
+
 /// Notifie chaque profil @mentionné dans [text] (jamais soi-même) —
 /// fire-and-forget, n'échoue jamais la publication elle-même. Réutilise la
 /// table `notifications` déjà utilisée pour le reste de l'appli (bulle du
