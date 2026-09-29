@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { auth } from '@/lib/firebase';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,26 @@ interface MarqueAliment {
   age_categorie?: string;
   taille_race?: string;
   type_aliment?: string;
+  ajoute_par_uid?: string | null;
+  kcal_estime?: boolean;
+}
+
+const MARQUE_COLS = 'id, marque, gamme, densite_kcal_100g, doses, age_categorie, taille_race, type_aliment, ajoute_par_uid, kcal_estime';
+
+/** Estimation kcal/100 g quand l'utilisateur ne la connaît pas — moyennes du
+ *  catalogue marques_aliments par espèce/type/âge (miroir de
+ *  estimationKcal100g, lib/widgets/ajout_aliment_sheet.dart). */
+function estimationKcal100g(espece: string, type: string, age: string, sterilise: boolean): number | null {
+  const e = espece.toLowerCase();
+  const patee = type === 'pâtée';
+  const jr = age === 'junior', sr = age === 'senior', st = sterilise && !jr;
+  if (e === 'chien') return patee ? (jr ? 90 : st ? 75 : sr ? 80 : 85) : (jr ? 390 : st ? 330 : sr ? 350 : 370);
+  if (e === 'chat') return patee ? (jr ? 80 : (st || sr) ? 70 : 75) : (jr ? 390 : st ? 340 : sr ? 345 : 360);
+  if (patee) return null;
+  if (e === 'lapin') return 280;
+  if (e === 'cheval') return 300;
+  if (e === 'oiseau') return 365;
+  return null;
 }
 
 interface Props {
@@ -254,22 +275,123 @@ function getMealPlan(espece: string, type: string, nbRepas: number, derKcal: num
 
 // ─── Composant BrandPicker ────────────────────────────────────────────────────
 
-function BrandPickerModal({ espece, phase, onSelect, onClose }: {
-  espece: string; phase: string;
+/** Formulaire « Ajouter mon aliment » (marque absente du catalogue) — la
+ *  ligne créée est visible des autres membres (« ajouté par un membre »). */
+function AjoutAlimentForm({ espece, phase, userId, marqueInitiale, onCreated, onCancel }: {
+  espece: string; phase: string; userId: string; marqueInitiale: string;
+  onCreated: (b: MarqueAliment) => void; onCancel: () => void;
+}) {
+  const [marque, setMarque] = useState(marqueInitiale);
+  const [gamme, setGamme] = useState('');
+  const [type, setType] = useState<'croquettes' | 'pâtée'>('croquettes');
+  const [age, setAge] = useState(['junior', 'adulte', 'senior'].includes(phase) ? phase : 'adulte');
+  const [sterilise, setSterilise] = useState(false);
+  const [taille, setTaille] = useState<string | null>(null);
+  const [kcal, setKcal] = useState('');
+  const [doses, setDoses] = useState<{ p: string; g: string }[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const est = estimationKcal100g(espece, type, age, sterilise);
+  const chip = (on: boolean) => `px-3 py-1.5 rounded-full text-sm border ${on ? 'bg-[#0C5C6C]/10 border-[#0C5C6C] text-[#0C5C6C] font-semibold' : 'border-gray-200 text-gray-600'}`;
+  const input = 'w-full px-3 py-2 text-sm bg-gray-100 rounded-xl outline-none';
+  const num = (s: string) => { const v = parseFloat(s.replace(',', '.')); return Number.isFinite(v) ? v : null; };
+
+  async function save() {
+    if (!marque.trim() || !gamme.trim()) { setError('Indiquez la marque et le nom du produit.'); return; }
+    const saisi = kcal.trim() ? num(kcal) : null;
+    if (kcal.trim() && (saisi === null || saisi < 20 || saisi > 700)) { setError('Valeur énergétique invalide (en kcal pour 100 g, ex. 370).'); return; }
+    const d = doses.map(x => ({ poids_kg: num(x.p), grammes: num(x.g) }))
+      .filter((x): x is { poids_kg: number; grammes: number } => !!x.poids_kg && !!x.grammes && x.poids_kg > 0 && x.grammes > 0)
+      .sort((a, b) => a.poids_kg - b.poids_kg);
+    setSaving(true); setError(null);
+    const { data, error: err } = await supabase.from('marques_aliments').insert({
+      marque: marque.trim(), gamme: gamme.trim(), espece: espece.toLowerCase(),
+      type_aliment: type, age_categorie: age, formule_sterilise: sterilise && age !== 'junior',
+      ...(taille ? { taille_race: taille } : {}),
+      densite_kcal_100g: saisi ?? est, kcal_estime: saisi === null,
+      // Auteur = utilisateur connecté (la RLS l'exige) — userId peut désigner
+      // le propriétaire de l'animal quand un co-propriétaire consulte la fiche.
+      doses: d, notes: 'Ajouté par un membre', ajoute_par_uid: auth.currentUser?.uid ?? userId,
+    }).select(MARQUE_COLS).single();
+    setSaving(false);
+    if (err || !data) { setError('Enregistrement impossible, réessayez.'); return; }
+    onCreated(data as MarqueAliment);
+  }
+
+  return (
+    <div className="overflow-y-auto flex-1 px-4 py-3 space-y-3 text-sm">
+      <div><p className="font-semibold mb-1">Marque *</p>
+        <input value={marque} onChange={e => setMarque(e.target.value)} placeholder="Ex : Josera, Carnilove…" className={input} /></div>
+      <div><p className="font-semibold mb-1">Nom du produit / gamme *</p>
+        <input value={gamme} onChange={e => setGamme(e.target.value)} placeholder="Ex : Adult Medium Agneau" className={input} /></div>
+      <div><p className="font-semibold mb-1">Type</p>
+        <div className="flex gap-2">
+          {(['croquettes', 'pâtée'] as const).map(t => <button key={t} type="button" onClick={() => setType(t)} className={chip(type === t)}>{t === 'croquettes' ? 'Croquettes' : 'Pâtée'}</button>)}
+        </div></div>
+      <div><p className="font-semibold mb-1">Âge</p>
+        <div className="flex gap-2 flex-wrap">
+          {[['junior', 'Junior / chiot, chaton'], ['adulte', 'Adulte'], ['senior', 'Senior']].map(([v, l]) =>
+            <button key={v} type="button" onClick={() => setAge(v)} className={chip(age === v)}>{l}</button>)}
+        </div></div>
+      {age !== 'junior' && (
+        <label className="flex items-center gap-2"><input type="checkbox" checked={sterilise} onChange={e => setSterilise(e.target.checked)} /> Formule stérilisé / light</label>
+      )}
+      {espece.toLowerCase() === 'chien' && (
+        <div><p className="font-semibold mb-1">Taille de race (facultatif)</p>
+          <div className="flex gap-2 flex-wrap">
+            {([[null, 'Toutes'], ['petite', 'Petite'], ['moyenne', 'Moyenne'], ['grande', 'Grande']] as const).map(([v, l]) =>
+              <button key={l} type="button" onClick={() => setTaille(v)} className={chip(taille === v)}>{l}</button>)}
+          </div></div>
+      )}
+      <div><p className="font-semibold mb-1">Valeur énergétique (kcal pour 100 g)</p>
+        <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs leading-relaxed mb-2">
+          ⚠️ Information essentielle pour calculer la bonne ration. Elle figure sur le paquet (« valeur énergétique » ou
+          « énergie métabolisable », en kcal/100 g ou kcal/kg ÷ 10).{' '}
+          {est !== null
+            ? <>Si vous ne l&apos;avez pas, nous utiliserons une estimation ({est} kcal/100 g) : la ration sera moins précise.</>
+            : <>Sans elle, la ration ne pourra pas être calculée pour cette espèce.</>}
+        </div>
+        <input value={kcal} onChange={e => setKcal(e.target.value)} inputMode="decimal" placeholder={est !== null ? `Ex : ${est}` : 'Ex : 370'} className={input} /></div>
+      <div><p className="font-semibold mb-1">Tableau de rationnement du paquet (recommandé)</p>
+        <p className="text-xs text-gray-500 mb-2">Au dos du paquet : la quantité par jour selon le poids de l&apos;animal.</p>
+        {doses.map((d, i) => (
+          <div key={i} className="flex gap-2 mb-2 items-center">
+            <input value={d.p} onChange={e => setDoses(ds => ds.map((x, j) => j === i ? { ...x, p: e.target.value } : x))} inputMode="decimal" placeholder="Poids (kg)" className={input} />
+            <input value={d.g} onChange={e => setDoses(ds => ds.map((x, j) => j === i ? { ...x, g: e.target.value } : x))} inputMode="decimal" placeholder="g / jour" className={input} />
+            <button type="button" onClick={() => setDoses(ds => ds.filter((_, j) => j !== i))} className="text-gray-400 px-1">✕</button>
+          </div>
+        ))}
+        <button type="button" onClick={() => setDoses(ds => [...ds, { p: '', g: '' }])} className="text-[#0C5C6C] font-semibold text-sm">+ Ajouter une ligne poids → quantité</button></div>
+      {error && <p className="text-red-600 text-sm">{error}</p>}
+      <p className="text-xs text-gray-400">L&apos;aliment sera visible des autres membres pour cette espèce (« ajouté par un membre »).</p>
+      <div className="flex gap-2 pt-1">
+        <button type="button" onClick={onCancel} className="flex-1 py-2 border border-gray-200 rounded-xl text-gray-600">Retour</button>
+        <button type="button" onClick={save} disabled={saving} className="flex-1 py-2 bg-[#0C5C6C] text-white rounded-xl font-semibold disabled:opacity-50">
+          {saving ? 'Enregistrement…' : 'Ajouter et sélectionner'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BrandPickerModal({ espece, phase, userId, onSelect, onClose }: {
+  espece: string; phase: string; userId: string;
   onSelect: (b: MarqueAliment) => void; onClose: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<MarqueAliment[]>([]);
   const [loading, setLoading] = useState(false);
+  const [adding, setAdding] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const doFetch = useCallback(async (q: string) => {
     setLoading(true);
     try {
       let req = supabase.from('marques_aliments')
-        .select('id, marque, gamme, densite_kcal_100g, age_categorie, taille_race, type_aliment')
+        .select(MARQUE_COLS)
         .eq('espece', espece);
-      if (phase !== 'junior') req = req.eq('age_categorie', 'adulte');
+      // Hors junior : adulte ET senior (un chien senior doit trouver sa gamme senior).
+      if (phase !== 'junior') req = req.in('age_categorie', ['adulte', 'senior']);
       if (q) req = req.or(`marque.ilike.%${q}%,gamme.ilike.%${q}%`);
       const { data } = await req.order('marque').limit(50);
       setResults((data ?? []) as MarqueAliment[]);
@@ -289,27 +411,44 @@ function BrandPickerModal({ espece, phase, onSelect, onClose }: {
       <div className="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="px-4 pt-4 pb-2 border-b border-gray-100">
           <div className="w-10 h-1 bg-gray-300 rounded-full mx-auto mb-3 sm:hidden" />
-          <p className="text-base font-bold text-[#1F2A2E] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>Choisir un aliment</p>
-          <input
-            autoFocus
-            value={query}
-            onChange={e => onChange(e.target.value)}
-            placeholder="Ex : Royal Canin, Orijen, Pro Plan…"
-            className="w-full px-3 py-2 text-sm bg-gray-100 rounded-full outline-none"
-          />
-          {loading && <div className="h-0.5 bg-[#0C5C6C] mt-2 animate-pulse rounded-full" />}
+          <p className="text-base font-bold text-[#1F2A2E] mb-3" style={{ fontFamily: 'Galey, sans-serif' }}>
+            {adding ? 'Ajouter mon aliment' : 'Choisir un aliment'}
+          </p>
+          {!adding && <>
+            <input
+              autoFocus
+              value={query}
+              onChange={e => onChange(e.target.value)}
+              placeholder="Ex : Royal Canin, Orijen, Pro Plan…"
+              className="w-full px-3 py-2 text-sm bg-gray-100 rounded-full outline-none"
+            />
+            {loading && <div className="h-0.5 bg-[#0C5C6C] mt-2 animate-pulse rounded-full" />}
+          </>}
         </div>
+        {adding ? (
+          <AjoutAlimentForm espece={espece} phase={phase} userId={userId} marqueInitiale={query.trim()}
+            onCreated={onSelect} onCancel={() => setAdding(false)} />
+        ) : <>
         <div className="overflow-y-auto flex-1">
           {results.length === 0 && !loading ? (
-            <p className="text-center text-sm text-gray-400 py-8">
-              {query ? `Aucun résultat pour « ${query} »` : 'Aucune marque dans la base'}
-            </p>
+            <div className="text-center py-8">
+              <p className="text-sm text-gray-400 mb-3">
+                {query ? `Aucun résultat pour « ${query} »` : 'Aucune marque dans la base'}
+              </p>
+              <button onClick={() => setAdding(true)} className="px-4 py-2 bg-[#0C5C6C] text-white rounded-xl text-sm font-semibold">
+                + Ajouter mon aliment
+              </button>
+            </div>
           ) : results.map(b => (
             <button key={b.id} onClick={() => onSelect(b)}
               className="w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors">
               <p className="text-sm font-semibold text-[#1F2A2E]">{b.marque} — {b.gamme}</p>
               <div className="flex gap-2 mt-0.5 flex-wrap">
-                {b.densite_kcal_100g && <span className="text-xs text-gray-400">{b.densite_kcal_100g} kcal/100g</span>}
+                {b.densite_kcal_100g && (b.kcal_estime
+                  ? <span className="text-xs text-orange-700">≈ {b.densite_kcal_100g} kcal/100g (estimé)</span>
+                  : <span className="text-xs text-gray-400">{b.densite_kcal_100g} kcal/100g</span>)}
+                {b.type_aliment === 'pâtée' && <span className="text-xs text-gray-400">Pâtée</span>}
+                {b.ajoute_par_uid && <span className="text-xs px-1.5 py-0.5 bg-[#EAF2F4] text-[#0C5C6C] rounded">Ajouté par un membre</span>}
                 {b.age_categorie === 'junior' && <span className="text-xs px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded">Junior</span>}
                 {b.taille_race && b.taille_race !== 'toutes' && <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">{b.taille_race}</span>}
               </div>
@@ -317,8 +456,14 @@ function BrandPickerModal({ espece, phase, onSelect, onClose }: {
           ))}
         </div>
         <div className="p-3 border-t border-gray-100">
+          {results.length > 0 && (
+            <button onClick={() => setAdding(true)} className="w-full py-2 text-sm text-[#0C5C6C] font-semibold">
+              + Mon aliment n&apos;est pas dans la liste — l&apos;ajouter
+            </button>
+          )}
           <button onClick={onClose} className="w-full py-2 text-sm text-gray-500 font-medium">Annuler</button>
         </div>
+        </>}
       </div>
     </div>
   );
@@ -1030,7 +1175,7 @@ export default function AlimentationTab({ animalId, espece, sexe, sterilise, dat
 
       {/* Brand picker modal */}
       {showBrand && (
-        <BrandPickerModal espece={espece} phase={phase}
+        <BrandPickerModal espece={espece} phase={phase} userId={userId}
           onSelect={b => {
             setAlim(p => ({
               ...p,

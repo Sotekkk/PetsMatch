@@ -35,6 +35,7 @@ import 'package:PetsMatch/pages/pro/anatomie_points_page.dart';
 import 'package:PetsMatch/pages/animaux/morpho/morpho_timeline_tab.dart';
 import 'package:PetsMatch/pages/pro/rdv_booking_page.dart';
 import 'package:PetsMatch/widgets/vet_share_dialog.dart';
+import 'package:PetsMatch/widgets/ajout_aliment_sheet.dart';
 import 'package:PetsMatch/widgets/rich_text_view.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/data/vaccin_types.dart';
@@ -11991,15 +11992,26 @@ class _MarquePickerSheetState extends State<_MarquePickerSheet> {
     try {
       var query = Supabase.instance.client
           .from('marques_aliments')
-          .select('id, marque, gamme, densite_kcal_100g, doses, age_categorie, taille_race, type_aliment')
+          .select(kMarqueAlimentCols)
           .eq('espece', widget.espece);
-      if (widget.phase != 'junior') query = query.eq('age_categorie', 'adulte');
+      // Hors junior : adulte ET senior (un chien senior doit trouver sa gamme senior).
+      if (widget.phase != 'junior') query = query.inFilter('age_categorie', ['adulte', 'senior']);
       if (q.isNotEmpty) query = query.or('marque.ilike.%$q%,gamme.ilike.%$q%');
       final data = await query.order('marque').limit(50);
       if (mounted) setState(() => _results = (data as List).cast<Map<String,dynamic>>());
     } catch (_) {} finally {
       if (mounted) setState(() => _searching = false);
     }
+  }
+
+  /// Marque absente du catalogue : l'utilisateur l'ajoute, elle est
+  /// sélectionnée aussitôt (et reste disponible pour les autres membres).
+  Future<void> _ajouter() async {
+    final row = await showAjoutAlimentSheet(context,
+        espece: widget.espece, marqueInitiale: _search.text.trim(), ageInitial: widget.phase);
+    if (row == null || !mounted) return;
+    Navigator.pop(context);
+    widget.onSelected(row);
   }
 
   @override
@@ -12028,9 +12040,20 @@ class _MarquePickerSheetState extends State<_MarquePickerSheet> {
       if (_searching) const LinearProgressIndicator(color:Color(0xFF0C5C6C), minHeight:2),
       Expanded(
         child: _results.isEmpty && !_searching
-          ? Center(child:Text(
-              _search.text.isEmpty ? 'Aucune marque dans la base' : 'Aucun résultat pour « ${_search.text} »',
-              style:const TextStyle(fontFamily:'Galey',color:Colors.grey)))
+          ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text(
+                _search.text.isEmpty ? 'Aucune marque dans la base' : 'Aucun résultat pour « ${_search.text} »',
+                style:const TextStyle(fontFamily:'Galey',color:Colors.grey)),
+              const SizedBox(height: 10),
+              ElevatedButton.icon(
+                onPressed: _ajouter,
+                icon: const Icon(Icons.add, color: Colors.white, size: 18),
+                label: const Text('Ajouter mon aliment',
+                    style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600, color: Colors.white)),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0C5C6C),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              ),
+            ]))
           : ListView.separated(
               padding: EdgeInsets.only(
                 top: 8, bottom: 8 + MediaQuery.of(context).viewInsets.bottom),
@@ -12046,8 +12069,16 @@ class _MarquePickerSheetState extends State<_MarquePickerSheet> {
                   title:Text('${b['marque']} — ${b['gamme']}',
                     style:const TextStyle(fontFamily:'Galey',fontSize:14,fontWeight:FontWeight.w600,color:Color(0xFF1F2A2E))),
                   subtitle:Wrap(spacing:8, children:[
-                    if (densite != null) Text('$densite kcal/100g',
+                    if (densite != null) Text(
+                      b['kcal_estime'] == true ? '≈ $densite kcal/100g (estimé)' : '$densite kcal/100g',
+                      style:TextStyle(fontFamily:'Galey',fontSize:12,
+                          color: b['kcal_estime'] == true ? Colors.orange.shade800 : Colors.grey.shade500)),
+                    if (b['type_aliment'] == 'pâtée') Text('Pâtée',
                       style:TextStyle(fontFamily:'Galey',fontSize:12,color:Colors.grey.shade500)),
+                    if (b['ajoute_par_uid'] != null) Container(
+                      padding:const EdgeInsets.symmetric(horizontal:6,vertical:2),
+                      decoration:BoxDecoration(color:const Color(0xFFEAF2F4),borderRadius:BorderRadius.circular(6)),
+                      child:const Text('Ajouté par un membre',style:TextStyle(fontFamily:'Galey',fontSize:10,color:Color(0xFF0C5C6C)))),
                     if (isJunior) Container(
                       padding:const EdgeInsets.symmetric(horizontal:6,vertical:2),
                       decoration:BoxDecoration(color:const Color(0xFFFFF3CD),borderRadius:BorderRadius.circular(6)),
@@ -12062,6 +12093,20 @@ class _MarquePickerSheetState extends State<_MarquePickerSheet> {
               },
             ),
       ),
+      if (_results.isNotEmpty || _searching)
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: TextButton.icon(
+              onPressed: _ajouter,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Mon aliment n\'est pas dans la liste — l\'ajouter',
+                  style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w600)),
+              style: TextButton.styleFrom(foregroundColor: const Color(0xFF0C5C6C)),
+            ),
+          ),
+        ),
     ]),
   );
 }
