@@ -62,16 +62,6 @@ const PERMS_LIST = [
   { key: 'suivi_chaleurs',   label: 'Suivi des chaleurs',    desc: 'Recevoir les rappels de chaleurs des femelles confiées (indépendant des tâches d\'agenda)' },
 ] as const;
 
-// ── Constantes ────────────────────────────────────────────────────────────────
-
-const ACTE_EMOJIS: Record<string, string> = {
-  vermifuge: '💊', vaccination: '💉', antiparasitaire: '🛡️',
-  traitement: '🩺', visite: '🏥', nettoyage: '🧹',
-  promenade: '🦮', socialisation: '🐾', toilettage: '✂️', autre: '📋',
-};
-
-function toDateStr(d: Date) { return d.toISOString().split('T')[0]; }
-
 // Catégories de notifications récurrentes reçues par l'employé en plus de
 // l'éleveur, sans tâche affectée — lues par les Cloud Functions
 // (functions/push_helpers.js employesAbonnes). Miroir de _kNotifPerms (appli).
@@ -83,6 +73,16 @@ const NOTIF_PERMS_LIST = [
   { key: 'notif_antiparasitaires', label: 'Antiparasitaires', desc: 'Rappels d\'antiparasitaire (J-7, J-1, jour J, retard)', eleveurOnly: false },
   { key: 'notif_inventaire',       label: 'Stock bas',        desc: 'Alertes quotidiennes des articles sous le seuil', eleveurOnly: false },
 ] as const;
+
+// ── Constantes ────────────────────────────────────────────────────────────────
+
+const ACTE_EMOJIS: Record<string, string> = {
+  vermifuge: '💊', vaccination: '💉', antiparasitaire: '🛡️',
+  traitement: '🩺', visite: '🏥', nettoyage: '🧹',
+  promenade: '🦮', socialisation: '🐾', toilettage: '✂️', autre: '📋',
+};
+
+function toDateStr(d: Date) { return d.toISOString().split('T')[0]; }
 
 function groupProtos(pts: PlanTache[]): ProtoGroupe[] {
   const map = new Map<string, PlanTache[]>();
@@ -154,6 +154,7 @@ export default function EmployesPage() {
   }, [user, profileId, profileLoaded]);
 
   const permsList = PERMS_LIST.filter(p => p.key !== 'read_planning_pension' || isPension);
+  const notifPermsList = NOTIF_PERMS_LIST.filter(p => !p.eleveurOnly || !isPension);
 
   const load = useCallback(async () => {
     if (!user || !profileLoaded) return;
@@ -168,7 +169,6 @@ export default function EmployesPage() {
       }
       const { data: empsRaw } = await empQ;
       const empsData: Employe[] = [];
-  const notifPermsList = NOTIF_PERMS_LIST.filter(p => !p.eleveurOnly || !isPension);
       const uidToNom: Record<string, string> = {};
       for (const e of empsRaw ?? []) {
         const { data: u } = await supabase.from('user_profiles')
@@ -866,6 +866,7 @@ export default function EmployesPage() {
                   Profils non liés — mettez à jour la fiche employé depuis l&apos;app.
                 </p>
               ) : (
+                <div className="max-h-[60vh] overflow-y-auto">
                 <div className="space-y-0 divide-y divide-gray-50">
                   {permsList.map(({ key, label, desc }) => (
                     <div key={key} className="flex items-center gap-3 py-3.5">
@@ -889,6 +890,37 @@ export default function EmployesPage() {
                       </button>
                     </div>
                   ))}
+                </div>
+                {notifPermsList.length > 0 && (
+                  <div className="mt-5">
+                    <p className="text-sm font-bold text-gray-800">Notifications reçues</p>
+                    <p className="text-xs text-gray-400">Il reçoit ces rappels comme vous, sans avoir à lui affecter les tâches.</p>
+                    <div className="space-y-0 divide-y divide-gray-50">
+                      {notifPermsList.map(({ key, label, desc }) => (
+                        <div key={key} className="flex items-center gap-3 py-3.5">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-800">{label}</p>
+                            <p className="text-xs text-gray-400">{desc}</p>
+                          </div>
+                          <button
+                            onClick={() => setPermsData(prev => {
+                              const next = new Set(prev);
+                              if (next.has(key)) next.delete(key); else next.add(key);
+                              return next;
+                            })}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${
+                              permsData.has(key) ? 'bg-teal-500' : 'bg-gray-200'
+                            }`}
+                          >
+                            <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                              permsData.has(key) ? 'translate-x-6' : 'translate-x-1'
+                            }`} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 </div>
               )}
             </div>
@@ -993,7 +1025,6 @@ function ChaleursSuiviModal({ ownerUid, employe, onClose }: {
     if (on) {
       await supabase.from('notifications').insert({
         uid: employe.uid_employe,
-                <div className="max-h-[60vh] overflow-y-auto">
         type: 'tache',
         title: 'Suivi des chaleurs confié',
         body: `On vous a confié le suivi des chaleurs de ${f.nom ?? 'un animal'}.`,
@@ -1018,37 +1049,6 @@ function ChaleursSuiviModal({ ownerUid, employe, onClose }: {
             Il reçoit alors les mêmes rappels que vous tant qu&apos;elles ne sont pas en chaleurs.
           </p>
         </div>
-                {notifPermsList.length > 0 && (
-                  <div className="mt-5">
-                    <p className="text-sm font-bold text-gray-800">Notifications reçues</p>
-                    <p className="text-xs text-gray-400">Il reçoit ces rappels comme vous, sans avoir à lui affecter les tâches.</p>
-                    <div className="space-y-0 divide-y divide-gray-50">
-                      {notifPermsList.map(({ key, label, desc }) => (
-                        <div key={key} className="flex items-center gap-3 py-3.5">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-gray-800">{label}</p>
-                            <p className="text-xs text-gray-400">{desc}</p>
-                          </div>
-                          <button
-                            onClick={() => setPermsData(prev => {
-                              const next = new Set(prev);
-                              if (next.has(key)) next.delete(key); else next.add(key);
-                              return next;
-                            })}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${
-                              permsData.has(key) ? 'bg-teal-500' : 'bg-gray-200'
-                            }`}
-                          >
-                            <span className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
-                              permsData.has(key) ? 'translate-x-6' : 'translate-x-1'
-                            }`} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                </div>
         <div className="overflow-y-auto flex-1 p-2">
           {loading ? (
             <div className="flex justify-center py-10">
