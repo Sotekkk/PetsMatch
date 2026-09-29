@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { notifyProfileValidated, sendNotification } from '@/lib/notifications';
 import AnimauxTab from './_components/AnimauxTab';
+import AlimentsTab from './_components/AlimentsTab';
 import AnnoncesToutesTab from './_components/AnnoncesToutesTab';
 import ConsommationTab from './_components/ConsommationTab';
 import StoryMusicTab from './_components/StoryMusicTab';
@@ -87,7 +88,7 @@ interface DossierEntry {
   isSecondary?: boolean; profileTableId?: string;
 }
 
-type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs' | 'animaux' | 'annonces' | 'consommation' | 'lieux_naturels' | 'tarification' | 'signalements_conv' | 'story_music' | 'avis_contestes';
+type AdminTab = 'dashboard' | 'signalements' | 'dossiers' | 'utilisateurs' | 'animaux' | 'aliments' | 'annonces' | 'consommation' | 'lieux_naturels' | 'tarification' | 'signalements_conv' | 'story_music' | 'avis_contestes';
 // 'tous' / 'en_attente' / 'admin' sont des filtres transverses ; toute autre
 // valeur est une catégorie dynamique (eleveur, association, particulier, ou
 // un métier pro), générée depuis les données — cf. entryCategory().
@@ -1168,6 +1169,7 @@ export default function AdminPage() {
           dossiers:           { label: 'Dossiers',         icon: '📂', badge: stats?.profilsEnAttente },
           utilisateurs:       { label: 'Utilisateurs',     icon: '👥' },
           animaux:            { label: 'Animaux',          icon: '🐾' },
+          aliments:           { label: 'Aliments',         icon: '🥣' },
           annonces:           { label: 'Annonces',         icon: '📋', badge: annoncesEnAttente.length || undefined },
           lieux_naturels:     { label: 'Lieux naturels',   icon: '🌲', badge: (naturalPlacesEnAttente.length + amenitySuggestions.length + photoSuggestions.length) || undefined },
           consommation:       { label: 'Consommation',     icon: '📈' },
@@ -1178,7 +1180,7 @@ export default function AdminPage() {
           { key: 'dashboard',    label: 'Dashboard',      icon: '📊', tabs: ['dashboard'] },
           { key: 'moderation',   label: 'Modération',     icon: '🚨', tabs: ['signalements', 'signalements_conv', 'avis_contestes'] },
           { key: 'comptes',      label: 'Comptes',        icon: '👥', tabs: ['dossiers', 'utilisateurs'] },
-          { key: 'contenu',      label: 'Contenu',        icon: '🐾', tabs: ['animaux', 'annonces', 'lieux_naturels'] },
+          { key: 'contenu',      label: 'Contenu',        icon: '🐾', tabs: ['animaux', 'aliments', 'annonces', 'lieux_naturels'] },
           { key: 'config',       label: 'Configuration',  icon: '⚙️', tabs: ['consommation', 'tarification', 'story_music'] },
         ];
         const activeGroup = GROUPS.find(g => g.tabs.includes(tab)) ?? GROUPS[0];
@@ -1784,6 +1786,9 @@ export default function AdminPage() {
 
         {/* ─── Animaux ──────────────────────────────────────────────────── */}
         {tab === 'animaux' && user && <AnimauxTab adminUid={user.uid} />}
+
+        {/* ─── Aliments (catalogue marques_aliments) ─────────────────────── */}
+        {tab === 'aliments' && user && <AlimentsTab />}
 
         {/* ─── Consommation ─────────────────────────────────────────────── */}
         {tab === 'consommation' && user && <ConsommationTab adminUid={user.uid} />}
