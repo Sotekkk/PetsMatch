@@ -384,6 +384,10 @@ exports.sendRdvReminders = functions
  */
 exports.sendMiseBasReminders = functions
     .region("europe-west1")
+    // Traitement de toute la base en une passe quotidienne : la limite par
+    // défaut de 60 s coupait la fonction en plein milieu (timeout du
+    // 29/09/2026 → rappels sautés pour une partie des animaux).
+    .runWith({timeoutSeconds: 540, memory: "512MB"})
     .pubsub.schedule("0 8 * * *")
     .timeZone("Europe/Paris")
     .onRun(async () => {
@@ -598,6 +602,10 @@ async function sendOverdueMiseBasReminders() {
  */
 exports.sendExerciceReminders = functions
     .region("europe-west1")
+    // Traitement de toute la base en une passe quotidienne : la limite par
+    // défaut de 60 s coupait la fonction en plein milieu (timeout du
+    // 29/09/2026 → rappels sautés pour une partie des animaux).
+    .runWith({timeoutSeconds: 540, memory: "512MB"})
     .pubsub.schedule("0 8 * * *")
     .timeZone("Europe/Paris")
     .onRun(async () => {
