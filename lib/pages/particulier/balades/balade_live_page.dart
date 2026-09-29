@@ -11,6 +11,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/particulier/balades/balade_recap_page.dart';
+import 'package:PetsMatch/pages/particulier/balades/balade_utils.dart';
 
 /// Suivi GPS en direct d'une balade (remplace le formulaire manuel Phase 1,
 /// enregistrer_balade_page.dart) : trace le parcours, accumule distance et
@@ -215,8 +216,36 @@ class _BaladeLivePageState extends State<BaladeLivePage> {
     } catch (_) {}
   }
 
-  Future<void> _stop() async {
+  /// Balade lancée par erreur : arrête le suivi et efface la balade — aucune
+  /// XP, flamme ni post (ils ne sont créés qu'au récap de fin).
+  Future<void> _abandonner() async {
     final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Abandonner la balade ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('Elle sera supprimée sans être enregistrée (pas d\'XP ni de publication).',
+            style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Continuer la balade', style: TextStyle(fontFamily: 'Galey'))),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+            child: const Text('Abandonner', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _finishing = true);
+    await _posSub?.cancel();
+    _ticker?.cancel();
+    await abandonnerBalade(_baladeId);
+    if (mounted) Navigator.pop(context);
+  }
+
+  Future<void> _stop() async {
+    final choix = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -224,16 +253,24 @@ class _BaladeLivePageState extends State<BaladeLivePage> {
         content: Text('$_distanceLabel parcourus en ${_fmtDuration(_elapsed)}.',
             style: const TextStyle(fontFamily: 'Galey')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Continuer', style: TextStyle(fontFamily: 'Galey'))),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'supprimer'),
+            child: Text('Supprimer', style: TextStyle(fontFamily: 'Galey', color: Colors.red.shade600)),
+          ),
+          TextButton(onPressed: () => Navigator.pop(context, 'continuer'), child: const Text('Continuer', style: TextStyle(fontFamily: 'Galey'))),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
+            onPressed: () => Navigator.pop(context, 'terminer'),
             style: FilledButton.styleFrom(backgroundColor: _teal),
             child: const Text('Terminer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
           ),
         ],
       ),
     );
-    if (ok != true) return;
+    if (choix == 'supprimer') {
+      await _abandonner();
+      return;
+    }
+    if (choix != 'terminer') return;
 
     setState(() => _finishing = true);
     await _posSub?.cancel();
@@ -265,7 +302,8 @@ class _BaladeLivePageState extends State<BaladeLivePage> {
     try {
       savedRow = await _supa.from('balades_perso').update({
         'statut': 'terminee',
-        'ended_at': DateTime.now().toIso8601String(),
+        // toUtc() : sans fuseau, l'heure locale était stockée comme UTC (+2 h).
+        'ended_at': DateTime.now().toUtc().toIso8601String(),
         'distance_m': _distanceM,
         'duree_s': duree.inSeconds,
         'route': _routeRaw,
@@ -316,7 +354,14 @@ class _BaladeLivePageState extends State<BaladeLivePage> {
       );
     }
 
-    return Scaffold(
+    // Balade en cours : un retour (flèche ou bouton du téléphone) propose de
+    // l'abandonner au lieu de laisser une balade « en cours » fantôme.
+    return PopScope(
+      canPop: !_started || _finishing,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _started && !_finishing) _abandonner();
+      },
+      child: Scaffold(
       backgroundColor: Colors.black,
       body: Stack(children: [
         GoogleMap(
@@ -363,6 +408,7 @@ class _BaladeLivePageState extends State<BaladeLivePage> {
                 Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
                   _stat(_distanceLabel, 'Distance'),
                   _stat(_fmtDuration(_elapsed), 'Durée'),
+                  _stat(baladeVitesseLabel(_distanceM, _elapsed.inSeconds), 'Vitesse moy.'),
                 ]),
               const SizedBox(height: 18),
               if (!_started)
@@ -414,6 +460,7 @@ class _BaladeLivePageState extends State<BaladeLivePage> {
           ),
         ),
       ]),
+      ),
     );
   }
 

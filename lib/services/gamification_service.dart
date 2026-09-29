@@ -230,6 +230,11 @@ class GamificationService {
     return (newStreak, incremented);
   }
 
+  /// Plus AUCUNE publication automatique sur Pets Social (retour utilisateur
+  /// du 29/09/2026 : une balade s'affichait sur le fil sans avoir été
+  /// partagée). Le partage est un choix explicite : boutons Story / Post du
+  /// récap de balade, et publishEvolutionPost() pour un passage de palier.
+  /// Seule la notification privée d'évolution reste automatique.
   Future<void> _publishFeedAndNotif({
     required String uid,
     String? profileId,
@@ -242,35 +247,7 @@ class GamificationService {
     required String newTier,
   }) async {
     try {
-      final parts = <String>[];
-      if (distanceKm != null && distanceKm > 0) parts.add('${distanceKm.toStringAsFixed(1)} km');
-      if (dureeMinutes != null && dureeMinutes > 0) parts.add('$dureeMinutes min');
-      final detail = parts.isEmpty ? '' : ' (${parts.join(' · ')})';
-      await _supa.from('posts_socialmedia').insert({
-        'uid': uid,
-        if (profileId != null) 'author_profile_id': profileId,
-        'texte': '🚶 Balade avec $animalNom$detail — +$xpEarned XP',
-        'tagged_animal_ids': [animalId],
-        'visibilite': 'public',
-        'post_type': 'balade_terminee',
-        'data': {
-          'animal_id': animalId,
-          'xp_earned': xpEarned,
-          if (distanceKm != null) 'distance_km': distanceKm,
-          if (dureeMinutes != null) 'duree_minutes': dureeMinutes,
-        },
-      });
-
       if (tierEvolved) {
-        await _supa.from('posts_socialmedia').insert({
-          'uid': uid,
-          if (profileId != null) 'author_profile_id': profileId,
-          'texte': '✨ $animalNom passe au palier ${tierLabel(newTier)} !',
-          'tagged_animal_ids': [animalId],
-          'visibilite': 'public',
-          'post_type': 'evolution',
-          'data': {'animal_id': animalId, 'tier': newTier},
-        });
         await _supa.from('notifications').insert({
           'uid': uid,
           'type': 'animal_evolution',
@@ -282,8 +259,28 @@ class GamificationService {
         });
       }
     } catch (_) {
-      // Le feed/la notif sont accessoires : une balade doit rester
+      // La notif est accessoire : une balade doit rester
       // enregistrée (XP + flamme) même si cette étape échoue.
     }
+  }
+
+  /// Publie « ✨ X passe au palier … » sur Pets Social — uniquement sur
+  /// action de l'utilisateur (bouton du récap de balade).
+  Future<void> publishEvolutionPost({
+    required String uid,
+    String? profileId,
+    required String animalId,
+    required String animalNom,
+    required String newTier,
+  }) async {
+    await _supa.from('posts_socialmedia').insert({
+      'uid': uid,
+      if (profileId != null && profileId.isNotEmpty) 'author_profile_id': profileId,
+      'texte': '✨ $animalNom passe au palier ${tierLabel(newTier)} !',
+      'tagged_animal_ids': [animalId],
+      'visibilite': 'public',
+      'post_type': 'evolution',
+      'data': {'animal_id': animalId, 'tier': newTier},
+    });
   }
 }

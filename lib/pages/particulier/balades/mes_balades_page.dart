@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/particulier/balades/balade_recap_page.dart' show BaladeRecapPage;
+import 'package:PetsMatch/pages/particulier/balades/balade_utils.dart';
 
 /// Historique des balades trackées GPS — toutes, ou filtrées sur un animal
 /// précis quand ouvert depuis sa fiche.
@@ -48,6 +49,45 @@ class _MesBaladesPageState extends State<MesBaladesPage> {
       if (mounted) setState(() { _balades = list; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  final Set<String> _deletingIds = {};
+
+  Future<void> _supprimer(Map<String, dynamic> b) async {
+    final id = b['id']?.toString();
+    if (id == null || _deletingIds.contains(id)) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Supprimer cette balade ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('L\'XP gagnée et les photos de la balade seront retirées (ainsi que sa publication automatique pour les anciennes balades). '
+            'Les posts ou stories que vous avez partagés vous-même restent en ligne.',
+            style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+            child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _deletingIds.add(id));
+    try {
+      await supprimerBalade(id);
+      if (!mounted) return;
+      setState(() { _balades.removeWhere((x) => x['id']?.toString() == id); _deletingIds.remove(id); });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Balade supprimée', style: TextStyle(fontFamily: 'Galey'))));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _deletingIds.remove(id));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Suppression impossible, réessayez.', style: TextStyle(fontFamily: 'Galey'))));
     }
   }
 
@@ -122,6 +162,7 @@ class _MesBaladesPageState extends State<MesBaladesPage> {
                               const SizedBox(height: 2),
                               Text(
                                 '${_fmtDistance(b['distance_m'] as num?)} · ${_fmtDuree(b['duree_s'] as int?)}'
+                                '${() { final v = baladeVitesseLabel((b['distance_m'] as num?)?.toDouble() ?? 0, (b['duree_s'] as int?) ?? 0); return v == '–' ? '' : ' · $v'; }()}'
                                 '${started != null ? ' · ${DateFormat('dd/MM/yyyy', 'fr').format(started)}' : ''}',
                                 style: TextStyle(fontFamily: 'Galey', fontSize: 12, color: Colors.grey.shade600),
                               ),
@@ -131,7 +172,15 @@ class _MesBaladesPageState extends State<MesBaladesPage> {
                               ],
                             ]),
                           ),
-                          const Icon(Icons.chevron_right, color: Colors.grey),
+                          _deletingIds.contains(b['id']?.toString())
+                              ? const Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)))
+                              : IconButton(
+                                  tooltip: 'Supprimer',
+                                  icon: Icon(Icons.delete_outline, color: Colors.grey.shade500),
+                                  onPressed: () => _supprimer(b),
+                                ),
                         ]),
                       ),
                     );
@@ -140,11 +189,12 @@ class _MesBaladesPageState extends State<MesBaladesPage> {
     );
   }
 
-  void _openDetail(Map<String, dynamic> b, String animalNom) {
+  Future<void> _openDetail(Map<String, dynamic> b, String animalNom) async {
     final route = (b['route'] as List? ?? [])
         .map((p) => LatLng(((p as Map)['lat'] as num).toDouble(), (p['lng'] as num).toDouble()))
         .toList();
-    Navigator.push(context, MaterialPageRoute(
+    // true = balade supprimée depuis le récap → recharger la liste.
+    final deleted = await Navigator.push<bool>(context, MaterialPageRoute(
       builder: (_) => BaladeRecapPage(
         baladeId: b['id']?.toString(),
         animalId: b['animal_id']?.toString() ?? '',
@@ -158,5 +208,6 @@ class _MesBaladesPageState extends State<MesBaladesPage> {
         existingXpEarned: (b['xp_earned'] as num?)?.toInt(),
       ),
     ));
+    if (deleted == true && mounted) _load();
   }
 }

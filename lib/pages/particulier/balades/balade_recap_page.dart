@@ -14,11 +14,12 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/gamification_service.dart';
 import 'package:PetsMatch/pages/particulier/social_feed_page.dart' show openCreatePostSheet;
 import 'package:PetsMatch/pages/particulier/stories/story_create_page.dart';
+import 'package:PetsMatch/pages/particulier/balades/balade_utils.dart';
 
-/// Récap de fin de balade : enregistre XP/palier/flamme (GamificationService,
-/// inchangé) puis propose un partage explicite (Story ou Post) qui déclenche
-/// la 2e flamme (share_streak_*) — jamais le post automatique de fin de
-/// balade, qui reste indépendant.
+/// Récap de fin de balade : enregistre XP/palier/flamme (GamificationService)
+/// puis propose un partage explicite (Story ou Post) qui déclenche la 2e
+/// flamme (share_streak_*). Rien n'est publié sur Pets Social sans ce choix
+/// (plus de post automatique depuis le 29/09/2026).
 class BaladeRecapPage extends StatefulWidget {
   final String? baladeId;
   final String animalId;
@@ -70,6 +71,71 @@ class _BaladeRecapPageState extends State<BaladeRecapPage> {
   GoogleMapController? _mapCtrl;
   Uint8List? _mapSnapshot;
   bool _withPhotos = true;
+  bool _deleting = false;
+  // Passage de palier : publication sur Pets Social au choix (plus automatique).
+  bool _evolutionPosting = false;
+  bool _evolutionPosted = false;
+
+  Future<void> _partagerEvolution() async {
+    final r = _result;
+    if (r == null || _evolutionPosting || _evolutionPosted) return;
+    setState(() => _evolutionPosting = true);
+    try {
+      await GamificationService.instance.publishEvolutionPost(
+        uid: User_Info.uid,
+        profileId: User_Info.activeProfileId,
+        animalId: widget.animalId,
+        animalNom: widget.animalNom,
+        newTier: r.newTier,
+      );
+      if (mounted) setState(() { _evolutionPosting = false; _evolutionPosted = true; });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _evolutionPosting = false);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Publication impossible, réessayez.', style: TextStyle(fontFamily: 'Galey'))));
+    }
+  }
+
+  /// Supprime la balade (XP, post automatique, photos compris — voir
+  /// supprimerBalade) puis ferme le récap ; renvoie true à l'historique
+  /// pour qu'il se recharge.
+  Future<void> _supprimer() async {
+    final id = widget.baladeId;
+    if (id == null || _deleting) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Supprimer cette balade ?', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        content: const Text('L\'XP gagnée et les photos de la balade seront retirées (ainsi que sa publication automatique pour les anciennes balades). '
+            'Les posts ou stories que vous avez partagés vous-même restent en ligne.',
+            style: TextStyle(fontFamily: 'Galey')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+            child: const Text('Supprimer', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _deleting = true);
+    try {
+      await supprimerBalade(id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Balade supprimée', style: TextStyle(fontFamily: 'Galey'))));
+      Navigator.pop(context, true);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _deleting = false);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Suppression impossible, réessayez.', style: TextStyle(fontFamily: 'Galey'))));
+    }
+  }
 
   bool get _canShowMap => widget.routePoints.length >= 2;
   bool get _hasPhotos => widget.photoUrls.isNotEmpty;
@@ -304,6 +370,18 @@ class _BaladeRecapPageState extends State<BaladeRecapPage> {
         foregroundColor: Colors.white,
         automaticallyImplyLeading: false,
         title: const Text('Balade terminée', style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700)),
+        actions: [
+          // Après l'enregistrement (XP connue) — sinon on supprimerait avant
+          // que recordBalade ait fini d'écrire XP/post.
+          if (widget.baladeId != null && !_saving)
+            IconButton(
+              tooltip: 'Supprimer la balade',
+              onPressed: _deleting ? null : _supprimer,
+              icon: _deleting
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Icon(Icons.delete_outline),
+            ),
+        ],
       ),
       body: _saving
           ? const Center(child: CircularProgressIndicator(color: _teal))
@@ -334,6 +412,7 @@ class _BaladeRecapPageState extends State<BaladeRecapPage> {
                   animalNom: widget.animalNom,
                   distanceLabel: _distanceLabel,
                   dureeLabel: _dureeLabel,
+                  vitesseLabel: baladeVitesseLabel(widget.distanceM, widget.dureeSecondes),
                   routeView: _routeView(),
                   photoUrls: _withPhotos ? widget.photoUrls : const [],
                 )),
@@ -419,6 +498,27 @@ class _BaladeRecapPageState extends State<BaladeRecapPage> {
             Text('✨ Palier ${GamificationService.tierLabel(r.newTier)} !', style: const TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, color: _teal)),
           ],
         ]),
+        if (r.tierEvolved) ...[
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _evolutionPosted
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text('✓ Évolution partagée sur Pets Social',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, color: _teal, fontWeight: FontWeight.w600)),
+                  )
+                : TextButton.icon(
+                    onPressed: _evolutionPosting ? null : _partagerEvolution,
+                    style: TextButton.styleFrom(foregroundColor: _teal, padding: EdgeInsets.zero),
+                    icon: _evolutionPosting
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: _teal))
+                        : const Icon(Icons.dynamic_feed_outlined, size: 16),
+                    label: const Text('Partager l\'évolution sur Pets Social',
+                        style: TextStyle(fontFamily: 'Galey', fontSize: 12.5, fontWeight: FontWeight.w600)),
+                  ),
+          ),
+        ],
         if (r.streakCount > 0) ...[
           const SizedBox(height: 6),
           Row(children: [
@@ -439,6 +539,7 @@ class _ShareCard extends StatelessWidget {
   final String animalNom;
   final String distanceLabel;
   final String dureeLabel;
+  final String vitesseLabel;
   final Widget routeView;
   final List<String> photoUrls;
 
@@ -446,6 +547,7 @@ class _ShareCard extends StatelessWidget {
     required this.animalNom,
     required this.distanceLabel,
     required this.dureeLabel,
+    required this.vitesseLabel,
     required this.routeView,
     required this.photoUrls,
   });
@@ -475,6 +577,7 @@ class _ShareCard extends StatelessWidget {
         Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
           _stat(distanceLabel, 'Distance'),
           _stat(dureeLabel, 'Durée'),
+          _stat(vitesseLabel, 'Vitesse moy.'),
         ]),
         if (photoUrls.isNotEmpty) ...[
           const SizedBox(height: 14),
