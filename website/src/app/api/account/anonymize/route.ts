@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireUser } from '@/lib/server-auth';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -67,8 +68,12 @@ const CREDIT_COLS: [string, string[]][] = [
 
 export async function POST(req: NextRequest) {
   try {
-    const { uid } = await req.json() as { uid?: string };
-    if (!uid) return NextResponse.json({ error: 'uid requis' }, { status: 400 });
+    // On n'anonymise QUE son propre compte : uid = jeton Firebase vérifié,
+    // jamais un uid lu dans le corps (appelé avant deleteUser, l'utilisateur
+    // est encore connecté).
+    const auth = await requireUser(req);
+    if (auth instanceof NextResponse) return auth;
+    const uid = auth.uid;
 
     const nullOutColumns = (tables: [string, string[]][]) =>
       Promise.all(

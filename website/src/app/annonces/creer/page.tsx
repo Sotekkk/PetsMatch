@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { apiFetch } from '@/lib/api-fetch';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { uploadBlob, uploadRawFile } from '@/lib/upload-media';
@@ -844,10 +845,10 @@ function CreerAnnoncePageInner() {
           .eq('id', activeProfileId).maybeSingle();
         if (profil && profil.profile_type !== 'particulier' && profil.validation_status === 'pending') {
           // Fire-and-forget : ne bloque pas la redirection
-          fetch('/api/admin/validate-profile', {
+          apiFetch('/api/admin/validate-profile', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ profileId: activeProfileId, adminUid: 'auto-annonce' }),
+            body: JSON.stringify({ profileId: activeProfileId }),
           }).catch(() => {});
         }
       }

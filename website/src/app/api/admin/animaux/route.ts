@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin, checkAdmin } from '../_lib/guard';
+import { supabaseAdmin, requireAdmin } from '../_lib/guard';
 
 interface OwnerOut {
   profile_id: string | null;
@@ -34,12 +34,11 @@ function profileName(p: Record<string, unknown> | undefined): string {
   return (p.nom as string)?.trim() || composed || (p.profile_label as string) || '—';
 }
 
-// GET /api/admin/animaux?uid=<admin>&espece=&statut=&proprio_type=&orphelin=1&q=
+// GET /api/admin/animaux?espece=&statut=&proprio_type=&orphelin=1&q= (admin, jeton Firebase requis)
 export async function GET(req: NextRequest) {
+  const auth = await requireAdmin(req);
+  if (auth instanceof NextResponse) return auth;
   const { searchParams } = new URL(req.url);
-  if (!(await checkAdmin(searchParams.get('uid')))) {
-    return NextResponse.json({ error: 'Non autorisé' }, { status: 403 });
-  }
 
   const espece = searchParams.get('espece');
   const statut = searchParams.get('statut');

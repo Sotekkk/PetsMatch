@@ -1,20 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { getDoc, doc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { stripe } from '@/lib/stripe';
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-async function checkAdmin(uid: string): Promise<boolean> {
-  try {
-    const snap = await getDoc(doc(db, 'users', uid));
-    return snap.exists() && snap.data()?.isAdmin === true;
-  } catch { return false; }
-}
+import { supabaseAdmin, requireAdmin } from '../_lib/guard';
 
 // Récupère le produit Stripe existant du plan (via un de ses prix), ou en crée un
 // nouveau — permet de saisir un tarif pour un profil qui n'a encore aucun produit
@@ -107,19 +93,17 @@ async function rotateProduitPrice(
 
 export async function PUT(req: NextRequest) {
   try {
+    const auth = await requireAdmin(req);
+    if (auth instanceof NextResponse) return auth;
     const body = await req.json();
-    const { uid, type, id, data } = body as {
-      uid: string;
+    const { type, id, data } = body as {
       type: 'plan' | 'produit';
       id: string;
       data: Record<string, unknown>;
     };
 
-    if (!uid || !type || !id || !data) {
+    if (!type || !id || !data) {
       return NextResponse.json({ error: 'Paramètres manquants' }, { status: 400 });
-    }
-    if (!(await checkAdmin(uid))) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 403 });
     }
 
     const stripeUpdates: Record<string, unknown> = {};

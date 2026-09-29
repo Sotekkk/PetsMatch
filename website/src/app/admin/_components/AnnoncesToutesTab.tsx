@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Badge, ESPECES, fmtDate, downloadCsv } from './ui';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface Annonce {
   id: string; titre: string | null; espece: string | null; race: string | null;
@@ -39,7 +40,7 @@ export default function AnnoncesToutesTab({ adminUid }: { adminUid: string }) {
     if (statut) p.set('statut', statut);
     if (typeVente) p.set('type_vente', typeVente);
     if (profilSource) p.set('profil_source', profilSource);
-    fetch(`/api/admin/annonces?${p}`)
+    apiFetch(`/api/admin/annonces?${p}`)
       .then(r => r.json())
       .then(json => { if (!alive) return; setRows(json.annonces ?? []); setTotal(json.total ?? 0); setLoaded(true); })
       .catch(() => { if (alive) setLoaded(true); });
@@ -51,7 +52,7 @@ export default function AnnoncesToutesTab({ adminUid }: { adminUid: string }) {
   async function act(id: string, action: 'suspend' | 'restore') {
     setBusy(id);
     try {
-      const res = await fetch('/api/admin/annonces', {
+      const res = await apiFetch('/api/admin/annonces', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: adminUid, annonce_id: id, action }),
       });

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Badge, fmtDate, typeBadge, downloadCsv } from './ui';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface UidStat {
   uid: string; email: string | null; inscrit_le: string | null; derniere_activite: string | null;
@@ -31,7 +32,7 @@ export default function ConsommationTab({ adminUid }: { adminUid: string }) {
 
   useEffect(() => {
     let alive = true;
-    fetch(`/api/admin/stats?uid=${adminUid}`)
+    apiFetch(`/api/admin/stats?uid=${adminUid}`)
       .then(r => r.json())
       .then(json => { if (!alive) return; setByUid(json.by_uid ?? []); setByProfile(json.by_profile ?? []); setLoaded(true); })
       .catch(() => { if (alive) setLoaded(true); });

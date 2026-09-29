@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin, checkAdmin } from '../_lib/guard';
+import { supabaseAdmin, requireAdmin } from '../_lib/guard';
 
 const IDENTITY_COLS = [
   'id', 'uid', 'is_main', 'profile_type', 'cat_pro', 'statut_pro', 'is_validate',
@@ -16,12 +16,11 @@ const IDENTITY_COLS = [
   'plan_code', 'plan_until', 'is_premium', 'verification_status', 'rejection_reason',
 ].join(', ');
 
-// GET /api/admin/profil?uid=<admin>&targetUid=<x>&profileId=<y>
+// GET /api/admin/profil?targetUid=<x>&profileId=<y> (admin, jeton Firebase requis)
 export async function GET(req: NextRequest) {
+  const auth = await requireAdmin(req);
+  if (auth instanceof NextResponse) return auth;
   const { searchParams } = new URL(req.url);
-  if (!(await checkAdmin(searchParams.get('uid')))) {
-    return NextResponse.json({ error: 'Non autorisé' }, { status: 403 });
-  }
   const targetUid = searchParams.get('targetUid');
   const profileId = searchParams.get('profileId');
   if (!targetUid && !profileId) {

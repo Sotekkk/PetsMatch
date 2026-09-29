@@ -10,6 +10,7 @@ import { db } from '@/lib/firebase';
 import { supabase } from '@/lib/supabase';
 import { useActiveProfileState } from '@/hooks/useActiveProfile';
 import { useAuth } from '@/lib/auth-context';
+import { apiFetch } from '@/lib/api-fetch';
 import { uploadPhoto } from '@/lib/upload-media';
 import ReactCrop, { type Crop, type PixelCrop, centerCrop, makeAspectCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
@@ -2892,11 +2893,7 @@ export default function ProfilPage() {
       // reservations_animaux ne sont de toute façon pas accessibles en
       // écriture au client lui-même.
       try {
-        await fetch('/api/account/anonymize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ uid }),
-        });
+        await apiFetch('/api/account/anonymize', { method: 'POST' });
       } catch { /* best-effort */ }
       // ⚠️ Volontairement NI supprimées NI anonymisées ici — l'obligation
       // légale porte ici sur l'INTÉGRITÉ du document, pas seulement sa

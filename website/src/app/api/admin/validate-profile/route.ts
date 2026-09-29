@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { requireUser } from '@/lib/server-auth';
+import { checkAdmin } from '../_lib/guard';
 
 // ─── Codes NAF autorisés par type de profil ───────────────────────────────────
 // L'API renvoie le code sous la forme "01.49Z" — on compare les préfixes normalisés
@@ -216,8 +218,14 @@ async function validateProfile(profile: Record<string, unknown>): Promise<Valida
 // ─── Route POST ───────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json() as { profileId?: string; uid?: string; adminUid?: string };
-    const { profileId, uid, adminUid } = body;
+    // Appelée par un admin (admin web) OU par le propriétaire du profil
+    // (auto-validation après création d'annonce) — identité = jeton Firebase.
+    const auth = await requireUser(req);
+    if (auth instanceof NextResponse) return auth;
+    const isAdmin = await checkAdmin(auth.uid);
+    const body = await req.json() as { profileId?: string; uid?: string };
+    const { profileId, uid } = body;
+    const adminUid = isAdmin ? auth.uid : undefined;
 
     if (!profileId && !uid) {
       return NextResponse.json({ error: 'profileId ou uid requis' }, { status: 400 });
@@ -231,6 +239,9 @@ export async function POST(req: NextRequest) {
     const { data: profiles, error: fetchErr } = await query;
     if (fetchErr || !profiles || profiles.length === 0) {
       return NextResponse.json({ error: 'Profil introuvable' }, { status: 404 });
+    }
+    if (!isAdmin && (profiles as Record<string, unknown>[]).some(p => p.uid !== auth.uid)) {
+      return NextResponse.json({ error: 'Non autorisé' }, { status: 403 });
     }
 
     const results = [];

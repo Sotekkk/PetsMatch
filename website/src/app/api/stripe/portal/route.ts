@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
 import { createClient } from '@supabase/supabase-js';
+import { requireUser } from '@/lib/server-auth';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,8 +10,11 @@ const supabase = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const { uid, returnPath } = await req.json();
-    if (!uid) return NextResponse.json({ error: 'uid requis' }, { status: 400 });
+    // Portail de facturation de l'appelant UNIQUEMENT (jeton Firebase vérifié).
+    const auth = await requireUser(req);
+    if (auth instanceof NextResponse) return auth;
+    const uid = auth.uid;
+    const { returnPath } = await req.json().catch(() => ({})) as { returnPath?: string };
 
     const { data: userData } = await supabase.from('users').select('stripe_customer_id').eq('uid', uid).maybeSingle();
     const customerId = userData?.stripe_customer_id as string | undefined;

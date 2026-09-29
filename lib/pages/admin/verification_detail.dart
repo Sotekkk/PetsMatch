@@ -25,13 +25,15 @@ class _VerificationDetailState extends State<VerificationDetail> {
     required String subject,
     required String body,
   }) async {
-    final adminUid = FirebaseAuth.instance.currentUser?.uid ?? '';
     try {
+      // Identité de l'admin = jeton Firebase vérifié côté serveur
+      // (website/src/lib/server-auth.ts), plus un uid dans le corps.
+      final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (idToken == null) return;
       await http.post(
         Uri.parse('${PlanService.kWebsiteUrl}/api/admin/notify-email'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $idToken'},
         body: jsonEncode({
-          'uid': adminUid,
           'to': toEmail,
           'subject': subject,
           'body': body,

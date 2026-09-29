@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Badge, ESPECES, TYPE_LABELS, fmtDate, typeBadge, downloadCsv } from './ui';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface Owner {
   profile_id: string | null; uid: string | null; nom: string;
@@ -36,7 +37,7 @@ export default function AnimauxTab({ adminUid }: { adminUid: string }) {
     if (proprioType) p.set('proprio_type', proprioType);
     if (orphelin) p.set('orphelin', '1');
     if (q.trim()) p.set('q', q.trim());
-    fetch(`/api/admin/animaux?${p}`)
+    apiFetch(`/api/admin/animaux?${p}`)
       .then(r => r.json())
       .then(json => { if (!alive) return; setRows(json.animaux ?? []); setLoaded(true); })
       .catch(() => { if (alive) setLoaded(true); });

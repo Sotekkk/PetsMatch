@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface PlanTarifaire {
   plan_code: string;
@@ -138,7 +139,7 @@ function PhotographeAbonnementContent() {
     if (!user) return;
     setLoadingPortal(true);
     try {
-      const res = await fetch('/api/stripe/portal', {
+      const res = await apiFetch('/api/stripe/portal', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: user.uid, returnPath: '/photographe/abonnement' }),
       });

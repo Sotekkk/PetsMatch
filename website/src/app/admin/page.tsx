@@ -13,6 +13,7 @@ import ConsommationTab from './_components/ConsommationTab';
 import StoryMusicTab from './_components/StoryMusicTab';
 import AvisContestesTab from './_components/AvisContestesTab';
 import PlanEditor from './_components/PlanEditor';
+import { apiFetch } from '@/lib/api-fetch';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -523,7 +524,7 @@ export default function AdminPage() {
       const profileType = d.isElevage ? 'eleveur' : (d.catPro ?? '');
       await notifyProfileValidated(d.uid, profileType);
       if (d.email) {
-        fetch('/api/admin/profil-notify-email', {
+        apiFetch('/api/admin/profil-notify-email', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: d.email, firstname: d.firstname, approved: true }),
         }).catch(() => {});
@@ -567,7 +568,7 @@ export default function AdminPage() {
         profileType,
       });
       if (d.email) {
-        fetch('/api/admin/profil-notify-email', {
+        apiFetch('/api/admin/profil-notify-email', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: d.email, firstname: d.firstname, approved: false, reason: motif.trim() }),
         }).catch(() => {});
@@ -588,7 +589,7 @@ export default function AdminPage() {
     const key = d.profileTableId ?? d.uid;
     setValidationChecking(key);
     try {
-      const res = await fetch('/api/admin/validate-profile', {
+      const res = await apiFetch('/api/admin/validate-profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -678,7 +679,7 @@ export default function AdminPage() {
   async function approveAnnonce(id: string) {
     setAnnonceSaving(id);
     try {
-      const res = await fetch('/api/admin/annonces', {
+      const res = await apiFetch('/api/admin/annonces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: user!.uid, annonce_id: id, action: 'approve' }),
@@ -693,7 +694,7 @@ export default function AdminPage() {
   async function rejectAnnonce(id: string) {
     setAnnonceSaving(id);
     try {
-      const res = await fetch('/api/admin/annonces', {
+      const res = await apiFetch('/api/admin/annonces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: user!.uid, annonce_id: id, action: 'reject' }),
@@ -708,7 +709,7 @@ export default function AdminPage() {
   const loadAnnoncesSuspectes = useCallback(async () => {
     setAnnoncesLoading(true);
     try {
-      const res = await fetch('/api/admin/annonces?type=suspectes');
+      const res = await apiFetch('/api/admin/annonces?type=suspectes');
       const { annonces } = await res.json() as { annonces: AnnonceAdmin[] };
       setAnnoncesSuspectes(annonces ?? []);
     } finally { setAnnoncesLoading(false); }
@@ -717,7 +718,7 @@ export default function AdminPage() {
   const loadAnnoncesSuspendues = useCallback(async () => {
     setAnnoncesLoading(true);
     try {
-      const res = await fetch('/api/admin/annonces?type=suspendues');
+      const res = await apiFetch('/api/admin/annonces?type=suspendues');
       const { annonces } = await res.json() as { annonces: AnnonceAdmin[] };
       setAnnoncesSuspendues(annonces ?? []);
     } finally { setAnnoncesLoading(false); }
@@ -726,7 +727,7 @@ export default function AdminPage() {
   async function suspendAnnonce(id: string) {
     setAnnonceSaving(id);
     try {
-      const res = await fetch('/api/admin/annonces', {
+      const res = await apiFetch('/api/admin/annonces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: user!.uid, annonce_id: id, action: 'suspend' }),
@@ -738,7 +739,7 @@ export default function AdminPage() {
   async function restoreAnnonce(id: string) {
     setAnnonceSaving(id);
     try {
-      const res = await fetch('/api/admin/annonces', {
+      const res = await apiFetch('/api/admin/annonces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: user!.uid, annonce_id: id, action: 'restore' }),
@@ -1003,7 +1004,7 @@ export default function AdminPage() {
   async function savePlan(plan: PlanAdmin) {
     setTarifSaving(true);
     try {
-      const res = await fetch('/api/admin/tarification', {
+      const res = await apiFetch('/api/admin/tarification', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1073,7 +1074,7 @@ export default function AdminPage() {
   async function saveProduit(produit: ProduitAdmin) {
     setTarifSaving(true);
     try {
-      const res = await fetch('/api/admin/tarification', {
+      const res = await apiFetch('/api/admin/tarification', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2943,7 +2944,7 @@ function ProfileModal({ entry, adminUid, onClose, onSetStatut, onDelete }: {
 
   useEffect(() => {
     let alive = true;
-    fetch(`/api/admin/profil?uid=${adminUid}&targetUid=${entry.uid}`)
+    apiFetch(`/api/admin/profil?uid=${adminUid}&targetUid=${entry.uid}`)
       .then(r => r.json())
       .then(j => { if (!alive) return; if (j.error) setDetailErr(j.error); else setDetail(j); })
       .catch(() => { if (alive) setDetailErr('Chargement impossible'); });

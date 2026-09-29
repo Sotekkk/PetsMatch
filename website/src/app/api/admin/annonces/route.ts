@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin, checkAdmin } from '../_lib/guard';
+import { supabaseAdmin, requireAdmin } from '../_lib/guard';
 
 export async function POST(req: NextRequest) {
   try {
-    const { uid, annonce_id, action } = await req.json() as {
-      uid: string; annonce_id: string; action: 'approve' | 'reject' | 'suspend' | 'restore';
+    const auth = await requireAdmin(req);
+    if (auth instanceof NextResponse) return auth;
+    const { annonce_id, action } = await req.json() as {
+      annonce_id: string; action: 'approve' | 'reject' | 'suspend' | 'restore';
     };
-    if (!uid || !annonce_id || !action) {
+    if (!annonce_id || !action) {
       return NextResponse.json({ error: 'Paramètres manquants' }, { status: 400 });
-    }
-    if (!(await checkAdmin(uid))) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 403 });
     }
 
     const statut =
@@ -32,10 +31,12 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET /api/admin/annonces
-//   ?type=suspectes|suspendues                    → files de modération (existant)
-//   ?type=toutes&uid=<admin>&...filtres&page=0    → vue complète filtrée
+// GET /api/admin/annonces (admin, jeton Firebase requis)
+//   ?type=suspectes|suspendues         → files de modération
+//   ?type=toutes&...filtres&page=0     → vue complète filtrée
 export async function GET(req: NextRequest) {
+  const auth = await requireAdmin(req);
+  if (auth instanceof NextResponse) return auth;
   const { searchParams } = new URL(req.url);
   const type = searchParams.get('type') ?? 'suspectes';
 
@@ -44,9 +45,6 @@ export async function GET(req: NextRequest) {
     'is_suspect, suspect_reasons, statut, vues, prix, prix_min_portee, prix_max_portee, boost_until';
 
   if (type === 'toutes') {
-    if (!(await checkAdmin(searchParams.get('uid')))) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 403 });
-    }
     const page = Math.max(0, parseInt(searchParams.get('page') ?? '0', 10));
     const pageSize = 60;
     const sort = searchParams.get('sort') ?? 'created_at';

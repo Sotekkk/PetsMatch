@@ -1,9 +1,33 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createRemoteJWKSet, jwtVerify } from 'https://esm.sh/jose@5.9.6';
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+// Secret PM_SECRET_KEY (clé sb_secret_ dédiée) si défini, sinon la clé
+// service_role legacy auto-injectée — à retirer une fois les clés legacy
+// désactivées (Dashboard → Edge Functions → Secrets → PM_SECRET_KEY).
+const SUPABASE_SERVICE_KEY = Deno.env.get('PM_SECRET_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const SERVICE_ACCOUNT      = JSON.parse(Deno.env.get('FIREBASE_SERVICE_ACCOUNT') ?? '{}');
+
+// Jeton d'ID Firebase de l'appelant (envoyé automatiquement par
+// functions.invoke, appli comme site, via l'option accessToken) — vérifié
+// localement avec les clés publiques Google.
+const FIREBASE_JWKS = createRemoteJWKSet(new URL(
+  'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com',
+));
+async function callerUid(req: Request, projectId: string): Promise<string | null> {
+  const m = (req.headers.get('authorization') ?? '').match(/^Bearer\s+(.+)$/i);
+  if (!m) return null;
+  try {
+    const { payload } = await jwtVerify(m[1], FIREBASE_JWKS, {
+      issuer: `https://securetoken.google.com/${projectId}`,
+      audience: projectId,
+    });
+    return typeof payload.sub === 'string' && payload.sub ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -67,25 +91,44 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   try {
-    const { uid, adminUid } = await req.json() as { uid: string; adminUid: string };
-    if (!uid || !adminUid) throw new Error('uid et adminUid requis');
+    const { uid } = await req.json() as { uid: string };
+    if (!uid) throw new Error('uid requis');
+
+    if (!SERVICE_ACCOUNT.project_id) {
+      throw new Error('FIREBASE_SERVICE_ACCOUNT non configuré dans les secrets Supabase');
+    }
+    const projectId = SERVICE_ACCOUNT.project_id as string;
+
+    // Identité de l'admin = jeton Firebase VÉRIFIÉ, jamais un champ du corps
+    // (l'ancien `adminUid` permettait à n'importe qui de supprimer un compte
+    // en fournissant l'uid d'un admin).
+    const adminUid = await callerUid(req, projectId);
+    if (!adminUid) {
+      return new Response(JSON.stringify({ success: false, error: 'Non authentifié' }),
+        { status: 401, headers: { ...CORS, 'Content-Type': 'application/json' } });
+    }
 
     const supa = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+    const accessToken = await getGoogleAccessToken();
 
-    // Vérifier que l'appelant est admin
-    const { data: admin } = await supa.from('users').select('is_admin').eq('uid', adminUid).single();
-    if (!admin?.is_admin) throw new Error('Non autorisé');
+    // Vérifier que l'appelant est admin — via Firestore users/{uid}.isAdmin,
+    // LA MÊME source de vérité que le reste de l'admin web (checkAdmin() côté
+    // Next.js). Supabase users.is_admin n'est jamais synchronisé avec ce
+    // champ : un admin qui accède bien à /admin (gated côté Firestore) se
+    // voyait donc systématiquement rejeté ici ("Non autorisé" → 400).
+    const adminDocRes = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${adminUid}`,
+      { headers: { 'Authorization': `Bearer ${accessToken}` } },
+    );
+    const adminDoc = adminDocRes.ok ? await adminDocRes.json() : null;
+    const isCallerAdmin = adminDoc?.fields?.isAdmin?.booleanValue === true;
+    if (!isCallerAdmin) throw new Error('Non autorisé');
 
     const log: string[] = [];
 
     // ── 1. Firebase Auth — OBLIGATOIRE en premier ─────────────────────────────
     // Si cette étape échoue (et ce n'est pas USER_NOT_FOUND), on annule tout
     // pour éviter qu'une suppression Supabase partielle bloque la ré-inscription.
-    if (!SERVICE_ACCOUNT.project_id) {
-      throw new Error('FIREBASE_SERVICE_ACCOUNT non configuré dans les secrets Supabase');
-    }
-    const accessToken = await getGoogleAccessToken();
-    const projectId   = SERVICE_ACCOUNT.project_id as string;
     const fbRes = await fetch(
       `https://identitytoolkit.googleapis.com/v1/projects/${projectId}/accounts:delete`,
       {

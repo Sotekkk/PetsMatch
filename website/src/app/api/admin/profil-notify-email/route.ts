@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { mailTransporter, MAIL_FROM } from '@/lib/mailer';
+import { requireAdmin } from '../_lib/guard';
+import { escapeHtml } from '@/lib/server-auth';
 
 // Email d'activation / refus d'un profil pro — miroir de
 // lib/pages/admin/verification_detail.dart (app) pour que l'admin web
-// envoie le même e-mail que l'admin app.
+// envoie le même e-mail que l'admin app. Réservé aux admins (jeton Firebase) ;
+// les textes fournis sont échappés avant insertion dans le HTML.
 export async function POST(req: NextRequest) {
+  const auth = await requireAdmin(req);
+  if (auth instanceof NextResponse) return auth;
   const { email, firstname, approved, reason } = await req.json().catch(() => ({})) as {
     email?: string; firstname?: string; approved?: boolean; reason?: string;
   };
@@ -13,7 +18,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'email requis' }, { status: 400 });
   }
 
-  const name = firstname || 'utilisateur';
+  const name = escapeHtml(firstname || 'utilisateur');
   const subject = approved
     ? '✅ Votre compte PetsMatch a été approuvé'
     : "❌ Votre dossier PetsMatch n'a pas été accepté";
@@ -29,7 +34,7 @@ export async function POST(req: NextRequest) {
         Nous avons examiné votre dossier et nous ne sommes malheureusement pas en mesure de valider votre compte pour la raison suivante :
       </p>
       <p style="font-size:14px;color:#1F2A2E;background:#FFF7ED;border:1px solid #FED7AA;border-radius:10px;padding:12px 16px;margin:0 0 16px;">
-        ${reason?.trim() || 'Documents incomplets.'}
+        ${escapeHtml(reason?.trim() || 'Documents incomplets.')}
       </p>
       <p style="font-size:14px;color:#4B5563;line-height:1.6;margin:0;">
         Si vous pensez qu'il s'agit d'une erreur ou souhaitez soumettre de nouveaux documents, contactez-nous à support@petsmatch.fr en répondant à cet e-mail.

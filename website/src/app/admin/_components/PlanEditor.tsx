@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Badge, fmtDate } from './ui';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface Plan { profil_type: string; plan_code: string; label: string; prix_mensuel: number; actif: boolean; }
 interface Abo {
@@ -37,7 +38,7 @@ export default function PlanEditor({ adminUid, targetUid, profilType, profileId,
   async function save() {
     setSaving(true); setErr(''); setOk(false);
     try {
-      const res = await fetch('/api/admin/abonnement', {
+      const res = await apiFetch('/api/admin/abonnement', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

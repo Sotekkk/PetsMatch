@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin, checkAdmin } from '../_lib/guard';
+import { supabaseAdmin, requireAdmin } from '../_lib/guard';
 import { computeDateFin } from '@/lib/subscription';
 
-// POST /api/admin/abonnement
-// { uid: <admin>, targetUid, profileId?, profil_type, plan_code,
+// POST /api/admin/abonnement (admin, jeton Firebase requis)
+// { targetUid, profileId?, profil_type, plan_code,
 //   statut?='actif', periodicite?='mensuel', date_fin?=null }
 //
 // Reproduit la logique de api/stripe/activate SANS Stripe : annule les
@@ -12,14 +12,13 @@ import { computeDateFin } from '@/lib/subscription';
 // puis resynchronise user_profiles + users.
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAdmin(req);
+    if (auth instanceof NextResponse) return auth;
     const body = await req.json() as {
-      uid?: string; targetUid?: string; profileId?: string | null;
+      targetUid?: string; profileId?: string | null;
       profil_type?: string; plan_code?: string;
       statut?: string; periodicite?: string; date_fin?: string | null;
     };
-    if (!(await checkAdmin(body.uid))) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 403 });
-    }
     const { targetUid, profil_type: profilType, plan_code: planCode } = body;
     const profileId = body.profileId ?? null;
     const statut = body.statut ?? 'actif';
