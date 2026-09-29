@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
+import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/utils/storage_helper.dart' as storage;
 
@@ -338,7 +339,7 @@ class _ReservationSheetState extends State<ReservationSheet> {
       final dateLimite = _needsDelaiLegal ? dateRemise.add(const Duration(days: 7)) : null;
       final res = await http.post(
         Uri.parse('$kSiteBaseUrl/api/certificat/create'),
-        headers: {'Content-Type': 'application/json'},
+        headers: await siteApiHeaders(),
         body: jsonEncode({
           'uid':                    widget.uid,
           'animal_id':              widget.animal['id'],

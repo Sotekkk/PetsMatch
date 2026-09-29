@@ -12,6 +12,7 @@ import 'package:PetsMatch/config.dart' show kSiteBaseUrl;
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
+import 'package:PetsMatch/utils/site_api.dart';
 
 /// Pension — historique des factures (Phase 2 item 2/4, complément).
 class PensionFacturesPage extends StatefulWidget {
@@ -214,7 +215,7 @@ class _PensionFacturesPageState extends State<PensionFacturesPage> {
       if (email != null && email.isNotEmpty && lien != null) {
         await http.post(
           Uri.parse('$kSiteBaseUrl/api/facture/notify-email'),
-          headers: {'Content-Type': 'application/json'},
+          headers: await siteApiHeaders(),
           body: jsonEncode({
             'email': email,
             'client_nom': f['proprietaire_nom'] ?? 'Client',

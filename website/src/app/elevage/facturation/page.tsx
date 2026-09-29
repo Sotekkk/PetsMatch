@@ -10,6 +10,7 @@ import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { useGardeAccess } from '@/hooks/useGardeAccess';
 import { usePlan, usePensionPlan, usePlanGarde, useProfessionPlanCode, PROFESSION_TOP_TIER } from '@/lib/use-plan';
 import { facturePdfBlob } from '@/lib/facture-pdf';
+import { apiFetch } from '@/lib/api-fetch';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -198,7 +199,7 @@ export default function FacturationPage() {
     const proNom = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre professionnel';
     const factureUrl = `${window.location.origin}/facture/${f.token}`;
     try {
-      const res = await fetch('/api/facture/notify-email', {
+      const res = await apiFetch('/api/facture/notify-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -724,7 +725,7 @@ function NouvelleFactureForm({ uid, profileId, profilSource = 'eleveur', avoirDe
         }
       } catch { /* la notif est un bonus, ne bloque pas l'émission */ }
       try {
-        await fetch('/api/facture/notify-email', {
+        await apiFetch('/api/facture/notify-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

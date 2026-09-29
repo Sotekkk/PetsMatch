@@ -7,6 +7,7 @@ import { supabase as supabaseAdmin } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface Certificat {
   id: string;
@@ -168,7 +169,7 @@ export default function CertificatEngagementPage() {
       const dateRemise = new Date();
       const dateLimite = needsDelai ? new Date(dateRemise.getTime() + 7 * 86400_000) : null;
 
-      const res = await fetch('/api/certificat/create', {
+      const res = await apiFetch('/api/certificat/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -262,7 +263,7 @@ export default function CertificatEngagementPage() {
   async function handleSend(cert: Certificat) {
     setSendingId(cert.id);
     try {
-      const r = await fetch('/api/certificat/send', {
+      const r = await apiFetch('/api/certificat/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: cert.token_signature }),
       });

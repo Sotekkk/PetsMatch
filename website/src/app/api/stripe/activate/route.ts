@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
 import { createClient } from '@supabase/supabase-js';
+import { requireUser } from '@/lib/server-auth';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,9 +10,12 @@ const supabase = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const { sessionId, uid } = await req.json();
-    if (!sessionId || !uid) {
-      return NextResponse.json({ error: 'sessionId et uid requis' }, { status: 400 });
+    const auth = await requireUser(req);
+    if (auth instanceof NextResponse) return auth;
+    const uid = auth.uid;
+    const { sessionId } = await req.json();
+    if (!sessionId) {
+      return NextResponse.json({ error: 'sessionId requis' }, { status: 400 });
     }
 
     // Vérifier la session Stripe côté serveur

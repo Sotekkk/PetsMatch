@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase';
 import { usePlan, usePensionPlan, usePlanGarde, useProfessionPlanCode, PROFESSION_TOP_TIER } from '@/lib/use-plan';
 import { useRouter } from 'next/navigation';
 import { ACTIVE_PROFILE_KEY, ACTIVE_PROFILE_TYPE_KEY, PROFILE_CHANGE_EVENT } from '@/hooks/useActiveProfile';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface Notif {
   id: string;
@@ -1280,7 +1281,7 @@ export default function Header() {
     const fetchNotifs = async () => {
       const qs = new URLSearchParams({ uid: user.uid });
       if (activeProfileId) qs.set('profileId', activeProfileId);
-      const res = await fetch(`/api/notifications?${qs.toString()}`);
+      const res = await apiFetch(`/api/notifications?${qs.toString()}`);
       if (res.ok) setNotifs(await res.json() as Notif[]);
     };
 
@@ -1312,7 +1313,7 @@ export default function Header() {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     async function fetchCounts() {
-      const res = await fetch(`/api/notifications?uid=${user!.uid}&countsByProfile=1`);
+      const res = await apiFetch(`/api/notifications?uid=${user!.uid}&countsByProfile=1`);
       if (!res.ok) return;
       const rows = await res.json() as { profile_id: string | null; profile_type: string | null }[];
       const counts: Record<string, number> = {};
@@ -1345,7 +1346,7 @@ export default function Header() {
   async function markAllRead() {
     if (!user || notifs.length === 0) return;
     setNotifs([]); // optimistic
-    await fetch('/api/notifications', {
+    await apiFetch('/api/notifications', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ uid: user.uid, profileId: activeProfileId }),

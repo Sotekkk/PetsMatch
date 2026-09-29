@@ -6,6 +6,7 @@ import { usePensionAccess } from '@/hooks/usePensionAccess';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { supabase } from '@/lib/supabase';
 import { openPensionInvoice, type PensionFactureData } from '@/lib/pension-facture-html';
+import { apiFetch } from '@/lib/api-fetch';
 
 const TEAL = '#0C5C6C';
 const GREEN = '#6E9E57';
@@ -128,7 +129,7 @@ export default function PensionFacturesPage() {
       }
 
       if (email && url) {
-        await fetch('/api/facture/notify-email', {
+        await apiFetch('/api/facture/notify-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

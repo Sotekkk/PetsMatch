@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import VerificationBadge, { getBadgeLevel } from '@/components/VerificationBadge';
 import { resultatChipClass, testChipLabel, type TestGenetique } from '@/lib/genetics';
+import { apiFetch } from '@/lib/api-fetch';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -475,7 +476,7 @@ function AnnonceDetailPageInner() {
     if (!user || !annonce) return;
     setBoosting(true);
     try {
-      const res = await fetch('/api/stripe/checkout', {
+      const res = await apiFetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

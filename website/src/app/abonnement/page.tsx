@@ -104,7 +104,7 @@ function AbonnementContent() {
     const activate = async () => {
       if (sessionId) {
         try {
-          const res = await fetch('/api/stripe/activate', {
+          const res = await apiFetch('/api/stripe/activate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId, uid: user.uid }),
@@ -148,7 +148,7 @@ function AbonnementContent() {
     if (planCode === 'free') return;
     setLoadingPlan(planCode);
     try {
-      const res = await fetch('/api/stripe/checkout', {
+      const res = await apiFetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: user.uid, email: user.email, plan: planCode, periodicite, profil_type: 'eleveur', returnPath: '/abonnement', ...(activeProfileId ? { profile_id: activeProfileId } : {}) }),

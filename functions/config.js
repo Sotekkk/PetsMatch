@@ -8,6 +8,9 @@
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "";
+// Secret partagé avec le site pour les appels serveur → serveur (ex. e-mail de
+// rappel RDV) — même valeur que INTERNAL_API_SECRET côté hébergeur du site.
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || "";
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
     console.error("config: SUPABASE_URL / SUPABASE_SERVICE_KEY manquants " +
@@ -26,4 +29,6 @@ const SUPABASE_AUTH_HEADERS = {
         {"Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`} : {}),
 };
 
-module.exports = {SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_AUTH_HEADERS, STRIPE_SECRET_KEY};
+module.exports = {
+    SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_AUTH_HEADERS, STRIPE_SECRET_KEY, INTERNAL_API_SECRET,
+};

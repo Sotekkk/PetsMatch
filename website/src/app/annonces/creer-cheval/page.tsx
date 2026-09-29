@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { uploadBlob, uploadRawFile } from '@/lib/upload-media';
 import { fromPostalCode } from '@/lib/french-geo';
 import ImageCropModal from '@/components/ImageCropModal';
+import { apiFetch } from '@/lib/api-fetch';
 
 type Formule = 'vente' | 'location' | 'demi_pension' | 'pension_complete' | 'valorisation';
 type Cadence = 'total' | 'mois' | 'semaine' | 'convenir';
@@ -289,7 +290,7 @@ function CreerAnnonceChevalInner() {
       if (dejaPayee) { router.push('/mes-annonces'); return; }
 
       // Sinon : paiement obligatoire pour publier (Stripe Checkout).
-      const res = await fetch('/api/stripe/checkout', {
+      const res = await apiFetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

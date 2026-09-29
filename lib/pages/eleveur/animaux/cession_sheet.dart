@@ -12,6 +12,7 @@ import 'package:PetsMatch/config.dart';
 import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/contrats/contrat_signature_page.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
+import 'package:PetsMatch/utils/site_api.dart';
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -896,7 +897,7 @@ class _CessionSheetState extends State<CessionSheet> {
         try {
           await http.post(
             Uri.parse('$kSiteBaseUrl/api/cession/notify-email'),
-            headers: {'Content-Type': 'application/json'},
+            headers: await siteApiHeaders(),
             body: jsonEncode({
               'email':        _emailCtrl.text.trim(),
               'nom_acquereur': _nomCtrl.text.trim(),

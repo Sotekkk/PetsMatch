@@ -633,7 +633,7 @@ function CreerAnnoncePageInner() {
   async function handleBuyExtra() {
     setQuotaBuying(true);
     try {
-      const res = await fetch('/api/stripe/checkout', {
+      const res = await apiFetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: user!.uid, email: user!.email ?? '', produit_code: 'annonce_sup' }),

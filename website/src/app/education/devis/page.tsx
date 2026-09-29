@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { usePlanGarde } from '@/lib/use-plan';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface Ligne { description: string; quantite: number; prix_unitaire: number; total: number; }
 
@@ -401,7 +402,7 @@ function DevisPageInner() {
     const token = docTokens[d.id];
     const devisUrl = `${window.location.origin}${token ? `/signer-contrat/${token}` : `/devis/${d.token_acceptation}`}`;
     try {
-      const res = await fetch('/api/devis/notify-email', {
+      const res = await apiFetch('/api/devis/notify-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

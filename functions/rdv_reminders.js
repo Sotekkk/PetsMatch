@@ -7,7 +7,7 @@ if (!admin.apps.length) admin.initializeApp();
 
 // Clé Supabase via config.js (functions/.env.<projectId>) — l'ancien repli
 // sur functions.config() était vide sur ce projet (401 → aucun rappel).
-const {SUPABASE_URL, SUPABASE_AUTH_HEADERS} = require("./config");
+const {SUPABASE_URL, SUPABASE_AUTH_HEADERS, INTERNAL_API_SECRET} = require("./config");
 
 // Site pour l'email de rappel des clients sans compte PetsMatch.
 const SITE_URL = process.env.SITE_URL ||
@@ -27,6 +27,9 @@ function sitePost(path, payload) {
                 headers: {
                     "Content-Type": "application/json",
                     "Content-Length": Buffer.byteLength(body),
+                    // Appel serveur → serveur : secret partagé avec le site
+                    // (INTERNAL_API_SECRET, website/src/lib/server-auth.ts).
+                    ...(INTERNAL_API_SECRET ? {"x-internal-secret": INTERNAL_API_SECRET} : {}),
                 },
             }, (res) => {
                 res.on("data", () => {});

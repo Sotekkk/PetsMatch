@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
 import { createClient } from '@supabase/supabase-js';
+import { requireUser } from '@/lib/server-auth';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,8 +10,25 @@ const supabase = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const { uid, email, plan, periodicite, annonce_id, produit_code, profile_id, profil_type, returnPath } = await req.json();
-    if (!uid || !email) return NextResponse.json({ error: 'uid et email requis' }, { status: 400 });
+    // Paiement pour le compte de l'appelant uniquement (jeton Firebase vérifié) :
+    // sinon on pouvait rattacher son propre client Stripe au compte d'un autre.
+    const auth = await requireUser(req);
+    if (auth instanceof NextResponse) return auth;
+    const uid = auth.uid;
+    const { email, plan, periodicite, annonce_id, produit_code, profile_id, profil_type, returnPath } = await req.json();
+    if (!email) return NextResponse.json({ error: 'email requis' }, { status: 400 });
+    if (profile_id) {
+      // Le profil payé doit être à l'appelant — ou à un élevage qu'il co-gère.
+      const { data: prof } = await supabase.from('user_profiles').select('uid').eq('id', profile_id).maybeSingle();
+      let allowed = !!prof && prof.uid === uid;
+      if (prof && !allowed) {
+        const { data: cog } = await supabase.from('elevage_cogerants').select('id')
+          .eq('uid_gerant', prof.uid).eq('uid_cogerant', uid).eq('statut', 'actif').is('date_fin', null)
+          .limit(1).maybeSingle();
+        allowed = !!cog;
+      }
+      if (!allowed) return NextResponse.json({ error: 'Profil non autorisé' }, { status: 403 });
+    }
 
     const origin = req.headers.get('origin') ?? process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
     const type = (profil_type as string | undefined) ?? 'eleveur';

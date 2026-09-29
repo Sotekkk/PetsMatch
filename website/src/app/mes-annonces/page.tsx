@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth-context';
 import { usePlan } from '@/lib/use-plan';
 import AnnonceStatsModal from '@/components/AnnonceStatsModal';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface Annonce {
   id: string;
@@ -160,7 +161,7 @@ export default function MesAnnoncesPage() {
     if (!user) return;
     setPayingId(a.id);
     try {
-      const res = await fetch('/api/stripe/checkout', {
+      const res = await apiFetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

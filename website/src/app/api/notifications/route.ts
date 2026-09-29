@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireUser } from '@/lib/server-auth';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
+
+// GET/PATCH : uid = jeton Firebase vérifié (plus l'uid de l'URL/du corps,
+// qui permettait de lire/marquer les notifications de n'importe qui).
 
 // GET /api/notifications?uid=xxx&profileId=yyy
 // GET /api/notifications?uid=xxx&countsByProfile=1 — pour le badge du
@@ -15,16 +19,24 @@ const supabase = createClient(
 // l'élevage (rappels Cloud Functions, cessions, etc.) sont taguées avec
 // CET uid, jamais celui du cogérant connecté. Sans ça, un cogérant ne
 // verrait jamais aucune notification de l'élevage qu'il co-gère.
+// Le profil emprunté n'est retenu QUE si l'appelant en est réellement
+// cogérant actif — sinon on reste sur ses propres notifications.
 async function resolveOwnerUid(uid: string, profileId: string | null): Promise<string> {
   if (!profileId) return uid;
   const { data } = await supabase.from('user_profiles').select('uid').eq('id', profileId).maybeSingle();
-  return (data?.uid as string | undefined) ?? uid;
+  const owner = data?.uid as string | undefined;
+  if (!owner || owner === uid) return uid;
+  const { data: cog } = await supabase.from('elevage_cogerants').select('id')
+    .eq('uid_gerant', owner).eq('uid_cogerant', uid).eq('statut', 'actif').is('date_fin', null)
+    .limit(1).maybeSingle();
+  return cog ? owner : uid;
 }
 
 export async function GET(req: NextRequest) {
-  const uid = req.nextUrl.searchParams.get('uid');
+  const auth = await requireUser(req);
+  if (auth instanceof NextResponse) return auth;
+  const uid = auth.uid;
   const profileId = req.nextUrl.searchParams.get('profileId');
-  if (!uid) return NextResponse.json([]);
 
   const ownerUid = await resolveOwnerUid(uid, profileId);
   const uidFilter = ownerUid !== uid ? `uid.eq.${uid},uid.eq.${ownerUid}` : `uid.eq.${uid}`;
@@ -61,8 +73,10 @@ export async function GET(req: NextRequest) {
 // PATCH /api/notifications — marquer tout comme lu (uniquement les notifs du
 // profil actif, pas celles des autres profils du même compte)
 export async function PATCH(req: NextRequest) {
-  const { uid, profileId } = await req.json().catch(() => ({})) as { uid?: string; profileId?: string };
-  if (!uid) return NextResponse.json({ error: 'uid requis' }, { status: 400 });
+  const auth = await requireUser(req);
+  if (auth instanceof NextResponse) return auth;
+  const uid = auth.uid;
+  const { profileId } = await req.json().catch(() => ({})) as { profileId?: string };
 
   const ownerUid = await resolveOwnerUid(uid, profileId ?? null);
   const uidFilter = ownerUid !== uid ? `uid.eq.${uid},uid.eq.${ownerUid}` : `uid.eq.${uid}`;

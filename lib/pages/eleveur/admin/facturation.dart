@@ -25,6 +25,7 @@ import 'package:PetsMatch/pages/pro/toilettage_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/vet_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/sante_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
+import 'package:PetsMatch/utils/site_api.dart';
 
 // ─────────────────────────────────────────────────────────────
 // HELPERS
@@ -1070,7 +1071,7 @@ class _CreerFacturePageState extends State<CreerFacturePage> {
     try {
       await http.post(
         Uri.parse('$kSiteBaseUrl/api/facture/notify-email'),
-        headers: {'Content-Type': 'application/json'},
+        headers: await siteApiHeaders(),
         body: jsonEncode({
           'email': email,
           'client_nom': '${d['prenomClient'] ?? ''} ${d['nomClient'] ?? ''}'.trim().isEmpty

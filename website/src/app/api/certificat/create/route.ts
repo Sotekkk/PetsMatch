@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { requireUser } from '@/lib/server-auth';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,9 +9,14 @@ const supabase = createClient(
 
 export async function POST(req: NextRequest) {
   try {
+    // Cédant = appelant (jeton Firebase vérifié), jamais un uid du corps ;
+    // les colonnes d'identité / de sécurité ne sont pas fixables par le client.
+    const auth = await requireUser(req);
+    if (auth instanceof NextResponse) return auth;
+    const uid = auth.uid;
     const body = await req.json();
-    const { uid, ...fields } = body;
-    if (!uid) return NextResponse.json({ error: 'uid requis' }, { status: 400 });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { uid: _ignored, id: _id, cedant_uid: _c, token_signature: _t, ...fields } = body;
 
     const { data, error } = await supabase
       .from('certificats_engagement')

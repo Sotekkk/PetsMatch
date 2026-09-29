@@ -84,7 +84,7 @@ function ToilettageAbonnementContent() {
     const activate = async () => {
       if (sessionId) {
         try {
-          const res = await fetch('/api/stripe/activate', {
+          const res = await apiFetch('/api/stripe/activate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId, uid: user.uid }),
@@ -126,7 +126,7 @@ function ToilettageAbonnementContent() {
     if (planCode === 'free') return;
     setLoadingPlan(planCode);
     try {
-      const res = await fetch('/api/stripe/checkout', {
+      const res = await apiFetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

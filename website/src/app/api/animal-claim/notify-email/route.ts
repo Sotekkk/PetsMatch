@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireUserOrInternal, sanitizeEmailBody } from '@/lib/server-auth';
 import { mailTransporter, MAIL_FROM } from '@/lib/mailer';
 
 export async function POST(req: NextRequest) {
+  // Appelant authentifié (jeton Firebase ou serveur PetsMatch), liens limités
+  // à notre site, textes nettoyés : empêche l'envoi d'e-mails d'hameçonnage
+  // « officiels » PetsMatch vers n'importe quelle adresse.
+  const auth = await requireUserOrInternal(req);
+  if (auth instanceof NextResponse) return auth;
+  const clean = sanitizeEmailBody(await req.json().catch(() => ({})), ['claim_url'], req);
+  if (clean instanceof NextResponse) return clean;
   const { email, nom_destinataire, animal_nom, pro_nom, claim_url } =
-    await req.json().catch(() => ({})) as {
+    clean as {
       email: string;
       nom_destinataire?: string;
       animal_nom: string;

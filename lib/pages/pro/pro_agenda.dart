@@ -26,6 +26,7 @@ import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/photographe_abonnement_page.dart';
 import 'package:PetsMatch/pages/pro/creneaux_week_grid.dart';
 import 'package:PetsMatch/pages/pro/education_planning_page.dart';
+import 'package:PetsMatch/utils/site_api.dart';
 
 /// Déduit la catégorie d'agenda (agenda_page.dart _kTypeColor) à partir du
 /// motif texte saisi par le client à la réservation (ex. "Promenade 1h",
@@ -2584,7 +2585,7 @@ class _ProAgendaPageState extends State<ProAgendaPage>
         try {
           await http.post(
             Uri.parse('$kSiteBaseUrl/api/rdv/notify-email'),
-            headers: {'Content-Type': 'application/json'},
+            headers: await siteApiHeaders(),
             body: jsonEncode({
               'email':        clientEmail,
               'client_nom':   clientNom,

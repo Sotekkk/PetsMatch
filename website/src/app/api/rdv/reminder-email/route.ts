@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireUserOrInternal, sanitizeEmailBody } from '@/lib/server-auth';
 import { mailTransporter, MAIL_FROM } from '@/lib/mailer';
 
 // Rappel de RDV pour un client SANS compte PetsMatch (client_email_manuel).
 // Appelé par functions/rdv_reminders.js (24h / 30min avant).
 export async function POST(req: NextRequest) {
+  // Appelant authentifié (jeton Firebase ou serveur PetsMatch), liens limités
+  // à notre site, textes nettoyés : empêche l'envoi d'e-mails d'hameçonnage
+  // « officiels » PetsMatch vers n'importe quelle adresse.
+  const auth = await requireUserOrInternal(req, { allowIfSecretUnset: true });
+  if (auth instanceof NextResponse) return auth;
+  const clean = sanitizeEmailBody(await req.json().catch(() => ({})), [], req);
+  if (clean instanceof NextResponse) return clean;
   const { email, client_nom, pro_nom, date_heure, motif, duree_minutes, lieu, echeance } =
-    await req.json().catch(() => ({})) as {
+    clean as {
       email: string;
       client_nom?: string;
       pro_nom?: string;

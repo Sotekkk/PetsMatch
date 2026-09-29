@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
 import { createClient } from '@supabase/supabase-js';
+import { requireUser } from '@/lib/server-auth';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,9 +10,13 @@ const supabase = createClient(
 
 export async function POST(req: NextRequest) {
   try {
-    const { pack_id, uid } = await req.json();
-    if (!pack_id || !uid) {
-      return NextResponse.json({ error: 'pack_id et uid requis' }, { status: 400 });
+    // Crédits attribués au compte de l'appelant (jeton Firebase vérifié).
+    const auth = await requireUser(req);
+    if (auth instanceof NextResponse) return auth;
+    const uid = auth.uid;
+    const { pack_id } = await req.json();
+    if (!pack_id) {
+      return NextResponse.json({ error: 'pack_id requis' }, { status: 400 });
     }
 
     // Récupérer le pack depuis Supabase

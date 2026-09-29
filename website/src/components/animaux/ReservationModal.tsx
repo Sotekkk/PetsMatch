@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface Animal {
   id: string;
@@ -169,7 +170,7 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
     try {
       const dateRemise = new Date();
       const dateLimite = needsDelaiLegal ? new Date(dateRemise.getTime() + 7 * 86400_000) : null;
-      const res = await fetch('/api/certificat/create', {
+      const res = await apiFetch('/api/certificat/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -207,7 +208,7 @@ export default function ReservationModal({ animal, uid, profileId, onClose, onRe
     if (!certifToken) return;
     setCertifSending(true);
     try {
-      const r = await fetch('/api/certificat/send', {
+      const r = await apiFetch('/api/certificat/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: certifToken }),
       });

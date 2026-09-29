@@ -8,6 +8,7 @@ import { useGardeAccess } from '@/hooks/useGardeAccess';
 import { useActiveProfile } from '@/hooks/useActiveProfile';
 import { usePlanGarde } from '@/lib/use-plan';
 import { sendNotification } from '@/lib/notifications';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface Client {
   uid: string;
@@ -159,7 +160,7 @@ export default function GardeContratPage() {
     const signingUrl = `${window.location.origin}/signer-contrat/${c.doc.token}`;
     const gardeNom = userData?.nameElevage || `${userData?.firstname ?? ''} ${userData?.lastname ?? ''}`.trim() || 'Votre pet sitter';
     try {
-      const res = await fetch('/api/contrat/notify-email', {
+      const res = await apiFetch('/api/contrat/notify-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

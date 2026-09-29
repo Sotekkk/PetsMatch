@@ -9,6 +9,7 @@ import { PensionEntreeModal, type PensionEntree } from '@/components/PensionEntr
 import { PensionJournal } from '@/components/PensionJournal';
 import { PensionFacturationModal } from '@/components/PensionFacturationModal';
 import { thumbUrl } from '@/lib/upload-media';
+import { apiFetch } from '@/lib/api-fetch';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -494,7 +495,7 @@ function EntreeCard({ entree, animalId, photoUrl, proUid, proNom, isFacture, log
       }).select('token').single();
       if (error || !claimRow) { setSendingClaim(false); return; }
       const claimUrl = `${window.location.origin}/reclamer-animal/${claimRow.token}`;
-      await fetch('/api/animal-claim/notify-email', {
+      await apiFetch('/api/animal-claim/notify-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

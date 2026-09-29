@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/api-fetch';
 
 const inputCls = 'w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#0C5C6C] bg-white';
 const labelCls = 'block text-sm font-semibold text-[#1F2A2E] mb-1';
@@ -64,7 +65,7 @@ export default function DemandeInfluenceurPage() {
       if (dbErr) throw dbErr;
 
       // Send email notification
-      await fetch('/api/influencer-request/notify-email', {
+      await apiFetch('/api/influencer-request/notify-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

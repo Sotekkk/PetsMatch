@@ -19,6 +19,7 @@ import 'package:PetsMatch/pages/pro/fiches_pension_page.dart';
 import 'package:PetsMatch/pages/eleveur/admin/facturation.dart' show CreerFacturePage, FacturePrefillLigne;
 import 'package:PetsMatch/services/plan_service.dart';
 import 'package:PetsMatch/pages/pro/pension_abonnement_page.dart';
+import 'package:PetsMatch/utils/site_api.dart';
 import 'package:PetsMatch/pages/pro/pension_tarifs_page.dart'
     show pensionTarifKeyForEspece, especeMatchesLogement,
         pensionLogementTypeLabel, pensionAlimentationSejourApplicable;
@@ -396,7 +397,7 @@ class _RegistrePensionPageState extends State<RegistrePensionPage> {
       final claimUrl = '$kSiteBaseUrl/reclamer-animal/$token';
       await http.post(
         Uri.parse('$kSiteBaseUrl/api/animal-claim/notify-email'),
-        headers: {'Content-Type': 'application/json'},
+        headers: await siteApiHeaders(),
         body: jsonEncode({
           'email': email,
           'nom_destinataire': e['proprietaire_nom'],

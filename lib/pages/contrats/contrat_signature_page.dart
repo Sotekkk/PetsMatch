@@ -21,6 +21,7 @@ import 'package:PetsMatch/main.dart' show User_Info;
 import 'package:PetsMatch/pages/contrats/contrat_finalize.dart';
 import 'package:PetsMatch/pages/eleveur/animaux/contrat_pdf.dart';
 import 'package:PetsMatch/widgets/signature_pad.dart';
+import 'package:PetsMatch/utils/site_api.dart';
 
 const _teal  = Color(0xFF0C5C6C);
 const _green = Color(0xFF6E9E57);
@@ -759,7 +760,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
         try {
           await http.post(
             Uri.parse('$kSiteBaseUrl/api/certificat/notify-email'),
-            headers: {'Content-Type': 'application/json'},
+            headers: await siteApiHeaders(),
             body: jsonEncode({
               'email': email,
               'animal_nom': animalNom,
@@ -872,7 +873,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
         try {
           await http.post(
             Uri.parse('$kSiteBaseUrl/api/contrat/notify-email'),
-            headers: {'Content-Type': 'application/json'},
+            headers: await siteApiHeaders(),
             body: '{"email":"$email","signing_url":"${url ?? ''}","titre":"${_doc!['titre'] ?? 'Contrat'}"}',
           );
         } catch (_) {}

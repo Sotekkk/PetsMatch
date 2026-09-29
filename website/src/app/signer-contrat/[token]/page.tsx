@@ -16,6 +16,7 @@ import { generateContratPrestationMarechalHTML } from '@/lib/contrat-marechal';
 import { generateContratEducationHTML, type LigneEducation } from '@/lib/contrat-education';
 import { generateContratSanteHTML, type LigneSante } from '@/lib/contrat-sante';
 import { useAuth } from '@/lib/auth-context';
+import { apiFetch } from '@/lib/api-fetch';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -731,7 +732,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
     });
     // Notifier l'éleveur du refus
     const acqNom = doc.metadata?.acquereur_nom || 'L\'acquéreur';
-    fetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    apiFetch('/api/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ uid: doc.uid_eleveur, type: 'contrat_refuse', title: '❌ Contrat refusé',
         body: `${acqNom} a refusé ${doc.titre ?? 'le contrat'}${reason ? ` — ${reason}` : ''}.`,
         profileType: doc.type === 'contrat_adoption' ? 'association' : 'eleveur',

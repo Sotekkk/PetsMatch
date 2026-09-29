@@ -55,9 +55,15 @@ export async function POST(req: NextRequest) {
     let emailed = false;
     if (email) {
       try {
+        // notify-email exige un appelant authentifié : secret interne si
+        // configuré, sinon le jeton Firebase de l'utilisateur qui a appelé /send.
         const r = await fetch(`${SITE}/api/certificat/notify-email`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(process.env.INTERNAL_API_SECRET ? { 'x-internal-secret': process.env.INTERNAL_API_SECRET } : {}),
+            ...(req.headers.get('authorization') ? { Authorization: req.headers.get('authorization')! } : {}),
+          },
           body: JSON.stringify({ email, animal_nom: animal, signing_url: url }),
         });
         emailed = r.ok;
