@@ -1276,9 +1276,25 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
     if (_presentsSubTab == 'repro') {
       docs = base.where((d) => d['reproducteur'] == true).toList();
     } else if (_presentsSubTab == 'bebes') {
-      docs = base.where((d) {
+      // Un bébé vendu/cédé (statut 'sorti') reste affiché ici, grisé — ce
+      // n'est plus le sien mais elle garde l'historique (courbe de poids
+      // qu'elle a elle-même saisie) : contrairement à `base`, on ne filtre
+      // donc PAS sur _currentOwnerIds/statut sorti ici, seulement décédé.
+      docs = _animauxData.where((d) {
         final pid = d['portee_id'] as String? ?? '';
-        return pid.isNotEmpty && d['reproducteur'] != true;
+        final statut = d['statut'] as String? ?? '';
+        if (pid.isEmpty || d['reproducteur'] == true) return false;
+        if (statut == 'decede') return false;
+        if (_filterEspece != 'tous' && d['espece'] != _filterEspece) return false;
+        if (_filterSexe != 'tous' && d['sexe'] != _filterSexe) return false;
+        if (_filterRace.isNotEmpty &&
+            (d['race'] ?? '').toString().toLowerCase() != _filterRace.toLowerCase()) return false;
+        if (_search.isNotEmpty) {
+          final nom  = (d['nom']            ?? '').toString().toLowerCase();
+          final puce = (d['identification'] ?? '').toString().toLowerCase();
+          if (!nom.contains(_search) && !puce.contains(_search)) return false;
+        }
+        return true;
       }).toList();
     } else {
       docs = base;
@@ -1381,7 +1397,7 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
       final siblings = _animauxData.where((a) {
         final aPid = (a['portee_id'] as String?) ?? '';
         final statut = (a['statut'] as String?) ?? '';
-        return aPid == pid && !existingIds.contains(a['id']) && statut != 'sorti' && statut != 'decede';
+        return aPid == pid && !existingIds.contains(a['id']) && statut != 'decede';
       });
       groups[pid]!.addAll(siblings);
     }
@@ -1575,10 +1591,15 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
             itemBuilder: (_, i) {
               final data = members[i];
               final id = data['id'] as String? ?? '';
-              return _AnimalCard(
+              // Vendu/cédé : plus le sien, la carte reste visible (grisée) —
+              // elle garde l'historique (dont la courbe de poids qu'elle a
+              // elle-même saisie), mais ne peut plus le modifier.
+              final cede = (data['statut'] as String? ?? '') == 'sorti';
+              final card = _AnimalCard(
                 id: id,
                 data: data,
                 showPorteeBadge: true,
+                showStatut: cede,
                 reproducteur: data['reproducteur'] == true,
                 isRetraite: data['is_retraite'] == true,
                 chaleurFlag:  _chaleurFlags[id]  ?? false,
@@ -1591,12 +1612,13 @@ class _MesAnimauxPageState extends State<MesAnimauxPage>
                         else _selectedIds.add(id);
                       })
                     : () => _openFiche(context, id, data: data),
-                onDelete: id.isEmpty ? null : () => _deleteAnimal(id),
-                onToggleReproducteur: id.isEmpty ? null : () => _toggleReproducteur(id, data['reproducteur'] == true),
-                onToggleRetraite: id.isEmpty ? null : () => _toggleRetraite(id, data['is_retraite'] == true),
+                onDelete: cede || id.isEmpty ? null : () => _deleteAnimal(id),
+                onToggleReproducteur: cede || id.isEmpty ? null : () => _toggleReproducteur(id, data['reproducteur'] == true),
+                onToggleRetraite: cede || id.isEmpty ? null : () => _toggleRetraite(id, data['is_retraite'] == true),
                 reproPublic: data['reproducteur_public'] == true,
-                onToggleReproPublic: id.isEmpty ? null : () => _toggleReproPublic(id, data['reproducteur_public'] == true),
+                onToggleReproPublic: cede || id.isEmpty ? null : () => _toggleReproPublic(id, data['reproducteur_public'] == true),
               );
+              return cede ? Opacity(opacity: 0.55, child: card) : card;
             },
           ),
         ]);

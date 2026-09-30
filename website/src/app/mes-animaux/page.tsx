@@ -97,8 +97,13 @@ function Chip({
   );
 }
 
-function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, reproPublic = false, isRetraite = false, chaleurFlag = false, gestanteFlag = false, selectMode = false, selected = false, onDelete, onToggleReproducteur, onToggleReproPublic, onToggleRetraite, onSelect, onCeder, onTransferer }: {
+function AnimalCard({ a, tab, showPorteeBadge = false, cede = false, reproducteur = false, reproPublic = false, isRetraite = false, chaleurFlag = false, gestanteFlag = false, selectMode = false, selected = false, onDelete, onToggleReproducteur, onToggleReproPublic, onToggleRetraite, onSelect, onCeder, onTransferer }: {
   a: Animal; tab: 'presents' | 'anciens' | 'decedes'; showPorteeBadge?: boolean;
+  // Carte "Bébés" vendue/cédée (statut 'sorti') : reste affichée (historique,
+  // courbe de poids) mais grisée et non modifiable — indépendant de `tab`
+  // (toujours 'presents' ici), donc un prop dédié plutôt que réutiliser le
+  // badge Sorti/Décédé lié à tab==='anciens'|'decedes'.
+  cede?: boolean;
   reproducteur?: boolean; reproPublic?: boolean; isRetraite?: boolean; chaleurFlag?: boolean; gestanteFlag?: boolean;
   selectMode?: boolean; selected?: boolean;
   onDelete?: () => void; onToggleReproducteur?: () => void; onToggleReproPublic?: () => void; onToggleRetraite?: () => void; onSelect?: () => void;
@@ -118,11 +123,16 @@ function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, rep
         : <div className="w-full h-full flex items-center justify-center text-5xl">
             {SPECIES_EMOJI[a.espece ?? ''] ?? '🐾'}
           </div>}
-      {(tab === 'anciens' || tab === 'decedes') && (a.statut === 'sorti' || a.statut === 'decede') && (
+      {((tab === 'anciens' || tab === 'decedes') && (a.statut === 'sorti' || a.statut === 'decede')) && (
         <span className={`absolute top-2 right-2 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg ${
           a.statut === 'decede' ? 'bg-red-500' : 'bg-[#0C5C6C]'
         }`}>
           {a.statut === 'decede' ? 'Décédé' : 'Sorti'}
+        </span>
+      )}
+      {cede && tab === 'presents' && (
+        <span className="absolute top-2 right-2 text-white text-[10px] font-bold px-2 py-0.5 rounded-lg bg-[#0C5C6C]">
+          Sorti
         </span>
       )}
       {tab === 'presents' && a.statut === 'en_attente_cession' && !selectMode && (
@@ -212,7 +222,7 @@ function AnimalCard({ a, tab, showPorteeBadge = false, reproducteur = false, rep
     </div>
   );
 
-  const innerCls = `bg-white rounded-2xl shadow-sm overflow-hidden transition-all ${selected ? 'ring-2 ring-[#0C5C6C]' : ''} ${!selectMode ? 'hover:shadow-md' : ''}`;
+  const innerCls = `bg-white rounded-2xl shadow-sm overflow-hidden transition-all ${selected ? 'ring-2 ring-[#0C5C6C]' : ''} ${!selectMode ? 'hover:shadow-md' : ''} ${cede ? 'opacity-55' : ''}`;
 
   return (
     <div className="relative group">
@@ -708,10 +718,31 @@ function MesAnimauxPageInner() {
     ? (decedesEspece !== 'tous' ? 1 : 0)
     : (anciensEspece !== 'tous' ? 1 : 0);
 
+  // Bébés vendus/cédés (statut 'sorti') : contrairement à filteredPresents,
+  // on les garde ici — la carte reste visible (grisée), elle garde
+  // l'historique (dont la courbe de poids qu'elle a elle-même saisie), juste
+  // exclus du reste de "Présents". Décédés toujours exclus.
+  const filteredBebes = animaux.filter(a => {
+    if (a.statut === 'decede') return false;
+    if (filtreEspece !== 'tous' && a.espece !== filtreEspece) return false;
+    if (filtreSexe !== 'tous') {
+      const s = (a.sexe ?? '').toLowerCase();
+      if (filtreSexe === 'male' && !s.startsWith('m')) return false;
+      if (filtreSexe === 'femelle' && !s.startsWith('f')) return false;
+    }
+    if (filtreRace && a.race !== filtreRace) return false;
+    if (searchLower) {
+      const nom  = (a.nom            ?? '').toLowerCase();
+      const puce = (a.identification ?? '').toLowerCase();
+      if (!nom.includes(searchLower) && !puce.includes(searchLower)) return false;
+    }
+    return true;
+  });
+
   // Sub-tab filtering (presents only)
   const presentsForSubTab = (() => {
     if (presentsSubTab === 'repro') return filteredPresents.filter(a => a.reproducteur === true);
-    if (presentsSubTab === 'bebes') return filteredPresents.filter(a => !!a.portee_id && !a.reproducteur);
+    if (presentsSubTab === 'bebes') return filteredBebes.filter(a => !!a.portee_id && !a.reproducteur);
     return filteredPresents;
   })();
 
@@ -722,10 +753,11 @@ function MesAnimauxPageInner() {
   if (tab === 'presents' && presentsSubTab === 'bebes') {
     // 1) Collecter les portee_id des vrais bébés (non-reproducteurs)
     const porteeIdsEnVue = new Set(
-      filteredPresents.filter(a => !!a.portee_id && !a.reproducteur).map(a => a.portee_id!)
+      filteredBebes.filter(a => !!a.portee_id && !a.reproducteur).map(a => a.portee_id!)
     );
-    // 2) Inclure TOUS les membres de ces portées (y compris reproducteurs)
-    for (const a of filteredPresents) {
+    // 2) Inclure TOUS les membres de ces portées (y compris reproducteurs, y
+    // compris cédés — un membre de la portée sorti reste dans le groupe).
+    for (const a of filteredBebes) {
       if (!a.portee_id || !porteeIdsEnVue.has(a.portee_id)) continue;
       const group = porteeGroups.get(a.portee_id) ?? [];
       group.push(a);
@@ -1113,14 +1145,17 @@ function MesAnimauxPageInner() {
                   </Link>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {members.map(a => <AnimalCard key={a.id} a={a} tab={tab} showPorteeBadge
+                  {members.map(a => {
+                    const cede = a.statut === 'sorti';
+                    return <AnimalCard key={a.id} a={a} tab={tab} showPorteeBadge cede={cede}
                     reproducteur={!!a.reproducteur} reproPublic={!!a.reproducteur_public} isRetraite={!!a.is_retraite}
                     chaleurFlag={!!chaleurFlags[a.id]} gestanteFlag={!!gestanteFlags[a.id]}
                     selectMode={selectMode} selected={selectedIds.has(a.id)} onSelect={() => toggleSelect(a.id)}
-                    onDelete={selectMode ? undefined : () => deleteAnimal(a.id)}
-                    onToggleReproducteur={isEleveur && !selectMode ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
-                    onToggleReproPublic={isEleveur && !selectMode ? () => toggleReproPublic(a.id, !!a.reproducteur_public) : undefined}
-                    onToggleRetraite={isEleveur && !selectMode ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined} />)}
+                    onDelete={selectMode || cede ? undefined : () => deleteAnimal(a.id)}
+                    onToggleReproducteur={isEleveur && !selectMode && !cede ? () => toggleReproducteur(a.id, !!a.reproducteur) : undefined}
+                    onToggleReproPublic={isEleveur && !selectMode && !cede ? () => toggleReproPublic(a.id, !!a.reproducteur_public) : undefined}
+                    onToggleRetraite={isEleveur && !selectMode && !cede ? () => toggleRetraite(a.id, !!a.is_retraite) : undefined} />;
+                  })}
                 </div>
               </div>
             );

@@ -2216,7 +2216,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
         controller: _tabs,
         children: widget.vetMode
             ? [
-                AbsorbPointer(absorbing: widget.readOnly, child: _IdentiteTab(this)),
+                _IdentiteTab(this),
                 _CarnetSanteTab(
                   animalId: widget.animalId, vetMode: true, espece: _espece,
                   canWrite: _canWriteHealth,
@@ -2226,11 +2226,12 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                 ),
                 // Le régime alimentaire n'a pas de mode lecture seule intégré
                 // (_AlimentationTab n'a jamais été pensé pour un viewer externe) —
-                // AbsorbPointer bloque toute interaction sans y toucher, pour
+                // AbsorbPointer (posé DANS son ScrollView, cf. sa méthode
+                // build()) bloque l'interaction sans bloquer le scroll, pour
                 // qu'un pet-sitter puisse consulter sans pouvoir modifier le
                 // plan du propriétaire.
                 if (User_Info.catPro == 'garde')
-                  AbsorbPointer(absorbing: widget.readOnly, child: _AlimentationTab(this)),
+                  _AlimentationTab(this),
                 _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly("write_repro"), sterilise: _sterilise, dateNaissance: _dateNaissance),
                 _ProprietaireVetTab(ownerUid: _ownerUid, animalId: widget.animalId),
                 if (_isHealthPro)
@@ -2249,7 +2250,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
               ]
             : widget.educationMode
                 ? [
-                    AbsorbPointer(absorbing: widget.readOnly, child: _IdentiteTab(this)),
+                    _IdentiteTab(this),
                     // Un éducateur n'est pas un pro de santé — lecture seule du
                     // carnet, jamais d'écriture (vaccins, etc.), contrairement
                     // au défaut `canWrite = true` de _CarnetSanteTab.
@@ -2258,7 +2259,7 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                   ]
                 : widget.isAssociation
                 ? [
-                    AbsorbPointer(absorbing: widget.readOnly, child: _IdentiteTab(this)),
+                    _IdentiteTab(this),
                     _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
                     _AlimentationTab(this),
                     _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
@@ -2266,19 +2267,19 @@ class _AnimalFichePageState extends State<AnimalFichePage> with SingleTickerProv
                   ]
                 : (_statut == 'sorti' && !_isNewOwner
                     ? [
-                        AbsorbPointer(absorbing: widget.readOnly, child: _IdentiteTab(this)),
+                        _IdentiteTab(this),
                         _DocumentsTab(animalId: widget.animalId ?? ''),
                       ]
                     : (!User_Info.isElevage && !User_Info.isAssociation && !widget.showReproTab
                         ? [
-                            AbsorbPointer(absorbing: widget.readOnly, child: _IdentiteTab(this)),
+                            _IdentiteTab(this),
                             _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
                             _AlimentationTab(this),
                             _ConsultationsOwnerTab(animalId: widget.animalId, espece: _espece),
                             _DocumentsTab(animalId: widget.animalId ?? ''),
                           ]
                         : [
-                            AbsorbPointer(absorbing: widget.readOnly, child: _IdentiteTab(this)),
+                            _IdentiteTab(this),
                             _DocumentsTab(animalId: widget.animalId ?? ''),
                             _SuiviReproTab(animalId: widget.animalId, espece: _espece, sexe: _sexe, race: _raceCtrl.text, uidEleveur: _ownerUid, intervalleChaleursCustom: _intervalleChaleursCustom, readOnly: _tabReadOnly("write_repro"), sterilise: _sterilise, dateNaissance: _dateNaissance),
                             _CarnetSanteTab(animalId: widget.animalId, espece: _espece),
@@ -2334,9 +2335,15 @@ class _IdentiteTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // AbsorbPointer DANS le ScrollView (pas autour) : posé à l'extérieur, il
+    // bloquait aussi le geste de scroll lui-même — un animal cédé (lecture
+    // seule) ne pouvait plus glisser sa fiche Identité, seuls les taps sur
+    // les champs devaient être bloqués.
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      child: Column(
+      child: AbsorbPointer(
+        absorbing: s.widget.readOnly,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (s._statut == 'cession_en_cours' && s._cessionEnCours != null)
@@ -2555,6 +2562,7 @@ class _IdentiteTab extends StatelessWidget {
           ],
           const SizedBox(height: 80),
         ],
+      ),
       ),
     );
   }
@@ -10344,6 +10352,10 @@ class _AlimentationTabState extends State<_AlimentationTab> {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
+      // AbsorbPointer DANS le ScrollView (pas autour) : posé à l'extérieur,
+      // il bloquait aussi le geste de scroll lui-même (même bug que
+      // _IdentiteTab).
+      child: AbsorbPointer(absorbing: widget.s.widget.readOnly,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
         // ── PROFIL DE L'ANIMAL ──────────────────────────────────
@@ -10438,6 +10450,7 @@ class _AlimentationTabState extends State<_AlimentationTab> {
         ]),
         const SizedBox(height: 32),
       ]),
+      ),
     );
   }
 
@@ -10816,6 +10829,7 @@ class _AlimentationTabState extends State<_AlimentationTab> {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
+      child: AbsorbPointer(absorbing: widget.s.widget.readOnly,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
         if (_existing != null) ...[
@@ -11652,6 +11666,7 @@ class _AlimentationTabState extends State<_AlimentationTab> {
         )),
         const SizedBox(height: 32),
       ]),
+      ),
     );
   }
 
