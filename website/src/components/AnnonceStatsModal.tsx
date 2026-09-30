@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { usePlan } from '@/lib/use-plan';
+import { apiFetch } from '@/lib/api-fetch';
 
 interface DayStats { date: string; vues: number; visiteurs: number; contacts: number; favoris: number; }
 interface GeoStat  { departement: string; vues: number; }
@@ -54,7 +55,7 @@ export default function AnnonceStatsModal({ annonceId, annonceTitle, isPremium, 
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/annonces/stats?annonceId=${annonceId}&period=${period}`)
+    apiFetch(`/api/annonces/stats?annonceId=${annonceId}&period=${period}`)
       .then(r => r.json())
       .then(d => { setStats(d); setLoading(false); })
       .catch(() => { setError('Impossible de charger les statistiques.'); setLoading(false); });

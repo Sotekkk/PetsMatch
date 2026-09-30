@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { requireUser } from '@/lib/server-auth';
+
+// Lecture des statistiques : réservée au propriétaire de l'annonce (ou à son
+// cogérant actif), vérifié ici ; lue ensuite avec la clé serveur (les tables
+// de stats ne sont plus lisibles publiquement).
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+);
 
 // POST /api/annonces/stats — tracker une vue
 export async function POST(req: NextRequest) {
@@ -55,34 +65,48 @@ export async function GET(req: NextRequest) {
 
   if (!annonceId) return NextResponse.json({ error: 'annonceId requis' }, { status: 400 });
 
+  const auth = await requireUser(req);
+  if (auth instanceof NextResponse) return auth;
+  const { data: proprio } = await supabaseAdmin.from('annonces')
+    .select('uid_eleveur').eq('id', annonceId).maybeSingle();
+  if (!proprio) return NextResponse.json({ error: 'Annonce introuvable' }, { status: 404 });
+  let autorise = proprio.uid_eleveur === auth.uid;
+  if (!autorise) {
+    const { data: cog } = await supabaseAdmin.from('elevage_cogerants').select('id')
+      .eq('uid_gerant', proprio.uid_eleveur).eq('uid_cogerant', auth.uid)
+      .eq('statut', 'actif').is('date_fin', null).limit(1);
+    autorise = (cog?.length ?? 0) > 0;
+  }
+  if (!autorise) return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
+
   const since = new Date();
   since.setDate(since.getDate() - period);
   const sinceStr = since.toISOString().split('T')[0];
 
   const [dailyRes, geoRes, porteeRes, annonceRes, likesRes] = await Promise.all([
-    supabase.from('annonces_stats_daily')
+    supabaseAdmin.from('annonces_stats_daily')
       .select('date, vues, visiteurs, contacts, favoris, partages')
       .eq('annonce_id', annonceId)
       .gte('date', sinceStr)
       .order('date', { ascending: true }),
 
-    supabase.from('annonces_views_geo')
+    supabaseAdmin.from('annonces_views_geo')
       .select('departement, vues')
       .eq('annonce_id', annonceId)
       .order('vues', { ascending: false })
       .limit(10),
 
-    supabase.from('animaux_portee_stats')
+    supabaseAdmin.from('animaux_portee_stats')
       .select('bebe_index, vues, favoris')
       .eq('annonce_id', annonceId)
       .gte('date', sinceStr),
 
-    supabase.from('annonces')
+    supabaseAdmin.from('annonces')
       .select('vues, contacts, titre, espece, race, type, type_vente, photos, prix, prix_min_portee, prix_max_portee, created_at, statut')
       .eq('id', annonceId)
       .single(),
 
-    supabase.from('likes')
+    supabaseAdmin.from('likes')
       .select('id', { count: 'exact', head: true })
       .eq('annonce_id', annonceId),
   ]);
@@ -109,13 +133,13 @@ export async function GET(req: NextRequest) {
   const tauxInteret    = totalVues > 0 ? Math.round((totalFavoris  / totalVues) * 100) : 0;
 
   // Classement dans la race (annonces similaires en ligne)
-  const { count: totalRace } = await supabase.from('annonces')
+  const { count: totalRace } = await supabaseAdmin.from('annonces')
     .select('id', { count: 'exact', head: true })
     .eq('espece', annonce?.espece ?? '')
     .eq('race',   annonce?.race   ?? '')
     .eq('statut', 'disponible');
 
-  const { count: betterRace } = await supabase.from('annonces')
+  const { count: betterRace } = await supabaseAdmin.from('annonces')
     .select('id', { count: 'exact', head: true })
     .eq('espece', annonce?.espece ?? '')
     .eq('race',   annonce?.race   ?? '')
