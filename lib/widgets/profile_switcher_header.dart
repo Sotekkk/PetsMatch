@@ -74,11 +74,17 @@ class _ProfileSwitcherHeaderState extends State<ProfileSwitcherHeader> {
     try {
       final rows = await Supabase.instance.client
           .from('notifications')
-          .select('profile_id, profile_type')
+          .select('type, profile_id, profile_type')
           .eq('uid', uid)
           .eq('read', false);
       final counts = <String, int>{};
       for (final n in (rows as List)) {
+        // Likes/mentions Pets Social : exclus de la cloche (bulle rouge du
+        // fil Pets Social à la place, cf. notifications_page.dart._fetch) —
+        // oublié ici jusqu'ici, ce qui gonflait ce badge au-delà du nombre
+        // réellement visible dans la cloche.
+        final type = n['type'] as String? ?? '';
+        if (type == 'social_like' || type == 'social_mention' || type == 'story_like') continue;
         final pid = (n['profile_id'] as String?) ?? '';
         final pt = (n['profile_type'] as String?) ?? '';
         if (pid.isNotEmpty) {

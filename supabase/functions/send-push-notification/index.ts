@@ -67,10 +67,16 @@ serve(async (req) => {
 
     // Payload Supabase Database Webhook : { type, table, record, old_record }
     const record = body?.record ?? body;
-    const { uid, title, body: notifBody, data, recipient_profile_id } = record as {
+    const { uid, title, body: notifBody, data, recipient_profile_id, profile_id, profile_type } = record as {
       uid: string; title: string; body: string; data: Record<string, unknown>;
-      recipient_profile_id?: string;
+      recipient_profile_id?: string; profile_id?: string; profile_type?: string;
     };
+    // `recipient_profile_id` (colonne dédiée, peu utilisée — cogérance/
+    // coproprio) prime, sinon repli sur `profile_id` (colonne utilisée par la
+    // quasi-totalité des inserts notifications) : sans ce repli, le tap sur
+    // une notif pour un profil secondaire n'avait quasiment jamais de quoi
+    // proposer la bascule côté app (lib/main.dart _handleNotifNavigation).
+    const targetProfileId = recipient_profile_id || profile_id || undefined;
 
     if (!uid || !title) {
       return new Response(JSON.stringify({ skipped: 'missing uid or title' }),
@@ -82,16 +88,16 @@ serve(async (req) => {
     // Résoudre le nom du profil destinataire si présent
     let profileSuffix = '';
     let profileName   = '';
-    let profileType   = '';
-    if (recipient_profile_id) {
+    let profileType   = profile_type ?? '';
+    if (targetProfileId) {
       const { data: profileRow } = await supa
         .from('user_profiles')
         .select('profile_name, profile_type')
-        .eq('id', recipient_profile_id)
+        .eq('id', targetProfileId)
         .maybeSingle();
       if (profileRow) {
         profileName = (profileRow as { profile_name: string; profile_type: string }).profile_name ?? '';
-        profileType = (profileRow as { profile_name: string; profile_type: string }).profile_type ?? '';
+        profileType = (profileRow as { profile_name: string; profile_type: string }).profile_type || profileType;
         if (profileName) profileSuffix = ` → ${profileName}`;
       }
     }
@@ -118,10 +124,11 @@ serve(async (req) => {
         dataStr[k] = v != null ? String(v) : '';
       }
     }
-    // Injecter le profil destinataire dans le payload FCM (utilisé pour le switch automatique)
-    if (recipient_profile_id) dataStr['recipient_profile_id'] = recipient_profile_id;
-    if (profileName)          dataStr['recipient_profile_name'] = profileName;
-    if (profileType)          dataStr['recipient_profile_type'] = profileType;
+    // Injecter le profil destinataire dans le payload FCM (lu par
+    // lib/main.dart _handleNotifNavigation pour proposer la bascule au tap)
+    if (targetProfileId) dataStr['recipient_profile_id'] = targetProfileId;
+    if (profileName)      dataStr['recipient_profile_name'] = profileName;
+    if (profileType)      dataStr['recipient_profile_type'] = profileType;
 
     const fcmRes = await fetch(
       `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,

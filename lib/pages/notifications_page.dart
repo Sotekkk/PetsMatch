@@ -943,6 +943,25 @@ class _NotificationsPageState extends State<NotificationsPage> {
       await Navigator.push(context, MaterialPageRoute(
         builder: (_) => const CogerancePage(),
       ));
+    } else if (type == 'conge_demande') {
+      // Employeur : ouvre directement l'onglet Congés du bon profil (pas
+      // forcément éleveur — profileType vient de la relation exacte qui a
+      // reçu la demande, cf. _DemanderCongeSheet).
+      final profileType = data is Map ? data['profileType'] as String? : null;
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => EmployesPage(
+          isAssociation: profileType == 'association',
+          profileType: (profileType == 'eleveur' || profileType == 'association') ? null : profileType,
+          initialTab: 2,
+        ),
+      ));
+    } else if (type == 'conge_reponse') {
+      // Employé : sa demande vit dans le sheet "Demander un congé" du bon
+      // employeur, pas de deep-link direct — Mes Employeurs reste le point
+      // d'entrée le plus fiable.
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (_) => const MesEmployeursPage(),
+      ));
     } else if (type == 'employee_invite') {
       final eleveurUid = data is Map ? data['eleveurUid'] as String? : null;
       final eleveurNom = data is Map ? (data['eleveurNom'] as String? ?? 'Mon employeur') : 'Mon employeur';

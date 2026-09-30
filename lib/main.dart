@@ -82,17 +82,90 @@ Future<String?> resolveConversationOtherUid(String conversationId) async {
   }
 }
 
+// Emoji par profile_type — mêmes valeurs que ProfileSwitcherHeader/
+// notifications_page.dart, dupliqué ici (fonctions top-level, pas d'accès
+// aux méthodes privées de ces widgets) pour la boîte de dialogue de bascule.
+String _notifProfileEmoji(String type) => switch (type) {
+  'particulier'      => '👤',
+  'eleveur'          => '🐾',
+  'association'      => '❤️',
+  'veterinaire'      => '⚕️',
+  'sante'            => '🧘',
+  'education'        => '🎓',
+  'garde'            => '🏠',
+  'pension'          => '🏨',
+  'toilettage'       => '✂️',
+  'photographe'      => '📷',
+  'marechal_ferrant' => '🔨',
+  'taxi_animalier'   => '🚕',
+  _                  => '📌',
+};
+
+/// Notification reçue pour un profil différent du profil actif : propose la
+/// bascule (à la manière de Facebook) au lieu de naviguer silencieusement
+/// sur le mauvais profil. Retourne true si le profil actif au retour est
+/// bien le profil visé par la notif (bascule acceptée, ou déjà actif).
+Future<bool> _confirmAndSwitchProfile(String recipientProfileId) async {
+  if (recipientProfileId.isEmpty || recipientProfileId == User_Info.activeProfileId) return true;
+  final target = User_Info.availableProfiles
+      .where((p) => p['id']?.toString() == recipientProfileId)
+      .firstOrNull;
+  if (target == null) return true; // profil introuvable (pas encore chargé) : on ne bloque pas la navigation
+
+  final navCtx = navigatorKey.currentContext;
+  if (navCtx == null) return false;
+  final type = target['profile_type']?.toString() ?? '';
+  final label = target['nom']?.toString().isNotEmpty == true
+      ? target['nom'].toString()
+      : (target['profile_label']?.toString() ?? 'ce profil');
+
+  final ok = await showDialog<bool>(
+        context: navCtx,
+        builder: (_) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(children: [
+            Text(_notifProfileEmoji(type), style: const TextStyle(fontSize: 20)),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('Changer de profil ?',
+                style: TextStyle(fontFamily: 'Galey', fontWeight: FontWeight.w700, fontSize: 16))),
+          ]),
+          content: Text(
+            'Cette notification concerne votre profil $label.\n\nBasculer vers ce profil ?',
+            style: const TextStyle(fontFamily: 'Galey', fontSize: 14, height: 1.5)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(navCtx, false),
+              child: const Text('Annuler', style: TextStyle(fontFamily: 'Galey'))),
+            FilledButton(
+              onPressed: () => Navigator.pop(navCtx, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF0C5C6C),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+              child: Text('Basculer — $label', style: const TextStyle(fontFamily: 'Galey'))),
+          ],
+        ),
+      ) ??
+      false;
+
+  if (ok) User_Info.applyProfile(target);
+  return ok;
+}
+
 Future<void> _handleNotifNavigation(Map<String, dynamic> data) async {
   final ctx = navigatorKey.currentState;
   if (ctx == null) return;
 
-  // Si la notif est destinée à un profil secondaire spécifique, on y bascule
+  // Si la notif est destinée à un profil secondaire spécifique, on propose de
+  // basculer dessus (comme Facebook) plutôt que de naviguer silencieusement
+  // sur le mauvais profil, ou pire, sur le profil actif sans rapport.
   final recipientProfileId = data['recipient_profile_id'] as String? ?? '';
   if (recipientProfileId.isNotEmpty) {
-    final profiles = User_Info.availableProfiles;
-    final target = profiles.where((p) => p['id']?.toString() == recipientProfileId).firstOrNull;
-    if (target != null) {
-      User_Info.applyProfile(target);
+    final switched = await _confirmAndSwitchProfile(recipientProfileId);
+    if (!switched) {
+      // Refus : on ouvre la liste de notifs génériques sur le profil actif
+      // plutôt que de risquer une navigation en contexte incohérent.
+      ctx.push(MaterialPageRoute(builder: (_) => const NotificationsPage()));
+      return;
     }
   }
 
