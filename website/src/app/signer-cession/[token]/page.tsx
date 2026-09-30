@@ -77,6 +77,7 @@ export default function SignerCessionPage({ params }: { params: Promise<{ token:
         .from('cessions')
         .select(`*, animaux!animal_id(nom, espece, race, sexe, identification, date_naissance), users!uid_eleveur(firstname, lastname, name_elevage, is_elevage, adress_elevage, adress, siret, email)`)
         .eq('token', token)
+        .setHeader('x-pm-token', token)
         .maybeSingle();
 
       if (e || !data) { setError('Lien invalide ou expiré.'); return; }

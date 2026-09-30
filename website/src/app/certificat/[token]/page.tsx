@@ -243,7 +243,8 @@ export default function CertificatPublicPage({ params }: { params: Promise<{ tok
   const padRef = useRef<unknown>(null);
 
   useEffect(() => {
-    supabase.from('certificats_engagement').select('*').eq('token_signature', token).maybeSingle()
+    supabase.from('certificats_engagement').select('*').eq('token_signature', token)
+      .setHeader('x-pm-token', token).maybeSingle()
       .then(async ({ data }) => {
         if (!data) { setNotFound(true); setLoading(false); return; }
         setCert(data as Cert);

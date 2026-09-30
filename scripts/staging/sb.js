@@ -13,7 +13,8 @@ async function as(uid) {
   };
   return {
     // GET REST : as(uid).rest('animaux?select=id&limit=5')
-    rest: (p) => call('GET', '/rest/v1/' + p),
+    // GET REST ; `extra` = en-têtes supplémentaires (ex. { 'x-pm-token': t }).
+    rest: (p, extra = {}) => call('GET', '/rest/v1/' + p, undefined, extra),
     // Écritures REST ; renvoient les lignes touchées (Prefer: return=representation).
     insert: (table, row) => call('POST', `/rest/v1/${table}`, JSON.stringify(row),
       { 'Content-Type': 'application/json', Prefer: 'return=representation' }),

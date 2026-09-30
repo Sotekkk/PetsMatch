@@ -54,7 +54,8 @@ export default function DevisPublicPage({ params }: { params: Promise<{ token: s
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    supabase.from('devis').select('*').eq('token_acceptation', token).maybeSingle()
+    supabase.from('devis').select('*').eq('token_acceptation', token)
+      .setHeader('x-pm-token', token).maybeSingle()
       .then(async ({ data }) => {
         if (!data) { setNotFound(true); setLoading(false); return; }
         setDevis(data as Devis);

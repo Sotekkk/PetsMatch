@@ -98,7 +98,8 @@ export default function FacturePublicPage({ params }: { params: Promise<{ token:
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
-    supabase.from('factures').select('*').eq('token', token).maybeSingle()
+    supabase.from('factures').select('*').eq('token', token)
+      .setHeader('x-pm-token', token).maybeSingle()
       .then(async ({ data }) => {
         if (!data) { setNotFound(true); setLoading(false); return; }
         setFacture(data as Facture);

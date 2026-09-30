@@ -110,6 +110,7 @@ export default function SignerContratPage({ params }: { params: Promise<{ token:
         .from('documents_animaux')
         .select('*, animaux(nom,espece,race,sexe,identification,date_naissance,couleur,couleur_yeux,pedigree_numero,pedigree_lof,nom_pere,puce_pere,nom_mere,puce_mere)')
         .eq('token', token)
+        .setHeader('x-pm-token', token)
         .maybeSingle();
 
       if (!data) { setStatus('not_found'); return; }

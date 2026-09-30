@@ -171,7 +171,7 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
   Future<void> _loadDocument() async {
     final q = _supa.from('documents_animaux').select('*');
     final res = widget.token != null
-        ? await q.eq('token', widget.token!).maybeSingle()
+        ? await q.eq('token', widget.token!).setHeader('x-pm-token', widget.token!).maybeSingle()
         : await q.eq('id', widget.documentId!).maybeSingle();
     if (res == null) { _error = 'Lien invalide ou expiré.'; return; }
     _doc = Map<String, dynamic>.from(res);
@@ -206,7 +206,8 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
 
   Future<void> _loadCession() async {
     final res = await _supa.from('cessions').select('*')
-        .eq('token', widget.cessionToken!).maybeSingle();
+        .eq('token', widget.cessionToken!)
+        .setHeader('x-pm-token', widget.cessionToken!).maybeSingle();
     if (res == null) { _error = 'Lien invalide ou expiré.'; return; }
     _doc = Map<String, dynamic>.from(res);
     final animalId = _doc!['animal_id'] as String?;
@@ -227,7 +228,8 @@ class _ContratSignaturePageState extends State<ContratSignaturePage> {
   Future<void> _loadCertificatEngagement() async {
     final q = _supa.from('certificats_engagement').select('*');
     final res = widget.certificatEngagementToken != null
-        ? await q.eq('token_signature', widget.certificatEngagementToken!).maybeSingle()
+        ? await q.eq('token_signature', widget.certificatEngagementToken!)
+            .setHeader('x-pm-token', widget.certificatEngagementToken!).maybeSingle()
         : await q.eq('id', widget.certificatEngagementId!).maybeSingle();
     if (res == null) { _error = 'Certificat introuvable ou lien expiré.'; return; }
     _cert = Map<String, dynamic>.from(res);

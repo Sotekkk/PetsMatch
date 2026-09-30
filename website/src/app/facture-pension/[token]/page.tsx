@@ -32,7 +32,7 @@ export default function FacturePensionPage({ params }: { params: Promise<{ token
     (async () => {
       const { data } = await supabase.from('pension_factures')
         .select('numero, numero_affichage, animal_nom, proprietaire_nom, montant, statut, type, pdf_url, details, date_envoi, date_paiement')
-        .eq('token', token).maybeSingle();
+        .eq('token', token).setHeader('x-pm-token', token).maybeSingle();
       setRow((data as Row) ?? null);
       setLoading(false);
     })();
